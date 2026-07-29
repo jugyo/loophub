@@ -24,7 +24,7 @@ export function usage(): void {
   lh notification send --kind merge_ready|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|delete <name> [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage global workflow prompt bundles
-  lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok] [--model <name>] [--herdr] [--auto] [--no-launch]   # start a Workflow run (default runtime/model from app settings; --auto launches the parent and all step agents in auto mode)
+  lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok] [--model <name>] [--herdr] [--no-launch]   # start a Workflow run (default runtime/model from app settings; agents launch in auto mode)
   lh workflow run advance-to-verify|request-rework --run <id> [--repo owner/name]
   lh workflow run activate-step --run <id> --step execute --session <id> [--repo owner/name]
   lh workflow run await-human --run <id> --reason <text> [--repo owner/name]

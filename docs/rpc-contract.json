@@ -333,7 +333,7 @@
     },
     {
       "name": "settings/get",
-      "description": "Instance-level settings (per-agent autoModeOnLaunch/model/effort, codingAgent, devCostLimitUsd, workflowContractLanguage).",
+      "description": "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, workflowContractLanguage).",
       "params": {
         "type": "object",
         "properties": {},
@@ -346,7 +346,7 @@
     },
     {
       "name": "settings/update",
-      "description": "Update instance-level settings. autoModeOnLaunch/model/effort require agent; workflowContractLanguage is DB-backed.",
+      "description": "Update instance-level settings. model/effort require agent; workflowContractLanguage is DB-backed.",
       "params": {
         "type": "object",
         "properties": {
@@ -356,9 +356,6 @@
               "codex",
               "grok"
             ]
-          },
-          "autoModeOnLaunch": {
-            "type": "boolean"
           },
           "model": {
             "type": "string",

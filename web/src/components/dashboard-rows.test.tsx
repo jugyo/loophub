@@ -34,9 +34,9 @@ vi.mock("@/components/terminal-controller", () => ({
 const settingsData = vi.hoisted(() => ({
   value: {
     agents: {
-      "claude-code": { autoModeOnLaunch: false, model: "", effort: "" },
-      codex: { autoModeOnLaunch: false, model: "", effort: "" },
-      grok: { autoModeOnLaunch: false, model: "", effort: "" },
+      "claude-code": { model: "", effort: "" },
+      codex: { model: "", effort: "" },
+      grok: { model: "", effort: "" },
     },
     codingAgent: "claude-code",
   } as GlobalSettings | undefined,
@@ -81,9 +81,9 @@ afterEach(() => {
   focusHerdrState.isPending = false;
   settingsData.value = {
     agents: {
-      "claude-code": { autoModeOnLaunch: false, model: "", effort: "" },
-      codex: { autoModeOnLaunch: false, model: "", effort: "" },
-      grok: { autoModeOnLaunch: false, model: "", effort: "" },
+      "claude-code": { model: "", effort: "" },
+      codex: { model: "", effort: "" },
+      grok: { model: "", effort: "" },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,

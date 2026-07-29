@@ -57,73 +57,47 @@ test("updateConfig ignores undefined-valued keys instead of erasing the existing
 // other typed fields, since updateConfig merges into the raw parsed object rather than this
 // module's typed GlobalConfig shape.
 test("a stale terminalLaunchBackend field in config.json is preserved and ignored", async () => {
-  const {
-    autoModeOnLaunch,
-    codingAgent,
-    updateAgentAutoModeOnLaunch,
-    updateConfig,
-  } = await import("./config.ts");
+  const { codingAgent, updateAgentDefaultModel, updateConfig } = await import(
+    "./config.ts"
+  );
   const path = join(dir, "config.json");
 
   updateConfig({ terminalLaunchBackend: "builtin" } as never);
-  updateAgentAutoModeOnLaunch("claude-code", true);
+  updateAgentDefaultModel("claude-code", "opus");
   updateConfig({ codingAgent: "codex" });
 
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
     terminalLaunchBackend: "builtin",
-    agents: { "claude-code": { autoModeOnLaunch: true } },
+    agents: { "claude-code": { defaultModel: "opus" } },
     codingAgent: "codex",
   });
-  expect(autoModeOnLaunch("claude-code")).toBe(true);
   expect(codingAgent()).toBe("codex");
 });
 
-test("autoModeOnLaunch defaults to false per agent and reflects updateAgentAutoModeOnLaunch (#499, #593)", async () => {
-  const { autoModeOnLaunch, updateAgentAutoModeOnLaunch } = await import(
-    "./config.ts"
-  );
-  expect(autoModeOnLaunch("claude-code")).toBe(false); // default
-  expect(autoModeOnLaunch("codex")).toBe(false); // default
-
-  updateAgentAutoModeOnLaunch("claude-code", true);
-  expect(autoModeOnLaunch("claude-code")).toBe(true);
-  expect(autoModeOnLaunch("codex")).toBe(false); // unaffected
-
-  updateAgentAutoModeOnLaunch("claude-code", false);
-  expect(autoModeOnLaunch("claude-code")).toBe(false);
-});
-
-test("updateAgentAutoModeOnLaunch sets one agent without disturbing another's setting (#593)", async () => {
-  const { autoModeOnLaunch, updateAgentAutoModeOnLaunch } = await import(
-    "./config.ts"
-  );
-
-  updateAgentAutoModeOnLaunch("claude-code", true);
-  updateAgentAutoModeOnLaunch("codex", true);
-  expect(autoModeOnLaunch("claude-code")).toBe(true);
-  expect(autoModeOnLaunch("codex")).toBe(true);
-
-  updateAgentAutoModeOnLaunch("claude-code", false);
-  expect(autoModeOnLaunch("claude-code")).toBe(false);
-  expect(autoModeOnLaunch("codex")).toBe(true); // untouched
-});
-
-test("autoModeOnLaunch reads legacy autoModeOnBuild and writes the new key (#1581)", async () => {
-  const { autoModeOnLaunch, updateAgentAutoModeOnLaunch } = await import(
-    "./config.ts"
-  );
+test("legacy auto mode settings are preserved and ignored", async () => {
+  const { agentModel, updateAgentDefaultModel } = await import("./config.ts");
   const path = join(dir, "config.json");
   writeFileSync(
     path,
     JSON.stringify({
-      agents: { "claude-code": { autoModeOnBuild: true } },
+      agents: {
+        "claude-code": {
+          autoModeOnLaunch: false,
+          autoModeOnBuild: true,
+        },
+      },
     }),
   );
-  expect(autoModeOnLaunch("claude-code")).toBe(true);
-
-  updateAgentAutoModeOnLaunch("claude-code", true);
+  updateAgentDefaultModel("claude-code", "sonnet");
+  expect(agentModel("claude-code")).toBe("sonnet");
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
-    agents: { "claude-code": { autoModeOnLaunch: true } },
+    agents: {
+      "claude-code": {
+        autoModeOnLaunch: false,
+        autoModeOnBuild: true,
+        defaultModel: "sonnet",
+      },
+    },
   });
 });
 

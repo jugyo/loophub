@@ -95,25 +95,14 @@ test("reconcileTargetRepo returns undefined when neither repo is provided", () =
 
 // ---- interactive launch args (pure) ----
 
-test("buildClaudeArgs adds auto mode only when --auto is set", () => {
-  // --auto → auto mode, enabled only because the user opted in explicitly.
-  const auto = buildClaudeArgs({
+test("buildClaudeArgs always adds auto mode", () => {
+  const args = buildClaudeArgs({
     sessionId: "sid-1",
-    auto: true,
     slashCommand: "/lh-build 42",
   });
-  const i = auto.indexOf("--permission-mode");
+  const i = args.indexOf("--permission-mode");
   expect(i).toBeGreaterThanOrEqual(0);
-  expect(auto[i + 1]).toBe("auto");
-
-  // auto: false (default) → no --permission-mode (Claude's normal approval mode), so an
-  // unattended session never auto-edits without an explicit opt-in.
-  const off = buildClaudeArgs({
-    sessionId: "sid-1",
-    auto: false,
-    slashCommand: "/lh-build 42",
-  });
-  expect(off.indexOf("--permission-mode")).toBe(-1);
+  expect(args[i + 1]).toBe("auto");
 });
 
 test("buildClaudeArgs carries the session id and the slash command", () => {
@@ -123,8 +112,7 @@ test("buildClaudeArgs carries the session id and the slash command", () => {
   });
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
   expect(args[args.length - 1]).toBe("/lh-build 42");
-  // No --auto → no auto mode.
-  expect(args.indexOf("--permission-mode")).toBe(-1);
+  expect(args).toContain("--permission-mode");
 });
 
 test("buildResumeArgs resumes a UUID session id with no extra flags", () => {
@@ -274,51 +262,10 @@ test("resolveDevRuntime rejects grok combined with another runtime flag", () => 
   ).toThrow(/mutually exclusive/);
 });
 
-test("buildCodexArgs grants LOOPHUB_HOME as a sandbox writable root before the prompt", () => {
+test("buildCodexArgs always adds --dangerously-bypass-approvals-and-sandbox", () => {
   expect(
     buildCodexArgs({
       slashCommand: "/lh-build 42",
-      loopHubHome: "/tmp/lh-home",
-    }),
-  ).toEqual([
-    "--sandbox",
-    "workspace-write",
-    "-c",
-    'sandbox_workspace_write.writable_roots=["/tmp/lh-home"]',
-    "/lh-build 42",
-  ]);
-});
-
-test("buildCodexArgs JSON-escapes the writable LOOPHUB_HOME path", () => {
-  expect(
-    buildCodexArgs({
-      slashCommand: "/lh-build 42",
-      loopHubHome: '/tmp/lh home/quote"dir',
-    }),
-  ).toContain(
-    'sandbox_workspace_write.writable_roots=["/tmp/lh home/quote\\"dir"]',
-  );
-});
-
-test("buildCodexArgs uses the effective LOOPHUB_HOME by default", () => {
-  const previous = process.env.LOOPHUB_HOME;
-  process.env.LOOPHUB_HOME = "/tmp/lh-env-home";
-  try {
-    expect(buildCodexArgs({ slashCommand: "/lh-build 42" })).toContain(
-      'sandbox_workspace_write.writable_roots=["/tmp/lh-env-home"]',
-    );
-  } finally {
-    if (previous === undefined) delete process.env.LOOPHUB_HOME;
-    else process.env.LOOPHUB_HOME = previous;
-  }
-});
-
-test("buildCodexArgs adds --dangerously-bypass-approvals-and-sandbox when auto is set", () => {
-  expect(
-    buildCodexArgs({
-      slashCommand: "/lh-build 42",
-      auto: true,
-      loopHubHome: "/tmp/lh-home",
     }),
   ).toEqual(["--dangerously-bypass-approvals-and-sandbox", "/lh-build 42"]);
 });
@@ -327,7 +274,6 @@ test("buildCodexArgs passes --model through verbatim and keeps the slash command
   const args = buildCodexArgs({
     slashCommand: "/lh-build 42",
     model: "gpt-5.5",
-    loopHubHome: "/tmp/lh-home",
   });
   expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
   expect(args[args.length - 1]).toBe("/lh-build 42");
@@ -338,7 +284,6 @@ test("buildCodexArgs passes effort as model_reasoning_effort (#1534)", () => {
     slashCommand: "Create an issue.",
     model: "gpt-5.5",
     effort: "high",
-    loopHubHome: "/tmp/lh-home",
   });
   expect(args).toContain("model_reasoning_effort=high");
   expect(args[args.length - 1]).toBe("Create an issue.");
@@ -358,7 +303,6 @@ test("buildClaudeArgs passes --effort through (#1534)", () => {
 test("buildCodexArgs omits --model when not provided (backend default model) (#594)", () => {
   const args = buildCodexArgs({
     slashCommand: "/lh-build 42",
-    loopHubHome: "/tmp/lh-home",
   });
   expect(args.indexOf("--model")).toBe(-1);
 });
@@ -367,7 +311,6 @@ test("buildCodexArgs strips control characters from the model before argv (#594)
   const args = buildCodexArgs({
     slashCommand: "/lh-build 42",
     model: "\x1b]0;x\x07gpt-5.5\r",
-    loopHubHome: "/tmp/lh-home",
   });
   expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
 });
@@ -406,18 +349,12 @@ test("buildRuntimeLaunch returns codex and Codex argv for codex", () => {
     buildCodexArgs({ slashCommand: "Create an issue." }),
   );
   expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toContain(
-    "'sandbox_workspace_write.writable_roots=",
+    "'--dangerously-bypass-approvals-and-sandbox'",
   );
 });
 
-test("buildGrokArgs keeps the slash command last and omits --model / auto flags by default", () => {
+test("buildGrokArgs keeps the slash command last and always enables auto mode", () => {
   expect(buildGrokArgs({ slashCommand: "/lh-build 42" })).toEqual([
-    "/lh-build 42",
-  ]);
-});
-
-test("buildGrokArgs adds the auto-bypass flag before the prompt when auto is set", () => {
-  expect(buildGrokArgs({ slashCommand: "/lh-build 42", auto: true })).toEqual([
     "--always-approve",
     "/lh-build 42",
   ]);
@@ -437,7 +374,12 @@ test("buildGrokArgs passes --model grok-4.5 when that model is selected", () => 
     slashCommand: "/lh-build 42",
     model: "grok-4.5",
   });
-  expect(args).toEqual(["--model", "grok-4.5", "/lh-build 42"]);
+  expect(args).toEqual([
+    "--always-approve",
+    "--model",
+    "grok-4.5",
+    "/lh-build 42",
+  ]);
 });
 
 test("buildGrokArgs strips control characters from the model before argv", () => {
@@ -455,7 +397,6 @@ test("buildRuntimeLaunch returns grok and Grok argv for grok", () => {
     slashCommand: "/lh-build 42",
     sessionName: "#7 fix it",
     model: "grok-code-fast-1",
-    auto: true,
   });
 
   expect(launch.bin).toBe("grok");
@@ -463,7 +404,6 @@ test("buildRuntimeLaunch returns grok and Grok argv for grok", () => {
     buildGrokArgs({
       slashCommand: "/lh-build 42",
       model: "grok-code-fast-1",
-      auto: true,
     }),
   );
   expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toMatch(
@@ -488,10 +428,9 @@ test("formatSpawnCommand shell-escapes embedded single quotes", () => {
 test("formatSpawnCommand renders the codex binary when bin is given", () => {
   const args = buildCodexArgs({
     slashCommand: "/lh-build 42",
-    loopHubHome: "/tmp/lh-home",
   });
   expect(formatSpawnCommand(args, { bin: "codex" })).toBe(
-    "codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[\"/tmp/lh-home\"]' '/lh-build 42'",
+    "codex '--dangerously-bypass-approvals-and-sandbox' '/lh-build 42'",
   );
 });
 

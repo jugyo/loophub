@@ -197,8 +197,6 @@ export type CodingAgent = CodingAgentWire;
 
 /** Per-agent settings (#593, #594, #682). */
 export interface AgentSettings {
-  // Whether agent launches use auto mode (#499, #593, #1581).
-  autoModeOnLaunch: boolean;
   // Model this agent launches with when no explicit --model is passed (#594).
   model: string;
   // Reasoning effort paired with model in the Settings screen (#682).

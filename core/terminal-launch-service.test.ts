@@ -204,16 +204,7 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
     });
 
     expect(lhDev.calls).toEqual([
-      [
-        "lh",
-        "workflow",
-        "start",
-        "me/proj/1",
-        "--workflow-id",
-        "9",
-        "--herdr",
-        "--auto",
-      ],
+      ["lh", "workflow", "start", "me/proj/1", "--workflow-id", "9", "--herdr"],
     ]);
     expect(herdr.calls).toHaveLength(0);
     expect(result).toMatchObject({ backend: "herdr" });
@@ -237,7 +228,7 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
 
     expect(err?.message).toBe("lh workflow start exited with status 7");
     expect(err?.data?.command).toBe(
-      "lh workflow start me/proj/1 --workflow-id 9 --herdr --auto",
+      "lh workflow start me/proj/1 --workflow-id 9 --herdr",
     );
   });
 
@@ -393,7 +384,7 @@ describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
     expect(agentStart[agentStart.indexOf("--cwd") + 1]).toBe(HOME);
     // The launched inner command is the coding agent seeded with the workflow-create prompt.
     expect(agentStart[agentStart.length - 1]).toContain(
-      "claude 'Create a workflow, then stop.'",
+      "claude '--permission-mode' 'auto' 'Create a workflow, then stop.'",
     );
     expect(result).toMatchObject({ backend: "herdr" });
   });
@@ -953,7 +944,9 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     const agentStart = herdr.calls[1];
     expect(agentStart).toContain("start");
     expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w4:t1");
-    expect(agentStart).toContain("claude 'Create a scheduled task.'");
+    expect(agentStart).toContain(
+      "claude '--permission-mode' 'auto' 'Create a scheduled task.'",
+    );
     expect(result).toMatchObject({ backend: "herdr" });
   });
 

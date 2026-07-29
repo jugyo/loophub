@@ -1,11 +1,9 @@
 import {
   agentEffort,
   agentModel,
-  autoModeOnLaunch,
   type CodingAgent,
   codingAgent,
   devCostLimitUsd,
-  updateAgentAutoModeOnLaunch,
   updateAgentDefaultEffort,
   updateAgentDefaultModel,
   updateConfig,
@@ -30,7 +28,6 @@ export function workflowContractLanguage(): WorkflowContractLanguage {
 }
 
 interface AgentSettingsShape {
-  autoModeOnLaunch: boolean;
   model: string;
   effort: string;
 }
@@ -42,7 +39,6 @@ function agentSettings(): Record<CodingAgent, AgentSettingsShape> {
     CODING_AGENTS.map((agent) => [
       agent,
       {
-        autoModeOnLaunch: autoModeOnLaunch(agent),
         model: agentModel(agent),
         effort: agentEffort(agent),
       },
@@ -100,10 +96,8 @@ export const settings = {
 
   update(
     input: {
-      // Which agent autoModeOnLaunch/model/effort is being set for (#593, #594, #682); required
-      // together with any of them, ignored otherwise.
+      // Which agent model/effort is being set for (#594, #682); required together with either.
       agent?: CodingAgent;
-      autoModeOnLaunch?: boolean;
       // Default model this agent launches with when no explicit --model is passed (#594).
       model?: string;
       // Default effort paired with model in the Settings screen (#682).
@@ -119,12 +113,6 @@ export const settings = {
     devCostLimitUsd: number;
     workflowContractLanguage: WorkflowContractLanguage;
   } {
-    if (input.autoModeOnLaunch !== undefined) {
-      if (typeof input.autoModeOnLaunch !== "boolean") {
-        throw new ServiceError(422, "autoModeOnLaunch must be a boolean");
-      }
-      validateAgentScopedSetting(input.agent);
-    }
     if (input.model !== undefined) {
       if (typeof input.model !== "string" || !input.model.trim()) {
         throw new ServiceError(422, "model must be a non-empty string");
@@ -156,11 +144,6 @@ export const settings = {
       );
     }
 
-    if (input.autoModeOnLaunch !== undefined) {
-      const agent = input.agent;
-      validateAgentScopedSetting(agent);
-      updateAgentAutoModeOnLaunch(agent, input.autoModeOnLaunch);
-    }
     if (input.model !== undefined) {
       const agent = input.agent;
       validateAgentScopedSetting(agent);

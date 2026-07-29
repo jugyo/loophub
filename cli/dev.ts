@@ -36,10 +36,8 @@ export function validateRepo(repo: string): void {
 
 // ---- interactive launch args ----
 //
-// Build the `claude` argv for the interactive dev session. Auto mode (`--permission-mode auto`)
-// is enabled only when the caller explicitly passes `--auto` (never by default); without it the
-// session starts in Claude's normal approval mode.
-// `auto` (vs `acceptEdits`) lets the session run Bash/network/edits without prompting — driven
+// Build the `claude` argv for the interactive dev session. Auto mode lets the session run
+// Bash/network/edits without prompting — driven
 // by Claude's safety classifier, which still stops to confirm genuinely destructive actions
 // (force push, `terraform destroy`, `curl | bash`, …) — so an unattended dev loop is not blocked
 // on routine approvals. Centralized here so the displayed spawn command line (formatSpawnCommand)
@@ -126,22 +124,14 @@ export function resolveDevRuntime(flags: {
 // positional (`codex [PROMPT]`), so the same slash command Claude receives is
 // handed to Codex verbatim — the rest of the context (worktree cwd, registered session, linked
 // PR) is prepared before spawn and is runtime-independent. Codex has no `--session-id` /
-// `--name` / `--settings` equivalents. Sandboxed launches receive a Codex config override that
-// grants LOOPHUB_HOME as a writable root; claude-only flags (--sandbox/--allow) are rejected up
+// `--name` / `--settings` equivalents; claude-only flags (--sandbox/--allow) are rejected up
 // front by the CLI, not silently dropped here.
 export function buildCodexArgs({
   slashCommand,
-  auto,
   model,
   effort,
-  loopHubHome,
 }: {
   slashCommand: string;
-  // Opt into Codex's auto-mode equivalent (#499): skip approval prompts and run unsandboxed,
-  // matching Claude Code's --auto (`--permission-mode auto`, "no guard rails" — see
-  // buildClaudeArgs). Codex's closest single flag for that is
-  // --dangerously-bypass-approvals-and-sandbox.
-  auto?: boolean;
   // Model for the session (`-m/--model <name>`, #594). No name validation — an unknown name is
   // the codex CLI's error to raise. Omitted => codex's own default. Control characters are
   // stripped (see display()), same invariant as buildClaudeArgs' model.
@@ -149,16 +139,11 @@ export function buildCodexArgs({
   // Reasoning effort (`-c model_reasoning_effort=<level>`, #682/#1534). Same Codex config override
   // the scheduled-task launcher uses. Omitted => codex's own default.
   effort?: string;
-  // Effective LOOPHUB_HOME to grant as a Codex sandbox writable root. Defaults to the same
-  // configDir() resolution used by LoopHub DB/config writes.
-  loopHubHome?: string;
 }): string[] {
   return buildRuntimeArgs({
     runtime: "codex",
-    auto,
     model,
     effort,
-    loopHubHome,
     prompt: slashCommand,
   });
 }
@@ -173,16 +158,12 @@ export function buildCodexArgs({
 // Grok's auto-mode equivalent is `--always-approve` (auto-approve all tool executions), matching
 // Claude Code's `--permission-mode auto` and Codex's `--dangerously-bypass-approvals-and-sandbox`.
 // An older tentative flag (`--force`) is rejected by current `grok` CLIs as unknown, which made
-// Web Start workflow (`--auto`) exit the agent pane immediately with status 2 (#1540).
+// Web Start workflow exit the agent pane immediately with status 2 (#1540).
 export function buildGrokArgs({
   slashCommand,
-  auto,
   model,
 }: {
   slashCommand: string;
-  // Opt into grok's auto-mode equivalent: skip approval prompts and auto-run tools, matching Claude
-  // Code's --auto (`--permission-mode auto`) and Codex's --dangerously-bypass-approvals-and-sandbox.
-  auto?: boolean;
   // Model for the session (`--model <name>`). No name validation — an unknown name is the grok CLI's
   // error to raise. Omitted => grok's own default. Control characters are stripped (see display()),
   // same invariant as buildCodexArgs' model.
@@ -192,7 +173,6 @@ export function buildGrokArgs({
 }): string[] {
   return buildRuntimeArgs({
     runtime: "grok",
-    auto,
     model,
     prompt: slashCommand,
   });
@@ -200,16 +180,12 @@ export function buildGrokArgs({
 
 export function buildClaudeArgs({
   sessionId,
-  auto,
   slashCommand,
   sessionName,
   model,
   effort,
 }: {
   sessionId: string;
-  // Opt into auto mode (`--permission-mode auto`). Enabled only when explicitly requested (never
-  // by default); without it the session starts in Claude's normal approval mode.
-  auto?: boolean;
   slashCommand: string;
   // Display name for the session picker / terminal title (e.g. `#54 <issue title>`). Stripped
   // of control characters before it reaches argv (see display()) so a crafted issue title can
@@ -227,7 +203,6 @@ export function buildClaudeArgs({
   return buildRuntimeArgs({
     runtime: "claude-code",
     sessionId,
-    auto,
     sessionName,
     model,
     effort,
@@ -239,7 +214,6 @@ export function buildClaudeArgs({
 // runtime's argv, keyed by the registry rather than a branch here.
 type RuntimeArgvInput = {
   sessionId: string;
-  auto?: boolean;
   slashCommand: string;
   sessionName?: string;
   model?: string;
@@ -249,7 +223,6 @@ type RuntimeArgvInput = {
 export function buildRuntimeLaunch({
   runtime,
   sessionId,
-  auto,
   slashCommand,
   sessionName,
   model,
@@ -262,7 +235,6 @@ export function buildRuntimeLaunch({
     args: buildRuntimeArgs({
       runtime,
       sessionId,
-      auto,
       sessionName,
       model,
       effort,

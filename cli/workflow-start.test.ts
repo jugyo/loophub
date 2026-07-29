@@ -943,7 +943,7 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     expect(log).toMatch(/agent start .+ --tab w1:t1 --focus /);
     expect(log).not.toContain("workspace focus");
     expect(log).not.toContain("tab focus");
-    expect(readFileSync(runtime.log, "utf8")).not.toContain(
+    expect(readFileSync(runtime.log, "utf8")).toContain(
       "'--permission-mode' 'auto'",
     );
     expect(started.stderr).toContain("Attach with: herdr --session");
@@ -952,52 +952,10 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
   }
 });
 
-test("workflow start --auto launches the parent in auto mode", () => {
-  const issueOut = run([
-    "issue",
-    "create",
-    "--repo",
-    REPO,
-    "--title",
-    "Auto parent session",
-    "--body",
-    "Do it unattended",
-  ]);
-  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
-  if (!issue) throw new Error(issueOut.stdout);
-  const runtime = fakeRuntime();
-  try {
-    const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-        "--auto",
-      ],
-      {
-        PATH: `${runtime.dir}:${process.env.PATH}`,
-        HERDR_LOG: runtime.log,
-      },
-    );
-
-    expect(started.exitCode, started.stderr).toBe(0);
-    expect(readFileSync(runtime.log, "utf8")).toContain(
-      "'--permission-mode' 'auto'",
-    );
-  } finally {
-    rmSync(runtime.dir, { recursive: true, force: true });
-  }
-});
-
-test("CLI usage documents workflow start --auto", () => {
+test("CLI usage omits workflow start --auto", () => {
   const result = run([]);
   expect(result.stdout).toContain("lh workflow start");
-  expect(result.stdout).toContain("[--herdr] [--auto]");
+  expect(result.stdout).not.toContain("--auto");
 });
 
 test("workflow start --herdr reuses an already-open PR worktree workspace", () => {
@@ -1184,13 +1142,13 @@ test("workflow start launches the configured codingAgent (codex) without requiri
     // Exit 0 with no `claude` on PATH already proves the Codex launch never required claude.
     expect(started.exitCode, started.stderr).toBe(0);
     const log = readFileSync(runtime.log, "utf8");
-    // The parent launches codex with the codex config default model and the workspace-write sandbox
-    // posture (non-auto). `<bin> '` marks the real binary invocation (the folded prompt escapes its
-    // own quotes), so `claude '` never appears and `--session-id` is not passed to codex.
+    // The parent launches codex with the config default model in auto mode. `<bin> '` marks the
+    // real binary invocation (the folded prompt escapes its own quotes), so `claude '` never
+    // appears and `--session-id` is not passed to codex.
     expect(log).toContain("codex '");
     expect(log).not.toContain("claude '");
     expect(log).toContain("'--model' 'gpt-5.6-sol'");
-    expect(log).toContain("'workspace-write'");
+    expect(log).toContain("'--dangerously-bypass-approvals-and-sandbox'");
     expect(log).not.toContain("'--enable' 'code_mode'");
     expect(log).not.toContain("'--enable' 'deferred_executor'");
     expect(log).not.toContain("'suppress_unstable_features_warning=true'");
@@ -1336,52 +1294,7 @@ test("workflow start --grok launches the grok runtime without requiring claude",
     expect(log).not.toContain("claude '");
     expect(log).toContain("'--model' 'grok-code-fast-1'");
     expect(log).not.toContain("'--session-id'");
-    expect(log).not.toContain("'--always-approve'");
-    expect(log).not.toContain("'--force'");
-  } finally {
-    rmSync(runtime.dir, { recursive: true, force: true });
-  }
-});
-
-test("workflow start --grok --auto opts into grok's approval bypass", () => {
-  const issueOut = run([
-    "issue",
-    "create",
-    "--repo",
-    REPO,
-    "--title",
-    "Grok auto parent session",
-    "--body",
-    "Do it unattended with grok",
-  ]);
-  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
-  if (!issue) throw new Error(issueOut.stdout);
-  const runtime = grokOnlyRuntime();
-  try {
-    const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--grok",
-        "--herdr",
-        "--auto",
-      ],
-      {
-        PATH: `${runtime.dir}:${process.env.PATH}`,
-        HERDR_LOG: runtime.log,
-      },
-    );
-
-    expect(started.exitCode, started.stderr).toBe(0);
-    const log = readFileSync(runtime.log, "utf8");
-    expect(log).toContain("grok '");
     expect(log).toContain("'--always-approve'");
-    // Current grok CLIs reject the old tentative `--force` flag (#1540).
     expect(log).not.toContain("'--force'");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });

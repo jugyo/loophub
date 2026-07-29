@@ -104,9 +104,7 @@ lh worktree prune [--repo owner/name] [--dry-run] [--yes]
 
 ## auto / sandbox / herdr
 
-- Workflow の `--auto` は unattended 用。親と step エージェントに自動編集モードを渡す。
-- Settings の **Auto mode on launch**（設定キー `autoModeOnLaunch`）は、エージェント起動時の
-  既定 auto を制御する（旧名 `autoModeOnBuild` は読み取り互換）。
+- Workflow の親と step を含む新規エージェントは、常に auto mode で起動する。
 - `--herdr` は herdr に作業を渡して呼び出し元を早く返す起動モード。`lh-worker` の
   `.loophub/workflow.yml` など、run がすぐ終わる必要がある場所では
   `lh workflow start "$LH_ISSUE_NUMBER" --workflow default --herdr` のように使う。

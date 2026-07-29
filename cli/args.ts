@@ -11,7 +11,6 @@ export type Flags = {
   "session-id"?: string;
   sessionId?: string;
   "usage-session"?: string;
-  auto?: boolean;
   verbose?: boolean;
   herdr?: boolean;
   force?: boolean;
@@ -118,7 +117,6 @@ const { values, positionals } = parseArgs({
     "session-id": { type: "string" },
     sessionId: { type: "string" },
     "usage-session": { type: "string" },
-    auto: { type: "boolean" },
     verbose: { type: "boolean" },
     herdr: { type: "boolean" },
     force: { type: "boolean" },

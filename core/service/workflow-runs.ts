@@ -1046,7 +1046,6 @@ export const workflowRuns = {
       issue: number;
       workflow?: string;
       workflowId?: number;
-      auto?: boolean;
       // Runtime + model the CLI resolved for the parent (#516). Persisted on the run row so every
       // step inherits the same values. Omitted => claude-code + the agent's config default model.
       runtime?: CodingAgent;
@@ -1141,7 +1140,7 @@ export const workflowRuns = {
         prNumber: opened.number,
         status: "running",
         currentStep: "execute",
-        autoMode: input.auto,
+        autoMode: true,
         runtime,
         model: input.model?.trim() || null,
         contractLanguage,
@@ -1606,7 +1605,6 @@ export const workflowRuns = {
       note?: string;
       review?: number;
       model?: string | null;
-      auto?: boolean;
       tabId?: string | null;
     },
     sessionId: string | null | undefined,
@@ -1699,7 +1697,6 @@ export const workflowRuns = {
       userPrompt: composed.userPrompt,
       tabId: input.tabId,
       model,
-      permissionMode: run.auto_mode === 1 || input.auto ? "auto" : undefined,
     });
     // Keep confirmation's validation at the persistence boundary, but also validate the generated
     // plan before the CLI can spawn it. A future naming/normalization change must fail before it can

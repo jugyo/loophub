@@ -216,7 +216,7 @@ function IssueHeader({
 
 // Start workflow dropdown (#1007): pick a saved workflow by name and launch it
 // via `terminal/launch` with workflow "workflow-run", which spawns `lh workflow start
-// <owner>/<repo>/<n> --workflow-id <id> --herdr --auto`. Rendered only when the issue has no
+// <owner>/<repo>/<n> --workflow-id <id> --herdr`. Rendered only when the issue has no
 // active/merged linked PR (issueCanStartWork), keeping one launch per issue at a time
 // (workflow design: CLI / UI). With no saved workflows, the menu links to Settings > Workflows.
 function StartWorkflowControls({

@@ -12,7 +12,7 @@ test("claude command runs the prompt in print mode with permission-mode auto", (
   );
 });
 
-test("codex command runs sandboxed (workspace-write), not a full bypass, with model + effort", () => {
+test("codex command runs in auto mode with model + effort", () => {
   const cmd = buildScheduledTaskCommand({
     agent: "codex",
     prompt: "lint",
@@ -20,10 +20,7 @@ test("codex command runs sandboxed (workspace-write), not a full bypass, with mo
     effort: "high",
   });
   expect(cmd).toContain("codex exec");
-  expect(cmd).toContain("--sandbox");
-  expect(cmd).toContain("workspace-write");
-  // #880 security review: scheduled codex fires must NOT disable the sandbox.
-  expect(cmd).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+  expect(cmd).toContain("--dangerously-bypass-approvals-and-sandbox");
   expect(cmd).toContain("--model 'gpt-5.5'");
   expect(cmd).toContain("model_reasoning_effort=high");
 });

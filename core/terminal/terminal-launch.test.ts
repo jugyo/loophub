@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { updateAgentAutoModeOnLaunch, updateConfig } from "../config.ts";
+import { updateConfig } from "../config.ts";
 import {
   acquireHerdrWorktreeTab,
   buildHerdrLaunchPlan,
@@ -29,8 +29,8 @@ import {
 } from "./terminal-launch.ts";
 
 describe("herdr terminal launch", () => {
-  // commandForHerdrLaunch reads codingAgent/autoModeOnLaunch from config.json when the caller
-  // doesn't override them (#660, #809) — isolate LOOPHUB_HOME per test so these tests assert
+  // commandForHerdrLaunch reads codingAgent from config.json when the caller doesn't override it
+  // (#660) — isolate LOOPHUB_HOME per test so these tests assert
   // against a clean default config instead of whatever is in the developer's real ~/.loophub.
   let prevHome: string | undefined;
   let home: string;
@@ -83,7 +83,7 @@ describe("herdr terminal launch", () => {
         codingAgent: "claude-code",
         prompt: "Create a scheduled task.",
       }),
-    ).toBe("claude 'Create a scheduled task.'");
+    ).toBe("claude '--permission-mode' 'auto' 'Create a scheduled task.'");
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -92,7 +92,7 @@ describe("herdr terminal launch", () => {
         prompt: "Create GitHub PR.",
         codingAgent: "claude-code",
       }),
-    ).toBe("claude 'Create GitHub PR.'");
+    ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -111,7 +111,7 @@ describe("herdr terminal launch", () => {
         codingAgent: "claude-code",
         prompt: "Create a workflow, then stop.",
       }),
-    ).toBe("claude 'Create a workflow, then stop.'");
+    ).toBe("claude '--permission-mode' 'auto' 'Create a workflow, then stop.'");
   });
 
   test("workflow-create without a prompt yields no command", () => {
@@ -182,7 +182,7 @@ describe("herdr terminal launch", () => {
         codingAgent: "codex",
       }),
     ).toBe(
-      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' 'Create GitHub PR.'`,
+      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create GitHub PR.'",
     );
     expect(
       commandForHerdrLaunch({
@@ -192,7 +192,7 @@ describe("herdr terminal launch", () => {
         prompt: "Create GitHub PR.",
         codingAgent: "claude-code",
       }),
-    ).toBe("claude 'Create GitHub PR.'");
+    ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
   });
 
   test("yields no command for a GitHub PR export launch without a prompt", () => {
@@ -206,8 +206,7 @@ describe("herdr terminal launch", () => {
     ).toBe("");
   });
 
-  test("does not apply build auto-mode to scheduled task creation launches", () => {
-    updateAgentAutoModeOnLaunch("codex", true);
+  test("launches scheduled task creation in auto mode", () => {
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -216,10 +215,9 @@ describe("herdr terminal launch", () => {
         prompt: "Create a scheduled task.",
       }),
     ).toBe(
-      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' 'Create a scheduled task.'`,
+      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create a scheduled task.'",
     );
 
-    updateAgentAutoModeOnLaunch("claude-code", true);
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -227,7 +225,7 @@ describe("herdr terminal launch", () => {
         codingAgent: "claude-code",
         prompt: "Create a scheduled task.",
       }),
-    ).toBe("claude 'Create a scheduled task.'");
+    ).toBe("claude '--permission-mode' 'auto' 'Create a scheduled task.'");
   });
 
   test("reads codingAgent config for GitHub PR export launches when no override is passed (#660)", () => {
@@ -240,7 +238,7 @@ describe("herdr terminal launch", () => {
         prompt: "Create GitHub PR.",
       }),
     ).toBe(
-      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' 'Create GitHub PR.'`,
+      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create GitHub PR.'",
     );
 
     updateConfig({ codingAgent: "claude-code" });
@@ -251,23 +249,10 @@ describe("herdr terminal launch", () => {
         prNumber: 451,
         prompt: "Create GitHub PR.",
       }),
-    ).toBe("claude 'Create GitHub PR.'");
+    ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
   });
 
-  test("applies the agent's autoModeOnLaunch setting to GitHub PR export launches (#809)", () => {
-    // claude-code: --auto's equivalent is --permission-mode auto, same as launch --auto
-    // (buildClaudeArgs) — off by default (autoModeOnLaunch unset).
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
-        workflow: "github-pr-export",
-        prNumber: 451,
-        prompt: "Create GitHub PR.",
-        codingAgent: "claude-code",
-      }),
-    ).toBe("claude 'Create GitHub PR.'");
-
-    updateAgentAutoModeOnLaunch("claude-code", true);
+  test("launches GitHub PR export in auto mode", () => {
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -278,23 +263,6 @@ describe("herdr terminal launch", () => {
       }),
     ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
 
-    // codex: auto mode swaps the sandboxed --sandbox args for the same unsandboxed bypass
-    // flag launch --auto uses (buildCodexArgs), rather than adding a flag on top.
-    updateAgentAutoModeOnLaunch("codex", true);
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
-        workflow: "github-pr-export",
-        prNumber: 451,
-        prompt: "Create GitHub PR.",
-        codingAgent: "codex",
-      }),
-    ).toBe(
-      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create GitHub PR.'",
-    );
-
-    // claude-code's setting must not leak into codex's launch, and vice versa (#593 parity).
-    updateAgentAutoModeOnLaunch("claude-code", false);
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -441,7 +409,6 @@ describe("herdr terminal launch", () => {
       userPrompt: "## Inputs\n- /tmp/run/execute/input/task.md - Task\n",
       tabId: "w1:t2",
       model: "sonnet",
-      permissionMode: "auto",
     });
 
     expect(plan.cwd).toBe("/repo/worktrees/pr-7");
@@ -482,7 +449,6 @@ describe("herdr terminal launch", () => {
       userPrompt: "## Inputs\n- task.md\n",
       tabId: "w1:t2",
       model: "gpt-5.5",
-      permissionMode: "auto",
     });
 
     // Codex still correlates through the ambient session env, but never gets a --session-id flag.
@@ -503,7 +469,7 @@ describe("herdr terminal launch", () => {
     expect(plan.command).toContain("## Inputs");
   });
 
-  test("a non-auto Codex Workflow step runs inside the workspace-write sandbox (#516)", () => {
+  test("a Codex Workflow step always bypasses approvals and sandbox", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 3,
@@ -518,8 +484,8 @@ describe("herdr terminal launch", () => {
       model: "gpt-5.5",
     });
 
-    expect(plan.command).toContain("'--sandbox' 'workspace-write'");
-    expect(plan.command).not.toContain(
+    expect(plan.command).not.toContain("'--sandbox' 'workspace-write'");
+    expect(plan.command).toContain(
       "--dangerously-bypass-approvals-and-sandbox",
     );
   });
@@ -538,7 +504,6 @@ describe("herdr terminal launch", () => {
       userPrompt: "## Inputs\n- task.md\n",
       tabId: "w1:t2",
       model: "grok-code-fast-1",
-      permissionMode: "auto",
     });
 
     // Grok correlates through the ambient session env like Codex, and never gets a --session-id flag.
@@ -561,7 +526,7 @@ describe("herdr terminal launch", () => {
     expect(plan.command).toContain("## Inputs");
   });
 
-  test("a non-auto Grok Workflow step omits the --always-approve approval bypass (#1521)", () => {
+  test("a Grok Workflow step always includes the approval bypass", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 3,
@@ -577,7 +542,7 @@ describe("herdr terminal launch", () => {
     });
 
     expect(plan.command).toContain("grok ");
-    expect(plan.command).not.toContain("--always-approve");
+    expect(plan.command).toContain("--always-approve");
     expect(plan.command).not.toContain("--force");
     expect(plan.command).not.toContain("--sandbox");
   });

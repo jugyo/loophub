@@ -21,10 +21,6 @@ export { CODING_AGENTS, type CodingAgent, normalizeCodingAgent };
 // Per-agent settings (#593). Kept as its own shape (rather than flattening fields onto
 // GlobalConfig) so a future setting can be added per-agent without another top-level field.
 export interface AgentConfig {
-  // Whether agent launches (workflow parent/steps, github-pr-export, etc.) use auto mode
-  // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499, #593, #1581).
-  // Renamed from autoModeOnBuild after `lh build` was removed; readers still accept the legacy key.
-  autoModeOnLaunch?: boolean;
   // Model this agent launches with when no explicit --model is passed (#594).
   // Falls back to DEFAULT_AGENT_MODEL when unset.
   defaultModel?: string;
@@ -124,28 +120,6 @@ export function baseUrl(): string {
 export function uiUrl(path: string): string {
   const p = path.replace(/^\/+/, "");
   return p ? `${baseUrl()}/${p}` : baseUrl();
-}
-
-// Whether launches of `agent` should use auto mode (#499, #593, #1581). Default false.
-// Accepts the legacy config key `autoModeOnBuild` so existing config.json keeps working.
-export function autoModeOnLaunch(agent: CodingAgent): boolean {
-  try {
-    const raw = JSON.parse(
-      readFileSync(join(configDir(), "config.json"), "utf8"),
-    ) as {
-      agents?: Partial<
-        Record<
-          CodingAgent,
-          { autoModeOnLaunch?: boolean; autoModeOnBuild?: boolean }
-        >
-      >;
-    };
-    const entry = raw.agents?.[agent];
-    if (entry?.autoModeOnLaunch === true) return true;
-    if (entry?.autoModeOnLaunch === false) return false;
-    return entry?.autoModeOnBuild === true;
-  } catch {}
-  return false;
 }
 
 // Model launches of `agent` use when --model isn't passed explicitly (#594). Falls back
@@ -265,26 +239,6 @@ export function updateConfig(patch: Partial<GlobalConfig>): GlobalConfig {
   writeFileSync(tmp, JSON.stringify(merged, null, 2));
   renameSync(tmp, path);
   return merged as GlobalConfig;
-}
-
-// Set a single agent's autoModeOnLaunch without disturbing other agents' settings (#593, #1581).
-// updateConfig replaces `agents` wholesale, so the existing map is read and merged here first.
-// Writes only the new key and drops a legacy `autoModeOnBuild` entry for that agent if present.
-export function updateAgentAutoModeOnLaunch(
-  agent: CodingAgent,
-  value: boolean,
-): GlobalConfig {
-  const current = readConfigFile() as GlobalConfig;
-  const prev = { ...(current.agents?.[agent] ?? {}) } as AgentConfig & {
-    autoModeOnBuild?: boolean;
-  };
-  delete prev.autoModeOnBuild;
-  return updateConfig({
-    agents: {
-      ...current.agents,
-      [agent]: { ...prev, autoModeOnLaunch: value },
-    },
-  });
 }
 
 // Set a single agent's defaultModel without disturbing other agents' settings (#594).

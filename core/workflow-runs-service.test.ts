@@ -129,7 +129,6 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     {
       issue: issue.number,
       workflowId: workflow.id,
-      auto: true,
     },
     "11111111-1111-4111-8111-111111111111",
   );

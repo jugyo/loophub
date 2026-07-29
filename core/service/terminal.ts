@@ -228,7 +228,7 @@ function runLhDevLaunch(
   });
 }
 
-// Spawns `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr --auto` for the issue-detail
+// Spawns `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr` for the issue-detail
 // Start workflow dropdown (#1007). This RPC only spawns the CLI
 // and lets `lh workflow start` own worktree/PR provisioning, the dev lock, run creation, and the
 // parent herdr launch (workflow design: CLI / UI). Args are passed as an array (no shell),
@@ -247,7 +247,6 @@ async function launchWorkflowRunHerdr(
     "--workflow-id",
     String(workflowId),
     "--herdr",
-    "--auto",
   ];
   try {
     await runLhDevLaunch(args, r.local_path, "lh workflow start");

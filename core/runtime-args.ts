@@ -11,12 +11,8 @@
 // `--session-id` / `--append-system-prompt-file` are claude-only, `effort` is a codex knob — so those
 // differences are expressed as options here rather than as runtime-id branches at the caller.
 //
-// This module is node-dependent (buildCodexSandboxArgs → configDir), so it stays in core rather than
-// core/runtimes.ts (which is deliberately node-free for the web bundle).
-
 import { stripVTControlCharacters } from "node:util";
 import { type CodingAgent, RUNTIMES } from "./runtimes.ts";
-import { buildCodexSandboxArgs } from "./terminal/codex-launch.ts";
 
 // Strip ANSI/VT control sequences and any remaining C0/C1 control bytes from a value rendered into
 // launch argv/output. The spawn command line a human reads before launch is a safety artifact; a
@@ -27,21 +23,9 @@ export function display(v: string): string {
   return stripVTControlCharacters(v).replace(/[\x00-\x1f\x7f-\x9f]/g, "");
 }
 
-// The approval / sandbox argv fragment for a runtime, given whether the launch runs in auto mode
-// (skip approval prompts, run tools without asking). This is the one place the per-runtime posture
-// that used to be duplicated as `auto ? autoApproveArgs : …` lives:
-//   - auto:      every runtime appends its registry autoApproveArgs (#1588).
-//   - non-auto:  codex falls back to its workspace-write sandbox (granting `loopHubHome` — default
-//                configDir() — as a writable root); claude and grok add nothing.
-export function runtimeApprovalArgs(input: {
-  runtime: CodingAgent;
-  auto?: boolean;
-  loopHubHome?: string;
-}): string[] {
-  if (input.auto) return [...RUNTIMES[input.runtime].autoApproveArgs];
-  return input.runtime === "codex"
-    ? buildCodexSandboxArgs(input.loopHubHome)
-    : [];
+// Every new agent launch runs in auto mode, using the runtime registry's approval-bypass argv.
+export function runtimeApprovalArgs(runtime: CodingAgent): string[] {
+  return [...RUNTIMES[runtime].autoApproveArgs];
 }
 
 // codex/grok take no system-prompt flag, so the rendered contract is folded into the positional
@@ -60,10 +44,6 @@ function modelFlag(model: string | undefined): string[] {
 
 export interface RuntimeArgsInput {
   runtime: CodingAgent;
-  // Opt into auto mode (skip approval prompts). For claude it is also implied by managedSettings.
-  auto?: boolean;
-  // codex non-auto sandbox writable root (defaults to configDir()); ignored by claude/grok.
-  loopHubHome?: string;
   // `--model <name>` for every runtime (sanitized; omitted when empty).
   model?: string;
   // Reasoning effort. claude: `--effort <level>`; codex: `-c model_reasoning_effort=<level>`; grok
@@ -89,7 +69,7 @@ export interface RuntimeArgsInput {
 export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
   const { runtime } = input;
   if (runtime === "codex") {
-    const args = runtimeApprovalArgs(input);
+    const args = runtimeApprovalArgs(runtime);
     args.push(...modelFlag(input.model));
     if (input.effort) {
       const e = display(input.effort).trim();
@@ -99,7 +79,7 @@ export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
     return args;
   }
   if (runtime === "grok") {
-    const args = runtimeApprovalArgs(input);
+    const args = runtimeApprovalArgs(runtime);
     args.push(...modelFlag(input.model));
     args.push(foldPrompt(input.systemPrompt, input.prompt));
     return args;
@@ -112,9 +92,7 @@ export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
     const e = display(input.effort).trim();
     if (e) args.push("--effort", e);
   }
-  // Auto mode is requested explicitly (--auto) or implied by the sandbox managed-settings.
-  const auto = !!(input.auto || input.managedSettings);
-  args.push(...runtimeApprovalArgs({ runtime, auto }));
+  args.push(...runtimeApprovalArgs(runtime));
   if (input.sessionName) {
     const name = display(input.sessionName).trim();
     if (name) args.push("--name", name);

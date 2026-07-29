@@ -174,7 +174,6 @@ function parentAgentArgs(input: {
 }): string[] {
   return buildRuntimeArgs({
     runtime: input.runtime,
-    auto: flags.auto === true,
     model: input.model,
     sessionId: input.sessionId,
     systemPromptFile: input.systemPromptPath,
@@ -281,7 +280,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok] [--model <name>] [--herdr] [--auto] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok] [--model <name>] [--herdr] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -327,7 +326,6 @@ async function startWorkflow(): Promise<void> {
         issue: parsed.id,
         workflow: flags.workflow,
         workflowId,
-        auto: flags.auto === true,
         runtime,
         // Persist the resolved model (explicit override or config default) so steps inherit it
         // without re-reading config (#516/#594).
@@ -406,7 +404,6 @@ async function launchStep(): Promise<void> {
         review,
         // The step inherits the parent run's model; only forward an explicit --model override.
         model: explicitModelFlag(),
-        auto: flags.auto === true,
         tabId,
       },
       actorSessionId,

@@ -70,7 +70,6 @@ const comments: IssueComment[] = [
 
 function mockFetch(
   getIssue: () => Issue = () => issue,
-  autoModeOnLaunch = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
   return mockRpcFetch({
@@ -87,9 +86,8 @@ function mockFetch(
     }),
     "settings/get": () => ({
       agents: {
-        "claude-code": { autoModeOnLaunch, model: "opus", effort: "medium" },
+        "claude-code": { model: "opus", effort: "medium" },
         codex: {
-          autoModeOnLaunch: false,
           model: "gpt-5.5",
           effort: "medium",
         },
@@ -101,10 +99,9 @@ function mockFetch(
 
 function renderDetail(
   getIssue?: () => Issue,
-  autoModeOnLaunch = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
-  vi.stubGlobal("fetch", mockFetch(getIssue, autoModeOnLaunch, extraHandlers));
+  vi.stubGlobal("fetch", mockFetch(getIssue, extraHandlers));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -176,7 +173,7 @@ describe("IssueDetail", () => {
 
   it("opens a linked PR Workflow step pane from the issue detail", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderDetail(undefined, false, {
+    renderDetail(undefined, {
       "workflowRuns/stateForPull": () => ({
         id: 41,
         workflow_id: 7,
@@ -249,7 +246,7 @@ describe("IssueDetail", () => {
 
   // #1828: the same budget action is reachable from the issue page's linked-PR row.
   it("increases a cost-held linked run's budget from the issue page", async () => {
-    renderDetail(undefined, false, {
+    renderDetail(undefined, {
       "workflowRuns/stateForPull": () => ({
         id: 41,
         workflow_id: 7,
@@ -343,7 +340,6 @@ describe("IssueDetail", () => {
           review_state: "CHANGES_REQUESTED",
         },
       }),
-      false,
       {
         "terminal/sessions": () => ({
           repos: [
@@ -382,7 +378,6 @@ describe("IssueDetail", () => {
           session_name: "me-proj-12345678",
         },
       }),
-      false,
       {
         "terminal/focusAgent": () => ({ ok: true }),
       },
@@ -411,7 +406,7 @@ describe("IssueDetail", () => {
   });
 
   it("does not aggregate linked-PR worktree agents into issue Agents", async () => {
-    renderDetail(() => ({ ...issue, herdr_pane: null }), false, {
+    renderDetail(() => ({ ...issue, herdr_pane: null }), {
       "terminal/sessions": () => ({
         repos: [
           {
@@ -568,7 +563,7 @@ describe("IssueDetail", () => {
   });
 
   it("shows no Herdr badge on the linked-PR row when no herdr session runs the PR", async () => {
-    renderDetail(undefined, false, {
+    renderDetail(undefined, {
       "terminal/sessions": () => ({ repos: [] }),
     });
 
@@ -672,7 +667,7 @@ describe("IssueDetail", () => {
       state: "closed",
       linked_pull_request: null,
     };
-    renderDetail(() => closedNoPr, false, {
+    renderDetail(() => closedNoPr, {
       "workflows/list": () => [{ id: 9, name: "Standard" }],
     });
 
@@ -697,7 +692,7 @@ describe("IssueDetail", () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     const longDescription =
       "Runs implementation and independent verification with enough detail to wrap across several lines without widening the workflow menu.";
-    renderDetail(() => noPr, false, {
+    renderDetail(() => noPr, {
       "workflows/list": () => [
         {
           id: 9,

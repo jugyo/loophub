@@ -23,19 +23,6 @@ import { cn } from "@/lib/utils";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 import { CODING_AGENTS } from "../../../core/runtimes.ts";
 
-function autoModeOptions(): { value: boolean; label: string }[] {
-  return [
-    {
-      value: false,
-      label: "Off",
-    },
-    {
-      value: true,
-      label: "On",
-    },
-  ];
-}
-
 // Built from the runtime registry order (core/runtimes.ts, via CODING_AGENTS) + its labels, so the
 // picker lists every runtime without a hand-maintained copy here.
 const CODING_AGENT_OPTIONS: {
@@ -253,8 +240,6 @@ export function SettingsPage() {
             selection above instead of living in a separate flat section. */}
           <div className="mt-3 max-w-md border-l-2 pl-4">
             {CODING_AGENT_OPTIONS.map((agentOption, i) => {
-              const autoModeOnLaunch =
-                data?.agents?.[agentOption.value]?.autoModeOnLaunch ?? false;
               const model = data?.agents?.[agentOption.value]?.model ?? "";
               const effort = data?.agents?.[agentOption.value]?.effort ?? "";
               return (
@@ -263,45 +248,6 @@ export function SettingsPage() {
                   className={i > 0 ? "mt-4" : undefined}
                 >
                   <h3 className="text-xs font-medium text-muted-foreground">
-                    {agentOption.label} — Auto mode on launch
-                  </h3>
-                  <div
-                    role="radiogroup"
-                    aria-label={`Auto mode on launch (${agentOption.label})`}
-                    className="mt-1 max-w-sm rounded-md border"
-                  >
-                    {autoModeOptions().map((o) => {
-                      const active = autoModeOnLaunch === o.value;
-                      return (
-                        <button
-                          key={String(o.value)}
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          disabled={isLoading || update.isPending}
-                          className={cn(
-                            "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
-                            disabledButtonStateClasses,
-                          )}
-                          onClick={() => {
-                            if (active) return;
-                            update.mutate({
-                              agent: agentOption.value,
-                              autoModeOnLaunch: o.value,
-                            });
-                          }}
-                        >
-                          <Check
-                            className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
-                            aria-hidden="true"
-                          />
-                          <span>{o.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <h3 className="mt-4 text-xs font-medium text-muted-foreground">
                     {agentOption.label} — Default model & effort
                   </h3>
                   <div className="mt-1 max-w-sm">

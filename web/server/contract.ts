@@ -201,17 +201,16 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level settings (per-agent autoModeOnLaunch/model/effort, codingAgent, devCostLimitUsd, workflowContractLanguage).",
+      "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, workflowContractLanguage).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
   },
   "settings/update": {
     description:
-      "Update instance-level settings. autoModeOnLaunch/model/effort require agent; workflowContractLanguage is DB-backed.",
+      "Update instance-level settings. model/effort require agent; workflowContractLanguage is DB-backed.",
     params: params({
       agent: { enum: ["claude-code", "codex", "grok"] },
-      autoModeOnLaunch: { type: "boolean" },
       model: strNonEmpty,
       effort: strNonEmpty,
       codingAgent: { enum: ["claude-code", "codex", "grok"] },
@@ -224,7 +223,6 @@ export const methods: Record<string, MethodDef> = {
       svc.settings.update(
         {
           agent: p.agent,
-          autoModeOnLaunch: p.autoModeOnLaunch,
           model: p.model,
           effort: p.effort,
           codingAgent: p.codingAgent,

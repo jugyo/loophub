@@ -51,12 +51,11 @@ export interface RuntimeDefinition {
   // claude has that concept; codex/grok don't, and the CLI rejects the `--sandbox`/`--allow`
   // combination for them up front.
   sandboxCapable: boolean;
-  // The argv fragment that opts this runtime into auto mode: skip approval prompts and run tools
-  // without asking (`--auto` on the LoopHub side). Every launch path — cli/dev.ts's argv builders,
+  // The argv fragment that runs this runtime without approval prompts or sandbox restrictions.
+  // Every launch path — cli/dev.ts's argv builders,
   // `lh workflow`'s parent agent, and core/terminal/terminal-launch.ts — appends this verbatim
-  // instead of re-branching on the runtime id (#1588). It is only the approval flag: a runtime's
-  // non-auto posture (Codex's workspace-write sandbox) and its other per-runtime launch differences
-  // stay with the caller.
+  // instead of re-branching on the runtime id (#1588). Other per-runtime launch differences stay
+  // with the caller.
   autoApproveArgs: readonly string[];
 }
 
@@ -104,8 +103,7 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     effortSuggestions: ["minimal", "low", "medium", "high"],
     resumable: false,
     sandboxCapable: false,
-    // Codex's closest single flag to Claude Code's auto mode: it also drops the sandbox, so callers
-    // that have a non-auto posture use buildCodexSandboxArgs() instead of this.
+    // Codex's closest single flag to Claude Code's auto mode; it also drops the sandbox.
     autoApproveArgs: ["--dangerously-bypass-approvals-and-sandbox"],
   },
   {
@@ -126,7 +124,7 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     resumable: false,
     sandboxCapable: false,
     // Auto-approve all tool executions. The older tentative `--force` is rejected by current `grok`
-    // CLIs as unknown, which made Web Start workflow (`--auto`) exit the agent pane at once (#1540).
+    // CLIs as unknown, which made Web Start workflow exit the agent pane at once (#1540).
     autoApproveArgs: ["--always-approve"],
   },
 ];

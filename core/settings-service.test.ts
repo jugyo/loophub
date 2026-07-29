@@ -19,21 +19,18 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-test("settings.get defaults to auto mode off and the default model/effort for every agent / claude-code (#474, #499, #516, #593, #594, #682)", () => {
+test("settings.get defaults to the model/effort for every agent and claude-code", () => {
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnLaunch: false,
         model: "opus",
         effort: "medium",
       },
       codex: {
-        autoModeOnLaunch: false,
         model: "gpt-5.6-sol",
         effort: "medium",
       },
       grok: {
-        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -71,133 +68,6 @@ test("settings.update persists workflowContractLanguage in the database", () => 
   svc.settings.update({ workflowContractLanguage: "en" });
 });
 
-test("settings.update persists a per-agent autoModeOnLaunch and is reflected by settings.get (#499, #593)", () => {
-  const result = svc.settings.update({
-    agent: "claude-code",
-    autoModeOnLaunch: true,
-  });
-  expect(result).toEqual({
-    agents: {
-      "claude-code": {
-        autoModeOnLaunch: true,
-        model: "opus",
-        effort: "medium",
-      },
-      codex: {
-        autoModeOnLaunch: false,
-        model: "gpt-5.6-sol",
-        effort: "medium",
-      },
-      grok: {
-        autoModeOnLaunch: false,
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
-    },
-    codingAgent: "claude-code",
-    devCostLimitUsd: 10,
-    workflowContractLanguage: "en",
-  });
-  expect(svc.settings.get()).toEqual(result);
-
-  const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
-  expect(raw.agents["claude-code"]).toEqual({ autoModeOnLaunch: true });
-
-  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: false });
-});
-
-test("settings.update sets one agent's autoModeOnLaunch without disturbing another's (#593)", () => {
-  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: true });
-  svc.settings.update({ agent: "codex", autoModeOnLaunch: true });
-  expect(svc.settings.get()).toEqual({
-    agents: {
-      "claude-code": {
-        autoModeOnLaunch: true,
-        model: "opus",
-        effort: "medium",
-      },
-      codex: { autoModeOnLaunch: true, model: "gpt-5.6-sol", effort: "medium" },
-      grok: {
-        autoModeOnLaunch: false,
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
-    },
-    codingAgent: "claude-code",
-    devCostLimitUsd: 10,
-    workflowContractLanguage: "en",
-  });
-
-  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: false });
-  expect(svc.settings.get()).toEqual({
-    agents: {
-      "claude-code": {
-        autoModeOnLaunch: false,
-        model: "opus",
-        effort: "medium",
-      },
-      codex: { autoModeOnLaunch: true, model: "gpt-5.6-sol", effort: "medium" },
-      grok: {
-        autoModeOnLaunch: false,
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
-    },
-    codingAgent: "claude-code",
-    devCostLimitUsd: 10,
-    workflowContractLanguage: "en",
-  });
-
-  svc.settings.update({ agent: "codex", autoModeOnLaunch: false });
-});
-
-test("settings.update rejects a non-boolean autoModeOnLaunch (#499)", () => {
-  expect(() =>
-    svc.settings.update({
-      agent: "claude-code",
-      autoModeOnLaunch: "yes" as any,
-    }),
-  ).toThrow(/autoModeOnLaunch must be a boolean/);
-});
-
-test("settings.update rejects autoModeOnLaunch without a valid agent (#593)", () => {
-  expect(() => svc.settings.update({ autoModeOnLaunch: true } as any)).toThrow(
-    /agent must be one of/,
-  );
-  expect(() =>
-    svc.settings.update({ agent: "bogus" as any, autoModeOnLaunch: true }),
-  ).toThrow(/agent must be one of/);
-});
-
-test("settings.update omitting autoModeOnLaunch preserves the persisted value (#499)", () => {
-  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: true });
-  svc.settings.update({});
-  expect(svc.settings.get()).toEqual({
-    agents: {
-      "claude-code": {
-        autoModeOnLaunch: true,
-        model: "opus",
-        effort: "medium",
-      },
-      codex: {
-        autoModeOnLaunch: false,
-        model: "gpt-5.6-sol",
-        effort: "medium",
-      },
-      grok: {
-        autoModeOnLaunch: false,
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
-    },
-    codingAgent: "claude-code",
-    devCostLimitUsd: 10,
-    workflowContractLanguage: "en",
-  });
-
-  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: false });
-});
-
 test("settings.update persists a per-agent model and is reflected by settings.get (#594)", () => {
   const result = svc.settings.update({
     agent: "claude-code",
@@ -206,17 +76,14 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
   expect(result).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnLaunch: false,
         model: "claude-opus-4-8",
         effort: "medium",
       },
       codex: {
-        autoModeOnLaunch: false,
         model: "gpt-5.6-sol",
         effort: "medium",
       },
       grok: {
-        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -229,7 +96,6 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
 
   const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
   expect(raw.agents["claude-code"]).toEqual({
-    autoModeOnLaunch: false,
     defaultModel: "claude-opus-4-8",
   });
 
@@ -242,17 +108,14 @@ test("settings.update sets one agent's model without disturbing another's (#594)
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnLaunch: false,
         model: "sonnet",
         effort: "medium",
       },
       codex: {
-        autoModeOnLaunch: false,
         model: "gpt-5.5-codex",
         effort: "medium",
       },
       grok: {
-        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -290,17 +153,14 @@ test("settings.update omitting model preserves the persisted value (#594)", () =
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnLaunch: false,
         model: "sonnet",
         effort: "medium",
       },
       codex: {
-        autoModeOnLaunch: false,
         model: "gpt-5.6-sol",
         effort: "medium",
       },
       grok: {
-        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -320,14 +180,12 @@ test("settings.update persists a per-agent effort and is reflected by settings.g
   });
   expect(result).toEqual({
     agents: {
-      "claude-code": { autoModeOnLaunch: false, model: "opus", effort: "high" },
+      "claude-code": { model: "opus", effort: "high" },
       codex: {
-        autoModeOnLaunch: false,
         model: "gpt-5.6-sol",
         effort: "medium",
       },
       grok: {
-        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -340,7 +198,6 @@ test("settings.update persists a per-agent effort and is reflected by settings.g
 
   const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
   expect(raw.agents["claude-code"]).toEqual({
-    autoModeOnLaunch: false,
     defaultModel: "opus",
     defaultEffort: "high",
   });
@@ -354,13 +211,11 @@ test("settings.update sets one agent's effort without disturbing another's (#682
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnLaunch: false,
         model: "opus",
         effort: "xhigh",
       },
-      codex: { autoModeOnLaunch: false, model: "gpt-5.6-sol", effort: "low" },
+      codex: { model: "gpt-5.6-sol", effort: "low" },
       grok: {
-        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -398,17 +253,14 @@ test("settings.update omitting effort preserves the persisted value (#682)", () 
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnLaunch: false,
         model: "opus",
         effort: "xhigh",
       },
       codex: {
-        autoModeOnLaunch: false,
         model: "gpt-5.6-sol",
         effort: "medium",
       },
       grok: {
-        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -426,17 +278,14 @@ test("settings.update persists codingAgent and is reflected by settings.get (#51
   expect(result).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnLaunch: false,
         model: "opus",
         effort: "medium",
       },
       codex: {
-        autoModeOnLaunch: false,
         model: "gpt-5.6-sol",
         effort: "medium",
       },
       grok: {
-        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -465,7 +314,6 @@ test("settings.update accepts grok as an agent-scoped and default coding agent",
   const got = svc.settings.get();
   expect(got.codingAgent).toBe("grok");
   expect(got.agents.grok).toEqual({
-    autoModeOnLaunch: false,
     model: "grok-4",
     effort: "high",
   });
@@ -482,17 +330,14 @@ test("settings.update omitting codingAgent preserves the persisted value (#516)"
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnLaunch: false,
         model: "opus",
         effort: "medium",
       },
       codex: {
-        autoModeOnLaunch: false,
         model: "gpt-5.6-sol",
         effort: "medium",
       },
       grok: {
-        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },

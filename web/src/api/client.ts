@@ -455,7 +455,6 @@ export function getSettings() {
 export function updateSettings(
   input: {
     agent?: CodingAgent;
-    autoModeOnLaunch?: boolean;
     model?: string;
     effort?: string;
     codingAgent?: CodingAgent;
