@@ -274,6 +274,20 @@ describe("DiffFileDialog", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Select new line 2" }));
     expect(screen.getByText("RIGHT 1–2")).toBeTruthy();
+    const splitComposerRow = screen
+      .getByLabelText("Diff comment")
+      .closest("tr");
+    expect(splitComposerRow?.hasAttribute("data-diff-comment-row")).toBe(true);
+    expect(splitComposerRow?.children).toHaveLength(2);
+    expect(splitComposerRow?.previousElementSibling?.textContent).toContain(
+      "new two",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select new line 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select new line 2" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Unified" }));
     expect(
@@ -281,6 +295,16 @@ describe("DiffFileDialog", () => {
         .getByRole("button", { name: "Select new line 1" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
+    const unifiedComposerRow = screen
+      .getByLabelText("Diff comment")
+      .closest("tr");
+    expect(unifiedComposerRow?.hasAttribute("data-diff-comment-row")).toBe(
+      true,
+    );
+    expect(unifiedComposerRow?.children).toHaveLength(1);
+    expect(unifiedComposerRow?.previousElementSibling?.textContent).toContain(
+      "new two",
+    );
 
     fireEvent.change(screen.getByLabelText("Diff comment"), {
       target: { value: "Please keep these together" },

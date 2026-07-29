@@ -554,6 +554,40 @@ function FileDiffContent({
   const historicalThreads = fileThreads.filter(
     (thread) => thread.freshness !== "current",
   );
+  const commentComposer =
+    selection && stableFile && diff.data ? (
+      <DiffCommentComposer
+        selection={selection}
+        body={body}
+        busy={create.isPending}
+        onBodyChange={setBody}
+        onCancel={() => {
+          setSelection(null);
+          setBody("");
+        }}
+        onSubmit={() =>
+          create.mutate(
+            {
+              base_sha: diff.data.base_sha,
+              head_sha: diff.data.head_sha,
+              path: stableFile.path,
+              side: selection.side,
+              start_line: selection.startLine,
+              end_line: selection.endLine,
+              body: body.trim(),
+            },
+            {
+              onSuccess: () => {
+                setSelection(null);
+                setBody("");
+              },
+              onError: (error) =>
+                showError(errorMessage(error, "Create failed")),
+            },
+          )
+        }
+      />
+    ) : null;
 
   if (mode === "raw") {
     return (
@@ -590,6 +624,7 @@ function FileDiffContent({
         stableLines={stableFile?.lines}
         viewMode={diffViewMode}
         selection={selection}
+        selectionContent={commentComposer}
         threads={currentThreads}
         onSelect={(line) =>
           setSelection((current) => extendSelection(current, line))
@@ -615,64 +650,6 @@ function FileDiffContent({
           />
         )}
       />
-      {selection && stableFile && diff.data ? (
-        <div className="m-2 rounded-md border bg-background p-3">
-          <div className="mb-2 text-xs font-medium">
-            {selection.side} {selection.startLine}
-            {selection.endLine === selection.startLine
-              ? ""
-              : `–${selection.endLine}`}
-          </div>
-          <div className="flex gap-2">
-            <textarea
-              aria-label="Diff comment"
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              className="min-h-20 flex-1 rounded-md border bg-background p-2 text-sm"
-              placeholder="Leave a comment…"
-            />
-          </div>
-          <div className="mt-2 flex justify-end gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setSelection(null);
-                setBody("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={!body.trim() || create.isPending}
-              onClick={() =>
-                create.mutate(
-                  {
-                    base_sha: diff.data.base_sha,
-                    head_sha: diff.data.head_sha,
-                    path: stableFile.path,
-                    side: selection.side,
-                    start_line: selection.startLine,
-                    end_line: selection.endLine,
-                    body: body.trim(),
-                  },
-                  {
-                    onSuccess: () => {
-                      setSelection(null);
-                      setBody("");
-                    },
-                    onError: (error) =>
-                      showError(errorMessage(error, "Create failed")),
-                  },
-                )
-              }
-            >
-              Comment
-            </Button>
-          </div>
-        </div>
-      ) : null}
       {historicalThreads.length > 0 ? (
         <section className="m-2 space-y-2" aria-label="Previous diff threads">
           <h4 className="text-xs font-semibold text-muted-foreground">
@@ -723,6 +700,7 @@ function DialogDiff({
   stableLines,
   viewMode,
   selection,
+  selectionContent,
   threads,
   onSelect,
   threadContent,
@@ -731,6 +709,7 @@ function DialogDiff({
   stableLines: PullDiff["files"][number]["lines"] | undefined;
   viewMode: DiffViewMode;
   selection: DiffSelection | null;
+  selectionContent: ReactNode;
   threads: DiffFeedbackThread[];
   onSelect: (line: {
     side: "LEFT" | "RIGHT";
@@ -753,6 +732,7 @@ function DialogDiff({
       lines={lines}
       selectable={selectable}
       selection={selection}
+      selectionContent={selectionContent}
       threads={threads}
       onSelect={onSelect}
       threadContent={threadContent}
@@ -762,6 +742,7 @@ function DialogDiff({
       lines={lines}
       selectable={selectable}
       selection={selection}
+      selectionContent={selectionContent}
       threads={threads}
       onSelect={onSelect}
       threadContent={threadContent}
@@ -776,6 +757,7 @@ type DiffRenderProps = {
     { side: "LEFT" | "RIGHT"; line: number; hunk: number }[]
   >;
   selection: DiffSelection | null;
+  selectionContent: ReactNode;
   threads: DiffFeedbackThread[];
   onSelect: (line: {
     side: "LEFT" | "RIGHT";
@@ -812,10 +794,25 @@ function threadAnchorsLine(
   );
 }
 
+function selectionEndsAt(
+  selection: DiffSelection | null,
+  side: "LEFT" | "RIGHT",
+  line: PositionedDiffLine | null,
+) {
+  const coordinate =
+    side === "LEFT" ? (line?.oldLine ?? null) : (line?.newLine ?? null);
+  return (
+    selection?.side === side &&
+    coordinate != null &&
+    coordinate === selection.endLine
+  );
+}
+
 function UnifiedDiff({
   lines,
   selectable,
   selection,
+  selectionContent,
   threads,
   onSelect,
   threadContent,
@@ -883,6 +880,13 @@ function UnifiedDiff({
                     {lineContent(line) || " "}
                   </td>
                 </tr>
+                {selectionContent &&
+                (selectionEndsAt(selection, "LEFT", line) ||
+                  selectionEndsAt(selection, "RIGHT", line)) ? (
+                  <tr data-diff-comment-row>
+                    <td colSpan={3}>{selectionContent}</td>
+                  </tr>
+                ) : null}
                 {ending.map((thread) => (
                   <tr key={`thread:${thread.id}`}>
                     <td colSpan={3}>{threadContent(thread)}</td>
@@ -898,8 +902,15 @@ function UnifiedDiff({
 }
 
 function SplitDiff(props: DiffRenderProps) {
-  const { lines, selectable, selection, threads, onSelect, threadContent } =
-    props;
+  const {
+    lines,
+    selectable,
+    selection,
+    selectionContent,
+    threads,
+    onSelect,
+    threadContent,
+  } = props;
   return (
     <div className="overflow-x-auto">
       <table className="w-full table-fixed border-collapse font-mono text-xs leading-5">
@@ -953,6 +964,19 @@ function SplitDiff(props: DiffRenderProps) {
                     onSelect={onSelect}
                   />
                 </tr>
+                {selectionContent &&
+                (selectionEndsAt(selection, "LEFT", row.left) ||
+                  selectionEndsAt(selection, "RIGHT", row.right)) ? (
+                  <tr data-diff-comment-row>
+                    {selection?.side === "RIGHT" ? (
+                      <td colSpan={2} aria-hidden="true" />
+                    ) : null}
+                    <td colSpan={2}>{selectionContent}</td>
+                    {selection?.side === "LEFT" ? (
+                      <td colSpan={2} aria-hidden="true" />
+                    ) : null}
+                  </tr>
+                ) : null}
                 {[
                   ...(row.left ? threadsEndingAt(threads, row.left) : []),
                   ...(row.right
@@ -982,6 +1006,48 @@ function SplitDiff(props: DiffRenderProps) {
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function DiffCommentComposer({
+  selection,
+  body,
+  busy,
+  onBodyChange,
+  onCancel,
+  onSubmit,
+}: {
+  selection: DiffSelection;
+  body: string;
+  busy: boolean;
+  onBodyChange: (body: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="m-2 rounded-md border bg-background p-3 font-sans">
+      <div className="mb-2 text-xs font-medium">
+        {selection.side} {selection.startLine}
+        {selection.endLine === selection.startLine
+          ? ""
+          : `–${selection.endLine}`}
+      </div>
+      <textarea
+        aria-label="Diff comment"
+        value={body}
+        onChange={(event) => onBodyChange(event.target.value)}
+        className="min-h-20 w-full rounded-md border bg-background p-2 text-sm"
+        placeholder="Leave a comment…"
+      />
+      <div className="mt-2 flex justify-end gap-2">
+        <Button variant="secondary" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" disabled={!body.trim() || busy} onClick={onSubmit}>
+          Comment
+        </Button>
+      </div>
     </div>
   );
 }
