@@ -50,6 +50,7 @@ export type Flags = {
   "start-line"?: string;
   "end-line"?: string;
   context?: string;
+  emoji?: string;
   "request-message"?: string;
   event?: string;
   effect?: string;
@@ -154,6 +155,7 @@ const { values, positionals } = parseArgs({
     "start-line": { type: "string" },
     "end-line": { type: "string" },
     context: { type: "string" },
+    emoji: { type: "string" },
     "request-message": { type: "string" },
     event: { type: "string" },
     effect: { type: "string" },

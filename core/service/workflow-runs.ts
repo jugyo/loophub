@@ -2178,6 +2178,7 @@ export const workflowRuns = {
         repo: name,
         run: run.id,
         issue: run.issue_number,
+        pr: run.pr_number,
       }),
       observed,
       event: wakeEvent,

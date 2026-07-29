@@ -657,7 +657,7 @@ describe("reconcileWorkflow", () => {
 });
 
 describe("workflowActionPlan", () => {
-  const context = { repo: "me/repo", run: 42, issue: 7 };
+  const context = { repo: "me/repo", run: 42, issue: 7, pr: 8 };
   const plan = (action: WorkflowNextAction) =>
     workflowActionPlan(action, context);
 
@@ -697,7 +697,7 @@ describe("workflowActionPlan", () => {
     ).toContain("11");
   });
 
-  test("delivers a diff comment as fixed text the parent does not write", () => {
+  test("reacts to a diff comment before delivering its fixed instruction", () => {
     const diffFeedback = plan({
       action: "deliver",
       reason: "new comment",
@@ -709,9 +709,24 @@ describe("workflowActionPlan", () => {
       boundary: "mechanical",
       after: "watch",
     });
-    expect(diffFeedback.commands).toHaveLength(1);
-    expect(diffFeedback.commands[0]?.input).toBeUndefined();
-    expect(diffFeedback.commands[0]?.args).toContain(
+    expect(diffFeedback.commands).toHaveLength(2);
+    expect(diffFeedback.commands[0]).toEqual({
+      command: "lh",
+      args: [
+        "pr",
+        "feedback",
+        "react",
+        "108",
+        "--pr",
+        "8",
+        "--emoji",
+        "👀",
+        "--repo",
+        "me/repo",
+      ],
+    });
+    expect(diffFeedback.commands[1]?.input).toBeUndefined();
+    expect(diffFeedback.commands[1]?.args).toContain(
       "orchestrator: address diff feedback thread #73 comment #108",
     );
   });

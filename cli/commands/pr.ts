@@ -120,6 +120,22 @@ export async function run(): Promise<void> {
         console.log(
           `replied to feedback thread #${result.thread.id} (message ${result.reply.id})`,
         );
+    } else if (action === "react") {
+      if (!flags.pr) fail("--pr is required");
+      if (!flags.emoji) fail("--emoji is required");
+      const emoji = flags.emoji;
+      const message = await runOp(async () =>
+        s.diffFeedback.react(
+          repo,
+          Number(flags.pr),
+          Number(target),
+          emoji,
+          await writeSession(),
+        ),
+      );
+      out(message);
+      if (!flags.json)
+        console.log(`reacted to feedback message #${message.id} with ${emoji}`);
     } else usage();
   } else if (sub === "list") {
     const items = await runOp(() =>

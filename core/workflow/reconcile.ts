@@ -134,7 +134,7 @@ export type WorkflowActionPlan = {
 /** Turn a reconciliation decision into the complete, ordered procedure returned by `next`. */
 export function workflowActionPlan(
   action: WorkflowNextAction,
-  context: { repo: string; run: number; issue: number },
+  context: { repo: string; run: number; issue: number; pr: number },
 ): WorkflowActionPlan {
   const base = ["workflow"];
   const scoped = ["--repo", context.repo, "--run", String(context.run)];
@@ -193,6 +193,21 @@ export function workflowActionPlan(
     case "deliver": {
       if (action.delivery_reason === "diff_feedback") {
         return watch([
+          {
+            command: "lh",
+            args: [
+              "pr",
+              "feedback",
+              "react",
+              String(action.comment_id),
+              "--pr",
+              String(context.pr),
+              "--emoji",
+              "👀",
+              "--repo",
+              context.repo,
+            ],
+          },
           command(
             "deliver",
             ...scoped,

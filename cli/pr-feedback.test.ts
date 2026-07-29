@@ -150,10 +150,33 @@ test("CLI immediately creates and replies in a diff conversation", () => {
     body: "Why?",
   });
 
+  const reacted = JSON.parse(
+    lh([
+      "pr",
+      "feedback",
+      "react",
+      String(created.comment.id),
+      "--pr",
+      String(prNumber),
+      "--emoji",
+      "👀",
+      "--repo",
+      REPO,
+      "--json",
+    ]),
+  );
+  expect(reacted).toMatchObject({
+    id: created.comment.id,
+    reactions: [{ emoji: "👀", count: 1 }],
+  });
+
   const listed = JSON.parse(
     lh(["pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"]),
   );
   expect(listed.threads).toHaveLength(1);
+  expect(listed.threads[0].messages[0].reactions).toEqual([
+    { emoji: "👀", count: 1 },
+  ]);
 
   const reply = JSON.parse(
     lh([
