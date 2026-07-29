@@ -859,7 +859,7 @@ function MarkdownPreviewPane({
   return (
     <div
       data-debug-component="MarkdownPreviewPane"
-      className="markdown-diff-preview p-3"
+      className="markdown-diff-preview px-3 py-8"
     >
       {file.isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
