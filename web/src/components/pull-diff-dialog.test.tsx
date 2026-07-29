@@ -123,6 +123,28 @@ function renderDialog({
   );
 }
 
+// The hover + button comments on one line; pressing a line number cell and moving over further
+// cells drags a range. The + button only exists once the diff query has reported which lines are
+// commentable, so both helpers wait for it before acting on a cell labelled like "New line 1".
+function addCommentButton(label: string) {
+  return screen.findByRole("button", {
+    name: `Comment on ${label.toLowerCase()}`,
+  });
+}
+
+async function addComment(label: string) {
+  fireEvent.click(await addCommentButton(label));
+}
+
+async function dragLines(from: string, ...through: string[]) {
+  await addCommentButton(from);
+  fireEvent.pointerDown(screen.getByLabelText(from), { button: 0 });
+  for (const label of through) {
+    fireEvent.pointerEnter(screen.getByLabelText(label));
+  }
+  fireEvent.pointerUp(document);
+}
+
 describe("DiffFileDialog", () => {
   it("renders the diff with its line comments", () => {
     renderDialog({ comments: lineComments });
@@ -269,10 +291,7 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Select new line 1" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Select new line 2" }));
+    await dragLines("New line 1", "New line 2");
     expect(screen.getByText("RIGHT 1–2")).toBeTruthy();
     const splitComposerRow = screen
       .getByLabelText("Diff comment")
@@ -286,15 +305,10 @@ describe("DiffFileDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Diff comment")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select new line 1" }));
-    fireEvent.click(screen.getByRole("button", { name: "Select new line 2" }));
+    await dragLines("New line 1", "New line 2");
 
     fireEvent.click(screen.getByRole("button", { name: "Unified" }));
-    expect(
-      screen
-        .getByRole("button", { name: "Select new line 1" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(screen.getByText("RIGHT 1–2")).toBeTruthy();
     const unifiedComposerRow = screen
       .getByLabelText("Diff comment")
       .closest("tr");
@@ -366,9 +380,7 @@ describe("DiffFileDialog", () => {
     };
     const view = renderDialog({ files: [file, secondFile], handlers });
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Select new line 1" }),
-    );
+    await addComment("New line 1");
     fireEvent.change(screen.getByLabelText("Diff comment"), {
       target: { value: "Comment for file A" },
     });
@@ -392,10 +404,8 @@ describe("DiffFileDialog", () => {
       </QueryClientProvider>,
     );
 
-    const secondFileLine = await screen.findByRole("button", {
-      name: "Select new line 1",
-    });
-    expect(secondFileLine.getAttribute("aria-pressed")).toBe("false");
+    const secondFileLine = await screen.findByLabelText("New line 1");
+    expect(secondFileLine.hasAttribute("data-selected")).toBe(false);
     expect(screen.queryByLabelText("Diff comment")).toBeNull();
     expect(screen.queryByText("Comment for file A")).toBeNull();
   });
@@ -468,19 +478,80 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Select old line 1" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Select old line 2" }));
+    await dragLines("Old line 1", "Old line 2");
     expect(screen.getByText("LEFT 1–2")).toBeTruthy();
+    expect(screen.getByLabelText("Old line 2").dataset.selected).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Select old line 10" }));
-    expect(screen.getByText("LEFT 10")).toBeTruthy();
-    expect(screen.queryByText("LEFT 1–2")).toBeNull();
+    // A drag stops at the hunk boundary and never crosses to the other side.
+    await dragLines("Old line 1", "Old line 10");
+    expect(screen.getByText("LEFT 1")).toBeTruthy();
+    await dragLines("Old line 1", "New line 1");
+    expect(screen.getByText("LEFT 1")).toBeTruthy();
+    expect(
+      screen.getByLabelText("New line 1").dataset.selected,
+    ).toBeUndefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Unified" }));
-    fireEvent.click(screen.getByRole("button", { name: "Select new line 1" }));
+    await addComment("New line 1");
     expect(screen.getByText("RIGHT 1")).toBeTruthy();
+  });
+
+  it("opens the composer from the + button shown on a hovered line number", async () => {
+    renderDialog({
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "web/src/a.ts",
+              original_path: null,
+              status: "modified",
+              additions: 1,
+              deletions: 1,
+              patch: file.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1 +1 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-const x = 0;",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+const x = 1;",
+                  left_line: null,
+                  right_line: 1,
+                },
+              ],
+            },
+          ],
+        }),
+        "diffFeedback/list": () => ({ threads: [] }),
+      },
+    });
+
+    const addButton = await screen.findByRole("button", {
+      name: "Comment on new line 1",
+    });
+    // Hidden until its line number cell is hovered, and never rendered for a missing counterpart.
+    expect(addButton.className).toContain("opacity-0");
+    expect(addButton.className).toContain("group-hover:opacity-100");
+    expect(
+      within(screen.getByLabelText("New line 1")).getByRole("button", {
+        name: "Comment on new line 1",
+      }),
+    ).toBe(addButton);
+
+    fireEvent.click(addButton);
+    expect(screen.getByText("RIGHT 1")).toBeTruthy();
+    expect(screen.getByLabelText("Diff comment")).toBeTruthy();
   });
 
   it("renders one thread after its range in both modes and operates on it", async () => {

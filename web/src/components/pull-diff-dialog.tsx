@@ -3,10 +3,11 @@
 // its own Escape handling, mode switching, per-mode file fetch, and the copy-path resolution for
 // renamed / invisible-character filenames. The Files changed section only picks the open file.
 
-import { Filter, Loader2, X } from "lucide-react";
+import { Filter, Loader2, Plus, X } from "lucide-react";
 import {
   Fragment,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
   useRef,
@@ -32,9 +33,11 @@ import {
 } from "@/lib/diff";
 import {
   type DiffSelection,
-  extendSelection,
+  dragSelection,
+  type SelectableDiffLine,
   selectableLines,
   selectionContains,
+  singleSelection,
 } from "@/lib/diff-feedback";
 import { errorMessage } from "@/lib/error-message";
 import { cn } from "@/lib/utils";
@@ -634,9 +637,7 @@ function FileDiffContent({
         selection={selection}
         selectionContent={commentComposer}
         threads={currentThreads}
-        onSelect={(line) =>
-          setSelection((current) => extendSelection(current, line))
-        }
+        onSelect={setSelection}
         threadContent={(thread) => (
           <ThreadCard
             owner={owner}
@@ -719,13 +720,10 @@ function DialogDiff({
   selection: DiffSelection | null;
   selectionContent: ReactNode;
   threads: DiffFeedbackThread[];
-  onSelect: (line: {
-    side: "LEFT" | "RIGHT";
-    line: number;
-    hunk: number;
-  }) => void;
+  onSelect: (selection: DiffSelection) => void;
   threadContent: (thread: DiffFeedbackThread) => ReactNode;
 }) {
+  const { dragging, lineSelection } = useLineSelectionDrag(onSelect);
   const lines = parsePositionedPatch(patch);
   const selectable = selectableLines(stableLines ?? []);
   if (lines.length === 0) {
@@ -735,43 +733,65 @@ function DialogDiff({
       </p>
     );
   }
+  // The composer stays hidden until the drag ends: inserting its row mid-drag would move the
+  // rows the pointer is still travelling over.
+  const props: DiffRenderProps = {
+    lines,
+    selectable,
+    selection,
+    selectionContent: dragging ? null : selectionContent,
+    threads,
+    lineSelection,
+    threadContent,
+  };
   return viewMode === "unified" ? (
-    <UnifiedDiff
-      lines={lines}
-      selectable={selectable}
-      selection={selection}
-      selectionContent={selectionContent}
-      threads={threads}
-      onSelect={onSelect}
-      threadContent={threadContent}
-    />
+    <UnifiedDiff {...props} />
   ) : (
-    <SplitDiff
-      lines={lines}
-      selectable={selectable}
-      selection={selection}
-      selectionContent={selectionContent}
-      threads={threads}
-      onSelect={onSelect}
-      threadContent={threadContent}
-    />
+    <SplitDiff {...props} />
   );
+}
+
+type LineSelectionHandlers = {
+  // The + button shown on hover comments on that single line.
+  onSelect: (line: SelectableDiffLine) => void;
+  onDragStart: (line: SelectableDiffLine) => void;
+  onDragEnter: (line: SelectableDiffLine) => void;
+};
+
+function useLineSelectionDrag(onSelect: (selection: DiffSelection) => void) {
+  const [anchor, setAnchor] = useState<SelectableDiffLine | null>(null);
+
+  useEffect(() => {
+    if (!anchor) return;
+    function onPointerUp() {
+      setAnchor(null);
+    }
+    document.addEventListener("pointerup", onPointerUp);
+    return () => document.removeEventListener("pointerup", onPointerUp);
+  }, [anchor]);
+
+  const lineSelection: LineSelectionHandlers = {
+    onSelect: (line) => onSelect(singleSelection(line)),
+    onDragStart: (line) => {
+      setAnchor(line);
+      onSelect(singleSelection(line));
+    },
+    onDragEnter: (line) => {
+      if (!anchor) return;
+      const next = dragSelection(anchor, line);
+      if (next) onSelect(next);
+    },
+  };
+  return { dragging: anchor !== null, lineSelection };
 }
 
 type DiffRenderProps = {
   lines: PositionedDiffLine[];
-  selectable: Map<
-    number,
-    { side: "LEFT" | "RIGHT"; line: number; hunk: number }[]
-  >;
+  selectable: Map<number, SelectableDiffLine[]>;
   selection: DiffSelection | null;
   selectionContent: ReactNode;
   threads: DiffFeedbackThread[];
-  onSelect: (line: {
-    side: "LEFT" | "RIGHT";
-    line: number;
-    hunk: number;
-  }) => void;
+  lineSelection: LineSelectionHandlers;
   threadContent: (thread: DiffFeedbackThread) => ReactNode;
 };
 
@@ -822,7 +842,7 @@ function UnifiedDiff({
   selection,
   selectionContent,
   threads,
-  onSelect,
+  lineSelection,
   threadContent,
 }: DiffRenderProps) {
   return (
@@ -842,6 +862,16 @@ function UnifiedDiff({
               "RIGHT",
               line.newLine,
             );
+            const leftSelected = selectionContains(
+              selection,
+              "LEFT",
+              line.oldLine,
+            );
+            const rightSelected = selectionContains(
+              selection,
+              "RIGHT",
+              line.newLine,
+            );
             return (
               <Fragment key={`${line.oldLine}:${line.newLine}:${index}`}>
                 <tr
@@ -852,31 +882,24 @@ function UnifiedDiff({
                     line={line.oldLine}
                     label="Old"
                     choice={choices.find((choice) => choice.side === "LEFT")}
-                    selected={selectionContains(
-                      selection,
-                      "LEFT",
-                      line.oldLine,
-                    )}
+                    selected={leftSelected}
                     anchored={leftAnchored}
-                    onSelect={onSelect}
+                    lineSelection={lineSelection}
                   />
                   <LineNumber
                     line={line.newLine}
                     label="New"
                     choice={choices.find((choice) => choice.side === "RIGHT")}
-                    selected={selectionContains(
-                      selection,
-                      "RIGHT",
-                      line.newLine,
-                    )}
+                    selected={rightSelected}
                     anchored={rightAnchored}
-                    onSelect={onSelect}
+                    lineSelection={lineSelection}
                   />
                   <td
                     className={cn(
                       "whitespace-pre pr-4",
                       (leftAnchored || rightAnchored) &&
                         "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
+                      (leftSelected || rightSelected) && "bg-blue-500/10",
                     )}
                   >
                     <span
@@ -916,7 +939,7 @@ function SplitDiff(props: DiffRenderProps) {
     selection,
     selectionContent,
     threads,
-    onSelect,
+    lineSelection,
     threadContent,
   } = props;
   return (
@@ -955,7 +978,7 @@ function SplitDiff(props: DiffRenderProps) {
                         ? threadAnchorsLine(threads, "LEFT", row.left.oldLine)
                         : false
                     }
-                    onSelect={onSelect}
+                    lineSelection={lineSelection}
                   />
                   <SplitLine
                     line={row.right}
@@ -969,7 +992,7 @@ function SplitDiff(props: DiffRenderProps) {
                         ? threadAnchorsLine(threads, "RIGHT", row.right.newLine)
                         : false
                     }
-                    onSelect={onSelect}
+                    lineSelection={lineSelection}
                   />
                 </tr>
                 {selectionContent &&
@@ -1066,44 +1089,76 @@ function LineNumber({
   choice,
   selected,
   anchored,
-  onSelect,
+  lineSelection,
 }: {
   line: number | null;
   label: "Old" | "New";
-  choice?: { side: "LEFT" | "RIGHT"; line: number; hunk: number };
+  choice?: SelectableDiffLine;
   selected: boolean;
   anchored: boolean;
-  onSelect: (line: {
-    side: "LEFT" | "RIGHT";
-    line: number;
-    hunk: number;
-  }) => void;
+  lineSelection: LineSelectionHandlers;
 }) {
   return (
     <td
       aria-label={line === null ? undefined : `${label} line ${line}`}
       className={cn(
-        "w-12 select-none border-r text-right text-muted-foreground/70",
+        "group relative w-12 select-none border-r px-2 text-right text-muted-foreground/70",
+        choice && "cursor-pointer hover:bg-blue-500/15",
         anchored &&
           "bg-amber-500/15 text-amber-800 shadow-[inset_3px_0_0_0] shadow-amber-500/70 dark:text-amber-200",
         selected && "bg-blue-500/20 text-foreground",
       )}
       data-thread-anchor={anchored || undefined}
+      data-selected={selected || undefined}
+      {...lineDragProps(choice, lineSelection)}
     >
       {choice ? (
-        <button
-          type="button"
-          className="h-full w-full px-2 text-right hover:bg-blue-500/15"
-          aria-label={`Select ${label.toLowerCase()} line ${line}`}
-          aria-pressed={selected}
-          onClick={() => onSelect(choice)}
-        >
-          {line}
-        </button>
-      ) : (
-        line
-      )}
+        <AddCommentButton
+          label={`${label.toLowerCase()} line ${line}`}
+          onClick={() => lineSelection.onSelect(choice)}
+        />
+      ) : null}
+      {line}
     </td>
+  );
+}
+
+// Pressing a line number starts a range; moving onto another number cell of the same side and
+// hunk grows it, and the document-level pointerup in useLineSelectionDrag ends it.
+function lineDragProps(
+  choice: SelectableDiffLine | undefined,
+  lineSelection: LineSelectionHandlers,
+) {
+  if (!choice) return {};
+  return {
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+      if (event.button !== 0) return;
+      // Keep the browser from starting a text selection across the diff while dragging.
+      event.preventDefault();
+      lineSelection.onDragStart(choice);
+    },
+    onPointerEnter: () => lineSelection.onDragEnter(choice),
+  };
+}
+
+function AddCommentButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      // Kept mounted but invisible so it stays reachable by keyboard; the cell below it starts
+      // the same selection when the pointer lands on the hidden button.
+      className="absolute left-0.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded-sm bg-blue-600 text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+      aria-label={`Comment on ${label}`}
+      onClick={onClick}
+    >
+      <Plus className="size-3" aria-hidden="true" />
+    </button>
   );
 }
 
@@ -1115,7 +1170,7 @@ function SplitLine({
   selectable,
   sourceIndex,
   anchored,
-  onSelect,
+  lineSelection,
 }: {
   line: PositionedDiffLine | null;
   markers?: PositionedDiffLine[];
@@ -1124,7 +1179,7 @@ function SplitLine({
   selectable: DiffRenderProps["selectable"];
   sourceIndex: number | null;
   anchored: boolean;
-  onSelect: DiffRenderProps["onSelect"];
+  lineSelection: LineSelectionHandlers;
 }) {
   const lineNumber = line
     ? side === "old"
@@ -1148,28 +1203,25 @@ function SplitLine({
             : `${side === "old" ? "Old" : "New"} line ${lineNumber}`
         }
         className={cn(
-          "w-12 select-none border-r text-right text-muted-foreground/70",
+          "group relative w-12 select-none border-r px-2 text-right text-muted-foreground/70",
           line && DIFF_LINE_CLASS[line.kind],
           side === "new" && "border-l",
+          choice && "cursor-pointer hover:bg-blue-500/15",
           anchored &&
             "bg-amber-500/15 text-amber-800 shadow-[inset_3px_0_0_0] shadow-amber-500/70 dark:text-amber-200",
           selected && "bg-blue-500/20 text-foreground",
         )}
         data-thread-anchor={anchored || undefined}
+        data-selected={selected || undefined}
+        {...lineDragProps(choice, lineSelection)}
       >
         {choice ? (
-          <button
-            type="button"
-            className="h-full w-full px-2 text-right hover:bg-blue-500/15"
-            aria-label={`Select ${side} line ${lineNumber}`}
-            aria-pressed={selected}
-            onClick={() => onSelect(choice)}
-          >
-            {lineNumber}
-          </button>
-        ) : (
-          lineNumber
-        )}
+          <AddCommentButton
+            label={`${side} line ${lineNumber}`}
+            onClick={() => lineSelection.onSelect(choice)}
+          />
+        ) : null}
+        {lineNumber}
       </td>
       <td
         className={cn(
@@ -1177,6 +1229,7 @@ function SplitLine({
           line && DIFF_LINE_CLASS[line.kind],
           anchored &&
             "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
+          selected && "bg-blue-500/10",
         )}
         data-line-kind={line?.kind}
       >

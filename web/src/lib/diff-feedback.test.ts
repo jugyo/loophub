@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  extendSelection,
+  dragSelection,
   selectableLines,
   selectionContains,
+  singleSelection,
 } from "./diff-feedback";
 
 describe("diff feedback selection", () => {
@@ -34,20 +35,36 @@ describe("diff feedback selection", () => {
     expect(lines.get(2)).toEqual([{ side: "LEFT", line: 2, hunk: 0 }]);
   });
 
-  it("extends only contiguous coordinates on the same side and hunk", () => {
-    const first = extendSelection(null, { side: "LEFT", line: 4, hunk: 0 });
+  it("selects a single line", () => {
+    const single = singleSelection({ side: "LEFT", line: 4, hunk: 0 });
+    expect(single).toEqual({
+      side: "LEFT",
+      startLine: 4,
+      endLine: 4,
+      hunk: 0,
+    });
+    expect(selectionContains(single, "LEFT", 4)).toBe(true);
+  });
+
+  it("drags a range in either direction within one side and hunk", () => {
+    const anchor = { side: "LEFT" as const, line: 4, hunk: 0 };
+    expect(dragSelection(anchor, { side: "LEFT", line: 6, hunk: 0 })).toEqual({
+      side: "LEFT",
+      startLine: 4,
+      endLine: 6,
+      hunk: 0,
+    });
+    expect(dragSelection(anchor, { side: "LEFT", line: 2, hunk: 0 })).toEqual({
+      side: "LEFT",
+      startLine: 2,
+      endLine: 4,
+      hunk: 0,
+    });
     expect(
-      extendSelection(first, { side: "LEFT", line: 5, hunk: 0 }),
-    ).toMatchObject({ startLine: 4, endLine: 5 });
+      dragSelection(anchor, { side: "RIGHT", line: 5, hunk: 0 }),
+    ).toBeNull();
     expect(
-      extendSelection(first, { side: "RIGHT", line: 5, hunk: 0 }),
-    ).toMatchObject({ side: "RIGHT", startLine: 5, endLine: 5 });
-    expect(
-      extendSelection(first, { side: "LEFT", line: 5, hunk: 1 }),
-    ).toMatchObject({ startLine: 5, endLine: 5, hunk: 1 });
-    expect(
-      extendSelection(first, { side: "LEFT", line: 7, hunk: 0 }),
-    ).toMatchObject({ startLine: 7, endLine: 7 });
-    expect(selectionContains(first, "LEFT", 4)).toBe(true);
+      dragSelection(anchor, { side: "LEFT", line: 5, hunk: 1 }),
+    ).toBeNull();
   });
 });

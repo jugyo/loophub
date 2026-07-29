@@ -32,27 +32,27 @@ export function selectableLines(
   return result;
 }
 
-export function extendSelection(
-  current: DiffSelection | null,
-  next: SelectableDiffLine,
-): DiffSelection {
-  if (
-    current &&
-    current.side === next.side &&
-    current.hunk === next.hunk &&
-    (next.line === current.startLine - 1 || next.line === current.endLine + 1)
-  ) {
-    return {
-      ...current,
-      startLine: Math.min(current.startLine, next.line),
-      endLine: Math.max(current.endLine, next.line),
-    };
-  }
+export function singleSelection(line: SelectableDiffLine): DiffSelection {
   return {
-    side: next.side,
-    startLine: next.line,
-    endLine: next.line,
-    hunk: next.hunk,
+    side: line.side,
+    startLine: line.line,
+    endLine: line.line,
+    hunk: line.hunk,
+  };
+}
+
+// A drag only produces a range inside one side and one hunk: an anchor stored on the server has
+// to cover a contiguous run of lines, and crossing sides would mix LEFT and RIGHT coordinates.
+export function dragSelection(
+  anchor: SelectableDiffLine,
+  current: SelectableDiffLine,
+): DiffSelection | null {
+  if (current.side !== anchor.side || current.hunk !== anchor.hunk) return null;
+  return {
+    side: anchor.side,
+    startLine: Math.min(anchor.line, current.line),
+    endLine: Math.max(anchor.line, current.line),
+    hunk: anchor.hunk,
   };
 }
 
