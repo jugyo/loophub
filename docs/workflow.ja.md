@@ -351,7 +351,7 @@ deliver が失敗した場合は `lh workflow launch-step --step execute --note 
 変わって HEAD が不変なら既存 pass を fresh のまま維持する。run を恒久終了する command は無く、
 終了させるのは人間である。
 
-rework 上限は 3。新規 launch より先に parent が **1 行の**
+rework 上限は 8。新規 launch より先に parent が **1 行の**
 `lh workflow deliver --text 'orchestrator: address review #<id>'` で同じ Execute session への注入を試す。
 コマンドは `pane_id` があれば `agent_status: done` の pane も再利用する。agent / session / pane を
 解決できない、または注入に失敗して non-zero になった場合に限り `--review <id>` で Execute child を

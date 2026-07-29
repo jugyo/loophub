@@ -833,6 +833,7 @@ function workflowRunState(
     workflowName,
     latestReview,
     verificationStatus,
+    reworkLimit: WORKFLOW_REWORK_LIMIT,
     costIncrementUsd: incrementUsd,
     costLimitUsd: limitUsd,
     costLimitIncreaseAvailable: costLimitIncreaseAvailable(repo, run),
@@ -1570,7 +1571,7 @@ export const workflowRuns = {
         "Workflow Verify review does not request changes",
       );
     }
-    if (run.rework_count >= 3) {
+    if (run.rework_count >= WORKFLOW_REWORK_LIMIT) {
       throw new ServiceError(409, "Workflow rework limit reached");
     }
     return updateRunLifecycle(

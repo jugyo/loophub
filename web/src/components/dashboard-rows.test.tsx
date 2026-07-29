@@ -448,6 +448,7 @@ describe("IssueRow workflow budget (#1828)", () => {
           status: "running",
           current_step: "execute",
           rework_count: 0,
+          rework_limit: 8,
           cost_increment_usd: 10,
           cost_limit_usd: 20,
           cost_limit_increase_available: true,

@@ -1,6 +1,7 @@
 // Workflow run state section for issue / PR detail (#1008). Shows the display state of the run linked
 // to an issue / PR: workflow name, status, current step (as an Execute → Verify
-// tracker), and rework count. The run row is the display-state source (workflow design: CLI / UI) —
+// tracker), and rework count / limit. The run row is the display-state source (workflow design:
+// CLI / UI) —
 // this deliberately does not re-derive step-completion truth (that stays with
 // `workflow step status` — HEAD vs the pinned Verify review).
 //
@@ -139,7 +140,7 @@ export function WorkflowRunStatusSection({
           <span className="text-muted-foreground">run #{state.id}</span>
           {state.rework_count > 0 ? (
             <span className="text-muted-foreground">
-              · rework ×{state.rework_count}
+              · rework ×{state.rework_count}/{state.rework_limit}
             </span>
           ) : null}
         </div>

@@ -108,7 +108,10 @@ export function WorkflowRunHistoryDialog({
               label="Current step"
               value={displayName(state.current_step)}
             />
-            <Metadata label="Rework count" value={String(state.rework_count)} />
+            <Metadata
+              label="Rework"
+              value={`${state.rework_count}/${state.rework_limit}`}
+            />
             <Metadata
               label="Started"
               value={timestamp(state.created_at)}

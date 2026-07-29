@@ -262,7 +262,7 @@ export function workflowActionPlan(
   }
 }
 
-export const WORKFLOW_REWORK_LIMIT = 3;
+export const WORKFLOW_REWORK_LIMIT = 8;
 
 /**
  * Advise the Workflow parent about its next action from already-observed state.

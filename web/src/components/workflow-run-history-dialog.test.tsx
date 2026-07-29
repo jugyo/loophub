@@ -18,6 +18,7 @@ const RUN: WorkflowRunState = {
   status: "running",
   current_step: "execute",
   rework_count: 1,
+  rework_limit: 8,
   cost_increment_usd: 30,
   cost_limit_usd: 30,
   cost_limit_increase_available: false,
@@ -103,7 +104,8 @@ describe("Workflow run history dialog", () => {
     });
     expect(within(dialog).getByText("standard · run #7")).toBeTruthy();
     expect(within(dialog).getByText("Current step")).toBeTruthy();
-    expect(within(dialog).getByText("Rework count")).toBeTruthy();
+    expect(within(dialog).getByText("Rework")).toBeTruthy();
+    expect(within(dialog).getByText("1/8")).toBeTruthy();
     expect(within(dialog).getByText("Started")).toBeTruthy();
     expect(within(dialog).getByText("Updated")).toBeTruthy();
     expect(

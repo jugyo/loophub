@@ -67,6 +67,7 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     status: "running",
     current_step: "execute",
     rework_count: 0,
+    rework_limit: 8,
     cost_increment_usd: 30,
     cost_limit_usd: 30,
     cost_limit_increase_available: false,
@@ -133,7 +134,7 @@ describe("WorkflowRunStatusSection", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("shows workflow name, status, current step, and rework count for a running run", async () => {
+  it("shows workflow name, status, current step, and rework count / limit for a running run", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
@@ -142,13 +143,14 @@ describe("WorkflowRunStatusSection", () => {
           status: "running",
           current_step: "execute",
           rework_count: 2,
+          rework_limit: 8,
         })}
       />,
     );
     expect(await screen.findByText("Workflow run")).toBeTruthy();
     expect(screen.getByText("Running")).toBeTruthy();
     expect(screen.getByText("standard")).toBeTruthy();
-    expect(screen.getByText("· rework ×2")).toBeTruthy();
+    expect(screen.getByText("· rework ×2/8")).toBeTruthy();
     // Current step is marked with aria-current="step".
     const current = screen.getByText("Execute");
     expect(current.getAttribute("aria-current")).toBe("step");

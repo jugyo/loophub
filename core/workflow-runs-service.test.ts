@@ -2084,7 +2084,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     awaiting_human: false,
     needs_human_reason: null,
     rework_count: 0,
-    rework_limit: 3,
+    rework_limit: 8,
     pending_effect_receipt: null,
     unaddressed_out_of_band_reviews: [],
   });
@@ -2240,7 +2240,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     awaiting_human: true,
     needs_human_reason: "waiting for guidance",
     rework_count: 2,
-    rework_limit: 3,
+    rework_limit: 8,
   });
 }, 30_000);
 
@@ -2922,7 +2922,7 @@ test("Execute escalation records a validated event without changing run lifecycl
   ).toThrowError(/launched Execute session/);
 }, 20_000);
 
-test("intent-based run lifecycle rejects invalid transitions and caps rework at 3", async () => {
+test("intent-based run lifecycle rejects invalid transitions and caps rework at 8", async () => {
   const { repo } = freshRepo("me/workflow-lifecycle");
   const issue = S.createIssue(
     repo.id,
@@ -2976,7 +2976,7 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
   // Drive the rework budget to its cap. Each request_changes review is pinned to the current head,
   // and each rework advances the head so the next review is fresh again.
   let head = headA;
-  for (let seq = 1; seq <= 3; seq++) {
+  for (let seq = 1; seq <= 8; seq++) {
     createWorkflowReview({
       prIssueId,
       runId: started.run.id,
@@ -3000,14 +3000,14 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
     );
   }
 
-  // The 4th request_changes exceeds the cap.
+  // The 9th request_changes exceeds the cap.
   createWorkflowReview({
     prIssueId,
     runId: started.run.id,
-    sequence: 4,
+    sequence: 9,
     event: "REQUEST_CHANGES",
     headSha: head,
-    body: "Change 4",
+    body: "Change 9",
     findings: 1,
   });
   await expect(
@@ -3017,14 +3017,14 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
       parent,
     ),
   ).rejects.toThrowError(/rework limit/);
-  expect(S.getWorkflowRun(started.run.id)?.rework_count).toBe(3);
+  expect(S.getWorkflowRun(started.run.id)?.rework_count).toBe(8);
 
   // A fresh pass verifies the current HEAD without terminating the run (#1513): it stays `running`,
   // so resume is refused (no human wait). There is no run-stop transition anymore (#1525).
   createWorkflowReview({
     prIssueId,
     runId: started.run.id,
-    sequence: 5,
+    sequence: 10,
     event: "PASS",
     headSha: head,
     body: "All criteria pass.",
@@ -3049,12 +3049,10 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
 
   expect(lifecycleTransitions()).toEqual([
     "advance_to_verify",
-    "request_rework",
-    "advance_to_verify",
-    "request_rework",
-    "advance_to_verify",
-    "request_rework",
-    "advance_to_verify",
+    ...Array.from({ length: 8 }, () => [
+      "request_rework",
+      "advance_to_verify",
+    ]).flat(),
   ]);
 }, 40_000);
 
@@ -3167,6 +3165,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     status: "running",
     current_step: "verify",
     rework_count: 2,
+    rework_limit: 8,
     issue_number: issue.number,
     pr_number: prIssue.number,
   });

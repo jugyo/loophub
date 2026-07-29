@@ -1122,6 +1122,7 @@ describe("PullDetail", () => {
         status: "running",
         current_step: "verify",
         rework_count: 2,
+        rework_limit: 8,
         needs_human_reason: "Review the unexpected API change",
         issue_number: 153,
         pr_number: 30,
@@ -1138,7 +1139,7 @@ describe("PullDetail", () => {
     expect(screen.getByText("Implementation loop")).toBeTruthy();
     expect(screen.getByText("run #12")).toBeTruthy();
     expect(screen.getByText("Verify")).toBeTruthy();
-    expect(screen.getByText("· rework ×2")).toBeTruthy();
+    expect(screen.getByText("· rework ×2/8")).toBeTruthy();
     expect(screen.getByText("Needs human")).toBeTruthy();
     expect(screen.getByRole("button", { name: "View history" })).toBeTruthy();
   });
@@ -1152,6 +1153,7 @@ describe("PullDetail", () => {
       status: "running",
       current_step: "execute",
       rework_count: 0,
+      rework_limit: 8,
       needs_human_reason: "Cost limit exceeded",
       issue_number: 153,
       pr_number: 30,
@@ -1207,6 +1209,7 @@ describe("PullDetail", () => {
       status: "running",
       current_step: "execute",
       rework_count: 0,
+      rework_limit: 8,
       needs_human_reason: "Cost limit exceeded",
       issue_number: 153,
       pr_number: 30,
@@ -1258,6 +1261,7 @@ describe("PullDetail", () => {
         status: "running",
         current_step: "execute",
         rework_count: 0,
+        rework_limit: 8,
         needs_human_reason: null,
         issue_number: 153,
         pr_number: 30,
@@ -1309,6 +1313,7 @@ describe("PullDetail", () => {
         status: "running",
         current_step: currentStep,
         rework_count: 0,
+        rework_limit: 8,
         needs_human_reason: null,
         issue_number: 153,
         pr_number: 30,
@@ -1336,6 +1341,7 @@ describe("PullDetail", () => {
         status: "running",
         current_step: "verify",
         rework_count: 0,
+        rework_limit: 8,
         needs_human_reason: null,
         issue_number: 153,
         pr_number: 30,

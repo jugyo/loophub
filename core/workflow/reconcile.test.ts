@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   reconcileWorkflow,
+  WORKFLOW_REWORK_LIMIT,
   type WorkflowNextAction,
   type WorkflowReconcileInput,
   workflowActionPlan,
@@ -21,7 +22,7 @@ function observed(
     awaitingHuman: false,
     costLimitIncreaseRequired: false,
     reworkCount: 0,
-    reworkLimit: 3,
+    reworkLimit: WORKFLOW_REWORK_LIMIT,
     pendingEffectReceipt: null,
     unaddressedOutOfBandReviews: [],
     currentHead: HEAD,
@@ -260,11 +261,11 @@ describe("reconcileWorkflow", () => {
     });
   });
 
-  test("escalates instead of requesting a fourth rework", () => {
+  test("escalates instead of requesting a ninth rework", () => {
     const requestChanges = observed({
       currentStep: "verify",
       activeStep: "verify",
-      reworkCount: 3,
+      reworkCount: WORKFLOW_REWORK_LIMIT,
       steps: {
         execute: {
           complete: false,
@@ -298,7 +299,7 @@ describe("reconcileWorkflow", () => {
         observed({
           currentStep: "verify",
           activeStep: "verify",
-          reworkCount: 3,
+          reworkCount: WORKFLOW_REWORK_LIMIT,
           wake: { kind: "human_instruction" },
           steps: {
             execute: {
@@ -331,7 +332,7 @@ describe("reconcileWorkflow", () => {
         observed({
           currentStep: "verify",
           activeStep: "execute",
-          reworkCount: 3,
+          reworkCount: WORKFLOW_REWORK_LIMIT,
           turnDoneForActiveExecute: true,
           steps: {
             execute: { complete: true, missing: [] },
