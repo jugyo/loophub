@@ -407,6 +407,11 @@ export interface DiffFeedbackThreadWire {
   messages: DiffFeedbackMessageWire[];
 }
 
+export interface DiffFeedbackListWire {
+  threads: DiffFeedbackThreadWire[];
+  comment_counts: Record<string, number>;
+}
+
 export function diffFeedbackMessageJSON(
   row: S.DiffFeedbackMessageRow,
 ): DiffFeedbackMessageWire {

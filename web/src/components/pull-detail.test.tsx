@@ -19,6 +19,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type {
+  DiffFeedbackThread,
   IssueComment,
   PullFile,
   PullLineComment,
@@ -146,6 +147,41 @@ const comments: IssueComment[] = [
   },
 ];
 
+const diffFeedback: DiffFeedbackThread[] = [
+  {
+    id: 1,
+    pr_number: 30,
+    anchor: {
+      base_sha: "a".repeat(40),
+      head_sha: "b".repeat(40),
+      path: "web/src/a.ts",
+      original_path: null,
+      side: "RIGHT",
+      start_line: 1,
+      end_line: 1,
+    },
+    freshness: "current",
+    created_by: "reviewer",
+    created_at: "2026-07-29T00:00:00Z",
+    messages: [
+      {
+        id: 1,
+        thread_id: 1,
+        author: "reviewer",
+        body: "First comment",
+        created_at: "2026-07-29T00:00:00Z",
+      },
+      {
+        id: 2,
+        thread_id: 1,
+        author: "author",
+        body: "Reply",
+        created_at: "2026-07-29T00:01:00Z",
+      },
+    ],
+  },
+];
+
 function mockFetch(
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
@@ -154,6 +190,7 @@ function mockFetch(
     "pulls/files": () => files,
     "reviews/list": () => reviews,
     "reviews/listComments": () => lineComments,
+    "diffFeedback/list": () => ({ threads: [], comment_counts: {} }),
     "comments/list": () => comments,
     "terminal/sessions": () => ({ repos: [] }),
     "workflowRuns/stateForPull": () => null,
@@ -206,6 +243,37 @@ function renderDetail(
 }
 
 describe("PullDetail", () => {
+  it("shows diff comment counts in the file list and diff sidebar", async () => {
+    renderDetail({
+      "diffFeedback/list": () => ({
+        threads: diffFeedback,
+        comment_counts: { "web/src/a.ts": 2 },
+      }),
+    });
+
+    const filesChanged = await screen.findByRole("heading", {
+      name: /Files changed \(1\)/,
+    });
+    const section = filesChanged.closest("section");
+    if (!section) throw new Error("Files changed section not found");
+    expect(
+      await within(section).findByLabelText("2 diff comments"),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      within(section).getByRole("button", { name: /web\/src\/a\.ts/ }),
+    );
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Changed files",
+    });
+    expect(within(sidebar).getByLabelText("2 diff comments")).toBeTruthy();
+    expect(
+      Array.from(
+        within(sidebar).getByRole("button", { name: "web/src/a.ts" }).children,
+      ).map((child) => child.textContent),
+    ).toEqual(["M", "web/src/a.ts", "+1−1", "", "2"]);
+  });
+
   it("does not offer a ready action after changes are requested", async () => {
     renderDetailWithPull({
       review_state: "CHANGES_REQUESTED",
@@ -426,6 +494,7 @@ describe("PullDetail", () => {
       "M",
       "web/src/a.ts",
       "+1−1",
+      "",
     ]);
     expect(row.className).toContain("grid-cols-");
     expect(filename.className).toContain("truncate");

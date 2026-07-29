@@ -3,7 +3,10 @@ import {
   linesForAnchor,
   parsePatchWithCoordinates,
 } from "../diff-anchor.ts";
-import { selectDiffFeedbackThreads } from "../diff-feedback-selection.ts";
+import {
+  countDiffFeedbackMessagesByFile,
+  selectDiffFeedbackThreads,
+} from "../diff-feedback-selection.ts";
 import { ServiceError } from "../errors.ts";
 import { diffFilesBetween, revParse } from "../git.ts";
 import { resolvePullBaseSha } from "../pull-base.ts";
@@ -127,6 +130,7 @@ export const diffFeedback = {
     );
     return {
       threads: selectDiffFeedbackThreads(threads, files, scope),
+      comment_counts: countDiffFeedbackMessagesByFile(threads, files),
     };
   },
 

@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
 import { DetailHeaderTitle } from "@/components/detail-title";
+import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
@@ -48,6 +49,7 @@ import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
 import {
+  useDiffFeedback,
   useGithubPrStatus,
   useMergePull,
   usePull,
@@ -589,6 +591,7 @@ function FilesChanged({
   isError: boolean;
 }) {
   const [openFilename, setOpenFilename] = useState<string | null>(null);
+  const feedback = useDiffFeedback(owner, repo, number);
   const openFile = files?.find((f) => f.filename === openFilename) ?? null;
   useEffect(() => {
     if (openFilename && files && !openFile) setOpenFilename(null);
@@ -600,6 +603,7 @@ function FilesChanged({
     list.push(comment);
     byFile.set(comment.path, list);
   }
+  const commentCounts = feedback.data?.comment_counts ?? {};
 
   const totalAdditions =
     files?.reduce((sum, file) => sum + file.additions, 0) ?? 0;
@@ -646,6 +650,7 @@ function FilesChanged({
                 <FileSummaryRow
                   key={file.filename}
                   file={file}
+                  commentCount={commentCounts[file.filename] ?? 0}
                   onOpen={() => setOpenFilename(file.filename)}
                 />
               ))}
@@ -660,6 +665,7 @@ function FilesChanged({
               files={files}
               file={openFile}
               comments={byFile.get(openFile.filename) ?? []}
+              commentCounts={commentCounts}
               onSelectFile={setOpenFilename}
               onClose={() => setOpenFilename(null)}
             />
@@ -672,9 +678,11 @@ function FilesChanged({
 
 function FileSummaryRow({
   file,
+  commentCount,
   onOpen,
 }: {
   file: PullFile;
+  commentCount: number;
   onOpen: () => void;
 }) {
   return (
@@ -682,7 +690,7 @@ function FileSummaryRow({
       <button
         type="button"
         onClick={onOpen}
-        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="grid w-full grid-cols-[auto_minmax(0,max-content)_auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         <FileStatusBadge status={file.status} />
         <span className="min-w-0 truncate font-mono text-xs [direction:rtl]">
@@ -693,6 +701,8 @@ function FileSummaryRow({
           deletions={file.deletions}
           className="justify-self-end text-xs"
         />
+        <span aria-hidden="true" />
+        <DiffCommentCount count={commentCount} className="text-xs" />
       </button>
     </li>
   );

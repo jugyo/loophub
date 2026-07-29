@@ -11,6 +11,7 @@ import type {
   AgentSession,
   CodingAgent,
   DashboardOverview,
+  DiffFeedbackList,
   DiffFeedbackMessage,
   DiffFeedbackThread,
   FileAtRef,
@@ -780,7 +781,7 @@ export function listDiffFeedback(
   number: number,
   scope: { path?: string; orphaned?: boolean } = {},
 ) {
-  return rpc<{ threads: DiffFeedbackThread[] }>(
+  return rpc<DiffFeedbackList>(
     "diffFeedback/list",
     clean({
       repo: full(owner, repo),

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { selectDiffFeedbackThreads } from "./diff-feedback-selection.ts";
+import {
+  countDiffFeedbackMessagesByFile,
+  selectDiffFeedbackThreads,
+} from "./diff-feedback-selection.ts";
 import type { DiffFeedbackThreadWire } from "./serialize.ts";
 
 function thread(
@@ -55,5 +58,53 @@ describe("selectDiffFeedbackThreads", () => {
         { orphaned: true },
       ).map(({ id }) => id),
     ).toEqual([2]);
+  });
+});
+
+describe("countDiffFeedbackMessagesByFile", () => {
+  it("counts messages across renamed paths and original anchor paths", () => {
+    const renamed = {
+      filename: "old.ts => new.ts",
+      headFilename: "new.ts",
+      previousFilename: "old.ts",
+    };
+    const oldPathThread = thread(1, "old.ts");
+    oldPathThread.messages = [
+      {
+        id: 1,
+        thread_id: 1,
+        author: "reviewer",
+        body: "Comment",
+        created_at: "2026-07-28T00:00:00Z",
+      },
+    ];
+    const originalPathThread = thread(2, "generated.ts");
+    originalPathThread.anchor.original_path = "new.ts";
+    originalPathThread.messages = [
+      {
+        id: 2,
+        thread_id: 2,
+        author: "reviewer",
+        body: "Comment",
+        created_at: "2026-07-28T00:00:00Z",
+      },
+      {
+        id: 3,
+        thread_id: 2,
+        author: "author",
+        body: "Reply",
+        created_at: "2026-07-28T00:01:00Z",
+      },
+    ];
+
+    expect(
+      countDiffFeedbackMessagesByFile(
+        [oldPathThread, originalPathThread, thread(3, "other.ts")],
+        [renamed, { filename: "untouched.ts" }],
+      ),
+    ).toEqual({
+      "old.ts => new.ts": 3,
+      "untouched.ts": 0,
+    });
   });
 });

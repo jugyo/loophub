@@ -19,6 +19,7 @@ import type {
   PullLineComment,
 } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
+import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
 import { Markdown } from "@/components/markdown";
@@ -174,6 +175,7 @@ export function DiffFileDialog({
   files,
   file,
   comments,
+  commentCounts = {},
   onSelectFile,
   onClose,
 }: {
@@ -183,6 +185,7 @@ export function DiffFileDialog({
   files: PullFile[];
   file: PullFile;
   comments: PullLineComment[];
+  commentCounts?: Readonly<Record<string, number>>;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
@@ -345,7 +348,7 @@ export function DiffFileDialog({
                     aria-label={sidebarFile.filename}
                     aria-current={selected ? "true" : undefined}
                     className={cn(
-                      "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 text-left hover:bg-muted",
+                      "grid w-full grid-cols-[auto_minmax(0,max-content)_auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 text-left hover:bg-muted",
                       selected &&
                         "bg-accent font-medium text-accent-foreground",
                     )}
@@ -359,6 +362,11 @@ export function DiffFileDialog({
                       additions={sidebarFile.additions}
                       deletions={sidebarFile.deletions}
                       className="justify-self-end text-[11px]"
+                    />
+                    <span aria-hidden="true" />
+                    <DiffCommentCount
+                      count={commentCounts[sidebarFile.filename] ?? 0}
+                      className="text-[11px]"
                     />
                   </button>
                 </li>

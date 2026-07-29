@@ -44,3 +44,17 @@ export function selectDiffFeedbackThreads(
     return true;
   });
 }
+
+export function countDiffFeedbackMessagesByFile(
+  threads: DiffFeedbackThreadWire[],
+  files: DiffFileIdentity[],
+): Record<string, number> {
+  return Object.fromEntries(
+    files.map((file) => [
+      file.filename,
+      selectDiffFeedbackThreads(threads, files, {
+        path: file.filename,
+      }).reduce((sum, thread) => sum + thread.messages.length, 0),
+    ]),
+  );
+}

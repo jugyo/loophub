@@ -778,7 +778,7 @@ describe("DiffFileDialog", () => {
     });
     expect(
       Array.from(secondRow.children).map((child) => child.textContent),
-    ).toEqual(["A", "core/nested/b.ts", "+4−0"]);
+    ).toEqual(["A", "core/nested/b.ts", "+4−0", ""]);
     expect(secondRow.className).toContain("grid-cols-");
     const filename = within(secondRow).getByText("core/nested/b.ts");
     expect(filename.className).toContain("min-w-0");

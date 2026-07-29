@@ -15,6 +15,7 @@ import type {
   AgentSessionWire,
   CodingAgent as CodingAgentWire,
   CommentWire,
+  DiffFeedbackListWire,
   DiffFeedbackMessageWire,
   DiffFeedbackThreadWire,
   GithubPrStatusWire,
@@ -113,6 +114,7 @@ export type PullLineComment = ReviewCommentWire;
 /** A changed file with its unified-diff patch (GET .../pulls/{number}/files). */
 export type PullFile = DiffFile;
 export type PullDiff = PullDiffWire;
+export type DiffFeedbackList = DiffFeedbackListWire;
 export type DiffFeedbackThread = DiffFeedbackThreadWire;
 export type DiffFeedbackMessage = DiffFeedbackMessageWire;
 
