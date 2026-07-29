@@ -324,6 +324,8 @@ describe("DiffFileDialog", () => {
     fireEvent.change(screen.getByLabelText("Diff comment"), {
       target: { value: "Please keep these together" },
     });
+    fireEvent.keyDown(screen.getByLabelText("Diff comment"), { key: "Enter" });
+    expect(create).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
     await waitFor(() =>
       expect(create).toHaveBeenCalledWith(
@@ -334,6 +336,67 @@ describe("DiffFileDialog", () => {
           body: "Please keep these together",
         }),
       ),
+    );
+  });
+
+  it("posts a non-empty diff comment once with Cmd+Enter", async () => {
+    const create = vi.fn(() => ({
+      thread: feedbackThread(),
+      comment: {},
+    }));
+    renderDialog({
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: file.filename,
+              original_path: null,
+              status: file.status,
+              additions: file.additions,
+              deletions: file.deletions,
+              patch: file.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1 +1 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-const x = 0;",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+const x = 1;",
+                  left_line: null,
+                  right_line: 1,
+                },
+              ],
+            },
+          ],
+        }),
+        "diffFeedback/list": () => ({ threads: [] }),
+        "diffFeedback/create": create,
+      },
+    });
+
+    await addComment("New line 1");
+    const textarea = screen.getByLabelText("Diff comment");
+
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+    expect(create).not.toHaveBeenCalled();
+
+    fireEvent.change(textarea, { target: { value: "Keyboard feedback" } });
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "Keyboard feedback" }),
     );
   });
 

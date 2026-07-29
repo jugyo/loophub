@@ -1097,6 +1097,12 @@ function DiffCommentComposer({
         aria-label="Diff comment"
         value={body}
         onChange={(event) => onBodyChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && event.metaKey) {
+            event.preventDefault();
+            if (body.trim() && !busy) onSubmit();
+          }
+        }}
         className="min-h-20 w-full rounded-md border bg-background p-2 text-sm"
         placeholder="Leave a comment…"
       />

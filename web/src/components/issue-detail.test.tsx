@@ -635,6 +635,39 @@ describe("IssueDetail", () => {
     await waitFor(() => expect(textarea.value).toBe(""));
   });
 
+  it("posts a non-empty comment once with Cmd+Enter but not Enter alone", async () => {
+    renderDetail();
+
+    const textarea = (await screen.findByLabelText(
+      "Add a comment",
+    )) as HTMLTextAreaElement;
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(rpcCall("comments/create")).toBeUndefined();
+
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+    expect(rpcCall("comments/create")).toBeUndefined();
+
+    fireEvent.change(textarea, { target: { value: "Keyboard comment" } });
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+
+    await waitFor(() => {
+      const calls = (
+        fetch as unknown as ReturnType<typeof vi.fn>
+      ).mock.calls.filter((call) => {
+        const request = JSON.parse(
+          String((call[1] as RequestInit | undefined)?.body),
+        );
+        return request.method === "comments/create";
+      });
+      expect(calls).toHaveLength(1);
+      expect(
+        JSON.parse(String((calls[0][1] as RequestInit).body)).params.body,
+      ).toBe("Keyboard comment");
+    });
+    await waitFor(() => expect(textarea.value).toBe(""));
+  });
+
   it("shows Start workflow (and no Build) on an open issue with no linked PR", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);

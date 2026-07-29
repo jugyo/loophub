@@ -471,6 +471,12 @@ function CommentForm({
         placeholder="Add a comment (paste or drop an image to attach)"
         value={body}
         onChange={(e) => setBody(e.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && event.metaKey) {
+            event.preventDefault();
+            submit();
+          }
+        }}
         onPaste={image.onPaste}
         onDrop={image.onDrop}
         onDragOver={image.onDragOver}
