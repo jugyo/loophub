@@ -50,10 +50,6 @@ function renderDialog({
   file: dialogFile = file,
   files,
   comments = [],
-  hasPreviousFile = false,
-  hasNextFile = false,
-  onPreviousFile = () => {},
-  onNextFile = () => {},
   onSelectFile = () => {},
   onClose = () => {},
   handlers = {},
@@ -61,10 +57,6 @@ function renderDialog({
   file?: PullFile;
   files?: PullFile[];
   comments?: PullLineComment[];
-  hasPreviousFile?: boolean;
-  hasNextFile?: boolean;
-  onPreviousFile?: () => void;
-  onNextFile?: () => void;
   onSelectFile?: (filename: string) => void;
   onClose?: () => void;
   handlers?: Record<string, (params: any) => unknown>;
@@ -82,10 +74,6 @@ function renderDialog({
         files={files ?? [dialogFile]}
         file={dialogFile}
         comments={comments}
-        hasPreviousFile={hasPreviousFile}
-        hasNextFile={hasNextFile}
-        onPreviousFile={onPreviousFile}
-        onNextFile={onNextFile}
         onSelectFile={onSelectFile}
         onClose={onClose}
       />
@@ -249,20 +237,11 @@ describe("DiffFileDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("disables Prev/Next at the ends and fires navigation otherwise", () => {
-    const onPreviousFile = vi.fn();
-    const onNextFile = vi.fn();
-    renderDialog({ hasNextFile: true, onPreviousFile, onNextFile });
+  it("does not render previous or next file buttons", () => {
+    renderDialog();
 
-    const prev = screen.getByRole("button", { name: /Prev/i });
-    const next = screen.getByRole("button", { name: /Next/i });
-    expect((prev as HTMLButtonElement).disabled).toBe(true);
-    expect((next as HTMLButtonElement).disabled).toBe(false);
-
-    fireEvent.click(prev);
-    expect(onPreviousFile).not.toHaveBeenCalled();
-    fireEvent.click(next);
-    expect(onNextFile).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: /Prev/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Next/i })).toBeNull();
   });
 
   it("lists changed file details flat and selects a file from the sidebar", () => {
@@ -370,7 +349,7 @@ describe("DiffFileDialog", () => {
   });
 
   it("keeps the standard mode while navigating between files", () => {
-    const view = renderDialog({ hasNextFile: true });
+    const view = renderDialog();
 
     fireEvent.click(screen.getByRole("button", { name: "Raw" }));
     expect(
@@ -386,10 +365,6 @@ describe("DiffFileDialog", () => {
           files={[{ ...file, filename: "web/src/b.ts" }]}
           file={{ ...file, filename: "web/src/b.ts" }}
           comments={[]}
-          hasPreviousFile
-          hasNextFile={false}
-          onPreviousFile={() => {}}
-          onNextFile={() => {}}
           onSelectFile={() => {}}
           onClose={() => {}}
         />
@@ -493,8 +468,6 @@ describe("DiffFileDialog", () => {
     };
     renderDialog({
       file: mdFile,
-      hasPreviousFile: true,
-      hasNextFile: true,
       handlers: {
         "pulls/fileAtRef": (p) =>
           p.side === "base"
@@ -521,8 +494,6 @@ describe("DiffFileDialog", () => {
       "Head",
       "Unified",
       "Split",
-      "Prev",
-      "Next",
       "Close diff",
     ]);
 
@@ -644,7 +615,7 @@ describe("DiffFileDialog", () => {
       deletions: 1,
       patch: "@@ -1 +1 @@\n-# old\n+# new",
     };
-    const view = renderDialog({ file: mdFile, hasNextFile: true });
+    const view = renderDialog({ file: mdFile });
 
     fireEvent.click(screen.getByRole("button", { name: "Head" }));
     expect(
@@ -660,10 +631,6 @@ describe("DiffFileDialog", () => {
           files={[{ ...file, filename: "web/src/a.ts" }]}
           file={{ ...file, filename: "web/src/a.ts" }}
           comments={[]}
-          hasPreviousFile
-          hasNextFile
-          onPreviousFile={() => {}}
-          onNextFile={() => {}}
           onSelectFile={() => {}}
           onClose={() => {}}
         />
@@ -683,10 +650,6 @@ describe("DiffFileDialog", () => {
           files={[mdFile]}
           file={mdFile}
           comments={[]}
-          hasPreviousFile
-          hasNextFile
-          onPreviousFile={() => {}}
-          onNextFile={() => {}}
           onSelectFile={() => {}}
           onClose={() => {}}
         />

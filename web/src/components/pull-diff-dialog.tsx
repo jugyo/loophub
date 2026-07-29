@@ -1,10 +1,9 @@
 // PR-detail diff dialog: the full-size modal opened from a file summary row, showing one file's
 // diff with line comments plus Raw and (for Markdown) Base/Head rendered previews. The dialog owns
 // its own Escape handling, mode switching, per-mode file fetch, and the copy-path resolution for
-// renamed / invisible-character filenames. The Files changed section only picks the open file and
-// drives prev/next navigation through props.
+// renamed / invisible-character filenames. The Files changed section only picks the open file.
 
-import { ChevronLeft, ChevronRight, Filter, Loader2, X } from "lucide-react";
+import { Filter, Loader2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { PullFile, PullLineComment } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
@@ -148,10 +147,6 @@ export function DiffFileDialog({
   files,
   file,
   comments,
-  hasPreviousFile,
-  hasNextFile,
-  onPreviousFile,
-  onNextFile,
   onSelectFile,
   onClose,
 }: {
@@ -161,10 +156,6 @@ export function DiffFileDialog({
   files: PullFile[];
   file: PullFile;
   comments: PullLineComment[];
-  hasPreviousFile: boolean;
-  hasNextFile: boolean;
-  onPreviousFile: () => void;
-  onNextFile: () => void;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
@@ -442,19 +433,6 @@ export function DiffFileDialog({
                   </ModeButton>
                 </div>
               ) : null}
-              <div className="flex overflow-hidden rounded-md border text-xs">
-                <ModeButton
-                  disabled={!hasPreviousFile}
-                  onClick={onPreviousFile}
-                >
-                  <ChevronLeft className="size-3" />
-                  Prev
-                </ModeButton>
-                <ModeButton disabled={!hasNextFile} onClick={onNextFile}>
-                  Next
-                  <ChevronRight className="size-3" />
-                </ModeButton>
-              </div>
               <Button
                 variant="secondary"
                 size="sm"

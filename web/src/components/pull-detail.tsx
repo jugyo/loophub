@@ -587,14 +587,6 @@ function FilesChanged({
 }) {
   const [openFilename, setOpenFilename] = useState<string | null>(null);
   const openFile = files?.find((f) => f.filename === openFilename) ?? null;
-  const openFileIndex =
-    openFilename && files
-      ? files.findIndex((f) => f.filename === openFilename)
-      : -1;
-  const hasPreviousFile = openFileIndex > 0;
-  const hasNextFile = Boolean(
-    files && openFileIndex >= 0 && openFileIndex < files.length - 1,
-  );
   useEffect(() => {
     if (openFilename && files && !openFile) setOpenFilename(null);
   }, [files, openFile, openFilename]);
@@ -661,18 +653,6 @@ function FilesChanged({
               files={files}
               file={openFile}
               comments={byFile.get(openFile.filename) ?? []}
-              hasPreviousFile={hasPreviousFile}
-              hasNextFile={hasNextFile}
-              onPreviousFile={() => {
-                if (files && hasPreviousFile) {
-                  setOpenFilename(files[openFileIndex - 1].filename);
-                }
-              }}
-              onNextFile={() => {
-                if (files && hasNextFile) {
-                  setOpenFilename(files[openFileIndex + 1].filename);
-                }
-              }}
               onSelectFile={setOpenFilename}
               onClose={() => setOpenFilename(null)}
             />
