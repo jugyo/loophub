@@ -216,7 +216,15 @@ describe("DiffFileDialog", () => {
         .getByRole("button", { name: "Unified" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(container.querySelector("colgroup")).toBeNull();
+    const unifiedLine = screen.getByText("const x = 1;").closest("td");
+    expect(unifiedLine?.classList).toContain("whitespace-pre-wrap");
+    expect(unifiedLine?.classList).toContain("break-words");
+    const unifiedTable = unifiedLine?.closest("table");
+    expect(unifiedTable?.classList).toContain("table-fixed");
+    expect(unifiedTable?.querySelectorAll("colgroup col")).toHaveLength(3);
+    expect(unifiedTable?.parentElement?.classList).not.toContain(
+      "overflow-x-auto",
+    );
   });
 
   it("keeps a range selection and its thread across split and unified views", async () => {

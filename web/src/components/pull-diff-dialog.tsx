@@ -875,8 +875,13 @@ function UnifiedDiff({
   threadContent,
 }: DiffRenderProps) {
   return (
-    <div className="overflow-x-auto [container-type:inline-size]">
-      <table className="w-full border-collapse font-mono text-xs leading-5">
+    <div className="[container-type:inline-size]">
+      <table className="w-full table-fixed border-collapse font-mono text-xs leading-5">
+        <colgroup>
+          <col className="w-12" />
+          <col className="w-12" />
+          <col />
+        </colgroup>
         <tbody>
           {lines.map((line, index) => {
             const choices = selectable.get(index) ?? [];
@@ -925,7 +930,7 @@ function UnifiedDiff({
                   />
                   <td
                     className={cn(
-                      "whitespace-pre pr-4",
+                      "whitespace-pre-wrap break-words pr-4",
                       (leftAnchored || rightAnchored) &&
                         "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
                       (leftSelected || rightSelected) && "bg-blue-500/10",
