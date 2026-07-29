@@ -110,6 +110,17 @@ describe("AppLayout", () => {
     );
   });
 
+  it("reserves the detail pages' sticky header height as scroll padding (#2033)", async () => {
+    const { container } = renderLayout();
+    await screen.findByText("Dashboard route");
+
+    // Must match DetailStickyHeader's bar height (h-11), so an anchor jump inside the scroll
+    // area lands below the bar instead of underneath it.
+    expect(container.querySelector("main")?.className).toContain(
+      "scroll-pt-11",
+    );
+  });
+
   it("keeps the same status bar mounted across routes", async () => {
     const { router } = renderLayout();
     await screen.findByText("Dashboard route");

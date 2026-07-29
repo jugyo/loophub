@@ -42,10 +42,13 @@ export function AppLayout() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <RepoTopbar />
             <RepoHerdrWarning />
+            {/* scroll-pt-11 reserves the detail pages' sticky header height (#2033) at the top
+                of this scrollport, so anything scrolled to (an anchor jump, scrollIntoView)
+                lands below the bar instead of underneath it. */}
             <main
               ref={mainRef}
               data-debug-component="RouteContent"
-              className="min-h-0 flex-1 overflow-y-auto px-4 pt-6 sm:px-6"
+              className="min-h-0 flex-1 scroll-pt-11 overflow-y-auto px-4 pt-6 sm:px-6"
             >
               <Outlet />
             </main>

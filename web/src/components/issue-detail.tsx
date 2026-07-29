@@ -5,9 +5,12 @@
 
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Loader2, Square, Workflow } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
-import { DetailHeaderTitle } from "@/components/detail-title";
+import {
+  DetailHeaderTitle,
+  DetailStickyHeader,
+} from "@/components/detail-title";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
@@ -22,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { issueCanStartWork, stateBadge } from "@/lib/badges";
+import { issueBadges, issueCanStartWork, stateBadge } from "@/lib/badges";
 import {
   hasPlainShortcutModifiers,
   isEditableShortcutTarget,
@@ -52,6 +55,7 @@ export function IssueDetail({
   const navigate = useNavigate();
   const issueQuery = useIssue(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
+  const titleRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -93,30 +97,44 @@ export function IssueDetail({
   const issue = issueQuery.data;
 
   return (
-    <div
-      data-debug-component="IssueDetail"
-      className="mx-auto flex max-w-content flex-col gap-6"
-    >
-      <IssueHeader owner={owner} repo={repo} issue={issue} />
+    // The sticky header (#2033) sits outside the gap-6 column so its sticky box spans the
+    // whole page — inside the column it would unstick with the header block it belongs to.
+    <div data-debug-component="IssueDetail" className="mx-auto max-w-content">
+      <DetailStickyHeader
+        kind="Issue"
+        number={issue.number}
+        title={issue.title}
+        badges={issueBadges(issue)}
+        titleRef={titleRef}
+      />
 
-      <LinkedPullSummary owner={owner} repo={repo} issue={issue} />
-
-      <IssueHerdrSection owner={owner} repo={repo} issue={issue} />
-
-      <section
-        data-debug-component="IssueDiscussion"
-        className="flex flex-col gap-6 pb-6"
-      >
-        <CommentList
+      <div className="flex flex-col gap-6">
+        <IssueHeader
           owner={owner}
           repo={repo}
-          comments={commentsQuery.data}
-          isLoading={commentsQuery.isLoading}
-          isError={commentsQuery.isError}
+          issue={issue}
+          titleRef={titleRef}
         />
 
-        <CommentForm owner={owner} repo={repo} number={number} />
-      </section>
+        <LinkedPullSummary owner={owner} repo={repo} issue={issue} />
+
+        <IssueHerdrSection owner={owner} repo={repo} issue={issue} />
+
+        <section
+          data-debug-component="IssueDiscussion"
+          className="flex flex-col gap-6 pb-6"
+        >
+          <CommentList
+            owner={owner}
+            repo={repo}
+            comments={commentsQuery.data}
+            isLoading={commentsQuery.isLoading}
+            isError={commentsQuery.isError}
+          />
+
+          <CommentForm owner={owner} repo={repo} number={number} />
+        </section>
+      </div>
     </div>
   );
 }
@@ -125,10 +143,12 @@ function IssueHeader({
   owner,
   repo,
   issue,
+  titleRef,
 }: {
   owner: string;
   repo: string;
   issue: Issue;
+  titleRef: RefObject<HTMLDivElement | null>;
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
   const state = stateBadge(issue, "issues");
@@ -140,6 +160,7 @@ function IssueHeader({
         kind="Issue"
         number={issue.number}
         title={issue.title}
+        titleRef={titleRef}
       />
 
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

@@ -8,10 +8,13 @@
 
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Github, Loader2, UploadCloud } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
-import { DetailHeaderTitle } from "@/components/detail-title";
+import {
+  DetailHeaderTitle,
+  DetailStickyHeader,
+} from "@/components/detail-title";
 import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
@@ -74,6 +77,7 @@ export function PullDetail({
   const reviewsQuery = usePullReviews(owner, repo, number);
   const lineCommentsQuery = usePullComments(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
+  const titleRef = useRef<HTMLDivElement>(null);
   // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
   // otherwise, and the sidebar section is hidden anyway when github_pull is absent (#850).
   const githubStatusQuery = useGithubPrStatus(
@@ -116,72 +120,89 @@ export function PullDetail({
     // with the sibling pages (issue-detail, pull-list).
     <div
       data-debug-component="PullDetail"
-      className="mx-auto flex max-w-content flex-col gap-6 lg:max-w-content-wide lg:flex-row lg:items-start"
+      className="mx-auto max-w-content lg:max-w-content-wide"
     >
-      <div
-        data-debug-component="PullMainContent"
-        className="flex min-w-0 flex-1 flex-col gap-6"
-      >
-        {/* No key needed for feedback safety: operation-failure feedback now lives in the app-shell
+      {/* The sticky header (#2033) sits outside the column/row layout so its sticky box spans
+          the whole page — inside it, it would unstick with the header block it belongs to. */}
+      <DetailStickyHeader
+        kind="PR"
+        number={pull.number}
+        title={pull.title}
+        badges={pullDetailBadges(pull)}
+        titleRef={titleRef}
+      />
+
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div
+          data-debug-component="PullMainContent"
+          className="flex min-w-0 flex-1 flex-col gap-6"
+        >
+          {/* No key needed for feedback safety: operation-failure feedback now lives in the app-shell
             error banner (#323), which clears on route change, so a `Merge failed: …` error can no
             longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
-        <PullHeader owner={owner} repo={repo} pull={pull} />
-
-        <PullCommitsSection
-          owner={owner}
-          repo={repo}
-          number={number}
-          commits={pull.commits}
-          reviews={reviewsQuery.data}
-          lineComments={lineCommentsQuery.data}
-          isReviewsLoading={reviewsQuery.isLoading}
-          isReviewsError={reviewsQuery.isError}
-          showGithubPushState={!!pull.github_pull}
-        />
-        <FilesChanged
-          owner={owner}
-          repo={repo}
-          number={number}
-          files={filesQuery.data}
-          lineComments={lineCommentsQuery.data}
-          isLoading={filesQuery.isLoading}
-          isError={filesQuery.isError}
-        />
-
-        <CommentList
-          owner={owner}
-          repo={repo}
-          comments={commentsQuery.data}
-          isLoading={commentsQuery.isLoading}
-          isError={commentsQuery.isError}
-        />
-      </div>
-
-      <aside
-        data-debug-component="PullSidebar"
-        className="flex w-full shrink-0 flex-col gap-6 lg:w-80"
-      >
-        <PullHerdrSection owner={owner} repo={repo} pull={number} />
-        <WorkflowRunSection
-          owner={owner}
-          repo={repo}
-          number={number}
-          conflict={pull.mergeable_state === "conflict"}
-        />
-        <WorktreeSection value={pull.worktree_path} />
-        {/* GitHub PR status (#850): only for a PR with a linked GitHub PR. Fetched on demand;
-            loading/error live in the section. */}
-        {pull.github_pull ? (
-          <GithubPrStatusSection
-            githubPull={pull.github_pull}
-            status={githubStatusQuery.data}
-            isLoading={githubStatusQuery.isLoading}
+          <PullHeader
+            owner={owner}
+            repo={repo}
+            pull={pull}
+            titleRef={titleRef}
           />
-        ) : null}
-        {/* Work duration sits at the bottom of the sidebar (#627): a low-priority historical
+
+          <PullCommitsSection
+            owner={owner}
+            repo={repo}
+            number={number}
+            commits={pull.commits}
+            reviews={reviewsQuery.data}
+            lineComments={lineCommentsQuery.data}
+            isReviewsLoading={reviewsQuery.isLoading}
+            isReviewsError={reviewsQuery.isError}
+            showGithubPushState={!!pull.github_pull}
+          />
+          <FilesChanged
+            owner={owner}
+            repo={repo}
+            number={number}
+            files={filesQuery.data}
+            lineComments={lineCommentsQuery.data}
+            isLoading={filesQuery.isLoading}
+            isError={filesQuery.isError}
+          />
+
+          <CommentList
+            owner={owner}
+            repo={repo}
+            comments={commentsQuery.data}
+            isLoading={commentsQuery.isLoading}
+            isError={commentsQuery.isError}
+          />
+        </div>
+
+        <aside
+          data-debug-component="PullSidebar"
+          className="flex w-full shrink-0 flex-col gap-6 lg:w-80"
+        >
+          <PullHerdrSection owner={owner} repo={repo} pull={number} />
+          <WorkflowRunSection
+            owner={owner}
+            repo={repo}
+            number={number}
+            conflict={pull.mergeable_state === "conflict"}
+          />
+          <WorktreeSection value={pull.worktree_path} />
+          {/* GitHub PR status (#850): only for a PR with a linked GitHub PR. Fetched on demand;
+            loading/error live in the section. */}
+          {pull.github_pull ? (
+            <GithubPrStatusSection
+              githubPull={pull.github_pull}
+              status={githubStatusQuery.data}
+              isLoading={githubStatusQuery.isLoading}
+            />
+          ) : null}
+          {/* Work duration sits at the bottom of the sidebar (#627): a low-priority historical
             summary that ranks below the live Agents and Workflow run state above. */}
-        <WorkDuration workDuration={pull.work_duration} />
-      </aside>
+          <WorkDuration workDuration={pull.work_duration} />
+        </aside>
+      </div>
     </div>
   );
 }
@@ -249,10 +270,12 @@ function PullHeader({
   owner,
   repo,
   pull,
+  titleRef,
 }: {
   owner: string;
   repo: string;
   pull: PullRequest;
+  titleRef: RefObject<HTMLDivElement | null>;
 }) {
   const navigate = useNavigate();
   const merge = useMergePull(owner, repo, pull.number);
@@ -288,7 +311,12 @@ function PullHeader({
   return (
     <div data-debug-component="PullHeader" className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
-        <DetailHeaderTitle kind="PR" number={pull.number} title={pull.title} />
+        <DetailHeaderTitle
+          kind="PR"
+          number={pull.number}
+          title={pull.title}
+          titleRef={titleRef}
+        />
         <PullDebugMenu
           owner={owner}
           repo={repo}
