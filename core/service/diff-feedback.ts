@@ -3,6 +3,7 @@ import {
   linesForAnchor,
   parsePatchWithCoordinates,
 } from "../diff-anchor.ts";
+import { selectDiffFeedbackThreads } from "../diff-feedback-selection.ts";
 import { ServiceError } from "../errors.ts";
 import { diffFilesBetween, revParse } from "../git.ts";
 import { resolvePullBaseSha } from "../pull-base.ts";
@@ -88,11 +89,8 @@ async function threadJSON(
       end_line: thread.end_line,
     },
     freshness,
-    status: thread.status as "open" | "resolved",
     created_by: thread.created_by,
     created_at: thread.created_at,
-    resolved_by: thread.resolved_by,
-    resolved_at: thread.resolved_at,
     messages: S.listDiffFeedbackMessages(thread.id).map(
       diffFeedbackMessageJSON,
     ),
@@ -113,19 +111,22 @@ export const diffFeedback = {
   async list(
     name: string,
     number: number,
-    status: "open" | "resolved" | "all" = "open",
+    scope: { path?: string; orphaned?: boolean } = {},
   ) {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
-    if (!["open", "resolved", "all"].includes(status))
-      throw new ServiceError(422, "status must be open, resolved, or all");
     const pull = S.getPull(row.id)!;
-    return {
-      threads: await Promise.all(
-        S.listDiffFeedbackThreads(row.id, status).map((thread) =>
-          threadJSON(r.local_path, pull, thread),
-        ),
+    const pair = await currentPair(r.local_path, pull);
+    const files = pair
+      ? await diffFilesBetween(r.local_path, pair.baseSha, pair.headSha)
+      : [];
+    const threads = await Promise.all(
+      S.listDiffFeedbackThreads(row.id).map((thread) =>
+        threadJSON(r.local_path, pull, thread),
       ),
+    );
+    return {
+      threads: selectDiffFeedbackThreads(threads, files, scope),
     };
   },
 
@@ -149,7 +150,6 @@ export const diffFeedback = {
       side: string;
       startLine: number;
       endLine: number;
-      kind: string;
       body: string;
     },
     sessionId?: string | null,
@@ -165,8 +165,6 @@ export const diffFeedback = {
       );
     if (input.side !== "LEFT" && input.side !== "RIGHT")
       throw new ServiceError(422, "side must be LEFT or RIGHT");
-    if (input.kind !== "feedback" && input.kind !== "question")
-      throw new ServiceError(422, "kind must be feedback or question");
     if (!input.path || !input.body)
       throw new ServiceError(422, "path and body are required");
     const pair = await currentPair(r.local_path, pull);
@@ -209,20 +207,15 @@ export const diffFeedback = {
       endLine: input.endLine,
       actor,
     });
-    const request = S.createDiffFeedbackMessage(
-      thread.id,
-      actor,
-      input.kind,
-      input.body,
-    );
+    const comment = S.createDiffFeedbackMessage(thread.id, actor, input.body);
     S.emitEvent(r.id, "pull_request.diff_feedback_created", actor, {
       number,
       thread_id: thread.id,
-      request_message_id: request.id,
+      comment_id: comment.id,
     });
     return {
       thread: await threadJSON(r.local_path, pull, thread),
-      request: diffFeedbackMessageJSON(request),
+      comment: diffFeedbackMessageJSON(comment),
     };
   },
 
@@ -230,7 +223,6 @@ export const diffFeedback = {
     name: string,
     number: number,
     threadId: number,
-    requestMessageId: number,
     body: string,
     sessionId?: string | null,
   ) {
@@ -240,59 +232,16 @@ export const diffFeedback = {
     const pull = S.getPull(row.id)!;
     const thread = threadForPull(row.id, threadId);
     if (!body) throw new ServiceError(422, "body is required");
-    const request = S.getDiffFeedbackMessage(requestMessageId);
-    if (!request || request.thread_id !== thread.id || request.kind === "reply")
-      throw new ServiceError(
-        422,
-        "request message does not belong to this thread",
-      );
-    const existing = S.listDiffFeedbackMessages(thread.id).find(
-      (message) =>
-        message.kind === "reply" && message.reply_to_id === requestMessageId,
-    );
     const actor = actorFor(sessionId);
-    const reply =
-      existing ??
-      S.createDiffFeedbackMessage(
-        thread.id,
-        actor,
-        "reply",
-        body,
-        requestMessageId,
-      );
-    if (!existing)
-      S.emitEvent(r.id, "pull_request.diff_feedback_replied", actor, {
-        number,
-        thread_id: thread.id,
-        request_message_id: requestMessageId,
-        reply_message_id: reply.id,
-      });
+    const reply = S.createDiffFeedbackMessage(thread.id, actor, body);
+    S.emitEvent(r.id, "pull_request.diff_feedback_replied", actor, {
+      number,
+      thread_id: thread.id,
+      reply_message_id: reply.id,
+    });
     return {
       thread: await threadJSON(r.local_path, pull, thread),
       reply: diffFeedbackMessageJSON(reply),
     };
-  },
-
-  async setStatus(
-    name: string,
-    number: number,
-    threadId: number,
-    status: "open" | "resolved",
-    sessionId?: string | null,
-  ) {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const row = issueOr404(r, number, "pull");
-    const pull = S.getPull(row.id)!;
-    const thread = threadForPull(row.id, threadId);
-    if (thread.status === status) return threadJSON(r.local_path, pull, thread);
-    const actor = actorFor(sessionId);
-    const updated = S.setDiffFeedbackThreadStatus(thread.id, status, actor);
-    S.emitEvent(r.id, "pull_request.diff_feedback_updated", actor, {
-      number,
-      thread_id: thread.id,
-      status,
-    });
-    return threadJSON(r.local_path, pull, updated);
   },
 };

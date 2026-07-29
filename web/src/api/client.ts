@@ -11,6 +11,8 @@ import type {
   AgentSession,
   CodingAgent,
   DashboardOverview,
+  DiffFeedbackMessage,
+  DiffFeedbackThread,
   FileAtRef,
   GithubPrStatus,
   GithubPull,
@@ -23,6 +25,7 @@ import type {
   Label,
   LoopEvent,
   Notification,
+  PullDiff,
   PullFile,
   PullLineComment,
   PullRequest,
@@ -757,6 +760,81 @@ export function deletePull(
 
 export function listPullFiles(owner: string, repo: string, number: number) {
   return rpc<PullFile[]>("pulls/files", { repo: full(owner, repo), number });
+}
+
+export function getPullDiff(
+  owner: string,
+  repo: string,
+  number: number,
+  path?: string,
+) {
+  return rpc<PullDiff>(
+    "pulls/diff",
+    clean({ repo: full(owner, repo), number, path }),
+  );
+}
+
+export function listDiffFeedback(
+  owner: string,
+  repo: string,
+  number: number,
+  scope: { path?: string; orphaned?: boolean } = {},
+) {
+  return rpc<{ threads: DiffFeedbackThread[] }>(
+    "diffFeedback/list",
+    clean({
+      repo: full(owner, repo),
+      number,
+      path: scope.path,
+      orphaned: scope.orphaned,
+    }),
+  );
+}
+
+export function createDiffFeedback(
+  owner: string,
+  repo: string,
+  number: number,
+  input: {
+    base_sha: string;
+    head_sha: string;
+    path: string;
+    side: "LEFT" | "RIGHT";
+    start_line: number;
+    end_line: number;
+    body: string;
+  },
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ thread: DiffFeedbackThread; comment: DiffFeedbackMessage }>(
+    "diffFeedback/create",
+    {
+      repo: full(owner, repo),
+      number,
+      ...input,
+      session_id: sessionId,
+    },
+  );
+}
+
+export function replyDiffFeedback(
+  owner: string,
+  repo: string,
+  number: number,
+  threadId: number,
+  body: string,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ thread: DiffFeedbackThread; reply: DiffFeedbackMessage }>(
+    "diffFeedback/reply",
+    {
+      repo: full(owner, repo),
+      number,
+      thread_id: threadId,
+      body,
+      session_id: sessionId,
+    },
+  );
 }
 
 export function listPullCommitFiles(

@@ -12,15 +12,26 @@ import {
 } from "@testing-library/react";
 import postcss from "postcss";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockRpcFetch } from "@/api/rpc-mock";
-import type { PullFile, PullLineComment } from "@/api/types";
+import { mockRpcFetch, RpcFault } from "@/api/rpc-mock";
+import type {
+  DiffFeedbackThread,
+  PullFile,
+  PullLineComment,
+} from "@/api/types";
 
-import { DiffFileDialog } from "./pull-diff-dialog";
+import { DiffFeedbackHistory, DiffFileDialog } from "./pull-diff-dialog";
+
+const { showError } = vi.hoisted(() => ({ showError: vi.fn() }));
+
+vi.mock("@/components/toast", () => ({
+  useToast: () => ({ showError }),
+}));
 
 const typesetCss = readFileSync(resolve("src/typeset.css"), "utf8");
 
 afterEach(() => {
   cleanup();
+  showError.mockClear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -45,6 +56,37 @@ const lineComments: PullLineComment[] = [
     created_at: "2026-06-18T11:30:00Z",
   },
 ];
+
+function feedbackThread(
+  patch: Partial<DiffFeedbackThread> = {},
+): DiffFeedbackThread {
+  return {
+    id: 1,
+    pr_number: 30,
+    anchor: {
+      base_sha: "a".repeat(40),
+      head_sha: "b".repeat(40),
+      path: "web/src/a.ts",
+      original_path: null,
+      side: "RIGHT",
+      start_line: 1,
+      end_line: 2,
+    },
+    freshness: "current",
+    created_by: "reviewer",
+    created_at: "2026-07-28T00:00:00Z",
+    messages: [
+      {
+        id: 11,
+        thread_id: 1,
+        author: "reviewer",
+        body: "Please revisit this range.",
+        created_at: "2026-07-28T00:00:00Z",
+      },
+    ],
+    ...patch,
+  };
+}
 
 function renderDialog({
   file: dialogFile = file,
@@ -152,6 +194,439 @@ describe("DiffFileDialog", () => {
         .getAttribute("aria-pressed"),
     ).toBe("true");
     expect(container.querySelector("colgroup")).toBeNull();
+  });
+
+  it("keeps a range selection and its thread across split and unified views", async () => {
+    const create = vi.fn(() => ({
+      thread: {
+        id: 9,
+        pr_number: 30,
+        anchor: {
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          path: "web/src/a.ts",
+          original_path: null,
+          side: "RIGHT",
+          start_line: 1,
+          end_line: 2,
+        },
+        freshness: "current",
+        created_by: "me",
+        created_at: "2026-07-28T00:00:00Z",
+        messages: [],
+      },
+      comment: {},
+    }));
+    renderDialog({
+      file: {
+        ...file,
+        additions: 2,
+        patch: "@@ -1 +1,2 @@\n-old\n+new one\n+new two",
+      },
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "web/src/a.ts",
+              original_path: null,
+              status: "modified",
+              additions: 2,
+              deletions: 1,
+              patch: "@@ -1 +1,2 @@\n-old\n+new one\n+new two",
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1 +1,2 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-old",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+new one",
+                  left_line: null,
+                  right_line: 1,
+                },
+                {
+                  kind: "addition",
+                  text: "+new two",
+                  left_line: null,
+                  right_line: 2,
+                },
+              ],
+            },
+          ],
+        }),
+        "diffFeedback/list": () => ({ threads: [] }),
+        "diffFeedback/create": create,
+      },
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Select new line 1" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Select new line 2" }));
+    expect(screen.getByText("RIGHT 1–2")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+    expect(
+      screen
+        .getByRole("button", { name: "Select new line 1" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    fireEvent.change(screen.getByLabelText("Diff comment"), {
+      target: { value: "Please keep these together" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          side: "RIGHT",
+          start_line: 1,
+          end_line: 2,
+          body: "Please keep these together",
+        }),
+      ),
+    );
+  });
+
+  it("clears the selection and composer when navigating to another file", async () => {
+    const secondFile = {
+      ...file,
+      filename: "web/src/b.ts",
+    };
+    const handlers = {
+      "pulls/diff": (params: { path: string }) => ({
+        base_sha: "a".repeat(40),
+        head_sha: "b".repeat(40),
+        files: [
+          {
+            path: params.path,
+            original_path: null,
+            status: "modified",
+            additions: 1,
+            deletions: 1,
+            patch: file.patch,
+            lines: [
+              {
+                kind: "hunk",
+                text: "@@ -1 +1 @@",
+                left_line: null,
+                right_line: null,
+              },
+              {
+                kind: "deletion",
+                text: "-const x = 0;",
+                left_line: 1,
+                right_line: null,
+              },
+              {
+                kind: "addition",
+                text: "+const x = 1;",
+                left_line: null,
+                right_line: 1,
+              },
+            ],
+          },
+        ],
+      }),
+      "diffFeedback/list": () => ({ threads: [] }),
+    };
+    const view = renderDialog({ files: [file, secondFile], handlers });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Select new line 1" }),
+    );
+    fireEvent.change(screen.getByLabelText("Diff comment"), {
+      target: { value: "Comment for file A" },
+    });
+
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <DiffFileDialog
+          owner="me"
+          repo="proj"
+          number={30}
+          files={[file, secondFile]}
+          file={secondFile}
+          comments={[]}
+          hasPreviousFile
+          hasNextFile={false}
+          onPreviousFile={() => {}}
+          onNextFile={() => {}}
+          onSelectFile={() => {}}
+          onClose={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+
+    const secondFileLine = await screen.findByRole("button", {
+      name: "Select new line 1",
+    });
+    expect(secondFileLine.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByText("Comment for file A")).toBeNull();
+  });
+
+  it("selects a LEFT deletion plus context range and resets at a hunk boundary", async () => {
+    const patch =
+      "@@ -1,3 +1,2 @@\n same\n-removed\n tail\n@@ -10 +9 @@\n-old hunk\n+new hunk";
+    renderDialog({
+      file: { ...file, patch },
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "web/src/a.ts",
+              original_path: null,
+              status: "modified",
+              additions: 1,
+              deletions: 2,
+              patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1,3 +1,2 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "context",
+                  text: " same",
+                  left_line: 1,
+                  right_line: 1,
+                },
+                {
+                  kind: "deletion",
+                  text: "-removed",
+                  left_line: 2,
+                  right_line: null,
+                },
+                {
+                  kind: "context",
+                  text: " tail",
+                  left_line: 3,
+                  right_line: 2,
+                },
+                {
+                  kind: "hunk",
+                  text: "@@ -10 +9 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-old hunk",
+                  left_line: 10,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+new hunk",
+                  left_line: null,
+                  right_line: 9,
+                },
+              ],
+            },
+          ],
+        }),
+        "diffFeedback/list": () => ({ threads: [] }),
+      },
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Select old line 1" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Select old line 2" }));
+    expect(screen.getByText("LEFT 1–2")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select old line 10" }));
+    expect(screen.getByText("LEFT 10")).toBeTruthy();
+    expect(screen.queryByText("LEFT 1–2")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select new line 1" }));
+    expect(screen.getByText("RIGHT 1")).toBeTruthy();
+  });
+
+  it("renders one thread after its range in both modes and operates on it", async () => {
+    const reply = vi.fn(() => ({}));
+    const patch = "@@ -1 +1,2 @@\n-old\n+new one\n+new two";
+    const view = renderDialog({
+      file: { ...file, additions: 2, patch },
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "web/src/a.ts",
+              original_path: null,
+              status: "modified",
+              additions: 2,
+              deletions: 1,
+              patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1 +1,2 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-old",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+new one",
+                  left_line: null,
+                  right_line: 1,
+                },
+                {
+                  kind: "addition",
+                  text: "+new two",
+                  left_line: null,
+                  right_line: 2,
+                },
+              ],
+            },
+          ],
+        }),
+        "diffFeedback/list": () => ({ threads: [feedbackThread()] }),
+        "diffFeedback/reply": reply,
+      },
+    });
+
+    expect(await screen.findAllByLabelText("Diff thread 1")).toHaveLength(1);
+    expect(
+      view.container.querySelectorAll('[data-thread-anchor="true"]'),
+    ).toHaveLength(2);
+    expect(
+      screen.getByLabelText("Old line 1").hasAttribute("data-thread-anchor"),
+    ).toBe(false);
+    fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
+      target: { value: "Updated now" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+    await waitFor(() =>
+      expect(reply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thread_id: 1,
+          body: "Updated now",
+        }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+    expect(screen.getAllByLabelText("Diff thread 1")).toHaveLength(1);
+    expect(
+      view.container.querySelectorAll('[data-thread-anchor="true"]'),
+    ).toHaveLength(2);
+    expect(
+      screen.getByLabelText("Old line 1").hasAttribute("data-thread-anchor"),
+    ).toBe(false);
+    const threadRow = screen
+      .getByLabelText("Diff thread 1")
+      .closest("tr")?.previousElementSibling;
+    expect(within(threadRow as HTMLElement).getByText("new two")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
+      target: { value: "Also checked unified" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+    await waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
+  });
+
+  it("places deletion threads on the left and other threads on the right in split view", async () => {
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                side: "LEFT",
+                start_line: 1,
+                end_line: 1,
+              },
+            }),
+            feedbackThread({
+              id: 2,
+              anchor: {
+                ...feedbackThread().anchor,
+                side: "RIGHT",
+                start_line: 1,
+                end_line: 1,
+              },
+              messages: [
+                {
+                  id: 12,
+                  thread_id: 2,
+                  author: "reviewer",
+                  body: "Please check the replacement.",
+                  created_at: "2026-07-28T00:01:00Z",
+                },
+              ],
+            }),
+          ],
+        }),
+      },
+    });
+
+    const leftCell = (await screen.findByLabelText("Diff thread 1")).closest(
+      "td",
+    ) as HTMLTableCellElement;
+    const rightCell = screen
+      .getByLabelText("Diff thread 2")
+      .closest("td") as HTMLTableCellElement;
+
+    expect(leftCell.cellIndex).toBe(0);
+    expect(leftCell.colSpan).toBe(2);
+    expect(rightCell.cellIndex).toBe(1);
+    expect(rightCell.colSpan).toBe(2);
+  });
+
+  it("keeps a file-scoped historical conversation replyable", async () => {
+    const reply = vi.fn(() => ({}));
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              freshness: "outdated",
+              anchor: {
+                ...feedbackThread().anchor,
+                end_line: 1,
+              },
+            }),
+          ],
+        }),
+        "diffFeedback/reply": reply,
+      },
+    });
+
+    expect(await screen.findByText("outdated")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
+      target: { value: "Still relevant" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+    await waitFor(() =>
+      expect(reply).toHaveBeenCalledWith(
+        expect.objectContaining({ thread_id: 1, body: "Still relevant" }),
+      ),
+    );
   });
 
   it("lets a long diff shrink inside the dialog and scroll vertically", () => {
@@ -928,5 +1403,93 @@ describe("DiffFileDialog", () => {
     });
 
     expect(writeText).toHaveBeenCalledWith("docs/readme\\u{e0100}install.md");
+  });
+});
+
+describe("DiffFeedbackHistory", () => {
+  it("shows a visible error when previous threads cannot be loaded", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "diffFeedback/list": () => {
+          throw new RpcFault(500, "database unavailable");
+        },
+      }),
+    );
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <DiffFeedbackHistory owner="me" repo="proj" number={30} />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        "Failed to load previous diff threads. database unavailable",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows orphaned conversations beside an empty or non-empty diff", async () => {
+    const list = vi.fn(() => ({
+      threads: [
+        feedbackThread({
+          id: 7,
+          anchor: {
+            base_sha: "a".repeat(40),
+            head_sha: "b".repeat(40),
+            path: "removed.ts",
+            original_path: null,
+            side: "LEFT",
+            start_line: 2,
+            end_line: 3,
+          },
+          freshness: "unavailable",
+          created_by: "reviewer",
+          created_at: "2026-07-28T00:00:00Z",
+          messages: [
+            {
+              id: 11,
+              thread_id: 7,
+              author: "reviewer",
+              body: "This conversation remains visible.",
+              created_at: "2026-07-28T00:00:00Z",
+            },
+          ],
+        }),
+      ],
+    }));
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "diffFeedback/list": list,
+      }),
+    );
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <div>
+          <p>No diff.</p>
+          <DiffFeedbackHistory owner="me" repo="proj" number={30} />
+        </div>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("No diff.")).toBeTruthy();
+    expect(await screen.findByText("unavailable")).toBeTruthy();
+    expect(
+      await screen.findByText("This conversation remains visible."),
+    ).toBeTruthy();
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({ orphaned: true }),
+    );
+    expect(screen.queryByRole("button", { name: "Resolve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reopen" })).toBeNull();
+    expect(screen.queryByText("Pending")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /submit (review|comments)/i }),
+    ).toBeNull();
   });
 });

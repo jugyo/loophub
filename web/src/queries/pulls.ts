@@ -4,11 +4,14 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  createDiffFeedback,
   deletePull,
   getGithubPrStatus,
   getPull,
   getPullDebug,
+  getPullDiff,
   getPullFileAtRef,
+  listDiffFeedback,
   listPullComments,
   listPullCommitFiles,
   listPullFiles,
@@ -16,6 +19,7 @@ import {
   mergePull,
   patchPull,
   pushGithubPull,
+  replyDiffFeedback,
 } from "@/api/client";
 import type { PullRequest } from "@/api/types";
 import { queryKeys } from "./keys";
@@ -53,6 +57,67 @@ export function usePullFiles(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: [...queryKeys.pull(full(owner, repo), number), "files"],
     queryFn: () => listPullFiles(owner, repo, number),
+  });
+}
+
+const feedbackKey = (owner: string, repo: string, number: number) => [
+  ...queryKeys.pull(full(owner, repo), number),
+  "diffFeedback",
+];
+
+export function usePullDiff(
+  owner: string,
+  repo: string,
+  number: number,
+  path: string,
+) {
+  return useQuery({
+    queryKey: [
+      ...queryKeys.pull(full(owner, repo), number),
+      "stableDiff",
+      path,
+    ],
+    queryFn: () => getPullDiff(owner, repo, number, path),
+  });
+}
+
+export function useDiffFeedback(
+  owner: string,
+  repo: string,
+  number: number,
+  scope: { path?: string; orphaned?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: [...feedbackKey(owner, repo, number), scope],
+    queryFn: () => listDiffFeedback(owner, repo, number, scope),
+  });
+}
+
+export function useCreateDiffFeedback(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof createDiffFeedback>[3]) =>
+      createDiffFeedback(owner, repo, number, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: feedbackKey(owner, repo, number) }),
+  });
+}
+
+export function useReplyDiffFeedback(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { threadId: number; body: string }) =>
+      replyDiffFeedback(owner, repo, number, input.threadId, input.body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: feedbackKey(owner, repo, number) }),
   });
 }
 

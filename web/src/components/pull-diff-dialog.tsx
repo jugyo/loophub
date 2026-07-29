@@ -4,20 +4,46 @@
 // renamed / invisible-character filenames. The Files changed section only picks the open file.
 
 import { Filter, Loader2, X } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import type { PullFile, PullLineComment } from "@/api/types";
+import {
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type {
+  DiffFeedbackThread,
+  PullDiff,
+  PullFile,
+  PullLineComment,
+} from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
 import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
 import { Markdown } from "@/components/markdown";
+import { useToast } from "@/components/toast";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
   type DiffLineKind,
   type PositionedDiffLine,
   parsePositionedPatch,
 } from "@/lib/diff";
+import {
+  type DiffSelection,
+  extendSelection,
+  selectableLines,
+  selectionContains,
+} from "@/lib/diff-feedback";
+import { errorMessage } from "@/lib/error-message";
 import { cn } from "@/lib/utils";
-import { usePullFileAtRef } from "@/queries/pulls";
+import {
+  useCreateDiffFeedback,
+  useDiffFeedback,
+  usePullDiff,
+  usePullFileAtRef,
+  useReplyDiffFeedback,
+} from "@/queries/pulls";
 
 // Markdown files can also switch the same diff dialog to base/head rendered previews.
 const MARKDOWN_FILENAME = /\.(md|markdown)$/i;
@@ -445,6 +471,7 @@ export function DiffFileDialog({
           </header>
           <div className="min-w-0 flex-1 overflow-auto">
             <FileDiffContent
+              key={copyFilename(file)}
               owner={owner}
               repo={repo}
               number={number}
@@ -507,6 +534,27 @@ function FileDiffContent({
   mode: DiffDialogMode;
   diffViewMode: DiffViewMode;
 }) {
+  const path = copyFilename(file);
+  const diff = usePullDiff(owner, repo, number, path);
+  const feedback = useDiffFeedback(owner, repo, number, { path });
+  const create = useCreateDiffFeedback(owner, repo, number);
+  const reply = useReplyDiffFeedback(owner, repo, number);
+  const { showError } = useToast();
+  const [selection, setSelection] = useState<DiffSelection | null>(null);
+  const [body, setBody] = useState("");
+  const stableFile = Array.isArray(diff.data?.files)
+    ? diff.data.files[0]
+    : undefined;
+  const fileThreads = Array.isArray(feedback.data?.threads)
+    ? feedback.data.threads
+    : [];
+  const currentThreads = fileThreads.filter(
+    (thread) => thread.freshness === "current",
+  );
+  const historicalThreads = fileThreads.filter(
+    (thread) => thread.freshness !== "current",
+  );
+
   if (mode === "raw") {
     return (
       <RawFilePane
@@ -532,7 +580,127 @@ function FileDiffContent({
 
   return (
     <div data-debug-component="FileDiffContent">
-      <DialogDiff patch={file.patch} viewMode={diffViewMode} />
+      {diff.isError || feedback.isError ? (
+        <div className="m-2 rounded-md border border-destructive/50 bg-destructive/5 p-2 text-sm text-destructive">
+          Failed to load diff feedback.
+        </div>
+      ) : null}
+      <DialogDiff
+        patch={file.patch}
+        stableLines={stableFile?.lines}
+        viewMode={diffViewMode}
+        selection={selection}
+        threads={currentThreads}
+        onSelect={(line) =>
+          setSelection((current) => extendSelection(current, line))
+        }
+        threadContent={(thread) => (
+          <ThreadCard
+            owner={owner}
+            repo={repo}
+            thread={thread}
+            busy={reply.isPending}
+            onReply={(replyBody) =>
+              reply.mutate(
+                {
+                  threadId: thread.id,
+                  body: replyBody,
+                },
+                {
+                  onError: (error) =>
+                    showError(errorMessage(error, "Reply failed")),
+                },
+              )
+            }
+          />
+        )}
+      />
+      {selection && stableFile && diff.data ? (
+        <div className="m-2 rounded-md border bg-background p-3">
+          <div className="mb-2 text-xs font-medium">
+            {selection.side} {selection.startLine}
+            {selection.endLine === selection.startLine
+              ? ""
+              : `–${selection.endLine}`}
+          </div>
+          <div className="flex gap-2">
+            <textarea
+              aria-label="Diff comment"
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              className="min-h-20 flex-1 rounded-md border bg-background p-2 text-sm"
+              placeholder="Leave a comment…"
+            />
+          </div>
+          <div className="mt-2 flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setSelection(null);
+                setBody("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!body.trim() || create.isPending}
+              onClick={() =>
+                create.mutate(
+                  {
+                    base_sha: diff.data.base_sha,
+                    head_sha: diff.data.head_sha,
+                    path: stableFile.path,
+                    side: selection.side,
+                    start_line: selection.startLine,
+                    end_line: selection.endLine,
+                    body: body.trim(),
+                  },
+                  {
+                    onSuccess: () => {
+                      setSelection(null);
+                      setBody("");
+                    },
+                    onError: (error) =>
+                      showError(errorMessage(error, "Create failed")),
+                  },
+                )
+              }
+            >
+              Comment
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {historicalThreads.length > 0 ? (
+        <section className="m-2 space-y-2" aria-label="Previous diff threads">
+          <h4 className="text-xs font-semibold text-muted-foreground">
+            Previous diff threads
+          </h4>
+          {historicalThreads.map((thread) => (
+            <ThreadCard
+              key={thread.id}
+              owner={owner}
+              repo={repo}
+              thread={thread}
+              busy={reply.isPending}
+              onReply={(replyBody) =>
+                reply.mutate(
+                  {
+                    threadId: thread.id,
+                    body: replyBody,
+                  },
+                  {
+                    onError: (error) =>
+                      showError(errorMessage(error, "Reply failed")),
+                  },
+                )
+              }
+            />
+          ))}
+        </section>
+      ) : null}
       {comments.map((c) => (
         <div key={c.id} className="m-2 rounded-md border bg-muted/20 p-2">
           <div className="mb-1 text-xs">
@@ -552,12 +720,27 @@ function FileDiffContent({
 
 function DialogDiff({
   patch,
+  stableLines,
   viewMode,
+  selection,
+  threads,
+  onSelect,
+  threadContent,
 }: {
   patch: string | undefined | null;
+  stableLines: PullDiff["files"][number]["lines"] | undefined;
   viewMode: DiffViewMode;
+  selection: DiffSelection | null;
+  threads: DiffFeedbackThread[];
+  onSelect: (line: {
+    side: "LEFT" | "RIGHT";
+    line: number;
+    hunk: number;
+  }) => void;
+  threadContent: (thread: DiffFeedbackThread) => ReactNode;
 }) {
   const lines = parsePositionedPatch(patch);
+  const selectable = selectableLines(stableLines ?? []);
   if (lines.length === 0) {
     return (
       <p className="px-3 py-2 text-xs text-muted-foreground">
@@ -566,43 +749,157 @@ function DialogDiff({
     );
   }
   return viewMode === "unified" ? (
-    <UnifiedDiff lines={lines} />
+    <UnifiedDiff
+      lines={lines}
+      selectable={selectable}
+      selection={selection}
+      threads={threads}
+      onSelect={onSelect}
+      threadContent={threadContent}
+    />
   ) : (
-    <SplitDiff lines={lines} />
+    <SplitDiff
+      lines={lines}
+      selectable={selectable}
+      selection={selection}
+      threads={threads}
+      onSelect={onSelect}
+      threadContent={threadContent}
+    />
   );
 }
 
-function UnifiedDiff({ lines }: { lines: PositionedDiffLine[] }) {
+type DiffRenderProps = {
+  lines: PositionedDiffLine[];
+  selectable: Map<
+    number,
+    { side: "LEFT" | "RIGHT"; line: number; hunk: number }[]
+  >;
+  selection: DiffSelection | null;
+  threads: DiffFeedbackThread[];
+  onSelect: (line: {
+    side: "LEFT" | "RIGHT";
+    line: number;
+    hunk: number;
+  }) => void;
+  threadContent: (thread: DiffFeedbackThread) => ReactNode;
+};
+
+function threadsEndingAt(
+  threads: DiffFeedbackThread[],
+  line: PositionedDiffLine,
+) {
+  return threads.filter((thread) => {
+    const coordinate =
+      thread.anchor.side === "LEFT" ? line.oldLine : line.newLine;
+    return coordinate === thread.anchor.end_line;
+  });
+}
+
+function threadAnchorsLine(
+  threads: DiffFeedbackThread[],
+  side: "LEFT" | "RIGHT",
+  line: number | null,
+) {
+  return (
+    line != null &&
+    threads.some(
+      (thread) =>
+        thread.anchor.side === side &&
+        line >= thread.anchor.start_line &&
+        line <= thread.anchor.end_line,
+    )
+  );
+}
+
+function UnifiedDiff({
+  lines,
+  selectable,
+  selection,
+  threads,
+  onSelect,
+  threadContent,
+}: DiffRenderProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse font-mono text-xs leading-5">
         <tbody>
-          {lines.map((line, index) => (
-            <tr
-              key={`${line.oldLine}:${line.newLine}:${index}`}
-              className={DIFF_LINE_CLASS[line.kind]}
-              data-line-kind={line.kind}
-            >
-              <LineNumber line={line.oldLine} label="Old" />
-              <LineNumber line={line.newLine} label="New" />
-              <td className="whitespace-pre pr-4">
-                <span
-                  aria-hidden="true"
-                  className="inline-block w-5 select-none text-center"
+          {lines.map((line, index) => {
+            const choices = selectable.get(index) ?? [];
+            const ending = threadsEndingAt(threads, line);
+            const leftAnchored = threadAnchorsLine(
+              threads,
+              "LEFT",
+              line.oldLine,
+            );
+            const rightAnchored = threadAnchorsLine(
+              threads,
+              "RIGHT",
+              line.newLine,
+            );
+            return (
+              <Fragment key={`${line.oldLine}:${line.newLine}:${index}`}>
+                <tr
+                  className={DIFF_LINE_CLASS[line.kind]}
+                  data-line-kind={line.kind}
                 >
-                  {DIFF_LINE_MARKER[line.kind]}
-                </span>
-                {lineContent(line) || " "}
-              </td>
-            </tr>
-          ))}
+                  <LineNumber
+                    line={line.oldLine}
+                    label="Old"
+                    choice={choices.find((choice) => choice.side === "LEFT")}
+                    selected={selectionContains(
+                      selection,
+                      "LEFT",
+                      line.oldLine,
+                    )}
+                    anchored={leftAnchored}
+                    onSelect={onSelect}
+                  />
+                  <LineNumber
+                    line={line.newLine}
+                    label="New"
+                    choice={choices.find((choice) => choice.side === "RIGHT")}
+                    selected={selectionContains(
+                      selection,
+                      "RIGHT",
+                      line.newLine,
+                    )}
+                    anchored={rightAnchored}
+                    onSelect={onSelect}
+                  />
+                  <td
+                    className={cn(
+                      "whitespace-pre pr-4",
+                      (leftAnchored || rightAnchored) &&
+                        "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="inline-block w-5 select-none text-center"
+                    >
+                      {DIFF_LINE_MARKER[line.kind]}
+                    </span>
+                    {lineContent(line) || " "}
+                  </td>
+                </tr>
+                {ending.map((thread) => (
+                  <tr key={`thread:${thread.id}`}>
+                    <td colSpan={3}>{threadContent(thread)}</td>
+                  </tr>
+                ))}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
-function SplitDiff({ lines }: { lines: PositionedDiffLine[] }) {
+function SplitDiff(props: DiffRenderProps) {
+  const { lines, selectable, selection, threads, onSelect, threadContent } =
+    props;
   return (
     <div className="overflow-x-auto">
       <table className="w-full table-fixed border-collapse font-mono text-xs leading-5">
@@ -625,18 +922,62 @@ function SplitDiff({ lines }: { lines: PositionedDiffLine[] }) {
                 </td>
               </tr>
             ) : (
-              <tr key={`line:${index}`}>
-                <SplitLine
-                  line={row.left}
-                  markers={row.leftMarkers}
-                  side="old"
-                />
-                <SplitLine
-                  line={row.right}
-                  markers={row.rightMarkers}
-                  side="new"
-                />
-              </tr>
+              <Fragment key={`line:${index}`}>
+                <tr>
+                  <SplitLine
+                    line={row.left}
+                    markers={row.leftMarkers}
+                    side="old"
+                    selection={selection}
+                    selectable={selectable}
+                    sourceIndex={row.left ? lines.indexOf(row.left) : null}
+                    anchored={
+                      row.left
+                        ? threadAnchorsLine(threads, "LEFT", row.left.oldLine)
+                        : false
+                    }
+                    onSelect={onSelect}
+                  />
+                  <SplitLine
+                    line={row.right}
+                    markers={row.rightMarkers}
+                    side="new"
+                    selection={selection}
+                    selectable={selectable}
+                    sourceIndex={row.right ? lines.indexOf(row.right) : null}
+                    anchored={
+                      row.right
+                        ? threadAnchorsLine(threads, "RIGHT", row.right.newLine)
+                        : false
+                    }
+                    onSelect={onSelect}
+                  />
+                </tr>
+                {[
+                  ...(row.left ? threadsEndingAt(threads, row.left) : []),
+                  ...(row.right
+                    ? threadsEndingAt(threads, row.right).filter(
+                        (thread) => thread.anchor.side === "RIGHT",
+                      )
+                    : []),
+                ]
+                  .filter(
+                    (thread, threadIndex, all) =>
+                      all.findIndex((item) => item.id === thread.id) ===
+                      threadIndex,
+                  )
+                  .map((thread) => (
+                    <tr key={`thread:${thread.id}`}>
+                      {thread.anchor.side === "RIGHT" ? (
+                        <td colSpan={2} aria-hidden="true" />
+                      ) : null}
+                      <td colSpan={2}>{threadContent(thread)}</td>
+                      {thread.anchor.side === "LEFT" ? (
+                        <td colSpan={2} aria-hidden="true" />
+                      ) : null}
+                    </tr>
+                  ))}
+              </Fragment>
             ),
           )}
         </tbody>
@@ -648,16 +989,46 @@ function SplitDiff({ lines }: { lines: PositionedDiffLine[] }) {
 function LineNumber({
   line,
   label,
+  choice,
+  selected,
+  anchored,
+  onSelect,
 }: {
   line: number | null;
   label: "Old" | "New";
+  choice?: { side: "LEFT" | "RIGHT"; line: number; hunk: number };
+  selected: boolean;
+  anchored: boolean;
+  onSelect: (line: {
+    side: "LEFT" | "RIGHT";
+    line: number;
+    hunk: number;
+  }) => void;
 }) {
   return (
     <td
       aria-label={line === null ? undefined : `${label} line ${line}`}
-      className="w-12 select-none border-r px-2 text-right text-muted-foreground/70"
+      className={cn(
+        "w-12 select-none border-r text-right text-muted-foreground/70",
+        anchored &&
+          "bg-amber-500/15 text-amber-800 shadow-[inset_3px_0_0_0] shadow-amber-500/70 dark:text-amber-200",
+        selected && "bg-blue-500/20 text-foreground",
+      )}
+      data-thread-anchor={anchored || undefined}
     >
-      {line}
+      {choice ? (
+        <button
+          type="button"
+          className="h-full w-full px-2 text-right hover:bg-blue-500/15"
+          aria-label={`Select ${label.toLowerCase()} line ${line}`}
+          aria-pressed={selected}
+          onClick={() => onSelect(choice)}
+        >
+          {line}
+        </button>
+      ) : (
+        line
+      )}
     </td>
   );
 }
@@ -666,16 +1037,34 @@ function SplitLine({
   line,
   markers = [],
   side,
+  selection,
+  selectable,
+  sourceIndex,
+  anchored,
+  onSelect,
 }: {
   line: PositionedDiffLine | null;
   markers?: PositionedDiffLine[];
   side: "old" | "new";
+  selection: DiffSelection | null;
+  selectable: DiffRenderProps["selectable"];
+  sourceIndex: number | null;
+  anchored: boolean;
+  onSelect: DiffRenderProps["onSelect"];
 }) {
   const lineNumber = line
     ? side === "old"
       ? line.oldLine
       : line.newLine
     : null;
+  const feedbackSide = side === "old" ? "LEFT" : "RIGHT";
+  const choice =
+    sourceIndex == null
+      ? undefined
+      : selectable
+          .get(sourceIndex)
+          ?.find((candidate) => candidate.side === feedbackSide);
+  const selected = selectionContains(selection, feedbackSide, lineNumber);
   return (
     <>
       <td
@@ -685,15 +1074,36 @@ function SplitLine({
             : `${side === "old" ? "Old" : "New"} line ${lineNumber}`
         }
         className={cn(
-          "w-12 select-none border-r px-2 text-right text-muted-foreground/70",
+          "w-12 select-none border-r text-right text-muted-foreground/70",
           line && DIFF_LINE_CLASS[line.kind],
           side === "new" && "border-l",
+          anchored &&
+            "bg-amber-500/15 text-amber-800 shadow-[inset_3px_0_0_0] shadow-amber-500/70 dark:text-amber-200",
+          selected && "bg-blue-500/20 text-foreground",
         )}
+        data-thread-anchor={anchored || undefined}
       >
-        {lineNumber}
+        {choice ? (
+          <button
+            type="button"
+            className="h-full w-full px-2 text-right hover:bg-blue-500/15"
+            aria-label={`Select ${side} line ${lineNumber}`}
+            aria-pressed={selected}
+            onClick={() => onSelect(choice)}
+          >
+            {lineNumber}
+          </button>
+        ) : (
+          lineNumber
+        )}
       </td>
       <td
-        className={cn("min-w-0", line && DIFF_LINE_CLASS[line.kind])}
+        className={cn(
+          "min-w-0",
+          line && DIFF_LINE_CLASS[line.kind],
+          anchored &&
+            "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
+        )}
         data-line-kind={line?.kind}
       >
         {line ? (
@@ -790,6 +1200,131 @@ function lineContent(line: PositionedDiffLine) {
   return line.kind === "add" || line.kind === "del" || line.kind === "context"
     ? line.text.slice(1)
     : line.text;
+}
+
+export function DiffFeedbackHistory({
+  owner,
+  repo,
+  number,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  const feedback = useDiffFeedback(owner, repo, number, { orphaned: true });
+  const reply = useReplyDiffFeedback(owner, repo, number);
+  const { showError } = useToast();
+  const historical = feedback.data?.threads ?? [];
+  if (feedback.isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Loading previous threads…
+      </div>
+    );
+  }
+  if (feedback.isError) {
+    return (
+      <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+        Failed to load previous diff threads.
+        {feedback.error instanceof Error ? ` ${feedback.error.message}` : null}
+      </div>
+    );
+  }
+  if (historical.length === 0) return null;
+  return (
+    <section className="space-y-2" aria-label="Previous diff threads">
+      <h3 className="text-sm font-semibold">Previous diff threads</h3>
+      {historical.map((thread) => (
+        <ThreadCard
+          key={thread.id}
+          owner={owner}
+          repo={repo}
+          thread={thread}
+          busy={reply.isPending}
+          onReply={(body) =>
+            reply.mutate(
+              { threadId: thread.id, body },
+              {
+                onError: (error) =>
+                  showError(errorMessage(error, "Reply failed")),
+              },
+            )
+          }
+        />
+      ))}
+    </section>
+  );
+}
+
+function ThreadCard({
+  owner,
+  repo,
+  thread,
+  busy,
+  onReply,
+}: {
+  owner: string;
+  repo: string;
+  thread: DiffFeedbackThread;
+  busy: boolean;
+  onReply: (body: string) => void;
+}) {
+  const [replyBody, setReplyBody] = useState("");
+  return (
+    <article
+      className="m-2 rounded-md border bg-background p-3 font-sans text-sm"
+      aria-label={`Diff thread ${thread.id}`}
+    >
+      <header className="mb-2 flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold">@{thread.created_by}</span>
+          {thread.freshness !== "current" ? (
+            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">
+              {thread.freshness}
+            </span>
+          ) : null}
+        </div>
+        <span className="text-muted-foreground">
+          {thread.anchor.side} {thread.anchor.start_line}
+          {thread.anchor.end_line === thread.anchor.start_line
+            ? ""
+            : `–${thread.anchor.end_line}`}
+        </span>
+      </header>
+      <div className="space-y-2">
+        {thread.messages.map((message) => (
+          <div key={message.id} className="rounded-md bg-muted/20 p-2">
+            <div className="mb-1 text-xs text-muted-foreground">
+              @{message.author}
+            </div>
+            <Markdown owner={owner} repo={repo}>
+              {message.body}
+            </Markdown>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex items-end gap-2">
+        <textarea
+          aria-label={`Reply to thread ${thread.id}`}
+          value={replyBody}
+          onChange={(event) => setReplyBody(event.target.value)}
+          className="min-h-16 flex-1 rounded-md border bg-background p-2 text-sm"
+          placeholder="Reply…"
+        />
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={!replyBody.trim() || busy}
+          onClick={() => {
+            onReply(replyBody.trim());
+            setReplyBody("");
+          }}
+        >
+          Reply
+        </Button>
+      </div>
+    </article>
+  );
 }
 
 function RawFilePane({

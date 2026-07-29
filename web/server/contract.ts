@@ -841,9 +841,12 @@ export const methods: Record<string, MethodDef> = {
   "pulls/diff": {
     description:
       "Get a stable PR diff with its exact commit pair and line coordinates.",
-    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    params: params({ repo, number: positiveInt, path: str }, [
+      "repo",
+      "number",
+    ]),
     result: anyObject,
-    handler: (p) => svc.pulls.diff(p.repo, p.number),
+    handler: (p) => svc.pulls.diff(p.repo, p.number, p.path),
   },
   "diffFeedback/list": {
     description: "List diff feedback threads for a pull request.",
@@ -851,12 +854,17 @@ export const methods: Record<string, MethodDef> = {
       {
         repo,
         number: positiveInt,
-        status: { enum: ["open", "resolved", "all"] },
+        path: str,
+        orphaned: { type: "boolean" },
       },
       ["repo", "number"],
     ),
     result: anyObject,
-    handler: (p) => svc.diffFeedback.list(p.repo, p.number, p.status ?? "open"),
+    handler: (p) =>
+      svc.diffFeedback.list(p.repo, p.number, {
+        path: p.path,
+        orphaned: p.orphaned,
+      }),
   },
   "diffFeedback/get": {
     description: "Get one diff feedback thread.",
@@ -880,7 +888,6 @@ export const methods: Record<string, MethodDef> = {
         side: { enum: ["LEFT", "RIGHT"] },
         start_line: positiveInt,
         end_line: positiveInt,
-        kind: { enum: ["feedback", "question"] },
         body: strNonEmpty,
         session_id: sid,
       },
@@ -893,7 +900,6 @@ export const methods: Record<string, MethodDef> = {
         "side",
         "start_line",
         "end_line",
-        "kind",
         "body",
       ],
     ),
@@ -909,24 +915,22 @@ export const methods: Record<string, MethodDef> = {
           side: p.side,
           startLine: p.start_line,
           endLine: p.end_line,
-          kind: p.kind,
           body: p.body,
         },
         p.session_id,
       ),
   },
   "diffFeedback/reply": {
-    description: "Reply to a request in a diff feedback thread.",
+    description: "Reply in a diff feedback conversation.",
     params: params(
       {
         repo,
         number: positiveInt,
         thread_id: positiveInt,
-        request_message_id: positiveInt,
         body: strNonEmpty,
         session_id: sid,
       },
-      ["repo", "number", "thread_id", "request_message_id", "body"],
+      ["repo", "number", "thread_id", "body"],
     ),
     result: anyObject,
     handler: (p) =>
@@ -934,40 +938,7 @@ export const methods: Record<string, MethodDef> = {
         p.repo,
         p.number,
         p.thread_id,
-        p.request_message_id,
         p.body,
-        p.session_id,
-      ),
-  },
-  "diffFeedback/resolve": {
-    description: "Resolve a diff feedback thread.",
-    params: params(
-      { repo, number: positiveInt, thread_id: positiveInt, session_id: sid },
-      ["repo", "number", "thread_id"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.diffFeedback.setStatus(
-        p.repo,
-        p.number,
-        p.thread_id,
-        "resolved",
-        p.session_id,
-      ),
-  },
-  "diffFeedback/reopen": {
-    description: "Reopen a resolved diff feedback thread.",
-    params: params(
-      { repo, number: positiveInt, thread_id: positiveInt, session_id: sid },
-      ["repo", "number", "thread_id"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.diffFeedback.setStatus(
-        p.repo,
-        p.number,
-        p.thread_id,
-        "open",
         p.session_id,
       ),
   },

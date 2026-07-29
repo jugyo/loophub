@@ -656,21 +656,16 @@ export const MIGRATIONS: Migration[] = [
       side           TEXT NOT NULL CHECK (side IN ('LEFT', 'RIGHT')),
       start_line     INTEGER NOT NULL CHECK (start_line > 0),
       end_line       INTEGER NOT NULL CHECK (end_line >= start_line),
-      status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
       created_by     TEXT NOT NULL,
-      created_at     TEXT NOT NULL,
-      resolved_by    TEXT,
-      resolved_at    TEXT
+      created_at     TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_diff_feedback_threads_issue_status
-      ON diff_feedback_threads(issue_id, status);
+    CREATE INDEX IF NOT EXISTS idx_diff_feedback_threads_issue
+      ON diff_feedback_threads(issue_id);
     CREATE TABLE IF NOT EXISTS diff_feedback_messages (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       thread_id   INTEGER NOT NULL REFERENCES diff_feedback_threads(id) ON DELETE CASCADE,
       author      TEXT NOT NULL,
-      kind        TEXT NOT NULL CHECK (kind IN ('feedback', 'question', 'reply')),
       body        TEXT NOT NULL,
-      reply_to_id INTEGER REFERENCES diff_feedback_messages(id),
       created_at  TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_diff_feedback_messages_thread
@@ -700,6 +695,53 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  sql(
+    "050-simplify-diff-feedback-conversations",
+    `
+    DROP INDEX IF EXISTS idx_diff_feedback_threads_issue_status;
+    DROP INDEX IF EXISTS idx_diff_feedback_threads_issue;
+    DROP INDEX IF EXISTS idx_diff_feedback_messages_thread;
+    ALTER TABLE diff_feedback_messages RENAME TO diff_feedback_messages_old;
+    ALTER TABLE diff_feedback_threads RENAME TO diff_feedback_threads_old;
+    CREATE TABLE diff_feedback_threads (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id       INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      pr_number      INTEGER NOT NULL,
+      base_sha       TEXT NOT NULL,
+      head_sha       TEXT NOT NULL,
+      path           TEXT NOT NULL,
+      original_path  TEXT,
+      side           TEXT NOT NULL CHECK (side IN ('LEFT', 'RIGHT')),
+      start_line     INTEGER NOT NULL CHECK (start_line > 0),
+      end_line       INTEGER NOT NULL CHECK (end_line >= start_line),
+      created_by     TEXT NOT NULL,
+      created_at     TEXT NOT NULL
+    );
+    INSERT INTO diff_feedback_threads
+      (id, issue_id, pr_number, base_sha, head_sha, path, original_path, side,
+       start_line, end_line, created_by, created_at)
+    SELECT id, issue_id, pr_number, base_sha, head_sha, path, original_path, side,
+           start_line, end_line, created_by, created_at
+    FROM diff_feedback_threads_old;
+    CREATE INDEX idx_diff_feedback_threads_issue
+      ON diff_feedback_threads(issue_id);
+    CREATE TABLE diff_feedback_messages (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id  INTEGER NOT NULL REFERENCES diff_feedback_threads(id) ON DELETE CASCADE,
+      author     TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    INSERT INTO diff_feedback_messages
+      (id, thread_id, author, body, created_at)
+    SELECT id, thread_id, author, body, created_at
+    FROM diff_feedback_messages_old;
+    CREATE INDEX idx_diff_feedback_messages_thread
+      ON diff_feedback_messages(thread_id, created_at, id);
+    DROP TABLE diff_feedback_messages_old;
+    DROP TABLE diff_feedback_threads_old;
+  `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

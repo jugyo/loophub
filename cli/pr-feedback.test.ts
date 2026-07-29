@@ -89,7 +89,19 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("CLI creates, reads, replies to, resolves, and reopens a diff thread", () => {
+test("CLI immediately creates and replies in a diff conversation", () => {
+  lh([
+    "session",
+    "register",
+    "--id",
+    "review-agent-session",
+    "--agent",
+    "codex",
+    "--session",
+    "review-agent-runtime",
+    "--name",
+    "Review Agent",
+  ]);
   const diff = JSON.parse(
     lh(["pr", "diff", String(prNumber), "--repo", REPO, "--json"]),
   );
@@ -122,19 +134,21 @@ test("CLI creates, reads, replies to, resolves, and reopens a diff thread", () =
       "2",
       "--end-line",
       "2",
-      "--kind",
-      "question",
       "--body",
       "Why?",
+      "--session-id",
+      "review-agent-session",
       "--json",
     ]),
   );
   expect(created.thread).toMatchObject({
     freshness: "current",
-    status: "open",
     anchor: { path: "a.txt", side: "RIGHT", start_line: 2, end_line: 2 },
   });
-  expect(created.request).toMatchObject({ kind: "question", body: "Why?" });
+  expect(created.comment).toMatchObject({
+    author: "Review Agent",
+    body: "Why?",
+  });
 
   const listed = JSON.parse(
     lh(["pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"]),
@@ -149,8 +163,6 @@ test("CLI creates, reads, replies to, resolves, and reopens a diff thread", () =
       String(created.thread.id),
       "--pr",
       String(prNumber),
-      "--request-message",
-      String(created.request.id),
       "--body",
       "Because.",
       "--repo",
@@ -159,27 +171,40 @@ test("CLI creates, reads, replies to, resolves, and reopens a diff thread", () =
     ]),
   );
   expect(reply.reply).toMatchObject({
-    kind: "reply",
+    author: "me",
     body: "Because.",
-    reply_to_id: created.request.id,
   });
-
-  for (const action of ["resolve", "reopen"]) {
-    const thread = JSON.parse(
-      lh([
-        "pr",
-        "feedback",
-        action,
-        String(created.thread.id),
-        "--pr",
-        String(prNumber),
-        "--repo",
-        REPO,
-        "--json",
-      ]),
-    );
-    expect(thread.status).toBe(action === "resolve" ? "resolved" : "open");
-  }
+  expect(reply.thread.messages).toMatchObject([
+    { author: "Review Agent", body: "Why?" },
+    { author: "me", body: "Because." },
+  ]);
+  const secondReply = JSON.parse(
+    lh([
+      "pr",
+      "feedback",
+      "reply",
+      String(created.thread.id),
+      "--pr",
+      String(prNumber),
+      "--body",
+      "One more thought.",
+      "--repo",
+      REPO,
+      "--session-id",
+      "review-agent-session",
+      "--json",
+    ]),
+  );
+  expect(secondReply.reply).toMatchObject({
+    author: "Review Agent",
+    body: "One more thought.",
+  });
+  expect(secondReply.thread.messages).toHaveLength(3);
+  expect(secondReply.thread.messages).toMatchObject([
+    { author: "Review Agent", body: "Why?" },
+    { author: "me", body: "Because." },
+    { author: "Review Agent", body: "One more thought." },
+  ]);
 });
 
 test("rename LEFT anchors use the diff wire head path contract", () => {
@@ -215,8 +240,6 @@ test("rename LEFT anchors use the diff wire head path contract", () => {
       "2",
       "--end-line",
       "2",
-      "--kind",
-      "feedback",
       "--body",
       "Keep the old name.",
       "--json",

@@ -1776,6 +1776,9 @@
           "number": {
             "type": "integer",
             "minimum": 1
+          },
+          "path": {
+            "type": "string"
           }
         },
         "required": [
@@ -1802,12 +1805,11 @@
             "type": "integer",
             "minimum": 1
           },
-          "status": {
-            "enum": [
-              "open",
-              "resolved",
-              "all"
-            ]
+          "path": {
+            "type": "string"
+          },
+          "orphaned": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1890,12 +1892,6 @@
             "type": "integer",
             "minimum": 1
           },
-          "kind": {
-            "enum": [
-              "feedback",
-              "question"
-            ]
-          },
           "body": {
             "type": "string",
             "minLength": 1
@@ -1914,7 +1910,6 @@
           "side",
           "start_line",
           "end_line",
-          "kind",
           "body"
         ],
         "additionalProperties": false
@@ -1925,7 +1920,7 @@
     },
     {
       "name": "diffFeedback/reply",
-      "description": "Reply to a request in a diff feedback thread.",
+      "description": "Reply in a diff feedback conversation.",
       "params": {
         "type": "object",
         "properties": {
@@ -1938,10 +1933,6 @@
             "minimum": 1
           },
           "thread_id": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "request_message_id": {
             "type": "integer",
             "minimum": 1
           },
@@ -1958,76 +1949,7 @@
           "repo",
           "number",
           "thread_id",
-          "request_message_id",
           "body"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "diffFeedback/resolve",
-      "description": "Resolve a diff feedback thread.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "thread_id": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number",
-          "thread_id"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "diffFeedback/reopen",
-      "description": "Reopen a resolved diff feedback thread.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "thread_id": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number",
-          "thread_id"
         ],
         "additionalProperties": false
       },

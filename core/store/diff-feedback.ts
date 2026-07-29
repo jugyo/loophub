@@ -11,34 +11,28 @@ export interface DiffFeedbackThreadRow {
   side: string;
   start_line: number;
   end_line: number;
-  status: string;
   created_by: string;
   created_at: string;
-  resolved_by: string | null;
-  resolved_at: string | null;
 }
 
 export interface DiffFeedbackMessageRow {
   id: number;
   thread_id: number;
   author: string;
-  kind: string;
   body: string;
-  reply_to_id: number | null;
   created_at: string;
 }
 
 export function listDiffFeedbackThreads(
   issueId: number,
-  status: "open" | "resolved" | "all",
 ): DiffFeedbackThreadRow[] {
   return db
     .query(
       `SELECT * FROM diff_feedback_threads
-       WHERE issue_id = ? AND (? = 'all' OR status = ?)
+       WHERE issue_id = ?
        ORDER BY created_at ASC, id ASC`,
     )
-    .all(issueId, status, status) as DiffFeedbackThreadRow[];
+    .all(issueId) as DiffFeedbackThreadRow[];
 }
 
 export function getDiffFeedbackThread(
@@ -67,8 +61,8 @@ export function createDiffFeedbackThread(input: {
     .query(
       `INSERT INTO diff_feedback_threads
        (issue_id, pr_number, base_sha, head_sha, path, original_path, side,
-        start_line, end_line, status, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?) RETURNING *`,
+        start_line, end_line, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.issueId,
@@ -109,42 +103,13 @@ export function getDiffFeedbackMessage(
 export function createDiffFeedbackMessage(
   threadId: number,
   author: string,
-  kind: string,
   body: string,
-  replyToId: number | null = null,
 ): DiffFeedbackMessageRow {
   return db
     .query(
       `INSERT INTO diff_feedback_messages
-       (thread_id, author, kind, body, reply_to_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
+       (thread_id, author, body, created_at)
+       VALUES (?, ?, ?, ?) RETURNING *`,
     )
-    .get(
-      threadId,
-      author,
-      kind,
-      body,
-      replyToId,
-      now(),
-    ) as DiffFeedbackMessageRow;
-}
-
-export function setDiffFeedbackThreadStatus(
-  id: number,
-  status: "open" | "resolved",
-  actor: string,
-): DiffFeedbackThreadRow {
-  const resolved = status === "resolved";
-  return db
-    .query(
-      `UPDATE diff_feedback_threads
-       SET status = ?, resolved_by = ?, resolved_at = ?
-       WHERE id = ? RETURNING *`,
-    )
-    .get(
-      status,
-      resolved ? actor : null,
-      resolved ? now() : null,
-      id,
-    ) as DiffFeedbackThreadRow;
+    .get(threadId, author, body, now()) as DiffFeedbackMessageRow;
 }

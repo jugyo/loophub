@@ -24,7 +24,10 @@ import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { Markdown } from "@/components/markdown";
 import { PullCommitsSection } from "@/components/pull-commits-section";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
-import { DiffFileDialog } from "@/components/pull-diff-dialog";
+import {
+  DiffFeedbackHistory,
+  DiffFileDialog,
+} from "@/components/pull-diff-dialog";
 import { PullHerdrSection } from "@/components/pull-herdr-section";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
@@ -627,7 +630,10 @@ function FilesChanged({
           Failed to load diff.
         </div>
       ) : !files || files.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No diff.</p>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">No diff.</p>
+          <DiffFeedbackHistory owner={owner} repo={repo} number={number} />
+        </div>
       ) : (
         <>
           <div className="overflow-hidden rounded-md border">
@@ -645,6 +651,7 @@ function FilesChanged({
               ))}
             </ul>
           </div>
+          <DiffFeedbackHistory owner={owner} repo={repo} number={number} />
           {openFile ? (
             <DiffFileDialog
               owner={owner}

@@ -31,18 +31,12 @@ export async function run(): Promise<void> {
       flags.pr ?? (action === "create" || action === "list" ? target : 0),
     );
     if (action === "list") {
-      const result = await runOp(() =>
-        s.diffFeedback.list(
-          repo,
-          number,
-          (flags.status ?? "open") as "open" | "resolved" | "all",
-        ),
-      );
+      const result = await runOp(() => s.diffFeedback.list(repo, number));
       out(result);
       if (!flags.json)
         result.threads.forEach((thread) => {
           console.log(
-            `#${thread.id}\t${thread.status}\t${thread.freshness}\t${thread.anchor.path}:${thread.anchor.start_line}-${thread.anchor.end_line}`,
+            `#${thread.id}\t${thread.freshness}\t${thread.anchor.path}:${thread.anchor.start_line}-${thread.anchor.end_line}`,
           );
         });
     } else if (action === "view") {
@@ -53,7 +47,7 @@ export async function run(): Promise<void> {
       out(thread);
       if (!flags.json)
         console.log(
-          `#${thread.id} ${thread.status} ${thread.freshness}\n${thread.anchor.path}:${thread.anchor.start_line}-${thread.anchor.end_line} ${thread.anchor.side}\n\n${thread.messages.map((message) => `@${message.author} [${message.kind}]: ${message.body}`).join("\n")}`,
+          `#${thread.id} ${thread.freshness}\n${thread.anchor.path}:${thread.anchor.start_line}-${thread.anchor.end_line} ${thread.anchor.side}\n\n${thread.messages.map((message) => `@${message.author}: ${message.body}`).join("\n")}`,
         );
     } else if (action === "create") {
       const result = await runOp(async () =>
@@ -67,7 +61,6 @@ export async function run(): Promise<void> {
             side: flags.side?.toUpperCase() ?? "",
             startLine: Number(flags["start-line"]),
             endLine: Number(flags["end-line"]),
-            kind: flags.kind ?? "feedback",
             body: flags.body ?? "",
           },
           await writeSession(),
@@ -76,7 +69,7 @@ export async function run(): Promise<void> {
       out(result);
       if (!flags.json)
         console.log(
-          `created feedback thread #${result.thread.id} (request ${result.request.id})`,
+          `created feedback conversation #${result.thread.id} (comment ${result.comment.id})`,
         );
     } else if (action === "reply") {
       if (!flags.pr) fail("--pr is required");
@@ -85,7 +78,6 @@ export async function run(): Promise<void> {
           repo,
           Number(flags.pr),
           Number(target),
-          Number(flags["request-message"]),
           flags.body ?? "",
           await writeSession(),
         ),
@@ -94,22 +86,6 @@ export async function run(): Promise<void> {
       if (!flags.json)
         console.log(
           `replied to feedback thread #${result.thread.id} (message ${result.reply.id})`,
-        );
-    } else if (action === "resolve" || action === "reopen") {
-      if (!flags.pr) fail("--pr is required");
-      const thread = await runOp(async () =>
-        s.diffFeedback.setStatus(
-          repo,
-          Number(flags.pr),
-          Number(target),
-          action === "resolve" ? "resolved" : "open",
-          await writeSession(),
-        ),
-      );
-      out(thread);
-      if (!flags.json)
-        console.log(
-          `${action === "resolve" ? "resolved" : "reopened"} feedback thread #${thread.id}`,
         );
     } else usage();
   } else if (sub === "list") {

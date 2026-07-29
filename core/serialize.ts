@@ -385,9 +385,7 @@ export interface DiffFeedbackMessageWire {
   id: number;
   thread_id: number;
   author: string;
-  kind: "feedback" | "question" | "reply";
   body: string;
-  reply_to_id: number | null;
   created_at: string;
 }
 
@@ -404,11 +402,8 @@ export interface DiffFeedbackThreadWire {
     end_line: number;
   };
   freshness: DiffFeedbackFreshness;
-  status: "open" | "resolved";
   created_by: string;
   created_at: string;
-  resolved_by: string | null;
-  resolved_at: string | null;
   messages: DiffFeedbackMessageWire[];
 }
 
@@ -419,9 +414,7 @@ export function diffFeedbackMessageJSON(
     id: row.id,
     thread_id: row.thread_id,
     author: row.author,
-    kind: row.kind as DiffFeedbackMessageWire["kind"],
     body: row.body,
-    reply_to_id: row.reply_to_id,
     created_at: row.created_at,
   };
 }
