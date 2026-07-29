@@ -106,12 +106,13 @@ const MIN_FILE_SIDEBAR_WIDTH = 160;
 const MAX_FILE_SIDEBAR_WIDTH = 480;
 
 function globPatternToRegExp(pattern: string) {
+  const normalizedPattern = pattern.includes("/") ? pattern : `**/${pattern}`;
   let source = "";
-  for (let index = 0; index < pattern.length; index += 1) {
-    const char = pattern[index];
+  for (let index = 0; index < normalizedPattern.length; index += 1) {
+    const char = normalizedPattern[index];
     if (char === "*") {
-      if (pattern[index + 1] === "*") {
-        if (pattern[index + 2] === "/") {
+      if (normalizedPattern[index + 1] === "*") {
+        if (normalizedPattern[index + 2] === "/") {
           source += "(?:.*/)?";
           index += 2;
         } else {
@@ -318,23 +319,21 @@ export function DiffFileDialog({
                     aria-label={sidebarFile.filename}
                     aria-current={selected ? "true" : undefined}
                     className={cn(
-                      "grid w-full gap-1 px-3 py-1.5 text-left hover:bg-muted",
+                      "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 text-left hover:bg-muted",
                       selected &&
                         "bg-accent font-medium text-accent-foreground",
                     )}
                     onClick={() => onSelectFile(sidebarFile.filename)}
                   >
-                    <span className="break-all font-mono text-xs">
+                    <FileStatusBadge status={sidebarFile.status} />
+                    <span className="min-w-0 truncate font-mono text-xs [direction:rtl]">
                       {sidebarFile.filename}
                     </span>
-                    <span className="flex items-center gap-2">
-                      <FileStatusBadge status={sidebarFile.status} />
-                      <DiffStat
-                        additions={sidebarFile.additions}
-                        deletions={sidebarFile.deletions}
-                        className="text-[11px]"
-                      />
-                    </span>
+                    <DiffStat
+                      additions={sidebarFile.additions}
+                      deletions={sidebarFile.deletions}
+                      className="justify-self-end text-[11px]"
+                    />
                   </button>
                 </li>
               );

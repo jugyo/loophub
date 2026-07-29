@@ -274,6 +274,17 @@ describe("DiffFileDialog", () => {
     expect(within(sidebar).getByText("−1")).toBeTruthy();
     expect(within(sidebar).getByLabelText("File status: added")).toBeTruthy();
     expect(within(sidebar).getByText("+4")).toBeTruthy();
+    const secondRow = within(sidebar).getByRole("button", {
+      name: /core\/nested\/b\.ts/,
+    });
+    expect(
+      Array.from(secondRow.children).map((child) => child.textContent),
+    ).toEqual(["A", "core/nested/b.ts", "+4−0"]);
+    expect(secondRow.className).toContain("grid-cols-");
+    const filename = within(secondRow).getByText("core/nested/b.ts");
+    expect(filename.className).toContain("min-w-0");
+    expect(filename.className).toContain("truncate");
+    expect(filename.className).toContain("[direction:rtl]");
 
     fireEvent.click(
       within(sidebar).getByRole("button", { name: /core\/nested\/b\.ts/ }),
@@ -341,6 +352,30 @@ describe("DiffFileDialog", () => {
     });
     expect(within(sidebar).getByText("Files changed (5)")).toBeTruthy();
     expect(within(sidebar).getByText("README.md")).toBeTruthy();
+
+    fireEvent.change(within(sidebar).getByLabelText("Include files"), {
+      target: { value: "*.test.ts" },
+    });
+    expect(within(sidebar).getByText("Files changed (2 of 5)")).toBeTruthy();
+    expect(within(sidebar).getByText("web/src/a.test.ts")).toBeTruthy();
+    expect(within(sidebar).getByText("a.test.ts")).toBeTruthy();
+
+    fireEvent.change(within(sidebar).getByLabelText("Include files"), {
+      target: { value: "*b.ts" },
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Exclude files"), {
+      target: { value: "*test.ts" },
+    });
+    expect(within(sidebar).getByText("Files changed (1 of 5)")).toBeTruthy();
+    expect(within(sidebar).getByText("core/b.ts")).toBeTruthy();
+
+    fireEvent.change(within(sidebar).getByLabelText("Include files"), {
+      target: { value: "**/*.test.ts" },
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Exclude files"), {
+      target: { value: "" },
+    });
+    expect(within(sidebar).getByText("Files changed (2 of 5)")).toBeTruthy();
 
     fireEvent.click(
       within(sidebar).getByRole("button", { name: "Toggle file filters" }),

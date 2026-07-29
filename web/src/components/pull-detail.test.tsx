@@ -416,6 +416,22 @@ describe("PullDetail", () => {
     expect(screen.queryByRole("heading", { name: "Reviews" })).toBeNull();
   });
 
+  it("shows each changed file as status, trailing filename, and changes on one row", async () => {
+    renderDetail();
+
+    await screen.findByRole("heading", { name: /Files changed \(1\)/ });
+    const filename = screen.getByText("web/src/a.ts");
+    const row = filename.closest("button")!;
+    expect(Array.from(row.children).map((child) => child.textContent)).toEqual([
+      "M",
+      "web/src/a.ts",
+      "+1−1",
+    ]);
+    expect(row.className).toContain("grid-cols-");
+    expect(filename.className).toContain("truncate");
+    expect(filename.className).toContain("[direction:rtl]");
+  });
+
   // The Commits section's own behaviour is covered by pull-commits-section.test.tsx; the PR detail
   // only has to place it, with this PR's commits, before Files changed.
   it("places the PR's commits before files changed in the main PR flow", async () => {
