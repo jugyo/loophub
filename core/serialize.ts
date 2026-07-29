@@ -973,6 +973,7 @@ export function relatedSessionsUsageJSON(
 export interface CommentWire {
   id: number;
   user: UserWire;
+  author_type: S.CommentAuthorType;
   body: string;
   created_at: string;
 }
@@ -981,6 +982,7 @@ export function commentJSON(m: S.CommentRow): CommentWire {
   return {
     id: m.id,
     user: { login: m.author },
+    author_type: m.author_type,
     body: m.body,
     created_at: m.created_at,
   };
@@ -1815,6 +1817,16 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     },
     significance: "notable",
   },
+  "workflow_run.pr_comment": {
+    label: "PR comment received",
+    description: ({ payload }) => {
+      const commentId = payloadNumber(payload, "comment_id");
+      return commentId !== null
+        ? `PR comment #${commentId} was sent to Execute.`
+        : "A PR comment was sent to Execute.";
+    },
+    significance: "notable",
+  },
   "workflow_run.github_event": {
     label: "GitHub feedback received",
     description: ({ payload }) => {
@@ -2064,6 +2076,9 @@ export interface PullWire {
   changes_addressed_by: string | null;
   labels: LabelWire[];
   comments: number;
+  // Full PR comments are included on detail responses so an Execute child can read a human comment
+  // named by a workflow notification with `lh pr view --json`.
+  comment_list?: CommentWire[];
   created_at: string;
   updated_at: string;
   linked_issue: LinkedIssueWire | null;

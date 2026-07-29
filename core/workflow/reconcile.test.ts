@@ -731,6 +731,20 @@ describe("workflowActionPlan", () => {
     );
   });
 
+  test("delivers a PR comment by id as fixed text", () => {
+    const comment = plan({
+      action: "deliver",
+      reason: "new PR comment",
+      delivery_reason: "pr_comment",
+      comment_id: 19,
+    });
+    expect(comment).toMatchObject({ boundary: "mechanical", after: "watch" });
+    expect(comment.commands[0]?.input).toBeUndefined();
+    expect(comment.commands[0]?.args).toContain(
+      "orchestrator: address PR comment #19",
+    );
+  });
+
   test("makes parent and human judgement boundaries explicit", () => {
     const github = plan({
       action: "read_github_reference",

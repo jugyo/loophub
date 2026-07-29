@@ -142,6 +142,7 @@ const comments: IssueComment[] = [
   {
     id: 9,
     user: { login: "me" },
+    author_type: "human",
     body: "Thanks!",
     created_at: "2026-06-18T11:45:00Z",
   },
@@ -342,6 +343,31 @@ describe("PullDetail", () => {
     // Bidirectional link back to the issue this PR closes.
     const linked = screen.getByText("#153").closest("a");
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
+  });
+
+  it("posts a PR comment and clears the composer", async () => {
+    renderDetail({
+      "pullComments/create": (params) => ({
+        id: 10,
+        user: { login: "me" },
+        author_type: "human",
+        body: params.body,
+        created_at: "2026-06-18T12:00:00Z",
+      }),
+    });
+
+    const composer = await screen.findByLabelText("Add a PR comment");
+    fireEvent.change(composer, { target: { value: "Please rename this." } });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() => {
+      expect(rpcCall("pullComments/create")?.params).toEqual({
+        repo: "me/proj",
+        number: 30,
+        body: "Please rename this.",
+      });
+      expect((composer as HTMLTextAreaElement).value).toBe("");
+    });
   });
 
   it("names the major PR regions for component debugging", async () => {

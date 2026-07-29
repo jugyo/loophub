@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS comments (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   issue_id    INTEGER NOT NULL REFERENCES issues(id),
   author      TEXT NOT NULL,
+  author_type TEXT NOT NULL CHECK (author_type IN ('human', 'agent', 'system')),
   body        TEXT NOT NULL,
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL

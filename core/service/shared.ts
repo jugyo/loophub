@@ -127,6 +127,18 @@ export function actorFor(sessionId: string | null | undefined): string {
   return S.authorFromSession(sessionId) ?? UNKNOWN_ACTOR;
 }
 
+export function commentActor(sessionId: string | null | undefined): {
+  actor: string;
+  authorType: S.CommentAuthorType;
+} {
+  const session = sessionId ? S.getAgentSession(sessionId) : null;
+  if (!session) return { actor: UNKNOWN_ACTOR, authorType: "system" };
+  return {
+    actor: session.name || session.agent,
+    authorType: session.agent === "me" ? "human" : "agent",
+  };
+}
+
 // Resolve symlinks so worktree paths from `git worktree list` (which canonicalizes, e.g.
 // /var → /private/var on macOS) compare equal to a caller's cwd. Falls back to a plain
 // absolute path when the target no longer exists.

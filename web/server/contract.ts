@@ -650,6 +650,16 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.comments.create(p.repo, p.number, p.body, p.session_id),
   },
+  "pullComments/create": {
+    description: "Add a human comment to a pull request.",
+    params: params({ repo, number: positiveInt, body: strNonEmpty }, [
+      "repo",
+      "number",
+      "body",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.comments.createHumanForPull(p.repo, p.number, p.body),
+  },
 
   // ---- handoffs (#352) ----
   "handoffs/list": {

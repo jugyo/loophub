@@ -18,6 +18,7 @@ import {
   listPullReviews,
   mergePull,
   patchPull,
+  postPullComment,
   pushGithubPull,
   reactToDiffFeedback,
   replyDiffFeedback,
@@ -190,6 +191,26 @@ export function usePullComments(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: [...queryKeys.pull(full(owner, repo), number), "comments"],
     queryFn: () => listPullComments(owner, repo, number),
+  });
+}
+
+export function usePostPullComment(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) => postPullComment(owner, repo, number, body),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({
+          queryKey: queryKeys.pull(full(owner, repo), number),
+        }),
+        qc.invalidateQueries({
+          queryKey: queryKeys.issue(full(owner, repo), number),
+        }),
+      ]),
   });
 }
 

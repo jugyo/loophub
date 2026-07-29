@@ -159,6 +159,14 @@ export interface WorkflowEventPayloadMap {
       thread_id: number;
       comment_id: number;
     };
+  "workflow_run.pr_comment": WorkflowRunScoped &
+    WorkflowRunDelivery &
+    WorkflowRunProjectionSource & {
+      pr_number: number;
+      comment_id: number;
+      author: string;
+      body: string;
+    };
   "workflow_run.github_event": WorkflowRunScoped &
     WorkflowRunDelivery &
     WorkflowRunProjectionSource & {

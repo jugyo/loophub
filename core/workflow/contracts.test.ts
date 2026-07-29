@@ -602,20 +602,25 @@ test("Execute treats additional work notes as Issue/PR requests and completes vi
     "Diff feedback (`orchestrator: address diff feedback thread #<t> comment #<c>`)",
   );
   expect(execute).toContain("lh pr feedback pending <pr> --run <run> --json");
-  // One line of budget for the diff feedback class (#2045); the contract stays a page long.
-  expect(execute.split("\n").length).toBeLessThanOrEqual(61);
+  expect(execute).toContain(
+    "PR comment (`orchestrator: address PR comment #<c>`)",
+  );
+  expect(execute.split("\n").length).toBeLessThanOrEqual(63);
 
   const executeJa = workflowContractText("execute", "ja");
   expect(executeJa).toContain("Rework（`orchestrator: address review #<id>`）");
   expect(executeJa).toContain(
     "Diff feedback（`orchestrator: address diff feedback thread #<t> comment #<c>`）",
   );
+  expect(executeJa).toContain(
+    "PR comment（`orchestrator: address PR comment #<c>`）",
+  );
   expect(executeJa).toContain("追加作業");
   expect(executeJa).toContain("質問だけ、または人間の判断待ち");
   expect(executeJa).toContain("確認のみ、またはドメイン変更不要");
   expect(executeJa).toContain("曖昧だが scope 内");
   expect(executeJa.match(/lh workflow turn done/gu)).toHaveLength(1);
-  expect(executeJa.split("\n").length).toBeLessThanOrEqual(60);
+  expect(executeJa.split("\n").length).toBeLessThanOrEqual(62);
 });
 
 test("Japanese workflow design documents the continuing lifecycle after a pass", () => {

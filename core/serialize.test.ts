@@ -540,6 +540,7 @@ describe("pure row -> wire serializers", () => {
       id: 7,
       issue_id: 3,
       author: "reviewer",
+      author_type: "agent",
       body: "looks good",
       created_at: "2026-07-03T00:00:00Z",
       updated_at: "2026-07-04T00:00:00Z",
@@ -547,6 +548,7 @@ describe("pure row -> wire serializers", () => {
     expect(serialize.commentJSON(row)).toEqual({
       id: 7,
       user: { login: "reviewer" },
+      author_type: "agent",
       body: "looks good",
       created_at: "2026-07-03T00:00:00Z",
     });

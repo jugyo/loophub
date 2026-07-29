@@ -63,6 +63,7 @@ const comments: IssueComment[] = [
   {
     id: 1,
     user: { login: "design-bot" },
+    author_type: "agent",
     body: "Looks good.",
     created_at: "2026-06-17T11:30:00Z",
   },

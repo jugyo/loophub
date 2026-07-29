@@ -37,6 +37,7 @@ export type WorkflowWakeInput =
   | { kind: "github_reference"; eventId: number; references: readonly string[] }
   | { kind: "github_feedback" }
   | { kind: "diff_feedback"; threadId: number; commentId: number }
+  | { kind: "pr_comment"; commentId: number }
   | { kind: "out_of_band_review"; reviewId: number }
   | { kind: "cost_limit_increased" }
   | { kind: "human_instruction" }
@@ -74,6 +75,12 @@ export type WorkflowNextAction =
       reason: string;
       delivery_reason: "diff_feedback";
       thread_id: number;
+      comment_id: number;
+    }
+  | {
+      action: "deliver";
+      reason: string;
+      delivery_reason: "pr_comment";
       comment_id: number;
     }
   | {
@@ -213,6 +220,16 @@ export function workflowActionPlan(
             ...scoped,
             "--text",
             `orchestrator: address diff feedback thread #${action.thread_id} comment #${action.comment_id}`,
+          ),
+        ]);
+      }
+      if (action.delivery_reason === "pr_comment") {
+        return watch([
+          command(
+            "deliver",
+            ...scoped,
+            "--text",
+            `orchestrator: address PR comment #${action.comment_id}`,
           ),
         ]);
       }
@@ -437,6 +454,15 @@ export function reconcileWorkflow(
       reason: `Diff feedback conversation #${input.wake.threadId} has a new comment for Execute.`,
       delivery_reason: "diff_feedback",
       thread_id: input.wake.threadId,
+      comment_id: input.wake.commentId,
+    };
+  }
+
+  if (input.wake?.kind === "pr_comment") {
+    return {
+      action: "deliver",
+      reason: `PR comment #${input.wake.commentId} has new input for Execute.`,
+      delivery_reason: "pr_comment",
       comment_id: input.wake.commentId,
     };
   }

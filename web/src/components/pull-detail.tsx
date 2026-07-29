@@ -49,6 +49,7 @@ import {
   useDiffFeedback,
   useGithubPrStatus,
   useMergePull,
+  usePostPullComment,
   usePull,
   usePullComments,
   usePullFiles,
@@ -171,6 +172,7 @@ export function PullDetail({
           <CommentList
             owner={owner}
             repo={repo}
+            number={number}
             comments={commentsQuery.data}
             isLoading={commentsQuery.isLoading}
             isError={commentsQuery.isError}
@@ -722,22 +724,64 @@ function FileSummaryRow({
 function CommentList({
   owner,
   repo,
+  number,
   comments,
   isLoading,
   isError,
 }: {
   owner: string;
   repo: string;
+  number: number;
   comments: import("@/api/types").IssueComment[] | undefined;
   isLoading: boolean;
   isError: boolean;
 }) {
+  const [body, setBody] = useState("");
+  const post = usePostPullComment(owner, repo, number);
+
+  function submit() {
+    const trimmed = body.trim();
+    if (!trimmed || post.isPending) return;
+    post.mutate(trimmed, { onSuccess: () => setBody("") });
+  }
+
   return (
     <section
       data-debug-component="PullCommentList"
       className="flex flex-col gap-3 pb-6"
     >
       <h2 className="text-lg font-semibold">Comments</h2>
+      <div
+        data-debug-component="PullCommentForm"
+        className="flex flex-col gap-2"
+      >
+        <textarea
+          aria-label="Add a PR comment"
+          placeholder="Add a comment"
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+          rows={4}
+          className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <div className="flex items-center justify-end gap-2">
+          {post.isError ? (
+            <span className="text-sm text-destructive">
+              Failed to post comment.
+            </span>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            onClick={submit}
+            disabled={!body.trim() || post.isPending}
+          >
+            {post.isPending ? (
+              <Loader2 className="mr-1 size-3.5 animate-spin" />
+            ) : null}
+            Comment
+          </Button>
+        </div>
+      </div>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading comments…

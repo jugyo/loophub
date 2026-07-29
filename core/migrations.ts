@@ -758,6 +758,28 @@ export const MIGRATIONS: Migration[] = [
       ON diff_feedback_reactions(message_id, created_at, id);
   `,
   ),
+  sql(
+    "052-classify-comment-authors",
+    `
+    ALTER TABLE comments RENAME TO comments_old;
+    CREATE TABLE comments (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id    INTEGER NOT NULL REFERENCES issues(id),
+      author      TEXT NOT NULL,
+      author_type TEXT NOT NULL CHECK (author_type IN ('human', 'agent', 'system')),
+      body        TEXT NOT NULL,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+    INSERT INTO comments
+      (id, issue_id, author, author_type, body, created_at, updated_at)
+    SELECT id, issue_id, author,
+           CASE WHEN author = 'me' THEN 'human' ELSE 'system' END,
+           body, created_at, updated_at
+    FROM comments_old;
+    DROP TABLE comments_old;
+  `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

@@ -585,6 +585,16 @@ function workflowWakeObservation(
     }
     return { kind: "diff_feedback", threadId, commentId };
   }
+  if (event.type === "workflow_run.pr_comment") {
+    const commentId = payload.comment_id;
+    if (typeof commentId !== "number") {
+      throw new ServiceError(
+        422,
+        `workflow event #${eventId} has no PR comment id`,
+      );
+    }
+    return { kind: "pr_comment", commentId };
+  }
   if (event.type === "workflow_run.cost_limit_increased") {
     return { kind: "cost_limit_increased" };
   }

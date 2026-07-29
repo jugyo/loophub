@@ -67,3 +67,25 @@ export function projectWorkflowRunDiffFeedback(input: {
     comment_id: input.commentId,
   });
 }
+
+export function projectWorkflowRunPullComment(input: {
+  repoId: number;
+  prNumber: number;
+  actor: string;
+  source: EventRow;
+  comment: S.CommentRow;
+}): void {
+  const run = S.runningWorkflowRunForPull(input.repoId, input.prNumber);
+  if (!run?.parent_session_id || input.comment.author_type !== "human") return;
+  S.emitWorkflowEvent(input.repoId, "workflow_run.pr_comment", input.actor, {
+    id: run.id,
+    number: input.prNumber,
+    pr_number: input.prNumber,
+    parent_session_id: run.parent_session_id,
+    source_event_id: input.source.id,
+    source_event_type: input.source.type,
+    comment_id: input.comment.id,
+    author: input.comment.author,
+    body: input.comment.body,
+  });
+}

@@ -26,6 +26,8 @@ parent; treat an identical launch note the same way.
 - **Diff feedback (`orchestrator: address diff feedback thread #<t> comment #<c>`)** — read the
   unanswered conversations and their diff context with `lh pr feedback pending <pr> --run <run> --json`,
   reply to each with `lh pr feedback reply <t> --pr <pr> --body <text>`, and make the change they ask for.
+- **PR comment (`orchestrator: address PR comment #<c>`)** — read the named comment from
+  `lh pr view <pr> --json` and treat its body as an additional work instruction.
 - **Additional work** — when a non-rework instruction is ordinary product or engineering work on
   the Issue / PR, make the smallest implementation against the same Issue and PR. You do not need
   to rewrite the Issue body. Update the PR body or comments when useful to the next Verify or a human.

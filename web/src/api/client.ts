@@ -690,6 +690,19 @@ export function postIssueComment(
   });
 }
 
+export function postPullComment(
+  owner: string,
+  repo: string,
+  number: number,
+  body: string,
+) {
+  return rpc<IssueComment>("pullComments/create", {
+    repo: full(owner, repo),
+    number,
+    body,
+  });
+}
+
 export function patchIssue(
   owner: string,
   repo: string,

@@ -34,6 +34,7 @@ import type {
   ReviewGateWire,
 } from "./serialize.ts";
 import {
+  commentJSON,
   githubPullJSON,
   herdrPaneJSON,
   issueJSON,
@@ -378,6 +379,9 @@ export async function pullJSON(
     changes_addressed_by: p.changes_addressed_by ?? null,
     labels: S.issueLabels(row.id).map(labelJSON),
     comments: S.countComments(row.id),
+    ...(opts.withCommits
+      ? { comment_list: S.listComments(row.id).map(commentJSON) }
+      : {}),
     created_at: row.created_at,
     updated_at: row.updated_at,
     linked_issue: status.linked,
