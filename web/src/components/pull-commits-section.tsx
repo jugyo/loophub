@@ -292,7 +292,7 @@ function ReviewDetailsDialog({
         aria-modal="true"
         aria-label={`Reviews for ${label}`}
         tabIndex={-1}
-        className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-md border bg-background shadow-lg"
+        className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-md border bg-background shadow-lg"
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.stopPropagation();
