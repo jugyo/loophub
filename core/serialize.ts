@@ -387,6 +387,12 @@ export interface DiffFeedbackMessageWire {
   author: string;
   body: string;
   created_at: string;
+  reactions: DiffFeedbackReactionWire[];
+}
+
+export interface DiffFeedbackReactionWire {
+  emoji: string;
+  count: number;
 }
 
 export interface DiffFeedbackThreadWire {
@@ -437,13 +443,19 @@ export interface DiffFeedbackPendingWire {
 
 export function diffFeedbackMessageJSON(
   row: S.DiffFeedbackMessageRow,
+  reactions: S.DiffFeedbackReactionRow[] = [],
 ): DiffFeedbackMessageWire {
+  const counts = new Map<string, number>();
+  for (const reaction of reactions) {
+    counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1);
+  }
   return {
     id: row.id,
     thread_id: row.thread_id,
     author: row.author,
     body: row.body,
     created_at: row.created_at,
+    reactions: Array.from(counts, ([emoji, count]) => ({ emoji, count })),
   };
 }
 

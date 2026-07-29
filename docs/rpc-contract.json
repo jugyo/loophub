@@ -1955,6 +1955,45 @@
       }
     },
     {
+      "name": "diffFeedback/react",
+      "description": "Add an emoji reaction to a diff feedback message.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "message_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "emoji": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "message_id",
+          "emoji"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "pulls/commitFiles",
       "description": "List files changed by one commit in a pull request, compared with its first parent.",
       "params": {

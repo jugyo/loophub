@@ -837,6 +837,23 @@ export function replyDiffFeedback(
   );
 }
 
+export function reactToDiffFeedback(
+  owner: string,
+  repo: string,
+  number: number,
+  messageId: number,
+  emoji: string,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<DiffFeedbackMessage>("diffFeedback/react", {
+    repo: full(owner, repo),
+    number,
+    message_id: messageId,
+    emoji,
+    session_id: sessionId,
+  });
+}
+
 export function listPullCommitFiles(
   owner: string,
   repo: string,

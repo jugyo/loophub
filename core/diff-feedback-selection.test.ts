@@ -71,6 +71,7 @@ describe("selectUnansweredDiffFeedbackThreads", () => {
       author,
       body: "Comment",
       created_at: `2026-07-28T00:0${index}:00Z`,
+      reactions: [],
     }));
     return value;
   }
@@ -113,6 +114,7 @@ describe("countDiffFeedbackMessagesByFile", () => {
         author: "reviewer",
         body: "Comment",
         created_at: "2026-07-28T00:00:00Z",
+        reactions: [],
       },
     ];
     const originalPathThread = thread(2, "generated.ts");
@@ -124,6 +126,7 @@ describe("countDiffFeedbackMessagesByFile", () => {
         author: "reviewer",
         body: "Comment",
         created_at: "2026-07-28T00:00:00Z",
+        reactions: [],
       },
       {
         id: 3,
@@ -131,6 +134,7 @@ describe("countDiffFeedbackMessagesByFile", () => {
         author: "author",
         body: "Reply",
         created_at: "2026-07-28T00:01:00Z",
+        reactions: [],
       },
     ];
 

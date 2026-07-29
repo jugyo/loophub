@@ -19,6 +19,7 @@ import {
   mergePull,
   patchPull,
   pushGithubPull,
+  reactToDiffFeedback,
   replyDiffFeedback,
 } from "@/api/client";
 import type { PullRequest } from "@/api/types";
@@ -116,6 +117,20 @@ export function useReplyDiffFeedback(
   return useMutation({
     mutationFn: (input: { threadId: number; body: string }) =>
       replyDiffFeedback(owner, repo, number, input.threadId, input.body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: feedbackKey(owner, repo, number) }),
+  });
+}
+
+export function useReactToDiffFeedback(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { messageId: number; emoji: string }) =>
+      reactToDiffFeedback(owner, repo, number, input.messageId, input.emoji),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: feedbackKey(owner, repo, number) }),
   });

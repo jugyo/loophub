@@ -3,7 +3,7 @@
 // its own Escape handling, mode switching, per-mode file fetch, and the copy-path resolution for
 // renamed / invisible-character filenames. The Files changed section only picks the open file.
 
-import { Filter, Loader2, Plus, X } from "lucide-react";
+import { Filter, Loader2, Plus, SmilePlus, X } from "lucide-react";
 import {
   Fragment,
   type ReactNode,
@@ -27,6 +27,12 @@ import { Markdown } from "@/components/markdown";
 import { useToast } from "@/components/toast";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   type DiffLineKind,
   type PositionedDiffLine,
   parsePositionedPatch,
@@ -46,6 +52,7 @@ import {
   useDiffFeedback,
   usePullDiff,
   usePullFileAtRef,
+  useReactToDiffFeedback,
   useReplyDiffFeedback,
 } from "@/queries/pulls";
 
@@ -134,6 +141,7 @@ const DIFF_LINE_MARKER: Record<DiffLineKind, string> = {
 const INITIAL_FILE_SIDEBAR_WIDTH = 336;
 const MIN_FILE_SIDEBAR_WIDTH = 160;
 const MAX_FILE_SIDEBAR_WIDTH = 480;
+const DIFF_FEEDBACK_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
 
 function globPatternToRegExp(pattern: string) {
   const normalizedPattern = pattern.includes("/") ? pattern : `**/${pattern}`;
@@ -550,6 +558,7 @@ function FileDiffContent({
   const feedback = useDiffFeedback(owner, repo, number, { path });
   const create = useCreateDiffFeedback(owner, repo, number);
   const reply = useReplyDiffFeedback(owner, repo, number);
+  const reaction = useReactToDiffFeedback(owner, repo, number);
   const { showError } = useToast();
   const [selection, setSelection] = useState<DiffSelection | null>(null);
   const [body, setBody] = useState("");
@@ -644,6 +653,16 @@ function FileDiffContent({
             repo={repo}
             thread={thread}
             busy={reply.isPending}
+            reactionBusy={reaction.isPending}
+            onReact={(messageId, emoji) =>
+              reaction.mutate(
+                { messageId, emoji },
+                {
+                  onError: (error) =>
+                    showError(errorMessage(error, "Reaction failed")),
+                },
+              )
+            }
             onReply={(replyBody) =>
               reply.mutate(
                 {
@@ -671,6 +690,16 @@ function FileDiffContent({
               repo={repo}
               thread={thread}
               busy={reply.isPending}
+              reactionBusy={reaction.isPending}
+              onReact={(messageId, emoji) =>
+                reaction.mutate(
+                  { messageId, emoji },
+                  {
+                    onError: (error) =>
+                      showError(errorMessage(error, "Reaction failed")),
+                  },
+                )
+              }
               onReply={(replyBody) =>
                 reply.mutate(
                   {
@@ -1340,6 +1369,7 @@ export function DiffFeedbackHistory({
 }) {
   const feedback = useDiffFeedback(owner, repo, number, { orphaned: true });
   const reply = useReplyDiffFeedback(owner, repo, number);
+  const reaction = useReactToDiffFeedback(owner, repo, number);
   const { showError } = useToast();
   const historical = feedback.data?.threads ?? [];
   if (feedback.isLoading) {
@@ -1368,6 +1398,16 @@ export function DiffFeedbackHistory({
           repo={repo}
           thread={thread}
           busy={reply.isPending}
+          reactionBusy={reaction.isPending}
+          onReact={(messageId, emoji) =>
+            reaction.mutate(
+              { messageId, emoji },
+              {
+                onError: (error) =>
+                  showError(errorMessage(error, "Reaction failed")),
+              },
+            )
+          }
           onReply={(body) =>
             reply.mutate(
               { threadId: thread.id, body },
@@ -1388,12 +1428,16 @@ function ThreadCard({
   repo,
   thread,
   busy,
+  reactionBusy,
+  onReact,
   onReply,
 }: {
   owner: string;
   repo: string;
   thread: DiffFeedbackThread;
   busy: boolean;
+  reactionBusy: boolean;
+  onReact: (messageId: number, emoji: string) => void;
   onReply: (body: string) => void;
 }) {
   const [replyBody, setReplyBody] = useState("");
@@ -1427,6 +1471,44 @@ function ThreadCard({
             <Markdown owner={owner} repo={repo}>
               {message.body}
             </Markdown>
+            <div className="mt-2 flex items-center gap-1">
+              {(message.reactions ?? []).map((reaction) => (
+                <span
+                  key={reaction.emoji}
+                  className="rounded-full border bg-background px-2 py-0.5 text-xs"
+                  aria-label={`${reaction.emoji} reaction: ${reaction.count}`}
+                >
+                  {reaction.emoji} {reaction.count}
+                </span>
+              ))}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label={`Add reaction to comment ${message.id}`}
+                    disabled={reactionBusy}
+                  >
+                    <SmilePlus className="size-3.5" aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="flex min-w-0 gap-1 p-1"
+                >
+                  {DIFF_FEEDBACK_REACTIONS.map((emoji) => (
+                    <DropdownMenuItem
+                      key={emoji}
+                      className="flex size-8 cursor-pointer items-center justify-center p-0 text-base"
+                      aria-label={`React with ${emoji}`}
+                      onSelect={() => onReact(message.id, emoji)}
+                    >
+                      {emoji}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         ))}
       </div>

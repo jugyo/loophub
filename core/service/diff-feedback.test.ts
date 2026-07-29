@@ -183,6 +183,29 @@ test("an Execute reply answers the comment without waking its own parent", async
   ).toEqual([]);
 });
 
+test("a supported reaction is stored once per actor and included with the comment", async () => {
+  const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
+  const message = thread.messages[0];
+
+  await svc.diffFeedback.react(REPO, prNumber, message.id, "👍", HUMAN_SESSION);
+  await svc.diffFeedback.react(REPO, prNumber, message.id, "👍", HUMAN_SESSION);
+  await svc.diffFeedback.react(
+    REPO,
+    prNumber,
+    message.id,
+    "👍",
+    EXECUTE_SESSION,
+  );
+
+  expect(
+    (await svc.diffFeedback.list(REPO, prNumber)).threads[0].messages[0]
+      .reactions,
+  ).toEqual([{ emoji: "👍", count: 2 }]);
+  await expect(
+    svc.diffFeedback.react(REPO, prNumber, message.id, "😈", HUMAN_SESSION),
+  ).rejects.toThrow("unsupported diff feedback reaction");
+});
+
 test("a follow-up comment from outside the run becomes pending again", async () => {
   const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
   const before = runEvents().length;

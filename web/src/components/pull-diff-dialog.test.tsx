@@ -82,6 +82,7 @@ function feedbackThread(
         author: "reviewer",
         body: "Please revisit this range.",
         created_at: "2026-07-28T00:00:00Z",
+        reactions: [],
       },
     ],
     ...patch,
@@ -672,6 +673,7 @@ describe("DiffFileDialog", () => {
                   author: "reviewer",
                   body: "Please check the replacement.",
                   created_at: "2026-07-28T00:01:00Z",
+                  reactions: [],
                 },
               ],
             }),
@@ -691,6 +693,47 @@ describe("DiffFileDialog", () => {
     expect(leftCell.colSpan).toBe(2);
     expect(rightCell.cellIndex).toBe(1);
     expect(rightCell.colSpan).toBe(2);
+  });
+
+  it("shows existing reactions and adds one from the reaction picker", async () => {
+    const react = vi.fn(() => ({}));
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+              messages: [
+                {
+                  ...feedbackThread().messages[0],
+                  reactions: [{ emoji: "👍", count: 2 }],
+                },
+              ],
+            }),
+          ],
+        }),
+        "diffFeedback/react": react,
+      },
+    });
+
+    expect(await screen.findByLabelText("👍 reaction: 2")).toBeTruthy();
+    fireEvent.pointerDown(screen.getByLabelText("Add reaction to comment 11"), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "React with 🎉" }),
+    );
+
+    await waitFor(() =>
+      expect(react).toHaveBeenCalledWith(
+        expect.objectContaining({ message_id: 11, emoji: "🎉" }),
+      ),
+    );
   });
 
   it("keeps a file-scoped historical conversation replyable", async () => {

@@ -27,6 +27,7 @@ import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 import { projectWorkflowRunDiffFeedback } from "./workflow-run-events.ts";
 
 const FULL_SHA = /^[0-9a-f]{40}$/i;
+export const DIFF_FEEDBACK_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
 
 /** Diff lines shown around an anchor when a caller does not ask for a different window. */
 const DEFAULT_CONTEXT_RADIUS = 3;
@@ -135,8 +136,11 @@ async function resolveThread(
       freshness,
       created_by: thread.created_by,
       created_at: thread.created_at,
-      messages: S.listDiffFeedbackMessages(thread.id).map(
-        diffFeedbackMessageJSON,
+      messages: S.listDiffFeedbackMessages(thread.id).map((message) =>
+        diffFeedbackMessageJSON(
+          message,
+          S.listDiffFeedbackReactions(message.id),
+        ),
       ),
     },
     lines,
@@ -399,5 +403,29 @@ export const diffFeedback = {
       thread: await threadJSON(r.local_path, pull, thread),
       reply: diffFeedbackMessageJSON(reply),
     };
+  },
+
+  async react(
+    name: string,
+    number: number,
+    messageId: number,
+    emoji: string,
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const message = S.getDiffFeedbackMessage(messageId);
+    if (!message)
+      throw new ServiceError(404, "diff feedback message not found");
+    threadForPull(row.id, message.thread_id);
+    if (!(DIFF_FEEDBACK_REACTIONS as readonly string[]).includes(emoji)) {
+      throw new ServiceError(422, "unsupported diff feedback reaction");
+    }
+    S.createDiffFeedbackReaction(message.id, actorFor(sessionId), emoji);
+    return diffFeedbackMessageJSON(
+      message,
+      S.listDiffFeedbackReactions(message.id),
+    );
   },
 };

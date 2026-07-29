@@ -254,6 +254,18 @@ CREATE TABLE IF NOT EXISTS diff_feedback_messages (
 CREATE INDEX IF NOT EXISTS idx_diff_feedback_messages_thread
   ON diff_feedback_messages(thread_id, created_at, id);
 
+CREATE TABLE IF NOT EXISTS diff_feedback_reactions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id  INTEGER NOT NULL REFERENCES diff_feedback_messages(id) ON DELETE CASCADE,
+  author      TEXT NOT NULL,
+  emoji       TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  UNIQUE (message_id, author, emoji)
+);
+
+CREATE INDEX IF NOT EXISTS idx_diff_feedback_reactions_message
+  ON diff_feedback_reactions(message_id, created_at, id);
+
 -- Per-criterion grade of an acceptance criterion by a review (#1895). A child fact of the review
 -- row, mirroring review_comments: it inherits the review's head_sha pin and staleness with no extra
 -- machinery (a grade goes stale when its review does). criterion_id targets the stable id, so the

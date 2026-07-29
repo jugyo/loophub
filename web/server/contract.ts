@@ -940,6 +940,28 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "diffFeedback/react": {
+    description: "Add an emoji reaction to a diff feedback message.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        message_id: positiveInt,
+        emoji: strNonEmpty,
+        session_id: sid,
+      },
+      ["repo", "number", "message_id", "emoji"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.diffFeedback.react(
+        p.repo,
+        p.number,
+        p.message_id,
+        p.emoji,
+        p.session_id,
+      ),
+  },
   "pulls/commitFiles": {
     description:
       "List files changed by one commit in a pull request, compared with its first parent.",

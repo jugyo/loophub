@@ -23,6 +23,14 @@ export interface DiffFeedbackMessageRow {
   created_at: string;
 }
 
+export interface DiffFeedbackReactionRow {
+  id: number;
+  message_id: number;
+  author: string;
+  emoji: string;
+  created_at: string;
+}
+
 export function listDiffFeedbackThreads(
   issueId: number,
 ): DiffFeedbackThreadRow[] {
@@ -112,4 +120,32 @@ export function createDiffFeedbackMessage(
        VALUES (?, ?, ?, ?) RETURNING *`,
     )
     .get(threadId, author, body, now()) as DiffFeedbackMessageRow;
+}
+
+export function listDiffFeedbackReactions(
+  messageId: number,
+): DiffFeedbackReactionRow[] {
+  return db
+    .query(
+      `SELECT * FROM diff_feedback_reactions
+       WHERE message_id = ? ORDER BY created_at ASC, id ASC`,
+    )
+    .all(messageId) as DiffFeedbackReactionRow[];
+}
+
+export function createDiffFeedbackReaction(
+  messageId: number,
+  author: string,
+  emoji: string,
+): DiffFeedbackReactionRow {
+  db.query(
+    `INSERT OR IGNORE INTO diff_feedback_reactions
+     (message_id, author, emoji, created_at) VALUES (?, ?, ?, ?)`,
+  ).run(messageId, author, emoji, now());
+  return db
+    .query(
+      `SELECT * FROM diff_feedback_reactions
+       WHERE message_id = ? AND author = ? AND emoji = ?`,
+    )
+    .get(messageId, author, emoji) as DiffFeedbackReactionRow;
 }

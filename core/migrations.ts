@@ -698,6 +698,7 @@ export const MIGRATIONS: Migration[] = [
   sql(
     "050-simplify-diff-feedback-conversations",
     `
+    DROP TABLE IF EXISTS diff_feedback_reactions;
     DROP INDEX IF EXISTS idx_diff_feedback_threads_issue_status;
     DROP INDEX IF EXISTS idx_diff_feedback_threads_issue;
     DROP INDEX IF EXISTS idx_diff_feedback_messages_thread;
@@ -740,6 +741,21 @@ export const MIGRATIONS: Migration[] = [
       ON diff_feedback_messages(thread_id, created_at, id);
     DROP TABLE diff_feedback_messages_old;
     DROP TABLE diff_feedback_threads_old;
+  `,
+  ),
+  sql(
+    "051-create-diff-feedback-reactions",
+    `
+    CREATE TABLE IF NOT EXISTS diff_feedback_reactions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id  INTEGER NOT NULL REFERENCES diff_feedback_messages(id) ON DELETE CASCADE,
+      author      TEXT NOT NULL,
+      emoji       TEXT NOT NULL,
+      created_at  TEXT NOT NULL,
+      UNIQUE (message_id, author, emoji)
+    );
+    CREATE INDEX IF NOT EXISTS idx_diff_feedback_reactions_message
+      ON diff_feedback_reactions(message_id, created_at, id);
   `,
   ),
 ];
