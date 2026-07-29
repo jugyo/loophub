@@ -429,6 +429,8 @@ describe("PullDetail", () => {
     ]);
     expect(row.className).toContain("grid-cols-");
     expect(filename.className).toContain("truncate");
+    expect(filename.className).toContain("font-mono");
+    expect(filename.className).toContain("text-xs");
     expect(filename.className).toContain("[direction:rtl]");
   });
 

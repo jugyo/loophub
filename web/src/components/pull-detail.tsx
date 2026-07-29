@@ -678,7 +678,7 @@ function FileSummaryRow({
         className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         <FileStatusBadge status={file.status} />
-        <span className="min-w-0 truncate font-medium [direction:rtl]">
+        <span className="min-w-0 truncate font-mono text-xs [direction:rtl]">
           {file.filename}
         </span>
         <DiffStat
