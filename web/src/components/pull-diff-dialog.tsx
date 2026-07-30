@@ -1112,7 +1112,7 @@ function UnifiedDiff({
                   />
                   <td
                     className={cn(
-                      "whitespace-pre-wrap break-words pr-4",
+                      "whitespace-pre-wrap break-words pr-4 align-top",
                       (leftAnchored || rightAnchored) &&
                         "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
                       (leftSelected || rightSelected) && "bg-blue-500/10",
@@ -1330,7 +1330,8 @@ function LineNumber({
     <td
       aria-label={line === null ? undefined : `${label} line ${line}`}
       className={cn(
-        "group relative w-12 select-none border-r px-2 text-right text-muted-foreground/70",
+        // align-top keeps the number on the first visual line when the content cell wraps.
+        "group relative w-12 select-none border-r px-2 text-right align-top text-muted-foreground/70",
         choice && "cursor-pointer hover:bg-blue-500/15",
         anchored &&
           "bg-amber-500/15 text-amber-800 shadow-[inset_3px_0_0_0] shadow-amber-500/70 dark:text-amber-200",
@@ -1380,8 +1381,9 @@ function AddCommentButton({
     <button
       type="button"
       // Kept mounted but invisible so it stays reachable by keyboard; the cell below it starts
-      // the same selection when the pointer lands on the hidden button.
-      className="absolute left-0.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded-sm bg-blue-600 text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+      // the same selection when the pointer lands on the hidden button. top-2.5 centers it on the
+      // first line box (leading-5) so it stays beside the number when the content cell wraps.
+      className="absolute left-0.5 top-2.5 flex size-4 -translate-y-1/2 items-center justify-center rounded-sm bg-blue-600 text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
       aria-label={`Comment on ${label}`}
       onClick={onClick}
     >
@@ -1424,7 +1426,7 @@ function SplitLine({
             : `${side === "old" ? "Old" : "New"} line ${lineNumber}`
         }
         className={cn(
-          "group relative w-12 select-none border-r px-2 text-right text-muted-foreground/70",
+          "group relative w-12 select-none border-r px-2 text-right align-top text-muted-foreground/70",
           line && DIFF_LINE_CLASS[line.kind],
           side === "new" && "border-l",
           choice && "cursor-pointer hover:bg-blue-500/15",
@@ -1446,7 +1448,7 @@ function SplitLine({
       </td>
       <td
         className={cn(
-          "min-w-0",
+          "min-w-0 align-top",
           line && DIFF_LINE_CLASS[line.kind],
           anchored &&
             "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",

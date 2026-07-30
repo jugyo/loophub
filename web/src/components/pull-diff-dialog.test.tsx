@@ -389,6 +389,22 @@ describe("DiffFileDialog", () => {
     );
   });
 
+  it("keeps line numbers on the first line of wrapped rows in both views", () => {
+    renderDialog();
+
+    const splitNumber = screen.getByLabelText("Old line 1");
+    expect(splitNumber.classList).toContain("align-top");
+    expect(splitNumber.nextElementSibling?.classList).toContain("align-top");
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+
+    const unifiedNumber = screen.getByLabelText("Old line 1");
+    expect(unifiedNumber.classList).toContain("align-top");
+    expect(screen.getByText("const x = 1;").closest("td")?.classList).toContain(
+      "align-top",
+    );
+  });
+
   it("ignores whitespace-only changes in split and unified views, then restores them", async () => {
     const fullPatch =
       "@@ -1,3 +1,3 @@\n-const first = 1;\n+  const first = 1;\n-const second = 2;\n+const second = 3;\n keep";
