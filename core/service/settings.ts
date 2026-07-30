@@ -11,7 +11,9 @@ import {
 } from "../config.ts";
 import { ServiceError } from "../errors.ts";
 import { CODING_AGENTS, isCodingAgent } from "../runtimes.ts";
+import type { GlobalSettingsWire } from "../serialize.ts";
 import * as S from "../store.ts";
+import { isTheme, type Theme } from "../theme.ts";
 import {
   WORKFLOW_CONTRACT_LANGUAGES,
   type WorkflowContractLanguage,
@@ -20,7 +22,13 @@ import { actorFor } from "./shared.ts";
 
 // The accepted coding-agent ids, for validation error messages ("claude-code, codex, grok").
 const CODING_AGENTS_SENTENCE = CODING_AGENTS.join(", ");
+const THEME_KEY = "theme";
 const WORKFLOW_CONTRACT_LANGUAGE_KEY = "workflow_contract_language";
+
+export function theme(): Theme | null {
+  const value = S.getInstanceSetting(THEME_KEY);
+  return isTheme(value) ? value : null;
+}
 
 export function workflowContractLanguage(): WorkflowContractLanguage {
   const value = S.getInstanceSetting(WORKFLOW_CONTRACT_LANGUAGE_KEY);
@@ -80,16 +88,12 @@ function validateDevCostLimitUsd(value: unknown): asserts value is number {
 // Instance-level settings, as opposed to repo-scoped settings. Existing agent/cost values live in
 // config.json; Workflow contract language lives in SQLite so every process shares one source.
 export const settings = {
-  get(): {
-    agents: Record<CodingAgent, AgentSettingsShape>;
-    codingAgent: CodingAgent;
-    devCostLimitUsd: number;
-    workflowContractLanguage: WorkflowContractLanguage;
-  } {
+  get(): GlobalSettingsWire {
     return {
       agents: agentSettings(),
       codingAgent: codingAgent(),
       devCostLimitUsd: devCostLimitUsd(),
+      theme: theme(),
       workflowContractLanguage: workflowContractLanguage(),
     };
   },
@@ -104,15 +108,11 @@ export const settings = {
       effort?: string;
       codingAgent?: CodingAgent;
       devCostLimitUsd?: number;
+      theme?: Theme;
       workflowContractLanguage?: WorkflowContractLanguage;
     },
     sessionId?: string | null,
-  ): {
-    agents: Record<CodingAgent, AgentSettingsShape>;
-    codingAgent: CodingAgent;
-    devCostLimitUsd: number;
-    workflowContractLanguage: WorkflowContractLanguage;
-  } {
+  ): GlobalSettingsWire {
     if (input.model !== undefined) {
       if (typeof input.model !== "string" || !input.model.trim()) {
         throw new ServiceError(422, "model must be a non-empty string");
@@ -133,6 +133,9 @@ export const settings = {
     }
     if (input.devCostLimitUsd !== undefined) {
       validateDevCostLimitUsd(input.devCostLimitUsd);
+    }
+    if (input.theme !== undefined && !isTheme(input.theme)) {
+      throw new ServiceError(422, "theme must be a supported theme");
     }
     if (
       input.workflowContractLanguage !== undefined &&
@@ -159,6 +162,9 @@ export const settings = {
     }
     if (input.devCostLimitUsd !== undefined) {
       updateDevCostLimitUsd(input.devCostLimitUsd);
+    }
+    if (input.theme !== undefined) {
+      S.setInstanceSetting(THEME_KEY, input.theme);
     }
     if (input.workflowContractLanguage !== undefined) {
       S.setInstanceSetting(

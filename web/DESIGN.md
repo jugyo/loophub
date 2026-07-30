@@ -61,20 +61,20 @@ Theming is **class-based** (`darkMode: ["class"]`). Theme definitions live in
 `src/lib/theme.ts`; each theme has a stable persisted ID, a label, a light/dark
 appearance, and a complete token set. The built-in set currently exposes eight
 choices.
-`light` and `dark` remain valid stored IDs in `localStorage` (`lh_theme`) for
-existing users, but their reader-facing labels are `LoopHub (Light)` and
-`LoopHub (Dark)`. Add a non-default theme by extending `THEMES` in
-`src/lib/theme.ts`; the `Theme` union is derived from that array, and tests
-assert every theme provides all required tokens.
+`light` and `dark` use the reader-facing labels `LoopHub (Light)` and `LoopHub
+(Dark)`. Add a non-default theme to both the shared ID registry in
+`core/theme.ts` and `THEMES` in `src/lib/theme.ts`; tests assert every theme
+provides all required tokens.
 
 The header **theme selector** (`components/theme-toggle.tsx`) applies themes via
 `lib/theme.ts`, which sets `data-theme`, a `theme-*` class, and the `dark` class
 for dark-appearance themes, then writes the selected theme's token values onto
-`<html>`. Components should not branch on theme. On first visit the initial
-theme follows the OS `prefers-color-scheme`; an inline guard in `index.html`
-applies the persisted theme ID and stored light/dark appearance before first
-paint. When the app module starts, `src/main.tsx` reapplies the selected
-`theme.ts` token set before React renders.
+`<html>`. Components should not branch on theme. The selected theme is stored
+in the server's instance settings, and `settings.updated` events keep open tabs
+in sync. Before a theme is selected, the initial theme follows the OS
+`prefers-color-scheme`; an inline guard in `index.html` applies that fallback
+before first paint. When the app module starts, `src/main.tsx` fetches settings
+and applies the selected `theme.ts` token set before React renders.
 
 ### Radius
 

@@ -1,9 +1,11 @@
 // Web UI themes. This file is the runtime source of truth for theme IDs,
 // labels, light/dark appearance, and CSS variable values.
 //
-// The initial class is set by an inline script in index.html before React
-// mounts. That guard reads the persisted theme ID and persisted appearance so
-// adding a theme does not require updating index.html.
+// The initial light/dark class is set from the OS preference by an inline
+// script in index.html before React mounts. The server-persisted selection is
+// applied before the app renders.
+
+import type { Theme as ThemeId } from "@/api/types";
 
 type ThemeAppearance = "light" | "dark";
 
@@ -36,15 +38,19 @@ export type ThemeTokenKey = (typeof THEME_TOKEN_KEYS)[number];
 export type ThemeTokens = Record<ThemeTokenKey, string>;
 
 type ThemeDefinitionInput = {
-  id: string;
+  id: ThemeId;
   label: string;
   description: string;
   appearance: ThemeAppearance;
   tokens: ThemeTokens;
 };
 
-export const THEMES = [
-  {
+type ThemeDefinitions = {
+  [Id in ThemeId]: ThemeDefinitionInput & { id: Id };
+};
+
+const THEME_DEFINITIONS = {
+  light: {
     id: "light",
     label: "LoopHub (Light)",
     description: "Bright neutral workspace",
@@ -74,7 +80,7 @@ export const THEMES = [
       ring: "var(--primary)",
     },
   },
-  {
+  dark: {
     id: "dark",
     label: "LoopHub (Dark)",
     description: "Low-light neutral workspace",
@@ -104,7 +110,7 @@ export const THEMES = [
       ring: "var(--primary)",
     },
   },
-  {
+  solarized: {
     id: "solarized",
     label: "Solarized Light",
     description: "Warm paper with teal accents",
@@ -134,7 +140,7 @@ export const THEMES = [
       ring: "var(--primary)",
     },
   },
-  {
+  "solarized-dark": {
     id: "solarized-dark",
     label: "Solarized Dark",
     description: "Ink-blue workspace with amber accents",
@@ -164,7 +170,7 @@ export const THEMES = [
       ring: "var(--primary)",
     },
   },
-  {
+  midnight: {
     id: "midnight",
     label: "Midnight",
     description: "Deep blue with cyan accents",
@@ -194,7 +200,7 @@ export const THEMES = [
       ring: "var(--primary)",
     },
   },
-  {
+  graphite: {
     id: "graphite",
     label: "Graphite",
     description: "Soft charcoal with violet accents",
@@ -224,7 +230,7 @@ export const THEMES = [
       ring: "var(--primary)",
     },
   },
-  {
+  forest: {
     id: "forest",
     label: "Forest",
     description: "Fresh green workspace",
@@ -254,7 +260,7 @@ export const THEMES = [
       ring: "var(--primary)",
     },
   },
-  {
+  rose: {
     id: "rose",
     label: "Rose",
     description: "Warm rose workspace",
@@ -284,34 +290,17 @@ export const THEMES = [
       ring: "var(--primary)",
     },
   },
-] as const satisfies readonly ThemeDefinitionInput[];
+} as const satisfies ThemeDefinitions;
 
-export type Theme = (typeof THEMES)[number]["id"];
+export const THEMES = Object.values(THEME_DEFINITIONS);
+
+export type Theme = ThemeId;
 export type ThemeDefinition = (typeof THEMES)[number];
-
-export const THEME_STORAGE_KEY = "lh_theme";
-export const THEME_APPEARANCE_STORAGE_KEY = "lh_theme_appearance";
 
 const THEME_CLASS_PREFIX = "theme-";
 
-function isTheme(value: string | null): value is Theme {
-  return THEMES.some((theme) => theme.id === value);
-}
-
 export function getThemeDefinition(theme: Theme): ThemeDefinition {
   return THEMES.find((candidate) => candidate.id === theme) ?? THEMES[0];
-}
-
-/** Theme persisted by the user, or null if they never chose one. */
-export function getStoredTheme(): Theme | null {
-  // localStorage access throws in sandboxed iframes / some private modes;
-  // treat any failure as "no stored choice" so init never crashes.
-  try {
-    const value = localStorage.getItem(THEME_STORAGE_KEY);
-    return isTheme(value) ? value : null;
-  } catch {
-    return null;
-  }
 }
 
 /** The OS preference, defaulting to dark when it can't be read. */
@@ -327,9 +316,9 @@ export function getSystemTheme(): Theme {
   }
 }
 
-/** Stored choice if any, otherwise the OS preference. */
-export function resolveInitialTheme(): Theme {
-  return getStoredTheme() ?? getSystemTheme();
+/** Server choice if any, otherwise the OS preference. */
+export function resolveInitialTheme(theme?: Theme | null): Theme {
+  return theme ?? getSystemTheme();
 }
 
 /** Apply the selected theme's root classes, data attribute, and CSS variables. */
@@ -347,37 +336,4 @@ export function applyTheme(theme: Theme): void {
   for (const key of THEME_TOKEN_KEYS) {
     root.style.setProperty(`--${key}`, definition.tokens[key]);
   }
-}
-
-/**
- * Watch for theme changes persisted by other tabs on the same origin.
- * `storage` only fires in tabs other than the one that wrote the value, so the
- * writing tab keeps using its own setTheme path. Returns an unsubscribe.
- */
-export function subscribeStoredTheme(
-  onChange: (theme: Theme) => void,
-): () => void {
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key !== THEME_STORAGE_KEY) return;
-    if (!isTheme(event.newValue)) return;
-    onChange(event.newValue);
-  };
-
-  window.addEventListener("storage", handleStorage);
-  return () => window.removeEventListener("storage", handleStorage);
-}
-
-/** Persist and apply the user's chosen theme. */
-export function setTheme(theme: Theme): void {
-  const definition = getThemeDefinition(theme);
-
-  // Apply unconditionally so the DOM stays in sync with state even when
-  // persistence fails (private mode quota / sandboxed storage).
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-    localStorage.setItem(THEME_APPEARANCE_STORAGE_KEY, definition.appearance);
-  } catch {
-    // Persistence is best-effort; the visual switch below still happens.
-  }
-  applyTheme(theme);
 }

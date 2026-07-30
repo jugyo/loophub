@@ -3,7 +3,7 @@
 // serializer change that alters a shape breaks this build instead of silently drifting.
 // HerdrPullWorkspace/HerdrIssueWorkspace likewise derive from core/terminal/herdr-status.ts,
 // whose interfaces the terminal/sessions RPC returns as-is. The remaining shapes with no core
-// counterpart (Terminal/Settings/Stats/dashboard/events) stay hand-written below.
+// counterpart (Terminal/Stats/dashboard/events) stay hand-written below.
 import type {
   DiffFile,
   FileAtRef as FileAtRefWire,
@@ -20,6 +20,7 @@ import type {
   DiffFeedbackThreadWire,
   GithubPrStatusWire,
   GithubPullWire,
+  GlobalSettingsWire,
   HandoffWire,
   HerdrRepoSessionsWire,
   HerdrSessionAgentWire,
@@ -49,6 +50,7 @@ import type {
   SessionUsageWire,
   TerminalLaunchBackendWire,
   TerminalLaunchResultWire,
+  ThemeWire,
   UserWire,
   WebConfigWire,
   WorkflowContractLanguageWire,
@@ -195,26 +197,10 @@ export interface HerdrAgentRead {
  */
 export type CodingAgent = CodingAgentWire;
 
-/** Per-agent settings (#593, #594, #682). */
-export interface AgentSettings {
-  // Model this agent launches with when no explicit --model is passed (#594).
-  model: string;
-  // Reasoning effort paired with model in the Settings screen (#682).
-  effort: string;
-}
-
 /** Instance-level settings (`settings/get`, `settings/update`, #474). */
-export interface GlobalSettings {
-  // Per-agent settings, keyed by CodingAgent (#593).
-  agents: Record<CodingAgent, AgentSettings>;
-  // Default coding agent for launches (#516).
-  codingAgent: CodingAgent;
-  // Per-task over-budget threshold for implementation agents (#1027).
-  devCostLimitUsd: number;
-  // Language used by fixed Workflow contracts and captured on each new run (#1699).
-  workflowContractLanguage: WorkflowContractLanguageWire;
-}
+export type GlobalSettings = GlobalSettingsWire;
 
+export type Theme = ThemeWire;
 export type WorkflowContractLanguage = WorkflowContractLanguageWire;
 
 /** Database statistics (`stats/get`, #587) for the /stats page. */

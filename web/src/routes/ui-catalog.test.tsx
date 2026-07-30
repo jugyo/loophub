@@ -60,7 +60,6 @@ describe("UiCatalogPage", () => {
   });
 
   it("applies theme changes only to the catalog wrapper", async () => {
-    localStorage.setItem("lh_theme", "dark");
     document.documentElement.classList.add("theme-dark", "dark");
     document.documentElement.dataset.theme = "dark";
 
@@ -78,7 +77,6 @@ describe("UiCatalogPage", () => {
     fireEvent.click(forestItem);
 
     expect(wrapper?.getAttribute("data-catalog-theme")).toBe("forest");
-    expect(localStorage.getItem("lh_theme")).toBe("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.documentElement.classList.contains("theme-dark")).toBe(
       true,

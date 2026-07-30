@@ -4,6 +4,7 @@
 // import core types. The dispatcher (rpc.ts) compiles the params schemas with ajv and
 // validates incoming params before calling the handler.
 import * as svc from "../../core/service.ts";
+import { THEME_IDS } from "../../core/theme.ts";
 import { webRuntimeConfig } from "./runtime-config.ts";
 
 export const PROTOCOL_VERSION = "2026-07-11";
@@ -201,20 +202,21 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, workflowContractLanguage).",
+      "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, theme, workflowContractLanguage).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
   },
   "settings/update": {
     description:
-      "Update instance-level settings. model/effort require agent; workflowContractLanguage is DB-backed.",
+      "Update instance-level settings. model/effort require agent; theme and workflowContractLanguage are DB-backed.",
     params: params({
       agent: { enum: ["claude-code", "codex", "grok"] },
       model: strNonEmpty,
       effort: strNonEmpty,
       codingAgent: { enum: ["claude-code", "codex", "grok"] },
       devCostLimitUsd,
+      theme: { enum: THEME_IDS },
       workflowContractLanguage: { enum: ["en", "ja"] },
       session_id: sid,
     }),
@@ -227,6 +229,7 @@ export const methods: Record<string, MethodDef> = {
           effort: p.effort,
           codingAgent: p.codingAgent,
           devCostLimitUsd: p.devCostLimitUsd,
+          theme: p.theme,
           workflowContractLanguage: p.workflowContractLanguage,
         },
         p.session_id,

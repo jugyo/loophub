@@ -2,46 +2,57 @@
 // (set by the inline FOUC guard); this hook tracks and updates the selection.
 
 import { useCallback, useEffect, useState } from "react";
+import { useToast } from "@/components/toast";
+import { errorMessage } from "@/lib/error-message";
 import {
   applyTheme,
   getThemeDefinition,
-  setTheme as persistTheme,
   resolveInitialTheme,
-  subscribeStoredTheme,
   type Theme,
 } from "@/lib/theme";
+import { useSettings, useUpdateSettings } from "@/queries/settings";
 
 export function useTheme(): {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   toggle: () => void;
 } {
-  const [theme, setThemeState] = useState<Theme>(resolveInitialTheme);
-
-  const setTheme = useCallback((next: Theme) => {
-    setThemeState(next);
-    persistTheme(next);
-  }, []);
-
-  // Another tab switched the theme: apply it here too so every open tab of the
-  // same origin stays in sync without a reload.
-  useEffect(
-    () =>
-      subscribeStoredTheme((next) => {
-        setThemeState(next);
-        applyTheme(next);
-      }),
-    [],
+  const settings = useSettings();
+  const { mutate: updateSettings } = useUpdateSettings();
+  const { showError } = useToast();
+  const [theme, setThemeState] = useState<Theme>(() =>
+    resolveInitialTheme(settings.data?.theme),
   );
 
-  const toggle = useCallback(() => {
-    setThemeState((prev) => {
-      const next: Theme =
-        getThemeDefinition(prev).appearance === "dark" ? "light" : "dark";
-      persistTheme(next);
-      return next;
-    });
-  }, []);
+  const selectTheme = useCallback(
+    (next: Theme) => {
+      setThemeState(next);
+      applyTheme(next);
+      updateSettings(
+        { theme: next },
+        {
+          onError: (error) =>
+            showError(errorMessage(error, "Failed to save theme")),
+        },
+      );
+    },
+    [showError, updateSettings],
+  );
 
-  return { theme, setTheme, toggle };
+  // settings.updated events invalidate this query, so selections made in
+  // another tab arrive through the same server-backed read path.
+  useEffect(() => {
+    if (!settings.data) return;
+    const next = resolveInitialTheme(settings.data.theme);
+    setThemeState(next);
+    applyTheme(next);
+  }, [settings.data]);
+
+  const toggle = useCallback(() => {
+    selectTheme(
+      getThemeDefinition(theme).appearance === "dark" ? "light" : "dark",
+    );
+  }, [selectTheme, theme]);
+
+  return { theme, setTheme: selectTheme, toggle };
 }

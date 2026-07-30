@@ -29,6 +29,8 @@ import type {
   HerdrPullWorkspace,
 } from "./terminal/herdr-status.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
+import type { Theme } from "./theme.ts";
+import type { WorkflowContractLanguage } from "./workflow/contracts.ts";
 import {
   parseWorkflowEventPayload,
   type StoredWorkflowEventPayload,
@@ -40,7 +42,21 @@ import type { WorkflowStepStatuses } from "./workflow/steps.ts";
 // summary, scheduled tasks, per-agent settings). Re-export it from the registry so web/src/api/types.ts
 // derives `CodingAgent` from core via a type-only import instead of re-declaring the union.
 export type { CodingAgent } from "./runtimes.ts";
+export type { Theme as ThemeWire } from "./theme.ts";
 export type { WorkflowContractLanguage as WorkflowContractLanguageWire } from "./workflow/contracts.ts";
+
+export interface AgentSettingsWire {
+  model: string;
+  effort: string;
+}
+
+export interface GlobalSettingsWire {
+  agents: Record<CodingAgent, AgentSettingsWire>;
+  codingAgent: CodingAgent;
+  devCostLimitUsd: number;
+  theme: Theme | null;
+  workflowContractLanguage: WorkflowContractLanguage;
+}
 
 export interface RepoWire {
   id: number;

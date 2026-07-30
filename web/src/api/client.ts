@@ -40,6 +40,7 @@ import type {
   SearchResult,
   Stats,
   TerminalLaunchResult,
+  Theme,
   WebConfig,
   Workflow,
   WorkflowContracts,
@@ -452,15 +453,18 @@ export function getSettings() {
   return rpc<GlobalSettings>("settings/get");
 }
 
+export interface UpdateSettingsInput {
+  agent?: CodingAgent;
+  model?: string;
+  effort?: string;
+  codingAgent?: CodingAgent;
+  devCostLimitUsd?: number;
+  theme?: Theme;
+  workflowContractLanguage?: GlobalSettings["workflowContractLanguage"];
+}
+
 export function updateSettings(
-  input: {
-    agent?: CodingAgent;
-    model?: string;
-    effort?: string;
-    codingAgent?: CodingAgent;
-    devCostLimitUsd?: number;
-    workflowContractLanguage?: GlobalSettings["workflowContractLanguage"];
-  },
+  input: UpdateSettingsInput,
   sessionId: string = getSessionId(),
 ) {
   return rpc<GlobalSettings>("settings/update", {

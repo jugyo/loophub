@@ -6,42 +6,17 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>LoopHub</title>
     <!--
-      FOUC guard: set theme classes before first paint. Mirrors
-      resolveInitialTheme() / applyTheme() in src/lib/theme.ts — stored choice
-      wins, else the OS preference, else dark. Theme definitions live in
-      src/lib/theme.ts; this guard only trusts a persisted ID plus its
-      persisted light/dark appearance.
+      FOUC guard: use the OS preference until the server-persisted theme is
+      loaded and applied by src/main.tsx.
     -->
     <script>
       (() => {
-        const themeKey = "lh_theme";
-        const appearanceKey = "lh_theme_appearance";
-        const safeThemeId = (value) =>
-          /^[a-z0-9-]+$/.test(value || "") ? value : null;
-        const systemTheme = () =>
-          window.matchMedia("(prefers-color-scheme: light)").matches
+        try {
+          const t = window.matchMedia("(prefers-color-scheme: light)").matches
             ? "light"
             : "dark";
-        let t = "dark";
-        let appearance = "dark";
-        try {
-          t = safeThemeId(localStorage.getItem(themeKey));
-          appearance = localStorage.getItem(appearanceKey);
-
-          if (appearance !== "light" && appearance !== "dark") {
-            if (t === "light" || t === "dark") {
-              appearance = t;
-            } else {
-              t = systemTheme();
-              appearance = t;
-            }
-          } else if (!t) {
-            t = systemTheme();
-            appearance = t;
-          }
-
           document.documentElement.classList.add(`theme-${t}`);
-          document.documentElement.classList.toggle("dark", appearance === "dark");
+          document.documentElement.classList.toggle("dark", t === "dark");
           document.documentElement.dataset.theme = t;
         } catch {
           document.documentElement.classList.add("theme-dark");

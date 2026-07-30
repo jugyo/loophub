@@ -1,13 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyTheme,
-  getStoredTheme,
   getThemeDefinition,
   resolveInitialTheme,
-  setTheme,
-  subscribeStoredTheme,
-  THEME_APPEARANCE_STORAGE_KEY,
-  THEME_STORAGE_KEY,
   THEME_TOKEN_KEYS,
   THEMES,
 } from "./theme";
@@ -90,7 +85,6 @@ function mockSystemTheme(prefersLight: boolean) {
 }
 
 beforeEach(() => {
-  localStorage.clear();
   document.documentElement.removeAttribute("class");
   document.documentElement.removeAttribute("data-theme");
   document.documentElement.removeAttribute("style");
@@ -108,39 +102,10 @@ describe("THEMES", () => {
   });
 });
 
-describe("getStoredTheme", () => {
-  it("returns null when nothing is stored", () => {
-    expect(getStoredTheme()).toBeNull();
-  });
-
-  it("returns the stored value when valid", () => {
-    localStorage.setItem(THEME_STORAGE_KEY, "light");
-    expect(getStoredTheme()).toBe("light");
-  });
-
-  it("returns newly added theme ids when valid", () => {
-    localStorage.setItem(THEME_STORAGE_KEY, "forest");
-    expect(getStoredTheme()).toBe("forest");
-  });
-
-  it("ignores invalid stored values", () => {
-    localStorage.setItem(THEME_STORAGE_KEY, "neon");
-    expect(getStoredTheme()).toBeNull();
-  });
-
-  it("returns null when localStorage access throws", () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("SecurityError");
-    });
-    expect(getStoredTheme()).toBeNull();
-  });
-});
-
 describe("resolveInitialTheme", () => {
-  it("prefers the stored choice over the OS preference", () => {
+  it("prefers the server choice over the OS preference", () => {
     mockSystemTheme(true);
-    localStorage.setItem(THEME_STORAGE_KEY, "dark");
-    expect(resolveInitialTheme()).toBe("dark");
+    expect(resolveInitialTheme("dark")).toBe("dark");
   });
 
   it("falls back to the OS preference when unset", () => {
@@ -205,75 +170,6 @@ describe("applyTheme", () => {
     expect(document.documentElement.style.getPropertyValue("--primary")).toBe(
       tokens.primary,
     );
-  });
-});
-
-describe("setTheme", () => {
-  it("persists and applies the theme", () => {
-    setTheme("light");
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
-    expect(localStorage.getItem(THEME_APPEARANCE_STORAGE_KEY)).toBe("light");
-    expect(document.documentElement.classList.contains("dark")).toBe(false);
-
-    setTheme("dark");
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
-    expect(localStorage.getItem(THEME_APPEARANCE_STORAGE_KEY)).toBe("dark");
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-  });
-
-  it("persists and applies a non-default theme", () => {
-    setTheme("midnight");
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("midnight");
-    expect(localStorage.getItem(THEME_APPEARANCE_STORAGE_KEY)).toBe("dark");
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-    expect(document.documentElement.classList.contains("theme-midnight")).toBe(
-      true,
-    );
-  });
-
-  it("still applies the theme when persistence throws", () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("QuotaExceededError");
-    });
-    document.documentElement.classList.add("dark");
-    expect(() => setTheme("light")).not.toThrow();
-    expect(document.documentElement.classList.contains("dark")).toBe(false);
-  });
-});
-
-describe("subscribeStoredTheme", () => {
-  function emitStorage(key: string | null, newValue: string | null) {
-    window.dispatchEvent(new StorageEvent("storage", { key, newValue }));
-  }
-
-  it("reports theme changes made by another tab", () => {
-    const onChange = vi.fn();
-    const unsubscribe = subscribeStoredTheme(onChange);
-
-    emitStorage(THEME_STORAGE_KEY, "midnight");
-    expect(onChange).toHaveBeenCalledWith("midnight");
-
-    unsubscribe();
-  });
-
-  it("ignores other keys and invalid values", () => {
-    const onChange = vi.fn();
-    const unsubscribe = subscribeStoredTheme(onChange);
-
-    emitStorage(THEME_APPEARANCE_STORAGE_KEY, "dark");
-    emitStorage(THEME_STORAGE_KEY, "neon");
-    emitStorage(null, null);
-    expect(onChange).not.toHaveBeenCalled();
-
-    unsubscribe();
-  });
-
-  it("stops reporting once unsubscribed", () => {
-    const onChange = vi.fn();
-    subscribeStoredTheme(onChange)();
-
-    emitStorage(THEME_STORAGE_KEY, "forest");
-    expect(onChange).not.toHaveBeenCalled();
   });
 });
 

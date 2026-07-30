@@ -37,6 +37,7 @@ test("settings.get defaults to the model/effort for every agent and claude-code"
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    theme: null,
     workflowContractLanguage: "en",
   });
 });
@@ -90,6 +91,7 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    theme: null,
     workflowContractLanguage: "en",
   });
   expect(svc.settings.get()).toEqual(result);
@@ -122,6 +124,7 @@ test("settings.update sets one agent's model without disturbing another's (#594)
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    theme: null,
     workflowContractLanguage: "en",
   });
 
@@ -167,6 +170,7 @@ test("settings.update omitting model preserves the persisted value (#594)", () =
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    theme: null,
     workflowContractLanguage: "en",
   });
 
@@ -192,6 +196,7 @@ test("settings.update persists a per-agent effort and is reflected by settings.g
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    theme: null,
     workflowContractLanguage: "en",
   });
   expect(svc.settings.get()).toEqual(result);
@@ -222,6 +227,7 @@ test("settings.update sets one agent's effort without disturbing another's (#682
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    theme: null,
     workflowContractLanguage: "en",
   });
 
@@ -267,6 +273,7 @@ test("settings.update omitting effort preserves the persisted value (#682)", () 
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    theme: null,
     workflowContractLanguage: "en",
   });
 
@@ -292,6 +299,7 @@ test("settings.update persists codingAgent and is reflected by settings.get (#51
     },
     codingAgent: "codex",
     devCostLimitUsd: 10,
+    theme: null,
     workflowContractLanguage: "en",
   });
   expect(svc.settings.get()).toEqual(result);
@@ -344,6 +352,7 @@ test("settings.update omitting codingAgent preserves the persisted value (#516)"
     },
     codingAgent: "codex",
     devCostLimitUsd: 10,
+    theme: null,
     workflowContractLanguage: "en",
   });
 
@@ -359,6 +368,30 @@ test("settings.update persists devCostLimitUsd and is reflected by settings.get 
   expect(raw.devCostLimitUsd).toBe(7.25);
 
   svc.settings.update({ devCostLimitUsd: 10 });
+});
+
+test("settings.update persists theme in the database", () => {
+  expect(svc.settings.update({ theme: "midnight" }).theme).toBe("midnight");
+  expect(svc.settings.get().theme).toBe("midnight");
+
+  const restarted = spawnSync(
+    process.execPath,
+    [
+      "--experimental-sqlite",
+      "--disable-warning=ExperimentalWarning",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "--eval",
+      'const { settings } = await import("./core/service.ts"); process.stdout.write(settings.get().theme ?? "null");',
+    ],
+    { cwd: process.cwd(), env: process.env, encoding: "utf8" },
+  );
+  expect(restarted.status, restarted.stderr).toBe(0);
+  expect(restarted.stdout).toBe("midnight");
+  expect(() => svc.settings.update({ theme: "neon" as any })).toThrow(
+    /theme must be a supported theme/,
+  );
 });
 
 test("settings.update accepts valid cent amounts despite floating-point representation (#1027)", () => {

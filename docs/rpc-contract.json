@@ -333,7 +333,7 @@
     },
     {
       "name": "settings/get",
-      "description": "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, workflowContractLanguage).",
+      "description": "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, theme, workflowContractLanguage).",
       "params": {
         "type": "object",
         "properties": {},
@@ -346,7 +346,7 @@
     },
     {
       "name": "settings/update",
-      "description": "Update instance-level settings. model/effort require agent; workflowContractLanguage is DB-backed.",
+      "description": "Update instance-level settings. model/effort require agent; theme and workflowContractLanguage are DB-backed.",
       "params": {
         "type": "object",
         "properties": {
@@ -378,6 +378,18 @@
             "maximum": 1000,
             "default": 10,
             "description": "Per-task USD over-budget stop threshold for implementation agents. Omit to use the $10 default. JSON Schema enforces the positive and $1,000 maximum bounds; the service additionally rejects values with more than two decimal places."
+          },
+          "theme": {
+            "enum": [
+              "light",
+              "dark",
+              "solarized",
+              "solarized-dark",
+              "midnight",
+              "graphite",
+              "forest",
+              "rose"
+            ]
           },
           "workflowContractLanguage": {
             "enum": [
@@ -1304,6 +1316,36 @@
             "minLength": 1
           },
           "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pullComments/create",
+      "description": "Add a human comment to a pull request.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "body": {
             "type": "string",
             "minLength": 1
           }
