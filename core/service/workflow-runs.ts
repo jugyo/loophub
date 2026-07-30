@@ -813,13 +813,10 @@ function workflowRunState(
   const workflowName = run.workflow_id
     ? (S.getWorkflowById(run.workflow_id)?.name ?? null)
     : null;
+  const projection = workflowRunEventProjection(repo.id, run.id);
   const prIssue = S.getIssue(repo.id, run.pr_number);
   const review = prIssue
-    ? latestWorkflowRunReview(
-        prIssue.id,
-        run.id,
-        workflowRunEventProjection(repo.id, run.id),
-      )
+    ? latestWorkflowRunReview(prIssue.id, run.id, projection)
     : null;
   const latestReview: WorkflowRunReviewSummaryWire | null = review
     ? {
@@ -849,6 +846,20 @@ function workflowRunState(
         ? "stale"
         : "unverified";
   const { incrementUsd, limitUsd } = workflowRunCostBudget(run);
+  const verifyLaunch = projection.latestVerifyLaunch;
+  const verifyHeadSha =
+    typeof verifyLaunch?.payload.head_sha === "string"
+      ? verifyLaunch.payload.head_sha
+      : null;
+  const latestReviewSubmission = review
+    ? projection.reviewSubmissions.get(review.id)?.latest
+    : undefined;
+  // `active_step` names the last activated pane and remains `verify` after its child submits a
+  // review. Event order distinguishes that completed launch from a newer verifier still working.
+  const verifyLaunchPending =
+    verifyLaunch !== null &&
+    (latestReviewSubmission === undefined ||
+      latestReviewSubmission.id < verifyLaunch.id);
   return workflowRunStateJSON({
     run,
     workflowName,
@@ -858,6 +869,13 @@ function workflowRunState(
     costIncrementUsd: incrementUsd,
     costLimitUsd: limitUsd,
     costLimitIncreaseAvailable: costLimitIncreaseAvailable(repo, run),
+    activeVerifyHeadSha:
+      run.status === "running" &&
+      run.needs_human_reason === null &&
+      run.active_step === "verify" &&
+      verifyLaunchPending
+        ? verifyHeadSha
+        : null,
   });
 }
 
@@ -1856,6 +1874,7 @@ export const workflowRuns = {
         step,
         session_id: sessionId,
         handoff_id: handoff.id,
+        head_sha: input.headSha ?? null,
         // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely (#1008).
         issue_number: run.issue_number,
         pr_number: run.pr_number,

@@ -68,7 +68,11 @@ function renderSection({
 } = {}) {
   vi.stubGlobal(
     "fetch",
-    mockRpcFetch({ "pulls/commitFiles": () => files, ...handlers }),
+    mockRpcFetch({
+      "pulls/commitFiles": () => files,
+      "workflowRuns/stateForPull": () => null,
+      ...handlers,
+    }),
   );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -91,6 +95,94 @@ function renderSection({
 }
 
 describe("PullCommitsSection", () => {
+  it("labels only the commit targeted by an active Verify step", async () => {
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          active_verify_head_sha: commits![1].sha,
+        }),
+      },
+    });
+
+    const reviewing = await screen.findByText("Reviewing");
+    const targetedCommit = screen
+      .getByRole("button", {
+        name: "View changes in bbbbbbb: Earlier change",
+      })
+      .closest("li")!;
+    expect(targetedCommit.contains(reviewing)).toBe(true);
+    expect(reviewing.className).toContain(
+      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
+    );
+    expect(
+      within(
+        screen
+          .getByRole("button", {
+            name: "View changes in aaaaaaa: Latest change",
+          })
+          .closest("li")!,
+      ).queryByText("Reviewing"),
+    ).toBeNull();
+  });
+
+  it.each([
+    { label: "no Verify is active", activeVerifyHeadSha: null },
+    {
+      label: "Verify targets another commit",
+      activeVerifyHeadSha: "c".repeat(40),
+    },
+  ])("does not label commits when $label", async ({ activeVerifyHeadSha }) => {
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          active_verify_head_sha: activeVerifyHeadSha,
+        }),
+      },
+    });
+
+    await waitFor(() =>
+      expect(rpcCall("workflowRuns/stateForPull")).toBeTruthy(),
+    );
+    expect(screen.queryByText("Reviewing")).toBeNull();
+  });
+
+  it("keeps Reviewing beside review status and the Pushed badge", async () => {
+    const pushedCommits = commits!.map((commit, index) => ({
+      ...commit,
+      pushed_to_github: index === 0,
+    }));
+    renderSection({
+      commits: pushedCommits,
+      reviews: [
+        {
+          id: 1,
+          user: { login: "quality-bot" },
+          state: "PASS",
+          body: "Looks good.",
+          head_sha: pushedCommits[0].sha,
+          model: null,
+          submitted_at: "2026-06-18T12:30:00Z",
+          ac_results: [],
+        },
+      ],
+      showGithubPushState: true,
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          active_verify_head_sha: pushedCommits[0].sha,
+        }),
+      },
+    });
+
+    const row = screen
+      .getByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      })
+      .closest("li")!;
+    expect(await within(row).findByText("Reviewing")).toBeTruthy();
+    expect(within(row).getByText("Reviewed")).toBeTruthy();
+    expect(within(row).getByText("Pushed")).toBeTruthy();
+  });
+
   it("opens review details from a compact status while keeping unreviewed commits simple", async () => {
     const reviews: PullReview[] = [
       {
@@ -393,17 +485,19 @@ describe("PullCommitsSection", () => {
     expect(screen.queryByText("No reviews.")).toBeNull();
 
     rerender(
-      <PullCommitsSection
-        owner="me"
-        repo="proj"
-        number={30}
-        commits={commits}
-        reviews={[]}
-        lineComments={[]}
-        isReviewsLoading={false}
-        isReviewsError={true}
-        showGithubPushState={false}
-      />,
+      <QueryClientProvider client={new QueryClient()}>
+        <PullCommitsSection
+          owner="me"
+          repo="proj"
+          number={30}
+          commits={commits}
+          reviews={[]}
+          lineComments={[]}
+          isReviewsLoading={false}
+          isReviewsError={true}
+          showGithubPushState={false}
+        />
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Failed to load reviews.")).toBeTruthy();

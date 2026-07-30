@@ -1481,6 +1481,7 @@ export interface WorkflowRunStateWire {
   workflow_name: string | null;
   status: string; // running | completed (closed PR); legacy rows may read 'stopped' or 'blocked'
   current_step: string; // execute | verify
+  active_verify_head_sha: string | null;
   rework_count: number;
   rework_limit: number;
   cost_increment_usd: number;
@@ -1552,6 +1553,7 @@ export function workflowRunStateJSON(input: {
   costIncrementUsd: number;
   costLimitUsd: number;
   costLimitIncreaseAvailable: boolean;
+  activeVerifyHeadSha: string | null;
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1560,6 +1562,7 @@ export function workflowRunStateJSON(input: {
     workflow_name: input.workflowName,
     status: run.status,
     current_step: run.current_step,
+    active_verify_head_sha: input.activeVerifyHeadSha,
     rework_count: run.rework_count,
     rework_limit: input.reworkLimit,
     cost_increment_usd: input.costIncrementUsd,

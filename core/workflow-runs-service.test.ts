@@ -924,11 +924,25 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     },
     parent,
   );
+  expect(
+    svc.workflowRuns.stateForPull(repo.full_name, {
+      pull: started.pr.number,
+    }),
+  ).toMatchObject({
+    status: "running",
+    current_step: "verify",
+    active_verify_head_sha: verify.head_sha,
+  });
   svc.workflowRuns.awaitHuman(
     repo.full_name,
     { run: started.run.id, reason: "Cost limit exceeded on Verify" },
     parent,
   );
+  expect(
+    svc.workflowRuns.stateForPull(repo.full_name, {
+      pull: started.pr.number,
+    })?.active_verify_head_sha,
+  ).toBeNull();
   const resumedVerify = await svc.workflowRuns.resumeAfterHuman(
     repo.full_name,
     { run: started.run.id, step: "verify" },
@@ -3204,6 +3218,93 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(waiting?.needs_human_reason).toBe("waiting for guidance");
+});
+
+test("stateForPull exposes only a Verify launch that has not submitted its review", async () => {
+  const repo = S.createRepo("me/workflow-active-verify", REPO_PATH);
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Show active Verify",
+    "body",
+    "me",
+  );
+  const prIssue = S.createIssue(
+    repo.id,
+    "pull",
+    "PR for active Verify",
+    "body",
+    "me",
+  );
+  const firstHead = "1".repeat(40);
+  const secondHead = "2".repeat(40);
+  S.createPull(prIssue.id, "active-verify-head", "main", firstHead, issue.id);
+  const workflow = S.createWorkflow({
+    name: "active-verify-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "23232323-2323-4232-8232-232323232323";
+  S.registerAgentSession(parent, "lh-workflow", parent);
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: prIssue.number,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId: parent,
+  });
+
+  const firstVerifier = "24242424-2424-4242-8242-242424242424";
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: run.id,
+      step: "verify",
+      sessionId: firstVerifier,
+      agentName: `verifier #${run.id}-1`,
+      pointers: [],
+      headSha: firstHead,
+    },
+    parent,
+  );
+  expect(
+    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
+      ?.active_verify_head_sha,
+  ).toBe(firstHead);
+
+  await svc.reviews.create(
+    repo.full_name,
+    prIssue.number,
+    { event: "PASS", headSha: firstHead, body: "First HEAD passes." },
+    firstVerifier,
+  );
+  expect(
+    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
+      ?.active_verify_head_sha,
+  ).toBeNull();
+
+  const secondVerifier = "25252525-2525-4252-8252-252525252525";
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: run.id,
+      step: "verify",
+      sessionId: secondVerifier,
+      agentName: `verifier #${run.id}-2`,
+      pointers: [],
+      headSha: secondHead,
+    },
+    parent,
+  );
+  expect(
+    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
+      ?.active_verify_head_sha,
+  ).toBe(secondHead);
 });
 
 test("human lifecycle intents sanitize reasons and authorize explicit resume (#1307)", async () => {

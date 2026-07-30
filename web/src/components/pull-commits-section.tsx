@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { usePullCommitFiles } from "@/queries/pulls";
+import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 
 type PullCommit = NonNullable<PullRequest["commits"]>[number];
 type SelectedReviewGroup = {
@@ -49,6 +50,7 @@ export function PullCommitsSection({
   const [selectedCommit, setSelectedCommit] = useState<PullCommit | null>(null);
   const [selectedReviewGroup, setSelectedReviewGroup] =
     useState<SelectedReviewGroup | null>(null);
+  const workflowRun = useWorkflowRunForPull(owner, repo, number).data;
   // Commits are newest first, so the topmost pushed one marks how far the GitHub branch reaches:
   // everything below it is pushed as well, and repeating the badge on those rows says nothing new
   // (#2039).
@@ -85,6 +87,8 @@ export function PullCommitsSection({
             const commitReviews = reviews.filter(
               (review) => review.head_sha === commit.sha,
             );
+            const isReviewing =
+              workflowRun?.active_verify_head_sha === commit.sha;
             const shortSha = commit.sha.slice(0, 7);
             return (
               <li key={commit.sha} data-debug-component="PullCommitRow">
@@ -122,6 +126,14 @@ export function PullCommitsSection({
                         })
                       }
                     />
+                  ) : null}
+                  {isReviewing ? (
+                    <Badge
+                      tone="working"
+                      className="shrink-0 animate-[linked-pull-pulse_2.4s_ease-out_infinite]"
+                    >
+                      Reviewing
+                    </Badge>
                   ) : null}
                   {commit.sha === latestPushedSha ? (
                     <Badge

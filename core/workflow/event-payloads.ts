@@ -94,6 +94,7 @@ export interface WorkflowEventPayloadMap {
       step: WorkflowStep;
       session_id: string;
       handoff_id: number;
+      head_sha: string | null;
     };
   "workflow_run.turn_done": WorkflowRunScoped &
     WorkflowRunSubject &
