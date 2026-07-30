@@ -153,10 +153,11 @@ test("merging a historical linked PR leaves other open linked PRs unchanged", as
     (event) => event.type === "pull_request.closed",
   );
   expect(closeEvents).toHaveLength(0);
-  const workflowClose = S.eventsForWorkflowRun(repo.id, siblingRun.id).find(
-    (event) => event.type === "workflow_run.closed",
-  );
-  expect(workflowClose).toBeUndefined();
+  expect(
+    S.eventsForWorkflowRun(repo.id, siblingRun.id).filter(
+      (event) => event.type === "workflow_run.closed",
+    ),
+  ).toEqual([]);
 });
 
 test("closing an issue directly closes every open linked PR and is idempotent", async () => {
@@ -201,26 +202,25 @@ test("closing an issue directly closes every open linked PR and is idempotent", 
     (event) => event.type === "pull_request.closed",
   );
   expect(closeEvents).toHaveLength(2);
+  // The close source carries the cutover marker and no run-scoped twin follows it: a run reads the
+  // PR's own state when its subscription selects the close.
   expect(closeEvents.map((event) => JSON.parse(event.payload))).toEqual(
     expect.arrayContaining([
       {
         number: pulls[0].number,
         linked_issue: issue.number,
+        source_payload_version: 1,
       },
       {
         number: pulls[1].number,
         linked_issue: issue.number,
+        source_payload_version: 1,
       },
     ]),
   );
-  const workflowClose = S.eventsForWorkflowRun(repo.id, pullRun.id).filter(
-    (event) => event.type === "workflow_run.closed",
-  );
-  expect(workflowClose).toHaveLength(1);
-  expect(JSON.parse(workflowClose[0].payload)).toMatchObject({
-    id: pullRun.id,
-    pr_number: pulls[0].number,
-    parent_session_id: "direct-close-parent",
-    source_event_type: "pull_request.closed",
-  });
+  expect(
+    S.eventsForWorkflowRun(repo.id, pullRun.id).filter(
+      (event) => event.type === "workflow_run.closed",
+    ),
+  ).toEqual([]);
 });

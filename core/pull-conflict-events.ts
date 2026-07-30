@@ -1,6 +1,7 @@
 import type { MergeableState } from "./mergeable.ts";
 import { currentMergeableState } from "./pull-mergeable-state.ts";
 import * as S from "./store.ts";
+import { SOURCE_PAYLOAD_VERSION } from "./workflow/source-events.ts";
 
 // The worker's conflict sweep (#1232): detect when a reviewed, mergeable PR (`clean`) has been
 // left waiting for a human merge long enough that a sibling merge advanced its base into a
@@ -58,36 +59,11 @@ export async function sweepPullConflicts(
     );
     if (!classifyConflictTransition(transition.previous, transition.current))
       continue;
-    const source = S.emitEvent(
-      pull.repo_id,
-      "pull_request.merge_conflict",
-      "lh-worker",
-      {
-        number: pull.number,
-      },
-    );
+    S.emitEvent(pull.repo_id, "pull_request.merge_conflict", "lh-worker", {
+      number: pull.number,
+      source_payload_version: SOURCE_PAYLOAD_VERSION,
+    });
     emitted++;
-    // When the conflicted PR is under a running Workflow run, project the conflict into a
-    // run-scoped event carrying the run's parent_session_id, mirroring how github-feedback-sync
-    // projects pull_request.github_feedback into workflow_run.github_event (#1516). The parent
-    // observes this on its existing `lh events --type workflow_run --run <run>` cursor and hands
-    // resolution to a fresh Execute child.
-    const run = S.runningWorkflowRunForPull(pull.repo_id, pull.number);
-    if (run?.parent_session_id) {
-      S.emitWorkflowEvent(
-        pull.repo_id,
-        "workflow_run.merge_conflict",
-        "lh-worker",
-        {
-          id: run.id,
-          number: pull.number,
-          pr_number: pull.number,
-          parent_session_id: run.parent_session_id,
-          source_event_id: source.id,
-          source_event_type: source.type,
-        },
-      );
-    }
   }
   return { checked: pulls.length, emitted };
 }

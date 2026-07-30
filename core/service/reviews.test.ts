@@ -53,6 +53,12 @@ function startRun(prNumber: number, currentStep: string): number {
 
 function reviewEvents() {
   return S.listEvents(0, repoId, 200).filter(
+    (e) => e.type === "pull_request.review_submitted",
+  );
+}
+
+function runScopedReviewEvents() {
+  return S.listEvents(0, repoId, 200).filter(
     (e) => e.type === "workflow_run.review_submitted",
   );
 }
@@ -113,9 +119,9 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("a human REQUEST_CHANGES on a PR with a running run emits review_submitted with review_id", async () => {
+test("a human REQUEST_CHANGES carries review_id and the submission head on its source event", async () => {
   const pr = await newPull("human-emit");
-  const runId = startRun(pr, "execute");
+  startRun(pr, "execute");
   const before = reviewEvents().length;
 
   // No verify session — a plain human session.
@@ -129,21 +135,25 @@ test("a human REQUEST_CHANGES on a PR with a running run emits review_submitted 
   const events = reviewEvents();
   expect(events.length).toBe(before + 1);
   expect(JSON.parse(events.at(-1)!.payload)).toEqual({
-    id: runId,
     number: pr,
-    issue_number: pr,
-    pr_number: pr,
-    parent_session_id: "parent-session",
+    state: "REQUEST_CHANGES",
+    comments: 0,
     session_id: "human-session",
     review_id: review.id,
     submission_head_sha: review.head_sha,
+    source_payload_version: 1,
   });
+  // No run-scoped twin: the review row stays the sole verdict source and the run's subscription
+  // picks the submission up from the source itself.
+  expect(runScopedReviewEvents()).toEqual([]);
 });
 
-test("a substantive review on a PR with no running run does not emit review_submitted", async () => {
+test("a review on a PR with no running run records the same source event", async () => {
   const pr = await newPull("no-run");
   const before = reviewEvents().length;
 
+  // The producer resolves no run and writes no notification of its own: whether a review concerns
+  // a run is the run's question, answered by its subscription.
   await svc.reviews.create(
     "me/reviews",
     pr,
@@ -151,12 +161,13 @@ test("a substantive review on a PR with no running run does not emit review_subm
     "human-session",
   );
 
-  expect(reviewEvents().length).toBe(before);
+  expect(reviewEvents().length).toBe(before + 1);
+  expect(runScopedReviewEvents()).toEqual([]);
 });
 
-test("a FEEDBACK review on a PR with a running run emits review_submitted with review_id", async () => {
+test("a FEEDBACK review carries review_id on its source event too", async () => {
   const pr = await newPull("feedback-emit");
-  const runId = startRun(pr, "execute");
+  startRun(pr, "execute");
   const before = reviewEvents().length;
 
   // Non-blocking out-of-band human feedback: must still route to Execute.
@@ -170,14 +181,13 @@ test("a FEEDBACK review on a PR with a running run emits review_submitted with r
   const events = reviewEvents();
   expect(events.length).toBe(before + 1);
   expect(JSON.parse(events.at(-1)!.payload)).toEqual({
-    id: runId,
     number: pr,
-    issue_number: pr,
-    pr_number: pr,
-    parent_session_id: "parent-session",
+    state: "FEEDBACK",
+    comments: 0,
     session_id: "human-session",
     review_id: review.id,
     submission_head_sha: review.head_sha,
+    source_payload_version: 1,
   });
 });
 
@@ -201,7 +211,7 @@ test("a FEEDBACK review is gate-neutral: it does not block merge and does not pa
   });
 });
 
-test("a non-substantive COMMENT review never emits review_submitted even with a running run", async () => {
+test("a non-substantive COMMENT review notifies no run even with one running", async () => {
   const pr = await newPull("comment-only");
   startRun(pr, "execute");
   const before = reviewEvents().length;
@@ -213,7 +223,13 @@ test("a non-substantive COMMENT review never emits review_submitted even with a 
     "human-session",
   );
 
-  expect(reviewEvents().length).toBe(before);
+  // Every review records the same source event; its verdict lives on the review row, and a
+  // COMMENT is not one the reconcile acts on. Nothing run-scoped is written for it.
+  expect(reviewEvents().length).toBe(before + 1);
+  expect(JSON.parse(reviewEvents().at(-1)!.payload)).toMatchObject({
+    state: "COMMENT",
+  });
+  expect(runScopedReviewEvents()).toEqual([]);
 });
 
 test("gate goes blocked on REQUEST_CHANGES and open when a later PASS supersedes it", async () => {

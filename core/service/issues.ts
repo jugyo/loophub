@@ -17,6 +17,7 @@ import {
 } from "../serialize.ts";
 import { issueDetailJSON, issueListItemJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
+import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
 import { closeOpenPullsForIssue } from "./linked-pulls.ts";
 import {
   actorFor,
@@ -30,7 +31,6 @@ import {
   paginate,
   repoOr404,
 } from "./shared.ts";
-import { projectWorkflowRunClosed } from "./workflow-run-events.ts";
 
 const ISSUE_LIST_LOOKAHEAD_MAX = MAX_LIST_PER_PAGE + 1;
 
@@ -394,17 +394,16 @@ export const issues = {
       });
     }
     if (patch.state === "closed" && wasOpen) {
-      const closedEvent = S.emitEvent(
+      S.emitEvent(
         r.id,
         row.kind === "pull" ? "pull_request.updated" : "issue.closed",
         actor,
         {
           number: row.number,
+          source_payload_version: SOURCE_PAYLOAD_VERSION,
         },
       );
-      if (row.kind === "pull") {
-        projectWorkflowRunClosed(r.id, row.number, actor, closedEvent);
-      } else {
+      if (row.kind !== "pull") {
         closeOpenPullsForIssue({
           repoId: r.id,
           linkedIssueId: row.id,

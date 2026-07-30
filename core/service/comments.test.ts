@@ -83,7 +83,7 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("classifies PR commenters and only notifies the workflow for a human", async () => {
+test("classifies PR commenters and only instructs the workflow for a human", async () => {
   const human = svc.comments.createHumanForPull(
     repoName,
     prNumber,
@@ -106,28 +106,39 @@ test("classifies PR commenters and only notifies the workflow for a human", asyn
     "agent",
     "system",
   ]);
-  const notifications = store
-    .eventsForWorkflowRun(repoId, runId)
-    .filter((event) => event.type === "workflow_run.pr_comment");
-  expect(notifications).toHaveLength(1);
-  expect(notifications[0].actor).toBe("me");
-  expect(JSON.parse(notifications[0].payload)).toMatchObject({
-    id: runId,
-    pr_number: prNumber,
-    parent_session_id: parentSession,
+  // No run-scoped twin is written any more: the run reads `author_type` off the source event and
+  // decides for itself which comment is an instruction.
+  expect(
+    store
+      .eventsForWorkflowRun(repoId, runId)
+      .filter((event) => event.type === "workflow_run.pr_comment"),
+  ).toEqual([]);
+  const sources = store
+    .eventsForPull(repoId, prNumber, null)
+    .filter((event) => event.type === "pull_request.commented")
+    .reverse();
+  expect(sources).toHaveLength(3);
+  expect(JSON.parse(sources[0].payload)).toMatchObject({
+    number: prNumber,
     comment_id: human.id,
-    author: "me",
-    body: "Please rename this.",
+    author_type: "human",
+    source_payload_version: 1,
   });
   const next = await svc.workflowRuns.next(repoName, {
     run: runId,
-    event: notifications[0].id,
+    event: sources[0].id,
   });
   expect(next).toMatchObject({
     action: "deliver",
     delivery_reason: "pr_comment",
     comment_id: human.id,
   });
+  // An agent's own comment is selected too, but reconciles to state observation only.
+  const agentWake = await svc.workflowRuns.next(repoName, {
+    run: runId,
+    event: sources[1].id,
+  });
+  expect(agentWake.action).not.toBe("deliver");
   expect(next.instructions.commands[0]?.args).toEqual([
     "pr",
     "comment",

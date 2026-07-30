@@ -49,7 +49,14 @@ interface WorkflowRunDelivery {
   parent_session_id: string | null;
 }
 
-/** The source event a run-scoped projection was derived from (see core/pull-conflict-events.ts). */
+/**
+ * The source event a run-scoped projection was derived from.
+ *
+ * Only the notification-only twins below carry it. Their producers are gone — a run now subscribes
+ * to the source events themselves — and the entries remain because the rows do: the timeline reads
+ * them back, and the cutover classification uses `source_event_id` to tell a twin whose source
+ * already instructed the run from one whose source did not.
+ */
 interface WorkflowRunProjectionSource {
   source_event_id: number;
   source_event_type: string;
@@ -139,6 +146,10 @@ export interface WorkflowEventPayloadMap {
       previous_limit_usd: number;
       current_limit_usd: number;
     };
+  /**
+   * Legacy notification twins, retained for typed reads of persisted rows. Nothing writes them any
+   * more: each announced a PR fact the run now reads off the source event itself.
+   */
   "workflow_run.merge_conflict": WorkflowRunScoped &
     WorkflowRunDelivery &
     WorkflowRunProjectionSource & { pr_number: number };
@@ -149,10 +160,6 @@ export interface WorkflowEventPayloadMap {
   "workflow_run.closed": WorkflowRunScoped &
     WorkflowRunDelivery &
     WorkflowRunProjectionSource & { pr_number: number };
-  /**
-   * A diff feedback comment landed on the run's PR (#2045). Only the ids travel: the comment, its
-   * anchor and its body stay canonical in the DB, which Execute reads back with `lh pr feedback`.
-   */
   "workflow_run.diff_feedback": WorkflowRunScoped &
     WorkflowRunDelivery &
     WorkflowRunProjectionSource & {
@@ -199,6 +206,22 @@ type ValueOfUnion<T, K extends PropertyKey> = T extends unknown
 type WorkflowEventPayloadKey = KeysOfUnion<WorkflowEventPayload>;
 
 /**
+ * Keys that appear only on the issue / PR source events a run subscribes to.
+ *
+ * Those events are written by the ordinary issue / PR producers through `emitEvent`, whose payloads
+ * serve every consumer rather than the run alone, so they have no emit-side entry in the map above.
+ * The run's readers still need the names they read off them typed in one place.
+ */
+interface WorkflowSourceEventKeys {
+  /** Marks a payload written by a cutover producer (see core/workflow/source-events.ts). */
+  source_payload_version: number;
+  /** `pull_request.diff_feedback_replied` names its new message this way. */
+  reply_message_id: number;
+  /** `pull_request.commented` tells a human comment from an agent's own. */
+  author_type: string;
+}
+
+/**
  * Read-side view of any stored workflow event payload: every key the writers above can produce,
  * all optional.
  *
@@ -210,7 +233,7 @@ type WorkflowEventPayloadKey = KeysOfUnion<WorkflowEventPayload>;
  */
 export type StoredWorkflowEventPayload = {
   [K in WorkflowEventPayloadKey]?: ValueOfUnion<WorkflowEventPayload, K>;
-};
+} & Partial<WorkflowSourceEventKeys>;
 
 /**
  * View an already-parsed payload as a stored workflow payload. Anything that is not a JSON object

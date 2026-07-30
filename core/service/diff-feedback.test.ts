@@ -49,10 +49,22 @@ function createThread(body: string, sessionId: string = HUMAN_SESSION) {
   );
 }
 
-function runEvents() {
-  return S.eventsForWorkflowRun(repoId, runId).filter(
-    (event) => event.type === "workflow_run.diff_feedback",
+// The events a run's subscription selects for diff feedback: the sources themselves, since no
+// run-scoped twin is written any more.
+function diffFeedbackSources() {
+  return S.listEvents(0, repoId, 500).filter(
+    (event) =>
+      event.type === "pull_request.diff_feedback_created" ||
+      event.type === "pull_request.diff_feedback_replied",
   );
+}
+
+// What the run makes of the latest diff feedback source it would be woken by.
+function nextForLatestSource() {
+  return svc.workflowRuns.next(REPO, {
+    run: runId,
+    event: diffFeedbackSources().at(-1)!.id,
+  });
 }
 
 beforeAll(async () => {
@@ -129,6 +141,8 @@ test("a diff comment records its anchor on the domain event, not a copy of itsel
     number: prNumber,
     thread_id: created.thread.id,
     comment_id: created.comment.id,
+    session_id: HUMAN_SESSION,
+    source_payload_version: 1,
     path: "a.txt",
     side: "RIGHT",
     start_line: 2,
@@ -136,14 +150,18 @@ test("a diff comment records its anchor on the domain event, not a copy of itsel
   });
 });
 
-test("the comment is projected onto the running workflow run for its PR", () => {
-  const projected = runEvents();
-  expect(projected).toHaveLength(1);
-  expect(JSON.parse(projected[0].payload)).toMatchObject({
-    id: runId,
-    pr_number: prNumber,
-    parent_session_id: PARENT_SESSION,
-    source_event_type: "pull_request.diff_feedback_created",
+test("the running run takes the comment from the source event, with no twin", async () => {
+  expect(
+    S.eventsForWorkflowRun(repoId, runId).filter(
+      (event) => event.type === "workflow_run.diff_feedback",
+    ),
+  ).toEqual([]);
+  const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
+
+  expect(await nextForLatestSource()).toMatchObject({
+    action: "deliver",
+    delivery_reason: "diff_feedback",
+    thread_id: thread.id,
   });
 });
 
@@ -165,7 +183,6 @@ test("Execute reads the unanswered comment with the diff around its anchor", asy
 });
 
 test("an Execute reply answers the comment without waking its own parent", async () => {
-  const before = runEvents().length;
   const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
 
   const replied = await svc.diffFeedback.reply(
@@ -180,7 +197,12 @@ test("an Execute reply answers the comment without waking its own parent", async
     author: "executor #1-1",
     body: "Renamed for clarity.",
   });
-  expect(runEvents()).toHaveLength(before);
+  // The reply is recorded like any other, but it carries the Execute child's session id, so the
+  // run reads it as its own answer rather than as new input to hand back to that child.
+  expect(diffFeedbackSources().at(-1)!.type).toBe(
+    "pull_request.diff_feedback_replied",
+  );
+  expect((await nextForLatestSource()).action).not.toBe("deliver");
   const pending = await traceGitCommands(() =>
     svc.diffFeedback.pending(REPO, prNumber, runId),
   );
@@ -265,9 +287,9 @@ test("a failed reaction change preserves the existing server reaction", async ()
 
 test("a follow-up comment from outside the run becomes pending again", async () => {
   const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
-  const before = runEvents().length;
+  const before = diffFeedbackSources().length;
 
-  await svc.diffFeedback.reply(
+  const replied = await svc.diffFeedback.reply(
     REPO,
     prNumber,
     thread.id,
@@ -275,7 +297,13 @@ test("a follow-up comment from outside the run becomes pending again", async () 
     HUMAN_SESSION,
   );
 
-  expect(runEvents()).toHaveLength(before + 1);
+  expect(diffFeedbackSources()).toHaveLength(before + 1);
+  expect(await nextForLatestSource()).toMatchObject({
+    action: "deliver",
+    delivery_reason: "diff_feedback",
+    thread_id: thread.id,
+    comment_id: replied.reply.id,
+  });
   expect(
     (await svc.diffFeedback.pending(REPO, prNumber, runId)).threads.map(
       ({ id }) => id,

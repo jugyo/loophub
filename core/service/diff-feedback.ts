@@ -32,8 +32,8 @@ import {
 } from "../serialize.ts";
 import * as S from "../store.ts";
 import { workflowStepSessionIds } from "../workflow/herdr-agents.ts";
+import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
 import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
-import { projectWorkflowRunDiffFeedback } from "./workflow-run-events.ts";
 
 const FULL_SHA = /^[0-9a-f]{40}$/i;
 export const DIFF_FEEDBACK_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
@@ -877,25 +877,16 @@ export const diffFeedback = {
       actor,
     });
     const comment = S.createDiffFeedbackMessage(thread.id, actor, input.body);
-    const source = S.emitEvent(
-      r.id,
-      "pull_request.diff_feedback_created",
-      actor,
-      {
-        number,
-        thread_id: thread.id,
-        comment_id: comment.id,
-        ...anchorPayload(thread),
-      },
-    );
-    projectWorkflowRunDiffFeedback({
-      repoId: r.id,
-      prNumber: number,
-      actor,
-      sessionId,
-      source,
-      threadId: thread.id,
-      commentId: comment.id,
+    // `session_id` travels so a Workflow run can tell a comment written by one of its own
+    // children from one it has to hand to Execute. The comment itself stays canonical in the DB,
+    // which Execute reads back with `lh pr feedback`.
+    S.emitEvent(r.id, "pull_request.diff_feedback_created", actor, {
+      number,
+      thread_id: thread.id,
+      comment_id: comment.id,
+      session_id: sessionId ?? null,
+      source_payload_version: SOURCE_PAYLOAD_VERSION,
+      ...anchorPayload(thread),
     });
     return {
       thread: await threadJSON(r.local_path, pull, thread),
@@ -918,25 +909,13 @@ export const diffFeedback = {
     if (!body) throw new ServiceError(422, "body is required");
     const actor = actorFor(sessionId);
     const reply = S.createDiffFeedbackMessage(thread.id, actor, body);
-    const source = S.emitEvent(
-      r.id,
-      "pull_request.diff_feedback_replied",
-      actor,
-      {
-        number,
-        thread_id: thread.id,
-        reply_message_id: reply.id,
-        ...anchorPayload(thread),
-      },
-    );
-    projectWorkflowRunDiffFeedback({
-      repoId: r.id,
-      prNumber: number,
-      actor,
-      sessionId,
-      source,
-      threadId: thread.id,
-      commentId: reply.id,
+    S.emitEvent(r.id, "pull_request.diff_feedback_replied", actor, {
+      number,
+      thread_id: thread.id,
+      reply_message_id: reply.id,
+      session_id: sessionId ?? null,
+      source_payload_version: SOURCE_PAYLOAD_VERSION,
+      ...anchorPayload(thread),
     });
     return {
       thread: await threadJSON(r.local_path, pull, thread),

@@ -36,6 +36,7 @@ import {
 } from "../serialize.ts";
 import { pullJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
+import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -47,7 +48,6 @@ import {
   paginate,
   repoOr404,
 } from "./shared.ts";
-import { projectWorkflowRunClosed } from "./workflow-run-events.ts";
 
 // #850: how long a cached GitHub PR status is served before hitting `gh` again. On-demand from the
 // PR-detail sidebar, so a short TTL keeps the panel roughly live without spawning a `gh` per render.
@@ -226,12 +226,13 @@ export const pulls = {
       state: patch.state as "open" | "closed" | undefined,
     };
     S.updateIssue(row.id, issuePatch);
-    const updatedEvent = S.emitEvent(r.id, "pull_request.updated", actor, {
+    S.emitEvent(r.id, "pull_request.updated", actor, {
       number: row.number,
+      // A close is a fact a Workflow run reacts to, so the closing update carries the source
+      // marker. Reconciliation reads the PR's own state, not this payload; the marker only tells
+      // the run that no legacy twin will follow.
+      ...(closesPull ? { source_payload_version: SOURCE_PAYLOAD_VERSION } : {}),
     });
-    if (closesPull) {
-      projectWorkflowRunClosed(r.id, row.number, actor, updatedEvent);
-    }
     return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
 
@@ -637,17 +638,17 @@ export const pulls = {
     if (res.conflict) {
       S.emitEvent(r.id, "pull_request.merge_conflict", actor, {
         number: row.number,
+        source_payload_version: SOURCE_PAYLOAD_VERSION,
       });
       throw new ServiceError(409, "Merge conflict");
     }
     if (!res.merged) throw new ServiceError(422, "Merge failed");
     const closedIssue = S.setMerged(row.id, res.sha!, method);
-    const mergedEvent = S.emitEvent(r.id, "pull_request.merged", actor, {
+    S.emitEvent(r.id, "pull_request.merged", actor, {
       number: row.number,
       sha: res.sha,
+      source_payload_version: SOURCE_PAYLOAD_VERSION,
     });
-    // Merge closes the PR, so use the same run-scoped close trigger as every other close route.
-    projectWorkflowRunClosed(r.id, row.number, actor, mergedEvent);
     if (closedIssue != null) {
       S.emitEvent(r.id, "issue.closed", actor, {
         number: closedIssue,

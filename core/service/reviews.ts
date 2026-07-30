@@ -6,6 +6,7 @@ import {
   reviewJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
+import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
 import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 
 // The per-criterion grades of one review (#1895), joined to the rubric text via `criterion_id`.
@@ -23,22 +24,6 @@ export function reviewAcResultsJSON(reviewId: number): ReviewAcResultWire[] {
       note: r.note,
     };
   });
-}
-
-// The running workflow run for this PR, if any. Unlike `latestWorkflowRunReview` (which stays
-// scoped to this run's verifier children for transition decisions), the run-scoped observation
-// event fires for any review the parent must route — the substantive PASS / REQUEST_CHANGES and
-// the non-blocking-but-must-handle FEEDBACK (human out-of-band, #1674) — so the parent always
-// re-observes step status. It carries no verdict; the persisted review row remains the sole
-// verdict source.
-function runningWorkflowRunForPull(
-  repoId: number,
-  prNumber: number,
-): S.WorkflowRunRow | null {
-  for (const run of S.listRunningWorkflowRuns()) {
-    if (run.repo_id === repoId && run.pr_number === prNumber) return run;
-  }
-  return null;
 }
 
 // Validate submitted per-criterion grades against the PR's linked issue rubric (#1895). The rubric
@@ -229,31 +214,20 @@ export const reviews = {
         body: cm.body,
       });
     }
+    // The review row remains the sole verdict source. This event is the reliable observation
+    // trigger for a Workflow parent, independent of whether the Verify child later manages to
+    // declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human FEEDBACK)
+    // review straight to Execute, since it will not appear in the run's own step status, and
+    // `submission_head_sha` is the boundary an unaddressed review is measured from.
     S.emitEvent(r.id, "pull_request.review_submitted", actor, {
       number: row.number,
       state: event,
       comments: lineComments.length,
+      session_id: sessionId ?? null,
+      review_id: v.id,
+      submission_head_sha: submissionHeadSha,
+      source_payload_version: SOURCE_PAYLOAD_VERSION,
     });
-    const workflowRun =
-      event === "PASS" || event === "REQUEST_CHANGES" || event === "FEEDBACK"
-        ? runningWorkflowRunForPull(r.id, row.number)
-        : null;
-    if (workflowRun) {
-      // The review row remains the sole verdict source. This run-scoped event is only the reliable
-      // observation trigger for the parent, independent of whether the Verify child later manages
-      // to declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human
-      // FEEDBACK) review straight to Execute, since it will not appear in the run's own step status.
-      S.emitWorkflowEvent(r.id, "workflow_run.review_submitted", actor, {
-        id: workflowRun.id,
-        number: workflowRun.pr_number,
-        issue_number: workflowRun.issue_number,
-        pr_number: workflowRun.pr_number,
-        parent_session_id: workflowRun.parent_session_id,
-        session_id: sessionId ?? null,
-        review_id: v.id,
-        submission_head_sha: submissionHeadSha,
-      });
-    }
     return {
       ...reviewJSON(v, reviewAcResultsJSON(v.id)),
       comments: lineComments.length,

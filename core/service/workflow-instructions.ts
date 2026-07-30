@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
 import { HERDR_ID, herdrPaneRunArgv } from "../terminal/terminal-launch.ts";
+import { workflowSubscriptionLowerBound } from "../workflow/source-events.ts";
 import { runHerdr } from "./herdr-runner.ts";
 import { repoOr404 } from "./shared.ts";
 import { workflowRuns } from "./workflow-runs.ts";
@@ -23,12 +24,25 @@ export type WorkflowInstructionDispatchResult =
       action: string;
     };
 
+// The next event the run has not consumed, selected from the three subjects it owns: itself, its
+// issue and its PR. A run with no `workflow_run.started` event has no lower bound to subscribe
+// from, and replaying its subjects' whole history is not a recovery — the missing start is raised
+// so an operator decides, and the cursor stays put.
 function pendingEvent(run: S.WorkflowRunRow): S.EventRow | null {
-  return (
-    S.eventsForWorkflowRun(run.repo_id, run.id).find(
-      (event) => event.id > run.event_cursor,
-    ) ?? null
-  );
+  const startedEventId = S.workflowRunStartedEventId(run.repo_id, run.id);
+  if (startedEventId === null) {
+    throw new ServiceError(
+      409,
+      `Workflow run #${run.id} has no workflow_run.started event`,
+    );
+  }
+  return S.nextWorkflowSubjectEvent({
+    repoId: run.repo_id,
+    runId: run.id,
+    issueNumber: run.issue_number,
+    prNumber: run.pr_number,
+    afterId: workflowSubscriptionLowerBound(run.event_cursor, startedEventId),
+  });
 }
 
 function parentPane(run: S.WorkflowRunRow): string | null | undefined {
@@ -73,7 +87,7 @@ function completeDecision(
   eventId: number,
   effect: string,
 ): void {
-  const claimed = S.beginWorkflowEventEffect(runId, eventId, effect);
+  const claimed = S.beginWorkflowEventEffect(runId, eventId, effect, "subject");
   if (!claimed?.acquired) {
     throw new ServiceError(
       409,
@@ -191,6 +205,7 @@ export const workflowInstructions = {
         run.id,
         event.id,
         MISSING_PARENT_EFFECT,
+        "subject",
       );
       if (!claimed?.acquired) {
         throw new ServiceError(
@@ -237,7 +252,12 @@ export const workflowInstructions = {
 
     // Claim before the non-transactional pane operation. An ambiguous failure remains pending and
     // blocks later events; recovery is an explicit operator decision rather than an automatic retry.
-    const claimed = S.beginWorkflowEventEffect(run.id, event.id, effect);
+    const claimed = S.beginWorkflowEventEffect(
+      run.id,
+      event.id,
+      effect,
+      "subject",
+    );
     if (!claimed) {
       throw new ServiceError(
         409,

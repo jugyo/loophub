@@ -91,6 +91,38 @@ function createWorkflowReview(input: {
   }
 }
 
+// The next event the run's subscription holds, resolved exactly as the consumer resolves it.
+function pendingWake(repoId: number, run: number) {
+  const row = S.getWorkflowRun(run)!;
+  const started = S.workflowRunStartedEventId(repoId, run);
+  return S.nextWorkflowSubjectEvent({
+    repoId,
+    runId: run,
+    issueNumber: row.issue_number,
+    prNumber: row.pr_number,
+    afterId: Math.max(row.event_cursor, (started ?? 1) - 1),
+  });
+}
+
+// Consume every wake the run already holds, so a `--watch` that follows genuinely blocks instead
+// of returning a queued one. Returns the ids consumed, oldest first.
+async function drainQueuedWakes(
+  repoFullName: string,
+  repoId: number,
+  run: number,
+): Promise<number[]> {
+  const consumed: number[] = [];
+  for (let queued = pendingWake(repoId, run); queued; ) {
+    expect(
+      (await svc.workflowRuns.next(repoFullName, { run, watch: true })).event
+        ?.id,
+    ).toBe(queued.id);
+    consumed.push(queued.id);
+    queued = pendingWake(repoId, run);
+  }
+  return consumed;
+}
+
 beforeAll(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@example.local"]);
@@ -1415,22 +1447,21 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     verify.session_id,
   );
 
-  // Regression for run 82: registering the fresh review itself emits a parent observation trigger.
-  // Verify does not need a later turn-done declaration, and the event carries only run pointers —
-  // the persisted review remains the verdict source.
+  // Regression for run 82: registering the fresh review itself gives the parent its observation
+  // trigger. Verify does not need a later turn-done declaration, and the event carries only
+  // pointers — the persisted review remains the verdict source.
   const reviewEvent = S.listEvents(0, repo.id, 100).findLast(
-    (event) => event.type === "workflow_run.review_submitted",
+    (event) => event.type === "pull_request.review_submitted",
   );
   expect(reviewEvent).toBeDefined();
   expect(JSON.parse(reviewEvent!.payload)).toEqual({
-    id: started.run.id,
     number: started.pr.number,
-    issue_number: issue.number,
-    pr_number: started.pr.number,
-    parent_session_id: parent,
+    state: "PASS",
+    comments: 0,
     session_id: verify.session_id,
     review_id: passReview.id,
     submission_head_sha: headA,
+    source_payload_version: 1,
   });
 
   status = await svc.workflowRuns.status(repo.full_name, {
@@ -1459,7 +1490,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   );
   const newerReviewEvent = S.listEvents(0, repo.id, 100).findLast(
     (event) =>
-      event.type === "workflow_run.review_submitted" &&
+      event.type === "pull_request.review_submitted" &&
       JSON.parse(event.payload).review_id === newerPassReview.id,
   );
   expect(newerReviewEvent).toBeDefined();
@@ -1653,14 +1684,9 @@ test("next --watch waits for one run event, owns its cursor, and keeps deciding 
 
   // The events `start` already recorded are undigested, so each wake returns immediately, oldest
   // first, and moves the durable cursor without the caller passing one.
-  const queued = S.eventsForWorkflowRun(repo.id, run).filter((event) =>
-    event.type.startsWith("workflow_run."),
-  );
+  const queued = await drainQueuedWakes(repo.full_name, repo.id, run);
   expect(queued.length).toBeGreaterThan(0);
-  for (const event of queued) {
-    expect((await watch()).event?.id).toBe(event.id);
-  }
-  expect(S.getWorkflowRun(run)?.event_cursor).toBe(queued.at(-1)!.id);
+  expect(S.getWorkflowRun(run)?.event_cursor).toBe(queued.at(-1));
 
   const wake = S.emitEvent(repo.id, "workflow_run.updated", "test", {
     id: run,
@@ -1924,14 +1950,7 @@ test("a merged PR completes the run, unblocks the watcher, and ends cost detecti
 
   // Digest the events the run already recorded so the watch below genuinely blocks instead of
   // returning a queued wake.
-  for (const queued of S.eventsForWorkflowRun(repo.id, run).filter((event) =>
-    event.type.startsWith("workflow_run."),
-  )) {
-    expect(
-      (await svc.workflowRuns.next(repo.full_name, { run, watch: true })).event
-        ?.id,
-    ).toBe(queued.id);
-  }
+  await drainQueuedWakes(repo.full_name, repo.id, run);
 
   // The reported failure (#1806 / run #306): the parent is already blocked in `--watch` when the
   // merge lands, so completion has to be recorded on the wake that follows — not only on a call
@@ -1941,18 +1960,17 @@ test("a merged PR completes the run, unblocks the watcher, and ends cost detecti
   await svc.pulls.merge(repo.full_name, started.pr.number, "merge");
   const completed = await blocked;
   expect(completed).toMatchObject({ action: "complete" });
-  // Merge closes the PR and uses the same close trigger as an unmerged close.
-  const projected = S.eventsForWorkflowRun(repo.id, run).filter(
-    (event) => event.type === "workflow_run.closed",
-  );
-  expect(projected).toHaveLength(1);
-  expect(JSON.parse(projected[0].payload)).toMatchObject({
-    id: run,
-    pr_number: started.pr.number,
-    parent_session_id: parent,
-    source_event_type: "pull_request.merged",
+  // Merge closes the PR, and the run reads that from the merge source itself — no run-scoped
+  // close twin is written for it any more.
+  expect(
+    S.eventsForWorkflowRun(repo.id, run).filter(
+      (event) => event.type === "workflow_run.closed",
+    ),
+  ).toEqual([]);
+  expect(completed.event).toMatchObject({
+    type: "pull_request.merged",
+    payload: { number: started.pr.number, source_payload_version: 1 },
   });
-  expect(completed.event?.id).toBe(projected[0].id);
   expect(completed.observed.pr_merged).toBe(true);
   expect(completed.observed.status).toBe("completed");
   expect(S.getWorkflowRun(run)?.status).toBe("completed");
@@ -2043,14 +2061,7 @@ test("closing an unmerged PR wakes its watcher and completes the run", async () 
   );
   const run = started.run.id;
 
-  for (const queued of S.eventsForWorkflowRun(repo.id, run).filter((event) =>
-    event.type.startsWith("workflow_run."),
-  )) {
-    expect(
-      (await svc.workflowRuns.next(repo.full_name, { run, watch: true })).event
-        ?.id,
-    ).toBe(queued.id);
-  }
+  await drainQueuedWakes(repo.full_name, repo.id, run);
 
   const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -2065,16 +2076,15 @@ test("closing an unmerged PR wakes its watcher and completes the run", async () 
   });
   expect(S.getWorkflowRun(run)?.status).toBe("completed");
 
-  const projected = S.eventsForWorkflowRun(repo.id, run).filter(
-    (event) => event.type === "workflow_run.closed",
-  );
-  expect(projected).toHaveLength(1);
-  expect(JSON.parse(projected[0].payload)).toMatchObject({
-    id: run,
-    pr_number: started.pr.number,
-    parent_session_id: parent,
+  expect(
+    S.eventsForWorkflowRun(repo.id, run).filter(
+      (event) => event.type === "workflow_run.closed",
+    ),
+  ).toEqual([]);
+  expect(completed.event).toMatchObject({
+    type: "pull_request.updated",
+    payload: { number: started.pr.number, source_payload_version: 1 },
   });
-  expect(completed.event?.id).toBe(projected[0].id);
 }, 20_000);
 
 test("closing a PR through issues.update wakes its watcher and completes the run", async () => {
@@ -2098,14 +2108,7 @@ test("closing a PR through issues.update wakes its watcher and completes the run
   });
   const run = started.run.id;
 
-  for (const queued of S.eventsForWorkflowRun(repo.id, run).filter((event) =>
-    event.type.startsWith("workflow_run."),
-  )) {
-    expect(
-      (await svc.workflowRuns.next(repo.full_name, { run, watch: true })).event
-        ?.id,
-    ).toBe(queued.id);
-  }
+  await drainQueuedWakes(repo.full_name, repo.id, run);
 
   const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -2115,7 +2118,7 @@ test("closing a PR through issues.update wakes its watcher and completes the run
   expect(completed).toMatchObject({
     action: "complete",
     observed: { pr_closed: true, status: "completed" },
-    event: { type: "workflow_run.closed" },
+    event: { type: "pull_request.updated" },
   });
   expect(S.getWorkflowRun(run)?.status).toBe("completed");
 }, 20_000);
@@ -2234,9 +2237,9 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     { id: feedback.id, verdict: "feedback" },
     { id: requestedChanges.id, verdict: "request_changes" },
   ]);
-  const feedbackEvent = S.eventsForWorkflowRun(repo.id, started.run.id).find(
+  const feedbackEvent = S.listEvents(0, repo.id, 500).find(
     (event) =>
-      event.type === "workflow_run.review_submitted" &&
+      event.type === "pull_request.review_submitted" &&
       (JSON.parse(event.payload) as { review_id?: unknown }).review_id ===
         feedback.id,
   );
@@ -3325,6 +3328,15 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
     costLimitUsd: 10,
     parentSessionId: parent,
   });
+  // The run's start bounds which review submissions belong to it, so this fixture records it the
+  // way `workflowRuns.start` does.
+  S.emitWorkflowEvent(repo.id, "workflow_run.started", "me", {
+    id: run.id,
+    workflow_id: workflow.id,
+    issue_number: issue.number,
+    pr_number: prIssue.number,
+    session_id: parent,
+  });
 
   const firstVerifier = "24242424-2424-4242-8242-242424242424";
   svc.workflowRuns.confirmStepLaunch(
@@ -3752,7 +3764,7 @@ test("status and next observe the run's event trail with a single load (#1912)",
     (event) => event.type === "workflow_run.started",
   );
 
-  const loads = vi.spyOn(S, "eventsForWorkflowRun");
+  const loads = vi.spyOn(S, "workflowRunObservationTrail");
   try {
     await svc.workflowRuns.status(repo.full_name, { run: started.run.id });
     expect(loads).toHaveBeenCalledTimes(1);
@@ -3874,3 +3886,77 @@ test("next --watch reconciles the run state its wake announced, not the pre-wait
   expect(woken.observed.needs_human_reason).toBeNull();
   expect(woken.action).toBe("launch_execute");
 }, 30_000);
+
+test("successive runs on one PR do not blend their review submissions", async () => {
+  const { repo } = freshRepo("me/workflow-attempt-window");
+  const issue = S.createIssue(repo.id, "issue", "Two attempts", "", "me");
+  const prIssue = S.createIssue(repo.id, "pull", "Two attempts PR", "", "me");
+  S.createPull(prIssue.id, "attempts", "main", "sha", issue.id);
+  const workflow = S.createWorkflow({
+    name: "attempt-window-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const startRunOnPull = (parent: string) => {
+    const row = S.createWorkflowRun({
+      workflowId: workflow.id,
+      repoId: repo.id,
+      issueNumber: issue.number,
+      prNumber: prIssue.number,
+      status: "running",
+      currentStep: "verify",
+      costIncrementUsd: 10,
+      costLimitUsd: 10,
+      parentSessionId: parent,
+    });
+    S.emitWorkflowEvent(repo.id, "workflow_run.started", "me", {
+      id: row.id,
+      workflow_id: workflow.id,
+      issue_number: issue.number,
+      pr_number: prIssue.number,
+      session_id: parent,
+    });
+    return row.id;
+  };
+  const submitReview = (verdict: "PASS" | "REQUEST_CHANGES") => {
+    const review = S.createReview(
+      prIssue.id,
+      "human",
+      verdict,
+      `${verdict} on the PR`,
+      "sha",
+    );
+    S.emitEvent(repo.id, "pull_request.review_submitted", "human", {
+      number: prIssue.number,
+      state: verdict,
+      comments: 0,
+      session_id: null,
+      review_id: review.id,
+      submission_head_sha: "sha",
+      source_payload_version: 1,
+    });
+    return review.id;
+  };
+
+  const first = startRunOnPull("11111111-1111-4111-8111-111111111111");
+  const firstReview = submitReview("REQUEST_CHANGES");
+  const second = startRunOnPull("22222222-2222-4222-8222-222222222222");
+  const secondReview = submitReview("PASS");
+
+  // A review source carries only the PR number, so the attempt it belongs to is decided by the two
+  // starts it sits between — never by the PR alone.
+  const reviewEntries = (run: number) =>
+    svc.workflowRuns
+      .history(repo.full_name, { run })
+      .filter((entry) => entry.type === "pull_request.review_submitted")
+      .map((entry) => entry.label);
+
+  expect(reviewEntries(first)).toEqual(["Review requested changes"]);
+  expect(reviewEntries(second)).toEqual(["Review passed"]);
+  // Each verdict is resolved from the review row the window kept, not from the PR's latest review.
+  expect(S.listReviews(prIssue.id).map((review) => review.id)).toEqual([
+    firstReview,
+    secondReview,
+  ]);
+}, 20_000);

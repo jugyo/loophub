@@ -26,7 +26,7 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-function fixture(name: string) {
+function fixture(name: string, options: { started?: boolean } = {}) {
   const repoPath = mkdtempSync(join(tmpdir(), "lh-instruction-repo-"));
   const repo = S.createRepo(`me/${name}`, repoPath);
   const issue = S.createIssue(repo.id, "issue", "Issue", "", "me");
@@ -50,14 +50,24 @@ function fixture(name: string) {
     costIncrementUsd: 5,
     costLimitUsd: 5,
   });
-  const event = S.emitWorkflowEvent(repo.id, "workflow_run.started", "me", {
-    id: run.id,
-    workflow_id: workflow.id,
-    issue_number: issue.number,
-    pr_number: pr.number,
-    session_id: parent,
-  });
-  return { repo, repoPath, run, event };
+  // The run's start bounds its subscription, so every fixture records it as `workflow start` does.
+  // The one that leaves it out asserts the visible error that follows.
+  const event =
+    options.started === false
+      ? null
+      : S.emitWorkflowEvent(repo.id, "workflow_run.started", "me", {
+          id: run.id,
+          workflow_id: workflow.id,
+          issue_number: issue.number,
+          pr_number: pr.number,
+          session_id: parent,
+        });
+  return {
+    repo,
+    repoPath,
+    run,
+    event: event as import("../store.ts").EventRow,
+  };
 }
 
 function fakeHerdr() {
@@ -416,6 +426,92 @@ test("terminal runs consume pending events without delivering progression", asyn
       reason: "Workflow run is completed",
     });
     expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(input.event.id);
+    expect(next).not.toHaveBeenCalled();
+  } finally {
+    next.mockRestore();
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("delivery targets the registered parent pane, never one of the run's children", async () => {
+  const input = fixture("parent-only");
+  const fake = fakeHerdr();
+  const execute = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const verify = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  S.appendWorkflowRunStepSession(input.run.id, "execute", execute);
+  S.appendWorkflowRunStepSession(input.run.id, "verify", verify);
+  for (const [launchId, paneId] of [
+    [execute, "w1:p3"],
+    [verify, "w1:p4"],
+  ]) {
+    S.registerHerdrPane({
+      repoId: input.repo.id,
+      launchId,
+      paneId,
+      sessionName: "me-repo",
+      origin: "workflow",
+    });
+  }
+  registerParent(input);
+  // A human comment recorded while the Verify child is the run's most recent actor. Neither the
+  // active step nor the session id on the wake moves the delivery target off the parent.
+  const comment = S.emitEvent(input.repo.id, "pull_request.commented", "me", {
+    number: input.run.pr_number,
+    comment_id: 9001,
+    author_type: "human",
+    session_id: verify,
+    source_payload_version: 1,
+  });
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  // A distinct reason per wake, so neither delivery is suppressed as a repeat of the previous
+  // decision and both have to pick a pane of their own.
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockImplementation(async (_name, opts) => ({
+      ...instructionResult(opts.event as number),
+      reason: `wake ${opts.event}`,
+    }));
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({ status: "delivered", pane_id: "w1:p1" });
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({
+      status: "delivered",
+      event: comment.id,
+      pane_id: "w1:p1",
+    });
+
+    const calls = readFileSync(fake.log, "utf8");
+    expect(calls).not.toContain("w1:p3");
+    expect(calls).not.toContain("w1:p4");
+    expect(
+      calls.split("\n").filter((line) => line.includes("pane run")),
+    ).toHaveLength(2);
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("a run with no recorded start fails visibly and keeps its cursor", async () => {
+  const input = fixture("missing-start", { started: false });
+  S.emitEvent(input.repo.id, "pull_request.commented", "me", {
+    number: input.run.pr_number,
+    comment_id: 9101,
+    author_type: "human",
+    source_payload_version: 1,
+  });
+  const next = vi.spyOn(svc.workflowRuns, "next");
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).rejects.toThrow("has no workflow_run.started event");
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(0);
     expect(next).not.toHaveBeenCalled();
   } finally {
     next.mockRestore();

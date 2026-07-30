@@ -96,7 +96,7 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("emits source and Workflow projection events for aggregated GitHub feedback", async () => {
+test("emits one marked source event for aggregated GitHub feedback", async () => {
   const pull = await workflowGithubPull(101);
   const result = await sync.syncGithubFeedback({
     async fetchFeedback(_repoPath, url) {
@@ -120,6 +120,7 @@ test("emits source and Workflow projection events for aggregated GitHub feedback
     parent_session_id: pull.parentSessionId,
     github_number: 101,
     github_url: pull.url,
+    source_payload_version: 1,
     feedback: [
       {
         kind: "issue_comment",
@@ -141,22 +142,13 @@ test("emits source and Workflow projection events for aggregated GitHub feedback
       },
     ],
   });
-  const projection = result.emitted.find(
-    (candidate) =>
-      candidate.type === "workflow_run.github_event" &&
-      JSON.parse(candidate.payload).number === pull.number,
-  );
-  expect(JSON.parse(projection!.payload)).toEqual({
-    id: pull.runId,
-    number: pull.number,
-    pr_number: pull.number,
-    parent_session_id: pull.parentSessionId,
-    source_event_id: source!.id,
-    source_event_type: "pull_request.github_feedback",
-    github_number: 101,
-    github_url: pull.url,
-    feedback: JSON.parse(source!.payload).feedback,
-  });
+  // No run-scoped twin follows: the marked source is what the run's subscription selects, and the
+  // canonical `gh api` references on it are what the parent reads.
+  expect(
+    result.emitted.filter(
+      (candidate) => candidate.type === "workflow_run.github_event",
+    ),
+  ).toEqual([]);
 });
 
 test("skips GitHub feedback when the Workflow run has no parent session", async () => {
@@ -225,7 +217,7 @@ test("detects edits and durably suppresses the same comment content", async () =
   expect(
     first.emitted.filter(
       (event) =>
-        event.type === "workflow_run.github_event" &&
+        event.type === "pull_request.github_feedback" &&
         JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(1);
@@ -236,7 +228,7 @@ test("detects edits and durably suppresses the same comment content", async () =
   expect(
     afterRestart.emitted.filter(
       (event) =>
-        event.type === "workflow_run.github_event" &&
+        event.type === "pull_request.github_feedback" &&
         JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(0);
@@ -251,7 +243,7 @@ test("detects edits and durably suppresses the same comment content", async () =
   expect(
     edited.emitted.filter(
       (event) =>
-        event.type === "workflow_run.github_event" &&
+        event.type === "pull_request.github_feedback" &&
         JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(1);
@@ -259,7 +251,7 @@ test("detects edits and durably suppresses the same comment content", async () =
   expect(
     unchangedEdit.emitted.filter(
       (event) =>
-        event.type === "workflow_run.github_event" &&
+        event.type === "pull_request.github_feedback" &&
         JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(0);
@@ -301,7 +293,7 @@ test("notifies once when a pending review with the same id and body is submitted
   expect(
     submitted.emitted.filter(
       (event) =>
-        event.type === "workflow_run.github_event" &&
+        event.type === "pull_request.github_feedback" &&
         JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(1);
@@ -310,7 +302,7 @@ test("notifies once when a pending review with the same id and body is submitted
   expect(
     unchanged.emitted.filter(
       (event) =>
-        event.type === "workflow_run.github_event" &&
+        event.type === "pull_request.github_feedback" &&
         JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(0);
@@ -346,7 +338,7 @@ test("notifies once for a submitted review with no body", async () => {
   expect(
     submitted.emitted.filter(
       (event) =>
-        event.type === "workflow_run.github_event" &&
+        event.type === "pull_request.github_feedback" &&
         JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(1);
@@ -355,7 +347,7 @@ test("notifies once for a submitted review with no body", async () => {
   expect(
     unchanged.emitted.filter(
       (event) =>
-        event.type === "workflow_run.github_event" &&
+        event.type === "pull_request.github_feedback" &&
         JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(0);

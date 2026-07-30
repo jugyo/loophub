@@ -1,5 +1,5 @@
 import * as S from "../store.ts";
-import { projectWorkflowRunClosed } from "./workflow-run-events.ts";
+import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
 
 interface CloseOpenPullsInput {
   repoId: number;
@@ -23,21 +23,11 @@ export function closeOpenPullsForIssue(input: CloseOpenPullsInput): number[] {
       input.actor,
       `Closed because linked issue #${linkedIssue.number} was closed.`,
     );
-    const closedEvent = S.emitEvent(
-      input.repoId,
-      "pull_request.closed",
-      input.actor,
-      {
-        number: pull.number,
-        linked_issue: linkedIssue.number,
-      },
-    );
-    projectWorkflowRunClosed(
-      input.repoId,
-      pull.number,
-      input.actor,
-      closedEvent,
-    );
+    S.emitEvent(input.repoId, "pull_request.closed", input.actor, {
+      number: pull.number,
+      linked_issue: linkedIssue.number,
+      source_payload_version: SOURCE_PAYLOAD_VERSION,
+    });
     closed.push(pull.number);
   }
   return closed;

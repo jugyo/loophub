@@ -709,14 +709,14 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   for (const event of [
     "workflow_run.turn_done",
     "workflow_run.escalated",
-    "workflow_run.review_submitted",
-    "workflow_run.github_event",
     "workflow_run.cost_exceeded",
+    "pull_request.review_submitted",
+    "pull_request.github_feedback",
   ]) {
     expect(design).toContain(event);
   }
   expect(design).toContain(
-    "5 種類の通知はいずれも真実を代替しない timing signal",
+    "これらの wake はいずれも真実を代替しない timing signal",
   );
   expect(design).toContain("`resume --step execute`");
 });

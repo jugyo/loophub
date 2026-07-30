@@ -7,6 +7,7 @@ import {
   realGithubFeedbackDeps,
 } from "./github.ts";
 import * as S from "./store.ts";
+import { SOURCE_PAYLOAD_VERSION } from "./workflow/source-events.ts";
 
 export type { GithubPrFeedback } from "./github.ts";
 
@@ -100,36 +101,22 @@ export async function syncGithubFeedback(
         });
       }
       if (changed.length > 0) {
-        const source = S.emitEvent(
-          link.repo_id,
-          "pull_request.github_feedback",
-          "lh-worker",
-          {
-            number: link.number,
-            workflow_run_id: link.workflow_run_id,
-            parent_session_id: link.parent_session_id,
-            github_number: link.github_number,
-            github_url: link.url,
-            feedback: changed,
-          },
-        );
-        const projection = S.emitWorkflowEvent(
-          link.repo_id,
-          "workflow_run.github_event",
-          "lh-worker",
-          {
-            id: link.workflow_run_id,
-            number: link.number,
-            pr_number: link.number,
-            parent_session_id: link.parent_session_id,
-            source_event_id: source.id,
-            source_event_type: source.type,
-            github_number: link.github_number,
-            github_url: link.url,
-            feedback: changed,
-          },
-        );
-        emitted = [source, projection];
+        emitted = [
+          S.emitEvent(
+            link.repo_id,
+            "pull_request.github_feedback",
+            "lh-worker",
+            {
+              number: link.number,
+              workflow_run_id: link.workflow_run_id,
+              parent_session_id: link.parent_session_id,
+              github_number: link.github_number,
+              github_url: link.url,
+              feedback: changed,
+              source_payload_version: SOURCE_PAYLOAD_VERSION,
+            },
+          ),
+        ];
       }
       db.run("COMMIT");
     } catch (error) {

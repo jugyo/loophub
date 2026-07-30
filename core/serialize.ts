@@ -1852,6 +1852,29 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
   // notable. A change-requesting one is the duplicate ledger row for the same real event: the
   // substance rides the `updated: request_rework` transition (notable), so by the supporting rule
   // this row drops to routine. An unresolved verdict is likewise just the parent's wake ping.
+  //
+  // The run reads its submissions off `pull_request.review_submitted` now; the `workflow_run.`
+  // entry below stays for the twins already stored. Both read the same way, because both carry
+  // only `review_id` and the review row remains the verdict.
+  "pull_request.review_submitted": {
+    label: ({ reviewVerdict }) =>
+      reviewVerdict === "PASS"
+        ? "Review passed"
+        : reviewVerdict === "REQUEST_CHANGES"
+          ? "Review requested changes"
+          : "Review submitted",
+    description: ({ payload, reviewVerdict }) => {
+      const reviewId = payloadNumber(payload, "review_id");
+      const subject = reviewId !== null ? `Review #${reviewId}` : "A review";
+      return reviewVerdict === "PASS"
+        ? `${subject} passed on the linked PR — Verify cleared this implementation.`
+        : reviewVerdict === "REQUEST_CHANGES"
+          ? `${subject} requested changes on the linked PR. The run reworks unless a human steps in.`
+          : `${subject} was submitted on the linked PR. Its verdict decides whether the run advances or reworks.`;
+    },
+    significance: ({ reviewVerdict }) =>
+      reviewVerdict === "PASS" ? "notable" : "routine",
+  },
   "workflow_run.review_submitted": {
     label: ({ reviewVerdict }) =>
       reviewVerdict === "PASS"

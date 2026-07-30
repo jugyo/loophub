@@ -115,10 +115,16 @@ rework は通常 Execute の turn done 後に届く。継続指示が作業中�
 
 ### Worker instruction delivery
 
-worker は `workflow_runs.event_cursor` より後の run event を検出し、`lh workflow next` と同じ
-reconcile / action-plan logic へ event と現在 state を渡す。生成結果は `workflow instruction: <JSON>` の
+worker は run が所有する 3 つの subject —— run 自身、その issue、その PR —— の event を
+`workflow_runs.event_cursor` より後から検出し、`lh workflow next` と同じ reconcile / action-plan logic へ
+event と現在 state を渡す。生成結果は `workflow instruction: <JSON>` の
 1 行として、run に登録済みの唯一の parent pane に単一の `pane run` request で注入・投稿する。
 repository の `.loophub/workflow.yml` はこの経路に関与しない。
+
+購読の下端は run 自身の `workflow_run.started` event である。run 開始より前に記録された issue / PR の
+event は選択されず、cursor の書き換えは不要である。started event が無い run は cursor 0 へ fallback せず、
+cursor を進めないまま可視 error になる。event は 1 行ずつ進めるため、間に挟まった無関係な event も
+失われない。
 
 CLI は parent の Herdr 起動成功後に pane 座標を run へ登録する。worker はその登録前には最古の event を
 run 作成から 2 分間だけ未処理のまま待つ。猶予後も pane row が無ければ missing-parent receipt と worker
@@ -267,15 +273,18 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 同じ pane で人間の回答・指示を待つ。reason は `await-human` と同じ inline text（必須、最大 500 文字）
 であり、質問内容の短い要約を入れる。engine はこれらをそれぞれ `workflow_run.turn_done`、
 `workflow_run.escalated` event として
-記録するが、escalate 自体は run lifecycle を変更しない。Verify が review を登録すると
-`workflow_run.review_submitted`、GitHub PR feedback が同期されると `workflow_run.github_event` が記録
-される。PR diff にコメントが投稿されると `pull_request.diff_feedback_created` /
-`pull_request.diff_feedback_replied` が記録され、その PR に running run があれば
-`workflow_run.diff_feedback` として投影される（run 自身の parent / child が書いたコメントは投影しない）。
+記録するが、escalate 自体は run lifecycle を変更しない。review、PR comment、diff feedback、merge
+conflict、GitHub feedback、close / merge は、通知専用の run-scoped event を持たない。producer は
+`pull_request.review_submitted`、`pull_request.github_feedback`、
+`pull_request.diff_feedback_created` / `pull_request.diff_feedback_replied`、`pull_request.commented`、
+`pull_request.merge_conflict`、close / merge の source event を 1 件だけ記録し、その PR を所有する run が
+購読で選択する。source payload には run が読む stable id と producer の session id、および
+`source_payload_version: 1` が載る。自分の parent / child が書いた diff reply や agent の PR comment は、
+選択されても instruction にはならない（source の `session_id` と PR comment の `author_type` で判定する）。
 親はこの wake で `orchestrator: address diff feedback thread #<t> comment #<c>` を Execute へ配送し、
 Execute は `lh pr feedback pending <pr> --run <run>` で未対応の会話と anchor 周辺の diff を読む。
 source の修正が必要なら、対象 thread へ認識と対応意思を返信してから編集する。
-1 コメントにつき run event は 1 件、wake は 1 回なので配送も 1 回である。usage sweep が run の累積コスト上限越えを検知すると `workflow_run.cost_exceeded` が記録される。
+1 コメントにつき event は 1 件、wake は 1 回なので配送も 1 回である。usage sweep が run の累積コスト上限越えを検知すると `workflow_run.cost_exceeded` が記録される。
 累計 cost が現在の累計上限を超えていて run が human hold されていない間は、同じ run・累計上限に対して
 再送間隔ごとに最大 1 回まで再送され続ける（既定 5 分、env `LOOPHUB_COST_REEMIT_MS` で調整し、0 は毎
 sweep 再送）。生存している親は再送間隔より早く hold を確立するため通常は再送されず、親が wake 後・
@@ -310,7 +319,7 @@ Esc、通知のいずれかに失敗した場合は成功扱いせず、親 pane
 hold を維持する。
 同じ edge の再処理で暗黙 retry や通知の重複を行わない。
 
-5 種類の通知はいずれも真実を代替しない timing signal である。親は通知後に
+これらの wake はいずれも真実を代替しない timing signal である。親は wake の後に
 `lh workflow step status`、PR review、または参照された GitHub API resource から domain state を再観測して
 判断する。review の verdict や feedback 本文を通知 payload の複製で判断しない。idle 検知は完了推定に
 一切使わない。

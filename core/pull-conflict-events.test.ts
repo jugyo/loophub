@@ -54,20 +54,17 @@ function mergeConflictEventsFor(repoId: number, number: number): number {
   ).length;
 }
 
-function workflowConflictEventsFor(repoId: number, prNumber: number) {
+function conflictSourcePayloadsFor(repoId: number, prNumber: number) {
   return S.listEvents(0, repoId, 1000)
-    .filter((e) => e.type === "workflow_run.merge_conflict")
+    .filter((e) => e.type === "pull_request.merge_conflict")
     .map(
       (e) =>
         JSON.parse(e.payload) as {
-          id: number;
-          pr_number: number;
-          parent_session_id: string;
-          source_event_type: string;
-          source_event_id: number;
+          number: number;
+          source_payload_version?: number;
         },
     )
-    .filter((p) => p.pr_number === prNumber);
+    .filter((p) => p.number === prNumber);
 }
 
 test("classifyConflictTransition only fires on the clean -> conflict edge", () => {
@@ -138,7 +135,7 @@ test("sweep emits once per clean -> conflict transition and does not repeat", as
   expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
 });
 
-test("projects a run-scoped conflict event for a PR under a running Workflow run", async () => {
+test("marks the conflict source so a Workflow run reacts to it directly", async () => {
   const repo = S.getRepo("me", "conflict")!;
   const issue = S.createIssue(repo.id, "pull", "Workflow PR", "", "me");
   S.createPull(issue.id, "wf-feature", "main", "wfsha", null);
@@ -168,34 +165,20 @@ test("projects a run-scoped conflict event for a PR under a running Workflow run
   };
 
   await D.sweepPullConflicts(deps); // clean recorded
-  await D.sweepPullConflicts(deps); // conflict: source + projection fire
+  await D.sweepPullConflicts(deps); // conflict: the source fires
 
   expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
-  const projected = workflowConflictEventsFor(repo.id, issue.number);
-  expect(projected).toHaveLength(1);
-  expect(projected[0].id).toBe(run.id);
-  expect(projected[0].parent_session_id).toBe("parent-session-1");
-  expect(projected[0].source_event_type).toBe("pull_request.merge_conflict");
-  expect(projected[0].source_event_id).toBeGreaterThan(0);
-});
-
-test("emits no run-scoped projection for a PR with no Workflow run", async () => {
-  const repo = S.getRepo("me", "conflict")!;
-  const issue = S.createIssue(repo.id, "pull", "Plain PR", "", "me");
-  S.createPull(issue.id, "plain-feature", "main", "plainsha", null);
-
-  const stateByPr = new Map<number, MergeableState[]>();
-  stateByPr.set(issue.number, ["clean", "conflict"]);
-  const deps = {
-    computeState: async (p: OpenPullSweepRow) =>
-      stateByPr.get(p.number)?.shift() ?? "blocked",
-  };
-
-  await D.sweepPullConflicts(deps);
-  await D.sweepPullConflicts(deps);
-
-  expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
-  expect(workflowConflictEventsFor(repo.id, issue.number)).toHaveLength(0);
+  // The sweep resolves no run and writes no run-scoped twin. The run's own subscription selects
+  // the source, which carries the cutover marker so it is read as the one instruction.
+  expect(
+    S.listEvents(0, repo.id, 1000).filter(
+      (e) => e.type === "workflow_run.merge_conflict",
+    ),
+  ).toHaveLength(0);
+  const sources = conflictSourcePayloadsFor(repo.id, issue.number);
+  expect(sources).toHaveLength(1);
+  expect(sources[0].source_payload_version).toBe(1);
+  expect(S.getWorkflowRun(run.id)?.status).toBe("running");
 });
 
 test("a transient unknown tick does not consume the clean -> conflict edge", async () => {

@@ -85,6 +85,12 @@ import {
   type WorkflowRunProjection,
   workflowStepPhaseAt,
 } from "../workflow/run-projection.ts";
+import {
+  classifyWorkflowSubjectEvent,
+  isWorkflowRunOwnSession,
+  type WorkflowSubjectEventRole,
+  type WorkflowTwinSourceRef,
+} from "../workflow/source-events.ts";
 import type { WorkflowLatestReviewState } from "../workflow/steps.ts";
 import {
   isHeadAheadOfReview,
@@ -431,14 +437,43 @@ function resolveReworkReview(
   return reviewId;
 }
 
-// One pass over the run's event trail, shared by every observation below. Loading it is the
-// expensive part (`eventsForWorkflowRun` scans `json_extract(payload, '$.id')`), so a single call
-// path resolves it once and hands the projection down.
+// The run's lifecycle events plus the marked `pull_request.review_submitted` sources that now
+// announce its reviews, in event id order. A run whose start was never recorded keeps its
+// lifecycle-only trail: the attempt window a start opens is what tells its reviews from another
+// attempt's on the same PR, and `next --watch` already surfaces the missing start.
+function runObservationTrail(run: S.WorkflowRunRow): S.EventRow[] {
+  const startedEventId = S.workflowRunStartedEventId(run.repo_id, run.id);
+  return S.workflowRunObservationTrail({
+    repoId: run.repo_id,
+    runId: run.id,
+    prNumber: run.pr_number,
+    startedEventId: startedEventId ?? Number.MAX_SAFE_INTEGER,
+    nextRunStartedEventId: S.nextWorkflowRunStartedEventId({
+      repoId: run.repo_id,
+      prNumber: run.pr_number,
+      afterRunId: run.id,
+    }),
+  });
+}
+
+// One pass over that trail, shared by every observation below. Loading it is the expensive part
+// (the store scans `json_extract(payload, '$.id')`), so a single call path resolves it once and
+// hands the projection down.
 function workflowRunEventProjection(
-  repoId: number,
-  runId: number,
+  run: S.WorkflowRunRow,
 ): WorkflowRunProjection {
-  return projectWorkflowRunEvents(S.eventsForWorkflowRun(repoId, runId));
+  return projectWorkflowRunEvents(runObservationTrail(run));
+}
+
+// The probe the cutover classification needs: whether the source a stored twin names is itself a
+// marked source, in which case the source already provided the instruction.
+function markedWorkflowSourceExists(
+  repoId: number,
+): (ref: WorkflowTwinSourceRef) => boolean {
+  return (ref) =>
+    ref.kind === "event"
+      ? S.hasMarkedWorkflowSourceEvent(repoId, ref.sourceEventId)
+      : S.hasMarkedWorkflowReviewSourceEvent(repoId, ref.reviewId);
 }
 
 // Scope a review to this run by parsing its author back to a `verifier #<run>-<seq>` agent name.
@@ -534,11 +569,21 @@ function turnDoneObservation(
   };
 }
 
-function workflowWakeObservation(
-  prIssueId: number,
-  event: LoopEvent | null,
-  requiresChanges: boolean | undefined,
-): WorkflowWakeInput | null {
+/**
+ * The instruction a selected event implies, or null when the event only wakes state observation.
+ *
+ * `role` is the cutover classification of the selected row. Only an `instruction` row hands its
+ * payload to reconciliation: an unmarked source predates the stable ids read here and leaves the
+ * instruction to its legacy twin, and a twin whose source is marked would repeat one already given.
+ */
+function workflowWakeObservation(input: {
+  run: S.WorkflowRunRow;
+  prIssueId: number;
+  event: LoopEvent | null;
+  role: WorkflowSubjectEventRole | null;
+  requiresChanges: boolean | undefined;
+}): WorkflowWakeInput | null {
+  const { event, requiresChanges, role } = input;
   if (!event) {
     if (requiresChanges !== undefined) {
       throw new ServiceError(422, "requiresChanges requires a workflow event");
@@ -556,7 +601,11 @@ function workflowWakeObservation(
     }
     return { kind: "execute_escalation", reason: payload.reason };
   }
-  if (event.type === "workflow_run.github_event") {
+  if (
+    event.type === "workflow_run.github_event" ||
+    event.type === "pull_request.github_feedback"
+  ) {
+    if (role !== "instruction") return null;
     // Without a parent verdict the wake is the first half of the two-call protocol: hand back the
     // references so the parent reads them and re-enters `next` with `--requires-changes`.
     if (requiresChanges === undefined) {
@@ -574,9 +623,21 @@ function workflowWakeObservation(
       "requiresChanges is only valid for GitHub feedback",
     );
   }
-  if (event.type === "workflow_run.diff_feedback") {
+  if (role !== "instruction") return null;
+  if (
+    event.type === "workflow_run.diff_feedback" ||
+    event.type === "pull_request.diff_feedback_created" ||
+    event.type === "pull_request.diff_feedback_replied"
+  ) {
+    // Execute answers a thread by replying to it, so a reply written by one of the run's own
+    // sessions must not be handed back to the child that wrote it. The producer used to make that
+    // call; now the run does, on the source payload's session id.
+    if (isWorkflowRunOwnSession(input.run, payload.session_id)) return null;
     const threadId = payload.thread_id;
-    const commentId = payload.comment_id;
+    const commentId =
+      event.type === "pull_request.diff_feedback_replied"
+        ? payload.reply_message_id
+        : payload.comment_id;
     if (typeof threadId !== "number" || typeof commentId !== "number") {
       throw new ServiceError(
         422,
@@ -585,7 +646,18 @@ function workflowWakeObservation(
     }
     return { kind: "diff_feedback", threadId, commentId };
   }
-  if (event.type === "workflow_run.pr_comment") {
+  if (
+    event.type === "workflow_run.pr_comment" ||
+    event.type === "pull_request.commented"
+  ) {
+    // Only a human's comment is an instruction. An agent's — including the run's own progress
+    // notes — is not, which is why the twin producer only ever projected human comments.
+    if (
+      event.type === "pull_request.commented" &&
+      payload.author_type !== "human"
+    ) {
+      return null;
+    }
     const commentId = payload.comment_id;
     if (typeof commentId !== "number") {
       throw new ServiceError(
@@ -601,7 +673,10 @@ function workflowWakeObservation(
   if (event.type === "workflow_run.cost_exceeded") {
     return { kind: "cost_exceeded", eventId };
   }
-  if (event.type === "workflow_run.review_submitted") {
+  if (
+    event.type === "workflow_run.review_submitted" ||
+    event.type === "pull_request.review_submitted"
+  ) {
     const reviewId = payload.review_id;
     if (typeof reviewId !== "number") {
       throw new ServiceError(
@@ -609,7 +684,7 @@ function workflowWakeObservation(
         `workflow event #${eventId} has no review id`,
       );
     }
-    if (!S.listReviews(prIssueId).some((review) => review.id === reviewId)) {
+    if (!S.listReviews(input.prIssueId).some((r) => r.id === reviewId)) {
       throw new ServiceError(
         404,
         `review #${reviewId} not found on workflow run PR`,
@@ -619,6 +694,8 @@ function workflowWakeObservation(
     // wakes reconciliation, so both run-owned and out-of-band reviews use the current status.
     return null;
   }
+  // Close, merge, conflict and every other subject event is a timing signal only: the PR's own
+  // state, git and the review rows remain the truth reconciliation reads.
   return null;
 }
 
@@ -813,7 +890,7 @@ function workflowRunState(
   const workflowName = run.workflow_id
     ? (S.getWorkflowById(run.workflow_id)?.name ?? null)
     : null;
-  const projection = workflowRunEventProjection(repo.id, run.id);
+  const projection = workflowRunEventProjection(run);
   const prIssue = S.getIssue(repo.id, run.pr_number);
   const review = prIssue
     ? latestWorkflowRunReview(prIssue.id, run.id, projection)
@@ -1252,7 +1329,7 @@ export const workflowRuns = {
     const progress = await workflowRunProgress(
       repo,
       run,
-      workflowRunEventProjection(repo.id, run.id),
+      workflowRunEventProjection(run),
     );
     if (!progress.steps.execute.complete) {
       throw new ServiceError(
@@ -1321,7 +1398,7 @@ export const workflowRuns = {
       const progress = await workflowRunProgress(
         repo,
         run,
-        workflowRunEventProjection(repo.id, run.id),
+        workflowRunEventProjection(run),
       );
       if (!progress.headAheadOfBase) {
         throw new ServiceError(
@@ -1595,7 +1672,7 @@ export const workflowRuns = {
     const progress = await workflowRunProgress(
       repo,
       run,
-      workflowRunEventProjection(repo.id, run.id),
+      workflowRunEventProjection(run),
     );
     if (!progress.steps.verify.complete) {
       throw new ServiceError(
@@ -2066,11 +2143,7 @@ export const workflowRuns = {
     if (run.repo_id !== r.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
-    return observeWorkflowRunStatus(
-      r,
-      run,
-      workflowRunEventProjection(r.id, run.id),
-    );
+    return observeWorkflowRunStatus(r, run, workflowRunEventProjection(run));
   },
 
   // Advise the parent's next action from observed state. With `watch`, the call blocks on the run's
@@ -2114,7 +2187,7 @@ export const workflowRuns = {
     if (input.watch && run.status === "running") {
       wakeEvent = await workflowWatch.waitForEvent({
         repo: name,
-        run: run.id,
+        run,
         since: run.event_cursor,
       });
       // Move the cursor before observing: this wake is spent either way, and reconciliation reads
@@ -2126,11 +2199,17 @@ export const workflowRuns = {
       // began — otherwise the wake is spent on a stale hold that never clears.
       run = readRun();
     }
-    // Load the run's trail once, after any wake has landed, and reuse it for both the wake lookup
-    // and the observation below.
-    const rows = S.eventsForWorkflowRun(r.id, run.id);
     if (wakeEvent === null && input.event !== undefined) {
-      const row = rows.find((candidate) => candidate.id === input.event);
+      // `--event` names any event of the run's subjects, matched by the same predicate the watch
+      // selects with: the GitHub two-call protocol hands back a source event id, and a lookup
+      // narrower than the selector would reject the id it just returned.
+      const row = S.workflowSubjectEventById({
+        repoId: r.id,
+        runId: run.id,
+        issueNumber: run.issue_number,
+        prNumber: run.pr_number,
+        eventId: input.event,
+      });
       if (!row) {
         throw new ServiceError(
           404,
@@ -2139,10 +2218,19 @@ export const workflowRuns = {
       }
       wakeEvent = formatEvent(row, name);
     }
+    const wakeRole: WorkflowSubjectEventRole | null = wakeEvent
+      ? classifyWorkflowSubjectEvent(
+          {
+            type: wakeEvent.type,
+            payload: workflowEventPayloadOf(wakeEvent.payload),
+          },
+          markedWorkflowSourceExists(r.id),
+        )
+      : null;
     const observedState = await observeWorkflowRunStatus(
       r,
       run,
-      projectWorkflowRunEvents(rows),
+      workflowRunEventProjection(run),
     );
     const prIssue = issueOr404(r, run.pr_number, "pull");
     // Terminal condition: once the linked PR is closed there is nothing left to reconcile. Merge
@@ -2195,11 +2283,13 @@ export const workflowRuns = {
       wake:
         input.note !== undefined
           ? { kind: "human_instruction" }
-          : workflowWakeObservation(
-              prIssue.id,
-              wakeEvent,
-              input.requiresChanges,
-            ),
+          : workflowWakeObservation({
+              run,
+              prIssueId: prIssue.id,
+              event: wakeEvent,
+              role: wakeRole,
+              requiresChanges: input.requiresChanges,
+            }),
     });
     return {
       ...action,
@@ -2236,8 +2326,10 @@ export const workflowRuns = {
     return run ? workflowRunState(r, run) : null;
   },
 
-  // On-demand audit history for the PR detail dialog. The store query matches the persisted run id,
-  // never just the PR number, so successive runs on one PR remain isolated.
+  // On-demand audit history for the PR detail dialog. It reads the same observation trail the run
+  // reconciles from, so a review submission still appears now that it arrives as a PR source event
+  // rather than a run-scoped twin. Successive runs on one PR stay isolated: lifecycle rows match
+  // the persisted run id, and sources are confined to the run's attempt window.
   history(
     name: string,
     input: { run: number },
@@ -2258,7 +2350,7 @@ export const workflowRuns = {
         review.event,
       ]),
     );
-    return S.eventsForWorkflowRun(r.id, run.id).map((event) => {
+    return runObservationTrail(run).map((event) => {
       // Malformed legacy payloads remain visible without launch input.
       const payload = parseWorkflowEventPayload(event.payload) ?? {};
       const handoffId =

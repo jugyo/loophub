@@ -1,5 +1,14 @@
 import { db, now } from "../db.ts";
 import type { WorkflowContractLanguage } from "../workflow/contracts.ts";
+import { workflowSubjectMatchSql } from "./events.ts";
+
+// The identity columns a run's subject predicate reads, as SQL expressions against `run`.
+const RUN_SUBJECT = {
+  event: "event",
+  run: "run.id",
+  pr: "run.pr_number",
+  issue: "run.issue_number",
+} as const;
 
 export interface WorkflowInput {
   name: string;
@@ -225,9 +234,14 @@ export function advanceWorkflowRunEventCursor(
     .get(cursor, now(), id, cursor) as WorkflowRunRow | null;
 }
 
-// Runs with at least one undelivered lifecycle event. This is intentionally independent of run
+// Runs with at least one undelivered subject event. This is intentionally independent of run
 // status: the worker advances terminal runs past their remaining events without delivering a
 // progression instruction, so a restart does not scan the same terminal history forever.
+//
+// The `workflow_run.started` bound keeps a run that was already running at the cutover from waking
+// on the issue / PR backlog its narrower subscription never had to skip. A run with no started
+// event falls back to its cursor here rather than being hidden: this query is a prefilter, and the
+// dispatcher resolves the bound again and raises the missing start as a visible error.
 export function workflowRunsWithPendingEvents(): WorkflowRunRow[] {
   return db
     .query(
@@ -235,10 +249,14 @@ export function workflowRunsWithPendingEvents(): WorkflowRunRow[] {
        WHERE EXISTS (
          SELECT 1 FROM events event
          WHERE event.repo_id = run.repo_id
-           AND (event.type GLOB 'workflow_run.*'
-             OR event.type GLOB 'workflow_step.*')
-           AND json_extract(event.payload, '$.id') = run.id
-           AND event.id > run.event_cursor
+           AND event.id > max(run.event_cursor, COALESCE((
+             SELECT started.id - 1 FROM events started
+             WHERE started.repo_id = run.repo_id
+               AND started.type = 'workflow_run.started'
+               AND json_extract(started.payload, '$.id') = run.id
+             ORDER BY started.id ASC LIMIT 1
+           ), 0))
+           AND ${workflowSubjectMatchSql(RUN_SUBJECT)}
        )
        ORDER BY run.id`,
     )
@@ -362,11 +380,34 @@ export function getWorkflowEventEffectForCostLimit(
   );
 }
 
+/**
+ * Which events a receipt may be claimed against.
+ *
+ * `lifecycle` is the original condition: the run's own events, which are the only ones the cost
+ * hold and escalation receipts ever anchor to. Widening it for them would let an unrelated PR event
+ * claim a lifecycle effect.
+ *
+ * `subject` is the wider set the instruction receipt needs, matching exactly what the instruction
+ * selector returns. The two share `workflowSubjectMatchSql`, so an event the selector hands the
+ * dispatcher can never be one the claim rejects.
+ */
+export type WorkflowEventEffectScope = "lifecycle" | "subject";
+
 export function beginWorkflowEventEffect(
   runId: number,
   eventId: number,
   effect: string,
+  scope: WorkflowEventEffectScope = "lifecycle",
 ): { row: WorkflowEventEffectRow; acquired: boolean } | null {
+  const ownership =
+    scope === "subject"
+      ? `(${workflowSubjectMatchSql(RUN_SUBJECT)}
+           OR (event.type = 'workflow_effect.human_escalation'
+             AND json_extract(event.payload, '$.id') = run.id))`
+      : `((event.type GLOB 'workflow_run.*'
+             OR event.type GLOB 'workflow_step.*'
+             OR event.type = 'workflow_effect.human_escalation')
+           AND json_extract(event.payload, '$.id') = run.id)`;
   const t = now();
   const inserted = db
     .query(
@@ -378,10 +419,7 @@ export function beginWorkflowEventEffect(
          JOIN events event ON event.id = ?
          WHERE run.id = ?
            AND event.repo_id = run.repo_id
-           AND (event.type GLOB 'workflow_run.*'
-             OR event.type GLOB 'workflow_step.*'
-             OR event.type = 'workflow_effect.human_escalation')
-           AND json_extract(event.payload, '$.id') = run.id
+           AND ${ownership}
        )
        ON CONFLICT(run_id, event_id, effect) DO NOTHING
        RETURNING *`,
@@ -464,22 +502,6 @@ export function latestWorkflowRunForPull(
   return db
     .query(
       `SELECT * FROM workflow_runs WHERE repo_id = ? AND pr_number = ? ORDER BY id DESC LIMIT 1`,
-    )
-    .get(repoId, prNumber) as WorkflowRunRow | null;
-}
-
-// The latest still-running Workflow run for a PR, used by the worker conflict sweep to project a
-// detected merge conflict into a run-scoped event the parent observes (#1516). Scoped to `running`
-// so a conflict on a PR whose run already stopped/completed emits no orphan projection.
-export function runningWorkflowRunForPull(
-  repoId: number,
-  prNumber: number,
-): WorkflowRunRow | null {
-  return db
-    .query(
-      `SELECT * FROM workflow_runs
-       WHERE repo_id = ? AND pr_number = ? AND status = 'running'
-       ORDER BY id DESC LIMIT 1`,
     )
     .get(repoId, prNumber) as WorkflowRunRow | null;
 }

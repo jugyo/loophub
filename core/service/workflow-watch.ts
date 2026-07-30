@@ -1,26 +1,27 @@
-import type { LoopEvent } from "../events.ts";
+import { formatEvent, type LoopEvent } from "../events.ts";
 import * as S from "../store.ts";
+import { workflowSubscriptionLowerBound } from "../workflow/source-events.ts";
 import {
   logWorkflowWatcher,
   type WorkflowWatcherLogEntry,
 } from "../workflow-watcher-log.ts";
-import { events } from "./events.ts";
 
 export type WorkflowEventWaitInput = {
   repo: string;
-  run: number;
+  run: S.WorkflowRunRow;
   since: number;
 };
 
 type WorkflowWatchDeps = {
-  readEvents(input: {
-    since: number;
-    repo: string;
-    types: ["workflow_run"];
+  /** The run's subscription lower bound, or null when its start was never recorded. */
+  startedEventId(run: S.WorkflowRunRow): number | null;
+  readNextEvent(input: {
+    repoId: number;
     runId: number;
-    order: "asc";
-    limit: 1;
-  }): LoopEvent[] | Promise<LoopEvent[]>;
+    issueNumber: number;
+    prNumber: number;
+    afterId: number;
+  }): S.EventRow | null | Promise<S.EventRow | null>;
   wait(): void | Promise<void>;
   log?(entry: WorkflowWatcherLogEntry): void;
 };
@@ -68,8 +69,11 @@ function runInRepo(input: { repo: string; run: number }): S.WorkflowRunRow {
 }
 
 const defaultDeps: WorkflowWatchDeps = {
-  readEvents(input) {
-    return events.list(input);
+  startedEventId(run) {
+    return S.workflowRunStartedEventId(run.repo_id, run.id);
+  },
+  readNextEvent(input) {
+    return S.nextWorkflowSubjectEvent(input);
   },
   wait() {
     return new Promise((resolve) => setTimeout(resolve, 1_000));
@@ -130,38 +134,56 @@ export const workflowWatch = {
     };
   },
 
-  // Block until the run has an event after `since`, then return that single event. `lh workflow
-  // next --watch` owns the cursor around this wait; callers of this helper have already resolved
-  // the repo and run.
+  // Block until one of the run's subjects records an event after `since`, then return it. `lh
+  // workflow next --watch` owns the cursor around this wait.
+  //
+  // A run with no `workflow_run.started` event gets a visible error rather than a fallback to 0:
+  // the start path writes the run row, its contract files and the event without a transaction, so
+  // a missing start is a broken run an operator must decide about, not a backlog to replay.
   async waitForEvent(
     input: WorkflowEventWaitInput,
     deps: WorkflowWatchDeps = defaultDeps,
   ): Promise<LoopEvent> {
+    const run = input.run;
     deps.log?.({
       event: "started",
       repo: input.repo,
-      run: input.run,
+      run: run.id,
       cursor: input.since,
     });
+    const startedEventId = deps.startedEventId(run);
+    if (startedEventId === null) {
+      const message = `run #${run.id} has no workflow_run.started event`;
+      deps.log?.({
+        event: "failed",
+        repo: input.repo,
+        run: run.id,
+        cursor: input.since,
+        error: message,
+      });
+      inputError(message);
+    }
+    const afterId = workflowSubscriptionLowerBound(input.since, startedEventId);
     while (true) {
-      let found: LoopEvent[];
+      let found: S.EventRow | null;
       try {
-        found = await deps.readEvents({
-          since: input.since,
-          repo: input.repo,
-          types: ["workflow_run"],
-          runId: input.run,
-          order: "asc",
-          // One event keeps each wait and the subsequent domain-state observation focused: the
-          // caller reconciles from the state that event produced before waking on the next one.
-          limit: 1,
+        // One event keeps each wait and the subsequent domain-state observation focused: the caller
+        // reconciles from the state that event produced before waking on the next one. Advancing a
+        // row at a time is also what keeps an unrelated event recorded between an old source and
+        // its twin from being skipped.
+        found = await deps.readNextEvent({
+          repoId: run.repo_id,
+          runId: run.id,
+          issueNumber: run.issue_number,
+          prNumber: run.pr_number,
+          afterId,
         });
       } catch (error) {
         deps.log?.({
           event: "failed",
           repo: input.repo,
-          run: input.run,
-          cursor: input.since,
+          run: run.id,
+          cursor: afterId,
           error: errorMessage(error),
         });
         throw new Error(`workflow event: read failed: ${errorMessage(error)}`, {
@@ -171,17 +193,17 @@ export const workflowWatch = {
       deps.log?.({
         event: "poll",
         repo: input.repo,
-        run: input.run,
-        cursor: input.since,
+        run: run.id,
+        cursor: afterId,
       });
-      if (found.length > 0) {
+      if (found) {
         deps.log?.({
           event: "delivered",
           repo: input.repo,
-          run: input.run,
-          cursor: found[0].id,
+          run: run.id,
+          cursor: found.id,
         });
-        return found[0];
+        return formatEvent(found, input.repo);
       }
       try {
         await deps.wait();
@@ -189,8 +211,8 @@ export const workflowWatch = {
         deps.log?.({
           event: "failed",
           repo: input.repo,
-          run: input.run,
-          cursor: input.since,
+          run: run.id,
+          cursor: afterId,
           error: errorMessage(error),
         });
         throw new Error(`workflow event: wait failed: ${errorMessage(error)}`, {

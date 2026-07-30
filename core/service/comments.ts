@@ -1,6 +1,7 @@
 import { ServiceError } from "../errors.ts";
 import { commentJSON } from "../serialize.ts";
 import * as S from "../store.ts";
+import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
 import {
   actorFor,
   commentActor,
@@ -8,7 +9,6 @@ import {
   issueOr404,
   repoOr404,
 } from "./shared.ts";
-import { projectWorkflowRunPullComment } from "./workflow-run-events.ts";
 
 // ===== comments =====
 export const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
@@ -54,15 +54,7 @@ export const comments = {
     const row = issueOr404(r, number, "pull");
     if (!body) throw new ServiceError(422, "body is required");
     const { actor, authorType } = commentActor(sessionId);
-    return createPullComment(
-      r,
-      row,
-      number,
-      body,
-      actor,
-      authorType,
-      sessionId,
-    );
+    return createPullComment(r, row, body, actor, authorType, sessionId);
   },
 
   createHumanForPull(name: string, number: number, body: string) {
@@ -70,7 +62,7 @@ export const comments = {
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
     if (!body) throw new ServiceError(422, "body is required");
-    return createPullComment(r, row, number, body, "me", "human", null);
+    return createPullComment(r, row, body, "me", "human", null);
   },
 
   reactForPull(
@@ -119,27 +111,20 @@ export const comments = {
 function createPullComment(
   repo: S.Repo,
   row: S.IssueRow,
-  number: number,
   body: string,
   actor: string,
   authorType: S.CommentAuthorType,
   sessionId?: string | null,
 ) {
   const m = S.createComment(row.id, actor, body, authorType);
-  const source = S.emitEvent(repo.id, "pull_request.commented", actor, {
+  // `author_type` is what tells a Workflow run whether this comment is an instruction: only a
+  // human's is. The run reads it off the source rather than being told by a separate event.
+  S.emitEvent(repo.id, "pull_request.commented", actor, {
     number: row.number,
     comment_id: m.id,
     author_type: authorType,
+    source_payload_version: SOURCE_PAYLOAD_VERSION,
     ...(sessionId ? { session_id: sessionId } : {}),
   });
-  if (authorType === "human") {
-    projectWorkflowRunPullComment({
-      repoId: repo.id,
-      prNumber: number,
-      actor,
-      source,
-      comment: m,
-    });
-  }
   return commentWire(m);
 }

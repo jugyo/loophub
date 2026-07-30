@@ -33,10 +33,12 @@ export interface WorkflowRunEvent {
 }
 
 /**
- * The `workflow_run.review_submitted` events for one review. A review can be announced more than
- * once on a run's trail, and the two ends answer different questions: `first` is the submission
- * boundary an out-of-band review is measured from, `latest` is the most recent announcement a turn
- * done is compared against.
+ * The review submission events for one review. A review can be announced more than once on a run's
+ * trail — a marked `pull_request.review_submitted` source and, on rows written across the cutover,
+ * the legacy `workflow_run.review_submitted` twin that followed it — and the two ends answer
+ * different questions: `first` is the submission boundary an out-of-band review is measured from,
+ * `latest` is the most recent announcement a turn done is compared against. Keying by review id is
+ * what makes a source and its twin count as one submission.
  */
 export interface WorkflowReviewSubmission {
   first: WorkflowRunEvent;
@@ -106,7 +108,12 @@ export function projectWorkflowRunEvents(
       ) {
         phaseTransitions.push({ id: event.id, step: payload.current_step });
       }
-    } else if (event.type === "workflow_run.review_submitted") {
+    } else if (
+      event.type === "workflow_run.review_submitted" ||
+      // Only sources the store already accepted as this run's belong to the trail: it filters them
+      // by the run's PR, its cutover marker and its started event before handing them over.
+      event.type === "pull_request.review_submitted"
+    ) {
       const reviewId = payload.review_id;
       if (typeof reviewId === "number") {
         const existing = reviewSubmissions.get(reviewId);
