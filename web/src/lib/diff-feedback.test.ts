@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   dragSelection,
+  selectableAt,
   selectableLines,
   selectionContains,
   singleSelection,
@@ -28,11 +29,57 @@ describe("diff feedback selection", () => {
         right_line: null,
       },
     ]);
-    expect(lines.get(1)).toEqual([
-      { side: "LEFT", line: 1, hunk: 0 },
-      { side: "RIGHT", line: 1, hunk: 0 },
+    expect(selectableAt(lines, "LEFT", 1)).toEqual({
+      side: "LEFT",
+      line: 1,
+      hunk: 0,
+    });
+    expect(selectableAt(lines, "RIGHT", 1)).toEqual({
+      side: "RIGHT",
+      line: 1,
+      hunk: 0,
+    });
+    expect(selectableAt(lines, "LEFT", 2)).toEqual({
+      side: "LEFT",
+      line: 2,
+      hunk: 0,
+    });
+    // The deletion has no right-hand line, and nothing describes right-hand line 2 at all.
+    expect(selectableAt(lines, "RIGHT", 2)).toBeUndefined();
+    expect(selectableAt(lines, "LEFT", null)).toBeUndefined();
+  });
+
+  it("finds a line by its number however the diff array is ordered or offset", () => {
+    // The view renders one diff and asks this map about another, so positions cannot be assumed.
+    const lines = selectableLines([
+      {
+        kind: "hunk",
+        text: "@@ -40,2 +40,2 @@",
+        left_line: null,
+        right_line: null,
+      },
+      { kind: "deletion", text: "-old", left_line: 40, right_line: null },
+      { kind: "addition", text: "+new", left_line: null, right_line: 40 },
+      {
+        kind: "hunk",
+        text: "@@ -90 +90 @@",
+        left_line: null,
+        right_line: null,
+      },
+      { kind: "context", text: " tail", left_line: 90, right_line: 90 },
     ]);
-    expect(lines.get(2)).toEqual([{ side: "LEFT", line: 2, hunk: 0 }]);
+
+    expect(selectableAt(lines, "RIGHT", 40)).toEqual({
+      side: "RIGHT",
+      line: 40,
+      hunk: 0,
+    });
+    expect(selectableAt(lines, "LEFT", 90)).toEqual({
+      side: "LEFT",
+      line: 90,
+      hunk: 1,
+    });
+    expect(selectableAt(lines, "RIGHT", 41)).toBeUndefined();
   });
 
   it("selects a single line", () => {

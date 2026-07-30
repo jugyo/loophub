@@ -688,6 +688,74 @@ describe("DiffFileDialog", () => {
     expect(screen.getByLabelText("Diff comment")).toBeTruthy();
   });
 
+  it("comments on the line under the pointer when the two diffs disagree", async () => {
+    // The dialog renders the patch it was handed but asks pulls/diff which lines take a comment.
+    // The two are fetched separately and can describe different ranges — after the base branch
+    // moves, for one — so the same array position means a different line in each.
+    renderDialog({
+      file: { ...file, patch: "@@ -10 +10 @@\n-const x = 0;\n+const x = 1;" },
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "web/src/a.ts",
+              original_path: null,
+              status: "modified",
+              additions: 2,
+              deletions: 2,
+              patch: "",
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1 +1 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-const a = 0;",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+const a = 1;",
+                  left_line: null,
+                  right_line: 1,
+                },
+                {
+                  kind: "hunk",
+                  text: "@@ -10 +10 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-const x = 0;",
+                  left_line: 10,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+const x = 1;",
+                  left_line: null,
+                  right_line: 10,
+                },
+              ],
+            },
+          ],
+        }),
+        "diffFeedback/list": () => ({ threads: [] }),
+      },
+    });
+
+    await addComment("New line 10");
+
+    expect(screen.getByText("RIGHT 10")).toBeTruthy();
+  });
+
   it("renders and operates on one thread with the standard composer layout", async () => {
     const reply = vi.fn(() => ({}));
     const patch = "@@ -1 +1,2 @@\n-old\n+new one\n+new two";

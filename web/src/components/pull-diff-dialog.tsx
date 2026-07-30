@@ -41,6 +41,8 @@ import {
   type DiffSelection,
   dragSelection,
   type SelectableDiffLine,
+  type SelectableLines,
+  selectableAt,
   selectableLines,
   selectionContains,
   singleSelection,
@@ -965,7 +967,7 @@ function useLineSelectionDrag(onSelect: (selection: DiffSelection) => void) {
 
 type DiffRenderProps = {
   lines: PositionedDiffLine[];
-  selectable: Map<number, SelectableDiffLine[]>;
+  selectable: SelectableLines;
   selection: DiffSelection | null;
   selectionContent: ReactNode;
   threads: DiffFeedbackThread[];
@@ -1033,7 +1035,6 @@ function UnifiedDiff({
         </colgroup>
         <tbody>
           {lines.map((line, index) => {
-            const choices = selectable.get(index) ?? [];
             const ending = threadsEndingAt(threads, line);
             const leftAnchored = threadAnchorsLine(
               threads,
@@ -1064,7 +1065,7 @@ function UnifiedDiff({
                   <LineNumber
                     line={line.oldLine}
                     label="Old"
-                    choice={choices.find((choice) => choice.side === "LEFT")}
+                    choice={selectableAt(selectable, "LEFT", line.oldLine)}
                     selected={leftSelected}
                     anchored={leftAnchored}
                     lineSelection={lineSelection}
@@ -1072,7 +1073,7 @@ function UnifiedDiff({
                   <LineNumber
                     line={line.newLine}
                     label="New"
-                    choice={choices.find((choice) => choice.side === "RIGHT")}
+                    choice={selectableAt(selectable, "RIGHT", line.newLine)}
                     selected={rightSelected}
                     anchored={rightAnchored}
                     lineSelection={lineSelection}
@@ -1159,7 +1160,6 @@ function SplitDiff(props: DiffRenderProps) {
                     side="old"
                     selection={selection}
                     selectable={selectable}
-                    sourceIndex={row.left ? lines.indexOf(row.left) : null}
                     anchored={
                       row.left
                         ? threadAnchorsLine(threads, "LEFT", row.left.oldLine)
@@ -1173,7 +1173,6 @@ function SplitDiff(props: DiffRenderProps) {
                     side="new"
                     selection={selection}
                     selectable={selectable}
-                    sourceIndex={row.right ? lines.indexOf(row.right) : null}
                     anchored={
                       row.right
                         ? threadAnchorsLine(threads, "RIGHT", row.right.newLine)
@@ -1361,7 +1360,6 @@ function SplitLine({
   side,
   selection,
   selectable,
-  sourceIndex,
   anchored,
   lineSelection,
 }: {
@@ -1370,7 +1368,6 @@ function SplitLine({
   side: "old" | "new";
   selection: DiffSelection | null;
   selectable: DiffRenderProps["selectable"];
-  sourceIndex: number | null;
   anchored: boolean;
   lineSelection: LineSelectionHandlers;
 }) {
@@ -1380,12 +1377,7 @@ function SplitLine({
       : line.newLine
     : null;
   const feedbackSide = side === "old" ? "LEFT" : "RIGHT";
-  const choice =
-    sourceIndex == null
-      ? undefined
-      : selectable
-          .get(sourceIndex)
-          ?.find((candidate) => candidate.side === feedbackSide);
+  const choice = selectableAt(selectable, feedbackSide, lineNumber);
   const selected = selectionContains(selection, feedbackSide, lineNumber);
   return (
     <>
