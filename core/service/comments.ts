@@ -2,6 +2,7 @@ import { ServiceError } from "../errors.ts";
 import { commentJSON } from "../serialize.ts";
 import * as S from "../store.ts";
 import {
+  actorFor,
   commentActor,
   ensureWritable,
   issueOr404,
@@ -10,11 +11,17 @@ import {
 import { projectWorkflowRunPullComment } from "./workflow-run-events.ts";
 
 // ===== comments =====
+export const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
+
+function commentWire(row: S.CommentRow) {
+  return commentJSON(row, S.listCommentReactions(row.id));
+}
+
 export const comments = {
   list(name: string, number: number) {
     const r = repoOr404(name);
     const row = issueOr404(r, number);
-    return S.listComments(row.id).map(commentJSON);
+    return S.listComments(row.id).map(commentWire);
   },
 
   create(
@@ -33,7 +40,7 @@ export const comments = {
       number: row.number,
       ...(sessionId ? { session_id: sessionId } : {}),
     });
-    return commentJSON(m);
+    return commentWire(m);
   },
 
   createForPull(
@@ -65,6 +72,27 @@ export const comments = {
     if (!body) throw new ServiceError(422, "body is required");
     return createPullComment(r, row, number, body, "me", "human", null);
   },
+
+  reactForPull(
+    name: string,
+    number: number,
+    commentId: number,
+    emoji: string,
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const comment = S.getComment(commentId);
+    if (!comment || comment.issue_id !== row.id) {
+      throw new ServiceError(404, "PR comment not found");
+    }
+    if (!(COMMENT_REACTIONS as readonly string[]).includes(emoji)) {
+      throw new ServiceError(422, "unsupported PR comment reaction");
+    }
+    S.createCommentReaction(comment.id, actorFor(sessionId), emoji);
+    return commentWire(comment);
+  },
 };
 
 function createPullComment(
@@ -92,5 +120,5 @@ function createPullComment(
       comment: m,
     });
   }
-  return commentJSON(m);
+  return commentWire(m);
 }

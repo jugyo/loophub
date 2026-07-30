@@ -145,6 +145,7 @@ const comments: IssueComment[] = [
     author_type: "human",
     body: "Thanks!",
     created_at: "2026-06-18T11:45:00Z",
+    reactions: [],
   },
 ];
 
@@ -353,6 +354,7 @@ describe("PullDetail", () => {
         author_type: "human",
         body: params.body,
         created_at: "2026-06-18T12:00:00Z",
+        reactions: [],
       }),
     });
 
@@ -368,6 +370,19 @@ describe("PullDetail", () => {
       });
       expect((composer as HTMLTextAreaElement).value).toBe("");
     });
+  });
+
+  it("shows reactions attached to PR comments", async () => {
+    renderDetail({
+      "comments/list": () => [
+        {
+          ...comments[0],
+          reactions: [{ emoji: "👀", count: 1 }],
+        },
+      ],
+    });
+
+    expect(await screen.findByLabelText("👀 reaction: 1")).toBeTruthy();
   });
 
   it("names the major PR regions for component debugging", async () => {

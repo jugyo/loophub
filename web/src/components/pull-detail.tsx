@@ -808,6 +808,19 @@ function CommentList({
             <Markdown owner={owner} repo={repo}>
               {c.body}
             </Markdown>
+            {c.reactions.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {c.reactions.map((reaction) => (
+                  <span
+                    key={reaction.emoji}
+                    aria-label={`${reaction.emoji} reaction: ${reaction.count}`}
+                    className="rounded-full border bg-muted/40 px-2 py-0.5 text-xs"
+                  >
+                    {reaction.emoji} {reaction.count}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </article>
         ))
       )}

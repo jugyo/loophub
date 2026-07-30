@@ -225,6 +225,21 @@ export function workflowActionPlan(
       }
       if (action.delivery_reason === "pr_comment") {
         return watch([
+          {
+            command: "lh",
+            args: [
+              "pr",
+              "comment",
+              "react",
+              String(action.comment_id),
+              "--pr",
+              String(context.pr),
+              "--emoji",
+              "👀",
+              "--repo",
+              context.repo,
+            ],
+          },
           command(
             "deliver",
             ...scoped,

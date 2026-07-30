@@ -120,6 +120,44 @@ test("lh pr comment posts a plain comment on a PR", () => {
   expect(viewJSON(n).comments).toBe(1);
 });
 
+test("lh pr comment react adds an idempotent reaction", () => {
+  const n = createPull();
+  const created = lh([
+    "pr",
+    "comment",
+    String(n),
+    "--repo",
+    REPO,
+    "--body",
+    "Please handle this.",
+    "--json",
+  ]);
+  expect(created.exitCode).toBe(0);
+  const comment = JSON.parse(created.stdout);
+
+  const reacted = lh([
+    "pr",
+    "comment",
+    "react",
+    String(comment.id),
+    "--pr",
+    String(n),
+    "--emoji",
+    "👀",
+    "--repo",
+    REPO,
+    "--json",
+  ]);
+
+  expect(reacted.exitCode).toBe(0);
+  expect(JSON.parse(reacted.stdout).reactions).toEqual([
+    { emoji: "👀", count: 1 },
+  ]);
+  expect(viewJSON(n).comment_list[0].reactions).toEqual([
+    { emoji: "👀", count: 1 },
+  ]);
+});
+
 test("lh pr comment requires a body", () => {
   const n = createPull();
   const { stderr, exitCode } = lh(["pr", "comment", String(n), "--repo", REPO]);
@@ -151,4 +189,5 @@ test("usage lists the pr comment subcommand", () => {
   expect(exitCode).toBe(0);
   expect(stdout).toContain("lh pr list|view|diff|create|update|comment|merge");
   expect(stdout).toContain('lh pr comment 3 --body "starting work"');
+  expect(stdout).toContain('lh pr comment react 12 --pr 3 --emoji "👀"');
 });

@@ -551,6 +551,7 @@ describe("pure row -> wire serializers", () => {
       author_type: "agent",
       body: "looks good",
       created_at: "2026-07-03T00:00:00Z",
+      reactions: [],
     });
   });
 

@@ -12,11 +12,26 @@ export interface CommentRow {
   updated_at: string;
 }
 
+export interface CommentReactionRow {
+  id: number;
+  comment_id: number;
+  author: string;
+  emoji: string;
+  created_at: string;
+}
+
 // ---- comments ----
 export function listComments(issueId: number): CommentRow[] {
   return db
     .query(`SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at ASC`)
     .all(issueId) as CommentRow[];
+}
+export function getComment(id: number): CommentRow | null {
+  return (
+    (db.query("SELECT * FROM comments WHERE id = ?").get(id) as
+      | CommentRow
+      | undefined) ?? null
+  );
 }
 export function createComment(
   issueId: number,
@@ -39,4 +54,30 @@ export function countComments(issueId: number): number {
       .query(`SELECT COUNT(*) AS c FROM comments WHERE issue_id = ?`)
       .get(issueId) as { c: number }
   ).c;
+}
+
+export function listCommentReactions(commentId: number): CommentReactionRow[] {
+  return db
+    .query(
+      `SELECT * FROM comment_reactions
+       WHERE comment_id = ? ORDER BY created_at ASC, id ASC`,
+    )
+    .all(commentId) as CommentReactionRow[];
+}
+
+export function createCommentReaction(
+  commentId: number,
+  author: string,
+  emoji: string,
+): CommentReactionRow {
+  db.query(
+    `INSERT OR IGNORE INTO comment_reactions
+     (comment_id, author, emoji, created_at) VALUES (?, ?, ?, ?)`,
+  ).run(commentId, author, emoji, now());
+  return db
+    .query(
+      `SELECT * FROM comment_reactions
+       WHERE comment_id = ? AND author = ? AND emoji = ?`,
+    )
+    .get(commentId, author, emoji) as CommentReactionRow;
 }

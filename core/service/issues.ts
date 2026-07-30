@@ -237,7 +237,9 @@ export const issues = {
     const r = repoOr404(name);
     const row = issueOr404(r, number);
     const out = await issueDetailJSON(row, r);
-    out.comment_list = S.listComments(row.id).map(commentJSON);
+    out.comment_list = S.listComments(row.id).map((comment) =>
+      commentJSON(comment, S.listCommentReactions(comment.id)),
+    );
     // Detail-only (#298): the issue's related sessions, newest first. Resume is offered via the
     // linked PR (relatedSessionJSON marks issue-container rows "resume-via-pull"), not the issue.
     out.related_sessions = relatedSessionsJSON(row);

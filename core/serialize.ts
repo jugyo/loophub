@@ -976,15 +976,24 @@ export interface CommentWire {
   author_type: S.CommentAuthorType;
   body: string;
   created_at: string;
+  reactions: DiffFeedbackReactionWire[];
 }
 
-export function commentJSON(m: S.CommentRow): CommentWire {
+export function commentJSON(
+  m: S.CommentRow,
+  reactions: S.CommentReactionRow[] = [],
+): CommentWire {
+  const counts = new Map<string, number>();
+  for (const reaction of reactions) {
+    counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1);
+  }
   return {
     id: m.id,
     user: { login: m.author },
     author_type: m.author_type,
     body: m.body,
     created_at: m.created_at,
+    reactions: Array.from(counts, ([emoji, count]) => ({ emoji, count })),
   };
 }
 

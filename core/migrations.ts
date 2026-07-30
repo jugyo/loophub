@@ -780,6 +780,21 @@ export const MIGRATIONS: Migration[] = [
     DROP TABLE comments_old;
   `,
   ),
+  sql(
+    "053-create-comment-reactions",
+    `
+    CREATE TABLE IF NOT EXISTS comment_reactions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      comment_id  INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+      author      TEXT NOT NULL,
+      emoji       TEXT NOT NULL,
+      created_at  TEXT NOT NULL,
+      UNIQUE (comment_id, author, emoji)
+    );
+    CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment
+      ON comment_reactions(comment_id, created_at, id);
+  `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

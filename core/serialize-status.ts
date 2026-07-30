@@ -380,7 +380,11 @@ export async function pullJSON(
     labels: S.issueLabels(row.id).map(labelJSON),
     comments: S.countComments(row.id),
     ...(opts.withCommits
-      ? { comment_list: S.listComments(row.id).map(commentJSON) }
+      ? {
+          comment_list: S.listComments(row.id).map((comment) =>
+            commentJSON(comment, S.listCommentReactions(comment.id)),
+          ),
+        }
       : {}),
     created_at: row.created_at,
     updated_at: row.updated_at,

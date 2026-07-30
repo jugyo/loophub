@@ -126,10 +126,60 @@ test("classifies PR commenters and only notifies the workflow for a human", asyn
     delivery_reason: "pr_comment",
     comment_id: human.id,
   });
-  expect(next.instructions.commands[0]?.args).toContain(
+  expect(next.instructions.commands[0]?.args).toEqual([
+    "pr",
+    "comment",
+    "react",
+    String(human.id),
+    "--pr",
+    String(prNumber),
+    "--emoji",
+    "👀",
+    "--repo",
+    repoName,
+  ]);
+  expect(next.instructions.commands[1]?.args).toContain(
     `orchestrator: address PR comment #${human.id}`,
   );
 
   const detail = await svc.pulls.get(repoName, prNumber);
   expect(detail.comment_list).toEqual([human, agent, system]);
+});
+
+test("stores a supported PR comment reaction once per actor", () => {
+  const comment = svc.comments.createHumanForPull(
+    repoName,
+    prNumber,
+    "Please acknowledge this.",
+  );
+
+  const first = svc.comments.reactForPull(
+    repoName,
+    prNumber,
+    comment.id,
+    "👀",
+    agentSession,
+  );
+  const repeated = svc.comments.reactForPull(
+    repoName,
+    prNumber,
+    comment.id,
+    "👀",
+    agentSession,
+  );
+
+  expect(first.reactions).toEqual([{ emoji: "👀", count: 1 }]);
+  expect(repeated.reactions).toEqual([{ emoji: "👀", count: 1 }]);
+  expect(svc.comments.list(repoName, prNumber).at(-1)?.reactions).toEqual([
+    { emoji: "👀", count: 1 },
+  ]);
+  expect(() =>
+    svc.comments.reactForPull(
+      repoName,
+      prNumber,
+      comment.id,
+      "unsupported",
+      agentSession,
+    ),
+  ).toThrow("unsupported PR comment reaction");
 });

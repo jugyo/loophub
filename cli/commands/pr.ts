@@ -198,20 +198,38 @@ export async function run(): Promise<void> {
   } else if (sub === "comment") {
     // Write commands return the resource they created/updated so an agent can verify from the
     // output what actually happened, instead of trusting a fixed success word (#1863).
-    const number = Number(rest[0]);
-    const c = await runOp(async () =>
-      s.comments.createForPull(
-        repo,
-        number,
-        flags.body ?? "",
-        await writeSession(),
-      ),
-    );
-    out(c);
-    if (!flags.json)
-      console.log(
-        `commented on PR #${number} (comment ${c.id} by @${c.user.login})`,
+    if (rest[0] === "react") {
+      if (!flags.pr) fail("--pr is required");
+      if (!flags.emoji) fail("--emoji is required");
+      const emoji = flags.emoji;
+      const c = await runOp(async () =>
+        s.comments.reactForPull(
+          repo,
+          Number(flags.pr),
+          Number(rest[1]),
+          emoji,
+          await writeSession(),
+        ),
       );
+      out(c);
+      if (!flags.json)
+        console.log(`reacted to PR comment #${c.id} with ${emoji}`);
+    } else {
+      const number = Number(rest[0]);
+      const c = await runOp(async () =>
+        s.comments.createForPull(
+          repo,
+          number,
+          flags.body ?? "",
+          await writeSession(),
+        ),
+      );
+      out(c);
+      if (!flags.json)
+        console.log(
+          `commented on PR #${number} (comment ${c.id} by @${c.user.login})`,
+        );
+    }
   } else if (sub === "merge") {
     const r = await runOp(async () =>
       s.pulls.merge(

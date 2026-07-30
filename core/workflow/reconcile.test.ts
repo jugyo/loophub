@@ -731,7 +731,7 @@ describe("workflowActionPlan", () => {
     );
   });
 
-  test("delivers a PR comment by id as fixed text", () => {
+  test("reacts to a PR comment before delivering its fixed instruction", () => {
     const comment = plan({
       action: "deliver",
       reason: "new PR comment",
@@ -739,8 +739,24 @@ describe("workflowActionPlan", () => {
       comment_id: 19,
     });
     expect(comment).toMatchObject({ boundary: "mechanical", after: "watch" });
-    expect(comment.commands[0]?.input).toBeUndefined();
-    expect(comment.commands[0]?.args).toContain(
+    expect(comment.commands).toHaveLength(2);
+    expect(comment.commands[0]).toEqual({
+      command: "lh",
+      args: [
+        "pr",
+        "comment",
+        "react",
+        "19",
+        "--pr",
+        "8",
+        "--emoji",
+        "👀",
+        "--repo",
+        "me/repo",
+      ],
+    });
+    expect(comment.commands[1]?.input).toBeUndefined();
+    expect(comment.commands[1]?.args).toContain(
       "orchestrator: address PR comment #19",
     );
   });

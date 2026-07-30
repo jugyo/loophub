@@ -59,6 +59,7 @@ export function usage(): void {
     lh workflow start 1 --workflow default --herdr
   lh pr create --head feature-x --base main --title "impl" --issue 5
     lh pr comment 3 --body "starting work"
+    lh pr comment react 12 --pr 3 --emoji "👀"
     lh notification send --repo me/proj --kind human_attention --title "Needs review" --body "PR is ready" --resource pull:3
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
