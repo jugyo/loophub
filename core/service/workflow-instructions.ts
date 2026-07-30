@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
-import { HERDR_ID, herdrPaneRunArgv } from "../terminal/terminal-launch.ts";
+import {
+  HERDR_ID,
+  herdrPaneSendKeysArgv,
+  herdrPaneSendTextArgv,
+} from "../terminal/terminal-launch.ts";
 import { runHerdr } from "./herdr-runner.ts";
 import { repoOr404 } from "./shared.ts";
 import { workflowRuns } from "./workflow-runs.ts";
@@ -93,7 +97,11 @@ async function sendInstruction(
   paneId: string,
   text: string,
 ): Promise<void> {
-  const submit = herdrPaneRunArgv(repo, paneId, text);
+  const sendText = herdrPaneSendTextArgv(repo, paneId, text);
+  await runHerdr(sendText[0], sendText.slice(1), repo.local_path, {
+    timeoutMs: HERDR_TIMEOUT_MS,
+  });
+  const submit = herdrPaneSendKeysArgv(repo, paneId, "Enter");
   await runHerdr(submit[0], submit.slice(1), repo.local_path, {
     timeoutMs: HERDR_TIMEOUT_MS,
   });

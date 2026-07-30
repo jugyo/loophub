@@ -206,8 +206,9 @@ test("lh workflow cost-hold holds the run, sends Escape, and notifies the active
   expect(log).not.toContain("agent list");
   expect(log).toContain("pane send-keys w1:p2 Escape");
   expect(log).toContain(
-    "pane run w1:p2 orchestrator: Cost limit exceeded: current $12.5, limit $10. Wait for human instruction.",
+    "pane send-text w1:p2 orchestrator: Cost limit exceeded: current $12.5, limit $10. Wait for human instruction.",
   );
+  expect(log).toContain("pane send-keys w1:p2 Enter");
 });
 
 test("a re-emitted cost event interrupts a run whose parent stopped before cost-hold (#1844)", () => {
@@ -351,7 +352,7 @@ test("a partial cost-hold failure is visible and leaves the run held", () => {
   expect(failed.stderr).toContain("cost hold failed at Escape");
   expect(failed.stderr).toContain("completed: await-human");
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).not.toBeNull();
-  expect(readFileSync(input.log, "utf8")).not.toContain("pane run");
+  expect(readFileSync(input.log, "utf8")).not.toContain("pane send-text");
 
   const logAfterFailure = readFileSync(input.log, "utf8");
   const replay = runCli(costHoldArgs(input), {

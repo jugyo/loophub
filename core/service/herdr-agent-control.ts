@@ -38,7 +38,10 @@ export function herdrAgentControl(cwd: string): AgentControl {
     );
   };
   return {
-    inputText: (target, text) => run(target, "run", [text]),
+    inputText: async (target, text) => {
+      await run(target, "send-text", [text]);
+      await run(target, "send-keys", ["Enter"]);
+    },
     inputKey: (target, key) => run(target, "send-keys", [key]),
     close: (target) => run(target, "close", []),
   };

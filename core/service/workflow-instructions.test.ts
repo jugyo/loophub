@@ -68,7 +68,7 @@ function fakeHerdr() {
     [
       "#!/bin/sh",
       `printf '%s\\n' "$*" >> '${log}'`,
-      'if [ "$4" = "run" ] && [ "$HERDR_SEND_FAIL" = "1" ]; then exit 9; fi',
+      'if [ "$4" = "send-keys" ] && [ "$HERDR_SEND_FAIL" = "1" ]; then exit 9; fi',
       "exit 0",
       "",
     ].join("\n"),
@@ -160,12 +160,12 @@ test("delivers the existing next decision to only the matching parent pane once"
       action: "launch_execute",
     });
     const calls = readFileSync(fake.log, "utf8");
-    expect(calls).toContain("pane run w1:p1 workflow instruction:");
+    expect(calls).toContain("pane send-text w1:p1 workflow instruction:");
     expect(calls).toContain('"action":"launch_execute"');
     expect(calls).toContain('"reason":"Execute has not started."');
-    expect(calls).not.toContain("pane send-keys");
-    expect(calls).not.toContain("pane run w1:p9");
-    expect(calls).not.toContain("pane run w1:p2");
+    expect(calls).toContain("pane send-keys w1:p1 Enter");
+    expect(calls).not.toContain("pane send-text w1:p9");
+    expect(calls).not.toContain("pane send-text w1:p2");
     expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(input.event.id);
     expect(
       S.getWorkflowEventEffectWithPrefix(
@@ -349,7 +349,12 @@ test("queued lifecycle wakes are processed in order and identical decisions are 
       event: latest.id,
     });
     expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(latest.id);
-    expect(readFileSync(fake.log, "utf8").match(/pane run/g)).toHaveLength(1);
+    expect(
+      readFileSync(fake.log, "utf8").match(/pane send-text/g),
+    ).toHaveLength(1);
+    expect(
+      readFileSync(fake.log, "utf8").match(/pane send-keys/g),
+    ).toHaveLength(1);
     await expect(
       svc.workflowInstructions.dispatchRun(input.run.id),
     ).resolves.toEqual({ status: "idle" });

@@ -74,8 +74,8 @@ beforeAll(async () => {
     `#!/bin/sh
 printf '%s\\n' "$*" >> "$HERDR_TEST_LOG"
 case "$*" in
-  *"pane run"*)
-    if [ "$HERDR_TEST_FAIL_RUN" = "1" ]; then exit 7; fi
+  *"pane send-keys"*)
+    if [ "$HERDR_TEST_FAIL_SUBMIT" = "1" ]; then exit 7; fi
     ;;
 esac
 `,
@@ -89,7 +89,7 @@ esac
 afterAll(() => {
   process.env.PATH = ORIGINAL_PATH;
   delete process.env.HERDR_TEST_LOG;
-  delete process.env.HERDR_TEST_FAIL_RUN;
+  delete process.env.HERDR_TEST_FAIL_SUBMIT;
   rmSync(HOME, { recursive: true, force: true });
   rmSync(REPO_PATH, { recursive: true, force: true });
   rmSync(BIN_PATH, { recursive: true, force: true });
@@ -165,7 +165,10 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     active_session_id: latestSession,
   });
   expect(readFileSync(HERDR_LOG, "utf8")).toContain(
-    `pane run w1:p2 orchestrator: address review #9`,
+    `pane send-text w1:p2 orchestrator: address review #9`,
+  );
+  expect(readFileSync(HERDR_LOG, "utf8")).toContain(
+    "pane send-keys w1:p2 Enter",
   );
   expect(readFileSync(HERDR_LOG, "utf8")).not.toContain("agent list");
   expect(S.getAgentExecutionTarget(latestSession)).toMatchObject({
@@ -174,7 +177,7 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     context: "test-session",
   });
 
-  process.env.HERDR_TEST_FAIL_RUN = "1";
+  process.env.HERDR_TEST_FAIL_SUBMIT = "1";
   await expect(
     svc.workflowRuns.deliver(
       repo.full_name,
@@ -183,7 +186,7 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     ),
   ).rejects.toThrowError(/status 7/);
 
-  delete process.env.HERDR_TEST_FAIL_RUN;
+  delete process.env.HERDR_TEST_FAIL_SUBMIT;
   const cliResult = runCli(
     [
       "workflow",
