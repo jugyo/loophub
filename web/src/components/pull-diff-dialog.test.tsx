@@ -423,6 +423,53 @@ describe("DiffFileDialog", () => {
     );
   });
 
+  it("posts a non-empty thread reply once with Cmd+Enter", async () => {
+    const initialThread = feedbackThread();
+    let thread = feedbackThread({
+      anchor: { ...initialThread.anchor, end_line: 1 },
+    });
+    const reply = vi.fn((params: { body: string }) => {
+      thread = {
+        ...thread,
+        messages: [
+          ...thread.messages,
+          {
+            id: 12,
+            thread_id: thread.id,
+            author: "me",
+            body: params.body,
+            created_at: "2026-07-30T00:00:00Z",
+            reactions: [],
+          },
+        ],
+      };
+      return { thread, reply: thread.messages.at(-1) };
+    });
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({ threads: [thread] }),
+        "diffFeedback/reply": reply,
+      },
+    });
+
+    const textarea = await screen.findByLabelText("Reply to thread 1");
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+    expect(reply).not.toHaveBeenCalled();
+
+    fireEvent.change(textarea, { target: { value: " Keyboard reply " } });
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+
+    await waitFor(() => expect(reply).toHaveBeenCalledTimes(1));
+    expect(reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thread_id: 1,
+        body: "Keyboard reply",
+      }),
+    );
+    expect(await screen.findByText("Keyboard reply")).toBeTruthy();
+  });
+
   it("clears the selection and composer when navigating to another file", async () => {
     const secondFile = {
       ...file,

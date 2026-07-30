@@ -1456,6 +1456,14 @@ function ThreadCard({
   onReply: (body: string) => void;
 }) {
   const [replyBody, setReplyBody] = useState("");
+
+  function submitReply() {
+    const trimmed = replyBody.trim();
+    if (!trimmed || busy) return;
+    onReply(trimmed);
+    setReplyBody("");
+  }
+
   return (
     <article
       className="m-2 rounded-md border bg-background p-3 font-sans text-sm"
@@ -1532,6 +1540,12 @@ function ThreadCard({
           aria-label={`Reply to thread ${thread.id}`}
           value={replyBody}
           onChange={(event) => setReplyBody(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && event.metaKey) {
+              event.preventDefault();
+              submitReply();
+            }
+          }}
           className="min-h-16 w-full rounded-md border bg-background p-2 text-sm"
           placeholder="Reply…"
         />
@@ -1540,10 +1554,7 @@ function ThreadCard({
             variant="secondary"
             size="sm"
             disabled={!replyBody.trim() || busy}
-            onClick={() => {
-              onReply(replyBody.trim());
-              setReplyBody("");
-            }}
+            onClick={submitReply}
           >
             Reply
           </Button>
