@@ -207,6 +207,7 @@ export function DiffFileDialog({
     useState<StandardDiffDialogMode>("diff");
   const [markdownMode, setMarkdownMode] = useState<DiffDialogMode>("diff");
   const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("split");
+  const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [showFileFilters, setShowFileFilters] = useState(false);
   const [includePattern, setIncludePattern] = useState("");
   const [excludePattern, setExcludePattern] = useState("");
@@ -469,23 +470,36 @@ export function DiffFileDialog({
                 ) : null}
               </div>
               {mode === "diff" ? (
-                <div
-                  className="flex overflow-hidden rounded-md border text-xs"
-                  aria-label="Diff view"
-                >
-                  <ModeButton
-                    active={diffViewMode === "unified"}
-                    onClick={() => setDiffViewMode("unified")}
+                <>
+                  <div
+                    className="flex overflow-hidden rounded-md border text-xs"
+                    aria-label="Diff whitespace"
                   >
-                    Unified
-                  </ModeButton>
-                  <ModeButton
-                    active={diffViewMode === "split"}
-                    onClick={() => setDiffViewMode("split")}
+                    <ModeButton
+                      active={ignoreWhitespace}
+                      onClick={() => setIgnoreWhitespace((value) => !value)}
+                    >
+                      Ignore whitespace
+                    </ModeButton>
+                  </div>
+                  <div
+                    className="flex overflow-hidden rounded-md border text-xs"
+                    aria-label="Diff view"
                   >
-                    Split
-                  </ModeButton>
-                </div>
+                    <ModeButton
+                      active={diffViewMode === "unified"}
+                      onClick={() => setDiffViewMode("unified")}
+                    >
+                      Unified
+                    </ModeButton>
+                    <ModeButton
+                      active={diffViewMode === "split"}
+                      onClick={() => setDiffViewMode("split")}
+                    >
+                      Split
+                    </ModeButton>
+                  </div>
+                </>
               ) : null}
               <Button
                 variant="secondary"
@@ -500,7 +514,7 @@ export function DiffFileDialog({
           </header>
           <div className="min-w-0 flex-1 overflow-auto">
             <FileDiffContent
-              key={copyFilename(file)}
+              key={`${copyFilename(file)}:${ignoreWhitespace}`}
               owner={owner}
               repo={repo}
               number={number}
@@ -508,6 +522,7 @@ export function DiffFileDialog({
               comments={comments}
               mode={mode}
               diffViewMode={diffViewMode}
+              ignoreWhitespace={ignoreWhitespace}
             />
           </div>
         </div>
@@ -680,6 +695,7 @@ function FileDiffContent({
   comments,
   mode,
   diffViewMode,
+  ignoreWhitespace,
 }: {
   owner: string;
   repo: string;
@@ -688,9 +704,10 @@ function FileDiffContent({
   comments: PullLineComment[];
   mode: DiffDialogMode;
   diffViewMode: DiffViewMode;
+  ignoreWhitespace: boolean;
 }) {
   const path = copyFilename(file);
-  const diff = usePullDiff(owner, repo, number, path);
+  const diff = usePullDiff(owner, repo, number, path, ignoreWhitespace);
   const feedback = useDiffFeedback(owner, repo, number, { path });
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);
@@ -784,7 +801,7 @@ function FileDiffContent({
         </div>
       ) : null}
       <DialogDiff
-        patch={file.patch}
+        patch={ignoreWhitespace ? stableFile?.patch : file.patch}
         stableLines={stableFile?.lines}
         viewMode={diffViewMode}
         selection={selection}

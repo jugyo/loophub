@@ -799,10 +799,16 @@ export function getPullDiff(
   repo: string,
   number: number,
   path?: string,
+  ignoreWhitespace = false,
 ) {
   return rpc<PullDiff>(
     "pulls/diff",
-    clean({ repo: full(owner, repo), number, path }),
+    clean({
+      repo: full(owner, repo),
+      number,
+      path,
+      ignore_whitespace: ignoreWhitespace || undefined,
+    }),
   );
 }
 

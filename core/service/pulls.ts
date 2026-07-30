@@ -252,7 +252,12 @@ export const pulls = {
     return diffFiles(r.local_path, p.base_ref, p.head_ref);
   },
 
-  async diff(name: string, number: number, path?: string) {
+  async diff(
+    name: string,
+    number: number,
+    path?: string,
+    ignoreWhitespace = false,
+  ) {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
@@ -268,7 +273,9 @@ export const pulls = {
     ]);
     if (!baseSha || !headSha)
       throw new ServiceError(422, "pull request diff is unavailable");
-    const files = await diffFilesBetween(r.local_path, baseSha, headSha);
+    const files = await diffFilesBetween(r.local_path, baseSha, headSha, {
+      ignoreWhitespace,
+    });
     const selectedFiles =
       path == null
         ? files

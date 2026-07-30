@@ -867,12 +867,18 @@ export const methods: Record<string, MethodDef> = {
   "pulls/diff": {
     description:
       "Get a stable PR diff with its exact commit pair and line coordinates.",
-    params: params({ repo, number: positiveInt, path: str }, [
-      "repo",
-      "number",
-    ]),
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        path: str,
+        ignore_whitespace: { type: "boolean" },
+      },
+      ["repo", "number"],
+    ),
     result: anyObject,
-    handler: (p) => svc.pulls.diff(p.repo, p.number, p.path),
+    handler: (p) =>
+      svc.pulls.diff(p.repo, p.number, p.path, p.ignore_whitespace),
   },
   "diffFeedback/list": {
     description: "List diff feedback threads for a pull request.",

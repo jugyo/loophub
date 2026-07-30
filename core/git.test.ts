@@ -419,6 +419,39 @@ test("diffFiles exposes structured rename target paths", async () => {
   rmSync(p, { recursive: true, force: true });
 });
 
+test("diffFiles can omit whitespace-only changes without hiding substantive changes", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-difffiles-whitespace-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "only-space.ts"), "const value = 1;\n");
+  writeFileSync(join(p, "mixed.ts"), "const first = 1;\nconst second = 2;\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  writeFileSync(join(p, "only-space.ts"), "  const value = 1;\n");
+  writeFileSync(join(p, "mixed.ts"), "  const first = 1;\nconst second = 3;\n");
+  await git(p, ["commit", "-qam", "change whitespace and value"]);
+
+  const full = await diffFiles(p, "main", "feat");
+  const ignored = await diffFiles(p, "main", "feat", {
+    ignoreWhitespace: true,
+  });
+
+  expect(full.map((file) => file.filename)).toEqual([
+    "mixed.ts",
+    "only-space.ts",
+  ]);
+  expect(ignored.map((file) => file.filename)).toEqual(["mixed.ts"]);
+  expect(ignored[0].patch).toContain("-const second = 2;");
+  expect(ignored[0].patch).toContain("+const second = 3;");
+  expect(ignored[0].patch).not.toContain("-const first = 1;");
+  expect(ignored[0].patch).not.toContain("+  const first = 1;");
+
+  rmSync(p, { recursive: true, force: true });
+});
+
 test("diffFiles keeps rename edits as old-vs-new patches", async () => {
   const p = mkdtempSync(join(tmpdir(), "lh-difffiles-rename-edit-"));
   await git(p, ["init", "-q", "-b", "main"]);

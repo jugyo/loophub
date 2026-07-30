@@ -389,6 +389,93 @@ describe("DiffFileDialog", () => {
     );
   });
 
+  it("ignores whitespace-only changes in split and unified views, then restores them", async () => {
+    const fullPatch =
+      "@@ -1,3 +1,3 @@\n-const first = 1;\n+  const first = 1;\n-const second = 2;\n+const second = 3;\n keep";
+    const ignoredPatch =
+      "@@ -2,2 +2,2 @@\n-const second = 2;\n+const second = 3;\n keep";
+    const diff = vi.fn((params: { ignore_whitespace?: boolean }) => ({
+      base_sha: "a".repeat(40),
+      head_sha: "b".repeat(40),
+      files: [
+        {
+          path: file.filename,
+          absolute_path: "/repo/web/src/a.ts",
+          original_path: null,
+          status: "modified",
+          additions: 2,
+          deletions: 2,
+          patch: params.ignore_whitespace ? ignoredPatch : fullPatch,
+          lines: [],
+        },
+      ],
+    }));
+    renderDialog({
+      file: { ...file, additions: 2, deletions: 2, patch: fullPatch },
+      handlers: { "pulls/diff": diff },
+    });
+
+    await waitFor(() => expect(diff).toHaveBeenCalled());
+    expect(screen.getAllByText("const first = 1;")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ignore whitespace" }));
+
+    await waitFor(() =>
+      expect(
+        diff.mock.calls.some(([params]) => params.ignore_whitespace === true),
+      ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("const first = 1;")).toBeNull(),
+    );
+    expect(screen.getByText("const second = 2;")).toBeTruthy();
+    expect(screen.getByText("const second = 3;")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+    expect(screen.queryByText("const first = 1;")).toBeNull();
+    expect(screen.getByText("const second = 3;")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ignore whitespace" }));
+    await waitFor(() =>
+      expect(screen.getAllByText("const first = 1;")).toHaveLength(2),
+    );
+  });
+
+  it("shows no textual diff when the selected file only changes whitespace", async () => {
+    const whitespacePatch =
+      "@@ -1 +1 @@\n-const value = 1;\n+  const value = 1;";
+    renderDialog({
+      file: { ...file, patch: whitespacePatch },
+      handlers: {
+        "pulls/diff": (params: { ignore_whitespace?: boolean }) => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: params.ignore_whitespace
+            ? []
+            : [
+                {
+                  path: file.filename,
+                  absolute_path: "/repo/web/src/a.ts",
+                  original_path: null,
+                  status: "modified",
+                  additions: 1,
+                  deletions: 1,
+                  patch: whitespacePatch,
+                  lines: [],
+                },
+              ],
+        }),
+      },
+    });
+
+    expect(screen.getAllByText("const value = 1;")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Ignore whitespace" }));
+    expect(await screen.findByText("No textual diff.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ignore whitespace" }));
+    expect(screen.getAllByText("const value = 1;")).toHaveLength(2);
+  });
+
   it("keeps a range selection and its thread across split and unified views", async () => {
     const create = vi.fn(() => ({
       thread: {
@@ -2147,6 +2234,7 @@ describe("DiffFileDialog", () => {
       "Raw",
       "Base",
       "Head",
+      "Ignore whitespace",
       "Unified",
       "Split",
       "Close diff",

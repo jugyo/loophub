@@ -136,6 +136,10 @@ export interface DiffFile {
   patch: string;
 }
 
+export interface DiffOptions {
+  ignoreWhitespace?: boolean;
+}
+
 const STATUS_MAP: Record<string, string> = {
   A: "added",
   M: "modified",
@@ -150,8 +154,9 @@ export async function diffFiles(
   repoPath: string,
   base: string,
   head: string,
+  options: DiffOptions = {},
 ): Promise<DiffFile[]> {
-  return diffFilesForRevisions(repoPath, [`${base}...${head}`]);
+  return diffFilesForRevisions(repoPath, [`${base}...${head}`], options);
 }
 
 /** Files changed between an exact, persisted base/head commit pair. */
@@ -159,8 +164,9 @@ export async function diffFilesBetween(
   repoPath: string,
   baseSha: string,
   headSha: string,
+  options: DiffOptions = {},
 ): Promise<DiffFile[]> {
-  return diffFilesForRevisions(repoPath, [baseSha, headSha]);
+  return diffFilesForRevisions(repoPath, [baseSha, headSha], options);
 }
 
 /** Files changed by one commit compared with its first parent. */
@@ -190,9 +196,12 @@ export async function commitInRange(
 async function diffFilesForRevisions(
   repoPath: string,
   revisions: string[],
+  options: DiffOptions = {},
 ): Promise<DiffFile[]> {
+  const whitespaceArgs = options.ignoreWhitespace ? ["--ignore-all-space"] : [];
   const metadata = await git(repoPath, [
     "diff",
+    ...whitespaceArgs,
     "--raw",
     "--numstat",
     "-z",
@@ -201,8 +210,14 @@ async function diffFilesForRevisions(
   assertGitSuccess(metadata, "git diff --raw --numstat -z failed");
   const { statusByFile, structured } = parseRawNumstatZ(metadata.stdout);
   const [patch, addedPatch] = await Promise.all([
-    git(repoPath, ["diff", ...revisions]),
-    git(repoPath, ["diff", "--no-renames", "--diff-filter=A", ...revisions]),
+    git(repoPath, ["diff", ...whitespaceArgs, ...revisions]),
+    git(repoPath, [
+      "diff",
+      ...whitespaceArgs,
+      "--no-renames",
+      "--diff-filter=A",
+      ...revisions,
+    ]),
   ]);
   assertGitSuccess(patch, "git diff patch failed");
   assertGitSuccess(addedPatch, "git diff added-file patch failed");

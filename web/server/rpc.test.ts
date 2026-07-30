@@ -360,6 +360,27 @@ test("pulls/commitFiles routes the PR number and selected SHA", async () => {
   }
 });
 
+test("pulls/diff routes the whitespace option", async () => {
+  const diff = vi.spyOn(svc.pulls, "diff").mockResolvedValue({
+    base_sha: "a".repeat(40),
+    head_sha: "b".repeat(40),
+    files: [],
+  });
+  try {
+    const response: any = await call("pulls/diff", {
+      repo: "me/proj",
+      number: 17,
+      path: "src/a.ts",
+      ignore_whitespace: true,
+    });
+
+    expect(response.result.files).toEqual([]);
+    expect(diff).toHaveBeenCalledWith("me/proj", 17, "src/a.ts", true);
+  } finally {
+    diff.mockRestore();
+  }
+});
+
 test("unknown method -> -32601", async () => {
   const r: any = await call("nope/nope", {});
   expect(r.error.code).toBe(ERROR_CODES.METHOD_NOT_FOUND);

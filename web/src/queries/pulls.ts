@@ -124,14 +124,16 @@ export function usePullDiff(
   repo: string,
   number: number,
   path: string,
+  ignoreWhitespace = false,
 ) {
   return useQuery({
     queryKey: [
       ...queryKeys.pull(full(owner, repo), number),
       "stableDiff",
       path,
+      { ignoreWhitespace },
     ],
-    queryFn: () => getPullDiff(owner, repo, number, path),
+    queryFn: () => getPullDiff(owner, repo, number, path, ignoreWhitespace),
   });
 }
 
