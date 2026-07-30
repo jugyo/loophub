@@ -1,7 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-pull-commits-"));
@@ -240,6 +246,40 @@ test("commitFiles returns the selected PR commit's parent diff", async () => {
       patch: expect.stringContaining("+new"),
     },
   ]);
+});
+
+test("diff roots absolute paths at the PR worktree with a repo fallback", async () => {
+  const withoutWorktree = await svc.pulls.diff(
+    "me/commit-files",
+    commitFilesPullNumber,
+    "a.txt",
+  );
+
+  expect(withoutWorktree.files).toHaveLength(1);
+  expect(withoutWorktree.files[0]).toMatchObject({
+    path: "a.txt",
+    absolute_path: join(commitFilesRepoPath, "a.txt"),
+  });
+
+  const worktreePath = join(
+    HOME,
+    "worktrees",
+    "me",
+    "commit-files",
+    `pr-${commitFilesPullNumber}`,
+  );
+  mkdirSync(dirname(worktreePath), { recursive: true });
+  gitAt(commitFilesRepoPath, ["worktree", "add", worktreePath, "feature"]);
+
+  const withWorktree = await svc.pulls.diff(
+    "me/commit-files",
+    commitFilesPullNumber,
+    "a.txt",
+  );
+  expect(withWorktree.files[0]).toMatchObject({
+    path: "a.txt",
+    absolute_path: join(worktreePath, "a.txt"),
+  });
 });
 
 test("commitFiles rejects a SHA outside the pull request's base..head range", async () => {

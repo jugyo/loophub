@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { parsePatchWithCoordinates } from "../diff-anchor.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
@@ -26,11 +27,11 @@ import {
 import { parseClosingIssueNumber } from "../links.ts";
 import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
 import { resolvePullBaseSha } from "../pull-base.ts";
+import { existingPullWorktreePath } from "../pull-worktree.ts";
 import {
   agentSessionJSON,
   githubPrStatusJSON,
   githubPullJSON,
-  pullDiffFileReferences,
   repoJSON,
 } from "../serialize.ts";
 import { pullJSON } from "../serialize-status.ts";
@@ -255,6 +256,12 @@ export const pulls = {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
+    const projectRoot =
+      existingPullWorktreePath({
+        fullName: r.full_name,
+        headRef: p.head_ref,
+        prNumber: row.number,
+      }) ?? r.local_path;
     const [baseSha, headSha] = await Promise.all([
       resolvePullBaseSha(r.local_path, p),
       revParse(r.local_path, p.head_ref),
@@ -277,6 +284,7 @@ export const pulls = {
       files: selectedFiles.map((file) => {
         const serializedFile = {
           path: file.headFilename ?? file.filename,
+          absolute_path: join(projectRoot, file.headFilename ?? file.filename),
           original_path: file.previousFilename ?? null,
           status: file.status,
           additions: file.additions,
@@ -285,7 +293,6 @@ export const pulls = {
         };
         return {
           ...serializedFile,
-          references: pullDiffFileReferences(baseSha, headSha, serializedFile),
           lines: parsePatchWithCoordinates(file.patch).map((line) => ({
             kind: line.kind,
             text: line.text,

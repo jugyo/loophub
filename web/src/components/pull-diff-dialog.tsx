@@ -112,15 +112,6 @@ function visibleCopyPath(path: string) {
   }).join("");
 }
 
-function shellQuote(value: string) {
-  if (/^[\w./:@%+=,-]+$/u.test(value)) return value;
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
-function gitShowCommand(commit: string, path: string) {
-  return `git show ${shellQuote(`${commit}:${path}`)}`;
-}
-
 type DiffDialogMode = "diff" | "raw" | "base" | "head";
 type StandardDiffDialogMode = "diff" | "raw";
 type DiffViewMode = "unified" | "split";
@@ -544,9 +535,9 @@ function FileInfoPopover({
     ? diff.data.files[0]
     : undefined;
   const headPath = stableFile?.path ?? path;
+  const absolutePath = stableFile?.absolute_path;
   const originalPath =
     stableFile?.original_path ?? file.previousFilename ?? null;
-  const references = stableFile?.references ?? [];
 
   useEffect(() => {
     if (!open) return;
@@ -595,13 +586,46 @@ function FileInfoPopover({
             </Button>
           </div>
           <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-            <dt className="text-muted-foreground">Path</dt>
-            <dd className="break-all font-mono">{visibleCopyPath(headPath)}</dd>
+            <dt className="text-muted-foreground">Project-relative path</dt>
+            <dd className="flex min-w-0 items-start gap-1">
+              <span className="min-w-0 flex-1 break-all font-mono">
+                {visibleCopyPath(headPath)}
+              </span>
+              <CopyButton
+                value={headPath}
+                label={`Copy project-relative path: ${visibleCopyPath(headPath)}`}
+                className="size-6"
+              />
+            </dd>
+            <dt className="text-muted-foreground">Absolute path</dt>
+            <dd className="flex min-w-0 items-start gap-1">
+              <span className="min-w-0 flex-1 break-all font-mono">
+                {diff.isPending
+                  ? "Loading…"
+                  : absolutePath
+                    ? visibleCopyPath(absolutePath)
+                    : "Unavailable"}
+              </span>
+              {absolutePath ? (
+                <CopyButton
+                  value={absolutePath}
+                  label={`Copy absolute path: ${visibleCopyPath(absolutePath)}`}
+                  className="size-6"
+                />
+              ) : null}
+            </dd>
             {originalPath && originalPath !== headPath ? (
               <>
                 <dt className="text-muted-foreground">Original path</dt>
-                <dd className="break-all font-mono">
-                  {visibleCopyPath(originalPath)}
+                <dd className="flex min-w-0 items-start gap-1">
+                  <span className="min-w-0 flex-1 break-all font-mono">
+                    {visibleCopyPath(originalPath)}
+                  </span>
+                  <CopyButton
+                    value={originalPath}
+                    label={`Copy original path: ${visibleCopyPath(originalPath)}`}
+                    className="size-6"
+                  />
                 </dd>
               </>
             ) : null}
@@ -612,46 +636,6 @@ function FileInfoPopover({
               <DiffStat additions={file.additions} deletions={file.deletions} />
             </dd>
           </dl>
-          <div className="mt-3 border-t pt-3">
-            <p className="mb-1.5 text-xs font-medium">Git command</p>
-            {diff.isPending ? (
-              <p className="text-xs text-muted-foreground">
-                Loading commit references…
-              </p>
-            ) : diff.isError ? (
-              <p className="text-xs text-destructive">
-                Git reference is unavailable.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {references.map((reference) => {
-                  const command = gitShowCommand(
-                    reference.commit,
-                    reference.path,
-                  );
-                  return (
-                    <div key={reference.label} className="space-y-1">
-                      {references.length > 1 ? (
-                        <p className="text-[11px] text-muted-foreground">
-                          {reference.label}
-                        </p>
-                      ) : null}
-                      <div className="flex items-start gap-1 rounded bg-muted/60 p-1.5">
-                        <code className="min-w-0 flex-1 break-all text-[11px]">
-                          {command}
-                        </code>
-                        <CopyButton
-                          value={command}
-                          label={`Copy ${reference.label.toLowerCase()} git command`}
-                          className="size-6 shrink-0"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
       ) : null}
     </div>

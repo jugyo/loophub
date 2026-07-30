@@ -4,8 +4,6 @@
 // without a git repo. The wire types these return are still defined in serialize.ts, which stays
 // the wire-shape SSOT (AGENTS.md "Wire types (core vs web)").
 
-import { statSync } from "node:fs";
-import { worktreeRoot } from "./config.ts";
 import {
   commitLog,
   commitsAhead,
@@ -23,8 +21,11 @@ import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import { resolvePullBaseSha } from "./pull-base.ts";
 import { cachedPullShaStatus } from "./pull-status-cache.ts";
-import { pullWorktreeDirty } from "./pull-worktree.ts";
-import { resolveWorktreeIdentity, sessionRuntime } from "./resume.ts";
+import {
+  existingPullWorktreePath,
+  pullWorktreeDirty,
+} from "./pull-worktree.ts";
+import { sessionRuntime } from "./resume.ts";
 import type {
   GithubPullWire,
   IssueListPullSummaryWire,
@@ -46,7 +47,6 @@ import {
   reviewGateJSON,
 } from "./serialize.ts";
 import * as S from "./store.ts";
-import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
 
 // Git-derived status fields for a PR row: mergeable state, diff totals, the
 // "working" flag, and review state. Shared by pullJSON (PR list/detail) and the
@@ -161,17 +161,11 @@ async function pullStatusFields(
   // Path of the existing PR worktree (same convention as the "working" flag above), so a
   // consumer can show / copy it without knowing worktreeRoot. Null when the path is unsafe or
   // the worktree directory has not been provisioned / was removed.
-  let worktree_path: string | null = null;
-  try {
-    const identity = resolveWorktreeIdentity(p.head_ref, row.number);
-    const candidate =
-      identity.scheme === "legacy-issue"
-        ? legacyWorktreePath(worktreeRoot(), repo.full_name, identity.number)
-        : worktreePath(worktreeRoot(), repo.full_name, identity.number);
-    worktree_path = statSync(candidate).isDirectory() ? candidate : null;
-  } catch {
-    worktree_path = null;
-  }
+  const worktree_path = existingPullWorktreePath({
+    fullName: repo.full_name,
+    headRef: p.head_ref,
+    prNumber: row.number,
+  });
   return {
     pull: p,
     headSha,

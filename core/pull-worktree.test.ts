@@ -1,6 +1,10 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { GitResult } from "./git.ts";
-import { pullWorktreeDirty } from "./pull-worktree.ts";
+import {
+  existingPullWorktreePath,
+  pullWorktreeDirty,
+} from "./pull-worktree.ts";
 
 const ROOT = "/wt-root";
 // Deterministic worktree dir for the lh-build convention head below (PR 9, #463).
@@ -17,6 +21,72 @@ const baseInput = {
   merged: false,
   state: "open",
 };
+
+describe("existingPullWorktreePath", () => {
+  it("returns an absolute path when the configured root is relative", () => {
+    const expected = resolve("worktrees/me/repo/pr-9");
+    expect(
+      existingPullWorktreePath(baseInput, {
+        worktreeRootDir: "worktrees",
+        isDirectory: (path) => path === expected,
+      }),
+    ).toBe(expected);
+  });
+
+  it("preserves an absolute configured root", () => {
+    expect(
+      existingPullWorktreePath(baseInput, {
+        worktreeRootDir: ROOT,
+        isDirectory: (path) => path === WT,
+      }),
+    ).toBe(WT);
+  });
+
+  it.each([
+    "ENOENT",
+    "ENOTDIR",
+  ])("returns null when the worktree lookup fails with %s", (code) => {
+    expect(
+      existingPullWorktreePath(baseInput, {
+        worktreeRootDir: ROOT,
+        isDirectory: () => {
+          throw Object.assign(new Error(code), { code });
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("propagates unexpected filesystem failures", () => {
+    const error = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+    expect(() =>
+      existingPullWorktreePath(baseInput, {
+        worktreeRootDir: ROOT,
+        isDirectory: () => {
+          throw error;
+        },
+      }),
+    ).toThrow(error);
+  });
+
+  it("returns null for an unsafe repository name without touching the filesystem", () => {
+    let called = false;
+    expect(
+      existingPullWorktreePath(
+        { ...baseInput, fullName: "../repo" },
+        {
+          worktreeRootDir: ROOT,
+          isDirectory: () => {
+            called = true;
+            return true;
+          },
+        },
+      ),
+    ).toBeNull();
+    expect(called).toBe(false);
+  });
+});
 
 describe("pullWorktreeDirty", () => {
   it("returns true on a real uncommitted change in the worktree", async () => {

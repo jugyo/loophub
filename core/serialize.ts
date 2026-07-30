@@ -380,23 +380,17 @@ export type DiffFeedbackSide = "LEFT" | "RIGHT";
 export type DiffFeedbackOutdatedReason = "deleted" | "modified" | "ambiguous";
 export type DiffFeedbackPlacement = "inline" | "historical";
 
-export interface PullDiffFileReferenceWire {
-  label: "File" | "Before" | "After";
-  commit: string;
-  path: string;
-}
-
 export interface PullDiffWire {
   base_sha: string;
   head_sha: string;
   files: {
     path: string;
+    absolute_path: string;
     original_path: string | null;
     status: string;
     additions: number;
     deletions: number;
     patch: string;
-    references: PullDiffFileReferenceWire[];
     lines: {
       kind: "hunk" | "context" | "addition" | "deletion" | "meta";
       text: string;
@@ -404,32 +398,6 @@ export interface PullDiffWire {
       right_line: number | null;
     }[];
   }[];
-}
-
-export function pullDiffFileReferences(
-  baseSha: string,
-  headSha: string,
-  file: Pick<
-    PullDiffWire["files"][number],
-    "path" | "original_path" | "status"
-  >,
-): PullDiffFileReferenceWire[] {
-  if (file.status === "removed") {
-    return [
-      {
-        label: "File",
-        commit: baseSha,
-        path: file.original_path ?? file.path,
-      },
-    ];
-  }
-  if (file.status === "renamed" && file.original_path) {
-    return [
-      { label: "Before", commit: baseSha, path: file.original_path },
-      { label: "After", commit: headSha, path: file.path },
-    ];
-  }
-  return [{ label: "File", commit: headSha, path: file.path }];
 }
 
 export interface DiffFeedbackMessageWire {

@@ -1778,7 +1778,6 @@ describe("DiffFileDialog", () => {
       } satisfies PullFile,
       stablePath: "src/new file.ts",
       originalPath: null,
-      commands: [`git show '${"b".repeat(40)}:src/new file.ts'`],
     },
     {
       name: "modified file at the head commit",
@@ -1791,7 +1790,6 @@ describe("DiffFileDialog", () => {
       } satisfies PullFile,
       stablePath: "src/app.ts",
       originalPath: null,
-      commands: [`git show ${"b".repeat(40)}:src/app.ts`],
     },
     {
       name: "removed file at the base commit",
@@ -1804,7 +1802,6 @@ describe("DiffFileDialog", () => {
       } satisfies PullFile,
       stablePath: "src/old.ts",
       originalPath: null,
-      commands: [`git show ${"a".repeat(40)}:src/old.ts`],
     },
     {
       name: "renamed file at both commits",
@@ -1819,12 +1816,10 @@ describe("DiffFileDialog", () => {
       } satisfies PullFile,
       stablePath: "src/new.ts",
       originalPath: "src/old.ts",
-      commands: [
-        `git show ${"a".repeat(40)}:src/old.ts`,
-        `git show ${"b".repeat(40)}:src/new.ts`,
-      ],
     },
-  ])("shows file information for a $name", async (testCase) => {
+  ])("shows file information without git commands for a $name", async (testCase) => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
     renderDialog({
       file: testCase.file,
       handlers: {
@@ -1834,26 +1829,12 @@ describe("DiffFileDialog", () => {
           files: [
             {
               path: testCase.stablePath,
+              absolute_path: `/repos/project/${testCase.stablePath}`,
               original_path: testCase.originalPath,
               status: testCase.file.status,
               additions: testCase.file.additions,
               deletions: testCase.file.deletions,
               patch: "",
-              references: testCase.commands.map((command, index) => ({
-                label:
-                  testCase.commands.length === 1
-                    ? "File"
-                    : index === 0
-                      ? "Before"
-                      : "After",
-                commit: command.includes("a".repeat(40))
-                  ? "a".repeat(40)
-                  : "b".repeat(40),
-                path:
-                  testCase.commands.length === 2 && index === 0
-                    ? (testCase.originalPath ?? testCase.stablePath)
-                    : testCase.stablePath,
-              })),
               lines: [],
             },
           ],
@@ -1872,7 +1853,32 @@ describe("DiffFileDialog", () => {
     });
     expect(information.className).toContain("bg-background");
     expect(information.className).toContain("text-foreground");
+    expect(within(information).getByText("Project-relative path")).toBeTruthy();
     expect(within(information).getByText(testCase.stablePath)).toBeTruthy();
+    expect(within(information).getByText("Absolute path")).toBeTruthy();
+    expect(
+      await within(information).findByText(
+        `/repos/project/${testCase.stablePath}`,
+      ),
+    ).toBeTruthy();
+    fireEvent.click(
+      within(information).getByRole("button", {
+        name: `Copy project-relative path: ${testCase.stablePath}`,
+      }),
+    );
+    await waitFor(() =>
+      expect(writeText).toHaveBeenLastCalledWith(testCase.stablePath),
+    );
+    fireEvent.click(
+      within(information).getByRole("button", {
+        name: `Copy absolute path: /repos/project/${testCase.stablePath}`,
+      }),
+    );
+    await waitFor(() =>
+      expect(writeText).toHaveBeenLastCalledWith(
+        `/repos/project/${testCase.stablePath}`,
+      ),
+    );
     expect(within(information).getByText(testCase.file.status)).toBeTruthy();
     expect(
       within(information).getByText(`+${testCase.file.additions}`),
@@ -1880,13 +1886,22 @@ describe("DiffFileDialog", () => {
     expect(
       within(information).getByText(`−${testCase.file.deletions}`),
     ).toBeTruthy();
-    for (const command of testCase.commands) {
-      expect(await within(information).findByText(command)).toBeTruthy();
-    }
+    expect(within(information).queryByText("Git command")).toBeNull();
+    expect(
+      within(information).queryByRole("button", {
+        name: /copy .* git command/i,
+      }),
+    ).toBeNull();
     if (testCase.originalPath) {
       expect(within(information).getByText(testCase.originalPath)).toBeTruthy();
-      expect(within(information).getByText("Before")).toBeTruthy();
-      expect(within(information).getByText("After")).toBeTruthy();
+      fireEvent.click(
+        within(information).getByRole("button", {
+          name: `Copy original path: ${testCase.originalPath}`,
+        }),
+      );
+      await waitFor(() =>
+        expect(writeText).toHaveBeenLastCalledWith(testCase.originalPath),
+      );
     }
   });
 

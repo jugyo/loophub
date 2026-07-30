@@ -4,12 +4,17 @@
 // PRs and PRs whose deterministic worktree directory is absent return false without touching
 // git, and `git status` only runs for an open PR whose worktree actually exists. The injected
 // `.claude/` artifact is filtered by porcelainIsDirty (shared with `lh worktree prune`).
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import { worktreeRoot } from "./config.ts";
 import type { GitResult } from "./git.ts";
 import { worktreeStatus } from "./git.ts";
 import { resolveWorktreeIdentity } from "./resume.ts";
-import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
+import {
+  assertSafeRepoSegments,
+  legacyWorktreePath,
+  worktreePath,
+} from "./worktree-path.ts";
 import { porcelainIsDirty } from "./worktree-prune.ts";
 
 export interface PullWorktreeDirtyInput {
@@ -29,6 +34,54 @@ export interface PullWorktreeDirtyDeps {
   status?: (path: string) => Promise<GitResult>;
 }
 
+type PullWorktreePathInput = Pick<
+  PullWorktreeDirtyInput,
+  "fullName" | "headRef" | "prNumber"
+>;
+
+function resolvePullWorktreePath(
+  input: PullWorktreePathInput,
+  root: string,
+): string | null {
+  try {
+    assertSafeRepoSegments(input.fullName, "worktree path");
+  } catch {
+    return null;
+  }
+
+  const identity = resolveWorktreeIdentity(input.headRef, input.prNumber);
+  const absoluteRoot = resolve(root);
+  return identity.scheme === "legacy-issue"
+    ? legacyWorktreePath(absoluteRoot, input.fullName, identity.number)
+    : worktreePath(absoluteRoot, input.fullName, identity.number);
+}
+
+function isMissingDirectoryError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+export function existingPullWorktreePath(
+  input: PullWorktreePathInput,
+  deps: {
+    worktreeRootDir?: string;
+    isDirectory?: (path: string) => boolean;
+  } = {},
+): string | null {
+  const root = deps.worktreeRootDir ?? worktreeRoot();
+  const path = resolvePullWorktreePath(input, root);
+  if (!path) return null;
+
+  const isDirectory =
+    deps.isDirectory ?? ((candidate) => statSync(candidate).isDirectory());
+  try {
+    return isDirectory(path) ? path : null;
+  } catch (error) {
+    if (isMissingDirectoryError(error)) return null;
+    throw error;
+  }
+}
+
 export async function pullWorktreeDirty(
   input: PullWorktreeDirtyInput,
   deps: PullWorktreeDirtyDeps = {},
@@ -36,17 +89,11 @@ export async function pullWorktreeDirty(
   // merged/closed PRs are not active work — never inspect their worktree.
   if (input.merged || input.state !== "open") return false;
 
-  const root = deps.worktreeRootDir ?? worktreeRoot();
-  const identity = resolveWorktreeIdentity(input.headRef, input.prNumber);
-  let path: string;
-  try {
-    path =
-      identity.scheme === "legacy-issue"
-        ? legacyWorktreePath(root, input.fullName, identity.number)
-        : worktreePath(root, input.fullName, identity.number);
-  } catch {
-    return false; // crafted repo name → no worktree to inspect
-  }
+  const path = resolvePullWorktreePath(
+    input,
+    deps.worktreeRootDir ?? worktreeRoot(),
+  );
+  if (!path) return false; // crafted repo name → no worktree to inspect
 
   const exists = deps.exists ?? existsSync;
   if (!exists(path)) return false; // no worktree → skip git entirely
