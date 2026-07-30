@@ -2,8 +2,9 @@
 // a linked GitHub PR (github_pull); the GitHub-side status (review / checks / comment counts /
 // merged) is fetched on demand via `pulls/githubStatus` and cached server-side. Compact by design so
 // it sits alongside the other sidebar sections (work duration, sessions, handoff) without crowding
-// them — a badge row plus a few small labeled rows and a freshness footnote. The heading is the
-// section's link out to the GitHub PR (#2035), so the GitHub route lives where the status is read.
+// them — a badge row plus a few small labeled rows and a freshness footnote. The section body opens
+// with the link out to the GitHub PR (#2091), so the GitHub route lives where the status is read;
+// the heading itself is plain text.
 //
 // Loading / error states mirror the sibling sidebar sections (e.g. WorkDuration): a spinner while
 // fetching and a destructive box on failure. The "not linked" state is handled by the caller — the
@@ -54,6 +55,15 @@ const MERGEABLE: Record<
   unknown: null,
 };
 
+/**
+ * The GitHub PR link's text: the stored URL minus its scheme and host, e.g. `me/proj/pull/42`. Kept
+ * as a plain strip rather than a parse into owner/repo/number, so a URL that doesn't have the shape
+ * we expect still reads as itself instead of throwing or being reduced to a bare number.
+ */
+function githubPrPath(url: string) {
+  return url.replace(/^https?:\/\/[^/]+\//, "");
+}
+
 /** One `label + badge` row; renders nothing when the badge is absent (keeps the panel compact). */
 function StatusRow({
   label,
@@ -76,7 +86,7 @@ export function GithubPrStatusSection({
   status,
   isLoading,
 }: {
-  // The linked GitHub PR itself (#2035): the heading doubles as the single link out to GitHub, so
+  // The linked GitHub PR itself (#2035): the body's first row is the single link out to GitHub, so
   // the PR-detail action row doesn't need a separate "View PR on GitHub" button. Non-null because
   // the caller only renders the section for a linked PR.
   githubPull: GithubPull;
@@ -91,19 +101,24 @@ export function GithubPrStatusSection({
       data-debug-component="GithubPrStatusSection"
       className="flex flex-col gap-3"
     >
-      <h2 className="text-lg font-semibold">
-        <a
-          href={githubPull.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={`GitHub PR #${githubPull.number}`}
-          className="inline-flex items-center gap-1.5 hover:underline"
-        >
-          <Github className="size-4" />
-          GitHub PR #{githubPull.number}
-          <ExternalLink className="size-3.5 text-muted-foreground" />
-        </a>
-      </h2>
+      <h2 className="text-lg font-semibold">GitHub PR</h2>
+      {/* The route out to GitHub (#2091). Outside the status branches below because it is the PR
+          detail's only link to the GitHub PR, so it must stay reachable while the status is loading
+          or failed. The text is the URL's own `owner/repo/pull/N` path rather than a bare `#N`: it
+          says which GitHub repo the PR lives in, which a fork or a mirror makes non-obvious. */}
+      <a
+        href={githubPull.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`GitHub PR #${githubPull.number}`}
+        className="inline-flex w-fit items-center gap-1.5 text-sm hover:underline"
+      >
+        <Github className="size-4 shrink-0" />
+        <span className="min-w-0 break-all">
+          {githubPrPath(githubPull.url)}
+        </span>
+        <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+      </a>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading GitHub status…

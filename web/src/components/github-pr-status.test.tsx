@@ -63,8 +63,8 @@ describe("GithubPrStatusSection", () => {
     expect(text).toContain("synced");
   });
 
-  it("links the heading to the GitHub PR in a new tab, labeled with its number (#2035)", () => {
-    const { getByRole } = render(
+  it("links to the GitHub PR from the section body in a new tab, showing its URL path (#2091)", () => {
+    const { getByRole, getByText } = render(
       <GithubPrStatusSection
         githubPull={PULL}
         status={BASE}
@@ -72,13 +72,32 @@ describe("GithubPrStatusSection", () => {
       />,
     );
 
-    const link = getByRole("link", { name: /GitHub PR #42/ });
+    // The heading is plain text; the link lives in the body.
+    expect(getByRole("heading").textContent).toBe("GitHub PR");
+    expect(getByText("GitHub PR").closest("a")).toBeNull();
+
+    // The text carries the owner/repo as well as the number, not a bare `#42`.
+    const link = getByRole("link", { name: "me/proj/pull/42" });
     expect(link.getAttribute("href")).toBe(PULL.url);
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link.getAttribute("title")).toBe("GitHub PR #42");
   });
 
-  it("keeps the heading link while the status is still loading (#2035)", () => {
+  it("shows a URL it can't shorten as-is rather than reducing it to a number (#2091)", () => {
+    const { getByRole } = render(
+      <GithubPrStatusSection
+        githubPull={{ ...PULL, url: "gh.example.com/me/proj/pull/42" }}
+        status={BASE}
+        isLoading={false}
+      />,
+    );
+    expect(
+      getByRole("link", { name: "gh.example.com/me/proj/pull/42" }),
+    ).toBeTruthy();
+  });
+
+  it("keeps the GitHub PR link while the status is still loading (#2091)", () => {
     const { getByRole } = render(
       <GithubPrStatusSection
         githubPull={PULL}
@@ -87,7 +106,7 @@ describe("GithubPrStatusSection", () => {
       />,
     );
     expect(
-      getByRole("link", { name: /GitHub PR #42/ }).getAttribute("href"),
+      getByRole("link", { name: "me/proj/pull/42" }).getAttribute("href"),
     ).toBe(PULL.url);
   });
 

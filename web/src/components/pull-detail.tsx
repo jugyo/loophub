@@ -481,7 +481,7 @@ function WorktreeSection({ value }: { value: string | null }) {
 // #406: GitHub-export write action for a PR whose repo is in 'github_pr' mode. Once the PR has been
 // exported (github_pull present) the Create action disappears and only the push controls remain —
 // this is the double-create guard, so a second export can't be dispatched. The route to the GitHub
-// PR itself lives in the sidebar's GitHub PR section heading (#2035), not here. Until exported,
+// PR itself lives in the sidebar's GitHub PR section body (#2091), not here. Until exported,
 // "Create PR on GitHub" injects the full export instructions into a launched agent (#1892, same
 // prompt-injection approach as New issue), which generates a branch/title/description in the target
 // PR's language and opens the GitHub Draft PR via `lh pr create-github-pr`.

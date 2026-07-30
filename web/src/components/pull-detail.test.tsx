@@ -1902,9 +1902,9 @@ describe("PullDetail — GitHub export action (#406)", () => {
       merge_mode: "github_pr",
       github_pull: linkedGithubPull(null),
     });
-    // The only route to the GitHub PR is the sidebar's GitHub PR heading — the action row has no
-    // "View PR on GitHub" button anymore.
-    const link = await screen.findByRole("link", { name: /GitHub PR #7/ });
+    // The only route to the GitHub PR is the link in the sidebar's GitHub PR section body (#2091) —
+    // the action row has no "View PR on GitHub" button anymore.
+    const link = await screen.findByRole("link", { name: "me/proj/pull/7" });
     expect(link.getAttribute("href")).toBe("https://github.com/me/proj/pull/7");
     expect(screen.queryByText(/View PR on GitHub/i)).toBeNull();
     expect(
