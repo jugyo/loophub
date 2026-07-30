@@ -372,6 +372,44 @@ describe("PullDetail", () => {
     });
   });
 
+  it("renders PR comments in response order before the comment form", async () => {
+    renderDetail({
+      "comments/list": () => [
+        comments[0],
+        {
+          ...comments[0],
+          id: 10,
+          body: "Second comment",
+        },
+      ],
+    });
+
+    const firstComment = await screen.findByText("Thanks!");
+    const secondComment = screen.getByText("Second comment");
+    const composer = screen.getByLabelText("Add a PR comment");
+
+    expect(
+      firstComment.compareDocumentPosition(secondComment) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      secondComment.compareDocumentPosition(composer) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("renders the empty comments state before the comment form", async () => {
+    renderDetail({ "comments/list": () => [] });
+
+    const emptyState = await screen.findByText("No comments.");
+    const composer = screen.getByLabelText("Add a PR comment");
+
+    expect(
+      emptyState.compareDocumentPosition(composer) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("shows reactions attached to PR comments", async () => {
     renderDetail({
       "comments/list": () => [
