@@ -263,7 +263,7 @@ CREATE TABLE IF NOT EXISTS diff_feedback_reactions (
   author      TEXT NOT NULL,
   emoji       TEXT NOT NULL,
   created_at  TEXT NOT NULL,
-  UNIQUE (message_id, author, emoji)
+  UNIQUE (message_id, author)
 );
 
 CREATE INDEX IF NOT EXISTS idx_diff_feedback_reactions_message

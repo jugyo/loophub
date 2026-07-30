@@ -441,10 +441,13 @@ export interface DiffFeedbackMessageWire {
   reactions: DiffFeedbackReactionWire[];
 }
 
-export interface DiffFeedbackReactionWire {
+export interface ReactionWire {
   emoji: string;
   count: number;
+  reacted: boolean;
 }
+
+export type DiffFeedbackReactionWire = ReactionWire;
 
 export interface DiffFeedbackThreadWire {
   id: number;
@@ -511,10 +514,15 @@ export interface DiffFeedbackPendingWire {
 export function diffFeedbackMessageJSON(
   row: S.DiffFeedbackMessageRow,
   reactions: S.DiffFeedbackReactionRow[] = [],
+  actor?: string,
 ): DiffFeedbackMessageWire {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { count: number; reacted: boolean }>();
   for (const reaction of reactions) {
-    counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1);
+    const current = counts.get(reaction.emoji);
+    counts.set(reaction.emoji, {
+      count: (current?.count ?? 0) + 1,
+      reacted: current?.reacted === true || reaction.author === actor,
+    });
   }
   return {
     id: row.id,
@@ -522,7 +530,10 @@ export function diffFeedbackMessageJSON(
     author: row.author,
     body: row.body,
     created_at: row.created_at,
-    reactions: Array.from(counts, ([emoji, count]) => ({ emoji, count })),
+    reactions: Array.from(counts, ([emoji, reaction]) => ({
+      emoji,
+      ...reaction,
+    })),
   };
 }
 
@@ -1043,16 +1054,21 @@ export interface CommentWire {
   author_type: S.CommentAuthorType;
   body: string;
   created_at: string;
-  reactions: DiffFeedbackReactionWire[];
+  reactions: ReactionWire[];
 }
 
 export function commentJSON(
   m: S.CommentRow,
   reactions: S.CommentReactionRow[] = [],
+  actor?: string,
 ): CommentWire {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { count: number; reacted: boolean }>();
   for (const reaction of reactions) {
-    counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1);
+    const current = counts.get(reaction.emoji);
+    counts.set(reaction.emoji, {
+      count: (current?.count ?? 0) + 1,
+      reacted: current?.reacted === true || reaction.author === actor,
+    });
   }
   return {
     id: m.id,
@@ -1060,7 +1076,10 @@ export function commentJSON(
     author_type: m.author_type,
     body: m.body,
     created_at: m.created_at,
-    reactions: Array.from(counts, ([emoji, count]) => ({ emoji, count })),
+    reactions: Array.from(counts, ([emoji, reaction]) => ({
+      emoji,
+      ...reaction,
+    })),
   };
 }
 

@@ -65,19 +65,28 @@ export function listCommentReactions(commentId: number): CommentReactionRow[] {
     .all(commentId) as CommentReactionRow[];
 }
 
-export function createCommentReaction(
+export function setCommentReaction(
   commentId: number,
   author: string,
   emoji: string,
-): CommentReactionRow {
-  db.query(
-    `INSERT OR IGNORE INTO comment_reactions
-     (comment_id, author, emoji, created_at) VALUES (?, ?, ?, ?)`,
-  ).run(commentId, author, emoji, now());
-  return db
+): void {
+  const existing = db
     .query(
       `SELECT * FROM comment_reactions
-       WHERE comment_id = ? AND author = ? AND emoji = ?`,
+       WHERE comment_id = ? AND author = ?`,
     )
-    .get(commentId, author, emoji) as CommentReactionRow;
+    .get(commentId, author) as CommentReactionRow | undefined;
+  if (existing?.emoji === emoji) {
+    db.query(
+      "DELETE FROM comment_reactions WHERE comment_id = ? AND author = ?",
+    ).run(commentId, author);
+    return;
+  }
+  db.query(
+    `INSERT INTO comment_reactions
+     (comment_id, author, emoji, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (comment_id, author) DO UPDATE SET
+       emoji = excluded.emoji,
+       created_at = excluded.created_at`,
+  ).run(commentId, author, emoji, now());
 }

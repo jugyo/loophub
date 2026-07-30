@@ -309,6 +309,7 @@ async function resolveThread(
   repoPath: string,
   pull: S.PullRow,
   thread: S.DiffFeedbackThreadRow,
+  actor?: string,
 ): Promise<{
   wire: DiffFeedbackThreadWire;
   lines: DiffLine[] | null;
@@ -367,6 +368,7 @@ async function resolveThread(
         diffFeedbackMessageJSON(
           message,
           S.listDiffFeedbackReactions(message.id),
+          actor,
         ),
       ),
     },
@@ -379,8 +381,9 @@ async function threadJSON(
   repoPath: string,
   pull: S.PullRow,
   thread: S.DiffFeedbackThreadRow,
+  actor?: string,
 ): Promise<DiffFeedbackThreadWire> {
-  return (await resolveThread(repoPath, pull, thread)).wire;
+  return (await resolveThread(repoPath, pull, thread, actor)).wire;
 }
 
 async function threadDetailJSON(
@@ -422,6 +425,7 @@ export const diffFeedback = {
     name: string,
     number: number,
     scope: { path?: string; orphaned?: boolean } = {},
+    sessionId?: string | null,
   ) {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
@@ -432,7 +436,7 @@ export const diffFeedback = {
       : [];
     const threads = await Promise.all(
       S.listDiffFeedbackThreads(row.id).map((thread) =>
-        threadJSON(r.local_path, pull, thread),
+        threadJSON(r.local_path, pull, thread, actorFor(sessionId)),
       ),
     );
     return {
@@ -669,10 +673,12 @@ export const diffFeedback = {
     if (!(DIFF_FEEDBACK_REACTIONS as readonly string[]).includes(emoji)) {
       throw new ServiceError(422, "unsupported diff feedback reaction");
     }
-    S.createDiffFeedbackReaction(message.id, actorFor(sessionId), emoji);
+    const actor = actorFor(sessionId);
+    S.setDiffFeedbackReaction(message.id, actor, emoji);
     return diffFeedbackMessageJSON(
       message,
       S.listDiffFeedbackReactions(message.id),
+      actor,
     );
   },
 };

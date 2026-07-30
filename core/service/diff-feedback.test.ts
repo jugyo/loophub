@@ -15,6 +15,7 @@ const HUMAN_SESSION = "33333333-3333-4333-8333-333333333333";
 
 let svc: typeof import("../service.ts");
 let S: typeof import("../store.ts");
+let database: typeof import("../db.ts")["db"];
 let repoPath: string;
 let repoId: number;
 let prNumber: number;
@@ -56,6 +57,7 @@ function runEvents() {
 beforeAll(async () => {
   svc = await import("../service.ts");
   S = await import("../store.ts");
+  ({ db: database } = await import("../db.ts"));
   repoPath = mkdtempSync(join(tmpdir(), "lh-diff-feedback-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -183,11 +185,37 @@ test("an Execute reply answers the comment without waking its own parent", async
   ).toEqual([]);
 });
 
-test("a supported reaction is stored once per actor and included with the comment", async () => {
+test("a supported reaction can be added, changed, and removed once per actor", async () => {
   const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
   const message = thread.messages[0];
 
-  await svc.diffFeedback.react(REPO, prNumber, message.id, "👍", HUMAN_SESSION);
+  const added = await svc.diffFeedback.react(
+    REPO,
+    prNumber,
+    message.id,
+    "👍",
+    HUMAN_SESSION,
+  );
+  expect(added.reactions).toEqual([{ emoji: "👍", count: 1, reacted: true }]);
+
+  const changed = await svc.diffFeedback.react(
+    REPO,
+    prNumber,
+    message.id,
+    "🎉",
+    HUMAN_SESSION,
+  );
+  expect(changed.reactions).toEqual([{ emoji: "🎉", count: 1, reacted: true }]);
+
+  const removed = await svc.diffFeedback.react(
+    REPO,
+    prNumber,
+    message.id,
+    "🎉",
+    HUMAN_SESSION,
+  );
+  expect(removed.reactions).toEqual([]);
+
   await svc.diffFeedback.react(REPO, prNumber, message.id, "👍", HUMAN_SESSION);
   await svc.diffFeedback.react(
     REPO,
@@ -198,12 +226,36 @@ test("a supported reaction is stored once per actor and included with the commen
   );
 
   expect(
-    (await svc.diffFeedback.list(REPO, prNumber)).threads[0].messages[0]
-      .reactions,
-  ).toEqual([{ emoji: "👍", count: 2 }]);
+    (await svc.diffFeedback.list(REPO, prNumber, {}, HUMAN_SESSION)).threads[0]
+      .messages[0].reactions,
+  ).toEqual([{ emoji: "👍", count: 2, reacted: true }]);
   await expect(
     svc.diffFeedback.react(REPO, prNumber, message.id, "😈", HUMAN_SESSION),
   ).rejects.toThrow("unsupported diff feedback reaction");
+});
+
+test("a failed reaction change preserves the existing server reaction", async () => {
+  const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
+  const message = thread.messages[0];
+  database.exec(`
+    CREATE TEMP TRIGGER fail_diff_feedback_reaction_update
+    BEFORE UPDATE ON diff_feedback_reactions
+    BEGIN
+      SELECT RAISE(ABORT, 'forced reaction update failure');
+    END
+  `);
+  try {
+    await expect(
+      svc.diffFeedback.react(REPO, prNumber, message.id, "🎉", HUMAN_SESSION),
+    ).rejects.toThrow("forced reaction update failure");
+  } finally {
+    database.exec("DROP TRIGGER fail_diff_feedback_reaction_update");
+  }
+
+  expect(
+    (await svc.diffFeedback.list(REPO, prNumber, {}, HUMAN_SESSION)).threads[0]
+      .messages[0].reactions,
+  ).toEqual([{ emoji: "👍", count: 2, reacted: true }]);
 });
 
 test("a follow-up comment from outside the run becomes pending again", async () => {

@@ -44,6 +44,43 @@ const file: PullFile = {
   patch: "@@ -1 +1 @@\n-const x = 0;\n+const x = 1;",
 };
 
+function stableDiff() {
+  return {
+    base_sha: "a".repeat(40),
+    head_sha: "b".repeat(40),
+    files: [
+      {
+        path: file.filename,
+        original_path: null,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        patch: file.patch,
+        lines: [
+          {
+            kind: "hunk",
+            text: "@@ -1 +1 @@",
+            left_line: null,
+            right_line: null,
+          },
+          {
+            kind: "deletion",
+            text: "-const x = 0;",
+            left_line: 1,
+            right_line: null,
+          },
+          {
+            kind: "addition",
+            text: "+const x = 1;",
+            left_line: null,
+            right_line: 1,
+          },
+        ],
+      },
+    ],
+  };
+}
+
 const lineComments: PullLineComment[] = [
   {
     id: 1,
@@ -390,10 +427,36 @@ describe("DiffFileDialog", () => {
   });
 
   it("posts a non-empty diff comment once with Cmd+Enter", async () => {
-    const create = vi.fn(() => ({
-      thread: feedbackThread(),
-      comment: {},
-    }));
+    let resolveCreate!: () => void;
+    let serverThreads: DiffFeedbackThread[] = [];
+    const pending = new Promise<void>((resolve) => {
+      resolveCreate = resolve;
+    });
+    const create = vi.fn(async () => {
+      await pending;
+      const thread = feedbackThread({
+        id: 9,
+        created_by: "me",
+        anchor: {
+          ...feedbackThread().anchor,
+          start_line: 1,
+          end_line: 1,
+        },
+        messages: [
+          {
+            id: 19,
+            thread_id: 9,
+            author: "me",
+            body: "Keyboard feedback",
+            created_at: "2026-07-28T00:01:00Z",
+            reactions: [],
+          },
+        ],
+      });
+      serverThreads = [thread];
+      return { thread, comment: thread.messages[0] };
+    });
+    const listFeedback = vi.fn(() => ({ threads: serverThreads }));
     renderDialog({
       handlers: {
         "pulls/diff": () => ({
@@ -430,7 +493,7 @@ describe("DiffFileDialog", () => {
             },
           ],
         }),
-        "diffFeedback/list": () => ({ threads: [] }),
+        "diffFeedback/list": listFeedback,
         "diffFeedback/create": create,
       },
     });
@@ -448,6 +511,104 @@ describe("DiffFileDialog", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ body: "Keyboard feedback" }),
     );
+    expect(screen.getAllByText("Keyboard feedback")).toHaveLength(1);
+    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+
+    resolveCreate();
+    await waitFor(() => {
+      expect(listFeedback).toHaveBeenCalledTimes(2);
+      expect(screen.getByLabelText("Diff thread 9")).toBeTruthy();
+      expect(screen.getAllByText("Keyboard feedback")).toHaveLength(1);
+    });
+  });
+
+  it("shows an optimistic diff comment while the initial feedback list is pending", async () => {
+    const feedbackPending = new Promise<never>(() => {});
+    const createPending = new Promise<never>(() => {});
+    renderDialog({
+      handlers: {
+        "pulls/diff": stableDiff,
+        "diffFeedback/list": () => feedbackPending,
+        "diffFeedback/create": () => createPending,
+      },
+    });
+
+    await addComment("New line 1");
+    fireEvent.change(screen.getByLabelText("Diff comment"), {
+      target: { value: "Visible before feedback loads." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    expect(
+      await screen.findByText("Visible before feedback loads."),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+  });
+
+  it("removes an optimistic diff comment when posting fails during the initial feedback load", async () => {
+    const feedbackPending = new Promise<never>(() => {});
+    const listFeedback = vi.fn(() => feedbackPending);
+    let rejectCreate!: (error: RpcFault) => void;
+    const createPending = new Promise<never>((_resolve, reject) => {
+      rejectCreate = reject;
+    });
+    renderDialog({
+      handlers: {
+        "pulls/diff": stableDiff,
+        "diffFeedback/list": listFeedback,
+        "diffFeedback/create": () => createPending,
+      },
+    });
+
+    await addComment("New line 1");
+    fireEvent.change(screen.getByLabelText("Diff comment"), {
+      target: { value: "Remove this failed comment." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    expect(await screen.findByText("Remove this failed comment.")).toBeTruthy();
+
+    rejectCreate(new RpcFault(500, "write failed"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/^Diff thread -/)).toBeNull();
+      expect(
+        (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
+      ).toBe("Remove this failed comment.");
+      expect(showError).toHaveBeenCalledWith("Create failed: write failed");
+      expect(listFeedback).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("restores the diff composer and thread cache when posting fails", async () => {
+    let rejectCreate!: (error: RpcFault) => void;
+    const pending = new Promise<never>((_resolve, reject) => {
+      rejectCreate = reject;
+    });
+    renderDialog({
+      handlers: {
+        "pulls/diff": stableDiff,
+        "diffFeedback/list": () => ({ threads: [] }),
+        "diffFeedback/create": () => pending,
+      },
+    });
+
+    await addComment("New line 1");
+    fireEvent.change(screen.getByLabelText("Diff comment"), {
+      target: { value: "Please retry this range." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    expect(await screen.findByText("Please retry this range.")).toBeTruthy();
+    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+
+    rejectCreate(new RpcFault(500, "write failed"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/^Diff thread -/)).toBeNull();
+      expect(
+        (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
+      ).toBe("Please retry this range.");
+      expect(showError).toHaveBeenCalledWith("Create failed: write failed");
+    });
   });
 
   it("posts a non-empty thread reply once with Cmd+Enter", async () => {
@@ -981,27 +1142,42 @@ describe("DiffFileDialog", () => {
     expect(rightCell.colSpan).toBe(2);
   });
 
-  it("shows existing reactions and adds one from the reaction picker", async () => {
-    const react = vi.fn(() => ({}));
-    renderDialog({
-      handlers: {
-        "diffFeedback/list": () => ({
-          threads: [
-            feedbackThread({
-              anchor: {
-                ...feedbackThread().anchor,
-                start_line: 1,
-                end_line: 1,
-              },
-              messages: [
-                {
-                  ...feedbackThread().messages[0],
-                  reactions: [{ emoji: "👍", count: 2 }],
-                },
-              ],
-            }),
+  it("optimistically adds, changes, and removes a reaction", async () => {
+    let serverReactions = [{ emoji: "👍", count: 2, reacted: false }];
+    let resolveReact!: (
+      message: ReturnType<typeof feedbackThread>["messages"][number],
+    ) => void;
+    const react = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof feedbackThread>["messages"][number]>(
+          (resolve) => {
+            resolveReact = (message) => {
+              serverReactions = message.reactions;
+              resolve(message);
+            };
+          },
+        ),
+    );
+    const listFeedback = vi.fn(() => ({
+      threads: [
+        feedbackThread({
+          anchor: {
+            ...feedbackThread().anchor,
+            start_line: 1,
+            end_line: 1,
+          },
+          messages: [
+            {
+              ...feedbackThread().messages[0],
+              reactions: serverReactions,
+            },
           ],
         }),
+      ],
+    }));
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": listFeedback,
         "diffFeedback/react": react,
       },
     });
@@ -1015,11 +1191,154 @@ describe("DiffFileDialog", () => {
       await screen.findByRole("menuitem", { name: "React with 🎉" }),
     );
 
-    await waitFor(() =>
-      expect(react).toHaveBeenCalledWith(
-        expect.objectContaining({ message_id: 11, emoji: "🎉" }),
-      ),
+    const added = await screen.findByLabelText("🎉 reaction: 1");
+    expect(added.getAttribute("aria-pressed")).toBe("true");
+    expect(react).toHaveBeenCalledWith(
+      expect.objectContaining({ message_id: 11, emoji: "🎉" }),
     );
+    resolveReact({
+      ...feedbackThread().messages[0],
+      reactions: [
+        { emoji: "👍", count: 2, reacted: false },
+        { emoji: "🎉", count: 1, reacted: true },
+      ],
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("🎉 reaction: 1").getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+    await waitFor(() => expect(listFeedback).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("👍 reaction: 2") as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+
+    fireEvent.click(screen.getByLabelText("👍 reaction: 2"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
+      expect(
+        screen.getByLabelText("👍 reaction: 3").getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
+    resolveReact({
+      ...feedbackThread().messages[0],
+      reactions: [{ emoji: "👍", count: 3, reacted: true }],
+    });
+    await waitFor(() => {
+      expect(listFeedback).toHaveBeenCalledTimes(3);
+      expect(screen.getByLabelText("👍 reaction: 3")).toBeTruthy();
+      expect(
+        (screen.getByLabelText("👍 reaction: 3") as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
+
+    fireEvent.click(screen.getByLabelText("👍 reaction: 3"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("👍 reaction: 2")).toBeTruthy(),
+    );
+    resolveReact({
+      ...feedbackThread().messages[0],
+      reactions: [{ emoji: "👍", count: 2, reacted: false }],
+    });
+    await waitFor(() => {
+      expect(listFeedback).toHaveBeenCalledTimes(4);
+      expect(screen.getByLabelText("👍 reaction: 2")).toBeTruthy();
+    });
+  });
+
+  it("rolls back an optimistic reaction and reports a failed request", async () => {
+    let rejectReact!: (error: RpcFault) => void;
+    const pending = new Promise<never>((_resolve, reject) => {
+      rejectReact = reject;
+    });
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                end_line: 1,
+              },
+            }),
+          ],
+        }),
+        "diffFeedback/react": () => pending,
+      },
+    });
+
+    await screen.findByLabelText("Add reaction to comment 11");
+    fireEvent.pointerDown(screen.getByLabelText("Add reaction to comment 11"), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "React with 🎉" }),
+    );
+    expect(await screen.findByLabelText("🎉 reaction: 1")).toBeTruthy();
+
+    rejectReact(new RpcFault(500, "write failed"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
+      expect(showError).toHaveBeenCalledWith("Reaction failed: write failed");
+    });
+  });
+
+  it("keeps a file-scoped historical conversation replyable", async () => {
+    let serverThread = feedbackThread({
+      freshness: "outdated",
+      anchor: {
+        ...feedbackThread().anchor,
+        end_line: 1,
+      },
+    });
+    let resolveReply!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      resolveReply = resolve;
+    });
+    const listFeedback = vi.fn(() => ({ threads: [serverThread] }));
+    const reply = vi.fn(async () => {
+      await pending;
+      const confirmedReply = {
+        id: 12,
+        thread_id: 1,
+        author: "me",
+        body: "Still relevant",
+        created_at: "2026-07-28T00:02:00Z",
+        reactions: [],
+      };
+      serverThread = {
+        ...serverThread,
+        messages: [...serverThread.messages, confirmedReply],
+      };
+      return { thread: serverThread, reply: confirmedReply };
+    });
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": listFeedback,
+        "diffFeedback/reply": reply,
+      },
+    });
+
+    expect(await screen.findByText("outdated")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
+      target: { value: "Still relevant" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+    await waitFor(() => {
+      expect(reply).toHaveBeenCalledWith(
+        expect.objectContaining({ thread_id: 1, body: "Still relevant" }),
+      );
+      expect(screen.getAllByText("Still relevant")).toHaveLength(1);
+    });
+
+    resolveReply();
+    await waitFor(() => {
+      expect(listFeedback).toHaveBeenCalledTimes(2);
+      expect(screen.getAllByText("Still relevant")).toHaveLength(1);
+    });
   });
 
   it("keeps a visible outdated conversation inline and replyable", async () => {

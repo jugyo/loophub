@@ -224,7 +224,12 @@ function renderDetail(
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/",
-    component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    component: () => (
+      <ToastProvider>
+        <ToastViewport />
+        <PullDetail owner="me" repo="proj" number={30} />
+      </ToastProvider>
+    ),
   });
   // The linked-issue link targets the issues route; register it for the router.
   const issuesRoute = createRoute({
@@ -346,16 +351,28 @@ describe("PullDetail", () => {
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
-  it("posts a PR comment and clears the composer", async () => {
+  it("shows a PR comment before the request settles and reconciles it once", async () => {
+    let resolveCreate!: () => void;
+    let serverComments = [...comments];
+    const listComments = vi.fn(() => serverComments);
+    const pending = new Promise<void>((resolve) => {
+      resolveCreate = resolve;
+    });
     renderDetail({
-      "pullComments/create": (params) => ({
-        id: 10,
-        user: { login: "me" },
-        author_type: "human",
-        body: params.body,
-        created_at: "2026-06-18T12:00:00Z",
-        reactions: [],
-      }),
+      "comments/list": listComments,
+      "pullComments/create": async (params) => {
+        await pending;
+        const comment: IssueComment = {
+          id: 10,
+          user: { login: "me" },
+          author_type: "human",
+          body: params.body,
+          created_at: "2026-06-18T12:00:00Z",
+          reactions: [],
+        };
+        serverComments = [...serverComments, comment];
+        return comment;
+      },
     });
 
     const composer = await screen.findByLabelText("Add a PR comment");
@@ -369,6 +386,79 @@ describe("PullDetail", () => {
         body: "Please rename this.",
       });
       expect((composer as HTMLTextAreaElement).value).toBe("");
+      expect(screen.getAllByText("Please rename this.")).toHaveLength(1);
+    });
+
+    resolveCreate();
+    await waitFor(() => {
+      expect(listComments).toHaveBeenCalledTimes(2);
+      expect(screen.getAllByText("Please rename this.")).toHaveLength(1);
+    });
+  });
+
+  it("restores the PR comment composer and cache when posting fails", async () => {
+    let rejectCreate!: (error: RpcFault) => void;
+    const pending = new Promise<never>((_resolve, reject) => {
+      rejectCreate = reject;
+    });
+    renderDetail({
+      "pullComments/create": () => pending,
+    });
+
+    const composer = await screen.findByLabelText("Add a PR comment");
+    fireEvent.change(composer, { target: { value: "Please retry this." } });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() => {
+      expect((composer as HTMLTextAreaElement).value).toBe("");
+      expect(screen.getByText("Please retry this.")).toBeTruthy();
+    });
+
+    rejectCreate(new RpcFault(500, "write failed"));
+    await waitFor(() => {
+      expect(screen.getAllByText("Please retry this.")).toHaveLength(1);
+      expect((composer as HTMLTextAreaElement).value).toBe(
+        "Please retry this.",
+      );
+      expect(screen.getByText("Failed to post comment.")).toBeTruthy();
+    });
+  });
+
+  it("removes a failed PR comment while the initial comment list is pending", async () => {
+    const commentsPending = new Promise<never>(() => {});
+    const listComments = vi.fn(() => commentsPending);
+    let rejectCreate!: (error: RpcFault) => void;
+    const createPending = new Promise<never>((_resolve, reject) => {
+      rejectCreate = reject;
+    });
+    const { container } = renderDetail({
+      "comments/list": listComments,
+      "pullComments/create": () => createPending,
+    });
+
+    const composer = await screen.findByLabelText("Add a PR comment");
+    fireEvent.change(composer, {
+      target: { value: "Remove this failed PR comment." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll('[data-debug-component="PullComment"]'),
+      ).toHaveLength(1);
+      expect(screen.getByText("Remove this failed PR comment.")).toBeTruthy();
+    });
+
+    rejectCreate(new RpcFault(500, "write failed"));
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll('[data-debug-component="PullComment"]'),
+      ).toHaveLength(0);
+      expect((composer as HTMLTextAreaElement).value).toBe(
+        "Remove this failed PR comment.",
+      );
+      expect(screen.getByText("Failed to post comment.")).toBeTruthy();
+      expect(listComments).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -415,12 +505,124 @@ describe("PullDetail", () => {
       "comments/list": () => [
         {
           ...comments[0],
-          reactions: [{ emoji: "👀", count: 1 }],
+          reactions: [{ emoji: "👀", count: 1, reacted: false }],
         },
       ],
     });
 
     expect(await screen.findByLabelText("👀 reaction: 1")).toBeTruthy();
+  });
+
+  it("optimistically adds, changes, and removes a PR comment reaction", async () => {
+    let serverReactions = [{ emoji: "👍", count: 2, reacted: false }];
+    let resolveReact!: (comment: IssueComment) => void;
+    const react = vi.fn(
+      () =>
+        new Promise<IssueComment>((resolve) => {
+          resolveReact = (comment) => {
+            serverReactions = comment.reactions;
+            resolve(comment);
+          };
+        }),
+    );
+    const listComments = vi.fn(() => [
+      { ...comments[0], reactions: serverReactions },
+    ]);
+    renderDetail({
+      "comments/list": listComments,
+      "pullComments/react": react,
+    });
+
+    await screen.findByLabelText("Add reaction to PR comment 9");
+    fireEvent.pointerDown(
+      screen.getByLabelText("Add reaction to PR comment 9"),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "React to PR comment 9 with 🎉",
+      }),
+    );
+
+    const added = await screen.findByLabelText("🎉 reaction: 1");
+    expect(added.getAttribute("aria-pressed")).toBe("true");
+    expect(react).toHaveBeenCalledWith(
+      expect.objectContaining({ comment_id: 9, emoji: "🎉" }),
+    );
+    resolveReact({
+      ...comments[0],
+      reactions: [
+        { emoji: "👍", count: 2, reacted: false },
+        { emoji: "🎉", count: 1, reacted: true },
+      ],
+    });
+    await waitFor(() => expect(listComments).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("👍 reaction: 2") as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+
+    fireEvent.click(screen.getByLabelText("👍 reaction: 2"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
+      expect(
+        screen.getByLabelText("👍 reaction: 3").getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
+    resolveReact({
+      ...comments[0],
+      reactions: [{ emoji: "👍", count: 3, reacted: true }],
+    });
+    await waitFor(() => {
+      expect(listComments).toHaveBeenCalledTimes(3);
+      expect(
+        (screen.getByLabelText("👍 reaction: 3") as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
+
+    fireEvent.click(screen.getByLabelText("👍 reaction: 3"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("👍 reaction: 2")).toBeTruthy(),
+    );
+    resolveReact({
+      ...comments[0],
+      reactions: [{ emoji: "👍", count: 2, reacted: false }],
+    });
+    await waitFor(() => {
+      expect(listComments).toHaveBeenCalledTimes(4);
+      expect(
+        screen.getByLabelText("👍 reaction: 2").getAttribute("aria-pressed"),
+      ).toBe("false");
+    });
+  });
+
+  it("rolls back a failed PR comment reaction and shows the error", async () => {
+    let rejectReact!: (error: RpcFault) => void;
+    const pending = new Promise<never>((_resolve, reject) => {
+      rejectReact = reject;
+    });
+    renderDetail({
+      "pullComments/react": () => pending,
+    });
+
+    await screen.findByLabelText("Add reaction to PR comment 9");
+    fireEvent.pointerDown(
+      screen.getByLabelText("Add reaction to PR comment 9"),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "React to PR comment 9 with 🎉",
+      }),
+    );
+    expect(await screen.findByLabelText("🎉 reaction: 1")).toBeTruthy();
+
+    rejectReact(new RpcFault(500, "write failed"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
+      expect(screen.getByText("Reaction failed: write failed")).toBeTruthy();
+    });
   });
 
   it("names the major PR regions for component debugging", async () => {

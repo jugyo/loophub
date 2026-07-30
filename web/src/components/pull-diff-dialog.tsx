@@ -708,13 +708,27 @@ function FileDiffContent({
   const path = copyFilename(file);
   const diff = usePullDiff(owner, repo, number, path);
   const feedback = useDiffFeedback(owner, repo, number, { path });
-  const create = useCreateDiffFeedback(owner, repo, number);
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);
   const resolution = useSetDiffFeedbackResolved(owner, repo, number);
   const { showError } = useToast();
   const [selection, setSelection] = useState<DiffSelection | null>(null);
   const [body, setBody] = useState("");
+  const create = useCreateDiffFeedback(
+    owner,
+    repo,
+    number,
+    path,
+    (error, input) => {
+      setSelection({
+        side: input.side,
+        startLine: input.start_line,
+        endLine: input.end_line,
+      });
+      setBody(input.body);
+      showError(errorMessage(error, "Create failed"));
+    },
+  );
   const stableFile = Array.isArray(diff.data?.files)
     ? diff.data.files[0]
     : undefined;
@@ -738,27 +752,20 @@ function FileDiffContent({
           setSelection(null);
           setBody("");
         }}
-        onSubmit={() =>
-          create.mutate(
-            {
-              base_sha: diff.data.base_sha,
-              head_sha: diff.data.head_sha,
-              path: stableFile.path,
-              side: selection.side,
-              start_line: selection.startLine,
-              end_line: selection.endLine,
-              body: body.trim(),
-            },
-            {
-              onSuccess: () => {
-                setSelection(null);
-                setBody("");
-              },
-              onError: (error) =>
-                showError(errorMessage(error, "Create failed")),
-            },
-          )
-        }
+        onSubmit={() => {
+          const submittedBody = body.trim();
+          setSelection(null);
+          setBody("");
+          create.mutate({
+            base_sha: diff.data.base_sha,
+            head_sha: diff.data.head_sha,
+            path: stableFile.path,
+            side: selection.side,
+            start_line: selection.startLine,
+            end_line: selection.endLine,
+            body: submittedBody,
+          });
+        }}
       />
     ) : null;
 
@@ -1695,13 +1702,22 @@ function ThreadCard({
             </Markdown>
             <div className="mt-2 flex items-center gap-1">
               {(message.reactions ?? []).map((reaction) => (
-                <span
+                <button
+                  type="button"
                   key={reaction.emoji}
-                  className="rounded-full border bg-background px-2 py-0.5 text-xs"
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 text-xs",
+                    reaction.reacted
+                      ? "bg-accent text-accent-foreground"
+                      : "bg-background",
+                  )}
                   aria-label={`${reaction.emoji} reaction: ${reaction.count}`}
+                  aria-pressed={reaction.reacted}
+                  disabled={reactionBusy}
+                  onClick={() => onReact(message.id, reaction.emoji)}
                 >
                   {reaction.emoji} {reaction.count}
-                </span>
+                </button>
               ))}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

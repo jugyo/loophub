@@ -149,19 +149,28 @@ export function listDiffFeedbackReactions(
     .all(messageId) as DiffFeedbackReactionRow[];
 }
 
-export function createDiffFeedbackReaction(
+export function setDiffFeedbackReaction(
   messageId: number,
   author: string,
   emoji: string,
-): DiffFeedbackReactionRow {
-  db.query(
-    `INSERT OR IGNORE INTO diff_feedback_reactions
-     (message_id, author, emoji, created_at) VALUES (?, ?, ?, ?)`,
-  ).run(messageId, author, emoji, now());
-  return db
+): void {
+  const existing = db
     .query(
       `SELECT * FROM diff_feedback_reactions
-       WHERE message_id = ? AND author = ? AND emoji = ?`,
+       WHERE message_id = ? AND author = ?`,
     )
-    .get(messageId, author, emoji) as DiffFeedbackReactionRow;
+    .get(messageId, author) as DiffFeedbackReactionRow | undefined;
+  if (existing?.emoji === emoji) {
+    db.query(
+      "DELETE FROM diff_feedback_reactions WHERE message_id = ? AND author = ?",
+    ).run(messageId, author);
+    return;
+  }
+  db.query(
+    `INSERT INTO diff_feedback_reactions
+     (message_id, author, emoji, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (message_id, author) DO UPDATE SET
+       emoji = excluded.emoji,
+       created_at = excluded.created_at`,
+  ).run(messageId, author, emoji, now());
 }

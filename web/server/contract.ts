@@ -642,7 +642,7 @@ export const methods: Record<string, MethodDef> = {
     description: "List an issue's comments.",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyArray,
-    handler: (p) => svc.comments.list(p.repo, p.number),
+    handler: (p) => svc.comments.list(p.repo, p.number, "me"),
   },
   "comments/create": {
     description: "Add a comment to an issue.",
@@ -662,6 +662,21 @@ export const methods: Record<string, MethodDef> = {
     ]),
     result: anyObject,
     handler: (p) => svc.comments.createHumanForPull(p.repo, p.number, p.body),
+  },
+  "pullComments/react": {
+    description: "Toggle a human emoji reaction on a pull request comment.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        comment_id: positiveInt,
+        emoji: strNonEmpty,
+      },
+      ["repo", "number", "comment_id", "emoji"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.comments.reactHumanForPull(p.repo, p.number, p.comment_id, p.emoji),
   },
 
   // ---- handoffs (#352) ----
@@ -867,15 +882,21 @@ export const methods: Record<string, MethodDef> = {
         number: positiveInt,
         path: str,
         orphaned: { type: "boolean" },
+        session_id: sid,
       },
       ["repo", "number"],
     ),
     result: anyObject,
     handler: (p) =>
-      svc.diffFeedback.list(p.repo, p.number, {
-        path: p.path,
-        orphaned: p.orphaned,
-      }),
+      svc.diffFeedback.list(
+        p.repo,
+        p.number,
+        {
+          path: p.path,
+          orphaned: p.orphaned,
+        },
+        p.session_id,
+      ),
   },
   "diffFeedback/get": {
     description: "Get one diff feedback thread.",

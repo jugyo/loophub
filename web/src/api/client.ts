@@ -707,6 +707,21 @@ export function postPullComment(
   });
 }
 
+export function reactToPullComment(
+  owner: string,
+  repo: string,
+  number: number,
+  commentId: number,
+  emoji: string,
+) {
+  return rpc<IssueComment>("pullComments/react", {
+    repo: full(owner, repo),
+    number,
+    comment_id: commentId,
+    emoji,
+  });
+}
+
 export function patchIssue(
   owner: string,
   repo: string,
@@ -804,6 +819,7 @@ export function listDiffFeedback(
       number,
       path: scope.path,
       orphaned: scope.orphaned,
+      session_id: getSessionId(),
     }),
   );
 }

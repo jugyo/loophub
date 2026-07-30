@@ -7,7 +7,13 @@
 // via <Markdown>.
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Github, Loader2, UploadCloud } from "lucide-react";
+import {
+  ChevronDown,
+  Github,
+  Loader2,
+  SmilePlus,
+  UploadCloud,
+} from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
@@ -55,6 +61,7 @@ import {
   usePullFiles,
   usePullReviews,
   usePushGithubPull,
+  useReactToPullComment,
   useSetPullState,
 } from "@/queries/pulls";
 import { useSettings } from "@/queries/settings";
@@ -62,6 +69,7 @@ import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 import { githubPrExportPrompt } from "../../../core/workflow/github-pr-export-prompt.ts";
 
 const MERGE_METHODS = ["squash", "merge", "rebase"] as const;
+const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
 type MergeMethod = (typeof MERGE_METHODS)[number];
 
 export function PullDetail({
@@ -737,12 +745,20 @@ function CommentList({
   isError: boolean;
 }) {
   const [body, setBody] = useState("");
-  const post = usePostPullComment(owner, repo, number);
+  const [postFailed, setPostFailed] = useState(false);
+  const reaction = useReactToPullComment(owner, repo, number);
+  const { showError } = useToast();
+  const post = usePostPullComment(owner, repo, number, (_error, failedBody) => {
+    setBody(failedBody);
+    setPostFailed(true);
+  });
 
   function submit() {
     const trimmed = body.trim();
     if (!trimmed || post.isPending) return;
-    post.mutate(trimmed, { onSuccess: () => setBody("") });
+    setPostFailed(false);
+    setBody("");
+    post.mutate(trimmed);
   }
 
   return (
@@ -777,19 +793,68 @@ function CommentList({
             <Markdown owner={owner} repo={repo}>
               {c.body}
             </Markdown>
-            {c.reactions.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {c.reactions.map((reaction) => (
-                  <span
-                    key={reaction.emoji}
-                    aria-label={`${reaction.emoji} reaction: ${reaction.count}`}
-                    className="rounded-full border bg-muted/40 px-2 py-0.5 text-xs"
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {c.reactions.map((item) => (
+                <button
+                  type="button"
+                  key={item.emoji}
+                  aria-label={`${item.emoji} reaction: ${item.count}`}
+                  aria-pressed={item.reacted}
+                  disabled={reaction.isPending}
+                  onClick={() =>
+                    reaction.mutate(
+                      { commentId: c.id, emoji: item.emoji },
+                      {
+                        onError: (error) =>
+                          showError(errorMessage(error, "Reaction failed")),
+                      },
+                    )
+                  }
+                  className={
+                    item.reacted
+                      ? "rounded-full border bg-accent px-2 py-0.5 text-xs text-accent-foreground"
+                      : "rounded-full border bg-background px-2 py-0.5 text-xs"
+                  }
+                >
+                  {item.emoji} {item.count}
+                </button>
+              ))}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label={`Add reaction to PR comment ${c.id}`}
+                    disabled={reaction.isPending}
                   >
-                    {reaction.emoji} {reaction.count}
-                  </span>
-                ))}
-              </div>
-            ) : null}
+                    <SmilePlus className="size-3.5" aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="flex min-w-0 gap-1 p-1"
+                >
+                  {COMMENT_REACTIONS.map((emoji) => (
+                    <DropdownMenuItem
+                      key={emoji}
+                      className="flex size-8 cursor-pointer items-center justify-center p-0 text-base"
+                      aria-label={`React to PR comment ${c.id} with ${emoji}`}
+                      onSelect={() =>
+                        reaction.mutate(
+                          { commentId: c.id, emoji },
+                          {
+                            onError: (error) =>
+                              showError(errorMessage(error, "Reaction failed")),
+                          },
+                        )
+                      }
+                    >
+                      {emoji}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </article>
         ))
       )}
@@ -806,7 +871,7 @@ function CommentList({
           className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <div className="flex items-center justify-end gap-2">
-          {post.isError ? (
+          {postFailed ? (
             <span className="text-sm text-destructive">
               Failed to post comment.
             </span>

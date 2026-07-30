@@ -2,7 +2,13 @@
 // Query keys come from the shared factory (./keys), so the event invalidation map
 // (../lib/event-keys.ts) refetches these on pull_request.* events.
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  type QueryKey,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   createDiffFeedback,
   deletePull,
@@ -21,10 +27,16 @@ import {
   postPullComment,
   pushGithubPull,
   reactToDiffFeedback,
+  reactToPullComment,
   replyDiffFeedback,
   setDiffFeedbackResolved,
 } from "@/api/client";
-import type { PullRequest } from "@/api/types";
+import type {
+  DiffFeedbackList,
+  DiffFeedbackMessage,
+  DiffFeedbackThread,
+  PullRequest,
+} from "@/api/types";
 import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
@@ -68,6 +80,45 @@ const feedbackKey = (owner: string, repo: string, number: number) => [
   "diffFeedback",
 ];
 
+let nextOptimisticId = -1;
+
+type FeedbackSnapshot = [QueryKey, DiffFeedbackList | undefined][];
+
+function snapshotFeedback(
+  qc: QueryClient,
+  owner: string,
+  repo: string,
+  number: number,
+): FeedbackSnapshot {
+  return qc.getQueriesData<DiffFeedbackList>({
+    queryKey: feedbackKey(owner, repo, number),
+  });
+}
+
+function restoreFeedback(qc: QueryClient, snapshot: FeedbackSnapshot) {
+  for (const [key, data] of snapshot) {
+    if (data) qc.setQueryData(key, data);
+    else {
+      qc.setQueryData<DiffFeedbackList>(key, {
+        threads: [],
+        comment_counts: {},
+      });
+    }
+  }
+}
+
+function updateFeedback(
+  qc: QueryClient,
+  owner: string,
+  repo: string,
+  number: number,
+  update: (data: DiffFeedbackList) => DiffFeedbackList,
+) {
+  for (const [key, data] of snapshotFeedback(qc, owner, repo, number)) {
+    if (data) qc.setQueryData(key, update(data));
+  }
+}
+
 export function usePullDiff(
   owner: string,
   repo: string,
@@ -100,12 +151,75 @@ export function useCreateDiffFeedback(
   owner: string,
   repo: string,
   number: number,
+  path: string,
+  handleError?: (
+    error: unknown,
+    input: Parameters<typeof createDiffFeedback>[3],
+  ) => void,
 ) {
   const qc = useQueryClient();
+  const queryKey = [...feedbackKey(owner, repo, number), { path }];
   return useMutation({
     mutationFn: (input: Parameters<typeof createDiffFeedback>[3]) =>
       createDiffFeedback(owner, repo, number, input),
-    onSuccess: () =>
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey, exact: true });
+      const previous: FeedbackSnapshot = [
+        [queryKey, qc.getQueryData<DiffFeedbackList>(queryKey)],
+      ];
+      const threadId = nextOptimisticId--;
+      const messageId = nextOptimisticId--;
+      const createdAt = new Date().toISOString();
+      const thread: DiffFeedbackThread = {
+        id: threadId,
+        pr_number: number,
+        anchor: {
+          base_sha: input.base_sha,
+          head_sha: input.head_sha,
+          path: input.path,
+          original_path: null,
+          side: input.side,
+          start_line: input.start_line,
+          end_line: input.end_line,
+        },
+        resolved_anchor: {
+          path: input.path,
+          original_path: null,
+          side: input.side,
+          start_line: input.start_line,
+          end_line: input.end_line,
+        },
+        freshness: "current",
+        outdated_reason: null,
+        placement: "inline",
+        original_context: null,
+        resolved: false,
+        resolved_by: null,
+        resolved_at: null,
+        created_by: "me",
+        created_at: createdAt,
+        messages: [
+          {
+            id: messageId,
+            thread_id: threadId,
+            author: "me",
+            body: input.body,
+            created_at: createdAt,
+            reactions: [],
+          },
+        ],
+      };
+      qc.setQueryData<DiffFeedbackList>(queryKey, (data) => ({
+        threads: [...(data?.threads ?? []), thread],
+        comment_counts: data?.comment_counts ?? {},
+      }));
+      return { previous };
+    },
+    onError: (error, input, context) => {
+      if (context) restoreFeedback(qc, context.previous);
+      handleError?.(error, input);
+    },
+    onSettled: () =>
       qc.invalidateQueries({ queryKey: feedbackKey(owner, repo, number) }),
   });
 }
@@ -119,7 +233,32 @@ export function useReplyDiffFeedback(
   return useMutation({
     mutationFn: (input: { threadId: number; body: string }) =>
       replyDiffFeedback(owner, repo, number, input.threadId, input.body),
-    onSuccess: () =>
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: feedbackKey(owner, repo, number) });
+      const previous = snapshotFeedback(qc, owner, repo, number);
+      const messageId = nextOptimisticId--;
+      const reply: DiffFeedbackMessage = {
+        id: messageId,
+        thread_id: input.threadId,
+        author: "me",
+        body: input.body,
+        created_at: new Date().toISOString(),
+        reactions: [],
+      };
+      updateFeedback(qc, owner, repo, number, (data) => ({
+        ...data,
+        threads: data.threads.map((thread) =>
+          thread.id === input.threadId
+            ? { ...thread, messages: [...thread.messages, reply] }
+            : thread,
+        ),
+      }));
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context) restoreFeedback(qc, context.previous);
+    },
+    onSettled: () =>
       qc.invalidateQueries({ queryKey: feedbackKey(owner, repo, number) }),
   });
 }
@@ -133,7 +272,61 @@ export function useReactToDiffFeedback(
   return useMutation({
     mutationFn: (input: { messageId: number; emoji: string }) =>
       reactToDiffFeedback(owner, repo, number, input.messageId, input.emoji),
-    onSuccess: () =>
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: feedbackKey(owner, repo, number) });
+      const previous = snapshotFeedback(qc, owner, repo, number);
+      updateFeedback(qc, owner, repo, number, (data) => ({
+        ...data,
+        threads: data.threads.map((thread) => ({
+          ...thread,
+          messages: thread.messages.map((message) => {
+            if (message.id !== input.messageId) return message;
+            const selected = message.reactions.find(
+              (reaction) => reaction.reacted,
+            );
+            const reactions = message.reactions
+              .map((reaction) =>
+                reaction.reacted
+                  ? {
+                      ...reaction,
+                      count: reaction.count - 1,
+                      reacted: false,
+                    }
+                  : reaction,
+              )
+              .filter((reaction) => reaction.count > 0);
+            if (selected?.emoji === input.emoji) {
+              return { ...message, reactions };
+            }
+            const target = reactions.find(
+              (reaction) => reaction.emoji === input.emoji,
+            );
+            return {
+              ...message,
+              reactions: target
+                ? reactions.map((reaction) =>
+                    reaction.emoji === input.emoji
+                      ? {
+                          ...reaction,
+                          count: reaction.count + 1,
+                          reacted: true,
+                        }
+                      : reaction,
+                  )
+                : [
+                    ...reactions,
+                    { emoji: input.emoji, count: 1, reacted: true },
+                  ],
+            };
+          }),
+        })),
+      }));
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context) restoreFeedback(qc, context.previous);
+    },
+    onSettled: () =>
       qc.invalidateQueries({ queryKey: feedbackKey(owner, repo, number) }),
   });
 }
@@ -219,19 +412,114 @@ export function usePostPullComment(
   owner: string,
   repo: string,
   number: number,
+  handleError?: (error: unknown, body: string) => void,
 ) {
   const qc = useQueryClient();
+  const commentsKey = [
+    ...queryKeys.issue(full(owner, repo), number),
+    "comments",
+  ];
   return useMutation({
     mutationFn: (body: string) => postPullComment(owner, repo, number, body),
-    onSuccess: () =>
+    onMutate: async (body) => {
+      await qc.cancelQueries({ queryKey: commentsKey });
+      const previous =
+        qc.getQueryData<Awaited<ReturnType<typeof postPullComment>>[]>(
+          commentsKey,
+        );
+      const optimisticId = nextOptimisticId--;
+      qc.setQueryData(commentsKey, [
+        ...(previous ?? []),
+        {
+          id: optimisticId,
+          user: { login: "me" },
+          author_type: "human",
+          body,
+          created_at: new Date().toISOString(),
+          reactions: [],
+        },
+      ]);
+      return { previous };
+    },
+    onError: (error, body, context) => {
+      if (context) qc.setQueryData(commentsKey, context.previous ?? []);
+      handleError?.(error, body);
+    },
+    onSettled: () =>
       Promise.all([
         qc.invalidateQueries({
           queryKey: queryKeys.pull(full(owner, repo), number),
         }),
-        qc.invalidateQueries({
-          queryKey: queryKeys.issue(full(owner, repo), number),
-        }),
+        qc.invalidateQueries({ queryKey: commentsKey }),
       ]),
+  });
+}
+
+export function useReactToPullComment(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  const commentsKey = [
+    ...queryKeys.issue(full(owner, repo), number),
+    "comments",
+  ];
+  return useMutation({
+    mutationFn: (input: { commentId: number; emoji: string }) =>
+      reactToPullComment(owner, repo, number, input.commentId, input.emoji),
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: commentsKey });
+      const previous =
+        qc.getQueryData<Awaited<ReturnType<typeof postPullComment>>[]>(
+          commentsKey,
+        );
+      qc.setQueryData<typeof previous>(
+        commentsKey,
+        previous?.map((comment) => {
+          if (comment.id !== input.commentId) return comment;
+          const selected = comment.reactions.find(
+            (reaction) => reaction.reacted,
+          );
+          const reactions = comment.reactions
+            .map((reaction) =>
+              reaction.reacted
+                ? {
+                    ...reaction,
+                    count: reaction.count - 1,
+                    reacted: false,
+                  }
+                : reaction,
+            )
+            .filter((reaction) => reaction.count > 0);
+          if (selected?.emoji === input.emoji) {
+            return { ...comment, reactions };
+          }
+          const target = reactions.find(
+            (reaction) => reaction.emoji === input.emoji,
+          );
+          return {
+            ...comment,
+            reactions: target
+              ? reactions.map((reaction) =>
+                  reaction.emoji === input.emoji
+                    ? {
+                        ...reaction,
+                        count: reaction.count + 1,
+                        reacted: true,
+                      }
+                    : reaction,
+                )
+              : [...reactions, { emoji: input.emoji, count: 1, reacted: true }],
+          };
+        }),
+      );
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context) qc.setQueryData(commentsKey, context.previous ?? []);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: commentsKey }),
   });
 }
 

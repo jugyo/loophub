@@ -795,6 +795,33 @@ export const MIGRATIONS: Migration[] = [
       ON comment_reactions(comment_id, created_at, id);
   `,
   ),
+  sql(
+    "053-single-diff-feedback-reaction",
+    `
+    ALTER TABLE diff_feedback_reactions RENAME TO diff_feedback_reactions_old;
+    CREATE TABLE diff_feedback_reactions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id  INTEGER NOT NULL REFERENCES diff_feedback_messages(id) ON DELETE CASCADE,
+      author      TEXT NOT NULL,
+      emoji       TEXT NOT NULL,
+      created_at  TEXT NOT NULL,
+      UNIQUE (message_id, author)
+    );
+    INSERT INTO diff_feedback_reactions
+      (id, message_id, author, emoji, created_at)
+    SELECT id, message_id, author, emoji, created_at
+    FROM diff_feedback_reactions_old AS reaction
+    WHERE id = (
+      SELECT MAX(candidate.id)
+      FROM diff_feedback_reactions_old AS candidate
+      WHERE candidate.message_id = reaction.message_id
+        AND candidate.author = reaction.author
+    );
+    DROP TABLE diff_feedback_reactions_old;
+    CREATE INDEX idx_diff_feedback_reactions_message
+      ON diff_feedback_reactions(message_id, created_at, id);
+  `,
+  ),
   {
     id: "054-resolve-diff-feedback",
     run(db) {
@@ -802,6 +829,33 @@ export const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "diff_feedback_threads", "resolved_at", "TEXT");
     },
   },
+  sql(
+    "054-single-comment-reaction",
+    `
+    ALTER TABLE comment_reactions RENAME TO comment_reactions_old;
+    CREATE TABLE comment_reactions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      comment_id  INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+      author      TEXT NOT NULL,
+      emoji       TEXT NOT NULL,
+      created_at  TEXT NOT NULL,
+      UNIQUE (comment_id, author)
+    );
+    INSERT INTO comment_reactions
+      (id, comment_id, author, emoji, created_at)
+    SELECT id, comment_id, author, emoji, created_at
+    FROM comment_reactions_old AS reaction
+    WHERE id = (
+      SELECT MAX(candidate.id)
+      FROM comment_reactions_old AS candidate
+      WHERE candidate.comment_id = reaction.comment_id
+        AND candidate.author = reaction.author
+    );
+    DROP TABLE comment_reactions_old;
+    CREATE INDEX idx_comment_reactions_comment
+      ON comment_reactions(comment_id, created_at, id);
+  `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

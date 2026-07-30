@@ -14,6 +14,7 @@ const agentSession = "22222222-2222-4222-8222-222222222222";
 
 let svc: typeof import("../service.ts");
 let store: typeof import("../store.ts");
+let database: typeof import("../db.ts")["db"];
 let repoPath: string;
 let repoId: number;
 let prNumber: number;
@@ -29,6 +30,7 @@ function git(args: string[]) {
 beforeAll(async () => {
   svc = await import("../service.ts");
   store = await import("../store.ts");
+  ({ db: database } = await import("../db.ts"));
   repoPath = mkdtempSync(join(tmpdir(), "lh-pr-comments-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "test@example.com"]);
@@ -146,32 +148,54 @@ test("classifies PR commenters and only notifies the workflow for a human", asyn
   expect(detail.comment_list).toEqual([human, agent, system]);
 });
 
-test("stores a supported PR comment reaction once per actor", () => {
+test("a supported PR comment reaction can be added, changed, and removed", () => {
   const comment = svc.comments.createHumanForPull(
     repoName,
     prNumber,
     "Please acknowledge this.",
   );
 
-  const first = svc.comments.reactForPull(
+  const added = svc.comments.reactForPull(
     repoName,
     prNumber,
     comment.id,
     "👀",
     agentSession,
   );
-  const repeated = svc.comments.reactForPull(
+  const human = svc.comments.reactHumanForPull(
     repoName,
     prNumber,
     comment.id,
     "👀",
+  );
+  const changed = svc.comments.reactForPull(
+    repoName,
+    prNumber,
+    comment.id,
+    "🚀",
+    agentSession,
+  );
+  const removed = svc.comments.reactForPull(
+    repoName,
+    prNumber,
+    comment.id,
+    "🚀",
     agentSession,
   );
 
-  expect(first.reactions).toEqual([{ emoji: "👀", count: 1 }]);
-  expect(repeated.reactions).toEqual([{ emoji: "👀", count: 1 }]);
+  expect(added.reactions).toEqual([{ emoji: "👀", count: 1, reacted: true }]);
+  expect(human.reactions).toEqual([{ emoji: "👀", count: 2, reacted: true }]);
+  expect(changed.reactions).toEqual(
+    expect.arrayContaining([
+      { emoji: "👀", count: 1, reacted: false },
+      { emoji: "🚀", count: 1, reacted: true },
+    ]),
+  );
+  expect(removed.reactions).toEqual([
+    { emoji: "👀", count: 1, reacted: false },
+  ]);
   expect(svc.comments.list(repoName, prNumber).at(-1)?.reactions).toEqual([
-    { emoji: "👀", count: 1 },
+    { emoji: "👀", count: 1, reacted: false },
   ]);
   expect(() =>
     svc.comments.reactForPull(
@@ -182,4 +206,37 @@ test("stores a supported PR comment reaction once per actor", () => {
       agentSession,
     ),
   ).toThrow("unsupported PR comment reaction");
+});
+
+test("a failed PR comment reaction change preserves the existing reaction", () => {
+  const comment = svc.comments.createHumanForPull(
+    repoName,
+    prNumber,
+    "Keep this reaction.",
+  );
+  svc.comments.reactForPull(repoName, prNumber, comment.id, "👀", agentSession);
+  database.exec(`
+    CREATE TEMP TRIGGER fail_comment_reaction_update
+    BEFORE UPDATE ON comment_reactions
+    BEGIN
+      SELECT RAISE(ABORT, 'forced reaction update failure');
+    END
+  `);
+  try {
+    expect(() =>
+      svc.comments.reactForPull(
+        repoName,
+        prNumber,
+        comment.id,
+        "🚀",
+        agentSession,
+      ),
+    ).toThrow("forced reaction update failure");
+  } finally {
+    database.exec("DROP TRIGGER fail_comment_reaction_update");
+  }
+
+  expect(
+    svc.comments.list(repoName, prNumber, "executor #1-1").at(-1)?.reactions,
+  ).toEqual([{ emoji: "👀", count: 1, reacted: true }]);
 });

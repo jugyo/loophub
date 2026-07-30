@@ -13,15 +13,15 @@ import { projectWorkflowRunPullComment } from "./workflow-run-events.ts";
 // ===== comments =====
 export const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
 
-function commentWire(row: S.CommentRow) {
-  return commentJSON(row, S.listCommentReactions(row.id));
+function commentWire(row: S.CommentRow, actor?: string) {
+  return commentJSON(row, S.listCommentReactions(row.id), actor);
 }
 
 export const comments = {
-  list(name: string, number: number) {
+  list(name: string, number: number, actor?: string) {
     const r = repoOr404(name);
     const row = issueOr404(r, number);
-    return S.listComments(row.id).map(commentWire);
+    return S.listComments(row.id).map((comment) => commentWire(comment, actor));
   },
 
   create(
@@ -90,8 +90,29 @@ export const comments = {
     if (!(COMMENT_REACTIONS as readonly string[]).includes(emoji)) {
       throw new ServiceError(422, "unsupported PR comment reaction");
     }
-    S.createCommentReaction(comment.id, actorFor(sessionId), emoji);
-    return commentWire(comment);
+    const actor = actorFor(sessionId);
+    S.setCommentReaction(comment.id, actor, emoji);
+    return commentWire(comment, actor);
+  },
+
+  reactHumanForPull(
+    name: string,
+    number: number,
+    commentId: number,
+    emoji: string,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const comment = S.getComment(commentId);
+    if (!comment || comment.issue_id !== row.id) {
+      throw new ServiceError(404, "PR comment not found");
+    }
+    if (!(COMMENT_REACTIONS as readonly string[]).includes(emoji)) {
+      throw new ServiceError(422, "unsupported PR comment reaction");
+    }
+    S.setCommentReaction(comment.id, "me", emoji);
+    return commentWire(comment, "me");
   },
 };
 

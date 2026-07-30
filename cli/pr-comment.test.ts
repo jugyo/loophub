@@ -120,7 +120,7 @@ test("lh pr comment posts a plain comment on a PR", () => {
   expect(viewJSON(n).comments).toBe(1);
 });
 
-test("lh pr comment react adds an idempotent reaction", () => {
+test("lh pr comment react adds a reaction", () => {
   const n = createPull();
   const created = lh([
     "pr",
@@ -151,10 +151,10 @@ test("lh pr comment react adds an idempotent reaction", () => {
 
   expect(reacted.exitCode).toBe(0);
   expect(JSON.parse(reacted.stdout).reactions).toEqual([
-    { emoji: "👀", count: 1 },
+    { emoji: "👀", count: 1, reacted: true },
   ]);
   expect(viewJSON(n).comment_list[0].reactions).toEqual([
-    { emoji: "👀", count: 1 },
+    { emoji: "👀", count: 1, reacted: false },
   ]);
 });
 

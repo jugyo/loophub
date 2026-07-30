@@ -175,7 +175,7 @@ test("CLI immediately creates and replies in a diff conversation", () => {
   );
   expect(listed.threads).toHaveLength(1);
   expect(listed.threads[0].messages[0].reactions).toEqual([
-    { emoji: "👀", count: 1 },
+    { emoji: "👀", count: 1, reacted: false },
   ]);
 
   const reply = JSON.parse(
