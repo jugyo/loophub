@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { AgentExecutionTarget } from "../agent-control.ts";
 import {
   agentModel,
   type CodingAgent,
@@ -29,16 +30,7 @@ import {
   workflowRunStateJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
-import {
-  NO_PANE_ID_PREFIX,
-  parseHerdrAgentList,
-} from "../terminal/herdr-status.ts";
-import {
-  buildWorkflowStepHerdrLaunchPlan,
-  HERDR_ID,
-  herdrSessionName,
-} from "../terminal/terminal-launch.ts";
-import { parsePreviousWorkflowVerifyPane } from "../terminal/workflow-pane-layout.ts";
+import { buildWorkflowStepHerdrLaunchPlan } from "../terminal/terminal-launch.ts";
 import {
   composeWorkflowLaunchPrompt,
   renderWorkflowContract,
@@ -59,7 +51,6 @@ import {
 import {
   nextWorkflowChildSequence,
   parseWorkflowHerdrAgentName,
-  type WorkflowHerdrAgent,
   workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
 import { workflowMessages } from "../workflow/messages.ts";
@@ -101,8 +92,8 @@ import {
   provisionWorktree,
   shouldCreateMissingConventionBranch,
 } from "../worktree-provision.ts";
+import { agentControl, assertAgentExecutionTarget } from "./agent-control.ts";
 import { dev } from "./dev.ts";
-import { runHerdr } from "./herdr-runner.ts";
 import { reviewAcResultsJSON } from "./reviews.ts";
 import { workflowContractLanguage } from "./settings.ts";
 import {
@@ -214,6 +205,14 @@ export type WorkflowConfirmStepLaunchResult = {
   run: WorkflowRunUpdateResult["run"];
   session_id: string;
 };
+
+function executionTarget(row: S.AgentExecutionTargetRow): AgentExecutionTarget {
+  return {
+    provider: row.provider,
+    targetId: row.target_id,
+    context: row.context,
+  };
+}
 
 export type WorkflowTurnDoneResult = {
   run: number;
@@ -1393,74 +1392,37 @@ export const workflowRuns = {
       throw new ServiceError(422, "workflow deliver requires non-empty text");
     }
 
-    const sessionName = herdrSessionName(repo);
-    const agentsOut = await runHerdr(
-      "herdr",
-      ["--session", sessionName, "agent", "list"],
-      repo.local_path,
-      { captureStdout: true, timeoutMs: 15_000 },
-    );
-    const latest = parseHerdrAgentList(agentsOut)
-      .map((agent) => ({
-        agent,
-        parsed: parseWorkflowHerdrAgentName(agent.name),
-      }))
-      .filter(
-        (
-          candidate,
-        ): candidate is {
-          agent: ReturnType<typeof parseHerdrAgentList>[number];
-          parsed: Extract<WorkflowHerdrAgent, { kind: "step" }>;
-        } =>
-          candidate.parsed?.kind === "step" &&
-          candidate.parsed.runId === run.id &&
-          candidate.parsed.step === "execute",
-      )
-      .sort((a, b) => b.parsed.sequence - a.parsed.sequence)[0];
-    if (!latest) {
-      throw new ServiceError(
-        404,
-        `No Execute agent found for Workflow run #${run.id}`,
-      );
-    }
-    if (
-      latest.agent.id.startsWith(NO_PANE_ID_PREFIX) ||
-      !HERDR_ID.test(latest.agent.id)
-    ) {
-      throw new ServiceError(
-        422,
-        `Execute agent "${latest.agent.name}" has no valid pane_id`,
-      );
-    }
-
-    const matchingSessions = workflowStepSessionIds(
+    const executeSessionId = workflowStepSessionIds(
       run.step_sessions_json,
       "execute",
-    ).filter(
-      (candidate) => S.getAgentSession(candidate)?.name === latest.agent.name,
-    );
-    if (matchingSessions.length !== 1) {
+    ).at(-1);
+    if (!executeSessionId) {
       throw new ServiceError(
-        422,
-        `Cannot resolve the registered Execute session for agent "${latest.agent.name}"`,
+        404,
+        `No Execute session found for Workflow run #${run.id}`,
       );
     }
-    const executeSessionId = matchingSessions[0];
+    const session = S.getAgentSession(executeSessionId);
+    const target = S.getAgentExecutionTarget(executeSessionId);
+    if (!session || !target) {
+      throw new ServiceError(
+        422,
+        `Execute session ${executeSessionId} has no execution target`,
+      );
+    }
     workflowRuns.activateStep(
       name,
       { run: run.id, step: "execute", sessionId: executeSessionId },
       sessionId,
     );
-    await runHerdr(
-      "herdr",
-      ["--session", sessionName, "pane", "run", latest.agent.id, text],
-      repo.local_path,
-      { timeoutMs: 15_000 },
+    await agentControl(repo.local_path, executionTarget(target)).inputText(
+      executionTarget(target),
+      text,
     );
     return {
       run: run.id,
-      agent_name: latest.agent.name,
-      pane_id: latest.agent.id,
+      agent_name: session.name ?? executeSessionId,
+      pane_id: target.target_id,
       session_id: executeSessionId,
       text,
     };
@@ -1747,7 +1709,7 @@ export const workflowRuns = {
     };
   },
 
-  async closePreviousVerifyPane(
+  async closePreviousVerifyAgent(
     name: string,
     input: { run: number },
     sessionId: string | null | undefined,
@@ -1761,23 +1723,15 @@ export const workflowRuns = {
     assertAutomaticProgressAllowed(run);
     assertParentActor(run, sessionId);
 
-    const sessionName = herdrSessionName(r);
-    const paneList = await runHerdr(
-      "herdr",
-      ["--session", sessionName, "pane", "list"],
-      r.local_path,
-      { captureStdout: true, timeoutMs: 15_000 },
-    );
-    const previous = parsePreviousWorkflowVerifyPane(paneList, run.id);
-    if (!previous) {
-      throw new ServiceError(500, "Herdr pane list returned invalid JSON");
-    }
-    if (!previous.paneId) return;
-    await runHerdr(
-      "herdr",
-      ["--session", sessionName, "pane", "close", previous.paneId],
-      r.local_path,
-      { timeoutMs: 15_000 },
+    const previousSession = workflowStepSessionIds(
+      run.step_sessions_json,
+      "verify",
+    ).at(-1);
+    if (!previousSession) return;
+    const target = S.getAgentExecutionTarget(previousSession);
+    if (!target) return;
+    await agentControl(r.local_path, executionTarget(target)).close(
+      executionTarget(target),
     );
   },
 
@@ -1788,6 +1742,7 @@ export const workflowRuns = {
       step: string;
       sessionId: string;
       agentName?: string;
+      executionTarget: AgentExecutionTarget;
       pointers: WorkflowInputPointer[];
       headSha?: string;
       note?: string;
@@ -1807,6 +1762,7 @@ export const workflowRuns = {
     const sessionId = input.sessionId;
     if (input.agentName)
       validateWorkflowStepAgentName(input.agentName, run.id, step);
+    assertAgentExecutionTarget(input.executionTarget);
     S.registerAgentSession(
       sessionId,
       "workflow-step",
@@ -1815,6 +1771,12 @@ export const workflowRuns = {
       runRuntime(run),
       "workflow-step",
     );
+    S.registerAgentExecutionTarget({
+      sessionId,
+      provider: input.executionTarget.provider,
+      targetId: input.executionTarget.targetId,
+      context: input.executionTarget.context,
+    });
     S.linkSession(sessionId, prIssue.id);
     const withSession = S.appendWorkflowRunStepSession(run.id, step, sessionId);
     if (!withSession) throw new ServiceError(404, "Workflow run not found");

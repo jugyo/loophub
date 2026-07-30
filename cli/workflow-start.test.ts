@@ -82,6 +82,7 @@ function git(args: string[], path = REPO_PATH): void {
 function fakeRuntime(
   opts: {
     agentStartExit?: number;
+    agentStartJson?: string;
     focusedState?: Record<string, string>;
     paneCloseExit?: number;
     paneListJson?: string;
@@ -91,6 +92,7 @@ function fakeRuntime(
 ) {
   const {
     agentStartExit = 0,
+    agentStartJson = '{"result":{"agent":{"pane_id":"w1:p3"}}}',
     focusedState,
     paneCloseExit = 0,
     paneListJson = "",
@@ -139,7 +141,7 @@ case " $command " in
   *" pane close "*) change_focus_if_closing pane_id "$3"; exit ${paneCloseExit} ;;
   *" tab close "*) change_focus_if_closing tab_id "$3"; exit 0 ;;
   *" tab create "*) change_focus_without_no_focus; printf '%s' '${tabCreateJson}'; exit 0 ;;
-  *" agent start "*) change_focus_without_no_focus; exit ${agentStartExit} ;;
+  *" agent start "*) change_focus_without_no_focus; printf '%s' '${agentStartJson}'; exit ${agentStartExit} ;;
   *" workspace focus "*|*" tab focus "*|*" agent focus "*|*" pane focus "*) change_focus; exit 0 ;;
 esac
 exit 0
@@ -808,6 +810,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
   });
   const freshRuntime = fakeRuntime({
     focusedState: UNRELATED_HERDR_FOCUS,
+    agentStartJson: '{"result":{"agent":{"pane_id":"w1:p5"}}}',
     paneListJson: JSON.stringify({
       result: {
         panes: [

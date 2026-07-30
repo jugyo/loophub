@@ -872,6 +872,19 @@ export const MIGRATIONS: Migration[] = [
     );
   `,
   ),
+  sql(
+    "056-agent-execution-targets",
+    `
+    CREATE TABLE IF NOT EXISTS agent_execution_targets (
+      session_id  TEXT PRIMARY KEY REFERENCES agent_sessions(id) ON DELETE CASCADE,
+      provider    TEXT NOT NULL,
+      target_id   TEXT NOT NULL,
+      context     TEXT,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+  `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

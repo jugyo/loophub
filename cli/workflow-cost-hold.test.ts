@@ -76,6 +76,12 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
       "codex",
       "workflow-step",
     );
+    S.registerAgentExecutionTarget({
+      sessionId: childSessionId,
+      provider: "herdr",
+      targetId: "w1:p2",
+      context: "test-session",
+    });
     S.appendWorkflowRunStepSession(run.id, "execute", childSessionId);
     S.updateWorkflowRun(run.id, {
       activeStep: "execute",
@@ -110,6 +116,7 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
   };
   const event = emit();
   const log = join(home, `herdr-${run.id}.log`);
+  writeFileSync(log, "");
   writeFileSync(
     join(home, `agents-${run.id}.json`),
     JSON.stringify({
@@ -196,7 +203,7 @@ test("lh workflow cost-hold holds the run, sends Escape, and notifies the active
     "Cost limit exceeded: current $12.5, limit $10; human decision required",
   );
   const log = readFileSync(input.log, "utf8");
-  expect(log).toContain("agent list");
+  expect(log).not.toContain("agent list");
   expect(log).toContain("pane send-keys w1:p2 Escape");
   expect(log).toContain(
     "pane run w1:p2 orchestrator: Cost limit exceeded: current $12.5, limit $10. Wait for human instruction.",
@@ -366,7 +373,7 @@ test("a missing active child is visible and still establishes the hold", () => {
   });
 
   expect(result.status).not.toBe(0);
-  expect(result.stderr).toContain("cost hold failed at pane resolution");
+  expect(result.stderr).toContain("cost hold failed at target resolution");
   expect(result.stderr).toContain("completed: await-human");
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).not.toBeNull();
 });

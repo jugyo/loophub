@@ -362,6 +362,17 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   UNIQUE (agent, external_session)
 );
 
+-- Runtime-specific address for controlling a live agent. Workflow code resolves targets through
+-- the owning session and delegates operations to an agent-control adapter.
+CREATE TABLE IF NOT EXISTS agent_execution_targets (
+  session_id  TEXT PRIMARY KEY REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  provider    TEXT NOT NULL,
+  target_id   TEXT NOT NULL,
+  context     TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
 -- Generalized session<->target links (#298). A session can relate to any issues row — an
 -- issue (kind=issue) OR a PR (kind=pull) — and a single issue/PR can carry many sessions
 -- (dev, review, issue-create, ...), so this is a plain many-to-many bridge keyed by the pair.

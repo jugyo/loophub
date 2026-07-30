@@ -648,7 +648,7 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
     "PR body・comment・attachment だけの更新は HEAD を変えない",
   );
   expect(design).toContain(
-    "`pane_id` があれば `agent_status: done` でも利用できる",
+    "DB 上の最新 Execute session と保存済み実行 target を再利用する",
   );
   expect(design).toMatch(/修正後の Verify は常に\s+fresh child/u);
   expect(design).toContain("`stopped`（#1525）は");
@@ -668,7 +668,7 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain(
     "`deliver` は内部で `activate-step` と同じ live-control target 更新を行う",
   );
-  expect(design).toContain("`herdr pane send-keys <pane_id> Escape`");
+  expect(design).toContain("agent-control port の key input");
   // #1859: the parent runs the `cost_hold` action and returns to the loop; the continuation
   // decision, the increase, and the resume are the human's.
   expect(design).not.toContain("「続けますか？」という yes / no");

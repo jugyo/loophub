@@ -1,21 +1,12 @@
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
-import {
-  NO_PANE_ID_PREFIX,
-  parseHerdrAgentList,
-} from "../terminal/herdr-status.ts";
-import { HERDR_ID, herdrSessionName } from "../terminal/terminal-launch.ts";
 import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
-import {
-  parseWorkflowHerdrAgentName,
-  workflowStepSessionIds,
-} from "../workflow/herdr-agents.ts";
-import { runHerdr } from "./herdr-runner.ts";
+import { workflowStepSessionIds } from "../workflow/herdr-agents.ts";
+import { agentControl } from "./agent-control.ts";
 import { ensureWritable, repoOr404 } from "./shared.ts";
 import { workflowRuns } from "./workflow-runs.ts";
 
 const EFFECT = "cost.hold";
-const HERDR_TIMEOUT_MS = 15_000;
 
 type CostExceededPayload = {
   id: number;
@@ -108,11 +99,10 @@ function failedResult(
   };
 }
 
-async function activePane(input: {
-  repo: S.Repo;
+function activeTarget(input: {
   run: S.WorkflowRunRow;
   payload: CostExceededPayload;
-}): Promise<{ paneId: string; sessionName: string }> {
+}): S.AgentExecutionTargetRow {
   if (!input.payload.active_step || !input.payload.active_session_id) {
     throw new ServiceError(409, "cost exceeded event has no active child");
   }
@@ -127,38 +117,14 @@ async function activePane(input: {
       `active session ${input.payload.active_session_id} is not registered for ${input.payload.active_step}`,
     );
   }
-  const session = S.getAgentSession(input.payload.active_session_id);
-  const parsedName = parseWorkflowHerdrAgentName(session?.name);
-  if (
-    parsedName?.kind !== "step" ||
-    parsedName.runId !== input.run.id ||
-    parsedName.step !== input.payload.active_step
-  ) {
+  const target = S.getAgentExecutionTarget(input.payload.active_session_id);
+  if (!target) {
     throw new ServiceError(
       409,
-      `active session ${input.payload.active_session_id} has no matching Workflow agent`,
+      `active session ${input.payload.active_session_id} has no execution target`,
     );
   }
-  const sessionName = herdrSessionName(input.repo);
-  const stdout = await runHerdr(
-    "herdr",
-    ["--session", sessionName, "agent", "list"],
-    input.repo.local_path,
-    { captureStdout: true, timeoutMs: HERDR_TIMEOUT_MS },
-  );
-  const matches = parseHerdrAgentList(stdout).filter(
-    (agent) =>
-      agent.name === session?.name &&
-      !agent.id.startsWith(NO_PANE_ID_PREFIX) &&
-      HERDR_ID.test(agent.id),
-  );
-  if (matches.length !== 1) {
-    throw new ServiceError(
-      409,
-      `could not resolve one pane for active agent ${session?.name}`,
-    );
-  }
-  return { paneId: matches[0].id, sessionName };
+  return target;
 }
 
 export const workflowCostHold = {
@@ -195,7 +161,7 @@ export const workflowCostHold = {
     // Scoped to the run's cumulative limit rather than this event id (#1844): detection re-emits
     // `workflow_run.cost_exceeded` while a stopped parent is away, so the parent drains several
     // events that all ask for the one interrupt this limit warrants. A per-event receipt would let
-    // each of them re-send Esc and the pane notification — and re-hold a run the human already
+    // each of them re-send Esc and the child notification — and re-hold a run the human already
     // released. A raised limit produces events at a new `limit_usd`, which correctly holds again.
     const existingReceipt = S.getWorkflowEventEffectForCostLimit(
       run.id,
@@ -231,13 +197,12 @@ export const workflowCostHold = {
     }
 
     const completed: string[] = [];
-    const listCommand = `herdr --session ${herdrSessionName(repo)} agent list`;
-    let pane: Awaited<ReturnType<typeof activePane>> | undefined;
-    let paneError: unknown;
+    let target: S.AgentExecutionTargetRow | undefined;
+    let targetError: unknown;
     try {
-      pane = await activePane({ repo, run, payload });
+      target = activeTarget({ run, payload });
     } catch (error) {
-      paneError = error;
+      targetError = error;
     }
 
     const reason = `Cost limit exceeded: current $${payload.cost_usd}, limit $${payload.limit_usd}; human decision required`;
@@ -254,62 +219,48 @@ export const workflowCostHold = {
     }
     completed.push("await-human");
 
-    if (paneError || !pane) {
+    if (targetError || !target) {
       return failedResult(
         input,
         completed,
-        "pane resolution",
-        listCommand,
-        paneError ?? new Error("active pane was not resolved"),
+        "target resolution",
+        "resolve active child execution target",
+        targetError ?? new Error("active execution target was not resolved"),
       );
     }
 
-    const escapeCommand = `herdr --session ${pane.sessionName} pane send-keys ${pane.paneId} Escape`;
+    const executionTarget = {
+      provider: target.provider,
+      targetId: target.target_id,
+      context: target.context,
+    };
+    const control = agentControl(repo.local_path, executionTarget);
     try {
-      await runHerdr(
-        "herdr",
-        [
-          "--session",
-          pane.sessionName,
-          "pane",
-          "send-keys",
-          pane.paneId,
-          "Escape",
-        ],
-        repo.local_path,
-        { timeoutMs: HERDR_TIMEOUT_MS },
-      );
+      await control.inputKey(executionTarget, "Escape");
     } catch (error) {
-      return failedResult(input, completed, "Escape", escapeCommand, error);
+      return failedResult(
+        input,
+        completed,
+        "Escape",
+        "send Escape to active child",
+        error,
+      );
     }
     completed.push("Escape");
 
     const notification = `orchestrator: Cost limit exceeded: current $${payload.cost_usd}, limit $${payload.limit_usd}. Wait for human instruction.`;
-    const notificationCommand = `herdr --session ${pane.sessionName} pane run ${pane.paneId} ${notification}`;
     try {
-      await runHerdr(
-        "herdr",
-        [
-          "--session",
-          pane.sessionName,
-          "pane",
-          "run",
-          pane.paneId,
-          notification,
-        ],
-        repo.local_path,
-        { timeoutMs: HERDR_TIMEOUT_MS },
-      );
+      await control.inputText(executionTarget, notification);
     } catch (error) {
       return failedResult(
         input,
         completed,
-        "pane notification",
-        notificationCommand,
+        "child notification",
+        "send notification to active child",
         error,
       );
     }
-    completed.push("pane notification");
+    completed.push("child notification");
 
     const completedReceipt = S.completeWorkflowEventEffect(
       run.id,

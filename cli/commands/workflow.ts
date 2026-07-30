@@ -5,7 +5,10 @@ import { removeDevLock } from "../../core/dev-lock.ts";
 import { isClaudeSessionId } from "../../core/resume.ts";
 import { buildRuntimeArgs } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
-import { HERDR_ID } from "../../core/terminal/terminal-launch.ts";
+import {
+  HERDR_ID,
+  parseHerdrAgentPaneId,
+} from "../../core/terminal/terminal-launch.ts";
 import {
   layoutWorkflowTab,
   WorkflowPaneLayoutError,
@@ -422,7 +425,7 @@ async function launchStep(): Promise<void> {
   preflightStepLaunch(result.runtime);
   if (result.step === "verify") {
     await runOp(() =>
-      s.workflowRuns.closePreviousVerifyPane(
+      s.workflowRuns.closePreviousVerifyAgent(
         repo,
         { run: result.run.id },
         actorSessionId,
@@ -439,7 +442,7 @@ async function launchStep(): Promise<void> {
   for (const pointer of result.pointers) {
     console.log(`input\t${display(pointer.label)}\t${display(pointer.value)}`);
   }
-  const confirm = () =>
+  const confirm = (paneId: string) =>
     runOp(() =>
       s.workflowRuns.confirmStepLaunch(
         repo,
@@ -448,6 +451,11 @@ async function launchStep(): Promise<void> {
           step: result.step,
           sessionId: result.session_id,
           agentName: result.agent_name,
+          executionTarget: {
+            provider: "herdr",
+            targetId: paneId,
+            context: result.herdr.sessionName,
+          },
           pointers: result.pointers,
           headSha: result.head_sha,
           note,
@@ -457,8 +465,10 @@ async function launchStep(): Promise<void> {
     );
   const launched = spawnSync(result.herdr.argv[0], result.herdr.argv.slice(1), {
     encoding: "utf8",
-    stdio: "inherit",
+    stdio: ["inherit", "pipe", "inherit"],
   });
+  const launchStdout = launched.stdout ?? "";
+  if (launchStdout) process.stdout.write(launchStdout);
   if (launched.error) fail(`failed to launch herdr: ${launched.error.message}`);
   if (launched.signal) {
     fail(`herdr terminated by signal ${launched.signal}`);
@@ -466,10 +476,14 @@ async function launchStep(): Promise<void> {
   if (launched.status == null || launched.status !== 0) {
     fail(`herdr exited with status ${launched.status}`);
   }
+  const paneId = parseHerdrAgentPaneId(launchStdout);
+  if (!paneId) {
+    fail("herdr agent start returned no valid pane_id");
+  }
   // The child process is live once agent start succeeds, so persist that truth before ancillary
   // layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
   // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
-  await confirm();
+  await confirm(paneId);
   if (tabId) {
     try {
       layoutWorkflowTab({

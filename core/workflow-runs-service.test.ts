@@ -20,6 +20,28 @@ let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
 let A: typeof import("./attachments.ts");
 
+function confirmStepLaunch(
+  name: string,
+  input: Omit<
+    Parameters<typeof svc.workflowRuns.confirmStepLaunch>[1],
+    "executionTarget"
+  >,
+  actorSessionId?: string | null,
+) {
+  return svc.workflowRuns.confirmStepLaunch(
+    name,
+    {
+      ...input,
+      executionTarget: {
+        provider: "herdr",
+        targetId: `p-${input.sessionId}`,
+        context: "test-session",
+      },
+    },
+    actorSessionId,
+  );
+}
+
 function git(args: string[]): void {
   const result = spawnSync("git", ["-C", REPO_PATH, ...args], {
     encoding: "utf8",
@@ -223,7 +245,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(launched.herdr.command).toContain("'--permission-mode' 'auto'");
   expect(launched.agent_name).toBe(`executor #${result.run.id}-1`);
 
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: result.run.id,
@@ -386,7 +408,7 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   expect(launched.herdr.command).not.toContain("--session-id");
   expect(launched.herdr.command).toContain("'--model' 'gpt-5.5'");
 
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: result.run.id,
@@ -460,7 +482,7 @@ test("start snapshots the contract language for parent and every later step", as
     "review submission target (do not read the PR)",
   );
 
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -931,7 +953,7 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -981,7 +1003,7 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -1070,7 +1092,7 @@ test("a grok run's steps launch grok, not claude (#1521)", async () => {
   expect(launched.herdr.command).not.toContain("--session-id");
   expect(launched.herdr.command).toContain("'--model' 'grok-code-fast-1'");
 
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: result.run.id,
@@ -1256,7 +1278,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -1377,7 +1399,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -1537,7 +1559,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(additionalExecute.user_prompt).toContain(
     "Add another requested change.",
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2147,7 +2169,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2353,7 +2375,7 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2403,7 +2425,7 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2513,7 +2535,7 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2650,7 +2672,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2680,7 +2702,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2737,7 +2759,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     label: "address review",
     value: `#${reviewId}`,
   });
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2817,7 +2839,7 @@ test("a turn done after the active Verify reviewed launches a fresh Verify", asy
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2844,7 +2866,7 @@ test("a turn done after the active Verify reviewed launches a fresh Verify", asy
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -3327,7 +3349,7 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
   });
 
   const firstVerifier = "24242424-2424-4242-8242-242424242424";
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: run.id,
@@ -3356,7 +3378,7 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
   ).toBeNull();
 
   const secondVerifier = "25252525-2525-4252-8252-252525252525";
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: run.id,
