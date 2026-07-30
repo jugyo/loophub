@@ -193,6 +193,14 @@ contract を検証する。
 5. ターン完了を `lh workflow turn done`（payload なし）で宣言する。**commit 前に宣言しても run は
    進まない**（親が HEAD 前進を観測しないため）。
 
+human follow-up が source の修正を要求する場合、Execute は対象を読んだ後、編集前に短い着手返信を
+投稿する。PR comment には top-level の `lh pr comment` で対象 `comment #<id>`、認識したこと、対応する
+意思を明記する。diff feedback には対象 thread の `lh pr feedback reply` で対象 `comment #<id>`、
+認識したこと、対応する意思を明記する。review rework には top-level の `lh pr comment` で対象
+`review #<id>`、対応するすべての `review comment #<id>`、finding を認識したことと対応する意思を
+明記する。質問、確認、PR metadata の更新のみなど source の修正を伴わない follow-up では、この着手返信を
+必須としない。
+
 `orchestrator:` 注入や launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
 continuing instruction など）は、自然に Issue / PR への追加要望と読めるならそのように扱い、同じ
 issue・PR に対して実装する。完了後は通常の Execute と同じく **commit（ドメイン変更がある場合）→
@@ -266,6 +274,7 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 `workflow_run.diff_feedback` として投影される（run 自身の parent / child が書いたコメントは投影しない）。
 親はこの wake で `orchestrator: address diff feedback thread #<t> comment #<c>` を Execute へ配送し、
 Execute は `lh pr feedback pending <pr> --run <run>` で未対応の会話と anchor 周辺の diff を読む。
+source の修正が必要なら、対象 thread へ認識と対応意思を返信してから編集する。
 1 コメントにつき run event は 1 件、wake は 1 回なので配送も 1 回である。usage sweep が run の累積コスト上限越えを検知すると `workflow_run.cost_exceeded` が記録される。
 累計 cost が現在の累計上限を超えていて run が human hold されていない間は、同じ run・累計上限に対して
 再送間隔ごとに最大 1 回まで再送され続ける（既定 5 分、env `LOOPHUB_COST_REEMIT_MS` で調整し、0 は毎
