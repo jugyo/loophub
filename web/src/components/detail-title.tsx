@@ -39,9 +39,11 @@ export function DetailHeaderTitle({
  *
  * The wrapper is a zero-height sticky box so the bar overlays the scrolled
  * content instead of reserving space at the top of the page; it must therefore
- * be rendered as a child of an element that spans the whole page, not inside
- * the header block itself. The scroll area reserves the bar's height as
- * scroll-padding (app-layout.tsx) so anything scrolled to lands below it.
+ * be rendered as a child of an element that spans the whole scrolled column,
+ * not inside the header block itself. Its width follows that parent, so on a
+ * page with a sidebar it belongs to the main column rather than the full page
+ * width (#2089). The scroll area reserves the bar's height as scroll-padding
+ * (app-layout.tsx) so anything scrolled to lands below it.
  */
 export function DetailStickyHeader({
   kind,

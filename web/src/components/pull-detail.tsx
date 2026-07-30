@@ -131,60 +131,62 @@ export function PullDetail({
       data-debug-component="PullDetail"
       className="mx-auto max-w-content lg:max-w-content-wide"
     >
-      {/* The sticky header (#2033) sits outside the column/row layout so its sticky box spans
-          the whole page — inside it, it would unstick with the header block it belongs to. */}
-      <DetailStickyHeader
-        kind="PR"
-        number={pull.number}
-        title={pull.title}
-        badges={pullDetailBadges(pull)}
-        titleRef={titleRef}
-      />
-
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <div
-          data-debug-component="PullMainContent"
-          className="flex min-w-0 flex-1 flex-col gap-6"
-        >
-          {/* No key needed for feedback safety: operation-failure feedback now lives in the app-shell
-            error banner (#323), which clears on route change, so a `Merge failed: …` error can no
-            longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
-          <PullHeader
-            owner={owner}
-            repo={repo}
-            pull={pull}
+        <div data-debug-component="PullMainContent" className="min-w-0 flex-1">
+          {/* The sticky header (#2033) sits at the top of the main column, outside its gap-6
+              stack (#2089): as a direct child of the column it spans the main content width
+              instead of the sidebar too, and its sticky box still covers the whole column so it
+              does not unstick with the header block it belongs to. */}
+          <DetailStickyHeader
+            kind="PR"
+            number={pull.number}
+            title={pull.title}
+            badges={pullDetailBadges(pull)}
             titleRef={titleRef}
           />
 
-          <PullCommitsSection
-            owner={owner}
-            repo={repo}
-            number={number}
-            commits={pull.commits}
-            reviews={reviewsQuery.data}
-            lineComments={lineCommentsQuery.data}
-            isReviewsLoading={reviewsQuery.isLoading}
-            isReviewsError={reviewsQuery.isError}
-            showGithubPushState={!!pull.github_pull}
-          />
-          <FilesChanged
-            owner={owner}
-            repo={repo}
-            number={number}
-            files={filesQuery.data}
-            lineComments={lineCommentsQuery.data}
-            isLoading={filesQuery.isLoading}
-            isError={filesQuery.isError}
-          />
+          <div className="flex flex-col gap-6">
+            {/* No key needed for feedback safety: operation-failure feedback now lives in the
+              app-shell error banner (#323), which clears on route change, so a `Merge failed: …`
+              error can no longer leak onto the next PR the way the inline mutation-observer error
+              did (#321). */}
+            <PullHeader
+              owner={owner}
+              repo={repo}
+              pull={pull}
+              titleRef={titleRef}
+            />
 
-          <CommentList
-            owner={owner}
-            repo={repo}
-            number={number}
-            comments={commentsQuery.data}
-            isLoading={commentsQuery.isLoading}
-            isError={commentsQuery.isError}
-          />
+            <PullCommitsSection
+              owner={owner}
+              repo={repo}
+              number={number}
+              commits={pull.commits}
+              reviews={reviewsQuery.data}
+              lineComments={lineCommentsQuery.data}
+              isReviewsLoading={reviewsQuery.isLoading}
+              isReviewsError={reviewsQuery.isError}
+              showGithubPushState={!!pull.github_pull}
+            />
+            <FilesChanged
+              owner={owner}
+              repo={repo}
+              number={number}
+              files={filesQuery.data}
+              lineComments={lineCommentsQuery.data}
+              isLoading={filesQuery.isLoading}
+              isError={filesQuery.isError}
+            />
+
+            <CommentList
+              owner={owner}
+              repo={repo}
+              number={number}
+              comments={commentsQuery.data}
+              isLoading={commentsQuery.isLoading}
+              isError={commentsQuery.isError}
+            />
+          </div>
         </div>
 
         <aside

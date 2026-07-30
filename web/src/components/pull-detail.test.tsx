@@ -705,6 +705,23 @@ describe("PullDetail", () => {
     }
   });
 
+  // #2089: the sticky header is the main column's own first child, so its sticky box — and with it
+  // the bar's width — follows the main content instead of spanning the sidebar too.
+  it("anchors the sticky header to the main column, not the full page width", async () => {
+    const { container } = renderDetail();
+
+    await screen.findByText("ui2: PR detail");
+    const mainContent = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullMainContent"]',
+    );
+    const sidebar = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullSidebar"]',
+    );
+    expect(mainContent?.firstElementChild?.className).toContain("sticky");
+    expect(sidebar).not.toBeNull();
+    expect(mainContent?.contains(sidebar as Node)).toBe(false);
+  });
+
   it("shows a regular PR author in the header", async () => {
     renderDetail();
 
