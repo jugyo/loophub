@@ -41,8 +41,7 @@ import {
   herdrAgentFocusArgv,
   herdrCommandLine,
   herdrPaneCloseArgv,
-  herdrPaneSendKeysArgv,
-  herdrPaneSendTextArgv,
+  herdrPaneRunArgv,
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
@@ -1078,18 +1077,7 @@ export const terminal = {
         "The Herdr agent is no longer running for this PR",
       );
 
-    const sendText = herdrPaneSendTextArgv(r, input.paneId, input.text);
-    try {
-      await runHerdr(sendText[0], sendText.slice(1), r.local_path, {
-        timeoutMs: 10_000,
-      });
-    } catch {
-      throw new ServiceError(
-        409,
-        "The Herdr agent disappeared before the input could be sent",
-      );
-    }
-    const submit = herdrPaneSendKeysArgv(r, input.paneId, "Enter");
+    const submit = herdrPaneRunArgv(r, input.paneId, input.text);
     try {
       await runHerdr(submit[0], submit.slice(1), r.local_path, {
         timeoutMs: 10_000,
@@ -1097,7 +1085,7 @@ export const terminal = {
     } catch {
       throw new ServiceError(
         409,
-        "The input was written, but Herdr could not submit it; check the pane before retrying",
+        "The Herdr agent disappeared before the input could be sent",
       );
     }
     return { ok: true };

@@ -892,8 +892,8 @@ test("terminal.sendAgentInput follows Herdr's positional text contract and submi
     [
       "#!/bin/sh",
       `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
-      // Herdr 0.7.1's contract is `send-text <pane_id> <text>`: it consumes $6 as
-      // the text positional and ignores later arguments. Model that behavior so an
+      // Herdr 0.7.1's contract is `pane run <pane_id> <text>`: it consumes $6 as
+      // the text positional and submits it atomically. Model that behavior so an
       // option terminator accidentally inserted before the text is observable.
       `printf '%s:%s\\0' "$4" "$6" >> ${callsFile}`,
       "exit 0",
@@ -928,7 +928,7 @@ test("terminal.sendAgentInput follows Herdr's positional text contract and submi
       }),
     ).resolves.toEqual({ ok: true });
     expect(readFileSync(callsFile).toString()).toBe(
-      `send-text:続けて\0send-keys:Enter\0send-text:-continue\0send-keys:Enter\0send-text:${text}\0send-keys:Enter\0`,
+      `run:続けて\0run:-continue\0run:${text}\0`,
     );
     expect(existsSync(injectedFile)).toBe(false);
   } finally {
