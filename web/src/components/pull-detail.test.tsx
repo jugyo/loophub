@@ -396,6 +396,60 @@ describe("PullDetail", () => {
     });
   });
 
+  it("posts a non-empty PR comment once with Cmd+Enter but not Enter alone", async () => {
+    let resolveCreate!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      resolveCreate = resolve;
+    });
+    const create = vi.fn(async (params: { body: string }) => {
+      await pending;
+      return {
+        id: 10,
+        user: { login: "me" },
+        author_type: "human" as const,
+        body: params.body,
+        created_at: "2026-06-18T12:00:00Z",
+        reactions: [],
+      };
+    });
+    renderDetail({ "pullComments/create": create });
+
+    const composer = (await screen.findByLabelText(
+      "Add a PR comment",
+    )) as HTMLTextAreaElement;
+
+    fireEvent.change(composer, { target: { value: "   " } });
+    expect(fireEvent.keyDown(composer, { key: "Enter", metaKey: true })).toBe(
+      false,
+    );
+    expect(create).not.toHaveBeenCalled();
+
+    fireEvent.change(composer, { target: { value: "Keyboard comment" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    expect(create).not.toHaveBeenCalled();
+
+    expect(fireEvent.keyDown(composer, { key: "Enter", metaKey: true })).toBe(
+      false,
+    );
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "Keyboard comment" }),
+    );
+    expect(composer.value).toBe("");
+
+    fireEvent.change(composer, { target: { value: "Second comment" } });
+    fireEvent.keyDown(composer, { key: "Enter", metaKey: true });
+    expect(create).toHaveBeenCalledTimes(1);
+
+    resolveCreate();
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+  });
+
   it("restores the PR comment composer and cache when posting fails", async () => {
     let rejectCreate!: (error: RpcFault) => void;
     const pending = new Promise<never>((_resolve, reject) => {
