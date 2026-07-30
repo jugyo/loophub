@@ -953,6 +953,28 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "diffFeedback/resolve": {
+    description: "Resolve or reopen a diff feedback conversation.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        thread_id: positiveInt,
+        resolved: { type: "boolean" },
+        session_id: sid,
+      },
+      ["repo", "number", "thread_id", "resolved"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.diffFeedback.resolve(
+        p.repo,
+        p.number,
+        p.thread_id,
+        p.resolved,
+        p.session_id,
+      ),
+  },
   "diffFeedback/react": {
     description: "Add an emoji reaction to a diff feedback message.",
     params: params(

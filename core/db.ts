@@ -238,7 +238,9 @@ CREATE TABLE IF NOT EXISTS diff_feedback_threads (
   start_line     INTEGER NOT NULL CHECK (start_line > 0),
   end_line       INTEGER NOT NULL CHECK (end_line >= start_line),
   created_by     TEXT NOT NULL,
-  created_at     TEXT NOT NULL
+  created_at     TEXT NOT NULL,
+  resolved_by    TEXT,
+  resolved_at    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_diff_feedback_threads_issue

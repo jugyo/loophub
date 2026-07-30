@@ -26,12 +26,14 @@ function readJsonArg(value: string): string {
 // A diff feedback conversation as text: where it points, the diff around it, then the exchange.
 // `>` marks the lines the anchor selected, so the anchored code stands out from its context.
 function feedbackThreadText(thread: DiffFeedbackThreadDetailWire): string {
-  const anchor = thread.anchor;
+  const anchor = thread.resolved_anchor ?? thread.anchor;
   const context = (thread.context ?? [])
     .map((line) => `${line.anchored ? ">" : " "} ${line.text}`)
     .join("\n");
   return [
-    `#${thread.id} ${thread.freshness}`,
+    `#${thread.id} ${thread.freshness}${
+      thread.outdated_reason ? ` (${thread.outdated_reason})` : ""
+    }`,
     `${anchor.path}:${anchor.start_line}-${anchor.end_line} ${anchor.side}`,
     ...(context ? ["", context] : []),
     "",
@@ -59,8 +61,9 @@ export async function run(): Promise<void> {
       out(result);
       if (!flags.json)
         result.threads.forEach((thread) => {
+          const anchor = thread.resolved_anchor ?? thread.anchor;
           console.log(
-            `#${thread.id}\t${thread.freshness}\t${thread.anchor.path}:${thread.anchor.start_line}-${thread.anchor.end_line}`,
+            `#${thread.id}\t${thread.freshness}\t${anchor.path}:${anchor.start_line}-${anchor.end_line}`,
           );
         });
     } else if (action === "view") {
@@ -119,6 +122,22 @@ export async function run(): Promise<void> {
       if (!flags.json)
         console.log(
           `replied to feedback thread #${result.thread.id} (message ${result.reply.id})`,
+        );
+    } else if (action === "resolve" || action === "reopen") {
+      if (!flags.pr) fail("--pr is required");
+      const thread = await runOp(async () =>
+        s.diffFeedback.resolve(
+          repo,
+          Number(flags.pr),
+          Number(target),
+          action === "resolve",
+          await writeSession(),
+        ),
+      );
+      out(thread);
+      if (!flags.json)
+        console.log(
+          `${action === "resolve" ? "resolved" : "reopened"} feedback thread #${thread.id}`,
         );
     } else if (action === "react") {
       if (!flags.pr) fail("--pr is required");

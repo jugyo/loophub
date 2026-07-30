@@ -23,7 +23,14 @@ function thread(
       start_line: 1,
       end_line: 1,
     },
+    resolved_anchor: null,
     freshness,
+    outdated_reason: freshness === "outdated" ? "modified" : null,
+    placement: freshness === "current" ? "inline" : "historical",
+    original_context: null,
+    resolved: false,
+    resolved_by: null,
+    resolved_at: null,
     created_by: "reviewer",
     created_at: "2026-07-28T00:00:00Z",
     messages: [],
@@ -95,6 +102,14 @@ describe("selectUnansweredDiffFeedbackThreads", () => {
         [withMessages(1, ["me", "executor #1"])],
         new Set(["executor #1", "executor #2"]),
       ),
+    ).toEqual([]);
+  });
+
+  it("does not return a resolved conversation as pending", () => {
+    const resolved = withMessages(1, ["me"]);
+    resolved.resolved = true;
+    expect(
+      selectUnansweredDiffFeedbackThreads([resolved], new Set(["executor #1"])),
     ).toEqual([]);
   });
 });

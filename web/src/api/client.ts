@@ -854,6 +854,23 @@ export function replyDiffFeedback(
   );
 }
 
+export function setDiffFeedbackResolved(
+  owner: string,
+  repo: string,
+  number: number,
+  threadId: number,
+  resolved: boolean,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<DiffFeedbackThread>("diffFeedback/resolve", {
+    repo: full(owner, repo),
+    number,
+    thread_id: threadId,
+    resolved,
+    session_id: sessionId,
+  });
+}
+
 export function reactToDiffFeedback(
   owner: string,
   repo: string,

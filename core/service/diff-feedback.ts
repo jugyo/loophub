@@ -6,17 +6,27 @@ import {
   parsePatchWithCoordinates,
 } from "../diff-anchor.ts";
 import {
+  type DiffFeedbackOutdatedReason,
+  resolveDiffFeedbackRange,
+} from "../diff-feedback-resolution.ts";
+import {
   countDiffFeedbackMessagesByFile,
   selectDiffFeedbackThreads,
   selectUnansweredDiffFeedbackThreads,
 } from "../diff-feedback-selection.ts";
 import { ServiceError } from "../errors.ts";
-import { diffFilesBetween, revParse } from "../git.ts";
+import {
+  type DiffFile,
+  diffFilesBetween,
+  fileAtRef,
+  revParse,
+} from "../git.ts";
 import { resolvePullBaseSha } from "../pull-base.ts";
 import {
   type DiffFeedbackContextLineWire,
   type DiffFeedbackFreshness,
   type DiffFeedbackPendingWire,
+  type DiffFeedbackPlacement,
   type DiffFeedbackThreadDetailWire,
   type DiffFeedbackThreadWire,
   diffFeedbackMessageJSON,
@@ -83,10 +93,9 @@ async function anchorLines(
 
 function contextJSON(
   lines: DiffLine[] | null,
-  thread: S.DiffFeedbackThreadRow,
+  anchor: { side: DiffSide; startLine: number; endLine: number },
   radius: number,
 ): DiffFeedbackContextLineWire[] | null {
-  const anchor = anchorOf(thread);
   const window = lines ? linesAroundAnchor(lines, anchor, radius) : null;
   if (!window) return null;
   const key = anchor.side === "LEFT" ? "leftLine" : "rightLine";
@@ -105,21 +114,228 @@ function contextJSON(
   });
 }
 
+function contentLines(content: string): string[] {
+  const lines = content.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+
+function pathsForFile(file: DiffFile): Set<string> {
+  return new Set(
+    [file.filename, file.headFilename, file.previousFilename].filter(
+      (path): path is string => path != null,
+    ),
+  );
+}
+
+function currentFileForAnchor(
+  files: DiffFile[],
+  thread: S.DiffFeedbackThreadRow,
+): DiffFile | null {
+  const originalPaths = new Set(
+    [thread.path, thread.original_path].filter(
+      (path): path is string => path != null,
+    ),
+  );
+  return (
+    files.find((file) =>
+      [...pathsForFile(file)].some((path) => originalPaths.has(path)),
+    ) ?? null
+  );
+}
+
+function pathAtSide(
+  file: Pick<DiffFile, "filename" | "headFilename" | "previousFilename">,
+  side: DiffSide,
+): string {
+  return side === "LEFT"
+    ? (file.previousFilename ?? file.filename)
+    : (file.headFilename ?? file.filename);
+}
+
+interface ResolvedThreadLocation {
+  freshness: DiffFeedbackFreshness;
+  reason: DiffFeedbackOutdatedReason | null;
+  placement: DiffFeedbackPlacement;
+  anchor: {
+    path: string;
+    original_path: string | null;
+    side: DiffSide;
+    start_line: number;
+    end_line: number;
+  } | null;
+  lines: DiffLine[] | null;
+}
+
+function placementFor(
+  lines: DiffLine[] | null,
+  anchor: { side: DiffSide; startLine: number; endLine: number },
+): DiffFeedbackPlacement {
+  return lines && linesForAnchor(lines, anchor) ? "inline" : "historical";
+}
+
+async function resolveCurrentLocation(
+  repoPath: string,
+  pair: { baseSha: string; headSha: string } | null,
+  thread: S.DiffFeedbackThreadRow,
+): Promise<ResolvedThreadLocation> {
+  const side = thread.side as DiffSide;
+  const originalAnchor = anchorOf(thread);
+  if (!pair) {
+    return {
+      freshness: "unavailable",
+      reason: null,
+      placement: "historical",
+      anchor: null,
+      lines: null,
+    };
+  }
+  if (pair.baseSha === thread.base_sha && pair.headSha === thread.head_sha) {
+    const lines = await anchorLines(repoPath, thread);
+    return {
+      freshness: "current",
+      reason: null,
+      placement: placementFor(lines, originalAnchor),
+      anchor: {
+        path: thread.path,
+        original_path: thread.original_path,
+        side,
+        start_line: thread.start_line,
+        end_line: thread.end_line,
+      },
+      lines,
+    };
+  }
+
+  const files = await diffFilesBetween(repoPath, pair.baseSha, pair.headSha);
+  const currentFile = currentFileForAnchor(files, thread);
+  if (!currentFile) {
+    return {
+      freshness: "outdated",
+      reason: "deleted",
+      placement: "historical",
+      anchor: null,
+      lines: null,
+    };
+  }
+  const currentLines = parsePatchWithCoordinates(currentFile.patch);
+  const originalPlacement = placementFor(currentLines, originalAnchor);
+
+  const originalRef = side === "LEFT" ? thread.base_sha : thread.head_sha;
+  const currentRef = side === "LEFT" ? pair.baseSha : pair.headSha;
+  const originalPath =
+    side === "LEFT" ? (thread.original_path ?? thread.path) : thread.path;
+  const currentPath = pathAtSide(currentFile, side);
+  const [originalFile, currentFileContent] = await Promise.all([
+    fileAtRef(repoPath, originalRef, originalPath),
+    fileAtRef(repoPath, currentRef, currentPath),
+  ]);
+  if (originalFile.status !== "ok") {
+    return {
+      freshness: "unavailable",
+      reason: null,
+      placement: originalPlacement,
+      anchor: null,
+      lines: null,
+    };
+  }
+  if (currentFileContent.status === "missing") {
+    return {
+      freshness: "outdated",
+      reason: "deleted",
+      placement: originalPlacement,
+      anchor: null,
+      lines: null,
+    };
+  }
+  if (currentFileContent.status !== "ok") {
+    return {
+      freshness: "unavailable",
+      reason: null,
+      placement: originalPlacement,
+      anchor: null,
+      lines: null,
+    };
+  }
+
+  const resolution = resolveDiffFeedbackRange(
+    contentLines(originalFile.content!),
+    contentLines(currentFileContent.content!),
+    thread.start_line,
+    thread.end_line,
+  );
+  if (resolution.status === "outdated") {
+    return {
+      freshness: "outdated",
+      reason: resolution.reason,
+      placement: originalPlacement,
+      anchor: null,
+      lines: null,
+    };
+  }
+
+  const resolvedAnchor = {
+    side,
+    startLine: resolution.startLine,
+    endLine: resolution.endLine,
+  };
+  if (!linesForAnchor(currentLines, resolvedAnchor)) {
+    return {
+      freshness: "outdated",
+      reason: "modified",
+      placement: originalPlacement,
+      anchor: null,
+      lines: null,
+    };
+  }
+  return {
+    freshness: "current",
+    reason: null,
+    placement: "inline",
+    anchor: {
+      path: currentFile.headFilename ?? currentFile.filename,
+      original_path: currentFile.previousFilename ?? null,
+      side,
+      start_line: resolution.startLine,
+      end_line: resolution.endLine,
+    },
+    lines: currentLines,
+  };
+}
+
 // The wire thread plus the patch it was resolved against, so a caller that also wants diff context
 // does not read the same patch a second time.
 async function resolveThread(
   repoPath: string,
   pull: S.PullRow,
   thread: S.DiffFeedbackThreadRow,
-): Promise<{ wire: DiffFeedbackThreadWire; lines: DiffLine[] | null }> {
+): Promise<{
+  wire: DiffFeedbackThreadWire;
+  lines: DiffLine[] | null;
+  anchor: { side: DiffSide; startLine: number; endLine: number };
+}> {
   const pair = await currentPair(repoPath, pull);
-  const lines = await anchorLines(repoPath, thread);
-  const available = Boolean(lines && linesForAnchor(lines, anchorOf(thread)));
-  const freshness: DiffFeedbackFreshness = !available
-    ? "unavailable"
-    : pair?.baseSha === thread.base_sha && pair.headSha === thread.head_sha
-      ? "current"
-      : "outdated";
+  const originalLines = await anchorLines(repoPath, thread);
+  const originalAnchor = anchorOf(thread);
+  const available = Boolean(
+    originalLines && linesForAnchor(originalLines, originalAnchor),
+  );
+  const location = available
+    ? await resolveCurrentLocation(repoPath, pair, thread)
+    : {
+        freshness: "unavailable" as const,
+        reason: null,
+        placement: "historical" as const,
+        anchor: null,
+        lines: null,
+      };
+  const resolvedAnchor = location.anchor
+    ? {
+        side: location.anchor.side,
+        startLine: location.anchor.start_line,
+        endLine: location.anchor.end_line,
+      }
+    : originalAnchor;
   return {
     wire: {
       id: thread.id,
@@ -133,7 +349,18 @@ async function resolveThread(
         start_line: thread.start_line,
         end_line: thread.end_line,
       },
-      freshness,
+      resolved_anchor: location.anchor,
+      freshness: location.freshness,
+      outdated_reason: location.reason,
+      placement: location.placement,
+      original_context: contextJSON(
+        originalLines,
+        originalAnchor,
+        DEFAULT_CONTEXT_RADIUS,
+      ),
+      resolved: thread.resolved_at != null,
+      resolved_by: thread.resolved_by,
+      resolved_at: thread.resolved_at,
       created_by: thread.created_by,
       created_at: thread.created_at,
       messages: S.listDiffFeedbackMessages(thread.id).map((message) =>
@@ -143,7 +370,8 @@ async function resolveThread(
         ),
       ),
     },
-    lines,
+    lines: location.lines ?? originalLines,
+    anchor: resolvedAnchor,
   };
 }
 
@@ -161,8 +389,8 @@ async function threadDetailJSON(
   thread: S.DiffFeedbackThreadRow,
   radius: number,
 ): Promise<DiffFeedbackThreadDetailWire> {
-  const { wire, lines } = await resolveThread(repoPath, pull, thread);
-  return { ...wire, context: contextJSON(lines, thread, radius) };
+  const { wire, lines, anchor } = await resolveThread(repoPath, pull, thread);
+  return { ...wire, context: contextJSON(lines, anchor, radius) };
 }
 
 // What the anchor of a diff feedback event points at, so an events reader knows which lines a
@@ -403,6 +631,25 @@ export const diffFeedback = {
       thread: await threadJSON(r.local_path, pull, thread),
       reply: diffFeedbackMessageJSON(reply),
     };
+  },
+
+  async resolve(
+    name: string,
+    number: number,
+    threadId: number,
+    resolved: boolean,
+    sessionId?: string | null,
+  ): Promise<DiffFeedbackThreadWire> {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const pull = S.getPull(row.id)!;
+    const thread = threadForPull(row.id, threadId);
+    const updated = S.setDiffFeedbackThreadResolved(
+      thread.id,
+      resolved ? actorFor(sessionId) : null,
+    );
+    return threadJSON(r.local_path, pull, updated);
   },
 
   async react(

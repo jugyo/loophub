@@ -106,7 +106,7 @@ beforeAll(async () => {
     costLimitUsd: 10,
   }).id;
   S.appendWorkflowRunStepSession(runId, "execute", EXECUTE_SESSION);
-});
+}, 30_000);
 
 afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
@@ -239,3 +239,292 @@ test("a PR with no running workflow run only records the domain event", async ()
   });
   expect(created.comment.body).toBe("Late thought.");
 });
+
+test("list and get resolve a shifted anchor without changing its original coordinates", async () => {
+  git(["checkout", "-q", "feature"]);
+  writeFileSync(
+    join(repoPath, "a.txt"),
+    "zero\none\nchanged\nthree\nfour\nfive\n",
+  );
+  git(["add", "-A"]);
+  git(["commit", "-qm", "insert above feedback"]);
+  git(["checkout", "-q", "main"]);
+
+  const listed = await svc.diffFeedback.list(REPO, prNumber);
+  expect(listed.threads[0]).toMatchObject({
+    freshness: "current",
+    placement: "inline",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: { start_line: 3, end_line: 3 },
+  });
+
+  const detail = await svc.diffFeedback.get(
+    REPO,
+    prNumber,
+    listed.threads[0].id,
+  );
+  expect(detail.context).toContainEqual(
+    expect.objectContaining({
+      text: "+changed",
+      right_line: 3,
+      anchored: true,
+    }),
+  );
+  expect(detail.original_context).toContainEqual(
+    expect.objectContaining({
+      text: "+changed",
+      right_line: 2,
+      anchored: true,
+    }),
+  );
+});
+
+test("an outdated conversation remains replyable, reactable, and resolvable", async () => {
+  git(["checkout", "-q", "feature"]);
+  writeFileSync(join(repoPath, "a.txt"), "zero\none\nthree\nfour\nfive\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "remove feedback target"]);
+  git(["checkout", "-q", "main"]);
+
+  const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
+  expect(thread).toMatchObject({
+    freshness: "outdated",
+    outdated_reason: "deleted",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: null,
+  });
+
+  const resolved = await svc.diffFeedback.resolve(
+    REPO,
+    prNumber,
+    thread.id,
+    true,
+    HUMAN_SESSION,
+  );
+  expect(resolved).toMatchObject({
+    freshness: "outdated",
+    resolved: true,
+    resolved_by: "me",
+  });
+  await svc.diffFeedback.reply(
+    REPO,
+    prNumber,
+    thread.id,
+    "Resolved after removal.",
+    HUMAN_SESSION,
+  );
+  await svc.diffFeedback.react(
+    REPO,
+    prNumber,
+    thread.messages[0].id,
+    "🎉",
+    HUMAN_SESSION,
+  );
+  expect(
+    (await svc.diffFeedback.pending(REPO, prNumber, runId)).threads.map(
+      ({ id }) => id,
+    ),
+  ).not.toContain(thread.id);
+
+  const reopened = await svc.diffFeedback.resolve(
+    REPO,
+    prNumber,
+    thread.id,
+    false,
+    HUMAN_SESSION,
+  );
+  expect(reopened).toMatchObject({
+    freshness: "outdated",
+    resolved: false,
+    resolved_by: null,
+    resolved_at: null,
+  });
+});
+
+test("service responses expose move, fuzzy, ambiguous, and unavailable resolution", async () => {
+  git(["checkout", "-q", "feature"]);
+  writeFileSync(join(repoPath, "move.txt"), "one\nmove target\nthree\nfour\n");
+  writeFileSync(
+    join(repoPath, "fuzzy.txt"),
+    "before\nconst answer = 41;\nafter\n",
+  );
+  writeFileSync(join(repoPath, "ambiguous.txt"), "a\nb\nc\ntarget\nd\ne\nf\n");
+  writeFileSync(join(repoPath, "lcs-ambiguous.txt"), "before\ntarget\nafter\n");
+  writeFileSync(
+    join(repoPath, "lcs-tied-prediction.txt"),
+    "a\ntarget\nb\nc\nd\n",
+  );
+  writeFileSync(
+    join(repoPath, "unavailable.txt"),
+    "before\nbinary target\nafter\n",
+  );
+  git(["add", "-A"]);
+  git(["commit", "-qm", "add resolution cases"]);
+  const originalHead = git(["rev-parse", "HEAD"]);
+  git(["checkout", "-q", "main"]);
+
+  const createCase = (path: string, line: number, body: string) =>
+    svc.diffFeedback.create(
+      REPO,
+      prNumber,
+      {
+        baseSha,
+        headSha: originalHead,
+        path,
+        side: "RIGHT",
+        startLine: line,
+        endLine: line,
+        body,
+      },
+      HUMAN_SESSION,
+    );
+  const [
+    moved,
+    fuzzy,
+    ambiguous,
+    lcsAmbiguous,
+    lcsTiedPrediction,
+    unavailable,
+  ] = await Promise.all([
+    createCase("move.txt", 2, "Moved target"),
+    createCase("fuzzy.txt", 2, "Fuzzy target"),
+    createCase("ambiguous.txt", 4, "Ambiguous target"),
+    createCase("lcs-ambiguous.txt", 2, "LCS ambiguous target"),
+    createCase("lcs-tied-prediction.txt", 2, "LCS tied prediction target"),
+    createCase("unavailable.txt", 2, "Unavailable target"),
+  ]);
+
+  git(["checkout", "-q", "feature"]);
+  writeFileSync(join(repoPath, "move.txt"), "one\nthree\nfour\nmove target\n");
+  writeFileSync(
+    join(repoPath, "fuzzy.txt"),
+    "before\nconst answer = 42;\nafter\n",
+  );
+  writeFileSync(
+    join(repoPath, "ambiguous.txt"),
+    "target\na\nb\nc\nd\ne\nf\ntarget\n",
+  );
+  writeFileSync(
+    join(repoPath, "lcs-ambiguous.txt"),
+    "before\ntarget\ntarget\nafter\n",
+  );
+  writeFileSync(
+    join(repoPath, "lcs-tied-prediction.txt"),
+    "target\na\nb\nc\nd\ntarget\n",
+  );
+  writeFileSync(join(repoPath, "unavailable.txt"), "before\0after\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "update resolution cases"]);
+  git(["checkout", "-q", "main"]);
+
+  const movedDetail = await svc.diffFeedback.get(
+    REPO,
+    prNumber,
+    moved.thread.id,
+  );
+  expect(movedDetail).toMatchObject({
+    freshness: "current",
+    placement: "inline",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: { start_line: 4, end_line: 4 },
+  });
+  expect(movedDetail.context).toContainEqual(
+    expect.objectContaining({
+      text: "+move target",
+      right_line: 4,
+      anchored: true,
+    }),
+  );
+
+  const fuzzyDetail = await svc.diffFeedback.get(
+    REPO,
+    prNumber,
+    fuzzy.thread.id,
+  );
+  expect(fuzzyDetail).toMatchObject({
+    freshness: "current",
+    placement: "inline",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: { start_line: 2, end_line: 2 },
+  });
+  expect(fuzzyDetail.context).toContainEqual(
+    expect.objectContaining({
+      text: "+const answer = 42;",
+      right_line: 2,
+      anchored: true,
+    }),
+  );
+
+  const ambiguousDetail = await svc.diffFeedback.get(
+    REPO,
+    prNumber,
+    ambiguous.thread.id,
+  );
+  expect(ambiguousDetail).toMatchObject({
+    freshness: "outdated",
+    outdated_reason: "ambiguous",
+    placement: "inline",
+    anchor: { start_line: 4, end_line: 4 },
+    resolved_anchor: null,
+  });
+  expect(ambiguousDetail.context).toContainEqual(
+    expect.objectContaining({
+      text: "+target",
+      right_line: 4,
+      anchored: true,
+    }),
+  );
+
+  const lcsAmbiguousDetail = await svc.diffFeedback.get(
+    REPO,
+    prNumber,
+    lcsAmbiguous.thread.id,
+  );
+  expect(lcsAmbiguousDetail).toMatchObject({
+    freshness: "outdated",
+    outdated_reason: "ambiguous",
+    placement: "inline",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: null,
+  });
+  expect(lcsAmbiguousDetail.context).toContainEqual(
+    expect.objectContaining({
+      text: "+target",
+      right_line: 2,
+      anchored: true,
+    }),
+  );
+
+  const lcsTiedPredictionDetail = await svc.diffFeedback.get(
+    REPO,
+    prNumber,
+    lcsTiedPrediction.thread.id,
+  );
+  expect(lcsTiedPredictionDetail).toMatchObject({
+    freshness: "outdated",
+    outdated_reason: "ambiguous",
+    placement: "inline",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: null,
+  });
+
+  const unavailableDetail = await svc.diffFeedback.get(
+    REPO,
+    prNumber,
+    unavailable.thread.id,
+  );
+  expect(unavailableDetail).toMatchObject({
+    freshness: "unavailable",
+    outdated_reason: null,
+    placement: "historical",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: null,
+  });
+  expect(unavailableDetail.context).toContainEqual(
+    expect.objectContaining({
+      text: "+binary target",
+      right_line: 2,
+      anchored: true,
+    }),
+  );
+}, 30_000);

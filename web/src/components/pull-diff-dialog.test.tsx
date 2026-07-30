@@ -60,19 +60,20 @@ const lineComments: PullLineComment[] = [
 function feedbackThread(
   patch: Partial<DiffFeedbackThread> = {},
 ): DiffFeedbackThread {
+  const anchor = {
+    base_sha: "a".repeat(40),
+    head_sha: "b".repeat(40),
+    path: "web/src/a.ts",
+    original_path: null,
+    side: "RIGHT" as const,
+    start_line: 1,
+    end_line: 2,
+    ...patch.anchor,
+  };
+  const freshness = patch.freshness ?? "current";
   return {
     id: 1,
     pr_number: 30,
-    anchor: {
-      base_sha: "a".repeat(40),
-      head_sha: "b".repeat(40),
-      path: "web/src/a.ts",
-      original_path: null,
-      side: "RIGHT",
-      start_line: 1,
-      end_line: 2,
-    },
-    freshness: "current",
     created_by: "reviewer",
     created_at: "2026-07-28T00:00:00Z",
     messages: [
@@ -85,7 +86,33 @@ function feedbackThread(
         reactions: [],
       },
     ],
+    resolved: false,
+    resolved_by: null,
+    resolved_at: null,
     ...patch,
+    anchor,
+    resolved_anchor:
+      patch.resolved_anchor === undefined
+        ? freshness === "current"
+          ? {
+              path: anchor.path,
+              original_path: anchor.original_path,
+              side: anchor.side,
+              start_line: anchor.start_line,
+              end_line: anchor.end_line,
+            }
+          : null
+        : patch.resolved_anchor,
+    freshness,
+    placement:
+      patch.placement ?? (freshness === "current" ? "inline" : "historical"),
+    outdated_reason:
+      patch.outdated_reason === undefined
+        ? freshness === "outdated"
+          ? "modified"
+          : null
+        : patch.outdated_reason,
+    original_context: patch.original_context ?? null,
   };
 }
 
@@ -863,6 +890,47 @@ describe("DiffFileDialog", () => {
     await waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
   });
 
+  it("renders a current thread at its resolved coordinates", async () => {
+    const patch = "@@ -1 +1,2 @@\n-old\n+new one\n+new two";
+    const view = renderDialog({
+      file: { ...file, additions: 2, patch },
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+              resolved_anchor: {
+                path: "web/src/a.ts",
+                original_path: null,
+                side: "RIGHT",
+                start_line: 2,
+                end_line: 2,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+
+    const card = await screen.findByLabelText("Diff thread 1");
+    expect(within(card).getByText("web/src/a.ts · RIGHT 2")).toBeTruthy();
+    expect(
+      screen.getByLabelText("New line 1").hasAttribute("data-thread-anchor"),
+    ).toBe(false);
+    expect(
+      screen.getByLabelText("New line 2").hasAttribute("data-thread-anchor"),
+    ).toBe(true);
+    const threadRow = card.closest("tr")?.previousElementSibling;
+    expect(within(threadRow as HTMLElement).getByText("new two")).toBeTruthy();
+    expect(
+      view.container.querySelectorAll('[data-thread-anchor="true"]'),
+    ).toHaveLength(1);
+  });
+
   it("places deletion threads on the left and other threads on the right in split view", async () => {
     renderDialog({
       handlers: {
@@ -954,26 +1022,82 @@ describe("DiffFileDialog", () => {
     );
   });
 
-  it("keeps a file-scoped historical conversation replyable", async () => {
+  it("keeps a visible outdated conversation inline and replyable", async () => {
     const reply = vi.fn(() => ({}));
+    const resolve = vi.fn(() => ({}));
     renderDialog({
       handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "web/src/a.ts",
+              original_path: null,
+              status: "modified",
+              additions: 1,
+              deletions: 1,
+              patch: file.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1 +1 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-const x = 0;",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+const x = 1;",
+                  left_line: null,
+                  right_line: 1,
+                },
+              ],
+            },
+          ],
+        }),
         "diffFeedback/list": () => ({
           threads: [
             feedbackThread({
               freshness: "outdated",
+              placement: "inline",
               anchor: {
                 ...feedbackThread().anchor,
                 end_line: 1,
               },
+              original_context: [
+                {
+                  kind: "addition",
+                  text: "+new one",
+                  left_line: null,
+                  right_line: 1,
+                  anchored: true,
+                },
+              ],
             }),
           ],
         }),
         "diffFeedback/reply": reply,
+        "diffFeedback/resolve": resolve,
       },
     });
 
     expect(await screen.findByText("outdated")).toBeTruthy();
+    expect(screen.queryByLabelText("Previous diff threads")).toBeNull();
+    const threadRow = screen
+      .getByLabelText("Diff thread 1")
+      .closest("tr")?.previousElementSibling;
+    expect(
+      within(threadRow as HTMLElement).getByText("const x = 1;"),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText("Historical context for thread 1").textContent,
+    ).toContain("> +new one");
     fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
       target: { value: "Still relevant" },
     });
@@ -983,6 +1107,68 @@ describe("DiffFileDialog", () => {
         expect.objectContaining({ thread_id: 1, body: "Still relevant" }),
       ),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    await waitFor(() =>
+      expect(resolve).toHaveBeenCalledWith(
+        expect.objectContaining({ thread_id: 1, resolved: true }),
+      ),
+    );
+  });
+
+  it("falls back to previous diff threads when the original range is hidden", async () => {
+    renderDialog({
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "web/src/a.ts",
+              original_path: null,
+              status: "modified",
+              additions: 1,
+              deletions: 1,
+              patch: file.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1 +1 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-const x = 0;",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+const x = 1;",
+                  left_line: null,
+                  right_line: 1,
+                },
+              ],
+            },
+          ],
+        }),
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              freshness: "outdated",
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 8,
+                end_line: 8,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+
+    const section = await screen.findByLabelText("Previous diff threads");
+    expect(within(section).getByLabelText("Diff thread 1")).toBeTruthy();
   });
 
   it("lets a long diff shrink inside the dialog and scroll vertically", () => {
@@ -2009,8 +2195,7 @@ describe("DiffFeedbackHistory", () => {
     expect(list).toHaveBeenCalledWith(
       expect.objectContaining({ orphaned: true }),
     );
-    expect(screen.queryByRole("button", { name: "Resolve" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Reopen" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Resolve" })).toBeTruthy();
     expect(screen.queryByText("Pending")).toBeNull();
     expect(
       screen.queryByRole("button", { name: /submit (review|comments)/i }),

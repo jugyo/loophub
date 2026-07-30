@@ -13,6 +13,8 @@ export interface DiffFeedbackThreadRow {
   end_line: number;
   created_by: string;
   created_at: string;
+  resolved_by: string | null;
+  resolved_at: string | null;
 }
 
 export interface DiffFeedbackMessageRow {
@@ -85,6 +87,20 @@ export function createDiffFeedbackThread(input: {
       input.actor,
       now(),
     ) as DiffFeedbackThreadRow;
+}
+
+export function setDiffFeedbackThreadResolved(
+  id: number,
+  actor: string | null,
+): DiffFeedbackThreadRow {
+  return db
+    .query(
+      `UPDATE diff_feedback_threads
+       SET resolved_by = ?, resolved_at = ?
+       WHERE id = ?
+       RETURNING *`,
+    )
+    .get(actor, actor ? now() : null, id) as DiffFeedbackThreadRow;
 }
 
 export function listDiffFeedbackMessages(

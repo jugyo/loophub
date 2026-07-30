@@ -277,16 +277,95 @@ test("rename LEFT anchors use the diff wire head path contract", () => {
   });
 });
 
-test("a saved anchor becomes outdated when the PR head advances", () => {
+test("a saved anchor follows the current diff when the PR head advances", () => {
   git(["checkout", "-q", "feature"]);
   writeFileSync(join(repoPath, "later.txt"), "later\n");
   git(["add", "-A"]);
   git(["commit", "-qm", "later"]);
   git(["checkout", "-q", "main"]);
-  const listed = JSON.parse(
+  let listed = JSON.parse(
     lh(["pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"]),
   );
-  expect(listed.threads[0].freshness).toBe("outdated");
+  expect(listed.threads[0]).toMatchObject({
+    freshness: "current",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: { start_line: 2, end_line: 2 },
+  });
+
+  git(["checkout", "-q", "feature"]);
+  writeFileSync(join(repoPath, "a.txt"), "zero\none\nchanged\nthree\nadded\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "insert above feedback"]);
+  git(["checkout", "-q", "main"]);
+  listed = JSON.parse(
+    lh(["pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"]),
+  );
+  expect(listed.threads[0]).toMatchObject({
+    freshness: "current",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: { start_line: 3, end_line: 3 },
+  });
+  const viewed = JSON.parse(
+    lh([
+      "pr",
+      "feedback",
+      "view",
+      String(listed.threads[0].id),
+      "--pr",
+      String(prNumber),
+      "--repo",
+      REPO,
+      "--json",
+    ]),
+  );
+  expect(viewed.context).toContainEqual(
+    expect.objectContaining({
+      text: "+changed",
+      right_line: 3,
+      anchored: true,
+    }),
+  );
+  git(["checkout", "-q", "feature"]);
+  writeFileSync(join(repoPath, "a.txt"), "zero\none\nthree\nadded\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "remove feedback target"]);
+  git(["checkout", "-q", "main"]);
+  listed = JSON.parse(
+    lh(["pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"]),
+  );
+  expect(listed.threads[0]).toMatchObject({
+    freshness: "outdated",
+    outdated_reason: "deleted",
+    anchor: { start_line: 2, end_line: 2 },
+  });
+  const resolved = JSON.parse(
+    lh([
+      "pr",
+      "feedback",
+      "resolve",
+      String(listed.threads[0].id),
+      "--pr",
+      String(prNumber),
+      "--repo",
+      REPO,
+      "--json",
+    ]),
+  );
+  expect(resolved).toMatchObject({ resolved: true, freshness: "outdated" });
+  const reopened = JSON.parse(
+    lh([
+      "pr",
+      "feedback",
+      "reopen",
+      String(listed.threads[0].id),
+      "--pr",
+      String(prNumber),
+      "--repo",
+      REPO,
+      "--json",
+    ]),
+  );
+  expect(reopened).toMatchObject({ resolved: false, freshness: "outdated" });
 });
 
 test("create rejects a stale commit pair", () => {

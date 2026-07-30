@@ -30,6 +30,8 @@ export function selectDiffFeedbackThreads(
     const anchorPaths = [
       thread.anchor.path,
       thread.anchor.original_path,
+      thread.resolved_anchor?.path,
+      thread.resolved_anchor?.original_path,
     ].filter((path): path is string => path != null);
     if (scope.orphaned)
       return (
@@ -54,9 +56,10 @@ export function selectDiffFeedbackThreads(
  * one would read as unanswered, which is the safe direction.
  */
 export function selectUnansweredDiffFeedbackThreads<
-  T extends Pick<DiffFeedbackThreadWire, "messages">,
+  T extends Pick<DiffFeedbackThreadWire, "messages" | "resolved">,
 >(threads: T[], responders: ReadonlySet<string>): T[] {
   return threads.filter((thread) => {
+    if (thread.resolved) return false;
     const newest = thread.messages.at(-1);
     return !newest || !responders.has(newest.author);
   });

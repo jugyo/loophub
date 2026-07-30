@@ -20,7 +20,7 @@ export function usage(): void {
   lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|close|reopen  [--repo owner/repo]
-  lh pr feedback list|create <pr> | pending <pr> --run <id> | view|reply <conversation> --pr <pr> | react <message> --pr <pr> --emoji <emoji> [--context <lines>] [--repo owner/repo]
+  lh pr feedback list|create <pr> | pending <pr> --run <id> | view|reply|resolve|reopen <conversation> --pr <pr> | react <message> --pr <pr> --emoji <emoji> [--context <lines>] [--repo owner/repo]
   lh notification send --kind merge_ready|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|delete <name> [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage global workflow prompt bundles
@@ -70,6 +70,8 @@ export function usage(): void {
     lh pr feedback list 3 --json
     lh pr feedback pending 3 --run 42 --json      # conversations this Workflow run has not answered, with diff context
     lh pr feedback reply 12 --pr 3 --body "fixed"
+    lh pr feedback resolve 12 --pr 3                 # mark complete and exclude from pending feedback
+    lh pr feedback reopen 12 --pr 3                  # return a resolved conversation to pending feedback
     lh pr feedback react 18 --pr 3 --emoji "👀"
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
     lh attachment add --file report.html     # prints [report.html](/attachments/<sha256>)

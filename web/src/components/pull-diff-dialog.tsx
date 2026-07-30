@@ -56,6 +56,7 @@ import {
   usePullFileAtRef,
   useReactToDiffFeedback,
   useReplyDiffFeedback,
+  useSetDiffFeedbackResolved,
 } from "@/queries/pulls";
 
 // Markdown files can also switch the same diff dialog to base/head rendered previews.
@@ -710,6 +711,7 @@ function FileDiffContent({
   const create = useCreateDiffFeedback(owner, repo, number);
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);
+  const resolution = useSetDiffFeedbackResolved(owner, repo, number);
   const { showError } = useToast();
   const [selection, setSelection] = useState<DiffSelection | null>(null);
   const [body, setBody] = useState("");
@@ -719,11 +721,11 @@ function FileDiffContent({
   const fileThreads = Array.isArray(feedback.data?.threads)
     ? feedback.data.threads
     : [];
-  const currentThreads = fileThreads.filter(
-    (thread) => thread.freshness === "current",
+  const inlineThreads = fileThreads.filter(
+    (thread) => thread.placement === "inline",
   );
   const historicalThreads = fileThreads.filter(
-    (thread) => thread.freshness !== "current",
+    (thread) => thread.placement === "historical",
   );
   const commentComposer =
     selection && stableFile && diff.data ? (
@@ -796,7 +798,7 @@ function FileDiffContent({
         viewMode={diffViewMode}
         selection={selection}
         selectionContent={commentComposer}
-        threads={currentThreads}
+        threads={inlineThreads}
         onSelect={setSelection}
         threadContent={(thread) => (
           <ThreadCard
@@ -805,6 +807,7 @@ function FileDiffContent({
             thread={thread}
             busy={reply.isPending}
             reactionBusy={reaction.isPending}
+            resolutionBusy={resolution.isPending}
             onReact={(messageId, emoji) =>
               reaction.mutate(
                 { messageId, emoji },
@@ -826,6 +829,15 @@ function FileDiffContent({
                 },
               )
             }
+            onResolved={(resolved) =>
+              resolution.mutate(
+                { threadId: thread.id, resolved },
+                {
+                  onError: (error) =>
+                    showError(errorMessage(error, "Update failed")),
+                },
+              )
+            }
           />
         )}
       />
@@ -842,6 +854,7 @@ function FileDiffContent({
               thread={thread}
               busy={reply.isPending}
               reactionBusy={reaction.isPending}
+              resolutionBusy={resolution.isPending}
               onReact={(messageId, emoji) =>
                 reaction.mutate(
                   { messageId, emoji },
@@ -860,6 +873,15 @@ function FileDiffContent({
                   {
                     onError: (error) =>
                       showError(errorMessage(error, "Reply failed")),
+                  },
+                )
+              }
+              onResolved={(resolved) =>
+                resolution.mutate(
+                  { threadId: thread.id, resolved },
+                  {
+                    onError: (error) =>
+                      showError(errorMessage(error, "Update failed")),
                   },
                 )
               }
@@ -980,9 +1002,9 @@ function threadsEndingAt(
   line: PositionedDiffLine,
 ) {
   return threads.filter((thread) => {
-    const coordinate =
-      thread.anchor.side === "LEFT" ? line.oldLine : line.newLine;
-    return coordinate === thread.anchor.end_line;
+    const anchor = thread.resolved_anchor ?? thread.anchor;
+    const coordinate = anchor.side === "LEFT" ? line.oldLine : line.newLine;
+    return coordinate === anchor.end_line;
   });
 }
 
@@ -993,12 +1015,14 @@ function threadAnchorsLine(
 ) {
   return (
     line != null &&
-    threads.some(
-      (thread) =>
-        thread.anchor.side === side &&
-        line >= thread.anchor.start_line &&
-        line <= thread.anchor.end_line,
-    )
+    threads.some((thread) => {
+      const anchor = thread.resolved_anchor ?? thread.anchor;
+      return (
+        anchor.side === side &&
+        line >= anchor.start_line &&
+        line <= anchor.end_line
+      );
+    })
   );
 }
 
@@ -1198,7 +1222,9 @@ function SplitDiff(props: DiffRenderProps) {
                   ...(row.left ? threadsEndingAt(threads, row.left) : []),
                   ...(row.right
                     ? threadsEndingAt(threads, row.right).filter(
-                        (thread) => thread.anchor.side === "RIGHT",
+                        (thread) =>
+                          (thread.resolved_anchor ?? thread.anchor).side ===
+                          "RIGHT",
                       )
                     : []),
                 ]
@@ -1209,11 +1235,13 @@ function SplitDiff(props: DiffRenderProps) {
                   )
                   .map((thread) => (
                     <tr key={`thread:${thread.id}`}>
-                      {thread.anchor.side === "RIGHT" ? (
+                      {(thread.resolved_anchor ?? thread.anchor).side ===
+                      "RIGHT" ? (
                         <td colSpan={2} aria-hidden="true" />
                       ) : null}
                       <td colSpan={2}>{threadContent(thread)}</td>
-                      {thread.anchor.side === "LEFT" ? (
+                      {(thread.resolved_anchor ?? thread.anchor).side ===
+                      "LEFT" ? (
                         <td colSpan={2} aria-hidden="true" />
                       ) : null}
                     </tr>
@@ -1526,6 +1554,7 @@ export function DiffFeedbackHistory({
   const feedback = useDiffFeedback(owner, repo, number, { orphaned: true });
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);
+  const resolution = useSetDiffFeedbackResolved(owner, repo, number);
   const { showError } = useToast();
   const historical = feedback.data?.threads ?? [];
   if (feedback.isLoading) {
@@ -1555,6 +1584,7 @@ export function DiffFeedbackHistory({
           thread={thread}
           busy={reply.isPending}
           reactionBusy={reaction.isPending}
+          resolutionBusy={resolution.isPending}
           onReact={(messageId, emoji) =>
             reaction.mutate(
               { messageId, emoji },
@@ -1573,6 +1603,15 @@ export function DiffFeedbackHistory({
               },
             )
           }
+          onResolved={(resolved) =>
+            resolution.mutate(
+              { threadId: thread.id, resolved },
+              {
+                onError: (error) =>
+                  showError(errorMessage(error, "Update failed")),
+              },
+            )
+          }
         />
       ))}
     </section>
@@ -1585,18 +1624,26 @@ function ThreadCard({
   thread,
   busy,
   reactionBusy,
+  resolutionBusy,
   onReact,
   onReply,
+  onResolved,
 }: {
   owner: string;
   repo: string;
   thread: DiffFeedbackThread;
   busy: boolean;
   reactionBusy: boolean;
+  resolutionBusy: boolean;
   onReact: (messageId: number, emoji: string) => void;
   onReply: (body: string) => void;
+  onResolved: (resolved: boolean) => void;
 }) {
   const [replyBody, setReplyBody] = useState("");
+  const displayedAnchor =
+    thread.freshness === "current" && thread.resolved_anchor
+      ? thread.resolved_anchor
+      : thread.anchor;
 
   function submitReply() {
     const trimmed = replyBody.trim();
@@ -1620,12 +1667,23 @@ function ThreadCard({
           ) : null}
         </div>
         <span className="text-muted-foreground">
-          {thread.anchor.side} {thread.anchor.start_line}
-          {thread.anchor.end_line === thread.anchor.start_line
+          {displayedAnchor.path} · {displayedAnchor.side}{" "}
+          {displayedAnchor.start_line}
+          {displayedAnchor.end_line === displayedAnchor.start_line
             ? ""
-            : `–${thread.anchor.end_line}`}
+            : `–${displayedAnchor.end_line}`}
         </span>
       </header>
+      {thread.freshness !== "current" && thread.original_context ? (
+        <pre
+          className="mb-2 overflow-x-auto rounded-md border bg-muted/20 p-2 font-mono text-xs"
+          aria-label={`Historical context for thread ${thread.id}`}
+        >
+          {thread.original_context
+            .map((line) => `${line.anchored ? ">" : " "} ${line.text}`)
+            .join("\n")}
+        </pre>
+      ) : null}
       <div className="space-y-2">
         {thread.messages.map((message) => (
           <div key={message.id} className="rounded-md bg-muted/20 p-2">
@@ -1675,6 +1733,16 @@ function ThreadCard({
             </div>
           </div>
         ))}
+      </div>
+      <div className="mt-2 flex justify-end">
+        <button
+          type="button"
+          className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+          disabled={resolutionBusy}
+          onClick={() => onResolved(!thread.resolved)}
+        >
+          {thread.resolved ? "Reopen" : "Resolve"}
+        </button>
       </div>
       <div className="mt-2">
         <textarea

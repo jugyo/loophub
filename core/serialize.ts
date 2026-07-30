@@ -377,6 +377,8 @@ export interface AcceptanceCriterionDetailWire extends AcceptanceCriterionWire {
 
 export type DiffFeedbackFreshness = "current" | "outdated" | "unavailable";
 export type DiffFeedbackSide = "LEFT" | "RIGHT";
+export type DiffFeedbackOutdatedReason = "deleted" | "modified" | "ambiguous";
+export type DiffFeedbackPlacement = "inline" | "historical";
 
 export interface PullDiffFileReferenceWire {
   label: "File" | "Before" | "After";
@@ -456,7 +458,23 @@ export interface DiffFeedbackThreadWire {
     start_line: number;
     end_line: number;
   };
+  /** Current diff coordinates derived from the immutable anchor, present only when current. */
+  resolved_anchor: {
+    path: string;
+    original_path: string | null;
+    side: DiffFeedbackSide;
+    start_line: number;
+    end_line: number;
+  } | null;
   freshness: DiffFeedbackFreshness;
+  outdated_reason: DiffFeedbackOutdatedReason | null;
+  /** Where the current diff viewer should render the conversation. */
+  placement: DiffFeedbackPlacement;
+  /** Context from the persisted commit pair, retained even when the anchor cannot be relocated. */
+  original_context: DiffFeedbackContextLineWire[] | null;
+  resolved: boolean;
+  resolved_by: string | null;
+  resolved_at: string | null;
   created_by: string;
   created_at: string;
   messages: DiffFeedbackMessageWire[];
@@ -481,7 +499,7 @@ export interface DiffFeedbackContextLineWire {
 
 /** A thread plus the diff context an agent needs to act on it without rendering the whole file. */
 export interface DiffFeedbackThreadDetailWire extends DiffFeedbackThreadWire {
-  /** Null when the anchor no longer resolves on the current diff (`freshness: "unavailable"`). */
+  /** Current context when resolved, otherwise the original historical context. */
   context: DiffFeedbackContextLineWire[] | null;
 }
 

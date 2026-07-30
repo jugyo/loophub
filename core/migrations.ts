@@ -795,6 +795,13 @@ export const MIGRATIONS: Migration[] = [
       ON comment_reactions(comment_id, created_at, id);
   `,
   ),
+  {
+    id: "054-resolve-diff-feedback",
+    run(db) {
+      addColumnIfMissing(db, "diff_feedback_threads", "resolved_by", "TEXT");
+      addColumnIfMissing(db, "diff_feedback_threads", "resolved_at", "TEXT");
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `
