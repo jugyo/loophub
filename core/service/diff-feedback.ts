@@ -53,18 +53,13 @@ async function currentPair(
   return baseSha && headSha ? { baseSha, headSha } : null;
 }
 
-async function fileForAnchor(
-  repoPath: string,
+function fileForAnchor(
+  files: DiffFile[],
   thread: Pick<
     S.DiffFeedbackThreadRow,
     "base_sha" | "head_sha" | "path" | "side"
   >,
 ) {
-  const files = await diffFilesBetween(
-    repoPath,
-    thread.base_sha,
-    thread.head_sha,
-  );
   return files.find(
     (file) =>
       (file.headFilename ?? file.filename) === thread.path ||
@@ -82,11 +77,11 @@ function anchorOf(thread: S.DiffFeedbackThreadRow) {
   };
 }
 
-async function anchorLines(
-  repoPath: string,
+function anchorLines(
+  files: DiffFile[],
   thread: S.DiffFeedbackThreadRow,
-): Promise<DiffLine[] | null> {
-  const file = await fileForAnchor(repoPath, thread);
+): DiffLine[] | null {
+  const file = fileForAnchor(files, thread);
   if (!file) return null;
   return parsePatchWithCoordinates(file.patch);
 }
@@ -177,7 +172,9 @@ function placementFor(
 async function resolveCurrentLocation(
   repoPath: string,
   pair: { baseSha: string; headSha: string } | null,
+  files: DiffFile[],
   thread: S.DiffFeedbackThreadRow,
+  originalLines: DiffLine[] | null,
 ): Promise<ResolvedThreadLocation> {
   const side = thread.side as DiffSide;
   const originalAnchor = anchorOf(thread);
@@ -191,11 +188,10 @@ async function resolveCurrentLocation(
     };
   }
   if (pair.baseSha === thread.base_sha && pair.headSha === thread.head_sha) {
-    const lines = await anchorLines(repoPath, thread);
     return {
       freshness: "current",
       reason: null,
-      placement: placementFor(lines, originalAnchor),
+      placement: placementFor(originalLines, originalAnchor),
       anchor: {
         path: thread.path,
         original_path: thread.original_path,
@@ -203,11 +199,10 @@ async function resolveCurrentLocation(
         start_line: thread.start_line,
         end_line: thread.end_line,
       },
-      lines,
+      lines: originalLines,
     };
   }
 
-  const files = await diffFilesBetween(repoPath, pair.baseSha, pair.headSha);
   const currentFile = currentFileForAnchor(files, thread);
   if (!currentFile) {
     return {
@@ -316,13 +311,19 @@ async function resolveThread(
   anchor: { side: DiffSide; startLine: number; endLine: number };
 }> {
   const pair = await currentPair(repoPath, pull);
-  const originalLines = await anchorLines(repoPath, thread);
+  const [files, distinctOriginalFiles] = await Promise.all([
+    pair ? diffFilesBetween(repoPath, pair.baseSha, pair.headSha) : [],
+    pair?.baseSha === thread.base_sha && pair.headSha === thread.head_sha
+      ? Promise.resolve(null)
+      : diffFilesBetween(repoPath, thread.base_sha, thread.head_sha),
+  ]);
+  const originalLines = anchorLines(distinctOriginalFiles ?? files, thread);
   const originalAnchor = anchorOf(thread);
   const available = Boolean(
     originalLines && linesForAnchor(originalLines, originalAnchor),
   );
   const location = available
-    ? await resolveCurrentLocation(repoPath, pair, thread)
+    ? await resolveCurrentLocation(repoPath, pair, files, thread, originalLines)
     : {
         freshness: "unavailable" as const,
         reason: null,
@@ -330,6 +331,12 @@ async function resolveThread(
         anchor: null,
         lines: null,
       };
+  const wire = threadWire(
+    thread,
+    location,
+    contextJSON(originalLines, originalAnchor, DEFAULT_CONTEXT_RADIUS),
+    actor,
+  );
   const resolvedAnchor = location.anchor
     ? {
         side: location.anchor.side,
@@ -338,43 +345,153 @@ async function resolveThread(
       }
     : originalAnchor;
   return {
-    wire: {
-      id: thread.id,
-      pr_number: thread.pr_number,
-      anchor: {
-        base_sha: thread.base_sha,
-        head_sha: thread.head_sha,
-        path: thread.path,
-        original_path: thread.original_path,
-        side: thread.side as DiffSide,
-        start_line: thread.start_line,
-        end_line: thread.end_line,
-      },
-      resolved_anchor: location.anchor,
-      freshness: location.freshness,
-      outdated_reason: location.reason,
-      placement: location.placement,
-      original_context: contextJSON(
-        originalLines,
-        originalAnchor,
-        DEFAULT_CONTEXT_RADIUS,
-      ),
-      resolved: thread.resolved_at != null,
-      resolved_by: thread.resolved_by,
-      resolved_at: thread.resolved_at,
-      created_by: thread.created_by,
-      created_at: thread.created_at,
-      messages: S.listDiffFeedbackMessages(thread.id).map((message) =>
-        diffFeedbackMessageJSON(
-          message,
-          S.listDiffFeedbackReactions(message.id),
-          actor,
-        ),
-      ),
-    },
+    wire,
     lines: location.lines ?? originalLines,
     anchor: resolvedAnchor,
   };
+}
+
+function threadWire(
+  thread: S.DiffFeedbackThreadRow,
+  location: ResolvedThreadLocation,
+  originalContext: DiffFeedbackContextLineWire[] | null,
+  actor?: string,
+): DiffFeedbackThreadWire {
+  return {
+    id: thread.id,
+    pr_number: thread.pr_number,
+    anchor: {
+      base_sha: thread.base_sha,
+      head_sha: thread.head_sha,
+      path: thread.path,
+      original_path: thread.original_path,
+      side: thread.side as DiffSide,
+      start_line: thread.start_line,
+      end_line: thread.end_line,
+    },
+    resolved_anchor: location.anchor,
+    freshness: location.freshness,
+    outdated_reason: location.reason,
+    placement: location.placement,
+    original_context: originalContext,
+    resolved: thread.resolved_at != null,
+    resolved_by: thread.resolved_by,
+    resolved_at: thread.resolved_at,
+    created_by: thread.created_by,
+    created_at: thread.created_at,
+    messages: S.listDiffFeedbackMessages(thread.id).map((message) =>
+      diffFeedbackMessageJSON(
+        message,
+        S.listDiffFeedbackReactions(message.id),
+        actor,
+      ),
+    ),
+  };
+}
+
+function parseLocation(row: S.DiffFeedbackLocationRow): {
+  location: ResolvedThreadLocation;
+  originalContext: DiffFeedbackContextLineWire[] | null;
+} {
+  return {
+    location: {
+      anchor: row.resolved_anchor_json
+        ? JSON.parse(row.resolved_anchor_json)
+        : null,
+      freshness: row.freshness as DiffFeedbackFreshness,
+      reason: row.outdated_reason as DiffFeedbackOutdatedReason | null,
+      placement: row.placement as DiffFeedbackPlacement,
+      lines: null,
+    },
+    originalContext: row.original_context_json
+      ? JSON.parse(row.original_context_json)
+      : null,
+  };
+}
+
+function fallbackLocation(
+  files: DiffFile[],
+  thread: S.DiffFeedbackThreadRow,
+): ResolvedThreadLocation {
+  const file = currentFileForAnchor(files, thread);
+  const lines = file ? parsePatchWithCoordinates(file.patch) : null;
+  return {
+    anchor: null,
+    freshness: "unavailable",
+    reason: null,
+    placement: placementFor(lines, anchorOf(thread)),
+    lines: null,
+  };
+}
+
+async function precomputeLocations(
+  repoPath: string,
+  pull: S.PullRow,
+  threads: S.DiffFeedbackThreadRow[],
+): Promise<number> {
+  if (threads.length === 0) return 0;
+  const pair = await currentPair(repoPath, pull);
+  if (!pair) return 0;
+  const pairKey = `${pair.baseSha}:${pair.headSha}`;
+  const filesByPair = new Map<string, Promise<DiffFile[]>>();
+  filesByPair.set(
+    pairKey,
+    diffFilesBetween(repoPath, pair.baseSha, pair.headSha),
+  );
+  const files = await filesByPair.get(pairKey)!;
+
+  await Promise.all(
+    threads.map(async (thread) => {
+      const originalKey = `${thread.base_sha}:${thread.head_sha}`;
+      let originalFiles = filesByPair.get(originalKey);
+      if (!originalFiles) {
+        originalFiles = diffFilesBetween(
+          repoPath,
+          thread.base_sha,
+          thread.head_sha,
+        );
+        filesByPair.set(originalKey, originalFiles);
+      }
+      const originalLines = anchorLines(await originalFiles, thread);
+      const originalAnchor = anchorOf(thread);
+      const location =
+        originalLines && linesForAnchor(originalLines, originalAnchor)
+          ? await resolveCurrentLocation(
+              repoPath,
+              pair,
+              files,
+              thread,
+              originalLines,
+            )
+          : {
+              freshness: "unavailable" as const,
+              reason: null,
+              placement: "historical" as const,
+              anchor: null,
+              lines: null,
+            };
+      const originalContext = contextJSON(
+        originalLines,
+        originalAnchor,
+        DEFAULT_CONTEXT_RADIUS,
+      );
+      S.upsertDiffFeedbackLocation({
+        thread_id: thread.id,
+        base_sha: pair.baseSha,
+        head_sha: pair.headSha,
+        resolved_anchor_json: location.anchor
+          ? JSON.stringify(location.anchor)
+          : null,
+        freshness: location.freshness,
+        outdated_reason: location.reason,
+        placement: location.placement,
+        original_context_json: originalContext
+          ? JSON.stringify(originalContext)
+          : null,
+      });
+    }),
+  );
+  return threads.length;
 }
 
 async function threadJSON(
@@ -434,15 +551,37 @@ export const diffFeedback = {
     const files = pair
       ? await diffFilesBetween(r.local_path, pair.baseSha, pair.headSha)
       : [];
-    const threads = await Promise.all(
-      S.listDiffFeedbackThreads(row.id).map((thread) =>
-        threadJSON(r.local_path, pull, thread, actorFor(sessionId)),
-      ),
-    );
+    const stored = pair
+      ? new Map(
+          S.listDiffFeedbackLocations(row.id, pair.baseSha, pair.headSha).map(
+            (location) => [location.thread_id, location],
+          ),
+        )
+      : new Map<number, S.DiffFeedbackLocationRow>();
+    const threads = S.listDiffFeedbackThreads(row.id).map((thread) => {
+      const cached = stored.get(thread.id);
+      const parsed = cached ? parseLocation(cached) : null;
+      return threadWire(
+        thread,
+        parsed?.location ?? fallbackLocation(files, thread),
+        parsed?.originalContext ?? null,
+        actorFor(sessionId),
+      );
+    });
     return {
       threads: selectDiffFeedbackThreads(threads, files, scope),
       comment_counts: countDiffFeedbackMessagesByFile(threads, files),
     };
+  },
+
+  async precompute(name: string, number: number): Promise<number> {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    return precomputeLocations(
+      r.local_path,
+      S.getPull(row.id)!,
+      S.listDiffFeedbackThreads(row.id),
+    );
   },
 
   async get(
@@ -536,7 +675,12 @@ export const diffFeedback = {
       pair.headSha !== input.headSha
     )
       throw new ServiceError(409, "pull request diff has changed");
-    const file = await fileForAnchor(r.local_path, {
+    const files = await diffFilesBetween(
+      r.local_path,
+      input.baseSha,
+      input.headSha,
+    );
+    const file = fileForAnchor(files, {
       base_sha: input.baseSha,
       head_sha: input.headSha,
       path: input.path,

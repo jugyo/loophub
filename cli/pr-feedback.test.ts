@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 const CLI = join(import.meta.dirname, "index.ts");
+const SERVICE = join(import.meta.dirname, "../core/service.ts");
 const REPO = "me/pr-feedback";
 const home = mkdtempSync(join(tmpdir(), "lh-feedback-home-"));
 const repoPath = mkdtempSync(join(tmpdir(), "lh-feedback-repo-"));
@@ -35,6 +36,18 @@ function lh(args: string[]) {
     "tsx",
     CLI,
     ...args,
+  ]);
+}
+
+function precomputeFeedback() {
+  run(process.execPath, [
+    "--experimental-sqlite",
+    "--disable-warning=ExperimentalWarning",
+    "--import",
+    "tsx",
+    "--input-type=module",
+    "--eval",
+    `const { diffFeedback } = await import(${JSON.stringify(SERVICE)}); await diffFeedback.precompute(${JSON.stringify(REPO)}, ${prNumber});`,
   ]);
 }
 
@@ -277,13 +290,21 @@ test("rename LEFT anchors use the diff wire head path contract", () => {
   });
 });
 
-test("a saved anchor follows the current diff when the PR head advances", () => {
+test("a precomputed anchor follows the current diff when the PR head advances", () => {
   git(["checkout", "-q", "feature"]);
   writeFileSync(join(repoPath, "later.txt"), "later\n");
   git(["add", "-A"]);
   git(["commit", "-qm", "later"]);
   git(["checkout", "-q", "main"]);
   let listed = JSON.parse(
+    lh(["pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"]),
+  );
+  expect(listed.threads[0]).toMatchObject({
+    freshness: "unavailable",
+    resolved_anchor: null,
+  });
+  precomputeFeedback();
+  listed = JSON.parse(
     lh(["pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"]),
   );
   expect(listed.threads[0]).toMatchObject({
@@ -297,6 +318,7 @@ test("a saved anchor follows the current diff when the PR head advances", () => 
   git(["add", "-A"]);
   git(["commit", "-qm", "insert above feedback"]);
   git(["checkout", "-q", "main"]);
+  precomputeFeedback();
   listed = JSON.parse(
     lh(["pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"]),
   );
@@ -330,6 +352,7 @@ test("a saved anchor follows the current diff when the PR head advances", () => 
   git(["add", "-A"]);
   git(["commit", "-qm", "remove feedback target"]);
   git(["checkout", "-q", "main"]);
+  precomputeFeedback();
   listed = JSON.parse(
     lh(["pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"]),
   );

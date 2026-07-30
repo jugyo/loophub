@@ -21,6 +21,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let S: typeof import("../core/store.ts");
 let R: typeof import("./runner.ts");
+let svc: typeof import("../core/service.ts");
 
 // Init a git repo whose working tree is the repo's local_path, with a workflow.yml.
 async function makeRepo(workflowYml: string): Promise<string> {
@@ -47,6 +48,7 @@ async function waitUntil(check: () => boolean, label: string): Promise<void> {
 
 beforeAll(async () => {
   S = await import("../core/store.ts");
+  svc = await import("../core/service.ts");
   R = await import("./runner.ts");
 });
 
@@ -113,6 +115,54 @@ test("issue.opened runs steps in repo cwd with LH_* env; a failing step does not
   out.mockRestore();
 
   rmSync(repoPath, { recursive: true, force: true });
+});
+
+test("PR update and diff feedback events precompute feedback locations", async () => {
+  const repoPath = await makeRepo("");
+  const repo = S.createRepo("jugyo/feedback-cache", repoPath);
+  const pr = S.createIssue(repo.id, "pull", "feat", "", "bot");
+  S.createPull(pr.id, "feature", "main", null);
+  const precompute = vi
+    .spyOn(svc.diffFeedback, "precompute")
+    .mockResolvedValue(1);
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  try {
+    for (const type of [
+      "pull_request.updated",
+      "pull_request.diff_feedback_created",
+    ]) {
+      await R.dispatchEvent(
+        S.emitEvent(repo.id, type, "bot", { number: pr.number }),
+      );
+    }
+    expect(precompute).toHaveBeenNthCalledWith(
+      1,
+      "jugyo/feedback-cache",
+      pr.number,
+    );
+    expect(precompute).toHaveBeenNthCalledWith(
+      2,
+      "jugyo/feedback-cache",
+      pr.number,
+    );
+    precompute.mockRejectedValueOnce(new Error("cache failed"));
+    await expect(
+      R.dispatchEvent(
+        S.emitEvent(repo.id, "pull_request.updated", "bot", {
+          number: pr.number,
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(errors).toHaveBeenCalledWith(
+      expect.stringContaining("diff feedback precompute error"),
+      expect.any(Error),
+    );
+  } finally {
+    errors.mockRestore();
+    precompute.mockRestore();
+    rmSync(repoPath, { recursive: true, force: true });
+  }
 });
 
 test("pull_request.opened sets LH_WORKTREE_PATH from git worktree list when head_ref matches", async () => {

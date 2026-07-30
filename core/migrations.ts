@@ -854,6 +854,23 @@ export const MIGRATIONS: Migration[] = [
     DROP TABLE comment_reactions_old;
     CREATE INDEX idx_comment_reactions_comment
       ON comment_reactions(comment_id, created_at, id);
+    `,
+  ),
+  sql(
+    "055-diff-feedback-locations",
+    `
+    DROP TABLE IF EXISTS diff_feedback_locations;
+    CREATE TABLE diff_feedback_locations (
+      thread_id              INTEGER NOT NULL REFERENCES diff_feedback_threads(id) ON DELETE CASCADE,
+      base_sha               TEXT NOT NULL,
+      head_sha               TEXT NOT NULL,
+      resolved_anchor_json   TEXT,
+      freshness              TEXT NOT NULL,
+      outdated_reason        TEXT,
+      placement              TEXT NOT NULL,
+      original_context_json  TEXT,
+      PRIMARY KEY (thread_id, base_sha, head_sha)
+    );
   `,
   ),
 ];

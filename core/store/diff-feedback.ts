@@ -33,6 +33,17 @@ export interface DiffFeedbackReactionRow {
   created_at: string;
 }
 
+export interface DiffFeedbackLocationRow {
+  thread_id: number;
+  base_sha: string;
+  head_sha: string;
+  resolved_anchor_json: string | null;
+  freshness: string;
+  outdated_reason: string | null;
+  placement: string;
+  original_context_json: string | null;
+}
+
 export function listDiffFeedbackThreads(
   issueId: number,
 ): DiffFeedbackThreadRow[] {
@@ -101,6 +112,45 @@ export function setDiffFeedbackThreadResolved(
        RETURNING *`,
     )
     .get(actor, actor ? now() : null, id) as DiffFeedbackThreadRow;
+}
+
+export function listDiffFeedbackLocations(
+  issueId: number,
+  baseSha: string,
+  headSha: string,
+): DiffFeedbackLocationRow[] {
+  return db
+    .query(
+      `SELECT location.*
+       FROM diff_feedback_locations location
+       INNER JOIN diff_feedback_threads thread ON thread.id = location.thread_id
+       WHERE thread.issue_id = ? AND location.base_sha = ? AND location.head_sha = ?`,
+    )
+    .all(issueId, baseSha, headSha) as DiffFeedbackLocationRow[];
+}
+
+export function upsertDiffFeedbackLocation(row: DiffFeedbackLocationRow): void {
+  db.query(
+    `INSERT INTO diff_feedback_locations
+       (thread_id, base_sha, head_sha, resolved_anchor_json, freshness,
+        outdated_reason, placement, original_context_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (thread_id, base_sha, head_sha) DO UPDATE SET
+       resolved_anchor_json = excluded.resolved_anchor_json,
+       freshness = excluded.freshness,
+       outdated_reason = excluded.outdated_reason,
+       placement = excluded.placement,
+       original_context_json = excluded.original_context_json`,
+  ).run(
+    row.thread_id,
+    row.base_sha,
+    row.head_sha,
+    row.resolved_anchor_json,
+    row.freshness,
+    row.outdated_reason,
+    row.placement,
+    row.original_context_json,
+  );
 }
 
 export function listDiffFeedbackMessages(

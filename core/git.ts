@@ -191,7 +191,6 @@ async function diffFilesForRevisions(
   repoPath: string,
   revisions: string[],
 ): Promise<DiffFile[]> {
-  const numstat = await git(repoPath, ["diff", "--numstat", ...revisions]);
   const numstatZ = await git(repoPath, [
     "diff",
     "--numstat",
@@ -204,43 +203,30 @@ async function diffFilesForRevisions(
     "-z",
     ...revisions,
   ]);
-  assertGitSuccess(numstat, "git diff --numstat failed");
+  const patch = await git(repoPath, ["diff", ...revisions]);
   assertGitSuccess(numstatZ, "git diff --numstat -z failed");
   assertGitSuccess(namestatus, "git diff --name-status failed");
+  assertGitSuccess(patch, "git diff patch failed");
   const statusByFile = parseNameStatusZ(namestatus.stdout);
 
   const structured = parseNumstatZ(numstatZ.stdout);
+  const patches = splitDiffPatches(patch.stdout);
   const files: DiffFile[] = [];
-  for (const [index, line] of numstat.stdout.split("\n").entries()) {
-    if (!line.trim()) continue;
-    const [add, del, ...rest] = line.split("\t");
-    const filename = rest.join("\t");
-    const paths = structured[index];
-    const headFilename = paths?.headFilename ?? paths?.filename ?? filename;
+  for (const [index, paths] of structured.entries()) {
+    const headFilename = paths.headFilename ?? paths.filename;
     const displayFilename = paths?.previousFilename
-      ? filename
-      : (paths?.filename ?? filename);
+      ? `${paths.previousFilename} => ${headFilename}`
+      : paths.filename;
     const status =
       statusByFile[headFilename] ?? statusByFile[displayFilename] ?? "modified";
-    const patchPaths =
-      paths?.previousFilename && status === "renamed"
-        ? [paths.previousFilename, headFilename]
-        : [headFilename];
-    const patch = await git(repoPath, [
-      "diff",
-      ...revisions,
-      "--",
-      ...patchPaths,
-    ]);
-    assertGitSuccess(patch, "git diff patch failed");
     files.push({
       filename: displayFilename,
       previousFilename: paths?.previousFilename,
       headFilename,
       status,
-      additions: add === "-" ? 0 : Number(add),
-      deletions: del === "-" ? 0 : Number(del),
-      patch: stripDiffHeader(patch.stdout),
+      additions: paths.additions,
+      deletions: paths.deletions,
+      patch: stripDiffHeader(patches[index] ?? ""),
     });
   }
   return files;
@@ -280,6 +266,8 @@ function parseNumstatZ(stdout: string): Array<{
   filename: string;
   previousFilename?: string;
   headFilename?: string;
+  additions: number;
+  deletions: number;
 }> {
   const fields = stdout.split("\0");
   if (fields.at(-1) === "") fields.pop();
@@ -287,11 +275,15 @@ function parseNumstatZ(stdout: string): Array<{
     filename: string;
     previousFilename?: string;
     headFilename?: string;
+    additions: number;
+    deletions: number;
   }> = [];
   for (let i = 0; i < fields.length; i++) {
     const [add, del, ...pathParts] = fields[i].split("\t");
     const path = pathParts.join("\t");
     if (add == null || del == null || pathParts.length === 0) continue;
+    const additions = add === "-" ? 0 : Number(add);
+    const deletions = del === "-" ? 0 : Number(del);
     if (path === "") {
       const previousFilename = fields[++i];
       const headFilename = fields[++i];
@@ -300,13 +292,36 @@ function parseNumstatZ(stdout: string): Array<{
           filename: headFilename,
           previousFilename,
           headFilename,
+          additions,
+          deletions,
         });
       }
       continue;
     }
-    files.push({ filename: path, headFilename: path });
+    files.push({
+      filename: path,
+      headFilename: path,
+      additions,
+      deletions,
+    });
   }
   return files;
+}
+
+function splitDiffPatches(stdout: string): string[] {
+  if (!stdout) return [];
+  const starts: number[] = [];
+  if (stdout.startsWith("diff --git ")) starts.push(0);
+  let offset = 0;
+  while (true) {
+    const index = stdout.indexOf("\ndiff --git ", offset);
+    if (index === -1) break;
+    starts.push(index + 1);
+    offset = index + 1;
+  }
+  return starts.map((start, index) =>
+    stdout.slice(start, starts[index + 1] ?? stdout.length),
+  );
 }
 
 export interface DiffStat {

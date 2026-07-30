@@ -24,6 +24,7 @@ import {
   worktreeRemove,
   worktreeStatus,
 } from "./git.ts";
+import { traceGitCommands } from "./git-trace-test-helper.ts";
 
 async function makeRepo(): Promise<string> {
   const p = mkdtempSync(join(tmpdir(), "lh-merge-lock-"));
@@ -472,10 +473,10 @@ test("diffFiles keeps copied-file patches scoped to the copy target", async () =
       filename: "source.txt => copy.txt",
       previousFilename: "source.txt",
       headFilename: "copy.txt",
-      patch: expect.stringContaining("+one"),
+      patch: expect.stringContaining("copy from source.txt"),
     }),
   );
-  expect(copied?.patch).toContain("@@ -0,0");
+  expect(copied?.patch).toContain("copy to copy.txt");
   expect(copied?.patch).not.toContain("-three");
   expect(copied?.patch).not.toContain("+THREE");
 
@@ -544,6 +545,41 @@ test("diffFiles preserves statuses for quoted paths", async () => {
       }),
     ]),
   );
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("diffFiles fetches every patch in one git call and preserves special patch lines", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-difffiles-single-patch-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "no-newline.txt"), "old");
+  writeFileSync(join(p, "binary.bin"), Buffer.from([0, 1, 2, 0, 3]));
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  writeFileSync(join(p, "no-newline.txt"), "new");
+  writeFileSync(join(p, "binary.bin"), Buffer.from([0, 4, 5, 0, 6]));
+  writeFileSync(join(p, "added.txt"), "added\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "change files"]);
+
+  const { result: files, commands } = await traceGitCommands(() =>
+    diffFiles(p, "main", "feat"),
+  );
+  expect(
+    commands.filter((command) => command.startsWith("diff ")),
+  ).toHaveLength(3);
+  expect(
+    files.find((file) => file.filename === "no-newline.txt")?.patch,
+  ).toContain("\\ No newline at end of file");
+  expect(files.find((file) => file.filename === "binary.bin")).toMatchObject({
+    additions: 0,
+    deletions: 0,
+    patch: expect.stringContaining("Binary files"),
+  });
 
   rmSync(p, { recursive: true, force: true });
 });

@@ -6,7 +6,14 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logsDir, workerCursorPath } from "../core/config.ts";
 import { worktreeList } from "../core/git.ts";
-import { events, pulls, type Repo, repos, terminal } from "../core/service.ts";
+import {
+  diffFeedback,
+  events,
+  pulls,
+  type Repo,
+  repos,
+  terminal,
+} from "../core/service.ts";
 import { resolveStartCursor, writeCursor } from "../core/worker-cursor.ts";
 import {
   buildRunEnv,
@@ -158,6 +165,21 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
     } catch (e) {
       console.error(
         `lh-worker: issue close herdr cleanup error (event ${row.id}):`,
+        e,
+      );
+    }
+  }
+
+  if (
+    number !== undefined &&
+    (row.type === "pull_request.updated" ||
+      row.type === "pull_request.diff_feedback_created")
+  ) {
+    try {
+      await diffFeedback.precompute(repo.full_name, number);
+    } catch (e) {
+      console.error(
+        `lh-worker: diff feedback precompute error (event ${row.id}):`,
         e,
       );
     }

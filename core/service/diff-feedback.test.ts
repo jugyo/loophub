@@ -302,6 +302,16 @@ test("list and get resolve a shifted anchor without changing its original coordi
   git(["commit", "-qm", "insert above feedback"]);
   git(["checkout", "-q", "main"]);
 
+  const fallback = await svc.diffFeedback.list(REPO, prNumber);
+  expect(fallback.threads[0]).toMatchObject({
+    freshness: "unavailable",
+    placement: "inline",
+    anchor: { start_line: 2, end_line: 2 },
+    resolved_anchor: null,
+    original_context: null,
+  });
+
+  expect(await svc.diffFeedback.precompute(REPO, prNumber)).toBeGreaterThan(0);
   const listed = await svc.diffFeedback.list(REPO, prNumber);
   expect(listed.threads[0]).toMatchObject({
     freshness: "current",
@@ -338,6 +348,7 @@ test("an outdated conversation remains replyable, reactable, and resolvable", as
   git(["commit", "-qm", "remove feedback target"]);
   git(["checkout", "-q", "main"]);
 
+  await svc.diffFeedback.precompute(REPO, prNumber);
   const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
   expect(thread).toMatchObject({
     freshness: "outdated",

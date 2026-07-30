@@ -246,6 +246,18 @@ CREATE TABLE IF NOT EXISTS diff_feedback_threads (
 CREATE INDEX IF NOT EXISTS idx_diff_feedback_threads_issue
   ON diff_feedback_threads(issue_id);
 
+CREATE TABLE IF NOT EXISTS diff_feedback_locations (
+  thread_id              INTEGER NOT NULL REFERENCES diff_feedback_threads(id) ON DELETE CASCADE,
+  base_sha               TEXT NOT NULL,
+  head_sha               TEXT NOT NULL,
+  resolved_anchor_json   TEXT,
+  freshness              TEXT NOT NULL,
+  outdated_reason        TEXT,
+  placement              TEXT NOT NULL,
+  original_context_json  TEXT,
+  PRIMARY KEY (thread_id, base_sha, head_sha)
+);
+
 CREATE TABLE IF NOT EXISTS diff_feedback_messages (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   thread_id   INTEGER NOT NULL REFERENCES diff_feedback_threads(id) ON DELETE CASCADE,
