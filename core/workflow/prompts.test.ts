@@ -39,7 +39,7 @@ test("the English parent prompt remains byte-identical", () => {
       "",
       "## Instruction",
       "Orchestrate this run through Execute -> Verify as described in your contract.",
-      "Start with `lh workflow next 42 --repo 'me/workflow-run' --json`, execute its structured `instructions`, then follow the contract's watch loop. Do not invoke slash-style commands.",
+      "Wait for workflow instructions delivered to this pane, execute their structured `instructions`, then return to waiting as described in the contract. Do not invoke slash-style commands.",
       "",
     ].join("\n"),
   );
@@ -58,17 +58,18 @@ test("the Japanese parent prompt translates prose without changing commands", ()
     "contract の記述に従い、この run を Execute -> Verify の順に orchestrate してください。",
   );
   expect(prompt).toContain(
-    "lh workflow next 42 --repo 'me/workflow-run' --json",
+    "この pane に配送される workflow instruction を待ち",
   );
   expect(prompt).toContain("構造化 `instructions`");
   expect(prompt).not.toContain("launch-step");
 });
 
-// The parent decides every transition from the action and observed state `next` returns.
-test("the parent prompt has one next-driven start path", () => {
+// The worker delivers every transition decision to the parent pane.
+test("the parent prompt starts from worker-delivered instructions", () => {
   const prompt = parentUserPrompt(INPUT, "en");
-  const initial = "lh workflow next 42 --repo 'me/workflow-run' --json";
-  expect(prompt).toContain(initial);
+  expect(prompt).toContain(
+    "Wait for workflow instructions delivered to this pane",
+  );
   expect(prompt).toContain("structured `instructions`");
   expect(prompt).not.toContain("launch-step");
   expect(prompt).not.toContain("--watch");
@@ -81,6 +82,7 @@ test("the parent prompt has one next-driven start path", () => {
   expect(prompt).not.toContain("lh subscribe");
   expect(prompt).not.toContain("functions.exec");
   expect(prompt).not.toContain("functions.wait");
+  expect(prompt).not.toContain("lh workflow next");
 });
 
 test("a repo name is shell-quoted in commands and kept verbatim in prose", () => {

@@ -260,6 +260,15 @@ async function launchParentHerdr(input: {
     if (e instanceof HerdrLaunchError) fail(e.message);
     throw e;
   }
+  const s = await svc();
+  await runOp(() =>
+    s.workflowInstructions.registerParentPane(input.repo.full_name, {
+      run: input.runId,
+      launch_id: input.sessionId,
+      session_name: launched.sessionName,
+      pane_id: launched.paneId,
+    }),
+  );
   if (input.detach) {
     // The agent now runs in its herdr pane; exit without attaching. process.exit(0) fires the
     // dev-lock release handler registered in startWorkflow.

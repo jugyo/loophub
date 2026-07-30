@@ -45,7 +45,7 @@ test("every fixed contract points to CLI help when workflow guidance is insuffic
   }
 });
 
-test("Japanese parent delegates action procedures to structured next instructions", () => {
+test("Japanese parent delegates action procedures to delivered structured instructions", () => {
   const parent = workflowContractText("parent", "ja");
   const execute = workflowContractText("execute", "ja");
   const verify = workflowContractText("verify", "ja");
@@ -76,9 +76,8 @@ test("Japanese parent delegates action procedures to structured next instruction
   ]) {
     if (action !== "complete") expect(parent).not.toContain(`\`${action}\``);
   }
-  expect(parent).toContain(
-    "lh workflow next <run> --repo '<repo>' --watch --json",
-  );
+  expect(parent).toContain("workflow instruction: {...}");
+  expect(parent.match(/lh workflow next --watch/gu)).toHaveLength(1);
   expect(parent).toContain("構造化 instructions");
   expect(parent).not.toContain("cursor を seed");
   expect(parent).not.toContain("herdr pane send-keys <pane_id> Escape");
@@ -253,48 +252,30 @@ test("Verify contract omits legacy mechanics while the design rationale remains 
   );
 });
 
-test("parent is organized around the goal and reconcile loop", () => {
+test("parent is organized around the goal and instruction loop", () => {
   const parent = workflowContractText("parent");
 
   expect(parent).toContain("## Goal");
-  expect(parent).toContain("## Reconcile loop");
+  expect(parent).toContain("## Instruction loop");
   expect(parent).toContain("## Structured instructions");
   expect(parent).toContain("fresh `pass` review pinned to that HEAD");
   expect(parent).toContain("The run stays `running` after reaching the goal");
   expect(parent.indexOf("## Goal")).toBeLessThan(
-    parent.indexOf("## Reconcile loop"),
+    parent.indexOf("## Instruction loop"),
   );
-  expect(parent.indexOf("## Reconcile loop")).toBeLessThan(
+  expect(parent.indexOf("## Instruction loop")).toBeLessThan(
     parent.indexOf("## Structured instructions"),
   );
 });
 
-// #1808: a merged PR ends the run. Both languages must name it as the only terminal condition and
-// stop the watcher loop there, so a parent never keeps watching a finished run.
-test("parent ends the loop on the merge terminal condition in both languages", () => {
+test("parent names PR close as the terminal condition in both languages", () => {
   const parent = workflowContractText("parent");
   const japanese = workflowContractText("parent", "ja");
 
   expect(parent).toContain(
-    "The linked PR being merged is the run's only terminal condition",
+    "Closing the linked PR is the run's terminal condition",
   );
-  expect(parent).toContain("Only `complete` stops the loop.");
-  expect(parent).toContain(
-    "Return to step 1, unless the action was `complete` — that action ends the loop.",
-  );
-  expect(parent).toContain(
-    "Only merged-PR `complete` permanently ends the loop",
-  );
-  expect(japanese).toContain(
-    "run の terminal condition は linked PR が merge されたことだけ",
-  );
-  expect(japanese).toContain("loop を止めるのは\n`complete` だけである");
-  expect(japanese).toContain(
-    "step 1 へ戻る。ただし action が `complete` のときは loop を終了する。",
-  );
-  expect(japanese).toContain(
-    "loop を恒久的に終了するのは merged PR の\n  `complete` だけ",
-  );
+  expect(japanese).toContain("linked PR の close が run の terminal condition");
 });
 
 test("parent decides transitions by observation, never idle detection", () => {
@@ -321,8 +302,8 @@ test("parent states shared lifecycle invariants once in both languages", () => {
     expect(contract).not.toMatch(/fresh (launch|Verify)/u);
     expect(contract).not.toContain("resolveRepo()");
   }
-  expect(japanese).toMatch(
-    /next \/ action の non-zero error は retry せず、人間へ判断を求める/u,
+  expect(japanese).toContain(
+    "不正な instruction や action の non-zero error は retry せず",
   );
 });
 
@@ -356,13 +337,11 @@ test("parent uses one same-session Execute delivery path", () => {
   expect(parent).toContain("never reuse a verifier session");
 });
 
-test("parent delegates transition decisions to workflow next", () => {
+test("parent delegates transition decisions to worker-delivered results", () => {
   const parent = workflowContractText("parent");
   const japanese = workflowContractText("parent", "ja");
 
-  expect(parent).toContain(
-    "lh workflow next <run> --repo '<repo>' --watch --json",
-  );
+  expect(parent.match(/lh workflow next --watch/gu)).toHaveLength(1);
   expect(parent).toContain(
     "lh workflow next <run> --repo '<repo>' --note <text|-> --json",
   );
@@ -373,7 +352,7 @@ test("parent delegates transition decisions to workflow next", () => {
     expect(contract).not.toContain("--event <event.id>");
   }
   expect(parent).toMatch(
-    /The `next` result is the only source for\s+selecting an action/u,
+    /The delivered result is the only source for selecting an action/u,
   );
   expect(parent).toContain(
     "Execute the returned structured `instructions` exactly",
@@ -431,33 +410,23 @@ test("parent keeps inject-round audit details out of the contract", () => {
   expect(parent).not.toContain("step_sessions_json.execute");
 });
 
-test("parent waits with next --watch and reacts to cost limit facts", () => {
+test("parent waits for worker instructions and reacts to cost limit facts", () => {
   const contract = workflowContractText("parent");
 
-  expect(contract).toContain("## Reconcile loop");
-  expect(contract).toContain(
-    "Start `lh workflow next <run> --repo '<repo>' --watch --json` in a runtime-managed unified exec session",
-  );
-  expect(contract).toMatch(/do not\s+emit a final parent response/i);
+  expect(contract).toContain("## Instruction loop");
+  expect(contract).toContain("workflow instruction: {...}");
+  expect(contract).toContain("Do not run `lh workflow next --watch`");
   expect(contract).not.toContain("functions.exec");
   expect(contract).not.toContain("functions.wait");
   expect(contract).not.toContain("background cell");
-  // #1859: the JSONL log stays an operator diagnostic. A best-effort write is not evidence about
-  // the watcher, so the only health signal the parent acts on is a non-zero `next --watch` exit.
   expect(contract).not.toContain("watcher writes JSONL records");
   expect(contract).not.toContain("logs/workflow-watch");
   expect(contract).not.toContain("not armed");
   expect(contract).toContain(
-    "A non-zero exit from `next --watch` is a visible watcher failure",
+    "worker owns event delivery, its order, duplicate prevention, and where to resume",
   );
-  expect(contract).toContain("the only watcher health signal you act on");
-  // Event delivery, ordering, and resume position moved inside `next --watch` (#1744): the parent
-  // no longer owns a cursor, an acknowledgement, or a replay procedure.
-  expect(contract).toContain(
-    "owns event delivery, its order, and where to resume",
-  );
-  expect(contract).toContain(
-    "Do not seed, persist, edit, or acknowledge a cursor",
+  expect(contract).toMatch(
+    /Do not seed, persist, edit, or\s+acknowledge a cursor/u,
   );
   expect(contract).not.toContain("lh workflow watch");
   expect(contract).not.toContain("next_command");
@@ -470,7 +439,7 @@ test("parent waits with next --watch and reacts to cost limit facts", () => {
   expect(japanese).not.toContain("--since");
   expect(japanese).not.toContain("--ack");
   expect(japanese).not.toContain("event を replay");
-  expect(japanese).toContain("watcher");
+  expect(japanese).toContain("worker");
   expect(contract).not.toContain("watcher_armed");
   expect(contract).not.toContain("HERDR_PANE_ID");
   // #1859: the cost procedure collapsed into one action. The parent runs the receipt-guarded
@@ -508,19 +477,16 @@ test("parent waits with next --watch and reacts to cost limit facts", () => {
   expect(contract).not.toContain("sleep briefly and poll again");
 });
 
-// #1803: Codex stalls when the watcher runs as a detached background task, so both contracts must
-// describe waiting on one unified exec session instead.
-test("English and Japanese parent contracts document the Codex watcher protocol", () => {
+test("English and Japanese parent contracts prohibit the old watcher protocol", () => {
   for (const language of ["en", "ja"] as const) {
     const contract = workflowContractText("parent", language);
     expect(contract).not.toContain("functions.exec");
     expect(contract).not.toContain("functions.wait");
-    expect(contract).toContain("exec_command");
-    expect(contract).toContain("write_stdin");
-    expect(contract).toContain("session_id");
-    expect(contract).toContain(
-      "lh workflow next <run> --repo '<repo>' --watch --json",
-    );
+    expect(contract).not.toContain("exec_command");
+    expect(contract).not.toContain("write_stdin");
+    expect(contract).not.toContain("session_id");
+    expect(contract).toContain("workflow instruction: {...}");
+    expect(contract).toContain("lh workflow next --watch");
     expect(contract).toContain("Execute / Verify");
   }
 });
@@ -668,17 +634,17 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain(
     "`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>`",
   );
-  expect(design).toContain("Unified exec reconcile loop");
+  expect(design).toContain("Worker instruction delivery");
+  expect(design).toContain("workflow instruction: <JSON>");
   expect(design).toContain(
-    'lh workflow next "$run" --repo "$repo" --watch --json',
-  );
-  expect(design).toContain(
-    "cursor は wake 専用の\n内部実装であり、親は seed も acknowledge もしない",
+    "注入成功または同一判断の抑止後だけ cursor を進める",
   );
   expect(design).not.toContain("event_ack_cursor");
   expect(design).not.toContain("next_command");
-  expect(design).toContain("同じ parent が stdout の JSON result を回収する");
-  expect(design).toContain("`write_stdin` で完了まで待つ");
+  expect(design).toContain("run に登録済みの唯一の parent pane");
+  expect(design).toContain(
+    "`workflow.instruction:<fingerprint>` effect receipt",
+  );
   expect(design).not.toContain("watcher_armed");
   // Execute-side interpretation of additional work (issue/PR extension, same completion path).
   expect(design).toContain("追加作業指示");

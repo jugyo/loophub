@@ -837,10 +837,8 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   active_step        TEXT,
   active_session_id  TEXT,
   child_sequence     INTEGER NOT NULL DEFAULT 0,
-  -- Wake bookmark for "lh workflow next --watch". It exists so a restarted parent resumes after the
-  -- events it already woke on; it is an internal implementation detail of that command, never an
-  -- acknowledgement the caller manages. Reconciliation decides from observed state, so a wake lost
-  -- to a stopped caller only delays the same decision until the next event.
+  -- Durable worker bookmark for workflow instruction delivery. A restarted worker resumes after
+  -- the last event whose instruction was delivered; the parent never manages this cursor.
   event_cursor       INTEGER NOT NULL DEFAULT 0,
   -- Snapshot the configured per-interval allowance when the run starts. The current cumulative
   -- limit advances only through the explicit cost-limit increase operation.

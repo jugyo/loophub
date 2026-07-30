@@ -6,7 +6,14 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logsDir, workerCursorPath } from "../core/config.ts";
 import { worktreeList } from "../core/git.ts";
-import { events, pulls, type Repo, repos, terminal } from "../core/service.ts";
+import {
+  events,
+  pulls,
+  type Repo,
+  repos,
+  terminal,
+  workflowInstructions,
+} from "../core/service.ts";
 import { resolveStartCursor, writeCursor } from "../core/worker-cursor.ts";
 import {
   buildRunEnv,
@@ -254,6 +261,18 @@ export function startWorker(
     if (stopped || running) return;
     running = true;
     try {
+      try {
+        const results = await workflowInstructions.dispatchPending();
+        for (const result of results) {
+          if (result.status === "failed") {
+            console.error(
+              `lh-worker: workflow instruction delivery failed for run ${result.run}: ${result.error}`,
+            );
+          }
+        }
+      } catch (e) {
+        console.error("lh-worker: workflow instruction delivery error:", e);
+      }
       for (;;) {
         if (stopped) break;
         const rows = events.page(cursor, null, PAGE) as EventRow[];

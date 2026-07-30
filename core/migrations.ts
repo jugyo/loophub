@@ -284,9 +284,8 @@ export const MIGRATIONS: Migration[] = [
     "child_sequence",
     "INTEGER NOT NULL DEFAULT 0",
   ),
-  // Internal wake bookmark for `lh workflow next --watch` (#1744). Existing rows start at 0, so the
-  // first watch replays the run's history one event at a time; each replay reconciles from current
-  // state, so the only cost is extra loop turns.
+  // Durable workflow event bookmark. Existing rows start at 0 so the current delivery mechanism can
+  // reconcile their history from the same persisted position.
   addColumn(
     "015-workflow-runs-event-cursor",
     "workflow_runs",

@@ -138,7 +138,7 @@ export interface WorkflowRunRow {
   active_step: string | null;
   active_session_id: string | null;
   child_sequence: number;
-  // Internal wake bookmark of `lh workflow next --watch`; not part of any caller-facing contract.
+  // Internal bookmark of the latest run event whose instruction was delivered by the worker.
   event_cursor: number;
   cost_increment_usd: number | null;
   cost_limit_usd: number | null;
@@ -210,9 +210,7 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
     .get(id) as WorkflowRunRow | null;
 }
 
-// Move the wake bookmark forward to the event `lh workflow next --watch` just consumed. The guard
-// keeps the cursor monotonic when two watches race on the same run; neither loses an event, because
-// both decide from the state observed after the cursor moved.
+// Move the run event bookmark forward. The guard keeps the cursor monotonic when two consumers race.
 export function advanceWorkflowRunEventCursor(
   id: number,
   cursor: number,
@@ -225,6 +223,26 @@ export function advanceWorkflowRunEventCursor(
        RETURNING *`,
     )
     .get(cursor, now(), id, cursor) as WorkflowRunRow | null;
+}
+
+// Runs with at least one undelivered lifecycle event. This is intentionally independent of run
+// status: the worker advances terminal runs past their remaining events without delivering a
+// progression instruction, so a restart does not scan the same terminal history forever.
+export function workflowRunsWithPendingEvents(): WorkflowRunRow[] {
+  return db
+    .query(
+      `SELECT run.* FROM workflow_runs run
+       WHERE EXISTS (
+         SELECT 1 FROM events event
+         WHERE event.repo_id = run.repo_id
+           AND (event.type GLOB 'workflow_run.*'
+             OR event.type GLOB 'workflow_step.*')
+           AND json_extract(event.payload, '$.id') = run.id
+           AND event.id > run.event_cursor
+       )
+       ORDER BY run.id`,
+    )
+    .all() as WorkflowRunRow[];
 }
 
 export interface WorkflowEventEffectRow {
@@ -247,6 +265,62 @@ export function pendingWorkflowEventEffect(
        LIMIT 1`,
     )
     .get(runId) as WorkflowEventEffectRow | null;
+}
+
+export function pendingWorkflowEventEffectWithPrefix(
+  runId: number,
+  prefix: string,
+): WorkflowEventEffectRow | null {
+  return (
+    (db
+      .query(
+        `SELECT * FROM workflow_event_effects
+         WHERE run_id = ? AND status = 'pending' AND effect GLOB ?
+         ORDER BY event_id, effect
+         LIMIT 1`,
+      )
+      .get(runId, `${prefix}*`) as WorkflowEventEffectRow | null) ?? null
+  );
+}
+
+export function getWorkflowEventEffectWithPrefix(
+  runId: number,
+  eventId: number,
+  prefix: string,
+): WorkflowEventEffectRow | null {
+  return (
+    (db
+      .query(
+        `SELECT * FROM workflow_event_effects
+         WHERE run_id = ? AND event_id = ? AND effect GLOB ?
+         ORDER BY effect
+         LIMIT 1`,
+      )
+      .get(runId, eventId, `${prefix}*`) as WorkflowEventEffectRow | null) ??
+    null
+  );
+}
+
+export function latestCompletedWorkflowEventEffectWithPrefix(
+  runId: number,
+  beforeEventId: number,
+  prefix: string,
+): WorkflowEventEffectRow | null {
+  return (
+    (db
+      .query(
+        `SELECT * FROM workflow_event_effects
+         WHERE run_id = ? AND event_id < ? AND effect GLOB ?
+           AND status = 'completed'
+         ORDER BY event_id DESC, effect
+         LIMIT 1`,
+      )
+      .get(
+        runId,
+        beforeEventId,
+        `${prefix}*`,
+      ) as WorkflowEventEffectRow | null) ?? null
+  );
 }
 
 export function getWorkflowEventEffect(
@@ -305,6 +379,7 @@ export function beginWorkflowEventEffect(
          WHERE run.id = ?
            AND event.repo_id = run.repo_id
            AND (event.type GLOB 'workflow_run.*'
+             OR event.type GLOB 'workflow_step.*'
              OR event.type = 'workflow_effect.human_escalation')
            AND json_extract(event.payload, '$.id') = run.id
        )

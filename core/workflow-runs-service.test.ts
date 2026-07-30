@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -269,6 +270,74 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   ).toContain("## Inputs\n- repo: me/workflow-run");
 }, 20_000);
 
+test("instruction delivery preserves the real next decision for the same state", async () => {
+  const { repo, path } = freshRepo("me/instruction-parity");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Deliver instructions",
+    "",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "instruction-parity",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const sessionId = "12121212-1212-4212-8212-121212121212";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    sessionId,
+  );
+  const event = S.eventsForWorkflowRun(repo.id, started.run.id)[0];
+  const expected = await svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
+    event: event.id,
+  });
+
+  const bin = mkdtempSync(join(tmpdir(), "lh-instruction-parity-herdr-"));
+  const log = join(bin, "calls.log");
+  writeFileSync(
+    join(bin, "herdr"),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\n`,
+  );
+  chmodSync(join(bin, "herdr"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${bin}:${originalPath}`;
+  try {
+    svc.workflowInstructions.registerParentPane(repo.full_name, {
+      run: started.run.id,
+      launch_id: sessionId,
+      session_name: "me-instruction-parity",
+      pane_id: "w1:p1",
+    });
+    await expect(
+      svc.workflowInstructions.dispatchRun(started.run.id),
+    ).resolves.toMatchObject({
+      status: "delivered",
+      event: event.id,
+      pane_id: "w1:p1",
+      action: expected.action,
+    });
+
+    const marker = "workflow instruction: ";
+    const delivery = readFileSync(log, "utf8")
+      .split("\n")
+      .find((line) => line.includes(marker));
+    expect(delivery).toBeDefined();
+    const payload = (delivery as string).slice(
+      (delivery as string).indexOf(marker) + marker.length,
+    );
+    expect(JSON.parse(payload)).toEqual(expected);
+  } finally {
+    process.env.PATH = originalPath;
+    rmSync(bin, { recursive: true, force: true });
+    rmSync(path, { recursive: true, force: true });
+  }
+}, 20_000);
+
 test("start persists the resolved runtime/model and every step inherits them (#516)", async () => {
   const repo = S.getRepo("me", "workflow-run")!;
   const issue = S.createIssue(
@@ -300,7 +369,7 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   expect(row.runtime).toBe("codex");
   expect(row.model).toBe("gpt-5.5");
   expect(result.parent.user_prompt).toContain(
-    `lh workflow next ${result.run.id} --repo '${repo.full_name}' --json`,
+    "Wait for workflow instructions delivered to this pane",
   );
   expect(result.parent.user_prompt).toContain("structured `instructions`");
   expect(result.parent.user_prompt).not.toContain("launch-step");
@@ -3069,14 +3138,14 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
   ]);
 }, 40_000);
 
-test("parent contract delegates action procedures to workflow next", () => {
+test("parent contract executes worker-delivered action procedures", () => {
   const contract = readFileSync(
     join(import.meta.dirname, "workflow", "contracts", "parent.md"),
     "utf8",
   );
-  // State observation and action procedures belong to `next`.
+  // State observation and action procedures are delivered by the worker.
   expect(contract).not.toContain("lh workflow step status");
-  expect(contract).toContain("lh workflow next");
+  expect(contract).toContain("workflow instruction: {...}");
   expect(contract).toContain("structured `instructions`");
   for (const command of [
     "lh workflow run request-rework",
@@ -3087,16 +3156,14 @@ test("parent contract delegates action procedures to workflow next", () => {
   ]) {
     expect(contract).not.toContain(command);
   }
-  expect(contract).toContain(
-    "Start `lh workflow next <run> --repo '<repo>' --watch --json` in a runtime-managed unified exec session",
-  );
+  expect(contract).toContain("Do not run `lh workflow next --watch`");
   expect(contract).not.toContain("lh workflow watch");
   expect(contract).not.toContain("next_command");
   expect(contract).not.toContain("--ack");
   expect(contract).not.toContain("replay the event");
   expect(contract).not.toContain("lh subscribe --repo");
   expect(contract).toContain("## Goal");
-  expect(contract).toContain("## Reconcile loop");
+  expect(contract).toContain("## Instruction loop");
   expect(contract).toContain("## Structured instructions");
   expect(contract).not.toContain("## Gap table");
   expect(contract).toMatch(/never use pane output|PR body marker/i);

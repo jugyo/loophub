@@ -249,6 +249,24 @@ test("events without a workflow.yml or unsupported types are no-ops", async () =
   rmSync(repoPath, { recursive: true, force: true });
 });
 
+test("the worker polls workflow instructions independently of workflow.yml", async () => {
+  const cursorPath = join(HOME, "instruction-worker.cursor");
+  const dispatch = vi
+    .spyOn(svc.workflowInstructions, "dispatchPending")
+    .mockResolvedValue([]);
+  const worker = R.startWorker({ pollMs: 10, cursorPath });
+  try {
+    await waitUntil(
+      () => dispatch.mock.calls.length > 0,
+      "workflow instruction dispatch",
+    );
+    expect(dispatch).toHaveBeenCalled();
+  } finally {
+    worker.stop();
+    dispatch.mockRestore();
+  }
+});
+
 test("issue.closed ignores an earlier linked workflow pane and cleans the New Issue pane", async () => {
   const repoPath = mkdtempSync(join(tmpdir(), "lh-repo-"));
   await git(repoPath, ["init", "-q", "-b", "main"]);

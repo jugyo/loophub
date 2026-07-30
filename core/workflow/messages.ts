@@ -99,7 +99,7 @@ const WORKFLOW_MESSAGE_CATALOG = {
       "",
       "## Instruction",
       "Orchestrate this run through Execute -> Verify as described in your contract.",
-      `Start with \`lh workflow next ${input.runId} --repo ${input.repoArg} --json\`, execute its structured \`instructions\`, then follow the contract's watch loop. Do not invoke slash-style commands.`,
+      "Wait for workflow instructions delivered to this pane, execute their structured `instructions`, then return to waiting as described in the contract. Do not invoke slash-style commands.",
       "",
     ],
     ja: (input) => [
@@ -114,7 +114,7 @@ const WORKFLOW_MESSAGE_CATALOG = {
       "",
       "## 指示",
       "contract の記述に従い、この run を Execute -> Verify の順に orchestrate してください。",
-      `\`lh workflow next ${input.runId} --repo ${input.repoArg} --json\` から開始し、返された構造化 \`instructions\` を実行してから contract の watch loop に従ってください。slash-style command は呼び出さないでください。`,
+      "この pane に配送される workflow instruction を待ち、その構造化 `instructions` を実行してから、contract に従って次の instruction を待ってください。slash-style command は呼び出さないでください。",
       "",
     ],
   },
