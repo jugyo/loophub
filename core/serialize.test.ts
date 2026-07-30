@@ -498,6 +498,49 @@ describe("workflowRunHistoryEventJSON rendering", () => {
 // repository (#1914). Serializers whose values come from live git state live in
 // serialize-status.ts instead.
 describe("pure row -> wire serializers", () => {
+  test.each([
+    {
+      status: "added",
+      path: "src/new.ts",
+      originalPath: null,
+      expected: [{ label: "File", commit: "head", path: "src/new.ts" }],
+    },
+    {
+      status: "modified",
+      path: "src/app.ts",
+      originalPath: null,
+      expected: [{ label: "File", commit: "head", path: "src/app.ts" }],
+    },
+    {
+      status: "removed",
+      path: "src/old.ts",
+      originalPath: null,
+      expected: [{ label: "File", commit: "base", path: "src/old.ts" }],
+    },
+    {
+      status: "renamed",
+      path: "src/new.ts",
+      originalPath: "src/old.ts",
+      expected: [
+        { label: "Before", commit: "base", path: "src/old.ts" },
+        { label: "After", commit: "head", path: "src/new.ts" },
+      ],
+    },
+  ])("pullDiffFileReferences selects the $status file revisions", ({
+    status,
+    path,
+    originalPath,
+    expected,
+  }) => {
+    expect(
+      serialize.pullDiffFileReferences("base", "head", {
+        status,
+        path,
+        original_path: originalPath,
+      }),
+    ).toEqual(expected);
+  });
+
   test("repoJSON maps a repo row, normalizing its integer flags", () => {
     const repo: Repo = {
       id: 1,

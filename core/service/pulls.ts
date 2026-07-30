@@ -30,6 +30,7 @@ import {
   agentSessionJSON,
   githubPrStatusJSON,
   githubPullJSON,
+  pullDiffFileReferences,
   repoJSON,
 } from "../serialize.ts";
 import { pullJSON } from "../serialize-status.ts";
@@ -273,20 +274,26 @@ export const pulls = {
     return {
       base_sha: baseSha,
       head_sha: headSha,
-      files: selectedFiles.map((file) => ({
-        path: file.headFilename ?? file.filename,
-        original_path: file.previousFilename ?? null,
-        status: file.status,
-        additions: file.additions,
-        deletions: file.deletions,
-        patch: file.patch,
-        lines: parsePatchWithCoordinates(file.patch).map((line) => ({
-          kind: line.kind,
-          text: line.text,
-          left_line: line.leftLine,
-          right_line: line.rightLine,
-        })),
-      })),
+      files: selectedFiles.map((file) => {
+        const serializedFile = {
+          path: file.headFilename ?? file.filename,
+          original_path: file.previousFilename ?? null,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          patch: file.patch,
+        };
+        return {
+          ...serializedFile,
+          references: pullDiffFileReferences(baseSha, headSha, serializedFile),
+          lines: parsePatchWithCoordinates(file.patch).map((line) => ({
+            kind: line.kind,
+            text: line.text,
+            left_line: line.leftLine,
+            right_line: line.rightLine,
+          })),
+        };
+      }),
     };
   },
 

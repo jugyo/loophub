@@ -3,7 +3,7 @@
 // its own Escape handling, mode switching, per-mode file fetch, and the copy-path resolution for
 // renamed / invisible-character filenames. The Files changed section only picks the open file.
 
-import { Filter, Loader2, Plus, SmilePlus, X } from "lucide-react";
+import { Filter, Info, Loader2, Plus, SmilePlus, X } from "lucide-react";
 import {
   Fragment,
   type ReactNode,
@@ -107,6 +107,15 @@ function visibleCopyPath(path: string) {
       }
     }
   }).join("");
+}
+
+function shellQuote(value: string) {
+  if (/^[\w./:@%+=,-]+$/u.test(value)) return value;
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function gitShowCommand(commit: string, path: string) {
+  return `git show ${shellQuote(`${commit}:${path}`)}`;
 }
 
 type DiffDialogMode = "diff" | "raw" | "base" | "head";
@@ -413,10 +422,17 @@ export function DiffFileDialog({
                   {file.filename}
                 </h3>
                 <CopyButton
-                  key={copyPath}
+                  key={`copy-${copyPath}`}
                   value={copyPath}
                   label={`Copy file path: ${copyPath}`}
                   className="size-6"
+                />
+                <FileInfoPopover
+                  key={`info-${copyPath}`}
+                  owner={owner}
+                  repo={repo}
+                  number={number}
+                  file={file}
                 />
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
@@ -502,6 +518,139 @@ export function DiffFileDialog({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function FileInfoPopover({
+  owner,
+  repo,
+  number,
+  file,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  file: PullFile;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const path = copyFilename(file);
+  const diff = usePullDiff(owner, repo, number, path);
+  const stableFile = Array.isArray(diff.data?.files)
+    ? diff.data.files[0]
+    : undefined;
+  const headPath = stableFile?.path ?? path;
+  const originalPath =
+    stableFile?.original_path ?? file.previousFilename ?? null;
+  const references = stableFile?.references ?? [];
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative shrink-0">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label={`Show file information: ${visibleCopyPath(path)}`}
+        aria-expanded={open}
+        className="size-6 text-muted-foreground"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Info className="size-3.5" />
+      </Button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-label={`File information: ${visibleCopyPath(path)}`}
+          className="absolute left-0 top-full z-20 mt-1 w-[28rem] max-w-[calc(100vw-3rem)] rounded-md border bg-background p-3 text-foreground shadow-md"
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.stopPropagation();
+            setOpen(false);
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <h4 className="text-sm font-semibold">File information</h4>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Close file information"
+              className="-mr-1 -mt-1 size-6 text-muted-foreground"
+              onClick={() => setOpen(false)}
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
+          <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+            <dt className="text-muted-foreground">Path</dt>
+            <dd className="break-all font-mono">{visibleCopyPath(headPath)}</dd>
+            {originalPath && originalPath !== headPath ? (
+              <>
+                <dt className="text-muted-foreground">Original path</dt>
+                <dd className="break-all font-mono">
+                  {visibleCopyPath(originalPath)}
+                </dd>
+              </>
+            ) : null}
+            <dt className="text-muted-foreground">Change</dt>
+            <dd>{file.status}</dd>
+            <dt className="text-muted-foreground">Lines</dt>
+            <dd>
+              <DiffStat additions={file.additions} deletions={file.deletions} />
+            </dd>
+          </dl>
+          <div className="mt-3 border-t pt-3">
+            <p className="mb-1.5 text-xs font-medium">Git command</p>
+            {diff.isPending ? (
+              <p className="text-xs text-muted-foreground">
+                Loading commit references…
+              </p>
+            ) : diff.isError ? (
+              <p className="text-xs text-destructive">
+                Git reference is unavailable.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {references.map((reference) => {
+                  const command = gitShowCommand(
+                    reference.commit,
+                    reference.path,
+                  );
+                  return (
+                    <div key={reference.label} className="space-y-1">
+                      {references.length > 1 ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          {reference.label}
+                        </p>
+                      ) : null}
+                      <div className="flex items-start gap-1 rounded bg-muted/60 p-1.5">
+                        <code className="min-w-0 flex-1 break-all text-[11px]">
+                          {command}
+                        </code>
+                        <CopyButton
+                          value={command}
+                          label={`Copy ${reference.label.toLowerCase()} git command`}
+                          className="size-6 shrink-0"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

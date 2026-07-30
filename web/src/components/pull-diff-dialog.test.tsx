@@ -1193,6 +1193,176 @@ describe("DiffFileDialog", () => {
     );
   });
 
+  it.each([
+    {
+      name: "added file at the head commit",
+      file: {
+        filename: "src/new file.ts",
+        status: "added",
+        additions: 2,
+        deletions: 0,
+        patch: "",
+      } satisfies PullFile,
+      stablePath: "src/new file.ts",
+      originalPath: null,
+      commands: [`git show '${"b".repeat(40)}:src/new file.ts'`],
+    },
+    {
+      name: "modified file at the head commit",
+      file: {
+        filename: "src/app.ts",
+        status: "modified",
+        additions: 3,
+        deletions: 1,
+        patch: "",
+      } satisfies PullFile,
+      stablePath: "src/app.ts",
+      originalPath: null,
+      commands: [`git show ${"b".repeat(40)}:src/app.ts`],
+    },
+    {
+      name: "removed file at the base commit",
+      file: {
+        filename: "src/old.ts",
+        status: "removed",
+        additions: 0,
+        deletions: 4,
+        patch: "",
+      } satisfies PullFile,
+      stablePath: "src/old.ts",
+      originalPath: null,
+      commands: [`git show ${"a".repeat(40)}:src/old.ts`],
+    },
+    {
+      name: "renamed file at both commits",
+      file: {
+        filename: "src/old.ts => src/new.ts",
+        previousFilename: "src/old.ts",
+        headFilename: "src/new.ts",
+        status: "renamed",
+        additions: 1,
+        deletions: 1,
+        patch: "",
+      } satisfies PullFile,
+      stablePath: "src/new.ts",
+      originalPath: "src/old.ts",
+      commands: [
+        `git show ${"a".repeat(40)}:src/old.ts`,
+        `git show ${"b".repeat(40)}:src/new.ts`,
+      ],
+    },
+  ])("shows file information for a $name", async (testCase) => {
+    renderDialog({
+      file: testCase.file,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: testCase.stablePath,
+              original_path: testCase.originalPath,
+              status: testCase.file.status,
+              additions: testCase.file.additions,
+              deletions: testCase.file.deletions,
+              patch: "",
+              references: testCase.commands.map((command, index) => ({
+                label:
+                  testCase.commands.length === 1
+                    ? "File"
+                    : index === 0
+                      ? "Before"
+                      : "After",
+                commit: command.includes("a".repeat(40))
+                  ? "a".repeat(40)
+                  : "b".repeat(40),
+                path:
+                  testCase.commands.length === 2 && index === 0
+                    ? (testCase.originalPath ?? testCase.stablePath)
+                    : testCase.stablePath,
+              })),
+              lines: [],
+            },
+          ],
+        }),
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Show file information: ${testCase.stablePath}`,
+      }),
+    );
+
+    const information = await screen.findByRole("dialog", {
+      name: `File information: ${testCase.stablePath}`,
+    });
+    expect(information.className).toContain("bg-background");
+    expect(information.className).toContain("text-foreground");
+    expect(within(information).getByText(testCase.stablePath)).toBeTruthy();
+    expect(within(information).getByText(testCase.file.status)).toBeTruthy();
+    expect(
+      within(information).getByText(`+${testCase.file.additions}`),
+    ).toBeTruthy();
+    expect(
+      within(information).getByText(`−${testCase.file.deletions}`),
+    ).toBeTruthy();
+    for (const command of testCase.commands) {
+      expect(await within(information).findByText(command)).toBeTruthy();
+    }
+    if (testCase.originalPath) {
+      expect(within(information).getByText(testCase.originalPath)).toBeTruthy();
+      expect(within(information).getByText("Before")).toBeTruthy();
+      expect(within(information).getByText("After")).toBeTruthy();
+    }
+  });
+
+  it("closes file information without closing the diff", async () => {
+    const onClose = vi.fn();
+    renderDialog({
+      onClose,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [],
+        }),
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show file information: web/src/a.ts",
+      }),
+    );
+    const information = screen.getByRole("dialog", {
+      name: "File information: web/src/a.ts",
+    });
+    fireEvent.keyDown(information, { key: "Escape" });
+
+    expect(
+      screen.queryByRole("dialog", {
+        name: "File information: web/src/a.ts",
+      }),
+    ).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show file information: web/src/a.ts",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close file information" }),
+    );
+    expect(
+      screen.queryByRole("dialog", {
+        name: "File information: web/src/a.ts",
+      }),
+    ).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("switches to raw file content and copies the full content", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
@@ -1286,6 +1456,7 @@ describe("DiffFileDialog", () => {
       "Toggle file filters",
       "README.md",
       "Copy file path: README.md",
+      "Show file information: README.md",
       "Diff",
       "Raw",
       "Base",
