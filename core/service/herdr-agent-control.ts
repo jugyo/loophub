@@ -1,6 +1,7 @@
 import type { AgentControl, AgentExecutionTarget } from "../agent-control.ts";
 import { ServiceError } from "../errors.ts";
 import { HERDR_ID } from "../terminal/terminal-launch.ts";
+import { sendHerdrPrompt } from "./herdr-prompt.ts";
 import { runHerdr } from "./herdr-runner.ts";
 
 const HERDR_TIMEOUT_MS = 15_000;
@@ -38,9 +39,15 @@ export function herdrAgentControl(cwd: string): AgentControl {
     );
   };
   return {
-    inputText: async (target, text) => {
-      await run(target, "send-text", [text]);
-      await run(target, "send-keys", ["Enter"]);
+    inputText: (target, text) => {
+      const { paneId, sessionName } = address(target);
+      return sendHerdrPrompt({
+        sessionName,
+        paneId,
+        text,
+        cwd,
+        timeoutMs: HERDR_TIMEOUT_MS,
+      });
     },
     inputKey: (target, key) => run(target, "send-keys", [key]),
     close: (target) => run(target, "close", []),

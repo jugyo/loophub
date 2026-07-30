@@ -1,12 +1,8 @@
 import { createHash } from "node:crypto";
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
-import {
-  HERDR_ID,
-  herdrPaneSendKeysArgv,
-  herdrPaneSendTextArgv,
-} from "../terminal/terminal-launch.ts";
-import { runHerdr } from "./herdr-runner.ts";
+import { HERDR_ID, herdrSessionName } from "../terminal/terminal-launch.ts";
+import { sendHerdrPrompt } from "./herdr-prompt.ts";
 import { repoOr404 } from "./shared.ts";
 import { workflowRuns } from "./workflow-runs.ts";
 
@@ -92,17 +88,16 @@ function completeDecision(
   }
 }
 
-async function sendInstruction(
+function sendInstruction(
   repo: S.Repo,
   paneId: string,
   text: string,
 ): Promise<void> {
-  const sendText = herdrPaneSendTextArgv(repo, paneId, text);
-  await runHerdr(sendText[0], sendText.slice(1), repo.local_path, {
-    timeoutMs: HERDR_TIMEOUT_MS,
-  });
-  const submit = herdrPaneSendKeysArgv(repo, paneId, "Enter");
-  await runHerdr(submit[0], submit.slice(1), repo.local_path, {
+  return sendHerdrPrompt({
+    sessionName: herdrSessionName(repo),
+    paneId,
+    text,
+    cwd: repo.local_path,
     timeoutMs: HERDR_TIMEOUT_MS,
   });
 }

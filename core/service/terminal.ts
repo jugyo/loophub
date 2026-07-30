@@ -41,8 +41,6 @@ import {
   herdrAgentFocusArgv,
   herdrCommandLine,
   herdrPaneCloseArgv,
-  herdrPaneSendKeysArgv,
-  herdrPaneSendTextArgv,
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
@@ -59,6 +57,7 @@ import {
   type TerminalLaunchRepo,
 } from "../terminal/terminal-launch.ts";
 import { legacyWorktreePath, worktreePath } from "../worktree-path.ts";
+import { isHerdrPromptError, sendHerdrPrompt } from "./herdr-prompt.ts";
 import {
   isHerdrExitError,
   runHerdr,
@@ -1078,26 +1077,20 @@ export const terminal = {
         "The Herdr agent is no longer running for this PR",
       );
 
-    const sendText = herdrPaneSendTextArgv(r, input.paneId, input.text);
     try {
-      await runHerdr(sendText[0], sendText.slice(1), r.local_path, {
+      await sendHerdrPrompt({
+        sessionName: herdrSessionName(r),
+        paneId: input.paneId,
+        text: input.text,
+        cwd: r.local_path,
         timeoutMs: 10_000,
       });
-    } catch {
+    } catch (e) {
       throw new ServiceError(
         409,
-        "The Herdr agent disappeared before the input could be sent",
-      );
-    }
-    const submit = herdrPaneSendKeysArgv(r, input.paneId, "Enter");
-    try {
-      await runHerdr(submit[0], submit.slice(1), r.local_path, {
-        timeoutMs: 10_000,
-      });
-    } catch {
-      throw new ServiceError(
-        409,
-        "The input was written, but Herdr could not submit it; check the pane before retrying",
+        isHerdrPromptError(e) && e.phase === "submit"
+          ? "The input was written, but Herdr could not submit it; check the pane before retrying"
+          : "The Herdr agent disappeared before the input could be sent",
       );
     }
     return { ok: true };

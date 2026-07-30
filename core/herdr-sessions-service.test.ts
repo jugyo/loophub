@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -860,7 +859,7 @@ test("terminal.focusAgent surfaces a visible error when herdr is not installed",
   }
 });
 
-test("terminal.sendAgentInput leaves no pasted text pending after repeated deliveries", async () => {
+test("terminal.sendAgentInput delivers to the verified pane and reports the failing phase", async () => {
   const repo = await svc.repos.create({
     path: initGitRepo(),
     name: "me/send-input",
@@ -885,68 +884,57 @@ test("terminal.sendAgentInput leaves no pasted text pending after repeated deliv
       ],
     },
   });
-  const callsFile = join(HOME, "send-input-calls.bin");
   const pendingFile = join(HOME, "send-input-pending");
   const deliveredFile = join(HOME, "send-input-delivered.bin");
-  const injectedFile = join(HOME, "must-not-exist");
   writeFileSync(pendingFile, "");
   writeFileSync(deliveredFile, "");
+  // The delivery protocol itself is covered by core/service/herdr-prompt.test.ts; this fake only
+  // has to make the pane's pending/delivered state visible so the RPC's own error mapping — which
+  // phase failed, and what the operator is told about the pane — can be asserted.
   writeFileSync(
     join(FAKE_BIN, "herdr"),
     [
       "#!/bin/sh",
       `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
-      // Herdr 0.7.1's pane input commands consume $6 as the text/key positional.
-      // Model that behavior so an option terminator accidentally inserted before
-      // the value is observable.
-      `printf '%s:%s\\0' "$4" "$6" >> ${callsFile}`,
-      // Model the coding-agent paste boundary that caused #2121: pane run writes
-      // text and Enter as one terminal input, so Enter remains part of the paste
-      // and the input stays pending. A separate send-keys request submits and
-      // clears the text written by send-text.
-      `if [ "$4" = "run" ]; then printf '%s' "$6" > ${pendingFile}; exit 0; fi`,
-      `if [ "$4" = "send-text" ]; then printf '%s' "$6" > ${pendingFile}; exit 0; fi`,
-      `if [ "$4" = "send-keys" ] && [ "$6" = "Enter" ]; then cat ${pendingFile} >> ${deliveredFile}; printf '\\0' >> ${deliveredFile}; : > ${pendingFile}; fi`,
+      `if [ "$4" = "send-text" ]; then`,
+      `  if [ "$LH_TEST_SEND_INPUT_FAIL" = "text" ]; then exit 3; fi`,
+      `  printf '%s' "$6" > ${pendingFile}; exit 0`,
+      "fi",
+      `if [ "$4" = "send-keys" ] && [ "$6" = "Enter" ]; then`,
+      `  if [ "$LH_TEST_SEND_INPUT_FAIL" = "submit" ]; then exit 7; fi`,
+      `  cat ${pendingFile} >> ${deliveredFile}; printf '\\0' >> ${deliveredFile}; : > ${pendingFile}`,
+      "fi",
       "exit 0",
     ].join("\n"),
   );
   chmodSync(join(FAKE_BIN, "herdr"), 0o755);
   process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
-  const text = `--help; please inspect $(touch ${injectedFile}) ; then report`;
+  const send = (text: string) =>
+    svc.terminal.sendAgentInput({
+      repo: repo.full_name,
+      pull: prRow.number,
+      paneId,
+      text,
+    });
   try {
-    await expect(
-      svc.terminal.sendAgentInput({
-        repo: repo.full_name,
-        pull: prRow.number,
-        paneId,
-        text: "続けて",
-      }),
-    ).resolves.toEqual({ ok: true });
-    await expect(
-      svc.terminal.sendAgentInput({
-        repo: repo.full_name,
-        pull: prRow.number,
-        paneId,
-        text: "-continue",
-      }),
-    ).resolves.toEqual({ ok: true });
-    await expect(
-      svc.terminal.sendAgentInput({
-        repo: repo.full_name,
-        pull: prRow.number,
-        paneId,
-        text,
-      }),
-    ).resolves.toEqual({ ok: true });
+    await expect(send("続けて")).resolves.toEqual({ ok: true });
     expect(readFileSync(pendingFile, "utf8")).toBe("");
-    expect(readFileSync(deliveredFile).toString()).toBe(
-      `続けて\0-continue\0${text}\0`,
+    expect(readFileSync(deliveredFile).toString()).toBe("続けて\0");
+
+    process.env.LH_TEST_SEND_INPUT_FAIL = "text";
+    await expect(send("再送")).rejects.toThrowError(
+      "The Herdr agent disappeared before the input could be sent",
     );
-    expect(readFileSync(callsFile).toString()).toBe(
-      `send-text:続けて\0send-keys:Enter\0send-text:-continue\0send-keys:Enter\0send-text:${text}\0send-keys:Enter\0`,
+    expect(readFileSync(pendingFile, "utf8")).toBe("");
+
+    process.env.LH_TEST_SEND_INPUT_FAIL = "submit";
+    await expect(send("再送")).rejects.toThrowError(
+      "The input was written, but Herdr could not submit it; check the pane before retrying",
     );
-    expect(existsSync(injectedFile)).toBe(false);
+    expect(readFileSync(pendingFile, "utf8")).toBe("再送");
+    expect(readFileSync(deliveredFile).toString()).toBe("続けて\0");
   } finally {
+    delete process.env.LH_TEST_SEND_INPUT_FAIL;
     process.env.PATH = ORIGINAL_PATH;
   }
 });
