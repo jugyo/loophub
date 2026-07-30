@@ -211,6 +211,104 @@ async function dragLines(from: string, ...through: string[]) {
 }
 
 describe("DiffFileDialog", () => {
+  it("posts a copied-file comment with a target-side anchor", async () => {
+    const create = vi.fn(() => ({
+      thread: feedbackThread({
+        anchor: {
+          ...feedbackThread().anchor,
+          path: "copy.txt",
+          original_path: "source.txt",
+          start_line: 1,
+          end_line: 1,
+        },
+      }),
+      comment: {},
+    }));
+    const copiedFile: PullFile = {
+      filename: "source.txt => copy.txt",
+      previousFilename: "source.txt",
+      headFilename: "copy.txt",
+      status: "copied",
+      additions: 0,
+      deletions: 0,
+      patch:
+        "similarity index 100%\ncopy from source.txt\ncopy to copy.txt\n@@ -0,0 +1,2 @@\n+one\n+two",
+    };
+    renderDialog({
+      file: copiedFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "copy.txt",
+              original_path: "source.txt",
+              status: "copied",
+              additions: 0,
+              deletions: 0,
+              patch: copiedFile.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -0,0 +1,2 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+one",
+                  left_line: null,
+                  right_line: 1,
+                },
+                {
+                  kind: "addition",
+                  text: "+two",
+                  left_line: null,
+                  right_line: 2,
+                },
+              ],
+            },
+          ],
+        }),
+        "diffFeedback/list": () => ({ threads: [] }),
+        "diffFeedback/create": create,
+      },
+    });
+
+    expect(screen.queryByText("No textual diff.")).toBeNull();
+    const commentButtons = await screen.findAllByRole("button", {
+      name: "Comment on new line 1",
+    });
+    expect(commentButtons).toHaveLength(1);
+    expect(
+      screen.getAllByRole("button", {
+        name: "Comment on new line 2",
+      }),
+    ).toHaveLength(1);
+    fireEvent.click(commentButtons[0]);
+    const composer = screen.getByLabelText("Diff comment");
+    fireEvent.change(composer, {
+      target: { value: "Copied line" },
+    });
+    fireEvent.click(
+      within(composer.closest("tr") as HTMLElement).getByRole("button", {
+        name: "Comment",
+      }),
+    );
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: "copy.txt",
+          side: "RIGHT",
+          start_line: 1,
+          end_line: 1,
+          body: "Copied line",
+        }),
+      ),
+    );
+  });
+
   it("renders the diff with its line comments", () => {
     renderDialog({ comments: lineComments });
 

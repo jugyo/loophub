@@ -6,14 +6,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logsDir, workerCursorPath } from "../core/config.ts";
 import { worktreeList } from "../core/git.ts";
-import {
-  diffFeedback,
-  events,
-  pulls,
-  type Repo,
-  repos,
-  terminal,
-} from "../core/service.ts";
+import { events, pulls, type Repo, repos, terminal } from "../core/service.ts";
 import { resolveStartCursor, writeCursor } from "../core/worker-cursor.ts";
 import {
   buildRunEnv,
@@ -23,6 +16,7 @@ import {
   stepsFor,
   type WorkflowStep,
 } from "../core/workflow.ts";
+import { scheduleDiffFeedbackProjection } from "./diff-feedback-projection.ts";
 import { workerLog } from "./logger.ts";
 
 const DEFAULT_POLL_MS = 1000;
@@ -170,21 +164,6 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
     }
   }
 
-  if (
-    number !== undefined &&
-    (row.type === "pull_request.updated" ||
-      row.type === "pull_request.diff_feedback_created")
-  ) {
-    try {
-      await diffFeedback.precompute(repo.full_name, number);
-    } catch (e) {
-      console.error(
-        `lh-worker: diff feedback precompute error (event ${row.id}):`,
-        e,
-      );
-    }
-  }
-
   if (!isSupported(row.type)) return;
 
   const workflow = loadWorkflow(repo.local_path);
@@ -281,6 +260,7 @@ export function startWorker(
         if (rows.length === 0) break;
         for (const row of rows) {
           if (stopped) break;
+          scheduleDiffFeedbackProjection(row);
           try {
             await dispatchEvent(row);
           } catch (e) {

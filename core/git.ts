@@ -191,26 +191,30 @@ async function diffFilesForRevisions(
   repoPath: string,
   revisions: string[],
 ): Promise<DiffFile[]> {
-  const numstatZ = await git(repoPath, [
+  const metadata = await git(repoPath, [
     "diff",
+    "--raw",
     "--numstat",
     "-z",
     ...revisions,
   ]);
-  const namestatus = await git(repoPath, [
-    "diff",
-    "--name-status",
-    "-z",
-    ...revisions,
+  assertGitSuccess(metadata, "git diff --raw --numstat -z failed");
+  const { statusByFile, structured } = parseRawNumstatZ(metadata.stdout);
+  const [patch, addedPatch] = await Promise.all([
+    git(repoPath, ["diff", ...revisions]),
+    git(repoPath, ["diff", "--no-renames", "--diff-filter=A", ...revisions]),
   ]);
-  const patch = await git(repoPath, ["diff", ...revisions]);
-  assertGitSuccess(numstatZ, "git diff --numstat -z failed");
-  assertGitSuccess(namestatus, "git diff --name-status failed");
   assertGitSuccess(patch, "git diff patch failed");
-  const statusByFile = parseNameStatusZ(namestatus.stdout);
-
-  const structured = parseNumstatZ(numstatZ.stdout);
+  assertGitSuccess(addedPatch, "git diff added-file patch failed");
   const patches = splitDiffPatches(patch.stdout);
+  const addedPatches = splitDiffPatches(addedPatch.stdout);
+  const addedPatchByFile = new Map(
+    addedPatches.flatMap((filePatch) => {
+      const path = patchHeadPath(filePatch);
+      return path ? [[path, filePatch] as const] : [];
+    }),
+  );
+
   const files: DiffFile[] = [];
   for (const [index, paths] of structured.entries()) {
     const headFilename = paths.headFilename ?? paths.filename;
@@ -219,6 +223,16 @@ async function diffFilesForRevisions(
       : paths.filename;
     const status =
       statusByFile[headFilename] ?? statusByFile[displayFilename] ?? "modified";
+    const originalPatch = stripDiffHeader(patches[index] ?? "");
+    const copyTargetPatch = stripDiffHeader(
+      addedPatchByFile.get(headFilename) ?? "",
+    );
+    const filePatch =
+      status === "copied" &&
+      !originalPatch.includes("@@") &&
+      copyTargetPatch.includes("@@")
+        ? `${originalPatch}\n${copyTargetPatch}`
+        : originalPatch;
     files.push({
       filename: displayFilename,
       previousFilename: paths?.previousFilename,
@@ -226,10 +240,34 @@ async function diffFilesForRevisions(
       status,
       additions: paths.additions,
       deletions: paths.deletions,
-      patch: stripDiffHeader(patches[index] ?? ""),
+      patch: filePatch,
     });
   }
   return files;
+}
+
+function parseRawNumstatZ(stdout: string): {
+  statusByFile: Record<string, string>;
+  structured: ReturnType<typeof parseNumstatZ>;
+} {
+  const fields = stdout.split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  const statusByFile: Record<string, string> = {};
+  let index = 0;
+  while (fields[index]?.startsWith(":")) {
+    const metadata = fields[index++];
+    const statusField = metadata.trim().split(/\s+/).at(-1) ?? "";
+    const code = statusField[0];
+    const status = STATUS_MAP[code] ?? "changed";
+    const firstPath = fields[index++];
+    const headFilename =
+      code === "R" || code === "C" ? fields[index++] : firstPath;
+    if (headFilename) statusByFile[headFilename] = status;
+  }
+  return {
+    statusByFile,
+    structured: parseNumstatZ(`${fields.slice(index).join("\0")}\0`),
+  };
 }
 
 function assertGitSuccess(result: GitResult, context: string): void {
@@ -239,27 +277,6 @@ function assertGitSuccess(result: GitResult, context: string): void {
     result.stdout.trim() ||
     `git exited with code ${result.code}`;
   throw new Error(`${context}: ${detail}`);
-}
-
-function parseNameStatusZ(stdout: string): Record<string, string> {
-  const fields = stdout.split("\0");
-  if (fields.at(-1) === "") fields.pop();
-  const statusByFile: Record<string, string> = {};
-  for (let i = 0; i < fields.length; ) {
-    const statusField = fields[i++];
-    if (!statusField) continue;
-    const code = statusField[0];
-    const status = STATUS_MAP[code] ?? "changed";
-    if (code === "R" || code === "C") {
-      i += 1; // previous path
-      const headFilename = fields[i++];
-      if (headFilename) statusByFile[headFilename] = status;
-      continue;
-    }
-    const filename = fields[i++];
-    if (filename) statusByFile[filename] = status;
-  }
-  return statusByFile;
 }
 
 function parseNumstatZ(stdout: string): Array<{
@@ -322,6 +339,51 @@ function splitDiffPatches(stdout: string): string[] {
   return starts.map((start, index) =>
     stdout.slice(start, starts[index + 1] ?? stdout.length),
   );
+}
+
+function patchHeadPath(patch: string): string | null {
+  const header = patch.split("\n").find((line) => line.startsWith("+++ "));
+  if (!header) return null;
+  const path = decodeGitPath(header.slice(4));
+  return path.startsWith("b/") ? path.slice(2) : path;
+}
+
+function decodeGitPath(path: string): string {
+  if (!path.startsWith('"') || !path.endsWith('"')) return path;
+  const bytes: number[] = [];
+  for (let index = 1; index < path.length - 1; index += 1) {
+    const char = path[index];
+    if (char !== "\\") {
+      bytes.push(...Buffer.from(char));
+      continue;
+    }
+    const escaped = path[++index];
+    const simple: Record<string, number> = {
+      a: 0x07,
+      b: 0x08,
+      t: 0x09,
+      n: 0x0a,
+      v: 0x0b,
+      f: 0x0c,
+      r: 0x0d,
+      '"': 0x22,
+      "\\": 0x5c,
+    };
+    if (escaped in simple) {
+      bytes.push(simple[escaped]);
+      continue;
+    }
+    if (/[0-7]/.test(escaped)) {
+      let octal = escaped;
+      while (octal.length < 3 && /[0-7]/.test(path[index + 1] ?? "")) {
+        octal += path[++index];
+      }
+      bytes.push(Number.parseInt(octal, 8));
+      continue;
+    }
+    bytes.push(...Buffer.from(escaped));
+  }
+  return Buffer.from(bytes).toString("utf8");
 }
 
 export interface DiffStat {

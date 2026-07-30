@@ -44,6 +44,7 @@ export function parsePositionedPatch(
 ): PositionedDiffLine[] {
   let oldLine = 0;
   let newLine = 0;
+  let inHunk = false;
 
   return parsePatch(patch).map((line) => {
     if (line.kind === "hunk") {
@@ -51,8 +52,12 @@ export function parsePositionedPatch(
       if (range) {
         oldLine = Number(range[1]);
         newLine = Number(range[2]);
+        inHunk = true;
       }
       return { ...line, oldLine: null, newLine: null };
+    }
+    if (!inHunk) {
+      return { ...line, kind: "meta", oldLine: null, newLine: null };
     }
     if (line.kind === "add") {
       const positioned = { ...line, oldLine: null, newLine };

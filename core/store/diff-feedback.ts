@@ -56,6 +56,36 @@ export function listDiffFeedbackThreads(
     .all(issueId) as DiffFeedbackThreadRow[];
 }
 
+export function listUnansweredDiffFeedbackThreads(
+  issueId: number,
+  responders: readonly string[],
+): DiffFeedbackThreadRow[] {
+  const responderClause =
+    responders.length === 0
+      ? ""
+      : `AND (latest.author IS NULL OR latest.author NOT IN (${responders
+          .map(() => "?")
+          .join(", ")}))`;
+  return db
+    .query(
+      `SELECT thread.*
+       FROM diff_feedback_threads thread
+       LEFT JOIN diff_feedback_messages latest
+         ON latest.id = (
+           SELECT message.id
+           FROM diff_feedback_messages message
+           WHERE message.thread_id = thread.id
+           ORDER BY message.created_at DESC, message.id DESC
+           LIMIT 1
+         )
+       WHERE thread.issue_id = ?
+         AND thread.resolved_at IS NULL
+         ${responderClause}
+       ORDER BY thread.created_at ASC, thread.id ASC`,
+    )
+    .all(issueId, ...responders) as DiffFeedbackThreadRow[];
+}
+
 export function getDiffFeedbackThread(
   id: number,
 ): DiffFeedbackThreadRow | null {

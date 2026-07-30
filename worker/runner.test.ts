@@ -21,6 +21,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let S: typeof import("../core/store.ts");
 let R: typeof import("./runner.ts");
+let P: typeof import("./diff-feedback-projection.ts");
 let svc: typeof import("../core/service.ts");
 
 // Init a git repo whose working tree is the repo's local_path, with a workflow.yml.
@@ -50,6 +51,7 @@ beforeAll(async () => {
   S = await import("../core/store.ts");
   svc = await import("../core/service.ts");
   R = await import("./runner.ts");
+  P = await import("./diff-feedback-projection.ts");
 });
 
 afterAll(() => {
@@ -117,7 +119,7 @@ test("issue.opened runs steps in repo cwd with LH_* env; a failing step does not
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("PR update and diff feedback events precompute feedback locations", async () => {
+test("diff feedback projection is independent from workflow dispatch", async () => {
   const repoPath = await makeRepo("");
   const repo = S.createRepo("jugyo/feedback-cache", repoPath);
   const pr = S.createIssue(repo.id, "pull", "feat", "", "bot");
@@ -128,14 +130,26 @@ test("PR update and diff feedback events precompute feedback locations", async (
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
   try {
-    for (const type of [
-      "pull_request.updated",
-      "pull_request.diff_feedback_created",
-    ]) {
-      await R.dispatchEvent(
-        S.emitEvent(repo.id, type, "bot", { number: pr.number }),
-      );
+    const rows = [
+      S.emitEvent(repo.id, "pull_request.updated", "bot", {
+        number: pr.number,
+      }),
+      S.emitEvent(repo.id, "pull_request.updated", "bot", {
+        number: pr.number,
+        sha: "a".repeat(40),
+      }),
+      S.emitEvent(repo.id, "pull_request.diff_feedback_created", "bot", {
+        number: pr.number,
+      }),
+    ];
+    for (const row of rows) {
+      await R.dispatchEvent(row);
     }
+    expect(precompute).not.toHaveBeenCalled();
+
+    await P.projectDiffFeedbackEvent(rows[0]);
+    await P.projectDiffFeedbackEvent(rows[1]);
+    await P.projectDiffFeedbackEvent(rows[2]);
     expect(precompute).toHaveBeenNthCalledWith(
       1,
       "jugyo/feedback-cache",
@@ -146,16 +160,20 @@ test("PR update and diff feedback events precompute feedback locations", async (
       "jugyo/feedback-cache",
       pr.number,
     );
+    expect(precompute).toHaveBeenCalledTimes(2);
     precompute.mockRejectedValueOnce(new Error("cache failed"));
     await expect(
-      R.dispatchEvent(
+      P.projectDiffFeedbackEvent(
         S.emitEvent(repo.id, "pull_request.updated", "bot", {
           number: pr.number,
+          sha: "b".repeat(40),
         }),
       ),
     ).resolves.toBeUndefined();
     expect(errors).toHaveBeenCalledWith(
-      expect.stringContaining("diff feedback precompute error"),
+      expect.stringContaining(
+        `diff feedback projection error event_id=${rows[2].id + 1} event_type=pull_request.updated repo=jugyo/feedback-cache pr=${pr.number}`,
+      ),
       expect.any(Error),
     );
   } finally {

@@ -64,3 +64,43 @@ describe("parsePatch", () => {
     ]);
   });
 });
+
+describe("parsePositionedPatch", () => {
+  it("leaves copy metadata before the first hunk unpositioned", () => {
+    const lines = parsePositionedPatch(
+      [
+        "similarity index 100%",
+        "copy from source.txt",
+        "copy to copy.txt",
+        "@@ -0,0 +1,2 @@",
+        "+one",
+        "+two",
+      ].join("\n"),
+    );
+
+    expect(lines.slice(0, 3)).toEqual([
+      {
+        kind: "meta",
+        text: "similarity index 100%",
+        oldLine: null,
+        newLine: null,
+      },
+      {
+        kind: "meta",
+        text: "copy from source.txt",
+        oldLine: null,
+        newLine: null,
+      },
+      {
+        kind: "meta",
+        text: "copy to copy.txt",
+        oldLine: null,
+        newLine: null,
+      },
+    ]);
+    expect(lines.slice(4)).toEqual([
+      { kind: "add", text: "+one", oldLine: null, newLine: 1 },
+      { kind: "add", text: "+two", oldLine: null, newLine: 2 },
+    ]);
+  });
+});

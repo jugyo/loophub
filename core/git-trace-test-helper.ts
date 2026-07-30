@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,12 +19,15 @@ export async function traceGitCommands<T>(
   try {
     const result = await run();
     const elapsedMs = performance.now() - started;
-    const commands = readFileSync(tracePath, "utf8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line))
-      .filter((event) => event.event === "start")
-      .map((event) => event.argv.slice(3).join(" "));
+    const commands = existsSync(tracePath)
+      ? readFileSync(tracePath, "utf8")
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
+          .filter((event) => event.event === "start")
+          .map((event) => event.argv.slice(3).join(" "))
+      : [];
     return { result, commands, elapsedMs };
   } finally {
     if (previousTrace === undefined) delete process.env.GIT_TRACE2_EVENT;

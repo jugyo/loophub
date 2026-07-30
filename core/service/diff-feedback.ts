@@ -12,7 +12,6 @@ import {
 import {
   countDiffFeedbackMessagesByFile,
   selectDiffFeedbackThreads,
-  selectUnansweredDiffFeedbackThreads,
 } from "../diff-feedback-selection.ts";
 import { ServiceError } from "../errors.ts";
 import {
@@ -393,19 +392,92 @@ function parseLocation(row: S.DiffFeedbackLocationRow): {
   location: ResolvedThreadLocation;
   originalContext: DiffFeedbackContextLineWire[] | null;
 } {
+  const invalid = (field: string): never => {
+    throw new Error(
+      `invalid diff feedback location for thread ${row.thread_id} at ${row.base_sha}..${row.head_sha}: ${field}`,
+    );
+  };
+  const parseJSON = (value: string, field: string): unknown => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return invalid(field);
+    }
+  };
+  const freshness = ["current", "outdated", "unavailable"].includes(
+    row.freshness,
+  )
+    ? (row.freshness as DiffFeedbackFreshness)
+    : invalid("freshness");
+  const reason =
+    row.outdated_reason == null ||
+    ["deleted", "modified", "ambiguous"].includes(row.outdated_reason)
+      ? (row.outdated_reason as DiffFeedbackOutdatedReason | null)
+      : invalid("outdated_reason");
+  const placement = ["inline", "historical"].includes(row.placement)
+    ? (row.placement as DiffFeedbackPlacement)
+    : invalid("placement");
+  const anchor = row.resolved_anchor_json
+    ? parseJSON(row.resolved_anchor_json, "resolved_anchor_json")
+    : null;
+  if (
+    anchor != null &&
+    (typeof anchor !== "object" ||
+      !("path" in anchor) ||
+      typeof anchor.path !== "string" ||
+      !("original_path" in anchor) ||
+      (anchor.original_path !== null &&
+        typeof anchor.original_path !== "string") ||
+      !("side" in anchor) ||
+      (anchor.side !== "LEFT" && anchor.side !== "RIGHT") ||
+      !("start_line" in anchor) ||
+      typeof anchor.start_line !== "number" ||
+      !Number.isInteger(anchor.start_line) ||
+      !("end_line" in anchor) ||
+      typeof anchor.end_line !== "number" ||
+      !Number.isInteger(anchor.end_line) ||
+      anchor.start_line < 1 ||
+      anchor.end_line < anchor.start_line)
+  ) {
+    invalid("resolved_anchor_json");
+  }
+  if (
+    (freshness === "current" && (reason !== null || anchor === null)) ||
+    (freshness === "outdated" && (reason === null || anchor !== null)) ||
+    (freshness === "unavailable" && (reason !== null || anchor !== null))
+  ) {
+    invalid("location union");
+  }
+  const originalContext = row.original_context_json
+    ? parseJSON(row.original_context_json, "original_context_json")
+    : null;
+  if (
+    originalContext != null &&
+    (!Array.isArray(originalContext) ||
+      originalContext.some(
+        (line) =>
+          typeof line !== "object" ||
+          line == null ||
+          !["hunk", "context", "addition", "deletion", "meta"].includes(
+            line.kind,
+          ) ||
+          typeof line.text !== "string" ||
+          (line.left_line !== null && !Number.isInteger(line.left_line)) ||
+          (line.right_line !== null && !Number.isInteger(line.right_line)) ||
+          typeof line.anchored !== "boolean",
+      ))
+  ) {
+    invalid("original_context_json");
+  }
   return {
     location: {
-      anchor: row.resolved_anchor_json
-        ? JSON.parse(row.resolved_anchor_json)
-        : null,
-      freshness: row.freshness as DiffFeedbackFreshness,
-      reason: row.outdated_reason as DiffFeedbackOutdatedReason | null,
-      placement: row.placement as DiffFeedbackPlacement,
+      anchor: anchor as ResolvedThreadLocation["anchor"],
+      freshness,
+      reason,
+      placement,
       lines: null,
     },
-    originalContext: row.original_context_json
-      ? JSON.parse(row.original_context_json)
-      : null,
+    originalContext: originalContext as DiffFeedbackContextLineWire[] | null,
   };
 }
 
@@ -432,6 +504,15 @@ async function precomputeLocations(
   if (threads.length === 0) return 0;
   const pair = await currentPair(repoPath, pull);
   if (!pair) return 0;
+  const storedThreadIds = new Set(
+    S.listDiffFeedbackLocations(pull.issue_id, pair.baseSha, pair.headSha).map(
+      ({ thread_id }) => thread_id,
+    ),
+  );
+  const missingThreads = threads.filter(
+    (thread) => !storedThreadIds.has(thread.id),
+  );
+  if (missingThreads.length === 0) return 0;
   const pairKey = `${pair.baseSha}:${pair.headSha}`;
   const filesByPair = new Map<string, Promise<DiffFile[]>>();
   filesByPair.set(
@@ -441,7 +522,7 @@ async function precomputeLocations(
   const files = await filesByPair.get(pairKey)!;
 
   await Promise.all(
-    threads.map(async (thread) => {
+    missingThreads.map(async (thread) => {
       const originalKey = `${thread.base_sha}:${thread.head_sha}`;
       let originalFiles = filesByPair.get(originalKey);
       if (!originalFiles) {
@@ -491,7 +572,49 @@ async function precomputeLocations(
       });
     }),
   );
-  return threads.length;
+  return missingThreads.length;
+}
+
+function cachedThreadDetail(
+  thread: S.DiffFeedbackThreadRow,
+  cached: S.DiffFeedbackLocationRow,
+  files: DiffFile[],
+  contextRadius: number,
+): DiffFeedbackThreadDetailWire | null {
+  const parsed = parseLocation(cached);
+  if (contextRadius !== DEFAULT_CONTEXT_RADIUS) return null;
+  const anchor = parsed.location.anchor;
+  let context = parsed.originalContext;
+  const anchorMatchesOriginal =
+    cached.base_sha === thread.base_sha &&
+    cached.head_sha === thread.head_sha &&
+    anchor?.path === thread.path &&
+    anchor.original_path === thread.original_path &&
+    anchor.side === thread.side &&
+    anchor.start_line === thread.start_line &&
+    anchor.end_line === thread.end_line;
+  if (anchor && !anchorMatchesOriginal) {
+    const file = fileForAnchor(files, {
+      base_sha: cached.base_sha,
+      head_sha: cached.head_sha,
+      path: anchor.path,
+      side: anchor.side,
+    });
+    const lines = file ? parsePatchWithCoordinates(file.patch) : null;
+    context = contextJSON(
+      lines,
+      {
+        side: anchor.side,
+        startLine: anchor.start_line,
+        endLine: anchor.end_line,
+      },
+      contextRadius,
+    );
+  }
+  return {
+    ...threadWire(thread, parsed.location, parsed.originalContext),
+    context,
+  };
 }
 
 async function threadJSON(
@@ -630,14 +753,54 @@ export const diffFeedback = {
         .map((sessionId) => S.authorFromSession(sessionId))
         .filter((author): author is string => author !== null),
     );
+    const unanswered = S.listUnansweredDiffFeedbackThreads(row.id, [
+      ...responders,
+    ]);
+    if (unanswered.length === 0) {
+      return { run: run.id, threads: [] };
+    }
+    const pair = await currentPair(r.local_path, pull);
+    const stored = pair
+      ? new Map(
+          S.listDiffFeedbackLocations(row.id, pair.baseSha, pair.headSha).map(
+            (location) => [location.thread_id, location],
+          ),
+        )
+      : new Map<number, S.DiffFeedbackLocationRow>();
+    const needsCurrentDiff =
+      contextRadius === DEFAULT_CONTEXT_RADIUS &&
+      unanswered.some((thread) => {
+        const cached = stored.get(thread.id);
+        const anchor = cached ? parseLocation(cached).location.anchor : null;
+        return (
+          anchor != null &&
+          (cached!.base_sha !== thread.base_sha ||
+            cached!.head_sha !== thread.head_sha ||
+            anchor.path !== thread.path ||
+            anchor.original_path !== thread.original_path ||
+            anchor.side !== thread.side ||
+            anchor.start_line !== thread.start_line ||
+            anchor.end_line !== thread.end_line)
+        );
+      });
+    const files =
+      pair && needsCurrentDiff
+        ? await diffFilesBetween(r.local_path, pair.baseSha, pair.headSha)
+        : [];
     const threads = await Promise.all(
-      S.listDiffFeedbackThreads(row.id).map((thread) =>
-        threadDetailJSON(r.local_path, pull, thread, contextRadius),
-      ),
+      unanswered.map((thread) => {
+        const cached = stored.get(thread.id);
+        return (
+          (cached
+            ? cachedThreadDetail(thread, cached, files, contextRadius)
+            : null) ??
+          threadDetailJSON(r.local_path, pull, thread, contextRadius)
+        );
+      }),
     );
     return {
       run: run.id,
-      threads: selectUnansweredDiffFeedbackThreads(threads, responders),
+      threads,
     };
   },
 

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { traceGitCommands } from "../git-trace-test-helper.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-diff-feedback-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -180,8 +181,12 @@ test("an Execute reply answers the comment without waking its own parent", async
     body: "Renamed for clarity.",
   });
   expect(runEvents()).toHaveLength(before);
+  const pending = await traceGitCommands(() =>
+    svc.diffFeedback.pending(REPO, prNumber, runId),
+  );
+  expect(pending.result.threads).toEqual([]);
   expect(
-    (await svc.diffFeedback.pending(REPO, prNumber, runId)).threads,
+    pending.commands.filter((command) => command.startsWith("diff ")),
   ).toEqual([]);
 });
 
@@ -312,6 +317,13 @@ test("list and get resolve a shifted anchor without changing its original coordi
   });
 
   expect(await svc.diffFeedback.precompute(REPO, prNumber)).toBeGreaterThan(0);
+  const cachedPrecompute = await traceGitCommands(() =>
+    svc.diffFeedback.precompute(REPO, prNumber),
+  );
+  expect(cachedPrecompute.result).toBe(0);
+  expect(
+    cachedPrecompute.commands.filter((command) => command.startsWith("diff ")),
+  ).toEqual([]);
   const listed = await svc.diffFeedback.list(REPO, prNumber);
   expect(listed.threads[0]).toMatchObject({
     freshness: "current",
@@ -319,6 +331,20 @@ test("list and get resolve a shifted anchor without changing its original coordi
     anchor: { start_line: 2, end_line: 2 },
     resolved_anchor: { start_line: 3, end_line: 3 },
   });
+  const cachedPending = await traceGitCommands(() =>
+    svc.diffFeedback.pending(REPO, prNumber, runId),
+  );
+  expect(cachedPending.result.threads[0]).toMatchObject({
+    resolved_anchor: { start_line: 3, end_line: 3 },
+  });
+  expect(
+    cachedPending.result.threads[0].context?.some(
+      (line) => line.text === "+changed" && line.anchored,
+    ),
+  ).toBe(true);
+  expect(
+    cachedPending.commands.filter((command) => command.startsWith("show ")),
+  ).toEqual([]);
 
   const detail = await svc.diffFeedback.get(
     REPO,
@@ -339,6 +365,45 @@ test("list and get resolve a shifted anchor without changing its original coordi
       anchored: true,
     }),
   );
+
+  const location = S.listDiffFeedbackLocations(
+    S.getIssue(repoId, prNumber)!.id,
+    git(["merge-base", "main", "feature"]),
+    git(["rev-parse", "feature"]),
+  )[0];
+  const invalidValues: Array<[string, string | null]> = [
+    ["freshness", "stale"],
+    ["placement", "floating"],
+    ["outdated_reason", "unknown"],
+    ["resolved_anchor_json", "{}"],
+    ["original_context_json", "[{}]"],
+  ];
+  for (const [column, invalidValue] of invalidValues) {
+    const originalValue = location[column as keyof typeof location];
+    database
+      .query(
+        `UPDATE diff_feedback_locations SET ${column} = ? WHERE thread_id = ? AND base_sha = ? AND head_sha = ?`,
+      )
+      .run(
+        invalidValue,
+        location.thread_id,
+        location.base_sha,
+        location.head_sha,
+      );
+    await expect(svc.diffFeedback.list(REPO, prNumber)).rejects.toThrow(
+      `invalid diff feedback location for thread ${location.thread_id}`,
+    );
+    database
+      .query(
+        `UPDATE diff_feedback_locations SET ${column} = ? WHERE thread_id = ? AND base_sha = ? AND head_sha = ?`,
+      )
+      .run(
+        originalValue,
+        location.thread_id,
+        location.base_sha,
+        location.head_sha,
+      );
+  }
 });
 
 test("an outdated conversation remains replyable, reactable, and resolvable", async () => {

@@ -477,10 +477,49 @@ test("diffFiles keeps copied-file patches scoped to the copy target", async () =
     }),
   );
   expect(copied?.patch).toContain("copy to copy.txt");
+  expect(copied?.patch).toContain("@@ -0,0 +1,5 @@");
+  expect(copied?.patch).toContain("+three");
   expect(copied?.patch).not.toContain("-three");
   expect(copied?.patch).not.toContain("+THREE");
 
   rmSync(p, { recursive: true, force: true });
+});
+
+test("diffFiles pairs added patches by target path for mixed renames and copies", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-difffiles-rename-copy-"));
+  try {
+    await git(p, ["init", "-q", "-b", "main"]);
+    await git(p, ["config", "user.email", "t@t.local"]);
+    await git(p, ["config", "user.name", "tester"]);
+    await git(p, ["config", "diff.renames", "copies"]);
+    writeFileSync(join(p, "rename-old.txt"), "rename me\n");
+    writeFileSync(join(p, "source.txt"), "one\ntwo\nthree\nfour\nfive\n");
+    await git(p, ["add", "-A"]);
+    await git(p, ["commit", "-qm", "base"]);
+
+    await git(p, ["checkout", "-q", "-b", "feat"]);
+    await git(p, ["mv", "rename-old.txt", "a-renamed.txt"]);
+    writeFileSync(join(p, "z-copy.txt"), "one\ntwo\nthree\nfour\nfive\n");
+    writeFileSync(join(p, "source.txt"), "one\ntwo\nTHREE\nfour\nfive\n");
+    await git(p, ["add", "-A"]);
+    await git(p, ["commit", "-qm", "rename and copy"]);
+
+    const files = await diffFiles(p, "main", "feat");
+    const copied = files.find((file) => file.status === "copied");
+    expect(copied).toEqual(
+      expect.objectContaining({
+        filename: "source.txt => z-copy.txt",
+        previousFilename: "source.txt",
+        headFilename: "z-copy.txt",
+        patch: expect.stringContaining("@@ -0,0 +1,5 @@"),
+      }),
+    );
+    expect(copied?.patch).toContain("+three");
+    expect(copied?.patch).not.toContain("+rename me");
+    expect(copied?.patch).not.toContain("+THREE");
+  } finally {
+    rmSync(p, { recursive: true, force: true });
+  }
 });
 
 test("diffFiles preserves tabs in structured filenames", async () => {
@@ -549,7 +588,7 @@ test("diffFiles preserves statuses for quoted paths", async () => {
   rmSync(p, { recursive: true, force: true });
 });
 
-test("diffFiles fetches every patch in one git call and preserves special patch lines", async () => {
+test("diffFiles fetches normal and added-file patches in batched git calls and preserves special patch lines", async () => {
   const p = mkdtempSync(join(tmpdir(), "lh-difffiles-single-patch-"));
   await git(p, ["init", "-q", "-b", "main"]);
   await git(p, ["config", "user.email", "t@t.local"]);
