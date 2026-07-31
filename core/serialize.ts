@@ -821,11 +821,20 @@ export interface HerdrRepoSessionsWire {
   agents: HerdrSessionAgentWire[];
   pull_workspaces: HerdrPullWorkspace[];
   issue_workspaces: HerdrIssueWorkspace[];
+  // Set only on a group carried over from an earlier snapshot because this repo's `agent list`
+  // capture failed (#2142): the ISO time of the last capture that actually produced this group.
+  // Absent means the group is this tick's live capture.
+  stale_since?: string;
 }
 
 export interface HerdrSessionsWire {
   repos: HerdrRepoSessionsWire[];
   running_repos?: string[];
+  // Repos whose `herdr agent list` capture failed on the tick that wrote this snapshot (#2142).
+  // Their `repos` entry — when one was already known — is the carried-over group tagged with
+  // `stale_since`; a repo listed here with no `repos` entry never captured successfully. Absent
+  // when every running repo captured, so "no agents" and "capture failed" stay distinguishable.
+  capture_failed_repos?: string[];
   // When lh-worker last wrote this snapshot (ISO). The `terminal/sessions` RPC is a pure DB read of
   // the worker-owned snapshot (#1665), so a stopped worker leaves this timestamp frozen — clients
   // surface the staleness instead of an automatic herdr fallback that would hide the stopped worker.

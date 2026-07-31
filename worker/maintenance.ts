@@ -515,6 +515,9 @@ export function startHerdrSnapshotSweep(
       logLoopCompleted("herdr snapshot sweep", startedAt, {
         repos: result.repos,
         running_repos: result.running_repos,
+        // Non-zero means some repo's agent list could not be captured this tick and is showing
+        // its last known agents instead (#2142) — the snapshot names those repos.
+        capture_failed_repos: result.capture_failed_repos,
         changed: result.changed ? 1 : 0,
       });
     } catch (err) {

@@ -182,3 +182,20 @@ test("signature reacts to running_repos with no visible agents", () => {
   const two = snapshot([repo()], ["me/app", "me/idle"]);
   expect(herdrSnapshotSignature(one)).not.toBe(herdrSnapshotSignature(two));
 });
+
+test("signature reacts to a capture failure but not to it repeating (#2142)", () => {
+  const live = snapshot([repo()]);
+  const stale: HerdrSessionsWire = {
+    ...snapshot([repo({ stale_since: "2026-07-31T00:00:00.000Z" })]),
+    capture_failed_repos: ["me/app"],
+  };
+  // Same agents, now carried over from a failed capture -> clients must re-render.
+  expect(herdrSnapshotSignature(live)).not.toBe(herdrSnapshotSignature(stale));
+  // stale_since is pinned at the first failure, so every later failing tick digests the same.
+  expect(herdrSnapshotSignature(stale)).toBe(
+    herdrSnapshotSignature({
+      ...snapshot([repo({ stale_since: "2026-07-31T00:00:00.000Z" })]),
+      capture_failed_repos: ["me/app"],
+    }),
+  );
+});

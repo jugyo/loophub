@@ -4,6 +4,7 @@ import type { HerdrSessionsWire } from "../serialize.ts";
 import { runHerdr, runHerdrCapture } from "../service/herdr-runner.ts";
 import { repoOr404 } from "../service/shared.ts";
 import * as S from "../store.ts";
+import { carryOverFailedRepoSessions } from "./herdr-snapshot-carryover.ts";
 import { herdrSnapshotSignature } from "./herdr-snapshot-signature.ts";
 import {
   parseHerdrAgentPlacements,
@@ -37,7 +38,7 @@ export async function sweepHerdrSessions(): Promise<HerdrSessionsWire> {
 
   const matched = reposWithRunningSession(S.listRepos("active"), running);
   const runningRepos = matched.map(({ repo }) => repo.full_name);
-  const groups = await Promise.all(
+  const captured = await Promise.all(
     matched.map(async ({ repo, sessionName }) => {
       let agentsOut: string;
       try {
@@ -49,19 +50,31 @@ export async function sweepHerdrSessions(): Promise<HerdrSessionsWire> {
           "list",
         ]);
       } catch {
-        return null;
+        // Report the failure instead of returning null: null is also what a repo with no agents
+        // to show projects to, and collapsing the two hid capture failures entirely (#2142).
+        return { repo: repo.full_name, group: null, failed: true };
       }
-      return projectHerdrRepoSessions(
-        repo,
-        sessionName,
-        agentsOut,
-        worktreeRoot(),
-      );
+      return {
+        repo: repo.full_name,
+        group: projectHerdrRepoSessions(
+          repo,
+          sessionName,
+          agentsOut,
+          worktreeRoot(),
+        ),
+        failed: false,
+      };
     }),
   );
+  const captureFailedRepos = captured
+    .filter((c) => c.failed)
+    .map((c) => c.repo);
   return {
-    repos: groups.filter((g) => g !== null),
+    repos: captured.map((c) => c.group).filter((g) => g !== null),
     running_repos: runningRepos,
+    ...(captureFailedRepos.length > 0
+      ? { capture_failed_repos: captureFailedRepos }
+      : {}),
   };
 }
 
@@ -70,6 +83,9 @@ const TERMINAL_SESSIONS_UPDATED_EVENT = "terminal.sessions_updated";
 export interface HerdrSnapshotSweepResult {
   repos: number;
   running_repos: number;
+  // How many repos' `agent list` capture failed this tick (#2142), so the worker log records the
+  // failure even for an operator who never opens the Agents page.
+  capture_failed_repos: number;
   changed: boolean;
   captured_at: string;
 }
@@ -91,7 +107,13 @@ export async function snapshotHerdrSessionsImpl(
   deps: HerdrSnapshotSweepDeps = {},
 ): Promise<HerdrSnapshotSweepResult> {
   const capture = deps.sweep ?? sweepHerdrSessions;
-  const snapshot = await capture();
+  const captured = await capture();
+  // A repo whose own capture failed keeps its last known agents (tagged stale_since) instead of
+  // vanishing from the snapshot — see carryOverFailedRepoSessions (#2142).
+  const snapshot = carryOverFailedRepoSessions(
+    captured,
+    S.getHerdrSessionSnapshot(),
+  );
   const signature = herdrSnapshotSignature(snapshot);
   const record = S.recordHerdrSessionSnapshot(snapshot, signature);
   if (record.changed) {
@@ -102,6 +124,7 @@ export async function snapshotHerdrSessionsImpl(
   return {
     repos: snapshot.repos.length,
     running_repos: snapshot.running_repos?.length ?? 0,
+    capture_failed_repos: snapshot.capture_failed_repos?.length ?? 0,
     changed: record.changed,
     captured_at: record.captured_at,
   };

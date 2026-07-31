@@ -144,9 +144,12 @@ test("terminal.sessions reports running repos independently from visible agent g
       "me/agentless",
       "me/agent-list-failure",
     ]);
+    // me/agent-list-failure could not be captured at all, and says so instead of passing for a
+    // repo with no agents (#2142). It has no group here only because no earlier snapshot ever
+    // captured it — otherwise its last known agents would be carried over.
+    expect(result.capture_failed_repos).toEqual(["me/agent-list-failure"]);
     // me/agentless runs a session with zero agents and me/not-running has no session —
-    // neither produces a group. A failed agent list is likewise absent from repos without
-    // hiding the independently confirmed running session.
+    // neither produces a group, and neither is reported as a capture failure.
     expect(result.repos).toEqual([
       {
         repo: "me/with-agents",
