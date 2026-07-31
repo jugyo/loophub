@@ -107,10 +107,9 @@ describe("--help", () => {
       ],
     },
     {
-      args: ["workflow", "next", "--help"],
-      usage: "lh workflow next <run>",
+      args: ["workflow", "instruction", "--help"],
+      usage: "lh workflow instruction <run>",
       options: [
-        "--watch",
         "--event <id>",
         "--requires-changes <bool>",
         "--note <text|->",

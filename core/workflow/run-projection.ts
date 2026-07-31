@@ -8,7 +8,7 @@ import {
  * One pass over a run's event trail, producing every observation the run's state is derived from.
  *
  * The trail is the run's only record of what its children did, and observing it used to mean
- * loading it again per question — `lh workflow next` alone re-ran `eventsForWorkflowRun` five times
+ * loading it again per question — deciding one action alone re-ran `eventsForWorkflowRun` five times
  * and re-scanned the result with a fresh `findLast` each time. The observations below are all the
  * questions that were being asked, answered once from one ordered pass, so the callers take a
  * projection instead of a repo id and a run id.

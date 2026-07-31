@@ -66,23 +66,23 @@ Options:
   --json                  Print the submitted review as JSON.
   --help                  Show this help without changing the database.`;
 
-const WORKFLOW_NEXT_DETAILS = `
+const WORKFLOW_INSTRUCTION_DETAILS = `
 
 Usage:
-  lh workflow next <run> [--repo <owner/name>]
-    [--watch | --event <id> [--requires-changes true|false] | --note <text|->] [--json]
+  lh workflow instruction <run> [--repo <owner/name>]
+    (--event <id> --requires-changes true|false | --note <text|->) [--json]
 
 Options:
-  --watch                   Wait for the run's next event, then return one advised action.
-  --event <id>              Advise from a specific observed event.
-  --requires-changes <bool> Supply the parent decision requested by the event.
-  --note <text|->           Process a direct human instruction; - reads the instruction from stdin.
+  --event <id>              The event whose GitHub references the parent read.
+  --requires-changes <bool> The parent's verdict on those references.
+  --note <text|->           A direct human instruction; - reads the instruction from stdin.
   --repo <owner/name>       Repository (defaults to the repository at the current path).
   --json                    Print the action, observations, and structured instructions as JSON.
   --help                    Show this help without reading or changing the database.
 
 Constraints:
-  --watch, --event, and --note are mutually exclusive.`;
+  --event and --note are mutually exclusive, and exactly one of them is required.
+  --event requires --requires-changes.`;
 
 export const commandHelp: readonly CommandHelp[] = [
   { path: ["info"], description: "Show the resolved LoopHub environment." },
@@ -253,9 +253,10 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Notify a human about a workflow escalation.",
   },
   {
-    path: ["workflow", "next"],
-    description: "Advise the next Workflow parent action.",
-    details: WORKFLOW_NEXT_DETAILS,
+    path: ["workflow", "instruction"],
+    description:
+      "Submit a parent input and return the instruction it produces.",
+    details: WORKFLOW_INSTRUCTION_DETAILS,
   },
   {
     path: ["workflow", "step"],

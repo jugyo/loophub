@@ -528,30 +528,35 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   expect(existsSync(body.lock_path)).toBe(true);
   expect(body.parent.user_prompt).not.toMatch(/^\/lh-/m);
 
-  const nextJson = run([
+  const instructionJson = run([
     "workflow",
-    "next",
+    "instruction",
     String(body.run.id),
     "--repo",
     REPO,
+    "--note",
+    "start on the first acceptance criterion",
     "--json",
   ]);
-  expect(nextJson.exitCode, nextJson.stderr).toBe(0);
-  expect(JSON.parse(nextJson.stdout)).toMatchObject({
-    action: "launch_execute",
+  expect(instructionJson.exitCode, instructionJson.stderr).toBe(0);
+  expect(JSON.parse(instructionJson.stdout)).toMatchObject({
+    action: "deliver",
+    delivery_reason: "human_instruction",
   });
 
-  const nextText = run([
+  const instructionText = run([
     "workflow",
-    "next",
+    "instruction",
     String(body.run.id),
     "--repo",
     REPO,
+    "--note",
+    "start on the first acceptance criterion",
   ]);
-  expect(nextText.exitCode, nextText.stderr).toBe(0);
-  expect(nextText.stdout.trim().split("\n")).toEqual([
-    "launch_execute",
-    "Execute has not started.",
+  expect(instructionText.exitCode, instructionText.stderr).toBe(0);
+  expect(instructionText.stdout.trim().split("\n")).toEqual([
+    "deliver",
+    "A human supplied additional work for Execute.",
   ]);
 });
 

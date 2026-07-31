@@ -121,9 +121,10 @@ export function eventsForWorkflowRun(
 
 // Cost detection runs on every usage sweep, so this INSERT collapses a run's repeated over-limit
 // observations into at most one event per `reemitAfterMs` for the same cumulative limit (#1844).
-// It re-emits rather than emitting once: a parent that stopped between wake and `cost-hold` would
-// otherwise never see the interrupt again, because `next --watch` advances its cursor before
-// observing. The caller stops asking once the run is held or its limit is raised.
+// It re-emits rather than emitting once: a parent that stopped between the delivered instruction
+// and `cost-hold` would otherwise never see the interrupt again, because the worker advances its
+// cursor once the instruction is delivered. The caller stops asking once the run is held or its
+// limit is raised.
 export function emitWorkflowRunCostExceeded(
   repoId: number,
   actor: string,

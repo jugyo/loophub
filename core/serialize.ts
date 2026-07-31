@@ -1512,7 +1512,7 @@ export interface WorkflowOutOfBandReviewWire {
   verdict: "feedback" | "request_changes";
 }
 
-// Complete observed state used by the Workflow parent and `lh workflow next`. This wire shape
+// Complete observed state the Workflow parent's instructions are decided from. This wire shape
 // remains in core even though its current presentation is CLI-only, so future web consumers share
 // the same source of truth instead of re-declaring it.
 export interface WorkflowStepStatusWire {

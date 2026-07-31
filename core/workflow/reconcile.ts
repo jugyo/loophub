@@ -90,7 +90,7 @@ export type WorkflowNextAction =
       transition: "resume_execute" | null;
     }
   | {
-      // The parent reads the named GitHub resources and re-enters `next` with its verdict. The
+      // The parent reads the named GitHub resources and submits its verdict. The
       // action carries the canonical references only; the untrusted body stays out of the result so
       // the trust boundary — reading and judging that content — remains the parent's alone.
       action: "read_github_reference";
@@ -275,7 +275,7 @@ export function workflowActionPlan(
             "Do the referenced GitHub resources require Execute changes?",
           inputs: [...action.references],
           submit: command(
-            "next",
+            "instruction",
             String(context.run),
             "--repo",
             context.repo,
@@ -315,7 +315,7 @@ export function workflowActionPlan(
           question: action.reason,
           inputs: ["human answer"],
           submit: command(
-            "next",
+            "instruction",
             String(context.run),
             "--repo",
             context.repo,
@@ -459,8 +459,8 @@ export function reconcileWorkflow(
     };
   }
 
-  // One diff comment produces one run event, and `next --watch` spends a wake exactly once, so the
-  // comment is handed to Execute once. Nothing here re-scans open threads: an undelivered comment
+  // One diff comment produces one run event, and the worker delivers each event's instruction
+  // exactly once, so the comment is handed to Execute once. Nothing here re-scans open threads: an undelivered comment
   // is visible on the PR and a human can post it again, which is cheaper than a redelivery rule
   // that also has to decide when a thread stops being new work.
   if (input.wake?.kind === "diff_feedback") {

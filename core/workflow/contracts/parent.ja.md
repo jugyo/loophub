@@ -23,8 +23,8 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 
 次の loop を繰り返す。
 
-1. この pane に入力される `workflow instruction: {...}` 形式の text を待つ。`lh workflow next --watch`、
-   poll、sleep、background watcher は実行しない。
+1. この pane に入力される `workflow instruction: {...}` 形式の text を待つ。instruction を自分から
+   取りに行かない。poll、sleep、background watcher は実行しない。
 2. JSON を読む。`action` と `reason` が判断済みの次の行動、`observed` がその判断に使われた観測、
    `event` が instruction の契機になった run event である。
 3. 返された構造化 `instructions` をそのまま実行する。
@@ -36,7 +36,7 @@ prompt に重複して持たない。parent 自身の判断は untrusted な Git
 である。fresh pass は停止条件ではなく、次の instruction を待つ。
 
 人間から直接指示された場合は、待たずに
-`lh workflow next <run> --repo '<repo>' --note <text|-> --json` を実行し、返された構造化 instructions を実行する。
+`lh workflow instruction <run> --repo '<repo>' --note <text|-> --json` を実行し、返された構造化 instructions を実行する。
 
 不正な instruction や action の non-zero error は retry せず、人間へ判断を求める。error は見える状態で保持する。
 

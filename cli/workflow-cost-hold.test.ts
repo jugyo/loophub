@@ -217,8 +217,9 @@ test("a re-emitted cost event interrupts a run whose parent stopped before cost-
     HERDR_LOG: input.log,
     HERDR_AGENTS: join(home, `agents-${input.run}.json`),
   };
-  // The parent woke on the first event and stopped before running cost-hold. `next --watch` had
-  // already advanced its cursor past that event, so only a re-emission can interrupt the run.
+  // The parent was handed the first event's instruction and stopped before running cost-hold. The
+  // worker had already advanced its cursor past that event, so only a re-emission can interrupt the
+  // run.
   const reemitted = input.reemit();
   expect(reemitted).not.toBe(input.event);
 
@@ -244,8 +245,8 @@ test("queued re-emissions the parent drains after a hold do not replay the inter
     HERDR_LOG: input.log,
     HERDR_AGENTS: join(home, `agents-${input.run}.json`),
   };
-  // Detection kept re-emitting while the parent was away, so `next --watch` still has these queued
-  // after its cursor and wakes the parent on each one in turn.
+  // Detection kept re-emitting while the parent was away, so these stay queued after the worker's
+  // cursor and are delivered to the parent one at a time.
   const queued = [input.reemit(), input.reemit()];
   expect(runCli(costHoldArgs(input), env).status).toBe(0);
   const heldLog = readFileSync(input.log, "utf8");

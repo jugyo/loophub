@@ -116,8 +116,8 @@ rework は通常 Execute の turn done 後に届く。継続指示が作業中�
 
 ### Worker instruction delivery
 
-worker は `workflow_runs.event_cursor` より後の run event を検出し、`lh workflow next` と同じ
-reconcile / action-plan logic へ event と現在 state を渡す。生成結果は `workflow instruction: <JSON>` の
+worker は `workflow_runs.event_cursor` より後の run event を検出し、共通の reconcile / action-plan
+logic へ event と現在 state を渡す。生成結果は `workflow instruction: <JSON>` の
 1 行として、run に登録済みの唯一の parent pane に `pane send-text` で注入し、その成功後に
 `pane send-keys Enter` で投稿する。text と submit は coding agent の paste 処理に同時に入らない。
 repository の `.loophub/workflow.yml` はこの経路に関与しない。
@@ -135,9 +135,9 @@ progression instruction を送らず cursor だけ進める。
 GitHub reference の event は親の変更要否判断を必要とするため、`read_github_reference`
 action を届ける。action は event id と canonical reference だけを含み、untrusted な comment 本文は含まない。
 親は `gh api` で参照を読んでから
-`lh workflow next <run> --repo <repo> --event <event_id> --requires-changes true|false --json` を実行する。
-どちらの呼び出しが必要かは action が示すため、親の prompt にこの二段呼び出し規則を持たない。
-人間からの直接指示は待たずに `--note <text|->` で渡す。
+`lh workflow instruction <run> --repo <repo> --event <event_id> --requires-changes true|false --json` を実行する。
+この二段目が必要かどうかは action が示すため、親の prompt にこの規則を持たない。
+人間からの直接指示は待たずに `lh workflow instruction <run> --note <text|->` で渡す。
 
 `workflow_run.cost_exceeded` の event は `cost_hold` action を返す。親は `lh workflow cost-hold` を実行して
 次の instruction を待つ。hold 中の event 再送に対しても同じ action が返るが、effect が
@@ -351,7 +351,7 @@ rework 上限は 8。新規 launch より先に parent が **1 行の**
 
 上限到達後に fresh な request_changes を観測したときは rework せず、`escalate-human` で Issue comment に
 通知する。この escalation は run を DB で hold しない（`needs_human_reason` は null のまま）ため、復帰は
-人間の指示を `lh workflow next <run> --note <text>` に渡すことで行い、返る action は既存 Execute target への
+人間の指示を `lh workflow instruction <run> --note <text>` に渡すことで行い、返る action は既存 Execute target への
 `deliver` である。`run resume` を経由しないので rework count は上限のまま残り、以降の request_changes は
 毎回 escalation として人間に戻る。`run resume` は cost hold のような `await-human` による明示的 hold を
 解除する経路として残る。
@@ -384,7 +384,7 @@ lh workflow deliver --run <id> --text <single-line-instruction> # 最新 Execute
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
 lh workflow escalate-human --reason <text> [--run <id>] [--issue <n>] # Issue comment を冪等に記録
-lh workflow next <run> [--watch | --event <id> [--requires-changes true|false] | --note <text|->] --json # 観測済み state から次の action を返す（--watch は次の run event まで block）
+lh workflow instruction <run> (--event <id> --requires-changes true|false | --note <text|->) --json # 親の入力（GitHub reference の判断 / 人間の直接指示）に対する instruction を返す
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測
 ```
@@ -402,6 +402,9 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
   install ではこれらのテーブルを作成しない。一時ロック用の `workflow_placement_claims` のみ DROP する。
 - CLI・RPC / wire type・Web UI・run history・本書から artifact 契約前提の API・表示・用語を削除した。
   Workflow 専用の語彙として残るのは **input**（起動時に子へ渡すポインタ群）のみである。
+- `lh workflow next` は廃止した。状態変化からの進行判断は worker の instruction 配送が担い、親が
+  instruction を取りに行く経路（`--watch` を含む）は無い。親自身の入力—GitHub reference に対する
+  変更要否の判断と、人間からの直接指示—だけを `lh workflow instruction` で渡す。
 
 ## 10. 実装境界
 

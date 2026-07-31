@@ -77,7 +77,7 @@ test("Japanese parent delegates action procedures to delivered structured instru
     if (action !== "complete") expect(parent).not.toContain(`\`${action}\``);
   }
   expect(parent).toContain("workflow instruction: {...}");
-  expect(parent.match(/lh workflow next --watch/gu)).toHaveLength(1);
+  expect(parent).not.toContain("lh workflow next");
   expect(parent).toContain("構造化 instructions");
   expect(parent).not.toContain("cursor を seed");
   expect(parent).not.toContain("herdr pane send-keys <pane_id> Escape");
@@ -341,9 +341,9 @@ test("parent delegates transition decisions to worker-delivered results", () => 
   const parent = workflowContractText("parent");
   const japanese = workflowContractText("parent", "ja");
 
-  expect(parent.match(/lh workflow next --watch/gu)).toHaveLength(1);
+  expect(parent).not.toContain("lh workflow next");
   expect(parent).toContain(
-    "lh workflow next <run> --repo '<repo>' --note <text|-> --json",
+    "lh workflow instruction <run> --repo '<repo>' --note <text|-> --json",
   );
   for (const contract of [parent, japanese]) {
     expect(contract).toContain("`commands`");
@@ -397,7 +397,7 @@ test("parent separates lifecycle actions from live Execute delivery", () => {
   expect(parent).not.toContain("lh workflow deliver");
 });
 
-test("parent delegates the rework limit decision to workflow next", () => {
+test("parent delegates the rework limit decision to the delivered instruction", () => {
   expect(workflowContractText("parent")).not.toContain("rework limit");
   expect(workflowContractText("parent", "ja")).not.toContain("rework 上限");
 });
@@ -415,7 +415,7 @@ test("parent waits for worker instructions and reacts to cost limit facts", () =
 
   expect(contract).toContain("## Instruction loop");
   expect(contract).toContain("workflow instruction: {...}");
-  expect(contract).toContain("Do not run `lh workflow next --watch`");
+  expect(contract).toContain("Do not fetch an instruction yourself");
   expect(contract).not.toContain("functions.exec");
   expect(contract).not.toContain("functions.wait");
   expect(contract).not.toContain("background cell");
@@ -486,7 +486,7 @@ test("English and Japanese parent contracts prohibit the old watcher protocol", 
     expect(contract).not.toContain("write_stdin");
     expect(contract).not.toContain("session_id");
     expect(contract).toContain("workflow instruction: {...}");
-    expect(contract).toContain("lh workflow next --watch");
+    expect(contract).not.toContain("lh workflow next");
     expect(contract).toContain("Execute / Verify");
   }
 });

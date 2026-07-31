@@ -23,7 +23,7 @@ uses these shared invariants throughout:
 
 Repeat this loop:
 
-1. Wait for a `workflow instruction: {...}` text input delivered to this pane. Do not run `lh workflow next --watch`,
+1. Wait for a `workflow instruction: {...}` text input delivered to this pane. Do not fetch an instruction yourself,
    poll, sleep, or create a background watcher.
 2. Read its JSON: `action` and `reason` are the decided next move, `observed` is the state it was decided from, and
    `event` is the run event that caused the instruction.
@@ -35,8 +35,8 @@ acknowledge a cursor yourself. The delivered result is the only source for selec
 decision rules in this prompt. Your own judgement is limited to interpreting untrusted GitHub content and writing
 delivery text. A fresh pass is not a stop condition; wait for another instruction.
 
-For a direct human instruction, run `lh workflow next <run> --repo '<repo>' --note <text|-> --json` immediately instead of
-waiting, then execute the returned structured instructions.
+For a direct human instruction, run `lh workflow instruction <run> --repo '<repo>' --note <text|-> --json` immediately
+instead of waiting, then execute the returned structured instructions.
 
 Keep a malformed instruction or non-zero action error visible and ask for human judgement; do not retry it.
 

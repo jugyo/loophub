@@ -104,7 +104,6 @@ import {
   repoOr404,
   UNKNOWN_ACTOR,
 } from "./shared.ts";
-import { workflowWatch } from "./workflow-watch.ts";
 
 export type WorkflowRunStartResult = {
   run: {
@@ -241,9 +240,9 @@ export type WorkflowStepInputResult = {
 export type WorkflowStepStatusResult = WorkflowStepStatusWire;
 
 // The action plus the facts it was decided from. The snapshot travels with the action so the parent
-// never has to re-observe state to act on it, and `event` names the run event this call woke on
-// (`--watch`) or was pointed at (`--event`) — the parent needs its id for event-scoped commands
-// such as `lh workflow cost-hold` and for reading a GitHub reference.
+// never has to re-observe state to act on it, and `event` names the run event the call was pointed
+// at (`--event`) — the parent needs its id for event-scoped commands such as `lh workflow cost-hold`
+// and for reading a GitHub reference.
 export type WorkflowNextResult = WorkflowNextAction & {
   instructions: ReturnType<typeof workflowActionPlan>;
   observed: WorkflowStepStatusWire;
@@ -556,8 +555,8 @@ function workflowWakeObservation(
     return { kind: "execute_escalation", reason: payload.reason };
   }
   if (event.type === "workflow_run.github_event") {
-    // Without a parent verdict the wake is the first half of the two-call protocol: hand back the
-    // references so the parent reads them and re-enters `next` with `--requires-changes`.
+    // Without a parent verdict the event is the first half of the two-call protocol: hand back the
+    // references so the parent reads them and submits `--requires-changes`.
     if (requiresChanges === undefined) {
       return {
         kind: "github_reference",
@@ -1043,8 +1042,8 @@ function increaseRunCostLimit(
       "Workflow cost limit was not increased because its state changed",
     );
   }
-  // The parent waits on this event in `lh workflow next --watch`; it carries the interrupted step so
-  // the wake is legible in run history even though reconciliation re-observes the run row.
+  // The worker turns this event into the parent's next instruction; it carries the interrupted step
+  // so the wake is legible in run history even though reconciliation re-observes the run row.
   S.emitWorkflowEvent(
     repo.id,
     "workflow_run.cost_limit_increased",
@@ -2035,9 +2034,9 @@ export const workflowRuns = {
     );
   },
 
-  // Advise the parent's next action from observed state. With `watch`, the call blocks on the run's
-  // next event before observing, so the parent's whole loop is this one command: no cursor to carry,
-  // no separate status observation, and no event delivery protocol.
+  // Decide the run's next action from observed state. The worker calls this per undigested event to
+  // produce the instruction it delivers to the parent pane; the parent calls it only to submit its
+  // own input — a direct human instruction, or its verdict on GitHub references it was asked to read.
   async next(
     name: string,
     input: {
@@ -2045,53 +2044,24 @@ export const workflowRuns = {
       event?: number;
       note?: string;
       requiresChanges?: boolean;
-      watch?: boolean;
     },
     sessionId?: string | null,
   ): Promise<WorkflowNextResult> {
-    const externalInputs = [
-      input.event !== undefined,
-      input.note !== undefined,
-      input.watch === true,
-    ].filter(Boolean).length;
-    if (externalInputs > 1) {
+    if (input.event !== undefined && input.note !== undefined) {
       throw new ServiceError(
         422,
-        "workflow next accepts either watch, event, or note",
+        "workflow instruction accepts either an event or a note",
       );
     }
     const r = repoOr404(name);
-    // Reading the row is a lookup, not a snapshot: the watch below re-reads it after its wake.
-    const readRun = (): S.WorkflowRunRow => {
-      const row = workflowRunOr404(input.run);
-      if (row.repo_id !== r.id) {
-        throw new ServiceError(404, "Workflow run not found for repo");
-      }
-      return row;
-    };
-    let run = readRun();
-    let wakeEvent: LoopEvent | null = null;
-    // A run that already reached a terminal status has no further event worth waiting for; blocking
-    // would leave the caller parked forever instead of returning the terminal action once.
-    if (input.watch && run.status === "running") {
-      wakeEvent = await workflowWatch.waitForEvent({
-        repo: name,
-        run: run.id,
-        since: run.event_cursor,
-      });
-      // Move the cursor before observing: this wake is spent either way, and reconciliation reads
-      // the state the event produced rather than the event itself.
-      S.advanceWorkflowRunEventCursor(run.id, wakeEvent.id);
-      // That state usually lives on the run row: the events worth waking for are records of writes
-      // to the run itself (a human resuming it, a raised cost limit). Re-read the row so
-      // reconciliation observes what the wake announced instead of what was true when the wait
-      // began — otherwise the wake is spent on a stale hold that never clears.
-      run = readRun();
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
     }
-    // Load the run's trail once, after any wake has landed, and reuse it for both the wake lookup
-    // and the observation below.
+    let wakeEvent: LoopEvent | null = null;
+    // Load the run's trail once and reuse it for both the event lookup and the observation below.
     const rows = S.eventsForWorkflowRun(r.id, run.id);
-    if (wakeEvent === null && input.event !== undefined) {
+    if (input.event !== undefined) {
       const row = rows.find((candidate) => candidate.id === input.event);
       if (!row) {
         throw new ServiceError(
@@ -2111,10 +2081,9 @@ export const workflowRuns = {
     // closes the PR and reaches this same path.
     // Record it from the observation rather than from the PR operation itself — that keeps the run
     // lifecycle owned by this service, makes every close / merge route land on the same result
-    // (the PR's own state is the fact), and covers the wake path too: a watcher that was already
-    // blocked when the operation landed records the completion on the wake that follows. A
-    // completed run is no longer a `running` target for cost detection, so no further cost-exceeded
-    // edge can fire for it.
+    // (the PR's own state is the fact), and covers the event path too: the close event the operation
+    // produced records the completion when its instruction is decided. A completed run is no longer
+    // a `running` target for cost detection, so no further cost-exceeded edge can fire for it.
     const completedNow =
       observedState.pr_closed && S.getWorkflowRun(run.id)?.status === "running"
         ? updateRunLifecycle(

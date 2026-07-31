@@ -911,7 +911,7 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
     previous_limit_usd: 2.5,
     current_limit_usd: 5,
   });
-  // The parent, still waiting in `next --watch`, resumes the step the cost hold interrupted.
+  // The parent resumes the step the cost hold interrupted.
   expect(
     await svc.workflowRuns.next(repo.full_name, {
       run: run.id,
@@ -1644,17 +1644,17 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   });
 }, 30_000);
 
-test("next --watch waits for one run event, owns its cursor, and keeps deciding from state", async () => {
-  const { repo } = freshRepo("me/workflow-watch-next");
+test("a decision from one event never spends the worker's delivery cursor", async () => {
+  const { repo } = freshRepo("me/workflow-event-decision");
   const issue = S.createIssue(
     repo.id,
     "issue",
-    "Watch",
+    "Decide",
     "## Acceptance criteria\n- [ ] Works\n",
     "me",
   );
   const workflow = S.createWorkflow({
-    name: "watch-next-wf",
+    name: "event-decision-wf",
     description: "",
     executePrompt: "",
     verifyPrompt: "",
@@ -1666,43 +1666,36 @@ test("next --watch waits for one run event, owns its cursor, and keeps deciding 
     parent,
   );
   const run = started.run.id;
-  const watch = () =>
-    svc.workflowRuns.next(repo.full_name, { run, watch: true });
 
   await expect(
-    svc.workflowRuns.next(repo.full_name, { run, watch: true, note: "hi" }),
-  ).rejects.toThrow("either watch, event, or note");
-
-  // The events `start` already recorded are undigested, so each wake returns immediately, oldest
-  // first, and moves the durable cursor without the caller passing one.
-  const queued = S.eventsForWorkflowRun(repo.id, run).filter((event) =>
-    event.type.startsWith("workflow_run."),
-  );
-  expect(queued.length).toBeGreaterThan(0);
-  for (const event of queued) {
-    expect((await watch()).event?.id).toBe(event.id);
-  }
-  expect(S.getWorkflowRun(run)?.event_cursor).toBe(queued.at(-1)!.id);
+    svc.workflowRuns.next(repo.full_name, { run, event: 1, note: "hi" }),
+  ).rejects.toThrow("either an event or a note");
 
   const wake = S.emitEvent(repo.id, "workflow_run.updated", "test", {
     id: run,
   });
-  const first = await watch();
+  const first = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: wake.id,
+  });
   expect(first).toMatchObject({ action: "launch_execute" });
   expect(first.event?.id).toBe(wake.id);
   expect(first.observed.run).toBe(run);
   expect(first.observed.steps.execute.complete).toBe(false);
-  expect(S.getWorkflowRun(run)?.event_cursor).toBe(wake.id);
+  // Advancing the cursor is the worker's delivery decision alone; deciding an action never moves it.
+  expect(S.getWorkflowRun(run)?.event_cursor).toBe(0);
 
   // The parent stopped before executing that action. Reconciliation reads state, not the spent
-  // event, so the next wake decides the same action again.
-  S.emitEvent(repo.id, "workflow_run.updated", "test", { id: run });
-  const afterLostAction = await watch();
+  // event, so the same event decides the same action again.
+  const afterLostAction = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: wake.id,
+  });
   expect(afterLostAction.action).toBe(first.action);
   expect(afterLostAction.reason).toBe(first.reason);
 
-  // A GitHub reference cannot carry the parent's changes decision into a wake, so the watch returns
-  // the reference-reading action instead of a transition; the parent evaluates it with `--event`.
+  // A GitHub reference cannot carry the parent's changes decision, so the event alone decides the
+  // reference-reading action instead of a transition; the parent then submits its verdict.
   const github = S.emitEvent(
     repo.id,
     "workflow_run.github_event",
@@ -1714,21 +1707,24 @@ test("next --watch waits for one run event, owns its cursor, and keeps deciding 
           kind: "issue_comment",
           id: 9,
           updated_at: "2026-07-23T00:00:00Z",
-          reference: "repos/me/workflow-watch/issues/comments/9",
+          reference: "repos/me/workflow-event-decision/issues/comments/9",
         },
       ],
     },
   );
-  const watchedGithub = await watch();
-  expect(watchedGithub.event?.id).toBe(github.id);
-  expect(watchedGithub).toMatchObject({
+  const referenced = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: github.id,
+  });
+  expect(referenced.event?.id).toBe(github.id);
+  expect(referenced).toMatchObject({
     action: "read_github_reference",
     event_id: github.id,
-    references: ["repos/me/workflow-watch/issues/comments/9"],
+    references: ["repos/me/workflow-event-decision/issues/comments/9"],
     instructions: {
       boundary: "parent_judgement",
       decision: {
-        inputs: ["repos/me/workflow-watch/issues/comments/9"],
+        inputs: ["repos/me/workflow-event-decision/issues/comments/9"],
       },
     },
   });
@@ -1739,21 +1735,6 @@ test("next --watch waits for one run event, owns its cursor, and keeps deciding 
       requiresChanges: true,
     }),
   ).toMatchObject({ action: "deliver", delivery_reason: "github_feedback" });
-
-  // With nothing undigested the call blocks until the run records its next event.
-  const pending = watch();
-  const late = await new Promise<ReturnType<typeof S.emitEvent>>((resolve) =>
-    setTimeout(
-      () =>
-        resolve(
-          S.emitEvent(repo.id, "workflow_run.turn_done", "executor", {
-            id: run,
-          }),
-        ),
-      50,
-    ),
-  );
-  expect((await pending).event?.id).toBe(late.id);
 }, 20_000);
 
 // #1859: the GitHub half of the two-call protocol lives in the action, not in the parent prompt.
@@ -1900,9 +1881,9 @@ test("next returns cost_hold for every cost-exceeded wake and the receipt keeps 
   ).resolves.toMatchObject({ status: "already_completed", completed: [] });
 }, 20_000);
 
-// #1808: the merged PR is the run's terminal condition. Before this, a parent kept watching a run
-// whose PR had shipped and only stopped once its cost limit was exceeded (run #306).
-test("a merged PR completes the run, unblocks the watcher, and ends cost detection", async () => {
+// #1808: the merged PR is the run's terminal condition. Before this, a parent kept reconciling a
+// run whose PR had shipped and only stopped once its cost limit was exceeded (run #306).
+test("a merged PR completes the run and ends cost detection", async () => {
   const { repo } = freshRepo("me/workflow-merge-terminal");
   const issue = S.createIssue(
     repo.id,
@@ -1944,30 +1925,20 @@ test("a merged PR completes the run, unblocks the watcher, and ends cost detecti
   });
   expect(S.getWorkflowRun(run)?.status).toBe("running");
 
-  // Digest the events the run already recorded so the watch below genuinely blocks instead of
-  // returning a queued wake.
-  for (const queued of S.eventsForWorkflowRun(repo.id, run).filter((event) =>
-    event.type.startsWith("workflow_run."),
-  )) {
-    expect(
-      (await svc.workflowRuns.next(repo.full_name, { run, watch: true })).event
-        ?.id,
-    ).toBe(queued.id);
-  }
-
-  // The reported failure (#1806 / run #306): the parent is already blocked in `--watch` when the
-  // merge lands, so completion has to be recorded on the wake that follows — not only on a call
-  // that starts with an already-merged PR.
-  const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The merge lands while the run is still reconciling toward the goal, so completion has to be
+  // recorded from the close event it produces (#1806 / run #306) — not only from a decision that
+  // starts with an already-merged PR.
   await svc.pulls.merge(repo.full_name, started.pr.number, "merge");
-  const completed = await blocked;
-  expect(completed).toMatchObject({ action: "complete" });
   // Merge closes the PR and uses the same close trigger as an unmerged close.
   const projected = S.eventsForWorkflowRun(repo.id, run).filter(
     (event) => event.type === "workflow_run.closed",
   );
   expect(projected).toHaveLength(1);
+  const completed = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: projected[0].id,
+  });
+  expect(completed).toMatchObject({ action: "complete" });
   expect(JSON.parse(projected[0].payload)).toMatchObject({
     id: run,
     pr_number: started.pr.number,
@@ -1979,12 +1950,8 @@ test("a merged PR completes the run, unblocks the watcher, and ends cost detecti
   expect(completed.observed.status).toBe("completed");
   expect(S.getWorkflowRun(run)?.status).toBe("completed");
 
-  // A terminal run never blocks the caller again: the watch returns the same action without an
-  // event to wake on, so the parent can exit instead of starting another watcher.
-  const replayed = await svc.workflowRuns.next(repo.full_name, {
-    run,
-    watch: true,
-  });
+  // A terminal run keeps deciding the same terminal action, so a later state change cannot revive it.
+  const replayed = await svc.workflowRuns.next(repo.full_name, { run });
   expect(replayed).toMatchObject({ action: "complete", event: null });
 
   // No further cost-exceeded edge can fire for a run that is no longer running.
@@ -2042,7 +2009,7 @@ test("any merge route that leaves the PR merged completes the run", async () => 
   expect(S.getWorkflowRun(run)?.status).toBe("completed");
 }, 20_000);
 
-test("closing an unmerged PR wakes its watcher and completes the run", async () => {
+test("closing an unmerged PR completes the run", async () => {
   const { repo } = freshRepo("me/workflow-close-route");
   const issue = S.createIssue(
     repo.id,
@@ -2065,20 +2032,16 @@ test("closing an unmerged PR wakes its watcher and completes the run", async () 
   );
   const run = started.run.id;
 
-  for (const queued of S.eventsForWorkflowRun(repo.id, run).filter((event) =>
-    event.type.startsWith("workflow_run."),
-  )) {
-    expect(
-      (await svc.workflowRuns.next(repo.full_name, { run, watch: true })).event
-        ?.id,
-    ).toBe(queued.id);
-  }
-
-  const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
-  await new Promise((resolve) => setTimeout(resolve, 50));
   svc.pulls.update(repo.full_name, started.pr.number, { state: "closed" });
 
-  const completed = await blocked;
+  const projected = S.eventsForWorkflowRun(repo.id, run).filter(
+    (event) => event.type === "workflow_run.closed",
+  );
+  expect(projected).toHaveLength(1);
+  const completed = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: projected[0].id,
+  });
   expect(completed).toMatchObject({ action: "complete" });
   expect(completed.observed).toMatchObject({
     pr_merged: false,
@@ -2086,11 +2049,6 @@ test("closing an unmerged PR wakes its watcher and completes the run", async () 
     status: "completed",
   });
   expect(S.getWorkflowRun(run)?.status).toBe("completed");
-
-  const projected = S.eventsForWorkflowRun(repo.id, run).filter(
-    (event) => event.type === "workflow_run.closed",
-  );
-  expect(projected).toHaveLength(1);
   expect(JSON.parse(projected[0].payload)).toMatchObject({
     id: run,
     pr_number: started.pr.number,
@@ -2099,7 +2057,7 @@ test("closing an unmerged PR wakes its watcher and completes the run", async () 
   expect(completed.event?.id).toBe(projected[0].id);
 }, 20_000);
 
-test("closing a PR through issues.update wakes its watcher and completes the run", async () => {
+test("closing a PR through issues.update completes the run", async () => {
   const { repo } = freshRepo("me/workflow-issue-update-close");
   const issue = S.createIssue(
     repo.id,
@@ -2120,20 +2078,16 @@ test("closing a PR through issues.update wakes its watcher and completes the run
   });
   const run = started.run.id;
 
-  for (const queued of S.eventsForWorkflowRun(repo.id, run).filter((event) =>
-    event.type.startsWith("workflow_run."),
-  )) {
-    expect(
-      (await svc.workflowRuns.next(repo.full_name, { run, watch: true })).event
-        ?.id,
-    ).toBe(queued.id);
-  }
-
-  const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
-  await new Promise((resolve) => setTimeout(resolve, 50));
   svc.issues.update(repo.full_name, started.pr.number, { state: "closed" });
 
-  const completed = await blocked;
+  const closed = S.eventsForWorkflowRun(repo.id, run).filter(
+    (event) => event.type === "workflow_run.closed",
+  );
+  expect(closed).toHaveLength(1);
+  const completed = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: closed[0].id,
+  });
   expect(completed).toMatchObject({
     action: "complete",
     observed: { pr_closed: true, status: "completed" },
@@ -3178,7 +3132,7 @@ test("parent contract executes worker-delivered action procedures", () => {
   ]) {
     expect(contract).not.toContain(command);
   }
-  expect(contract).toContain("Do not run `lh workflow next --watch`");
+  expect(contract).toContain("Do not fetch an instruction yourself");
   expect(contract).not.toContain("lh workflow watch");
   expect(contract).not.toContain("next_command");
   expect(contract).not.toContain("--ack");
@@ -3847,17 +3801,17 @@ test("event rows written before the typed payloads still reconcile (#1912)", asy
   );
 }, 20_000);
 
-test("next --watch reconciles the run state its wake announced, not the pre-wait one (#1912)", async () => {
-  const { repo } = freshRepo("me/workflow-watch-reread");
+test("a decision reads the run state its event announced, not an earlier one (#1912)", async () => {
+  const { repo } = freshRepo("me/workflow-hold-reread");
   const issue = S.createIssue(
     repo.id,
     "issue",
-    "Watch reread",
+    "Hold reread",
     "## Acceptance criteria\n- [ ] Works\n",
     "me",
   );
   const workflow = S.createWorkflow({
-    name: "watch-reread-wf",
+    name: "hold-reread-wf",
     description: "",
     executePrompt: "",
     verifyPrompt: "",
@@ -3873,26 +3827,21 @@ test("next --watch reconciles the run state its wake announced, not the pre-wait
     { run: started.run.id, reason: "human decision required" },
     parent,
   );
-  // Park the cursor on the current tail so the watch below blocks on the human's answer rather
-  // than replaying the events the setup already produced.
-  const trail = S.eventsForWorkflowRun(repo.id, started.run.id);
-  S.advanceWorkflowRunEventCursor(started.run.id, trail[trail.length - 1].id);
 
-  const watching = svc.workflowRuns.next(repo.full_name, {
-    run: started.run.id,
-    watch: true,
-  });
-  // The human clears the hold while the parent is blocked. Its `workflow_run.updated` event is
-  // both the wake and the only record that the hold is gone.
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The human clears the hold. Its `workflow_run.updated` event is the only record that the hold
+  // is gone, so the decision for that event must observe the run row as the event left it.
   await svc.workflowRuns.resumeAfterHuman(
     repo.full_name,
     { run: started.run.id, step: "execute" },
     parent,
   );
+  const resumed = S.eventsForWorkflowRun(repo.id, started.run.id).at(-1)!;
 
-  const woken = await watching;
-  expect(woken.observed.awaiting_human).toBe(false);
-  expect(woken.observed.needs_human_reason).toBeNull();
-  expect(woken.action).toBe("launch_execute");
+  const decided = await svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
+    event: resumed.id,
+  });
+  expect(decided.observed.awaiting_human).toBe(false);
+  expect(decided.observed.needs_human_reason).toBeNull();
+  expect(decided.action).toBe("launch_execute");
 }, 30_000);

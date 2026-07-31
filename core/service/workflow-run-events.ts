@@ -3,7 +3,7 @@ import * as S from "../store.ts";
 import { workflowStepSessionIds } from "../workflow/herdr-agents.ts";
 
 // Project every PR close route, including merge, onto the same run-scoped close trigger. The event
-// wakes a parent blocked in `workflow next --watch`; workflow-runs owns lifecycle reconciliation.
+// is what the parent's next instruction is decided from; workflow-runs owns lifecycle reconciliation.
 export function projectWorkflowRunClosed(
   repoId: number,
   pullNumber: number,

@@ -671,7 +671,10 @@ async function stepStatus(): Promise<void> {
   }
 }
 
-async function nextAction(): Promise<void> {
+// The parent's own inputs to the run: a direct human instruction, or its verdict on the GitHub
+// references a delivered instruction asked it to read. State-derived instructions reach the parent
+// through the worker, so this command always carries one input rather than polling for progress.
+async function instruction(): Promise<void> {
   const runId = positiveInt(rest[0], "<run>");
   const event =
     flags.event === undefined ? undefined : positiveInt(flags.event, "--event");
@@ -681,11 +684,11 @@ async function nextAction(): Promise<void> {
       : typeof flags.note === "string"
         ? flags.note
         : undefined;
-  const watch = flags.watch === true;
-  if (
-    [event !== undefined, note !== undefined, watch].filter(Boolean).length > 1
-  ) {
-    fail("workflow next accepts either --watch, --event, or --note");
+  if (event !== undefined && note !== undefined) {
+    fail("workflow instruction accepts either --event or --note");
+  }
+  if (event === undefined && note === undefined) {
+    fail("workflow instruction requires --event or --note");
   }
   const requiresChanges =
     flags["requires-changes"] === undefined
@@ -695,6 +698,9 @@ async function nextAction(): Promise<void> {
         : flags["requires-changes"] === "false"
           ? false
           : fail("--requires-changes must be true or false");
+  if (event !== undefined && requiresChanges === undefined) {
+    fail("--event requires --requires-changes");
+  }
   const repo = await resolveRepo();
   const result = await runOp(async () =>
     (await svc()).workflowRuns.next(repo, {
@@ -702,7 +708,6 @@ async function nextAction(): Promise<void> {
       event,
       note,
       requiresChanges,
-      watch,
     }),
   );
   if (flags.json) {
@@ -823,7 +828,7 @@ async function effect(): Promise<void> {
   const event = positiveInt(flags.event, "--event");
   if (!flags.effect) fail("--effect is required");
   const repo = await resolveRepo();
-  const service = (await svc()).workflowWatch;
+  const service = (await svc()).workflowEffects;
   const input = { repo, run, event, effect: flags.effect };
   const result = await runOp(() =>
     action === "begin"
@@ -952,8 +957,8 @@ export async function run(): Promise<void> {
     await deliver();
   } else if (sub === "escalate-human") {
     await escalateHuman();
-  } else if (sub === "next") {
-    await nextAction();
+  } else if (sub === "instruction") {
+    await instruction();
   } else if (sub === "effect") {
     await effect();
   } else if (sub === "cost-hold") {
