@@ -87,17 +87,12 @@ export function reorderAcceptanceCriteria(
   issueId: number,
   orderedIds: number[],
 ): void {
-  db.run("BEGIN IMMEDIATE");
-  try {
+  db.transaction(() => {
     orderedIds.forEach((id, index) => {
       db.run(
         `UPDATE acceptance_criteria SET ordinal = ? WHERE id = ? AND issue_id = ?`,
         [index + 1, id, issueId],
       );
     });
-    db.run("COMMIT");
-  } catch (error) {
-    db.run("ROLLBACK");
-    throw error;
-  }
+  });
 }

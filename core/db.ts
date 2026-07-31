@@ -80,9 +80,31 @@ interface BunStyleQuery {
   run(...params: Param[]): void;
 }
 
+/**
+ * A `() => unknown` callback that provably finishes before it returns.
+ *
+ * `Extract` distributes over the callback's inferred return type, so a union with a single
+ * `PromiseLike` member (`Promise<void> | undefined`) still collapses the parameter to `never` and
+ * fails to compile. Keeping the callback generic rather than declaring it `() => void` is what
+ * preserves that inference: contextual typing to `void` would erase the `Promise` we look for.
+ */
+export type SyncCallback<F extends () => unknown> = F &
+  ([Extract<ReturnType<F>, PromiseLike<unknown>>] extends [never]
+    ? unknown
+    : never);
+
+const AsyncFunction = (async () => {}).constructor;
+
+function isThenable(value: unknown): boolean {
+  if (typeof value !== "object" && typeof value !== "function") return false;
+  return typeof (value as PromiseLike<unknown> | null)?.then === "function";
+}
+
 export class Db {
   #raw: DatabaseSync;
   #cache = new Map<string, StatementSync>();
+  // Depth of the transaction this connection owns; 0 means no transaction is open.
+  #depth = 0;
 
   constructor(path: string) {
     this.#raw = new DatabaseSync(path);
@@ -117,6 +139,70 @@ export class Db {
     withWriteRetry(() =>
       this.#prepare(sql).run(...(normalize(params) as never[])),
     );
+  }
+
+  /**
+   * Run `callback` inside a transaction and return its value.
+   *
+   * The outermost call owns `BEGIN IMMEDIATE` / `COMMIT` / `ROLLBACK`; a nested call joins the
+   * transaction already open and never commits it. A store helper therefore stays atomic when
+   * called on its own, while a caller that wraps several helpers gets one transaction covering all
+   * of them. An error propagates to the outermost caller, which rolls the whole transaction back —
+   * catching it inside the callback to keep going would commit half a command.
+   *
+   * The callback must be synchronous: SQLite here is synchronous, so work resumed after an `await`
+   * would land outside the transaction it appears to belong to. The compile-time guard is
+   * `SyncCallback`; the checks below cover callers that get past it (a type assertion, or plain
+   * JavaScript).
+   */
+  transaction<F extends () => unknown>(
+    callback: SyncCallback<F>,
+  ): ReturnType<F> {
+    const fn = callback as () => unknown;
+    if (fn instanceof AsyncFunction) {
+      throw new TypeError(
+        "db.transaction requires a synchronous callback (received an async function)",
+      );
+    }
+    if (this.#depth > 0) {
+      this.#depth++;
+      try {
+        return this.#callSync(fn) as ReturnType<F>;
+      } finally {
+        this.#depth--;
+      }
+    }
+    this.run("BEGIN IMMEDIATE");
+    this.#depth = 1;
+    let result: unknown;
+    try {
+      result = this.#callSync(fn);
+    } catch (error) {
+      this.#depth = 0;
+      try {
+        this.run("ROLLBACK");
+      } catch {
+        // SQLite already aborted the transaction in the cases where ROLLBACK itself errors; a
+        // failed rollback must not mask the failure we are about to report.
+      }
+      throw error;
+    }
+    this.#depth = 0;
+    this.run("COMMIT");
+    return result as ReturnType<F>;
+  }
+
+  // A callback that returns a thenable has not finished, so committing would persist a partial
+  // command. Throwing makes it a visible programming error and rolls the transaction back; side
+  // effects the returned promise already started cannot be undone from here.
+  #callSync(callback: () => unknown): unknown {
+    const result = callback();
+    if (isThenable(result)) {
+      throw new TypeError(
+        "db.transaction callback returned a thenable; transaction callbacks must be synchronous",
+      );
+    }
+    return result;
   }
 }
 

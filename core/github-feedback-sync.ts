@@ -71,37 +71,38 @@ export async function syncGithubFeedback(
 
     let emitted: S.EventRow[] = [];
     try {
-      db.run("BEGIN IMMEDIATE");
-      const changed: Array<{
-        kind: GithubPrFeedback["kind"];
-        id: number;
-        updated_at: string;
-        reference: string;
-      }> = [];
-      for (const item of feedback) {
-        const hash = contentHash(item.body);
-        const previous = S.getGithubFeedbackObservation(
-          link.issue_id,
-          item.kind,
-          item.id,
-        );
-        if (previous?.content_hash === hash) continue;
-        S.saveGithubFeedbackObservation({
-          issueId: link.issue_id,
-          kind: item.kind,
-          githubId: item.id,
-          contentHash: hash,
-          updatedAt: item.updatedAt,
-        });
-        changed.push({
-          kind: item.kind,
-          id: item.id,
-          updated_at: item.updatedAt,
-          reference: feedbackReference(link.url, item),
-        });
-      }
-      if (changed.length > 0) {
-        emitted = [
+      // The HTTP fetch above is already done; only the synchronous DB phase is transactional.
+      emitted = db.transaction(() => {
+        const changed: Array<{
+          kind: GithubPrFeedback["kind"];
+          id: number;
+          updated_at: string;
+          reference: string;
+        }> = [];
+        for (const item of feedback) {
+          const hash = contentHash(item.body);
+          const previous = S.getGithubFeedbackObservation(
+            link.issue_id,
+            item.kind,
+            item.id,
+          );
+          if (previous?.content_hash === hash) continue;
+          S.saveGithubFeedbackObservation({
+            issueId: link.issue_id,
+            kind: item.kind,
+            githubId: item.id,
+            contentHash: hash,
+            updatedAt: item.updatedAt,
+          });
+          changed.push({
+            kind: item.kind,
+            id: item.id,
+            updated_at: item.updatedAt,
+            reference: feedbackReference(link.url, item),
+          });
+        }
+        if (changed.length === 0) return [];
+        return [
           S.emitEvent(
             link.repo_id,
             "pull_request.github_feedback",
@@ -117,12 +118,8 @@ export async function syncGithubFeedback(
             },
           ),
         ];
-      }
-      db.run("COMMIT");
+      });
     } catch (error) {
-      try {
-        db.run("ROLLBACK");
-      } catch {}
       result.failures.push({
         number: link.number,
         github_number: link.github_number,

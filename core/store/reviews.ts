@@ -77,17 +77,12 @@ export function createReviewWithAcResults(
   model: string | null,
   acResults: { criterionId: number; verdict: string; note: string }[],
 ): ReviewRow {
-  db.run("BEGIN IMMEDIATE");
-  try {
+  return db.transaction(() => {
     const review = createReview(issueId, author, event, body, headSha, model);
     for (const r of acResults)
       createReviewAcResult(review.id, r.criterionId, r.verdict, r.note);
-    db.run("COMMIT");
     return review;
-  } catch (error) {
-    db.run("ROLLBACK");
-    throw error;
-  }
+  });
 }
 
 export type ReviewState =

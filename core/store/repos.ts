@@ -167,14 +167,7 @@ export function updateRepo(
   };
 
   if (headShas?.length) {
-    db.run("BEGIN IMMEDIATE");
-    try {
-      apply();
-      db.run("COMMIT");
-    } catch (e) {
-      db.run("ROLLBACK");
-      throw e;
-    }
+    db.transaction(apply);
   } else {
     apply();
   }

@@ -132,8 +132,7 @@ export function releaseHerdrPaneClaimsForResource(input: {
   resourceKind: string;
   resourceKey: string;
 }): HerdrPaneClaimRelease {
-  db.run("BEGIN IMMEDIATE");
-  try {
+  return db.transaction(() => {
     const released = listHerdrPaneClaimsForResource(input).filter(
       (claim) => claim.released_at == null,
     );
@@ -164,12 +163,8 @@ export function releaseHerdrPaneClaimsForResource(input: {
         input.resourceKind,
         input.resourceKey,
       ) as HerdrPaneRow[];
-    db.run("COMMIT");
     return { released, closeCandidates };
-  } catch (error) {
-    db.run("ROLLBACK");
-    throw error;
-  }
+  });
 }
 
 export function getHerdrPaneCloseCandidate(

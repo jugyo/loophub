@@ -208,8 +208,7 @@ export function deletePull(
   repoId: number,
   number: number,
 ): void {
-  db.run("BEGIN IMMEDIATE");
-  try {
+  db.transaction(() => {
     // These tables reference issues without ON DELETE CASCADE. Remove only rows owned by this PR;
     // session records, worktrees, and repository-level events remain untouched.
     for (const table of [
@@ -234,11 +233,7 @@ export function deletePull(
     );
     db.run("DELETE FROM pulls WHERE issue_id = ?", [issueId]);
     db.run("DELETE FROM issues WHERE id = ?", [issueId]);
-    db.run("COMMIT");
-  } catch (error) {
-    db.run("ROLLBACK");
-    throw error;
-  }
+  });
 }
 
 export function setHeadSha(issueId: number, sha: string | null) {

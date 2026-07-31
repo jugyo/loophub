@@ -55,7 +55,7 @@ export function linkIssueFiledFromHerdrPane(input: {
 
 // ---- issues / pulls ----
 function reserveNumber(repoId: number): number {
-  // Fresh repositories do not need an eager sequence row. The caller holds BEGIN IMMEDIATE across
+  // Fresh repositories do not need an eager sequence row. The caller holds one transaction across
   // this reservation and the Issue/PR insert. Rechecking surviving rows and opened-event history
   // also repairs a lagging allocator left by a rolling/partial upgrade before incrementing it.
   db.run(
@@ -97,8 +97,7 @@ export function createIssue(
   targetBranch?: string | null,
 ): IssueRow {
   const t = now();
-  db.run("BEGIN IMMEDIATE");
-  try {
+  return db.transaction(() => {
     const number = reserveNumber(repoId);
     const issue = db
       .query(
@@ -117,12 +116,8 @@ export function createIssue(
         t,
       ) as IssueRow;
     indexIssueSearch(issue);
-    db.run("COMMIT");
     return issue;
-  } catch (error) {
-    db.run("ROLLBACK");
-    throw error;
-  }
+  });
 }
 
 export function upsertIssueHerdrPane(input: {
@@ -237,18 +232,16 @@ export function updateIssue(
   params.push(now());
   params.push(id);
   const updatesSearch = fields.title !== undefined || fields.body !== undefined;
-  if (updatesSearch) db.run("BEGIN IMMEDIATE");
-  try {
+  const apply = () => {
     db.run(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?`, params);
     if (updatesSearch) {
       const issue = getIssueById(id);
       if (issue) indexIssueSearch(issue);
-      db.run("COMMIT");
     }
-  } catch (error) {
-    if (updatesSearch) db.run("ROLLBACK");
-    throw error;
-  }
+  };
+  // A title/body edit also rewrites the search index, so the row and its index move together.
+  if (updatesSearch) db.transaction(apply);
+  else apply();
 }
 
 export function getIssueById(id: number): IssueRow | null {
