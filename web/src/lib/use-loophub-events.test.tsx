@@ -3,15 +3,18 @@ import { cleanup, render } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LoopEvent } from "@/api/types";
+import { eventSubject } from "../../../core/event-subjects.ts";
 import { useLoopHubEvents } from "./use-loophub-events";
 
 function ev(id: number, type = "issue.updated"): LoopEvent {
+  const payload = { number: 3 };
   return {
     id,
     type,
     actor: "me",
     repo: "me/proj",
-    payload: { number: 3 },
+    payload,
+    subject: eventSubject(type, payload),
     created_at: "2026-07-04T00:00:00Z",
   };
 }

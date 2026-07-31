@@ -7,8 +7,14 @@
 //   agent_session.*  -> agent-sessions
 //   terminal.*       -> terminal sessions (herdr snapshot, worker-owned #1665)
 // See ../../../API.md for the full event type list.
+//
+// The Issue / PR / Workflow run / scheduled-task identifiers come off `event.subject`, which core
+// normalizes (core/event-subjects.ts) — this module picks keys and does not decide which payload
+// key names which subject. What is left of the payload here is metadata no subject covers, read
+// through the shared object decoder.
 
 import type { LoopEvent } from "@/api/types";
+import { eventPayloadFields } from "../../../core/event-subjects.ts";
 
 /** Query keys used across the app. Components build keys via these factories. */
 export const queryKeys = {
@@ -43,8 +49,7 @@ export const queryKeys = {
  */
 export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   const keys: unknown[][] = [];
-  const { type, repo, payload } = event;
-  const number = payload?.number;
+  const { type, repo, subject } = event;
   if (isNotificationSourceEvent(event)) {
     keys.push([...queryKeys.notifications()]);
   }
@@ -53,8 +58,8 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     if (repo) {
       keys.push([...queryKeys.issues(repo)]);
       keys.push([...queryKeys.labels(repo)]);
-      if (typeof number === "number") {
-        keys.push([...queryKeys.issue(repo, number)]);
+      if (subject.issue_number !== null) {
+        keys.push([...queryKeys.issue(repo, subject.issue_number)]);
       }
     } else {
       keys.push(["issues"]);
@@ -73,8 +78,8 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   } else if (type.startsWith("pull_request.")) {
     if (repo) {
       keys.push([...queryKeys.pulls(repo)]);
-      if (typeof number === "number") {
-        keys.push([...queryKeys.pull(repo, number)]);
+      if (subject.pull_number !== null) {
+        keys.push([...queryKeys.pull(repo, subject.pull_number)]);
       }
     } else {
       keys.push(["pulls"]);
@@ -96,20 +101,17 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     }
     keys.push([...queryKeys.dashboard()]); // cross-repo top page
   } else if (type === "handoff.recorded") {
-    // A handoff (#352) is filed against a PR (payload.number / pr_number) and/or a generic issue
-    // (payload.issue_number). Its section is a sub-key of the pull (and, for an issue-only handoff,
-    // the issue) key, so invalidating that prefix refetches the Handoffs list. An issue-only handoff
-    // carries no PR number, so route its issue_number to the issue keys instead — the generic
-    // mechanism is not PR-only (#352).
-    const prNumber = payload?.pr_number ?? payload?.number;
-    const issueNumber = payload?.issue_number;
+    // A handoff (#352) is filed against a PR and/or a generic issue. Its section is a sub-key of the
+    // pull (and, for an issue-only handoff, the issue) key, so invalidating that prefix refetches
+    // the Handoffs list. An issue-only handoff names no PR, so route its issue subject to the issue
+    // keys instead — the generic mechanism is not PR-only (#352).
     if (repo) {
       keys.push([...queryKeys.pulls(repo)]);
-      if (typeof prNumber === "number") {
-        keys.push([...queryKeys.pull(repo, prNumber)]);
+      if (subject.pull_number !== null) {
+        keys.push([...queryKeys.pull(repo, subject.pull_number)]);
       }
-      if (typeof issueNumber === "number") {
-        keys.push([...queryKeys.issue(repo, issueNumber)]);
+      if (subject.issue_number !== null) {
+        keys.push([...queryKeys.issue(repo, subject.issue_number)]);
       }
     } else {
       keys.push(["pulls"]);
@@ -119,14 +121,15 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     keys.push([...queryKeys.dashboard()]);
   } else if (type.startsWith("scheduled_task.")) {
     // Scheduled task CRUD (#880) alters the repo's task list for every connected client, not just
-    // the tab that made the change (whose mutation hook already invalidates onSuccess). The payload
-    // carries the task id, but create/delete change the whole list, so invalidate the list by prefix
-    // plus the specific task's detail when an id is present.
-    const id = payload?.id;
+    // the tab that made the change (whose mutation hook already invalidates onSuccess). The event
+    // names the task, but create/delete change the whole list, so invalidate the list by prefix
+    // plus the specific task's detail when the subject carries an id.
     if (repo) {
       keys.push([...queryKeys.scheduledTasks(repo)]);
-      if (typeof id === "number")
-        keys.push([...queryKeys.scheduledTask(repo, id)]);
+      if (subject.scheduled_task_id !== null)
+        keys.push([
+          ...queryKeys.scheduledTask(repo, subject.scheduled_task_id),
+        ]);
     } else {
       keys.push(["scheduled-tasks"]);
       keys.push(["scheduled-task"]);
@@ -146,23 +149,24 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     type.startsWith("workflow_step.")
   ) {
     // A Workflow run's step / status / rework count is shown on issue and PR detail (#1008). These
-    // lifecycle events (workflow_run.started/updated/turn_done, workflow_step.launched) all carry
-    // both issue_number and pr_number in the payload, so refresh both detail views' run-state query.
-    // Fall back to the whole prefix defensively when the repo or numbers are somehow absent.
-    const issueNumber = payload?.issue_number;
-    const prNumber = payload?.pr_number ?? payload?.number;
-    const runId = payload?.id;
+    // lifecycle events (workflow_run.started/updated/turn_done, workflow_step.launched) name the
+    // run's issue and PR as well as the run itself, so refresh both detail views' run-state query.
+    // Fall back to the whole prefix defensively when the repo or subjects are somehow absent.
     if (repo) {
-      if (typeof issueNumber === "number") {
-        keys.push([...queryKeys.workflowRunForIssue(repo, issueNumber)]);
+      if (subject.issue_number !== null) {
+        keys.push([
+          ...queryKeys.workflowRunForIssue(repo, subject.issue_number),
+        ]);
       }
-      if (typeof prNumber === "number") {
-        keys.push([...queryKeys.workflowRunForPull(repo, prNumber)]);
+      if (subject.pull_number !== null) {
+        keys.push([...queryKeys.workflowRunForPull(repo, subject.pull_number)]);
       }
-      if (typeof runId === "number") {
-        keys.push([...queryKeys.workflowRunHistory(repo, runId)]);
+      if (subject.workflow_run_id !== null) {
+        keys.push([
+          ...queryKeys.workflowRunHistory(repo, subject.workflow_run_id),
+        ]);
       }
-      if (typeof issueNumber !== "number" && typeof prNumber !== "number") {
+      if (subject.issue_number === null && subject.pull_number === null) {
         keys.push(["workflow-run"]);
       }
     } else {
@@ -187,7 +191,8 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // Dashboard rows embed the repo's full_name and /r/<full_name> links, so any repo
     // metadata change (rename especially) must refresh the cross-repo top page too.
     keys.push([...queryKeys.dashboard()]);
-    const from = payload?.from;
+    // The old name is metadata, not a subject, so it stays a narrowed payload read.
+    const from = eventPayloadFields(event.payload)?.from;
     if (typeof from === "string" && from) {
       keys.push([...queryKeys.repo(from)]);
       keys.push(["issues", from]);
@@ -207,12 +212,10 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // Some agent_session events target a specific PR or issue (for example linked/usage_updated);
     // their related_sessions list and usage summary live in that detail's query too.
     if (repo) {
-      const prNumber = payload?.pr;
-      const issueNumber = payload?.issue;
-      if (typeof prNumber === "number")
-        keys.push([...queryKeys.pull(repo, prNumber)]);
-      if (typeof issueNumber === "number")
-        keys.push([...queryKeys.issue(repo, issueNumber)]);
+      if (subject.pull_number !== null)
+        keys.push([...queryKeys.pull(repo, subject.pull_number)]);
+      if (subject.issue_number !== null)
+        keys.push([...queryKeys.issue(repo, subject.issue_number)]);
     }
   }
 

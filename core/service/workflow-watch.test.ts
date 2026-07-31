@@ -53,6 +53,12 @@ test("blocks until a subject event exists and returns the oldest one", async () 
     repo: "jugyo/loophub",
     actor: "executor",
     payload: { id: 42 },
+    subject: {
+      issue_number: null,
+      pull_number: null,
+      workflow_run_id: 42,
+      scheduled_task_id: null,
+    },
     created_at: "2026-07-21T00:00:00Z",
   });
   expect(deps.log).toHaveBeenCalledWith(

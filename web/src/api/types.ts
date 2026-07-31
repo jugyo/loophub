@@ -3,7 +3,7 @@
 // serializer change that alters a shape breaks this build instead of silently drifting.
 // HerdrPullWorkspace/HerdrIssueWorkspace likewise derive from core/terminal/herdr-status.ts,
 // whose interfaces the terminal/sessions RPC returns as-is. The remaining shapes with no core
-// counterpart (Terminal/Stats/dashboard/events) stay hand-written below.
+// counterpart (Terminal/Stats/dashboard) stay hand-written below.
 import type {
   DiffFile,
   FileAtRef as FileAtRefWire,
@@ -18,6 +18,7 @@ import type {
   DiffFeedbackListWire,
   DiffFeedbackMessageWire,
   DiffFeedbackThreadWire,
+  EventSubjectWire,
   GithubPrStatusWire,
   GithubPullWire,
   GlobalSettingsWire,
@@ -29,6 +30,7 @@ import type {
   IssueWire,
   LabelWire,
   LinkedIssueWire,
+  LoopEventWire,
   NotificationWire,
   PullDiffWire,
   PullSummaryWire,
@@ -301,12 +303,8 @@ export interface DashboardOverview {
   recentIssuesLimit: number;
 }
 
+/** Domain subjects an event names, normalized by core (core/event-subjects.ts). */
+export type EventSubject = EventSubjectWire;
+
 /** Wire format returned by events/list. */
-export interface LoopEvent {
-  id: number;
-  type: string;
-  repo?: string;
-  actor: string;
-  payload: { number?: number; [key: string]: unknown };
-  created_at: string;
-}
+export type LoopEvent = LoopEventWire;

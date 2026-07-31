@@ -1,15 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { LoopEvent } from "@/api/types";
+import { eventSubject } from "../../../core/event-subjects.ts";
 import { queryKeysForEvent } from "./event-keys";
 
+// Events reach the web already normalized, so the fixture derives its subject the same way
+// formatEvent does rather than hand-writing one that could disagree with the server.
 function ev(partial: Partial<LoopEvent>): LoopEvent {
-  return {
+  const event = {
     id: 1,
     type: "issue.opened",
     actor: "impl-bot",
     payload: {},
     created_at: "2026-06-17T00:00:00Z",
     ...partial,
+  };
+  return {
+    ...event,
+    subject: partial.subject ?? eventSubject(event.type, event.payload),
   };
 }
 
@@ -238,5 +245,85 @@ describe("queryKeysForEvent", () => {
         }),
       ),
     ).not.toContainEqual(["notifications"]);
+  });
+
+  it("routes a handoff to the PR it is filed against, and an issue-only one to the issue (#352)", () => {
+    const prKeys = queryKeysForEvent(
+      ev({
+        type: "handoff.recorded",
+        repo: "me/proj",
+        payload: { pr_number: 13, issue_number: 4 },
+      }),
+    );
+    expect(prKeys).toContainEqual(["pull", "me/proj", 13]);
+    expect(prKeys).toContainEqual(["issue", "me/proj", 4]);
+
+    const issueOnlyKeys = queryKeysForEvent(
+      ev({
+        type: "handoff.recorded",
+        repo: "me/proj",
+        payload: { issue_number: 4 },
+      }),
+    );
+    expect(issueOnlyKeys).toContainEqual(["issue", "me/proj", 4]);
+    expect(issueOnlyKeys).toContainEqual(["pulls", "me/proj"]);
+  });
+
+  it("maps scheduled_task events to the repo's task list and the task's detail (#880)", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "scheduled_task.updated",
+        repo: "me/proj",
+        payload: { id: 5 },
+      }),
+    );
+    expect(keys).toContainEqual(["scheduled-tasks", "me/proj"]);
+    expect(keys).toContainEqual(["scheduled-task", "me/proj", 5]);
+  });
+
+  it("maps workflow run lifecycle events to both detail views and the run history (#1008)", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "workflow_run.updated",
+        repo: "me/proj",
+        payload: { id: 9, issue_number: 4, pr_number: 13 },
+      }),
+    );
+    expect(keys).toContainEqual(["workflow-run", "issue", "me/proj", 4]);
+    expect(keys).toContainEqual(["workflow-run", "pull", "me/proj", 13]);
+    expect(keys).toContainEqual(["workflow-run", "history", "me/proj", 9]);
+  });
+
+  it("falls back to the whole workflow-run prefix when the event names neither issue nor PR", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "workflow_step.launched",
+        repo: "me/proj",
+        payload: { id: 9 },
+      }),
+    );
+    expect(keys).toContainEqual(["workflow-run"]);
+  });
+
+  it.each([
+    ["null", null],
+    ["an array", [1, 2]],
+    ["a primitive", 12],
+    ["missing keys", {}],
+  ])("keeps the broad keys and adds no detail key when the payload is %s", (_label, payload) => {
+    const keys = queryKeysForEvent(
+      ev({ type: "issue.updated", repo: "me/proj", payload }),
+    );
+    expect(keys).toContainEqual(["issues", "me/proj"]);
+    expect(keys).not.toContainEqual(["issue", "me/proj", 12]);
+  });
+
+  it("invalidates nothing extra for a repo.renamed whose payload carries no old name", () => {
+    const keys = queryKeysForEvent(
+      ev({ type: "repo.renamed", repo: "acme/renamed", payload: null }),
+    );
+    expect(keys).toContainEqual(["repos"]);
+    expect(keys).toContainEqual(["repo", "acme/renamed"]);
+    expect(keys).not.toContainEqual(["repo", "me/proj"]);
   });
 });

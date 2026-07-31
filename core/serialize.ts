@@ -1579,6 +1579,35 @@ export function workflowRunStateJSON(input: {
 }
 
 /**
+ * The domain subjects one event is about, normalized by core (see core/event-subjects.ts) so a
+ * consumer reads one shape instead of learning which payload key carries which identifier per
+ * event type. `null` means the event names no subject of that kind, including when a legacy
+ * payload predates the key.
+ */
+export interface EventSubjectWire {
+  issue_number: number | null;
+  pull_number: number | null;
+  workflow_run_id: number | null;
+  scheduled_task_id: number | null;
+}
+
+/** Wire format returned by events/list. */
+export interface LoopEventWire {
+  id: number;
+  type: string;
+  repo?: string;
+  actor: string;
+  /**
+   * The stored payload as written by the producer: unversioned, type-specific, and on old rows
+   * anything JSON can hold. Read subjects off `subject`; narrow this only for the metadata no
+   * subject covers.
+   */
+  payload: unknown;
+  subject: EventSubjectWire;
+  created_at: string;
+}
+
+/**
  * How loudly one history event should read in a run's timeline (#1867, #1869). The classification
  * lives here, with the rest of the wire shape, so the dialog only owns three looks and never
  * reconstructs importance from label text.
