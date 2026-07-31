@@ -160,7 +160,10 @@ test("delivers the existing next decision to only the matching parent pane once"
       action: "launch_execute",
     });
     const calls = readFileSync(fake.log, "utf8");
-    expect(calls).toContain("pane send-text w1:p1 workflow instruction:");
+    expect(calls).toContain(
+      "pane send-text w1:p1 \u001b[200~workflow instruction:",
+    );
+    expect(calls).toContain("\u001b[201~");
     expect(calls).toContain('"action":"launch_execute"');
     expect(calls).toContain('"reason":"Execute has not started."');
     expect(calls).toContain("pane send-keys w1:p1 Enter");

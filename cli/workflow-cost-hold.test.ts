@@ -206,7 +206,7 @@ test("lh workflow cost-hold holds the run, sends Escape, and notifies the active
   expect(log).not.toContain("agent list");
   expect(log).toContain("pane send-keys w1:p2 Escape");
   expect(log).toContain(
-    "pane send-text w1:p2 orchestrator: Cost limit exceeded: current $12.5, limit $10. Wait for human instruction.",
+    "pane send-text w1:p2 \u001b[200~orchestrator: Cost limit exceeded: current $12.5, limit $10. Wait for human instruction.\u001b[201~",
   );
   expect(log).toContain("pane send-keys w1:p2 Enter");
 });

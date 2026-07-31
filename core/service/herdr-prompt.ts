@@ -50,20 +50,37 @@ function paneRequest(
   });
 }
 
-// Delivers one prompt to a Herdr pane: write the body, then submit it. The two steps are
-// separate Herdr requests because a coding agent's TUI treats one request as a single paste,
-// which would leave the `Enter` inside the pasted text and the prompt unsent (#2113/#2121).
-// The text is passed as a literal argv positional — no shell, and no `--` terminator, which
-// Herdr's `send-text` would send as the text itself — so `-`-leading and shell-like prompts
-// arrive verbatim. `Enter` is only sent once the body is in the pane; a failed body write must
-// not submit whatever was already there.
+// Bracketed paste (DEC 2004). `send-text` writes the body straight to the pane's PTY as plain
+// bytes, so without these markers a coding agent's TUI has nothing but arrival timing to tell a
+// paste from typing: it classifies the burst as a paste and swallows the `Enter` that follows a
+// few milliseconds later into the pasted text, leaving the prompt sitting in the input box
+// unsent (#2113/#2121/#2137). Splitting the delivery into two Herdr requests did not fix that —
+// the two writes still reach the PTY ~7ms apart, well inside the TUI's paste window. The closing
+// marker ends the paste in the terminal's own parser, so the `Enter` after it is a key press no
+// matter how the bytes are batched.
+const PASTE_START = "\u001b[200~";
+const PASTE_END = "\u001b[201~";
+
+// A prompt body carrying ESC could close its own paste region and turn the rest of the text into
+// key presses, so the escape byte is dropped: prompts are text, and this is the only encoding
+// they have to survive.
+function pasted(text: string): string {
+  return `${PASTE_START}${text.replaceAll("\u001b", "")}${PASTE_END}`;
+}
+
+// Delivers one prompt to a Herdr pane: paste the body, then submit it. The two steps are
+// separate Herdr requests so a failed body write is reported without submitting whatever was
+// already in the pane; correctness of the submit itself comes from the paste markers, not from
+// the split. The text is passed as a literal argv positional — no shell, and no `--` terminator,
+// which Herdr's `send-text` would send as the text itself — so `-`-leading and shell-like
+// prompts arrive verbatim.
 export async function sendHerdrPrompt(
   delivery: HerdrPromptDelivery,
 ): Promise<void> {
   await paneRequest(delivery, "text", [
     "send-text",
     delivery.paneId,
-    delivery.text,
+    pasted(delivery.text),
   ]);
   await paneRequest(delivery, "submit", [
     "send-keys",

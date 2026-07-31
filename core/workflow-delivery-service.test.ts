@@ -165,7 +165,7 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     active_session_id: latestSession,
   });
   expect(readFileSync(HERDR_LOG, "utf8")).toContain(
-    `pane send-text w1:p2 orchestrator: address review #9`,
+    `pane send-text w1:p2 \u001b[200~orchestrator: address review #9\u001b[201~`,
   );
   expect(readFileSync(HERDR_LOG, "utf8")).toContain(
     "pane send-keys w1:p2 Enter",

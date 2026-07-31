@@ -119,7 +119,9 @@ rework は通常 Execute の turn done 後に届く。継続指示が作業中�
 worker は `workflow_runs.event_cursor` より後の run event を検出し、共通の reconcile / action-plan
 logic へ event と現在 state を渡す。生成結果は `workflow instruction: <JSON>` の
 1 行として、run に登録済みの唯一の parent pane に `pane send-text` で注入し、その成功後に
-`pane send-keys Enter` で投稿する。text と submit は coding agent の paste 処理に同時に入らない。
+`pane send-keys Enter` で投稿する。本文は bracketed paste で囲んで送るため、閉じ marker 以降の
+`Enter` は coding agent の paste 処理に取り込まれない。request を分けること自体は保証にならない
+（[根本原因](herdr-prompt-unsent-root-cause.ja.md)）。
 repository の `.loophub/workflow.yml` はこの経路に関与しない。
 
 CLI は parent の Herdr 起動成功後に pane 座標を run へ登録する。worker はその登録前には最古の event を

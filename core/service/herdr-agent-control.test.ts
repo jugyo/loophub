@@ -54,7 +54,10 @@ test("inputText delivers to the session and pane named by the execution target",
 
   expect(
     readFileSync(DELIVERED_PATH, "utf8").split("\n").filter(Boolean),
-  ).toEqual(["repo-session|w1:p2|-continue", "repo-session|w1:p2|Enter"]);
+  ).toEqual([
+    "repo-session|w1:p2|\u001b[200~-continue\u001b[201~",
+    "repo-session|w1:p2|Enter",
+  ]);
 });
 
 test("inputText propagates the Herdr failure to the caller", async () => {
