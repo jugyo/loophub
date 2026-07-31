@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { issueBadges, issueCanStartWork, stateBadge } from "@/lib/badges";
+import { commentAuthor } from "@/lib/comment-author";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
@@ -401,7 +402,7 @@ function CommentList({
           className="rounded-md border p-3"
         >
           <header className="mb-1 text-sm font-medium">
-            @{c.user.login}{" "}
+            @{commentAuthor(c)}{" "}
             <span className="text-xs font-normal text-muted-foreground">
               {relativeTime(c.created_at)}
             </span>

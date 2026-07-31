@@ -645,13 +645,14 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.comments.list(p.repo, p.number, "me"),
   },
   "comments/create": {
-    description: "Add a comment to an issue.",
-    params: params(
-      { repo, number: positiveInt, body: strNonEmpty, session_id: sid },
-      ["repo", "number", "body"],
-    ),
+    description: "Add a human comment to an issue.",
+    params: params({ repo, number: positiveInt, body: strNonEmpty }, [
+      "repo",
+      "number",
+      "body",
+    ]),
     result: anyObject,
-    handler: (p) => svc.comments.create(p.repo, p.number, p.body, p.session_id),
+    handler: (p) => svc.comments.createHumanForIssue(p.repo, p.number, p.body),
   },
   "pullComments/create": {
     description: "Add a human comment to a pull request.",

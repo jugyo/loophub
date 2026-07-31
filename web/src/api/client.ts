@@ -684,13 +684,11 @@ export function postIssueComment(
   repo: string,
   number: number,
   body: string,
-  sessionId: string = getSessionId(),
 ) {
   return rpc<IssueComment>("comments/create", {
     repo: full(owner, repo),
     number,
     body,
-    session_id: sessionId,
   });
 }
 

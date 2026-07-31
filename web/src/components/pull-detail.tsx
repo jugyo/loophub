@@ -46,6 +46,7 @@ import {
 import { WorkDuration } from "@/components/work-duration";
 import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import { pullDetailBadges } from "@/lib/badges";
+import { commentAuthor } from "@/lib/comment-author";
 import { errorMessage } from "@/lib/error-message";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
@@ -787,7 +788,7 @@ function CommentList({
             className="rounded-md border p-3"
           >
             <header className="mb-1 text-sm font-medium">
-              @{c.user.login}{" "}
+              @{commentAuthor(c)}{" "}
               <span className="text-xs font-normal text-muted-foreground">
                 {relativeTime(c.created_at)}
               </span>

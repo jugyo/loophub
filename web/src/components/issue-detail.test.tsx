@@ -68,6 +68,14 @@ const comments: IssueComment[] = [
     created_at: "2026-06-17T11:30:00Z",
     reactions: [],
   },
+  {
+    id: 5,
+    user: { login: "me" },
+    author_type: "human",
+    body: "Shipping it.",
+    created_at: "2026-06-17T11:40:00Z",
+    reactions: [],
+  },
 ];
 
 function mockFetch(
@@ -301,6 +309,19 @@ describe("IssueDetail", () => {
 
     expect(chip).toBeTruthy();
     expect(chip.getAttribute("title")).toBe("Target branch: feature/foo-bar");
+  });
+
+  // #2129: a human post reads as @human whatever actor name it was stored under; agent posts keep
+  // their own author.
+  it("shows a human comment as @human and leaves an agent comment alone", async () => {
+    renderDetail();
+
+    const human = (await screen.findByText("Shipping it.")).closest("article");
+    expect(human?.textContent).toContain("@human");
+    expect(human?.textContent).not.toContain("@me");
+
+    const agent = screen.getByText("Looks good.").closest("article");
+    expect(agent?.textContent).toContain("@design-bot");
   });
 
   it("keeps bottom spacing after the comments section", async () => {
@@ -621,6 +642,8 @@ describe("IssueDetail", () => {
       const call = rpcCall("comments/create");
       expect(call).toBeTruthy();
       expect(call!.params.body).toContain("Nice work");
+      // #2129: posted as the supervising human, not as an unregistered browser session.
+      expect(call!.params.session_id).toBeUndefined();
     });
 
     await waitFor(() => expect(textarea.value).toBe(""));

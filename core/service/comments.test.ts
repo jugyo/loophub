@@ -240,3 +240,33 @@ test("a failed PR comment reaction change preserves the existing reaction", () =
     svc.comments.list(repoName, prNumber, "executor #1-1").at(-1)?.reactions,
   ).toEqual([{ emoji: "👀", count: 1, reacted: true }]);
 });
+
+test("classifies issue commenters, including a human posting without a session", async () => {
+  const issueNumber = (
+    await svc.issues.create(repoName, { title: "Comment target issue" })
+  ).number;
+
+  const human = svc.comments.createHumanForIssue(
+    repoName,
+    issueNumber,
+    "Looks right to me.",
+  );
+  const agent = svc.comments.create(
+    repoName,
+    issueNumber,
+    "Implemented.",
+    agentSession,
+  );
+  const system = svc.comments.create(repoName, issueNumber, "Automated note.");
+
+  expect([human.author_type, agent.author_type, system.author_type]).toEqual([
+    "human",
+    "agent",
+    "system",
+  ]);
+  expect([human.user.login, agent.user.login, system.user.login]).toEqual([
+    "me",
+    "executor #1-1",
+    "unknown",
+  ]);
+});

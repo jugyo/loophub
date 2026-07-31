@@ -32,6 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { diffFeedbackAuthor } from "@/lib/comment-author";
 import {
   type DiffLineKind,
   type PositionedDiffLine,
@@ -1669,7 +1670,9 @@ function ThreadCard({
     >
       <header className="mb-2 flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-2">
-          <span className="font-semibold">@{thread.created_by}</span>
+          <span className="font-semibold">
+            @{diffFeedbackAuthor(thread.created_by)}
+          </span>
           {thread.freshness !== "current" ? (
             <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">
               {thread.freshness}
@@ -1698,7 +1701,7 @@ function ThreadCard({
         {thread.messages.map((message) => (
           <div key={message.id} className="rounded-md bg-muted/20 p-2">
             <div className="mb-1 text-xs text-muted-foreground">
-              @{message.author}
+              @{diffFeedbackAuthor(message.author)}
             </div>
             <Markdown owner={owner} repo={repo}>
               {message.body}

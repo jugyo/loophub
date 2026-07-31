@@ -1252,6 +1252,51 @@ describe("DiffFileDialog", () => {
     await waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
   });
 
+  // #2129: a diff conversation stores only an author name, so the human actor names read as
+  // @human while an agent session keeps its own name.
+  it("shows a human diff conversation as @human and leaves an agent reply alone", async () => {
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              created_by: "unknown",
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+              messages: [
+                {
+                  id: 11,
+                  thread_id: 1,
+                  author: "unknown",
+                  body: "Please rename this.",
+                  created_at: "2026-07-28T00:00:00Z",
+                  reactions: [],
+                },
+                {
+                  id: 12,
+                  thread_id: 1,
+                  author: "executor #12-1",
+                  body: "Renamed.",
+                  created_at: "2026-07-28T00:02:00Z",
+                  reactions: [],
+                },
+              ],
+            }),
+          ],
+        }),
+      },
+    });
+
+    const card = await screen.findByLabelText("Diff thread 1");
+    // The thread creator and their own message; the agent reply is untouched.
+    expect(within(card).getAllByText("@human")).toHaveLength(2);
+    expect(within(card).getByText("@executor #12-1")).toBeTruthy();
+    expect(within(card).queryByText("@unknown")).toBeNull();
+  });
+
   it("renders a current thread at its resolved coordinates", async () => {
     const patch = "@@ -1 +1,2 @@\n-old\n+new one\n+new two";
     const view = renderDialog({

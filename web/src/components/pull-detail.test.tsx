@@ -147,6 +147,14 @@ const comments: IssueComment[] = [
     created_at: "2026-06-18T11:45:00Z",
     reactions: [],
   },
+  {
+    id: 11,
+    user: { login: "impl-bot" },
+    author_type: "agent",
+    body: "Rebased on main.",
+    created_at: "2026-06-18T11:50:00Z",
+    reactions: [],
+  },
 ];
 
 const diffFeedback: DiffFeedbackThread[] = [
@@ -349,6 +357,19 @@ describe("PullDetail", () => {
     // Bidirectional link back to the issue this PR closes.
     const linked = screen.getByText("#153").closest("a");
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
+  });
+
+  // #2129: a human post reads as @human whatever actor name it was stored under; agent posts keep
+  // their own author.
+  it("shows a human PR comment as @human and leaves an agent comment alone", async () => {
+    renderDetail();
+
+    const human = (await screen.findByText("Thanks!")).closest("article");
+    expect(human?.textContent).toContain("@human");
+    expect(human?.textContent).not.toContain("@me");
+
+    const agent = screen.getByText("Rebased on main.").closest("article");
+    expect(agent?.textContent).toContain("@impl-bot");
   });
 
   it("shows a PR comment before the request settles and reconciles it once", async () => {
