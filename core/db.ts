@@ -349,6 +349,20 @@ CREATE INDEX IF NOT EXISTS idx_events_repo_ready_number_id
 CREATE INDEX IF NOT EXISTS idx_events_repo_cost_stopped_number_session_id
   ON events(repo_id, json_extract(payload, '$.number'), json_extract(payload, '$.session_id'), id)
   WHERE type = 'dev.cost_stopped';
+-- Workflow lifecycle lookups by run id (workflowRunsWithPendingEvents in store/workflows.ts,
+-- eventsForWorkflowRun in store/events.ts). The first of those runs once per second in the worker's
+-- event tail and, without this index, re-scanned every event after each run's cursor -- a cost that
+-- grows with both the events table and the number of recorded runs, and that blocks the whole worker
+-- event loop because node:sqlite is synchronous. Unlike the two indexes above this one covers a
+-- whole type family rather than a single literal type, so its partial condition repeats the
+-- callers' GLOB pair verbatim (SQLite matches partial indexes syntactically, so the query text has
+-- to keep both GLOBs in that exact form). The CAST is load-bearing too: run ids are compared
+-- against workflow_runs.id, an INTEGER-affinity column, and SQLite only uses an expression index
+-- when the comparison's affinity matches the indexed expression's -- a bare json_extract has none,
+-- so the correlated lookup silently fell back to a scan.
+CREATE INDEX IF NOT EXISTS idx_events_repo_workflow_run_id
+  ON events(repo_id, CAST(json_extract(payload, '$.id') AS INTEGER), id)
+  WHERE type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*';
 
 CREATE TABLE IF NOT EXISTS agent_sessions (
   id                TEXT PRIMARY KEY,

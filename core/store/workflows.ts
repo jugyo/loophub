@@ -228,6 +228,9 @@ export function advanceWorkflowRunEventCursor(
 // Runs with at least one undelivered lifecycle event. This is intentionally independent of run
 // status: the worker advances terminal runs past their remaining events without delivering a
 // progression instruction, so a restart does not scan the same terminal history forever.
+// The worker's event tail asks this once per second, so the per-run EXISTS has to be a seek, not a
+// scan: the GLOB pair and the CAST both exist to match idx_events_repo_workflow_run_id (see the
+// index comment in db.ts before changing either).
 export function workflowRunsWithPendingEvents(): WorkflowRunRow[] {
   return db
     .query(
@@ -237,7 +240,7 @@ export function workflowRunsWithPendingEvents(): WorkflowRunRow[] {
          WHERE event.repo_id = run.repo_id
            AND (event.type GLOB 'workflow_run.*'
              OR event.type GLOB 'workflow_step.*')
-           AND json_extract(event.payload, '$.id') = run.id
+           AND CAST(json_extract(event.payload, '$.id') AS INTEGER) = run.id
            AND event.id > run.event_cursor
        )
        ORDER BY run.id`,

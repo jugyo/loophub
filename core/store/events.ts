@@ -102,7 +102,8 @@ export function listEvents(
 
 // Workflow lifecycle events for one run, oldest first. Match the run id directly rather than the
 // issue / PR numbers also carried in these payloads: a PR may have successive runs, and its history
-// dialog must never blend their timelines.
+// dialog must never blend their timelines. The GLOB pair and the CAST are what let this seek
+// idx_events_repo_workflow_run_id instead of scanning the repo's events (see db.ts).
 export function eventsForWorkflowRun(
   repoId: number,
   runId: number,
@@ -113,7 +114,7 @@ export function eventsForWorkflowRun(
        WHERE repo_id = ?
          AND (type GLOB 'workflow_run.*'
            OR type GLOB 'workflow_step.*')
-         AND json_extract(payload, '$.id') = ?
+         AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
        ORDER BY id ASC`,
     )
     .all(repoId, runId) as EventRow[];
