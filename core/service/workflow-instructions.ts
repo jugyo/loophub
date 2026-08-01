@@ -139,26 +139,71 @@ export const workflowInstructions = {
     return pane;
   },
 
-  // The parent agent's own declaration that it is running and reads its pane, which is the fact
-  // delivery waits for. Nothing here authenticates the caller: the signal exists for timing, and the
-  // same CLI already lets a human hand the parent an instruction directly.
-  markParentReady(
+  // Record readiness and synchronously release the instruction that was waiting on it. This keeps
+  // the command's success tied to delivery instead of relying on a later worker poll. A worker that
+  // still has the pre-readiness implementation may have claimed or completed the event already;
+  // surface that existing receipt instead of reporting a successful handshake.
+  async parentReady(
     name: string,
     input: { run: number },
-  ): { run: number; ready_at: string } {
+  ): Promise<{
+    run: number;
+    ready_at: string;
+    instruction: WorkflowInstructionDispatchResult;
+  }> {
     const repo = repoOr404(name);
     const run = S.getWorkflowRun(input.run);
     if (!run || run.repo_id !== repo.id) {
       throw new ServiceError(404, `Workflow run #${input.run} not found`);
     }
-    const ready = S.markWorkflowRunParentReady(run.id);
-    if (!ready?.parent_ready_at) {
+    const readyRow = S.markWorkflowRunParentReadyIfNoEffect(
+      run.id,
+      EFFECT_PREFIX,
+    );
+    if (!readyRow?.parent_ready_at || readyRow.parent_ready_confirmed !== 1) {
+      const pending = S.pendingWorkflowEventEffectWithPrefix(
+        run.id,
+        EFFECT_PREFIX,
+      );
+      if (pending) {
+        throw new ServiceError(
+          409,
+          `Workflow instruction delivery for event #${pending.event_id} has a pending receipt`,
+        );
+      }
+      const completed = S.latestCompletedWorkflowEventEffectWithPrefix(
+        run.id,
+        Number.MAX_SAFE_INTEGER,
+        EFFECT_PREFIX,
+      );
+      if (completed) {
+        throw new ServiceError(
+          409,
+          `Workflow instruction for event #${completed.event_id} was recorded before parent readiness; delivery cannot be confirmed`,
+        );
+      }
       throw new ServiceError(
         500,
         `could not record parent readiness for Workflow run #${run.id}`,
       );
     }
-    return { run: ready.id, ready_at: ready.parent_ready_at };
+    const ready = { run: readyRow.id, ready_at: readyRow.parent_ready_at };
+
+    let instruction = await this.dispatchRun(ready.run);
+    while (instruction.status === "skipped") {
+      instruction = await this.dispatchRun(ready.run);
+    }
+    if (instruction.status === "idle") {
+      const current = S.getWorkflowRun(ready.run);
+      const event = current ? pendingEvent(current) : null;
+      if (event) {
+        throw new ServiceError(
+          409,
+          `Workflow instruction for event #${event.id} is pending but was not delivered`,
+        );
+      }
+    }
+    return { ...ready, instruction };
   },
 
   async dispatchRun(runId: number): Promise<WorkflowInstructionDispatchResult> {

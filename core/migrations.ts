@@ -900,6 +900,31 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  // Persist whether readiness was serialized before any instruction claim. Timestamps are only
+  // second-precision, so equality cannot establish order; existing rows with a receipt at or before
+  // readiness remain unconfirmed and surface the ambiguity through the existing error path.
+  {
+    id: "058-workflow-runs-parent-ready-confirmed",
+    run(db) {
+      addColumnIfMissing(
+        db,
+        "workflow_runs",
+        "parent_ready_confirmed",
+        "INTEGER NOT NULL DEFAULT 0",
+      );
+      db.exec(`
+        UPDATE workflow_runs AS run
+        SET parent_ready_confirmed = 1
+        WHERE parent_ready_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM workflow_event_effects AS effect
+            WHERE effect.run_id = run.id
+              AND effect.effect GLOB 'workflow.instruction:*'
+              AND effect.created_at <= run.parent_ready_at
+          )
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

@@ -340,9 +340,7 @@ test("instruction delivery preserves the real next decision for the same state",
     await expect(
       svc.workflowInstructions.dispatchRun(started.run.id),
     ).resolves.toEqual({ status: "idle" });
-    svc.workflowInstructions.markParentReady(repo.full_name, {
-      run: started.run.id,
-    });
+    S.markWorkflowRunParentReady(started.run.id);
     await expect(
       svc.workflowInstructions.dispatchRun(started.run.id),
     ).resolves.toMatchObject({

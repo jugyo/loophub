@@ -755,13 +755,19 @@ async function parentReady(): Promise<void> {
   const runId = positiveInt(rest[0], "<run>");
   const repo = await resolveRepo();
   const result = await runOp(async () =>
-    (await svc()).workflowInstructions.markParentReady(repo, { run: runId }),
+    (await svc()).workflowInstructions.parentReady(repo, { run: runId }),
   );
   if (flags.json) out(result);
-  else
+  else {
     console.log(
       `parent is ready for Workflow run #${result.run} (${result.ready_at})`,
     );
+    if (result.instruction.status === "delivered") {
+      console.log(
+        `delivered Workflow instruction for event #${result.instruction.event}`,
+      );
+    }
+  }
 }
 
 async function escalate(): Promise<void> {

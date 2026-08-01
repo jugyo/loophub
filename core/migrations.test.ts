@@ -147,6 +147,43 @@ test("the one-time data migrations converged instead of running on every boot", 
   ]);
 });
 
+test("readiness confirmation backfill treats same-timestamp receipts as ambiguous", () => {
+  D.db.exec(`
+    INSERT INTO workflow_runs
+      (id, workflow_id, repo_id, issue_number, pr_number, status, current_step,
+       parent_ready_at, parent_ready_confirmed, cost_increment_usd, cost_limit_usd,
+       created_at, updated_at)
+    VALUES
+      (901, NULL, 1, 901, 902, 'running', 'execute', 't5', 0, 5, 5, 't4', 't5'),
+      (902, NULL, 1, 903, 904, 'running', 'execute', 't5', 0, 5, 5, 't4', 't5');
+    INSERT INTO events (id, repo_id, type, actor, payload, created_at)
+    VALUES
+      (901, 1, 'workflow_run.started', 'me', '{"id":901}', 't4'),
+      (902, 1, 'workflow_run.started', 'me', '{"id":902}', 't4');
+    INSERT INTO workflow_event_effects
+      (run_id, event_id, effect, status, created_at, updated_at)
+    VALUES
+      (901, 901, 'workflow.instruction:ambiguous', 'completed', 't5', 't5'),
+      (902, 902, 'workflow.instruction:safe', 'completed', 't6', 't6');
+  `);
+
+  M.MIGRATIONS.find(
+    (migration) => migration.id === "058-workflow-runs-parent-ready-confirmed",
+  )?.run(D.db);
+
+  expect(
+    D.db
+      .query(
+        `SELECT id, parent_ready_confirmed FROM workflow_runs
+         WHERE id IN (901, 902) ORDER BY id`,
+      )
+      .all(),
+  ).toEqual([
+    { id: 901, parent_ready_confirmed: 0 },
+    { id: 902, parent_ready_confirmed: 1 },
+  ]);
+});
+
 // Columns whose migrated shape legitimately differs from the fresh schema. SQLite cannot add a
 // NOT NULL column without a default, and there is no defensible default cost budget to invent for
 // runs created before the columns existed, so an upgraded database keeps them nullable.

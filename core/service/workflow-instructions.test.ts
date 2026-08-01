@@ -101,9 +101,9 @@ function registerParentPane(
 }
 
 function markParentReady(input: ReturnType<typeof fixture>) {
-  return svc.workflowInstructions.markParentReady(input.repo.full_name, {
-    run: input.run.id,
-  });
+  const ready = S.markWorkflowRunParentReady(input.run.id);
+  if (!ready?.parent_ready_at) throw new Error("could not mark parent ready");
+  return { run: ready.id, ready_at: ready.parent_ready_at };
 }
 
 function herdrCalls(path: string): string {
@@ -208,7 +208,7 @@ test("delivers the existing next decision to only the matching parent pane once"
   }
 });
 
-test("a parent pane can register during launch grace", async () => {
+test("parent readiness fails visibly until its pane registers during launch grace", async () => {
   const input = fixture("late-parent");
   const fake = fakeHerdr();
   const originalPath = process.env.PATH;
@@ -218,18 +218,28 @@ test("a parent pane can register during launch grace", async () => {
     .mockResolvedValue(instructionResult(input.event.id));
   try {
     await expect(
-      svc.workflowInstructions.dispatchRun(input.run.id),
-    ).resolves.toEqual({ status: "idle" });
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).rejects.toThrow(
+      `Workflow instruction for event #${input.event.id} is pending but was not delivered`,
+    );
+    expect(S.getWorkflowRun(input.run.id)?.parent_ready_at).not.toBeNull();
     expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(0);
     expect(herdrCalls(fake.log)).toBe("");
+    expect(next).not.toHaveBeenCalled();
 
-    registerParent(input);
+    registerParentPane(input);
     await expect(
-      svc.workflowInstructions.dispatchRun(input.run.id),
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
     ).resolves.toMatchObject({
-      status: "delivered",
-      event: input.event.id,
-      pane_id: "w1:p1",
+      instruction: {
+        status: "delivered",
+        event: input.event.id,
+        pane_id: "w1:p1",
+      },
     });
   } finally {
     next.mockRestore();
@@ -266,19 +276,103 @@ test("delivery waits for the parent agent's readiness signal, not just its pane"
     ).toBeNull();
     expect(next).not.toHaveBeenCalled();
 
-    markParentReady(input);
     await expect(
-      svc.workflowInstructions.dispatchRun(input.run.id),
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
     ).resolves.toMatchObject({
-      status: "delivered",
-      event: input.event.id,
-      pane_id: "w1:p1",
+      run: input.run.id,
+      instruction: {
+        status: "delivered",
+        event: input.event.id,
+        pane_id: "w1:p1",
+      },
     });
+    expect(S.getWorkflowRun(input.run.id)?.parent_ready_confirmed).toBe(1);
     expect(herdrCalls(fake.log)).toContain("pane send-text w1:p1");
   } finally {
     next.mockRestore();
     process.env.PATH = originalPath;
     rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("readiness keeps a pre-existing pending receipt visible after it completes", async () => {
+  const input = fixture("premature-delivery");
+  registerParentPane(input);
+  const effect = "workflow.instruction:premature";
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
+    const claimed = S.beginWorkflowEventEffect(
+      input.run.id,
+      input.event.id,
+      effect,
+    );
+    expect(claimed?.acquired).toBe(true);
+
+    // This is the race left by the old command, entirely within one DB timestamp tick: the worker
+    // claimed before readiness, then completed after it, but all three rows carry the same time.
+    vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
+    markParentReady(input);
+    vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
+    expect(
+      S.completeWorkflowEventEffect(input.run.id, input.event.id, effect),
+    ).not.toBeNull();
+    S.advanceWorkflowRunEventCursor(input.run.id, input.event.id);
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).rejects.toThrow(
+      `Workflow instruction for event #${input.event.id} was recorded before parent readiness; delivery cannot be confirmed`,
+    );
+    expect(S.getWorkflowRun(input.run.id)?.parent_ready_confirmed).toBe(0);
+    expect(S.getWorkflowRun(input.run.id)?.parent_ready_at).not.toBeNull();
+
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).rejects.toThrow("delivery cannot be confirmed");
+  } finally {
+    vi.useRealTimers();
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("readiness does not hide a pending receipt that already exists", async () => {
+  const input = fixture("pending-before-ready");
+  registerParentPane(input);
+  const effect = "workflow.instruction:pending-before-ready";
+  const claimed = S.beginWorkflowEventEffect(
+    input.run.id,
+    input.event.id,
+    effect,
+  );
+  expect(claimed?.acquired).toBe(true);
+
+  try {
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).rejects.toThrow("has a pending receipt");
+    expect(S.getWorkflowRun(input.run.id)?.parent_ready_at).toBeNull();
+    expect(S.getWorkflowRun(input.run.id)?.parent_ready_confirmed).toBe(0);
+
+    expect(
+      S.completeWorkflowEventEffect(input.run.id, input.event.id, effect),
+    ).not.toBeNull();
+    S.advanceWorkflowRunEventCursor(input.run.id, input.event.id);
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).rejects.toThrow("delivery cannot be confirmed");
+    expect(S.getWorkflowRun(input.run.id)?.parent_ready_at).toBeNull();
+  } finally {
     rmSync(input.repoPath, { recursive: true, force: true });
   }
 });
@@ -325,13 +419,35 @@ test("a parent that never signals readiness after launch grace fails visibly and
   }
 });
 
-test("a repeated readiness signal keeps the first one", () => {
+test("a repeated confirmed readiness signal keeps the first one", async () => {
   const input = fixture("repeated-ready");
+  const fake = fakeHerdr();
+  registerParentPane(input);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
   try {
-    const first = markParentReady(input);
+    const first = await svc.workflowInstructions.parentReady(
+      input.repo.full_name,
+      { run: input.run.id },
+    );
     expect(first).toMatchObject({ run: input.run.id });
-    expect(markParentReady(input).ready_at).toBe(first.ready_at);
+    const calls = herdrCalls(fake.log);
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).resolves.toMatchObject({
+      ready_at: first.ready_at,
+      instruction: { status: "idle" },
+    });
+    expect(herdrCalls(fake.log)).toBe(calls);
   } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
     rmSync(input.repoPath, { recursive: true, force: true });
   }
 });
@@ -486,7 +602,7 @@ test("queued lifecycle wakes are processed in order and identical decisions are 
 test("an ambiguous send failure leaves a visible pending receipt and is not repeated", async () => {
   const input = fixture("send-failure");
   const fake = fakeHerdr();
-  registerParent(input);
+  registerParentPane(input);
   const originalPath = process.env.PATH;
   const originalFail = process.env.HERDR_SEND_FAIL;
   process.env.PATH = `${fake.bin}:${originalPath}`;
@@ -496,7 +612,9 @@ test("an ambiguous send failure leaves a visible pending receipt and is not repe
     .mockResolvedValue(instructionResult(input.event.id));
   try {
     await expect(
-      svc.workflowInstructions.dispatchRun(input.run.id),
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
     ).rejects.toThrow("Herdr exited with status 9");
     const calls = readFileSync(fake.log, "utf8");
     expect(
@@ -509,7 +627,9 @@ test("an ambiguous send failure leaves a visible pending receipt and is not repe
     expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(0);
 
     await expect(
-      svc.workflowInstructions.dispatchRun(input.run.id),
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
     ).rejects.toThrow("has a pending receipt");
     expect(readFileSync(fake.log, "utf8")).toBe(calls);
     await expect(svc.workflowInstructions.dispatchPending()).resolves.toEqual(
