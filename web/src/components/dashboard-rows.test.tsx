@@ -246,6 +246,27 @@ describe("PullRow", () => {
 });
 
 describe("IssueRow", () => {
+  it("shows the issue comment count at the right of the row", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ comments: 3 })} />,
+    );
+
+    const count = await screen.findByLabelText("3 comments");
+    expect(count.textContent).toBe("3");
+    expect(count.querySelector("svg")).toBeTruthy();
+    // Match the linked-PR comment layout by keeping the count at the row's right edge.
+    expect(count.nextElementSibling).toBeNull();
+  });
+
+  it("does not show a comment count when the issue has no comments", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ comments: 0 })} />,
+    );
+
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(screen.queryByLabelText(/comments?$/)).toBeNull();
+  });
+
   it("shows the workspace above the issue title", async () => {
     renderInRouter(
       <IssueRow
