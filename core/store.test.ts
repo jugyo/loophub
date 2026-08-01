@@ -767,6 +767,47 @@ test("pullAgentSummary returns the primary dev session runtime and usage models 
   });
 });
 
+test("recordSessionUsageSample decides the automatic delta inside its transaction", () => {
+  const sessionId = "77777777-0000-0000-0000-000000000004";
+  S.registerAgentSession(
+    sessionId,
+    "lh-build",
+    sessionId,
+    null,
+    "claude-code",
+    "dev",
+  );
+  const originalQuery = D.db.query.bind(D.db);
+  let latestSampleReadInTransaction = false;
+  D.db.query = ((sql: string) => {
+    if (sql.includes("FROM session_usage_samples")) {
+      latestSampleReadInTransaction = D.db.inTransaction;
+    }
+    return originalQuery(sql);
+  }) as typeof D.db.query;
+  try {
+    S.recordSessionUsageSample({ sessionId, totalTokens: 100 });
+    S.recordSessionUsageSample({ sessionId, totalTokens: 125 });
+  } finally {
+    D.db.query = originalQuery;
+  }
+
+  expect(latestSampleReadInTransaction).toBe(true);
+  expect(
+    D.db
+      .query(
+        `SELECT total_tokens, token_delta
+         FROM session_usage_samples
+         WHERE session_id = ?
+         ORDER BY id`,
+      )
+      .all(sessionId),
+  ).toEqual([
+    { total_tokens: 100, token_delta: 0 },
+    { total_tokens: 125, token_delta: 25 },
+  ]);
+});
+
 test("hasAnyCostStopEvent detects a dev.cost_stopped event per PR, any session (#863)", () => {
   const repo = S.createRepo("me/anycoststop", "/tmp/anycoststop");
   const other = S.createRepo("me/anycoststop2", "/tmp/anycoststop2");

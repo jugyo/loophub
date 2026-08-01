@@ -32,11 +32,13 @@ import {
   parseClaudeSubagentTranscript,
   parseClaudeUsageJsonl,
   readTranscriptSlice,
+  type SubagentUsage,
   type UsageEntry,
 } from "../session-usage.ts";
 import {
   calculateTokensPerSecond,
   planGrokTurnRateSamples,
+  totalTokens,
 } from "../session-usage-rate.ts";
 import * as S from "../store.ts";
 import { legacyWorktreePath, worktreePath } from "../worktree-path.ts";
@@ -182,38 +184,67 @@ function secondsAgo(now: Date, seconds: number): string {
   return new Date(now.getTime() - seconds * 1000).toISOString();
 }
 
-function recordUsageSample(sessionId: string): void {
-  const totalTokens = S.totalTokensForSession(sessionId);
-  if (totalTokens == null) return;
-  S.recordSessionUsageSample({ sessionId, totalTokens });
-  S.pruneSessionUsageSamples(secondsAgo(new Date(), 600));
+interface UsageSamplePlan {
+  samples: {
+    totalTokens: number;
+    tokenDelta?: number;
+    observedAt: string;
+  }[];
+  pruneBefore: string;
 }
 
-// Grok has no mid-turn billed usage events. After session_usage is rewritten,
-// reconstruct live TPS from turn tokens × apiDurationMs as a sample pair so
-// calculateTokensPerSecond sees a positive delta over a positive span (including
-// the first turn, where a lone sample would store token_delta=0). Does not touch
-// session_usage cost columns.
-function recordGrokUsageRateSamples(
-  sessionId: string,
+function usageTotal(usage: ReadonlyArray<ModelUsage | S.SessionUsageRow>) {
+  if (usage.length === 0) return null;
+  return usage.reduce((sum, row) => sum + totalTokens(row), 0);
+}
+
+function planUsageSample(
+  usage: ReadonlyArray<ModelUsage | S.SessionUsageRow>,
+  now = new Date(),
+): UsageSamplePlan | null {
+  const total = usageTotal(usage);
+  if (total == null) return null;
+  return {
+    samples: [
+      {
+        totalTokens: total,
+        observedAt: now.toISOString(),
+      },
+    ],
+    pruneBefore: secondsAgo(now, 600),
+  };
+}
+
+// Grok has no mid-turn billed usage events. Precompute the sample pair before the DB phase so the
+// transaction only persists it alongside the rewritten usage.
+function planGrokUsageRateSamples(
   previousTotal: number | null,
+  usage: ModelUsage[],
   turns: GrokTurnUsage[],
-): void {
-  const newTotal = S.totalTokensForSession(sessionId);
-  if (newTotal == null) return;
-  const plan = planGrokTurnRateSamples({
+  now = new Date(),
+): UsageSamplePlan | null {
+  const newTotal = usageTotal(usage);
+  if (newTotal == null) return null;
+  const samples = planGrokTurnRateSamples({
     previousTotal: previousTotal ?? 0,
     newTotal,
     turns: turns.map((turn) => ({
       totalTokens: turn.totalTokens,
       apiDurationMs: turn.apiDurationMs,
     })),
+    now,
   });
-  if (!plan) {
-    recordUsageSample(sessionId);
-    return;
-  }
-  for (const sample of plan) {
+  return samples
+    ? { samples, pruneBefore: secondsAgo(now, 600) }
+    : planUsageSample(usage, now);
+}
+
+function saveUsageSamples(
+  sessionId: string,
+  plan: UsageSamplePlan | null,
+): void {
+  if (!plan) return;
+  for (const sample of plan.samples) {
     S.recordSessionUsageSample({
       sessionId,
       totalTokens: sample.totalTokens,
@@ -221,7 +252,7 @@ function recordGrokUsageRateSamples(
       tokenDelta: sample.tokenDelta,
     });
   }
-  S.pruneSessionUsageSamples(secondsAgo(new Date(), 600));
+  S.pruneSessionUsageSamples(plan.pruneBefore);
 }
 
 // Retention for the persisted live-rate history (#1123). Longer than the 600s sample TTL so a rate time
@@ -238,21 +269,18 @@ function liveTokensPerSecond(now: Date): number | null {
   );
 }
 
-function saveClaudeSubagentUsage(
-  sessionId: string,
+function claudeSubagentUsage(
   subagents: ClaudeSubagentTranscript[],
-): void {
-  for (const subagent of subagents) {
-    for (const usage of aggregateUsage(subagent.entries)) {
-      S.upsertSessionSubagentUsage(sessionId, {
-        source_id: subagent.sourceId,
-        parent_source_id: subagent.parentSourceId,
-        label: subagent.label,
-        kind: subagent.kind,
-        ...usage,
-      });
-    }
-  }
+): SubagentUsage[] {
+  return subagents.flatMap((subagent) =>
+    aggregateUsage(subagent.entries).map((usage) => ({
+      source_id: subagent.sourceId,
+      parent_source_id: subagent.parentSourceId,
+      label: subagent.label,
+      kind: subagent.kind,
+      ...usage,
+    })),
+  );
 }
 
 function parseClaudeSubagentTranscripts(
@@ -263,30 +291,94 @@ function parseClaudeSubagentTranscripts(
     .filter((x): x is ClaudeSubagentTranscript => x != null);
 }
 
-function saveCodexSubagentUsage(
-  sessionId: string,
+function codexSubagentUsage(
   rollouts: {
     path: string;
     threadId: string | null;
     parentThreadId: string | null;
     entries: UsageEntry[];
   }[],
-): void {
-  S.deleteSessionSubagentUsageByKind(sessionId, "codex-child-rollout");
-  for (const rollout of rollouts) {
-    if (!rollout.parentThreadId) continue;
+): SubagentUsage[] {
+  return rollouts.flatMap((rollout) => {
+    if (!rollout.parentThreadId) return [];
     const fallbackId = rollout.path.split(/[\\/]/).pop() ?? "unknown-rollout";
     const sourceId = rollout.threadId ?? `rollout:${fallbackId}`;
-    for (const usage of aggregateUsage(rollout.entries)) {
-      S.upsertSessionSubagentUsage(sessionId, {
-        source_id: sourceId,
-        parent_source_id: rollout.parentThreadId,
-        label: rollout.threadId ? `Codex thread ${rollout.threadId}` : null,
-        kind: "codex-child-rollout",
-        ...usage,
-      });
-    }
+    return aggregateUsage(rollout.entries).map((usage) => ({
+      source_id: sourceId,
+      parent_source_id: rollout.parentThreadId,
+      label: rollout.threadId ? `Codex thread ${rollout.threadId}` : null,
+      kind: "codex-child-rollout",
+      ...usage,
+    }));
+  });
+}
+
+function saveSubagentUsage(sessionId: string, usage: SubagentUsage[]): void {
+  for (const row of usage) S.upsertSessionSubagentUsage(sessionId, row);
+}
+
+function mergeModelUsage(
+  current: ReadonlyArray<ModelUsage | S.SessionUsageRow>,
+  additions: ModelUsage[],
+): ModelUsage[] {
+  const byModel = new Map<string, ModelUsage>();
+  for (const row of [...current, ...additions]) {
+    const existing = byModel.get(row.model);
+    const usage = existing
+      ? {
+          input_tokens: existing.input_tokens + row.input_tokens,
+          cache_creation_input_tokens:
+            existing.cache_creation_input_tokens +
+            row.cache_creation_input_tokens,
+          cache_read_input_tokens:
+            existing.cache_read_input_tokens + row.cache_read_input_tokens,
+          output_tokens: existing.output_tokens + row.output_tokens,
+        }
+      : {
+          input_tokens: row.input_tokens,
+          cache_creation_input_tokens: row.cache_creation_input_tokens,
+          cache_read_input_tokens: row.cache_read_input_tokens,
+          output_tokens: row.output_tokens,
+        };
+    const contexts = [
+      existing?.context_usage_percent,
+      row.context_usage_percent,
+    ].filter((value): value is number => value != null);
+    byModel.set(row.model, {
+      model: row.model,
+      ...usage,
+      cost_usd: calculateCostUsd(row.model, usage),
+      context_usage_percent: contexts.length > 0 ? Math.max(...contexts) : null,
+    });
   }
+  return [...byModel.values()];
+}
+
+function newUsageEntries(
+  sessionId: string,
+  parsed: UsageEntry[],
+  checkStored: boolean,
+): UsageEntry[] {
+  const seen = new Set<string>();
+  return parsed.filter((entry) => {
+    if (seen.has(entry.message_id)) return false;
+    seen.add(entry.message_id);
+    return (
+      !checkStored || !S.hasSessionUsageMessage(sessionId, entry.message_id)
+    );
+  });
+}
+
+function usageCursorEquals(
+  expected: S.SessionUsageCursorRow | null,
+  actual: S.SessionUsageCursorRow | null,
+): boolean {
+  return (
+    expected?.session_id === actual?.session_id &&
+    expected?.transcript_path === actual?.transcript_path &&
+    expected?.cursor_offset === actual?.cursor_offset &&
+    expected?.mtime_ms === actual?.mtime_ms
+  );
 }
 
 function codexTargetKey(target: {
@@ -629,17 +721,25 @@ export const sessions = {
         const transcriptPath = rollouts.map((x) => x.path).join("\n");
         const fresh = rollouts.flatMap((x) => x.entries);
         const aggregated = aggregateUsage(fresh);
+        const subagentUsage = codexSubagentUsage(rollouts);
+        const stored = S.listSessionUsage(row.id);
+        const topLevelUnchanged =
+          !input.full && modelUsageEqualsStored(aggregated, stored);
+        const samplePlan = planUsageSample(
+          topLevelUnchanged ? stored : aggregated,
+        );
         return db.transaction(() => {
-          const topLevelUnchanged =
-            !input.full &&
-            modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
+          if (!modelUsageEqualsStored(stored, S.listSessionUsage(row.id))) {
+            throw new Error("Session usage changed during sync");
+          }
           if (topLevelUnchanged) {
-            saveCodexSubagentUsage(row.id, rollouts);
+            S.deleteSessionSubagentUsageByKind(row.id, "codex-child-rollout");
+            saveSubagentUsage(row.id, subagentUsage);
             clearOtherCodexUsageForPull(
               target.pullIssueId,
               target.ownerSessionId,
             );
-            recordUsageSample(row.id);
+            saveUsageSamples(row.id, samplePlan);
             return {
               session_id: row.id,
               status: "skipped",
@@ -657,15 +757,8 @@ export const sessions = {
           for (const usage of aggregated) {
             S.upsertSessionUsage(row.id, usage);
           }
-          saveCodexSubagentUsage(row.id, rollouts);
-          for (const usage of S.listSessionUsage(row.id)) {
-            S.rewriteSessionUsageCost(
-              row.id,
-              usage.model,
-              calculateCostUsd(usage.model, usage),
-            );
-          }
-          recordUsageSample(row.id);
+          saveSubagentUsage(row.id, subagentUsage);
+          saveUsageSamples(row.id, samplePlan);
 
           return {
             session_id: row.id,
@@ -721,11 +814,17 @@ export const sessions = {
         const fresh = sessions.flatMap((x) => x.entries);
         const turns = sessions.flatMap((x) => x.turns);
         const aggregated = aggregateUsage(fresh);
+        const previousTotal = S.totalTokensForSession(row.id);
+        const stored = S.listSessionUsage(row.id);
+        const topLevelUnchanged =
+          !input.full && modelUsageEqualsStored(aggregated, stored);
+        const samplePlan = topLevelUnchanged
+          ? planUsageSample(stored)
+          : planGrokUsageRateSamples(previousTotal, aggregated, turns);
         return db.transaction(() => {
-          const previousTotal = S.totalTokensForSession(row.id);
-          const topLevelUnchanged =
-            !input.full &&
-            modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
+          if (!modelUsageEqualsStored(stored, S.listSessionUsage(row.id))) {
+            throw new Error("Session usage changed during sync");
+          }
           if (topLevelUnchanged) {
             clearOtherGrokUsageForPull(
               target.pullIssueId,
@@ -733,7 +832,7 @@ export const sessions = {
             );
             // Unchanged totals: keep a heartbeat sample (delta 0). Rate pairs are
             // only written when turn usage advances.
-            recordUsageSample(row.id);
+            saveUsageSamples(row.id, samplePlan);
             return {
               session_id: row.id,
               status: "skipped",
@@ -748,14 +847,7 @@ export const sessions = {
           for (const usage of aggregated) {
             S.upsertSessionUsage(row.id, usage);
           }
-          for (const usage of S.listSessionUsage(row.id)) {
-            S.rewriteSessionUsageCost(
-              row.id,
-              usage.model,
-              calculateCostUsd(usage.model, usage),
-            );
-          }
-          recordGrokUsageRateSamples(row.id, previousTotal, turns);
+          saveUsageSamples(row.id, samplePlan);
 
           return {
             session_id: row.id,
@@ -798,7 +890,9 @@ export const sessions = {
         cursor.cursor_offset === transcriptStats.size &&
         cursor.mtime_ms === transcriptStats.mtimeMs;
       if (unchanged) {
-        recordUsageSample(row.id);
+        const stored = S.listSessionUsage(row.id);
+        const samplePlan = planUsageSample(stored);
+        saveUsageSamples(row.id, samplePlan);
         return {
           session_id: row.id,
           status: "skipped",
@@ -827,26 +921,35 @@ export const sessions = {
             ...parseClaudeUsageJsonl(readTranscriptSlice(transcript.path, 0)),
             ...subagents.flatMap((subagent) => subagent.entries),
           ];
+      const fresh = newUsageEntries(row.id, parsed, Boolean(canContinue));
+      const aggregated = aggregateUsage(fresh);
+      const finalUsage = canContinue
+        ? mergeModelUsage(S.listSessionUsage(row.id), aggregated)
+        : aggregated;
+      const subagentUsage = claudeSubagentUsage(subagents);
+      const samplePlan = planUsageSample(finalUsage);
       return db.transaction(() => {
+        if (
+          canContinue &&
+          !usageCursorEquals(cursor, S.getSessionUsageCursor(row.id))
+        ) {
+          throw new Error("Session usage changed during sync");
+        }
         if (!canContinue) S.resetSessionUsage(row.id);
-        const fresh: UsageEntry[] = [];
-        for (const entry of parsed) {
-          if (S.insertSessionUsageMessage(row.id, entry.message_id))
-            fresh.push(entry);
+        for (const entry of fresh) {
+          if (!S.insertSessionUsageMessage(row.id, entry.message_id)) {
+            throw new Error("Session usage changed during sync");
+          }
         }
 
-        for (const usage of aggregateUsage(fresh)) {
+        for (const usage of aggregated) {
           S.upsertSessionUsage(row.id, usage);
         }
-        if (!canContinue) saveClaudeSubagentUsage(row.id, subagents);
-        for (const usage of S.listSessionUsage(row.id)) {
-          S.rewriteSessionUsageCost(
-            row.id,
-            usage.model,
-            calculateCostUsd(usage.model, usage),
-          );
+        if (!canContinue) saveSubagentUsage(row.id, subagentUsage);
+        for (const usage of finalUsage) {
+          S.rewriteSessionUsageCost(row.id, usage.model, usage.cost_usd);
         }
-        recordUsageSample(row.id);
+        saveUsageSamples(row.id, samplePlan);
 
         S.upsertSessionUsageCursor({
           sessionId: row.id,

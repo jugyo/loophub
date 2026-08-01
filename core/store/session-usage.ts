@@ -103,15 +103,8 @@ export function totalTokensForSession(sessionId: string): number | null {
   });
 }
 
-export function recordSessionUsageSample(input: {
-  sessionId: string;
-  totalTokens: number;
-  observedAt?: string;
-  /** Override auto delta (used by Grok turn-rate reconstruction). */
-  tokenDelta?: number;
-}): void {
-  const observedAt = input.observedAt ?? now();
-  const previous = db
+function latestSessionUsageSampleTotal(sessionId: string): number | null {
+  const row = db
     .query(
       `SELECT total_tokens
        FROM session_usage_samples
@@ -119,21 +112,37 @@ export function recordSessionUsageSample(input: {
        ORDER BY observed_at DESC, id DESC
        LIMIT 1`,
     )
-    .get(input.sessionId) as { total_tokens: number } | null;
-  const rawDelta =
-    previous == null ? 0 : input.totalTokens - previous.total_tokens;
-  const tokenDelta =
-    input.tokenDelta != null
-      ? Math.max(0, input.tokenDelta)
-      : rawDelta > 0
-        ? rawDelta
-        : 0;
-  db.run(
-    `INSERT INTO session_usage_samples
-       (session_id, total_tokens, token_delta, observed_at)
-     VALUES (?, ?, ?, ?)`,
-    [input.sessionId, input.totalTokens, tokenDelta, observedAt],
-  );
+    .get(sessionId) as { total_tokens: number } | null;
+  return row?.total_tokens ?? null;
+}
+
+export function recordSessionUsageSample(input: {
+  sessionId: string;
+  totalTokens: number;
+  observedAt?: string;
+  /** Override auto delta (used by Grok turn-rate reconstruction). */
+  tokenDelta?: number;
+}): void {
+  db.transaction(() => {
+    const observedAt = input.observedAt ?? now();
+    const previous =
+      input.tokenDelta == null
+        ? latestSessionUsageSampleTotal(input.sessionId)
+        : null;
+    const rawDelta = previous == null ? 0 : input.totalTokens - previous;
+    const tokenDelta =
+      input.tokenDelta != null
+        ? Math.max(0, input.tokenDelta)
+        : rawDelta > 0
+          ? rawDelta
+          : 0;
+    db.run(
+      `INSERT INTO session_usage_samples
+         (session_id, total_tokens, token_delta, observed_at)
+       VALUES (?, ?, ?, ?)`,
+      [input.sessionId, input.totalTokens, tokenDelta, observedAt],
+    );
+  });
 }
 
 export function pruneSessionUsageSamples(before: string): void {
@@ -332,19 +341,27 @@ export function insertSessionUsageMessage(
   sessionId: string,
   messageId: string,
 ): boolean {
-  const before = db
-    .query(
-      `SELECT 1 AS ok FROM session_usage_messages
-       WHERE session_id = ? AND message_id = ?`,
-    )
-    .get(sessionId, messageId);
-  if (before) return false;
+  if (hasSessionUsageMessage(sessionId, messageId)) return false;
   db.run(
     `INSERT INTO session_usage_messages (session_id, message_id)
      VALUES (?, ?)`,
     [sessionId, messageId],
   );
   return true;
+}
+
+export function hasSessionUsageMessage(
+  sessionId: string,
+  messageId: string,
+): boolean {
+  return Boolean(
+    db
+      .query(
+        `SELECT 1 AS ok FROM session_usage_messages
+         WHERE session_id = ? AND message_id = ?`,
+      )
+      .get(sessionId, messageId),
+  );
 }
 
 function hasTokenUsage(usage: {

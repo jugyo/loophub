@@ -16,6 +16,11 @@ import { afterAll, beforeAll, expect, test, vi } from "vitest";
 // wanted-set path stats requested filenames directly instead of enumerating each project dir
 // (#1119). node:fs is spread through unchanged; only readdirSync is wrapped.
 const fsSpy = vi.hoisted(() => ({ readdirDirs: [] as unknown[] }));
+const pricingSpy = vi.hoisted(() => ({
+  callsInTransaction: [] as boolean[],
+  isInTransaction: (() => false) as () => boolean,
+  beforeCalculate: null as (() => void) | null,
+}));
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
@@ -23,6 +28,19 @@ vi.mock("node:fs", async (importOriginal) => {
     readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
       fsSpy.readdirDirs.push(args[0]);
       return (actual.readdirSync as (...a: unknown[]) => unknown)(...args);
+    },
+  };
+});
+vi.mock("./pricing.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pricing.ts")>();
+  return {
+    ...actual,
+    calculateCostUsd: (...args: Parameters<typeof actual.calculateCostUsd>) => {
+      pricingSpy.callsInTransaction.push(pricingSpy.isInTransaction());
+      const beforeCalculate = pricingSpy.beforeCalculate;
+      pricingSpy.beforeCalculate = null;
+      beforeCalculate?.();
+      return actual.calculateCostUsd(...args);
     },
   };
 });
@@ -107,6 +125,7 @@ function codexRollout(
 beforeAll(async () => {
   svc = await import("./service.ts");
   D = await import("./db.ts");
+  pricingSpy.isInTransaction = () => D.db.inTransaction;
   SU = await import("./session-usage.ts");
   ST = await import("./store.ts");
   serialize = await import("./serialize.ts");
@@ -565,7 +584,10 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
     }),
   );
 
+  pricingSpy.callsInTransaction = [];
   const first = svc.sessions.usageSync({ sessionId, projectsDir });
+  expect(pricingSpy.callsInTransaction.length).toBeGreaterThan(0);
+  expect(pricingSpy.callsInTransaction).not.toContain(true);
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(first.sessions[0].messages).toBe(1);
   expect(getSession(sessionId).usage![0]).toMatchObject({
@@ -678,6 +700,57 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   });
 
   rmSync(projectsDir, { recursive: true, force: true });
+});
+
+test("sessions.usageSync rejects a stale Claude dedupe plan", () => {
+  const sessionId = "99999999-0000-0000-0000-000000000011";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  const projectsDir = mkdtempSync(join(tmpdir(), "lh-claude-race-"));
+  const projectDir = join(projectsDir, "repo-worktree");
+  mkdirSync(projectDir);
+  const transcript = join(projectDir, `${sessionId}.jsonl`);
+  writeFileSync(
+    transcript,
+    assistantLine("msg_1", "claude-sonnet-4-6-20260601", {
+      input_tokens: 100,
+      output_tokens: 10,
+    }),
+  );
+  svc.sessions.usageSync({ sessionId, projectsDir });
+  appendFileSync(
+    transcript,
+    assistantLine("msg_2", "claude-sonnet-4-6-20260601", {
+      input_tokens: 50,
+      output_tokens: 5,
+    }),
+  );
+
+  pricingSpy.beforeCalculate = () => {
+    D.db.run(
+      `UPDATE session_usage_cursors
+       SET cursor_offset = cursor_offset + 1
+       WHERE session_id = ?`,
+      [sessionId],
+    );
+  };
+  try {
+    expect(() => svc.sessions.usageSync({ sessionId, projectsDir })).toThrow(
+      "Session usage changed during sync",
+    );
+  } finally {
+    pricingSpy.beforeCalculate = null;
+    rmSync(projectsDir, { recursive: true, force: true });
+  }
+  expect(getSession(sessionId).usage![0]).toMatchObject({
+    input_tokens: 100,
+    output_tokens: 10,
+  });
 });
 
 test("sessions.costSummary limits token rate to in-progress dev sessions", async () => {
@@ -1112,7 +1185,10 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
     ),
   );
 
+  pricingSpy.callsInTransaction = [];
   const first = svc.sessions.usageSync({ sessionId, codexSessionsDir });
+  expect(pricingSpy.callsInTransaction.length).toBeGreaterThan(0);
+  expect(pricingSpy.callsInTransaction).not.toContain(true);
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(first.sessions[0].messages).toBe(3);
   expect(getSession(sessionId).usage![0]).toMatchObject({
@@ -1131,6 +1207,35 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
     input_tokens: 30,
     output_tokens: 2,
   });
+
+  const originalTransaction = D.db.transaction.bind(D.db);
+  let changeUsageBeforeTransaction = true;
+  D.db.transaction = ((callback: () => unknown) => {
+    if (changeUsageBeforeTransaction) {
+      changeUsageBeforeTransaction = false;
+      D.db.run(
+        `UPDATE session_usage
+         SET input_tokens = input_tokens + 1
+         WHERE session_id = ?`,
+        [sessionId],
+      );
+    }
+    return originalTransaction(callback);
+  }) as typeof D.db.transaction;
+  try {
+    expect(() =>
+      svc.sessions.usageSync({ sessionId, codexSessionsDir }),
+    ).toThrow("Session usage changed during sync");
+  } finally {
+    D.db.transaction = originalTransaction;
+    D.db.run(
+      `UPDATE session_usage
+       SET input_tokens = input_tokens - 1
+       WHERE session_id = ?`,
+      [sessionId],
+    );
+  }
+
   D.db.run(`DELETE FROM session_usage_subagents WHERE session_id = ?`, [
     sessionId,
   ]);
@@ -1426,7 +1531,10 @@ test("sessions.usageSync imports Grok updates.jsonl for the linked PR worktree c
     ]),
   );
 
+  pricingSpy.callsInTransaction = [];
   const first = svc.sessions.usageSync({ sessionId, grokSessionsDir });
+  expect(pricingSpy.callsInTransaction.length).toBeGreaterThan(0);
+  expect(pricingSpy.callsInTransaction).not.toContain(true);
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   // Owner (primary dev) stores the worktree aggregate; peer is cleared.
   const ownerUsage = getSession(sessionId).usage ?? [];
