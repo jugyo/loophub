@@ -124,6 +124,13 @@ npm run format           # biome format --write (apply formatting)
 Lint/format use [Biome](https://biomejs.dev). Config is `biome.json`; the linter is a
 minimal recommended set (type-aware checks stay with `npm run typecheck`).
 
+## Attached documents
+
+An issue or PR body can link a document attachment (`[findings.md](/attachments/<sha256>)`),
+typically a hand-off from an earlier investigation. Read one with `lh attachment get
+<sha256|url>` — text goes to stdout, `--json` reports its metadata and stored path. Attach
+one with `lh attachment add --file <path>` and put the printed markdown in the body.
+
 ## Tests
 
 - Vitest, co-located as `<module>.test.ts` next to the source under each layer.

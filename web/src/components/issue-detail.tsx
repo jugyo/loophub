@@ -4,7 +4,13 @@
 // Markdown and rendered as GFM via <Markdown>.
 
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Loader2, Square, Workflow } from "lucide-react";
+import {
+  ChevronDown,
+  Loader2,
+  Paperclip,
+  Square,
+  Workflow,
+} from "lucide-react";
 import { type RefObject, useRef, useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
 import {
@@ -29,8 +35,8 @@ import { issueBadges, issueCanStartWork, stateBadge } from "@/lib/badges";
 import { commentAuthor } from "@/lib/comment-author";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
+import { useAttachmentUpload } from "@/lib/use-attachment-upload";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
-import { useImageUpload } from "@/lib/use-image-upload";
 import {
   useIssue,
   useIssueComments,
@@ -428,7 +434,12 @@ function CommentForm({
   const [body, setBody] = useState("");
   const post = usePostComment(owner, repo, number);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const image = useImageUpload({ value: body, onChange: setBody, textareaRef });
+  const fileRef = useRef<HTMLInputElement>(null);
+  const attach = useAttachmentUpload({
+    value: body,
+    onChange: setBody,
+    textareaRef,
+  });
 
   function submit() {
     const trimmed = body.trim();
@@ -444,7 +455,7 @@ function CommentForm({
       <textarea
         ref={textareaRef}
         aria-label="Add a comment"
-        placeholder="Add a comment (paste or drop an image to attach)"
+        placeholder="Add a comment (paste, drop, or attach a file)"
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(event) => {
@@ -453,15 +464,15 @@ function CommentForm({
             submit();
           }
         }}
-        onPaste={image.onPaste}
-        onDrop={image.onDrop}
-        onDragOver={image.onDragOver}
+        onPaste={attach.onPaste}
+        onDrop={attach.onDrop}
+        onDragOver={attach.onDragOver}
         rows={4}
         className="min-h-24 rounded-md border bg-background p-3 text-sm"
       />
-      {image.uploading ? (
+      {attach.uploading ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Uploading image…
+          <Loader2 className="size-4 animate-spin" /> Uploading…
         </p>
       ) : null}
       {post.isError ? (
@@ -469,7 +480,24 @@ function CommentForm({
           {post.error instanceof Error ? post.error.message : "Failed to post."}
         </p>
       ) : null}
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        {/* The picker takes any file; the server rejects unsupported types and the
+            error lands in the body as a visible note. */}
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          aria-label="Attach a file"
+          className="hidden"
+          onChange={(e) => {
+            attach.upload(Array.from(e.target.files ?? []));
+            e.target.value = "";
+          }}
+        />
+        <Button variant="ghost" onClick={() => fileRef.current?.click()}>
+          <Paperclip className="size-4" />
+          Attach a file
+        </Button>
         <Button disabled={!body.trim() || post.isPending} onClick={submit}>
           {post.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
           Comment

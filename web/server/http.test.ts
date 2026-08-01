@@ -342,10 +342,32 @@ test("POST /attachments accepts application/octet-stream for a valid extension",
   expect(((await res.json()) as any).mime).toBe("image/png");
 });
 
-test("POST /attachments rejects unsupported MIME / extension", async () => {
-  const res = await fetch(`${base}/attachments?filename=note.txt`, {
+test("POST /attachments stores a Markdown document; GET displays it as UTF-8 text", async () => {
+  const doc = Buffer.from("# 調査結果\n\n- ひとつめ\n");
+  const res = await fetch(`${base}/attachments?filename=findings.md&actor=me`, {
     method: "POST",
-    headers: { "content-type": "text/plain" },
+    headers: { "content-type": "text/markdown" },
+    body: doc,
+  });
+  expect(res.status).toBe(201);
+  const body = (await res.json()) as any;
+  expect(body.mime).toBe("text/markdown");
+  expect(body.markdown).toBe(`[findings.md](/attachments/${body.sha256})`);
+
+  // Served inline as plain text: a text/markdown response would be downloaded,
+  // and a charset-less one would garble the Japanese content.
+  const get = await fetch(`${base}${body.url}`);
+  expect(get.status).toBe(200);
+  expect(get.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+  expect(get.headers.get("content-disposition")).toBeNull();
+  expect(get.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(await get.text()).toBe(doc.toString("utf8"));
+});
+
+test("POST /attachments rejects unsupported MIME / extension", async () => {
+  const res = await fetch(`${base}/attachments?filename=note.pdf`, {
+    method: "POST",
+    headers: { "content-type": "application/pdf" },
     body: Buffer.from("hello"),
   });
   expect(res.status).toBe(415);

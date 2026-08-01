@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -77,10 +83,44 @@ test("lh attachment add uploads HTML and prints a file link", () => {
   ).toBe(true);
 });
 
+test("lh attachment add uploads a document and lh attachment get reads it back", () => {
+  const doc = join(home, "findings.md");
+  const text = "# 調査結果\n\n- ひとつめ\n";
+  writeFileSync(doc, text);
+  const added = lh(["attachment", "add", "--file", doc]);
+  expect(added.exitCode).toBe(0);
+  const m = added.stdout.match(
+    /^\[findings\.md\]\((\/attachments\/[0-9a-f]{64})\)$/m,
+  );
+  expect(m).not.toBeNull();
+  const url = m![1];
+
+  // An agent reads the linked document straight from the body's URL.
+  const got = lh(["attachment", "get", url]);
+  expect(got.exitCode).toBe(0);
+  expect(got.stdout).toBe(text);
+
+  const json = lh(["attachment", "get", url, "--json"]);
+  const meta = JSON.parse(json.stdout);
+  expect(meta.mime).toBe("text/markdown");
+  expect(meta.url).toBe(url);
+  expect(existsSync(meta.path)).toBe(true);
+
+  const out = join(home, "copy.md");
+  expect(lh(["attachment", "get", url, "--output", out]).exitCode).toBe(0);
+  expect(readFileSync(out, "utf8")).toBe(text);
+});
+
+test("lh attachment get rejects an unknown reference", () => {
+  const { exitCode, stderr } = lh(["attachment", "get", "0".repeat(64)]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toMatch(/not found/);
+});
+
 test("lh attachment add rejects an unsupported attachment file", () => {
-  const txt = join(home, "note.txt");
-  writeFileSync(txt, "hello");
-  const { exitCode, stderr } = lh(["attachment", "add", "--file", txt]);
+  const pdf = join(home, "note.pdf");
+  writeFileSync(pdf, "hello");
+  const { exitCode, stderr } = lh(["attachment", "add", "--file", pdf]);
   expect(exitCode).not.toBe(0);
   expect(stderr).toMatch(/extension|MIME/);
 });

@@ -174,6 +174,17 @@ function safeDownloadFilename(filename: string): string {
   );
 }
 
+// Document attachments (`.md` / `.txt`) are served as UTF-8 plain text so that
+// following the link from an issue body shows the document in the browser: a
+// `text/markdown` response is downloaded rather than displayed, and a charset-less
+// `text/plain` one is decoded with the browser's legacy default, which mangles
+// non-ASCII text. text/html keeps its recorded type (and download disposition).
+function inlineTextContentType(mime: string): string | null {
+  return mime === "text/markdown" || mime === "text/plain"
+    ? "text/plain; charset=utf-8"
+    : null;
+}
+
 // GET /attachments/:sha256 — stream a stored blob with its recorded content-type.
 function handleAttachmentGet(res: ServerResponse, url: URL): void {
   const sha256 = url.pathname.slice("/attachments/".length);
@@ -190,7 +201,7 @@ function handleAttachmentGet(res: ServerResponse, url: URL): void {
     return;
   }
   const headers: Record<string, string> = {
-    "content-type": att.mime,
+    "content-type": inlineTextContentType(att.mime) ?? att.mime,
     "cache-control": "public, max-age=31536000, immutable",
     // Bytes aren't magic-byte-validated, so stop the browser from sniffing a
     // served blob into something other than its recorded content-type.

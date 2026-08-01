@@ -1,8 +1,10 @@
-// Paste/drag-drop image upload for a markdown <textarea>. On a dropped or pasted
-// image it inserts an `![Uploading name…]()` placeholder at the cursor, uploads
+// Attachment upload for a markdown <textarea>: paste, drag-drop, or a file picker.
+// On a file it inserts a `[Uploading name…]()` placeholder at the cursor, uploads
 // the bytes to POST /attachments, and swaps the placeholder for the returned
-// `![](...)` markdown (or an error note on failure). The body stays a controlled
-// value owned by the caller — we only ever call `onChange` with the next string.
+// markdown — `![](...)` for an image, `[](...)` for a document (or an error note on
+// failure, e.g. when the server rejects an unsupported type). The body stays a
+// controlled value owned by the caller — we only ever call `onChange` with the next
+// string.
 
 import { type ClipboardEvent, type DragEvent, useRef, useState } from "react";
 import { uploadAttachment } from "@/api/attachments";
@@ -10,11 +12,7 @@ import { uploadAttachment } from "@/api/attachments";
 // Monotonic id so concurrent uploads get distinct, replaceable placeholder tokens.
 let uploadSeq = 0;
 
-function isImage(file: File): boolean {
-  return file.type.startsWith("image/");
-}
-
-export function useImageUpload(opts: {
+export function useAttachmentUpload(opts: {
   value: string;
   onChange: (next: string) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -41,10 +39,8 @@ export function useImageUpload(opts: {
   }
 
   async function handleFiles(files: File[]): Promise<void> {
-    const images = files.filter(isImage);
-    if (images.length === 0) return;
-    for (const file of images) {
-      const token = `![Uploading ${file.name}…](uploading:${++uploadSeq})`;
+    for (const file of files) {
+      const token = `[Uploading ${file.name}…](uploading:${++uploadSeq})`;
       insertAtCursor(`${token}\n`);
       setUploadingCount((n) => n + 1);
       try {
@@ -54,9 +50,7 @@ export function useImageUpload(opts: {
         set(valueRef.current.replace(token, () => r.markdown));
       } catch (e) {
         const why = e instanceof Error ? e.message : "error";
-        set(
-          valueRef.current.replace(token, () => `![upload failed: ${why}]()`),
-        );
+        set(valueRef.current.replace(token, () => `[upload failed: ${why}]()`));
       } finally {
         setUploadingCount((n) => n - 1);
       }
@@ -65,16 +59,20 @@ export function useImageUpload(opts: {
 
   return {
     uploading: uploadingCount > 0,
+    /** Upload files chosen through a file picker. */
+    upload(files: File[]) {
+      if (files.length > 0) void handleFiles(files);
+    },
     onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
       const files = Array.from(e.clipboardData?.files ?? []);
-      if (files.some(isImage)) {
+      if (files.length > 0) {
         e.preventDefault();
         void handleFiles(files);
       }
     },
     onDrop(e: DragEvent<HTMLTextAreaElement>) {
       const files = Array.from(e.dataTransfer?.files ?? []);
-      if (files.some(isImage)) {
+      if (files.length > 0) {
         e.preventDefault();
         void handleFiles(files);
       }

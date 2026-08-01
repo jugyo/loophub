@@ -17,6 +17,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as attachments from "@/api/attachments";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
@@ -332,6 +333,32 @@ describe("IssueDetail", () => {
 
     expect(commentsSection?.className).toContain("pb-6");
     expect(commentsSection?.textContent).toContain("Looks good.");
+  });
+
+  // #2151: documents (not just pasted images) can be attached from the UI.
+  it("attaches a document picked with the file picker to the comment body", async () => {
+    const sha = "d".repeat(64);
+    const upload = vi.spyOn(attachments, "uploadAttachment").mockResolvedValue({
+      sha256: sha,
+      filename: "findings.md",
+      mime: "text/markdown",
+      size: 7,
+      url: `/attachments/${sha}`,
+      markdown: `[findings.md](/attachments/${sha})`,
+    });
+    renderDetail();
+
+    const textarea = (await screen.findByLabelText(
+      "Add a comment",
+    )) as HTMLTextAreaElement;
+    const picker = screen.getByLabelText("Attach a file") as HTMLInputElement;
+    const doc = new File(["# notes"], "findings.md", { type: "text/markdown" });
+    fireEvent.change(picker, { target: { files: [doc] } });
+
+    await waitFor(() =>
+      expect(textarea.value).toBe(`[findings.md](/attachments/${sha})\n`),
+    );
+    expect(upload).toHaveBeenCalledOnce();
   });
 
   it("does not navigate with the removed u shortcut", async () => {

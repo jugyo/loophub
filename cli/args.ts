@@ -65,6 +65,7 @@ export type Flags = {
   pr?: string;
   file?: string[];
   actor?: string;
+  output?: string;
   input?: string;
   status?: string;
   limit?: string;
@@ -170,6 +171,7 @@ const { values, positionals } = parseArgs({
     pr: { type: "string" },
     file: { type: "string", multiple: true },
     actor: { type: "string" },
+    output: { type: "string" },
     input: { type: "string" },
     status: { type: "string" },
     limit: { type: "string" },

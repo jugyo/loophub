@@ -46,7 +46,8 @@ export function usage(): void {
   lh worktree prune [--repo owner/name] [--dry-run] [--yes] [--force]   # GC done PR worktrees (--force also removes dirty trees)
   lh herdr [--repo owner/name] [--json]                      # show the repo's herdr session as workspace -> tab -> agent(PR)
   lh herdr focus <pr> [--repo owner/name]                     # focus the pane of the running agent for that PR's worktree
-  lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image/HTML attachment(s), print markdown
+  lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image/HTML/document (.md,.txt) attachment(s), print markdown
+  lh attachment get <sha256|url> [--output <path>] [--json]   # read an attached document: text to stdout, --output to a file, --json for metadata + stored path
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--type type[,type]] [--run <id>] [--order asc|desc]   # print a bounded event snapshot; --type accepts exact types or namespace prefixes
 
@@ -75,6 +76,8 @@ export function usage(): void {
     lh pr feedback react 18 --pr 3 --emoji "👀"
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
     lh attachment add --file report.html     # prints [report.html](/attachments/<sha256>)
+    lh attachment add --file findings.md     # attach a hand-off document to an issue body/comment
+    lh attachment get /attachments/<sha256>  # print an attached document (as linked from an issue body)
     lh events --since 0
     lh events --since 120 --order asc --repo me/proj --json`);
   process.exit(group ? 1 : 0);
