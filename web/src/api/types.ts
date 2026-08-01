@@ -303,7 +303,7 @@ export interface DashboardOverview {
   recentIssuesLimit: number;
 }
 
-/** Domain subjects an event names, normalized by core (core/event-subjects.ts). */
+/** One domain subject an event names, normalized by core (core/event-subjects.ts). */
 export type EventSubject = EventSubjectWire;
 
 /** Wire format returned by events/list. */

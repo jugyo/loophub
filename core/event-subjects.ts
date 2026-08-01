@@ -2,81 +2,72 @@
 // core for the subject instead of reinterpreting payload keys themselves.
 //
 // The same subject is spelled differently across namespaces: `number` is the issue on `issue.*` and
-// the PR on `pull_request.*`, a run's PR arrives as `pr_number` but as `number` on older rows, and
-// an agent session names its targets `pr` / `issue`. Payloads are also unversioned — a row written
-// before a key existed simply lacks it, and legacy rows can hold null, an array, or a primitive
-// where an object is expected. Every unknown reads as `null` here rather than throwing, leaving the
-// consumer on whatever broad fallback it already has.
+// the PR on `pull_request.*`, while a run's PR arrives as `pr_number` but as `number` on older rows.
+// Payloads are also unversioned — a row written before a key existed simply lacks it, and legacy
+// rows can hold null, an array, or a primitive where an object is expected. Every unknown becomes
+// an empty collection here rather than throwing, leaving the consumer on its broad fallback.
 //
 // Node-free and side-effect free: the web imports it directly, the same way it imports
 // core/runtimes.ts.
 
 import type { EventSubjectWire } from "./serialize.ts";
 
-/** A subject naming nothing — the result for any event type or payload this module can't read. */
-export function emptyEventSubject(): EventSubjectWire {
-  return {
-    issue_number: null,
-    pull_number: null,
-    workflow_run_id: null,
-    scheduled_task_id: null,
-  };
-}
-
 /**
  * The payload as a plain object, or null when it is one of the shapes a keyed read cannot be made
  * on: absent, null, an array, or a primitive. Consumers narrow non-subject metadata through this
  * rather than each inventing their own guard.
  */
-export function eventPayloadFields(
+export function eventPayloadRecord(
   payload: unknown,
-): Record<string, unknown> | null {
+): Readonly<Record<string, unknown>> | null {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload))
     return null;
   return payload as Record<string, unknown>;
 }
 
-function payloadNumber(
-  fields: Record<string, unknown>,
+function subjectNumber(
+  fields: Readonly<Record<string, unknown>>,
   key: string,
-): number | null {
+  kind: "issue" | "pull",
+): EventSubjectWire[] {
   const value = fields[key];
-  return typeof value === "number" ? value : null;
+  return typeof value === "number" ? [{ kind, number: value }] : [];
 }
 
 /** The subjects an event names, derived from its type and payload. */
-export function eventSubject(type: string, payload: unknown): EventSubjectWire {
-  const subject = emptyEventSubject();
-  const fields = eventPayloadFields(payload);
-  if (!fields) return subject;
+export function eventSubjects(
+  type: string,
+  payload: unknown,
+): EventSubjectWire[] {
+  const fields = eventPayloadRecord(payload);
+  if (!fields) return [];
 
   if (type.startsWith("issue.")) {
-    subject.issue_number = payloadNumber(fields, "number");
-  } else if (type.startsWith("pull_request.")) {
-    subject.pull_number = payloadNumber(fields, "number");
-  } else if (type === "handoff.recorded") {
-    // A handoff (#352) is filed against a PR and/or a plain issue; an issue-only handoff carries no
-    // PR number at all.
-    subject.pull_number =
-      payloadNumber(fields, "pr_number") ?? payloadNumber(fields, "number");
-    subject.issue_number = payloadNumber(fields, "issue_number");
-  } else if (
-    type.startsWith("workflow_run.") ||
-    type.startsWith("workflow_step.")
-  ) {
-    // A run's lifecycle payload names all three subjects: the run by `id`, plus the issue and PR it
-    // works on.
-    subject.workflow_run_id = payloadNumber(fields, "id");
-    subject.pull_number =
-      payloadNumber(fields, "pr_number") ?? payloadNumber(fields, "number");
-    subject.issue_number = payloadNumber(fields, "issue_number");
-  } else if (type.startsWith("scheduled_task.")) {
-    subject.scheduled_task_id = payloadNumber(fields, "id");
-  } else if (type.startsWith("agent_session.")) {
-    // Only the events that link a session to a target carry these; the rest name no subject.
-    subject.pull_number = payloadNumber(fields, "pr");
-    subject.issue_number = payloadNumber(fields, "issue");
+    return subjectNumber(fields, "number", "issue");
+  }
+  if (type.startsWith("pull_request.")) {
+    return subjectNumber(fields, "number", "pull");
+  }
+  if (type === "dev.cost_stopped") {
+    return subjectNumber(fields, "number", "pull");
+  }
+  if (type.startsWith("workflow_run.") || type.startsWith("workflow_step.")) {
+    const subjects: EventSubjectWire[] = [];
+    const runId = fields.id;
+    const issueNumber = fields.issue_number;
+    const pullNumber = fields.pr_number ?? fields.number;
+    if (typeof runId === "number")
+      subjects.push({ kind: "workflow_run", id: runId });
+    if (typeof issueNumber === "number")
+      subjects.push({ kind: "issue", number: issueNumber });
+    if (typeof pullNumber === "number")
+      subjects.push({ kind: "pull", number: pullNumber });
+    return subjects;
+  }
+  if (type.startsWith("scheduled_task.")) {
+    const id = fields.id;
+    return typeof id === "number" ? [{ kind: "scheduled_task", id }] : [];
   }
 
-  return subject;
+  return [];
 }
