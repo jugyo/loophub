@@ -135,9 +135,11 @@ export function workflowSubjectMatchSql(input: {
  * also what keeps an unrelated event interleaved between an old source and its twin from being
  * skipped over.
  *
- * `afterId` is the run's effective lower bound — its cursor, or its `workflow_run.started` id when
- * that is higher. The scan is a bounded `id > ?` range on the existing `(repo_id, id)` index; the
- * type and `json_extract` predicates then apply to the few rows it walks.
+ * `afterId` is the run's effective exclusive bound — its cursor, or one less than its
+ * `workflow_run.started` id when that is higher. This includes the start itself as the initial
+ * Execute wake while excluding all older subject history. The scan is a bounded `id > ?` range on
+ * the existing `(repo_id, id)` index; the type and `json_extract` predicates then apply to the few
+ * rows it walks.
  */
 export function nextWorkflowSubjectEvent(input: {
   repoId: number;

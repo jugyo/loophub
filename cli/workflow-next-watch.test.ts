@@ -406,6 +406,61 @@ test("a marked source instructs once even when a legacy twin arrives after it", 
   expect(JSON.parse(runWatch(run).stdout).action).not.toBe("deliver");
 });
 
+test("a marked pair yields no second instruction with the cursor between it", () => {
+  const { run, pr } = createRun();
+  runWatch(run);
+  const source = S.emitEvent(repoId, "pull_request.commented", "me", {
+    number: pr,
+    comment_id: 6006,
+    author_type: "human",
+    source_payload_version: 1,
+  });
+  const twin = S.emitEvent(repoId, "workflow_run.pr_comment", "me", {
+    id: run,
+    number: pr,
+    pr_number: pr,
+    parent_session_id: null,
+    source_event_id: source.id,
+    source_event_type: "pull_request.commented",
+    comment_id: 6006,
+    author: "me",
+    body: "Please rename this.",
+  });
+  S.advanceWorkflowRunEventCursor(run, source.id);
+
+  const result = JSON.parse(runWatch(run).stdout);
+  expect(result.event.id).toBe(twin.id);
+  expect(result.action).not.toBe("deliver");
+});
+
+test("a marked pair yields no instruction with the cursor after it", () => {
+  const { run, pr } = createRun();
+  runWatch(run);
+  const source = S.emitEvent(repoId, "pull_request.commented", "me", {
+    number: pr,
+    comment_id: 6007,
+    author_type: "human",
+    source_payload_version: 1,
+  });
+  const twin = S.emitEvent(repoId, "workflow_run.pr_comment", "me", {
+    id: run,
+    number: pr,
+    pr_number: pr,
+    parent_session_id: null,
+    source_event_id: source.id,
+    source_event_type: "pull_request.commented",
+    comment_id: 6007,
+    author: "me",
+    body: "Please rename this.",
+  });
+  S.advanceWorkflowRunEventCursor(run, twin.id);
+  const wake = S.emitEvent(repoId, "workflow_run.updated", "me", { id: run });
+
+  const result = JSON.parse(runWatch(run).stdout);
+  expect(result.event.id).toBe(wake.id);
+  expect(result.action).not.toBe("deliver");
+});
+
 test("a source wake claims no lifecycle effect receipt", () => {
   const { run, pr } = createRun();
   runWatch(run);

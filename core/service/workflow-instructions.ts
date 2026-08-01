@@ -3,7 +3,13 @@ import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
 import { HERDR_ID, herdrPaneRunArgv } from "../terminal/terminal-launch.ts";
-import { workflowSubscriptionLowerBound } from "../workflow/source-events.ts";
+import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
+import {
+  classifyWorkflowSubjectEvent,
+  type WorkflowSubjectEventRole,
+  type WorkflowTwinSourceRef,
+  workflowSubscriptionLowerBound,
+} from "../workflow/source-events.ts";
 import { runHerdr } from "./herdr-runner.ts";
 import { repoOr404 } from "./shared.ts";
 import { workflowRuns } from "./workflow-runs.ts";
@@ -44,6 +50,23 @@ function pendingEvent(run: S.WorkflowRunRow): S.EventRow | null {
     prNumber: run.pr_number,
     afterId: workflowSubscriptionLowerBound(run.event_cursor, startedEventId),
   });
+}
+
+function pendingEventRole(
+  repoId: number,
+  event: S.EventRow,
+): WorkflowSubjectEventRole {
+  const markedSourceExists = (ref: WorkflowTwinSourceRef): boolean =>
+    ref.kind === "event"
+      ? S.hasMarkedWorkflowSourceEvent(repoId, ref.sourceEventId)
+      : S.hasMarkedWorkflowReviewSourceEvent(repoId, ref.reviewId);
+  return classifyWorkflowSubjectEvent(
+    {
+      type: event.type,
+      payload: parseWorkflowEventPayload(event.payload) ?? {},
+    },
+    markedSourceExists,
+  );
 }
 
 function parentPane(run: S.WorkflowRunRow): string | null | undefined {
@@ -181,6 +204,36 @@ export const workflowInstructions = {
       };
     }
 
+    const repo = S.getRepoById(run.repo_id);
+    if (!repo) {
+      throw new ServiceError(
+        404,
+        `Repository for Workflow run #${run.id} not found`,
+      );
+    }
+
+    // Wake-only sources predate the stable payload contract, so their legacy twin still owns the
+    // instruction. Conversely, a twin whose source is marked arrived after that source already
+    // owned it. Reconcile the state each row announced, but neither row represents an instruction
+    // side effect: advance the cursor without creating a receipt that would falsely claim one.
+    const role = pendingEventRole(run.repo_id, event);
+    if (role !== "instruction") {
+      await workflowRuns.next(repo.full_name, {
+        run: run.id,
+        event: event.id,
+      });
+      S.advanceWorkflowRunEventCursor(run.id, event.id);
+      return {
+        status: "skipped",
+        run: run.id,
+        event: event.id,
+        reason:
+          role === "wake_only"
+            ? "Event only wakes state observation"
+            : "Instruction was superseded by its source event",
+      };
+    }
+
     const receipt = S.getWorkflowEventEffectWithPrefix(
       run.id,
       event.id,
@@ -202,13 +255,6 @@ export const workflowInstructions = {
       };
     }
 
-    const repo = S.getRepoById(run.repo_id);
-    if (!repo) {
-      throw new ServiceError(
-        404,
-        `Repository for Workflow run #${run.id} not found`,
-      );
-    }
     // A run is created before its parent pane is launched and registered. Until that explicit
     // readiness signal exists, allow the bounded launch window without reconciling the event.
     // Afterward, claim a durable failure receipt so a lost registration is visible exactly once.

@@ -132,6 +132,39 @@ function instructionResult(event: number) {
   };
 }
 
+function emitCommentPair(
+  input: ReturnType<typeof fixture>,
+  commentId: number,
+  marked: boolean,
+) {
+  const source = S.emitEvent(input.repo.id, "pull_request.commented", "me", {
+    number: input.run.pr_number,
+    comment_id: commentId,
+    author_type: "human",
+    ...(marked ? { source_payload_version: 1 } : {}),
+  });
+  const twin = S.emitEvent(input.repo.id, "workflow_run.pr_comment", "me", {
+    id: input.run.id,
+    number: input.run.pr_number,
+    pr_number: input.run.pr_number,
+    parent_session_id: input.run.parent_session_id,
+    source_event_id: source.id,
+    source_event_type: "pull_request.commented",
+    comment_id: commentId,
+    author: "me",
+    body: "Please rename this.",
+  });
+  return { source, twin };
+}
+
+function instructionReceipt(run: number, event: number) {
+  return S.getWorkflowEventEffectWithPrefix(
+    run,
+    event,
+    "workflow.instruction:",
+  );
+}
+
 test("delivers the existing next decision to only the matching parent pane once", async () => {
   const input = fixture("delivery");
   const fake = fakeHerdr();
@@ -367,6 +400,170 @@ test("queued lifecycle wakes are processed in order and identical decisions are 
     next.mockRestore();
     process.env.PATH = originalPath;
     rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("an unmarked source advances without a receipt and its legacy twin owns the instruction", async () => {
+  const input = fixture("unmarked-source-before");
+  const pair = emitCommentPair(input, 9201, false);
+  const fake = fakeHerdr();
+  registerParent(input);
+  S.advanceWorkflowRunEventCursor(input.run.id, input.event.id);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockImplementation(async (_name, opts) =>
+      instructionResult(opts.event as number),
+    );
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({
+      status: "skipped",
+      event: pair.source.id,
+      reason: "Event only wakes state observation",
+    });
+    expect(instructionReceipt(input.run.id, pair.source.id)).toBeNull();
+    expect(next).toHaveBeenCalledTimes(1);
+
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({
+      status: "delivered",
+      event: pair.twin.id,
+    });
+    expect(instructionReceipt(input.run.id, pair.twin.id)?.status).toBe(
+      "completed",
+    );
+    expect(next).toHaveBeenCalledTimes(2);
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("an unmarked legacy twin still owns the instruction with the cursor after its source", async () => {
+  const input = fixture("unmarked-source-between");
+  const pair = emitCommentPair(input, 9202, false);
+  const fake = fakeHerdr();
+  registerParent(input);
+  S.advanceWorkflowRunEventCursor(input.run.id, pair.source.id);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(pair.twin.id));
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({ status: "delivered", event: pair.twin.id });
+    expect(instructionReceipt(input.run.id, pair.source.id)).toBeNull();
+    expect(instructionReceipt(input.run.id, pair.twin.id)?.status).toBe(
+      "completed",
+    );
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("an unmarked pair is not revisited with the cursor after its twin", async () => {
+  const input = fixture("unmarked-source-after");
+  const pair = emitCommentPair(input, 9203, false);
+  S.advanceWorkflowRunEventCursor(input.run.id, pair.twin.id);
+  const next = vi.spyOn(svc.workflowRuns, "next");
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toEqual({ status: "idle" });
+    expect(instructionReceipt(input.run.id, pair.source.id)).toBeNull();
+    expect(instructionReceipt(input.run.id, pair.twin.id)).toBeNull();
+    expect(next).not.toHaveBeenCalled();
+  } finally {
+    next.mockRestore();
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("a marked source owns the instruction and its late legacy twin creates no receipt", async () => {
+  const input = fixture("marked-source-before");
+  const pair = emitCommentPair(input, 9204, true);
+  const fake = fakeHerdr();
+  registerParent(input);
+  S.advanceWorkflowRunEventCursor(input.run.id, input.event.id);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(pair.source.id));
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({ status: "delivered", event: pair.source.id });
+    expect(instructionReceipt(input.run.id, pair.source.id)?.status).toBe(
+      "completed",
+    );
+
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({
+      status: "skipped",
+      event: pair.twin.id,
+      reason: "Instruction was superseded by its source event",
+    });
+    expect(instructionReceipt(input.run.id, pair.twin.id)).toBeNull();
+    expect(next).toHaveBeenCalledTimes(2);
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("a marked legacy twin is superseded with the cursor after its source", async () => {
+  const input = fixture("marked-source-between");
+  const pair = emitCommentPair(input, 9205, true);
+  S.advanceWorkflowRunEventCursor(input.run.id, pair.source.id);
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(pair.twin.id));
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({
+      status: "skipped",
+      event: pair.twin.id,
+      reason: "Instruction was superseded by its source event",
+    });
+    expect(instructionReceipt(input.run.id, pair.twin.id)).toBeNull();
+    expect(next).toHaveBeenCalledTimes(1);
+  } finally {
+    next.mockRestore();
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("a marked pair is not revisited with the cursor after its twin", async () => {
+  const input = fixture("marked-source-after");
+  const pair = emitCommentPair(input, 9206, true);
+  S.advanceWorkflowRunEventCursor(input.run.id, pair.twin.id);
+  const next = vi.spyOn(svc.workflowRuns, "next");
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toEqual({ status: "idle" });
+    expect(instructionReceipt(input.run.id, pair.source.id)).toBeNull();
+    expect(instructionReceipt(input.run.id, pair.twin.id)).toBeNull();
+    expect(next).not.toHaveBeenCalled();
+  } finally {
+    next.mockRestore();
     rmSync(input.repoPath, { recursive: true, force: true });
   }
 });

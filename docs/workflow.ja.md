@@ -121,10 +121,16 @@ event と現在 state を渡す。生成結果は `workflow instruction: <JSON>`
 1 行として、run に登録済みの唯一の parent pane に単一の `pane run` request で注入・投稿する。
 repository の `.loophub/workflow.yml` はこの経路に関与しない。
 
-購読の下端は run 自身の `workflow_run.started` event である。run 開始より前に記録された issue / PR の
-event は選択されず、cursor の書き換えは不要である。started event が無い run は cursor 0 へ fallback せず、
-cursor を進めないまま可視 error になる。event は 1 行ずつ進めるため、間に挟まった無関係な event も
-失われない。
+購読の下端は run 自身の `workflow_run.started` event を含む。selector の exclusive bound には
+`max(event_cursor, started_event_id - 1)` を渡すため、run 開始より前に記録された issue / PR の event は
+選択されず、未消費の started event 自体は初回 Execute instruction として 1 回選択される。cursor の事前の
+書き換えは不要である。started event が無い run は cursor 0 へ fallback せず、cursor を進めないまま可視
+error になる。event は 1 行ずつ進めるため、間に挟まった無関係な event も失われない。
+
+source event の instruction ownership は payload marker ごとに決まる。marker のない旧 source は state
+observation だけを wake し、instruction receipt を作らず cursor を進める。その legacy twin が instruction と
+receipt を所有する。marker のある source は自身が instruction と receipt を所有し、後着した legacy twin は
+superseded として receipt を作らず cursor だけを進める。この判定は parent watch と worker dispatch で共通である。
 
 CLI は parent の Herdr 起動成功後に pane 座標を run へ登録する。worker はその登録前には最古の event を
 run 作成から 2 分間だけ未処理のまま待つ。猶予後も pane row が無ければ missing-parent receipt と worker
