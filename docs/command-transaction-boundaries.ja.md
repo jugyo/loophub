@@ -155,7 +155,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `issues.update` | procedure | issue fields、labels と `issue.labeled`、state event、linked PR の close cascade | branch 検証の git read |
 | `issues.addLabels` | procedure | labels、`issue.labeled` | — |
 | `issues.acAdd` / `acSetEnabled` / `acReorder` | procedure | criterion write、issue touch | — |
-| `pulls.create` | procedure（外部 I/O 後の区間） | pull row、`pull_request.opened` | head / base の SHA read。head 名が PR 番号由来のため、issue row はその read の前に commit される |
+| `pulls.create` | procedure（外部 I/O 後の区間） | pull-shaped issue row、pull row、`pull_request.opened` | number-derived head 用の issue number 予約、head / base の SHA read |
 | `pulls.update` | procedure | issue fields、`pull_request.updated` | 応答の `pullJSON` |
 | `pulls.delete` | procedure | PR 関連 row の削除、`pull_request.deleted` | git ref / worktree は削除しない |
 | `pulls.recordGithubPull` | procedure | GitHub PR link、`pull_request.github_pr_recorded` | URL validation のみ |

@@ -88,6 +88,54 @@ function reserveNumber(repoId: number): number {
   ).last_number;
 }
 
+export function reserveIssueNumber(repoId: number): number {
+  return db.transaction(() => reserveNumber(repoId));
+}
+
+function insertIssue(
+  repoId: number,
+  number: number,
+  kind: "issue" | "pull",
+  title: string,
+  body: string,
+  author: string,
+  targetBranch?: string | null,
+): IssueRow {
+  const t = now();
+  const issue = db
+    .query(
+      `INSERT INTO issues (repo_id, number, kind, state, title, body, target_branch, author, created_at, updated_at)
+       VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?) RETURNING *`,
+    )
+    .get(
+      repoId,
+      number,
+      kind,
+      title,
+      body,
+      targetBranch ?? null,
+      author,
+      t,
+      t,
+    ) as IssueRow;
+  indexIssueSearch(issue);
+  return issue;
+}
+
+export function createIssueWithNumber(
+  repoId: number,
+  number: number,
+  kind: "issue" | "pull",
+  title: string,
+  body: string,
+  author: string,
+  targetBranch?: string | null,
+): IssueRow {
+  return db.transaction(() =>
+    insertIssue(repoId, number, kind, title, body, author, targetBranch),
+  );
+}
+
 export function createIssue(
   repoId: number,
   kind: "issue" | "pull",
@@ -96,27 +144,9 @@ export function createIssue(
   author: string,
   targetBranch?: string | null,
 ): IssueRow {
-  const t = now();
   return db.transaction(() => {
     const number = reserveNumber(repoId);
-    const issue = db
-      .query(
-        `INSERT INTO issues (repo_id, number, kind, state, title, body, target_branch, author, created_at, updated_at)
-         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?) RETURNING *`,
-      )
-      .get(
-        repoId,
-        number,
-        kind,
-        title,
-        body,
-        targetBranch ?? null,
-        author,
-        t,
-        t,
-      ) as IssueRow;
-    indexIssueSearch(issue);
-    return issue;
+    return insertIssue(repoId, number, kind, title, body, author, targetBranch);
   });
 }
 

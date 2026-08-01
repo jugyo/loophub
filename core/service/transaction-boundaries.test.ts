@@ -58,6 +58,28 @@ function whileFailing<T>(type: string, run: () => T): T {
   }
 }
 
+function failingInsert(table: "pulls"): { drop: () => void } {
+  database.run(
+    `CREATE TRIGGER inject_${table}_failure BEFORE INSERT ON ${table}
+     BEGIN SELECT RAISE(ABORT, 'injected ${table} failure'); END`,
+  );
+  return {
+    drop: () => database.run(`DROP TRIGGER inject_${table}_failure`),
+  };
+}
+
+async function whileFailingInsert<T>(
+  table: "pulls",
+  run: () => Promise<T>,
+): Promise<T> {
+  const injected = failingInsert(table);
+  try {
+    return await run();
+  } finally {
+    injected.drop();
+  }
+}
+
 async function whileFailingAsync<T>(
   type: string,
   run: () => Promise<T>,
@@ -72,6 +94,27 @@ async function whileFailingAsync<T>(
 
 function eventTypes(): string[] {
   return S.listEvents(0, repoId, 500).map((row) => row.type);
+}
+
+function pullCreationCounts(): {
+  issues: number;
+  pulls: number;
+  openedEvents: number;
+} {
+  const count = (sql: string): number =>
+    (database.query(sql).get(repoId) as { count: number }).count;
+  return {
+    issues: count(
+      "SELECT COUNT(*) AS count FROM issues WHERE repo_id = ? AND kind = 'pull'",
+    ),
+    pulls: count(
+      `SELECT COUNT(*) AS count FROM pulls p
+       JOIN issues i ON i.id = p.issue_id WHERE i.repo_id = ?`,
+    ),
+    openedEvents: count(
+      "SELECT COUNT(*) AS count FROM events WHERE repo_id = ? AND type = 'pull_request.opened'",
+    ),
+  };
 }
 
 beforeAll(async () => {
@@ -135,6 +178,68 @@ test("a failed issue.opened event leaves no issue, labels or criteria behind", (
   expect(S.listLabels(repoId).some((label) => label.name === "bug")).toBe(
     false,
   );
+});
+
+test("a failed pull ref observation leaves no pull-shaped issue", async () => {
+  const before = pullCreationCounts();
+  let observedHead = "";
+
+  await expect(
+    svc.pulls.create(
+      REPO,
+      {
+        title: "failed pull ref observation",
+        headFromNumber: (number) => `loophub/pr-${number}`,
+        base: "main",
+      },
+      null,
+      {
+        revParse: async (_path, ref) => {
+          expect(database.inTransaction).toBe(false);
+          if (ref.startsWith("loophub/pr-")) {
+            observedHead = ref;
+            throw new Error("injected ref observation failure");
+          }
+          return baseSha;
+        },
+      },
+    ),
+  ).rejects.toThrowError(/injected ref observation failure/);
+
+  expect(observedHead).toMatch(/^loophub\/pr-\d+$/);
+  expect(pullCreationCounts()).toEqual(before);
+});
+
+test("a failed pull insert leaves no pull-shaped issue", async () => {
+  const before = pullCreationCounts();
+
+  await expect(
+    whileFailingInsert("pulls", () =>
+      svc.pulls.create(REPO, {
+        title: "failed pull insert",
+        head: "feature",
+        base: "main",
+      }),
+    ),
+  ).rejects.toThrowError(/injected pulls failure/);
+
+  expect(pullCreationCounts()).toEqual(before);
+});
+
+test("a failed pull_request.opened event leaves no pull or pull-shaped issue", async () => {
+  const before = pullCreationCounts();
+
+  await expect(
+    whileFailingAsync("pull_request.opened", () =>
+      svc.pulls.create(REPO, {
+        title: "failed pull opened event",
+        head: "feature",
+        base: "main",
+      }),
+    ),
+  ).rejects.toThrowError(/injected event failure/);
+
+  expect(pullCreationCounts()).toEqual(before);
 });
 
 test("a failed linked-PR close leaves the issue open and writes no system comment", () => {

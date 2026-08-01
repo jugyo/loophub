@@ -56,6 +56,12 @@ import {
 // PR-detail sidebar, so a short TTL keeps the panel roughly live without spawning a `gh` per render.
 const GITHUB_PR_STATUS_TTL_MS = 60_000;
 
+interface PullCreateDeps {
+  revParse: typeof revParse;
+}
+
+const realPullCreateDeps: PullCreateDeps = { revParse };
+
 // ===== pulls =====
 function resolveLinkedIssueId(
   r: S.Repo,
@@ -148,6 +154,7 @@ export const pulls = {
       issue?: number;
     },
     sessionId?: string | null,
+    deps: PullCreateDeps = realPullCreateDeps,
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
@@ -170,23 +177,32 @@ export const pulls = {
         ? "target_branch"
         : "base",
     );
-    // Create the issue row first so a PR-number-derived head (headFromNumber) can be computed
-    // from its assigned number; a plain string head is unaffected by this reordering. The head
-    // branch itself need not exist yet in git — revParse resolves a null sha for a missing ref
-    // rather than throwing, which is what lets Workflow / openPr open the PR before the
-    // branch/worktree exist (#463).
-    const row = S.createIssue(r.id, "pull", title, body, actor);
-    const head = input.head ?? input.headFromNumber!(row.number);
+    // A number-derived head needs its stable number before git can observe the ref. Reserve only
+    // the number here; the pull-shaped issue itself remains part of the command transaction below.
+    // A missing future head resolves to a null sha, which lets openPr create the PR before its
+    // branch/worktree exists (#463).
+    const reservedNumber = input.headFromNumber
+      ? S.reserveIssueNumber(r.id)
+      : null;
+    const head = input.head ?? input.headFromNumber!(reservedNumber!);
     const [headSha, resolvedBaseSha] = await Promise.all([
-      revParse(r.local_path, head),
-      revParse(r.local_path, base),
+      deps.revParse(r.local_path, head),
+      deps.revParse(r.local_path, base),
     ]);
-    // The head branch name can be derived from the PR number, so the issue row above must be
-    // committed before these SHAs can be read. That git read is what splits this command into two
-    // DB phases; the pull row and its event, which must agree, share the second one.
-    db.transaction(() => {
+    const row = db.transaction(() => {
+      const created =
+        reservedNumber == null
+          ? S.createIssue(r.id, "pull", title, body, actor)
+          : S.createIssueWithNumber(
+              r.id,
+              reservedNumber,
+              "pull",
+              title,
+              body,
+              actor,
+            );
       S.createPull(
-        row.id,
+        created.id,
         head,
         base,
         headSha,
@@ -199,9 +215,10 @@ export const pulls = {
         input.headFromNumber != null && headSha == null,
       );
       S.emitEvent(r.id, "pull_request.opened", actor, {
-        number: row.number,
+        number: created.number,
         linked_issue: linkedNumber ?? undefined,
       });
+      return created;
     });
     return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
