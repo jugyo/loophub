@@ -660,6 +660,8 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     expect(log).not.toMatch(/(?:workspace|tab|agent) focus/);
     expectUnrelatedHerdrFocus(runtime);
 
+    // The layout is step-agnostic, and the run now owns a live Execute child, so the launch that
+    // exercises the missing-tab-id fallback is a Verify one (#2150).
     const legacyLaunch = run(
       [
         "workflow",
@@ -669,7 +671,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
         "--run",
         String(body.run.id),
         "--step",
-        "execute",
+        "verify",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,

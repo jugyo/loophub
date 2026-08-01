@@ -893,6 +893,19 @@ function costLimitIncreaseAvailable(
   );
 }
 
+// A run owns at most one live Execute child: two children share one worktree and edit the same
+// files, and only the newest one receives `deliver` input, so the child actually doing the rework
+// goes silent. Nothing else stops a launch from adding a second one, and a silent duplicate is
+// invisible to the human supervising the run — fail the launch instead (#2150).
+function assertNoLiveExecuteChild(run: S.WorkflowRunRow, step: WorkflowStep) {
+  if (step !== "execute") return;
+  if (run.active_step !== "execute" || !run.active_session_id) return;
+  throw new ServiceError(
+    409,
+    `Workflow run #${run.id} already has a live Execute session (${run.active_session_id})`,
+  );
+}
+
 function assertParentActor(
   run: S.WorkflowRunRow,
   sessionId: string | null | undefined,
@@ -1573,13 +1586,20 @@ export const workflowRuns = {
     if (run.rework_count >= WORKFLOW_REWORK_LIMIT) {
       throw new ServiceError(409, "Workflow rework limit reached");
     }
+    // The Execute child that will address the review is still live in its pane, so hand
+    // `active_step` straight back to it instead of clearing it first. Clearing left a window where
+    // `current_step` was already `execute` while `active_step` was null: a worker dispatch landing
+    // in that window reads "Execute has not started" and launches a second Execute child into the
+    // same worktree (#2150). The `deliver` that follows re-activates the same session.
+    const executeSessionId =
+      workflowStepSessionIds(run.step_sessions_json, "execute").at(-1) ?? null;
     return updateRunLifecycle(
       run,
       {
         currentStep: "execute",
         reworkCount: run.rework_count + 1,
-        activeStep: null,
-        activeSessionId: null,
+        activeStep: executeSessionId ? "execute" : null,
+        activeSessionId: executeSessionId,
       },
       "request_rework",
       sessionId,
@@ -1608,6 +1628,7 @@ export const workflowRuns = {
     assertAutomaticProgressAllowed(run);
     assertParentActor(run, sessionId);
     const step = workflowStep(input.step);
+    assertNoLiveExecuteChild(run, step);
     const childSessionId = randomUUID();
     const workflow = run.workflow_id
       ? S.getWorkflowById(run.workflow_id)

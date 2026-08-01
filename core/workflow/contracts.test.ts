@@ -643,7 +643,10 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).not.toContain("passing verdict で run を completed にする");
   expect(design).toContain("run を `running` のまま維持");
   expect(design).toContain("`run resume` は使わず");
-  expect(design).toContain("`--note` 付きで Execute を launch");
+  // #2150: a run owns at most one live Execute child, so a failed injection goes to a human
+  // instead of relaunching a second executor into the same worktree.
+  expect(design).not.toContain("`--note` 付きで Execute を launch");
+  expect(design).toContain("deliver が失敗すれば二重起動を避けて人間へ渡す");
   expect(design).toContain(
     "PR body・comment・attachment だけの更新は HEAD を変えない",
   );

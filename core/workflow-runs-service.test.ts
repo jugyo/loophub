@@ -1541,36 +1541,19 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   });
 
   // A human can request ordinary additional work while the pass is fresh. The run is not held and
-  // remains at Verify; the parent may launch and register another Execute child with the human note.
-  const additionalExecute = await svc.workflowRuns.launchStep(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "execute",
-      note: "Add another requested change.",
-    },
-    parent,
-  );
-  expect(additionalExecute.run).toMatchObject({
-    status: "running",
-    current_step: "verify",
-    needs_human_reason: null,
-  });
-  expect(additionalExecute.user_prompt).toContain(
-    "Add another requested change.",
-  );
-  confirmStepLaunch(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "execute",
-      sessionId: additionalExecute.session_id,
-      agentName: additionalExecute.agent_name,
-      pointers: additionalExecute.pointers,
-      note: "Add another requested change.",
-    },
-    parent,
-  );
+  // remains at Verify, and the work goes to the Execute child that is still live: launching a
+  // second executor into the same worktree is refused rather than silently recorded (#2150).
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      {
+        run: started.run.id,
+        step: "execute",
+        note: "Add another requested change.",
+      },
+      parent,
+    ),
+  ).rejects.toMatchObject({ status: 409 });
 
   // A passing review verifies the current HEAD without terminating the run. Uploading an
   // attachment and embedding it in the PR body are non-code edits: neither moves HEAD, so the same
@@ -1603,7 +1586,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
-    additionalExecute.session_id,
+    exec.session_id,
   );
   const staleStatus = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
@@ -2697,33 +2680,35 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     current_step: "execute",
     rework_count: 1,
   });
-
-  // The parent relaunches Execute with the review-id pointer; the pointer names the review, not a
-  // summary of its findings.
-  const rexec = await svc.workflowRuns.launchStep(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "execute",
-      review: reviewId,
-    },
-    parent,
-  );
-  expect(rexec.pointers).toContainEqual({
-    label: "address review",
-    value: `#${reviewId}`,
+  // The rework goes to the Execute child that is still live in its pane, so `request_rework` hands
+  // `active_step` back to that session in the same update (#2150).
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
+    active_step: "execute",
+    active_session_id: exec.session_id,
   });
-  confirmStepLaunch(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "execute",
-      sessionId: rexec.session_id,
-      agentName: rexec.agent_name,
-      pointers: rexec.pointers,
-    },
-    parent,
+  // Launching another Execute on top of that live child is refused instead of silently starting a
+  // second executor in the same worktree.
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "execute", review: reviewId },
+      parent,
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  // The worker reconciles from the `request_rework` event itself, before the parent delivers the
+  // review to the pane. That intermediate state must not read as "Execute has not started".
+  const reworkEvent = S.eventsForWorkflowRun(repo.id, started.run.id).findLast(
+    (event) =>
+      event.type === "workflow_run.updated" &&
+      (JSON.parse(event.payload) as Record<string, unknown>).transition ===
+        "request_rework",
   );
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: reworkEvent!.id,
+    }),
+  ).toMatchObject({ action: "wait" });
 
   // Execute pushes a fix (HEAD advances past the request_changes review), declares turn done, and
   // the run advances to a fresh Verify.
@@ -2731,7 +2716,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
-    rexec.session_id,
+    exec.session_id,
   );
   const reworkedStatus = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,

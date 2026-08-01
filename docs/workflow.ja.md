@@ -69,7 +69,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
     │
     ├─ request_changes review → 生きている Execute pane へ「review <id> に対応せよ」を注入 → fresh Verify
     └─ fresh pass review → run は running のまま次の worker instruction を待つ
-         ├─ 追加指示 → Execute pane へ注入（閉じていれば --note 付き launch）
+         ├─ 追加指示 → 生きている Execute pane へ注入（注入できなければ人間へ渡す）
          ├─ turn done ＋ HEAD 前進 → fresh Verify
          ├─ turn done ＋ HEAD 不変 → pass は fresh のまま待機
          └─ 明示的 stop → run を恒久終了（merge は人間）
@@ -100,8 +100,9 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    session と登録済み実行 target を解決し、live control target を更新して、改行・制御文字を空白に
    sanitize した指示を agent-control port 経由で送る。rework は
    `orchestrator: address review #<id>` のみ（findings の要約・解釈はしない）。deliver が non-zero の
-   場合だけ `launch-step`
-   （`--review` / `--note`）で fresh relaunch する。fresh launch の確認は active step/session も
+   場合は retry や relaunch を行わず人間へ渡す。run は生きている Execute child を 1 つしか持たず、
+   それがある run への `launch-step --step execute` は 409 で失敗する（同じ worktree を 2 つの child が
+   編集する二重起動を、成功として記録させないため）。fresh launch の確認は active step/session も
    自動記録する。修正後の Verify は常に fresh child とする。
 6. コスト上限超過では event payload の `usage_session_id` と `active_step` /
    `active_session_id` を区別し、run を needs-human hold にしてから active child の pane だけに
@@ -331,24 +332,28 @@ hold を維持する。
 | Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
 | Human wait | Execute の turn done 後、HEAD が不変 | hold を維持し、追加作業または明示的 resume を待つ |
 | Verify | 最新 review が fresh + pass | run を `running` のまま維持し、次の worker instruction を待つ |
-| Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、`lh workflow deliver` で既存 Execute target へ注入する。deliver が失敗すれば `--note` 付きで Execute を launch |
+| Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、`lh workflow deliver` で既存 Execute target へ注入する。deliver が失敗すれば二重起動を避けて人間へ渡す |
 | Verified + continuing | Execute の turn done 後、HEAD が passing review より前進 | run は Verify のまま、現在の HEAD に対する Verify を fresh launch |
 | Verified + continuing | Execute の turn done 後、HEAD が不変 | 既存 pass は fresh のまま。Verify を起動せず待機を続ける |
 | Verify | 最新 review が fresh + request_changes | rework → Execute |
 
 fresh pass は現在の HEAD を検証するが、run を完了・凍結しない。parent agent と Execute target を維持し、
 同じ run で追加作業を受け付ける。追加指示時に run は人間待ち hold ではないため `run resume` を使わない。
-保存済みの Execute target へ parent が `lh workflow deliver` で `orchestrator: <instruction>` を注入し、
-deliver が失敗した場合は `lh workflow launch-step --step execute --note <instruction>` で起動する。
+保存済みの Execute target へ parent が `lh workflow deliver` で `orchestrator: <instruction>` を注入する。
+deliver が失敗した場合、生きている Execute child がある run への `launch-step --step execute` は拒否される
+ため、error を見える状態のまま人間の判断へ渡す。
 その後の turn done で HEAD が進んでいれば fresh Verify を起動し、PR body・comment・attachment だけが
 変わって HEAD が不変なら既存 pass を fresh のまま維持する。run を恒久終了する command は無く、
 終了させるのは人間である。
 
-rework 上限は 8。新規 launch より先に parent が **1 行の**
-`lh workflow deliver --text 'orchestrator: address review #<id>'` で同じ Execute session への注入を試す。
-コマンドは DB 上の最新 Execute session と保存済み実行 target を再利用する。session / target を
-解決できない、または注入に失敗して non-zero になった場合に限り `--review <id>` で Execute child を
-再 launch する。修正後の Verify は常に fresh child とする。注入の成功自体を execute complete の根拠
+rework 上限は 8。rework は parent の **1 行の**
+`lh workflow deliver --text 'orchestrator: address review #<id>'` による同じ Execute session への注入で行う。
+コマンドは DB 上の最新 Execute session と保存済み実行 target を再利用する。`request-rework` は
+`current_step` を `execute` に戻すのと同じ更新で `active_step` / `active_session_id` をその Execute child に
+向け直す。両者を一度 null にすると、生きている child が居るのに「Execute 未起動」に見える窓ができ、
+その窓で worker が reconcile すると二重起動する（#2150）。session / target を解決できない、または注入に
+失敗して non-zero になった場合は、二重起動を避けて人間の判断へ渡す。
+修正後の Verify は常に fresh child とする。注入の成功自体を execute complete の根拠
 にしない — 次の遷移は `lh workflow step status` の HEAD / review 観測のみ。
 
 上限到達後に fresh な request_changes を観測したときは rework せず、`escalate-human` で Issue comment に
