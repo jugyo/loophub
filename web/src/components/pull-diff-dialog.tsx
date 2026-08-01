@@ -19,6 +19,7 @@ import type {
   PullFile,
   PullLineComment,
 } from "@/api/types";
+import { CommentId } from "@/components/comment-id";
 import { CopyButton } from "@/components/copy-button";
 import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
@@ -904,7 +905,8 @@ function FileDiffContent({
             💬 @{c.user.login}{" "}
             <span className="text-muted-foreground">
               {c.path}:{c.line ?? "?"}
-            </span>
+            </span>{" "}
+            <CommentId id={c.id} />
           </div>
           <Markdown owner={owner} repo={repo}>
             {c.body}
@@ -1701,7 +1703,8 @@ function ThreadCard({
         {thread.messages.map((message) => (
           <div key={message.id} className="rounded-md bg-muted/20 p-2">
             <div className="mb-1 text-xs text-muted-foreground">
-              @{diffFeedbackAuthor(message.author)}
+              @{diffFeedbackAuthor(message.author)}{" "}
+              <CommentId id={message.id} />
             </div>
             <Markdown owner={owner} repo={repo}>
               {message.body}

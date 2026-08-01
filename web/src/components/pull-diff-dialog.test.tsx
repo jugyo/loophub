@@ -332,6 +332,33 @@ describe("DiffFileDialog", () => {
     expect(within(dialog).getAllByText("nice constant").length).toBeGreaterThan(
       0,
     );
+    expect(within(dialog).getByLabelText("Comment ID 1").textContent).toBe(
+      "#1",
+    );
+  });
+
+  it("shows diff feedback message IDs without obscuring the comment body", async () => {
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+
+    const thread = await screen.findByLabelText("Diff thread 1");
+    expect(within(thread).getByLabelText("Comment ID 11").textContent).toBe(
+      "#11",
+    );
+    expect(within(thread).getByText("Please revisit this range.")).toBeTruthy();
   });
 
   it("starts in split view and switches to unified view", () => {

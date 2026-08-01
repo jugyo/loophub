@@ -552,6 +552,15 @@ describe("PullDetail", () => {
     const firstComment = await screen.findByText("Thanks!");
     const secondComment = screen.getByText("Second comment");
     const composer = screen.getByLabelText("Add a PR comment");
+    const firstCommentCard = firstComment.closest("article")!;
+    const secondCommentCard = secondComment.closest("article")!;
+
+    expect(
+      within(firstCommentCard).getByLabelText("Comment ID 9").textContent,
+    ).toBe("#9");
+    expect(
+      within(secondCommentCard).getByLabelText("Comment ID 10").textContent,
+    ).toBe("#10");
 
     expect(
       firstComment.compareDocumentPosition(secondComment) &

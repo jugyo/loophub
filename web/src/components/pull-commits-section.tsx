@@ -10,6 +10,7 @@
 import { Check, Loader2, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { PullLineComment, PullRequest, PullReview } from "@/api/types";
+import { CommentId } from "@/components/comment-id";
 import { DiffLines } from "@/components/diff-lines";
 import { DiffStat } from "@/components/diff-stat";
 import { Markdown } from "@/components/markdown";
@@ -426,7 +427,8 @@ function ReviewItem({
                 💬 @{comment.user.login}{" "}
                 <span className="text-muted-foreground">
                   {comment.path}:{comment.line ?? "?"}
-                </span>
+                </span>{" "}
+                <CommentId id={comment.id} />
               </div>
               <Markdown owner={owner} repo={repo}>
                 {comment.body}

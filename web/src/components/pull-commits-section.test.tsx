@@ -254,6 +254,9 @@ describe("PullCommitsSection", () => {
     expect(within(reviewDialog).getByText("claude-opus-4-8")).toBeTruthy();
     expect(within(reviewDialog).getByText("Looks good.")).toBeTruthy();
     expect(within(reviewDialog).getByText("web/src/a.ts:4")).toBeTruthy();
+    expect(
+      within(reviewDialog).getByLabelText("Comment ID 10").textContent,
+    ).toBe("#10");
     expect(within(reviewDialog).getByText("Keep this guard.")).toBeTruthy();
     fireEvent.click(closeButton);
     expect(screen.queryByRole("dialog")).toBeNull();
