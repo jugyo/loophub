@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { RefreshCw, TriangleAlert } from "lucide-react";
+import { MessageSquare, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
@@ -144,6 +144,22 @@ function WorkflowReworkCount({
       title={`Workflow rework ×${count}`}
     >
       <RefreshCw className="size-3" aria-hidden="true" />
+      {count}
+    </span>
+  );
+}
+
+// #2152: how much has been said on the PR — its comments plus every diff comment, as one number.
+// Icon and count only, and silent at zero like the diff view's own count, so a row with no
+// discussion spends no width on it.
+function CommentCount({ count }: { count: LinkedPull["total_comments"] }) {
+  if (!count) return null;
+  return (
+    <span
+      aria-label={`${count} ${count === 1 ? "comment" : "comments"}`}
+      className="flex shrink-0 items-center gap-1 whitespace-nowrap tabular-nums text-muted-foreground/70"
+    >
+      <MessageSquare className="size-3" aria-hidden="true" />
       {count}
     </span>
   );
@@ -565,10 +581,12 @@ export function LinkedPullSummaryRow({
           conflict={operationalStatus.tone === "conflict"}
         />
         {/* The row's right edge: the rework count sits directly left of the cost metrics, so the
-            two run totals a human scans for read as one group. */}
+            two run totals a human scans for read as one group, with how much has been said on the
+            PR closing the row (#2152). */}
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <WorkflowReworkCount count={pull.workflow_rework_count} />
           <Metrics pull={pull} overBudget={costStopped !== null} />
+          <CommentCount count={pull.total_comments} />
         </div>
       </div>
       {popover.open ? (

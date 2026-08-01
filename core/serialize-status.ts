@@ -277,6 +277,8 @@ async function linkedPullDetail(
     github_pull: githubPullJSON(S.getGithubPull(pr.id)),
     // #863: whether this PR was force-stopped for exceeding its cost limit.
     cost_stopped: S.hasAnyCostStopEvent(repo.id, pr.number),
+    // #2152: conversation comments plus diff-comment messages as one total, both counted in SQL.
+    total_comments: S.countComments(pr.id) + S.countDiffFeedbackMessages(pr.id),
     // #783: agent cost (total tokens + cost) for the sub-row, or omitted when no linked session
     // has usage yet.
     ...(usageTotals

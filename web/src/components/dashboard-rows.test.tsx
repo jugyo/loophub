@@ -1373,6 +1373,39 @@ describe("agent cost display (#783)", () => {
   });
 });
 
+// #2152: the linked-PR sub-row shows how much has been said on the PR — its comments plus every
+// diff comment — as one number on the right of the row.
+describe("comment count on the linked-PR sub-row (#2152)", () => {
+  it("shows the total as an icon and a number, with no label text", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ total_comments: 4 })],
+        })}
+      />,
+    );
+    const count = await screen.findByLabelText("4 comments");
+    expect(count.textContent).toBe("4");
+    expect(count.querySelector("svg")).toBeTruthy();
+  });
+
+  it("stays quiet when the PR has no comments", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ total_comments: 0 })],
+        })}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(screen.queryByLabelText(/comments?$/)).toBeNull();
+  });
+});
+
 // #863: a PR force-stopped for exceeding its cost limit gets an "over budget" badge on the
 // issue-list linked-PR sub-row (LinkedPullSubRow), so a stalled PR is spotted at a glance.
 describe("cost-stopped badge on the linked-PR sub-row (#863)", () => {

@@ -97,6 +97,7 @@ export type LinkedPull = PullSummaryWire &
       | "agent_model"
       | "work_duration_total"
       | "workflow_rework_count"
+      | "total_comments"
     >
   >;
 

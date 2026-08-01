@@ -310,6 +310,9 @@ export interface IssueListPullSummaryWire extends PullSummaryWire {
   // list shows a PR that keeps circling without opening its run. Omitted when no workflow run is
   // linked to the PR; zero means a linked run that has not reworked yet.
   workflow_rework_count?: number;
+  // #2152: comments on the PR for the sub-row — its conversation comments plus every diff-comment
+  // message, as one total. Zero when the PR has neither.
+  total_comments: number;
 }
 
 // Herdr pane captured from the New Issue flow (#670). Narrowed from its compatibility store row —

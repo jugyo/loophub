@@ -194,6 +194,20 @@ export function listDiffFeedbackMessages(
     .all(threadId) as DiffFeedbackMessageRow[];
 }
 
+// Every diff-feedback message on the PR, across all of its threads. Counted in SQL so a list row
+// can show the total without loading threads and messages.
+export function countDiffFeedbackMessages(issueId: number): number {
+  return (
+    db
+      .query(
+        `SELECT COUNT(*) AS c FROM diff_feedback_messages m
+         JOIN diff_feedback_threads t ON t.id = m.thread_id
+         WHERE t.issue_id = ?`,
+      )
+      .get(issueId) as { c: number }
+  ).c;
+}
+
 export function getDiffFeedbackMessage(
   id: number,
 ): DiffFeedbackMessageRow | null {
