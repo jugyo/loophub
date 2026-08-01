@@ -92,7 +92,7 @@ afterAll(() => {
   for (const path of repoPaths) rmSync(path, { recursive: true, force: true });
 });
 
-test("merging a historical linked PR leaves other open linked PRs unchanged", async () => {
+test("merging a historical linked PR closes its Issue and sibling PRs", async () => {
   const repo = await makeRepo("me/merge-linked-pulls");
   const issue = svc.issues.create("me/merge-linked-pulls", {
     title: "choose one",
@@ -143,16 +143,40 @@ test("merging a historical linked PR leaves other open linked PRs unchanged", as
   for (const sibling of [siblingA, siblingB]) {
     expect(
       (await svc.pulls.get("me/merge-linked-pulls", sibling.number)).state,
-    ).toBe("open");
+    ).toBe("closed");
     const row = S.getIssue(repo.id, sibling.number)!;
-    expect(S.listComments(row.id)).toEqual([]);
+    expect(S.listComments(row.id).map((comment) => comment.body)).toEqual([
+      `Closed because linked issue #${issue.number} was closed.`,
+    ]);
   }
   expect(S.getAgentSession("running-sibling")).toEqual(sessionBefore);
 
   const closeEvents = S.listEvents(0, repo.id, 100).filter(
     (event) => event.type === "pull_request.closed",
   );
-  expect(closeEvents).toHaveLength(0);
+  expect(closeEvents).toHaveLength(2);
+  expect(closeEvents.map((event) => JSON.parse(event.payload))).toEqual(
+    expect.arrayContaining([
+      {
+        number: siblingA.number,
+        linked_issue: issue.number,
+        source_payload_version: 1,
+      },
+      {
+        number: siblingB.number,
+        linked_issue: issue.number,
+        source_payload_version: 1,
+      },
+    ]),
+  );
+  const mergedEvents = S.listEvents(0, repo.id, 100).filter(
+    (event) => event.type === "pull_request.merged",
+  );
+  expect(mergedEvents).toHaveLength(1);
+  expect(JSON.parse(mergedEvents[0].payload)).toMatchObject({
+    number: adopted.number,
+    source_payload_version: 1,
+  });
   expect(
     S.eventsForWorkflowRun(repo.id, siblingRun.id).filter(
       (event) => event.type === "workflow_run.closed",

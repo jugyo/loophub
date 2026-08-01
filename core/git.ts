@@ -642,11 +642,13 @@ async function syncPrimaryCheckoutIfOnBase(
 //   squash => 単一親(base) の 1 コミットに圧縮
 //   merge  => 2親(base, head) のマージコミット
 //   rebase => head の各コミットを base 上に並べ替え (git replay、線形履歴)
+export type PullMergeMethod = "squash" | "merge" | "rebase";
+
 export async function mergePull(
   repoPath: string,
   base: string,
   head: string,
-  method: "squash" | "merge" | "rebase",
+  method: PullMergeMethod,
   message: string,
   actor: string,
   opts: MergeOptions = {},

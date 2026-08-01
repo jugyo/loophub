@@ -110,6 +110,11 @@ export class Db {
     this.#raw = new DatabaseSync(path);
   }
 
+  /** Whether this connection is currently inside a synchronous command transaction. */
+  get inTransaction(): boolean {
+    return this.#depth > 0;
+  }
+
   #prepare(sql: string): StatementSync {
     let stmt = this.#cache.get(sql);
     if (!stmt) {

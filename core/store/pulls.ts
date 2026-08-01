@@ -1,7 +1,7 @@
 import { db, now } from "../db.ts";
+import type { PullMergeMethod } from "../git.ts";
 import type { MergeableState } from "../mergeable.ts";
 import type { IssueRow } from "./issues.ts";
-import { getIssueById } from "./issues.ts";
 import { linkSession, setSessionKind } from "./sessions.ts";
 
 export interface PullRow {
@@ -311,28 +311,18 @@ export function recordPullConflictState(
 export function setMerged(
   issueId: number,
   sha: string,
-  method: string,
-): number | null {
-  return finishMerge(issueId, now(), sha, method);
+  method: PullMergeMethod,
+): void {
+  finishMerge(issueId, now(), sha, method);
 }
 
 function finishMerge(
   issueId: number,
   mergedAt: string,
   sha: string | null,
-  method: string,
-): number | null {
+  method: PullMergeMethod,
+): void {
   const t = mergedAt;
-  const pull = getPull(issueId);
-  let closedIssue: number | null = null;
-  let shouldCloseLinked = false;
-  if (pull?.linked_issue_id) {
-    const linked = getIssueById(pull.linked_issue_id);
-    if (linked?.state === "open") {
-      shouldCloseLinked = true;
-      closedIssue = linked.number;
-    }
-  }
   db.run(
     `UPDATE pulls
      SET merged = 1, merged_at = ?, merge_commit_sha = ?, merge_method = ?
@@ -347,11 +337,4 @@ function finishMerge(
     `UPDATE issues SET state = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
     [t, t, issueId],
   );
-  if (pull?.linked_issue_id && shouldCloseLinked) {
-    db.run(
-      `UPDATE issues SET state = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
-      [t, t, pull.linked_issue_id],
-    );
-  }
-  return closedIssue;
 }

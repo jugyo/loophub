@@ -110,3 +110,23 @@ test("merge() succeeds once the head branch has a commit ahead of base", async (
   );
   expect(result.merged).toBe(true);
 });
+
+test("merge() rejects a closed PR before publishing another terminal fact", async () => {
+  git(["branch", "loophub/closed", "main"]);
+  git(["checkout", "-q", "loophub/closed"]);
+  spawnSync("sh", ["-c", `echo closed > ${join(repoPath, "closed.txt")}`]);
+  git(["add", "-A"]);
+  git(["commit", "-qm", "closed PR change"]);
+  git(["checkout", "-q", "main"]);
+
+  const pr = (await svc.pulls.create(
+    "me/proj",
+    { title: "closed", head: "loophub/closed", base: "main" },
+    undefined,
+  )) as any;
+  svc.pulls.update("me/proj", pr.number, { state: "closed" });
+
+  await expect(
+    svc.pulls.merge("me/proj", pr.number, "merge", undefined),
+  ).rejects.toThrow("Pull Request is not open");
+});

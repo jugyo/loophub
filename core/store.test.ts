@@ -104,12 +104,12 @@ test("issues, labels, comments, and review state round-trip through the adapter"
   S.createComment(issue.id, "me", "hi");
   expect(S.countComments(issue.id)).toBe(1);
 
-  // merge closes the PR and its linked issue
+  // The store primitive records only the PR merge; service subscribers own linked Issue closure.
   const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
   S.createPull(pr.id, "feat", "main", "abc123", issue.id);
-  const linkedNumber = S.setMerged(pr.id, "deadbeef", "squash");
-  expect(linkedNumber).toBe(issue.number);
-  expect(S.getIssueById(issue.id)!.state).toBe("closed");
+  S.setMerged(pr.id, "deadbeef", "squash");
+  expect(S.getIssueById(pr.id)!.state).toBe("closed");
+  expect(S.getIssueById(issue.id)!.state).toBe("open");
 });
 
 test("Issue and PR numbers remain monotonic after the highest row is hard-deleted", () => {

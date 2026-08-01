@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db } from "../db.ts";
+import { publish } from "../domain-events.ts";
 import { ServiceError } from "../errors.ts";
 import {
   type GithubIssueDeps,
@@ -18,8 +19,6 @@ import {
 } from "../serialize.ts";
 import { issueDetailJSON, issueListItemJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
-import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
-import { closeOpenPullsForIssue } from "./linked-pulls.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -405,20 +404,24 @@ export const issues = {
         });
       }
       if (state === "closed" && wasOpen) {
-        S.emitEvent(
-          r.id,
-          row.kind === "pull" ? "pull_request.updated" : "issue.closed",
-          actor,
-          {
-            number: row.number,
-            source_payload_version: SOURCE_PAYLOAD_VERSION,
-          },
-        );
-        if (row.kind !== "pull") {
-          closeOpenPullsForIssue({
+        if (row.kind === "pull") {
+          publish({
+            type: "pull.closed",
             repoId: r.id,
-            linkedIssueId: row.id,
             actor,
+            pullId: row.id,
+            pullNumber: row.number,
+            linkedIssueId: S.getPull(row.id)?.linked_issue_id ?? null,
+            reason: { kind: "manual" },
+          });
+        } else {
+          publish({
+            type: "issue.closed",
+            repoId: r.id,
+            actor,
+            issueId: row.id,
+            issueNumber: row.number,
+            reason: { kind: "manual" },
           });
         }
       } else if (state === "open" && !wasOpen) {

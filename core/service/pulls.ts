@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { db } from "../db.ts";
 import { parsePatchWithCoordinates } from "../diff-anchor.ts";
+import { publish } from "../domain-events.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
 import {
@@ -14,6 +15,7 @@ import {
   fileAtRef,
   mergePull as gitMergePull,
   hasEffectiveDiff,
+  type PullMergeMethod,
   pathInDiff,
   remoteUrl,
   revParse,
@@ -233,15 +235,21 @@ export const pulls = {
     };
     const updated = db.transaction(() => {
       S.updateIssue(row.id, issuePatch);
-      S.emitEvent(r.id, "pull_request.updated", actor, {
-        number: row.number,
-        // A close is a fact a Workflow run reacts to, so the closing update carries the source
-        // marker. Reconciliation reads the PR's own state, not this payload; the marker only tells
-        // the run that no legacy twin will follow.
-        ...(closesPull
-          ? { source_payload_version: SOURCE_PAYLOAD_VERSION }
-          : {}),
-      });
+      if (closesPull) {
+        publish({
+          type: "pull.closed",
+          repoId: r.id,
+          actor,
+          pullId: row.id,
+          pullNumber: row.number,
+          linkedIssueId: p.linked_issue_id,
+          reason: { kind: "manual" },
+        });
+      } else {
+        S.emitEvent(r.id, "pull_request.updated", actor, {
+          number: row.number,
+        });
+      }
       return S.getIssue(r.id, row.number)!;
     });
     return pullJSON(r, updated);
@@ -621,7 +629,7 @@ export const pulls = {
   async merge(
     name: string,
     number: number,
-    method: "squash" | "merge" | "rebase",
+    method: PullMergeMethod,
     sessionId?: string | null,
   ) {
     const r = repoOr404(name);
@@ -629,6 +637,8 @@ export const pulls = {
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
     if (p.merged) throw new ServiceError(405, "Pull Request is already merged");
+    if (row.state !== "open")
+      throw new ServiceError(405, "Pull Request is not open");
     // A diff-free PR has nothing to merge — the UI disables the Merge button for this
     // state (#691), but merge-tree itself does not reject it (a diff-free tree merges
     // cleanly), so this check must be enforced here too. Use base...head effective diff,
@@ -663,21 +673,19 @@ export const pulls = {
       throw new ServiceError(409, "Merge conflict");
     }
     if (!res.merged) throw new ServiceError(422, "Merge failed");
-    // The git merge is done; the merge state, the linked issue it closes and both events commit
-    // together so a merged PR is never recorded without the closure it caused.
+    // The git merge is done; the PR state, persisted facts and every subscriber write commit
+    // together so a merged PR is never recorded without the closure cascade it caused.
     db.transaction(() => {
-      const closedIssue = S.setMerged(row.id, res.sha!, method);
-      S.emitEvent(r.id, "pull_request.merged", actor, {
-        number: row.number,
-        sha: res.sha,
-        source_payload_version: SOURCE_PAYLOAD_VERSION,
+      S.setMerged(row.id, res.sha!, method);
+      publish({
+        type: "pull.closed",
+        repoId: r.id,
+        actor,
+        pullId: row.id,
+        pullNumber: row.number,
+        linkedIssueId: p.linked_issue_id,
+        reason: { kind: "merged", sha: res.sha!, method },
       });
-      if (closedIssue != null) {
-        S.emitEvent(r.id, "issue.closed", actor, {
-          number: closedIssue,
-          closed_by_pull: row.number,
-        });
-      }
     });
     return { merged: true, sha: res.sha };
   },

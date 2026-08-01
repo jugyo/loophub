@@ -1,41 +1,57 @@
-import { db } from "../db.ts";
+import type { SyncSubscriber } from "../domain-events.ts";
 import * as S from "../store.ts";
-import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
 
-interface CloseOpenPullsInput {
-  repoId: number;
-  linkedIssueId: number;
-  actor: string;
-}
+// Close every still-open PR linked to the closed Issue. This procedure owns the lookup, state
+// checks, comments and cascade publication; the subscriber registry only wires its reference.
+export const closeLinkedPulls: SyncSubscriber<"issue.closed"> = (
+  fact,
+  { publish },
+) => {
+  for (const pull of S.allLinkedPullsForIssue(fact.issueId)) {
+    if (pull.state !== "open" || pull.merged) continue;
 
-// Close historical linked PRs when their issue is explicitly closed. Session/process cleanup is
-// intentionally absent: the existing PID-based dev lock recovery owns that lifecycle.
-//
-// Every PR's state, its system comment and its `pull_request.closed` event share one transaction, so
-// a cascade either closes each PR completely or leaves it untouched. Callers that already close the
-// issue itself in a transaction join that one instead, which keeps the whole close atomic.
-export function closeOpenPullsForIssue(input: CloseOpenPullsInput): number[] {
-  return db.transaction(() => {
-    const linkedIssue = S.getIssueById(input.linkedIssueId);
-    if (!linkedIssue) return [];
+    S.updateIssue(pull.id, { state: "closed" });
+    S.createComment(
+      pull.id,
+      fact.actor,
+      `Closed because linked issue #${fact.issueNumber} was closed.`,
+    );
+    publish({
+      type: "pull.closed",
+      repoId: fact.repoId,
+      actor: fact.actor,
+      pullId: pull.id,
+      pullNumber: pull.number,
+      linkedIssueId: fact.issueId,
+      reason: {
+        kind: "linked_issue_closed",
+        issueNumber: fact.issueNumber,
+      },
+    });
+  }
+  return undefined;
+};
 
-    const closed: number[] = [];
-    for (const pull of S.allLinkedPullsForIssue(input.linkedIssueId)) {
-      if (pull.state !== "open" || pull.merged) continue;
+// A merged PR closes its linked Issue. Other PR closure reasons intentionally do not cascade in
+// this direction. Publishing issue.closed then lets the Issue handler close sibling PRs.
+export const closeLinkedIssueAfterMerge: SyncSubscriber<"pull.closed"> = (
+  fact,
+  context,
+) => {
+  if (fact.reason.kind !== "merged" || fact.linkedIssueId == null)
+    return undefined;
 
-      S.updateIssue(pull.id, { state: "closed" });
-      S.createComment(
-        pull.id,
-        input.actor,
-        `Closed because linked issue #${linkedIssue.number} was closed.`,
-      );
-      S.emitEvent(input.repoId, "pull_request.closed", input.actor, {
-        number: pull.number,
-        linked_issue: linkedIssue.number,
-        source_payload_version: SOURCE_PAYLOAD_VERSION,
-      });
-      closed.push(pull.number);
-    }
-    return closed;
+  const issue = S.getIssueById(fact.linkedIssueId);
+  if (issue?.state !== "open") return undefined;
+
+  S.updateIssue(issue.id, { state: "closed" });
+  context.publish({
+    type: "issue.closed",
+    repoId: fact.repoId,
+    actor: fact.actor,
+    issueId: issue.id,
+    issueNumber: issue.number,
+    reason: { kind: "pull_merged", pullNumber: fact.pullNumber },
   });
-}
+  return undefined;
+};
