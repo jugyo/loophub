@@ -1,4 +1,5 @@
 import { worktreeRoot } from "../config.ts";
+import { db } from "../db.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
 import type { HerdrSessionsWire } from "../serialize.ts";
 import { runHerdr, runHerdrCapture } from "../service/herdr-runner.ts";
@@ -93,12 +94,18 @@ export async function snapshotHerdrSessionsImpl(
   const capture = deps.sweep ?? sweepHerdrSessions;
   const snapshot = await capture();
   const signature = herdrSnapshotSignature(snapshot);
-  const record = S.recordHerdrSessionSnapshot(snapshot, signature);
-  if (record.changed) {
-    // Global (repo_id = null): the snapshot spans every repo, and clients invalidate one shared
-    // terminal/sessions query rather than a repo-scoped one.
-    S.emitEvent(null, TERMINAL_SESSIONS_UPDATED_EVENT, "lh-worker", {});
-  }
+  // The herdr capture is done. The stored signature is what decides whether this tick counts as a
+  // change, so it commits with the event: a stored signature whose event was lost leaves clients on
+  // the previous snapshot until some later tick happens to change the signature again.
+  const record = db.transaction(() => {
+    const stored = S.recordHerdrSessionSnapshot(snapshot, signature);
+    if (stored.changed) {
+      // Global (repo_id = null): the snapshot spans every repo, and clients invalidate one shared
+      // terminal/sessions query rather than a repo-scoped one.
+      S.emitEvent(null, TERMINAL_SESSIONS_UPDATED_EVENT, "lh-worker", {});
+    }
+    return stored;
+  });
   return {
     repos: snapshot.repos.length,
     running_repos: snapshot.running_repos?.length ?? 0,

@@ -1,3 +1,4 @@
+import { db } from "./db.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { currentMergeableState } from "./pull-mergeable-state.ts";
 import * as S from "./store.ts";
@@ -52,18 +53,28 @@ export async function sweepPullConflicts(
     // observed PR state. Recording it would overwrite a stored "clean" and permanently consume
     // the clean -> conflict edge — a conflicted PR can never return to clean — so skip the tick.
     if (state === "unknown") continue;
-    const transition = S.recordPullConflictState(
-      pull.repo_id,
-      pull.number,
-      state,
-    );
-    if (!classifyConflictTransition(transition.previous, transition.current))
-      continue;
-    S.emitEvent(pull.repo_id, "pull_request.merge_conflict", "lh-worker", {
-      number: pull.number,
-      source_payload_version: SOURCE_PAYLOAD_VERSION,
-    });
-    emitted++;
+    // Recording the state consumes the clean -> conflict edge, so it must commit with the event it
+    // fires: a stored `conflict` whose event was lost leaves every later tick reading
+    // conflict -> conflict, and the conflict is never reported.
+    if (
+      db.transaction(() => {
+        const transition = S.recordPullConflictState(
+          pull.repo_id,
+          pull.number,
+          state,
+        );
+        if (
+          !classifyConflictTransition(transition.previous, transition.current)
+        )
+          return false;
+        S.emitEvent(pull.repo_id, "pull_request.merge_conflict", "lh-worker", {
+          number: pull.number,
+          source_payload_version: SOURCE_PAYLOAD_VERSION,
+        });
+        return true;
+      })
+    )
+      emitted++;
   }
   return { checked: pulls.length, emitted };
 }

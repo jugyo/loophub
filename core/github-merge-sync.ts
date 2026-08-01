@@ -1,3 +1,4 @@
+import { db } from "./db.ts";
 import {
   type GithubMergeStatusDeps,
   realGithubMergeStatusDeps,
@@ -26,18 +27,23 @@ export async function syncGithubMergeStatus(
     // mergedAt should always be present once state is MERGED; a synthetic fallback only guards
     // against a malformed/unexpected gh response so a real detection is never silently dropped.
     const mergedAt = status.mergedAt ?? new Date().toISOString();
-    S.setGithubMerged(link.issue_id, mergedAt);
+    // The `gh` call is done; the recorded merge and the event it fires commit together. Recording it
+    // alone would drop the link out of unmergedGithubPullLinks(), so a lost event means the
+    // Notification Center prompt is never shown for this PR.
     emitted.push(
-      S.emitEvent(
-        link.repo_id,
-        "pull_request.github_merged",
-        status.mergedByLogin ?? "lh-worker",
-        {
-          number: link.number,
-          github_number: link.github_number,
-          github_merged_at: mergedAt,
-        },
-      ),
+      db.transaction(() => {
+        S.setGithubMerged(link.issue_id, mergedAt);
+        return S.emitEvent(
+          link.repo_id,
+          "pull_request.github_merged",
+          status.mergedByLogin ?? "lh-worker",
+          {
+            number: link.number,
+            github_number: link.github_number,
+            github_merged_at: mergedAt,
+          },
+        );
+      }),
     );
   }
   return emitted;

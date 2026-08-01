@@ -1,3 +1,4 @@
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import { type WorkflowContractsWire, workflowJSON } from "../serialize.ts";
 import * as S from "../store.ts";
@@ -60,17 +61,19 @@ export const workflows = {
   ) {
     const name = normalizeName(input.name);
     ensureUniqueName(name);
-    const row = S.createWorkflow({
-      name,
-      description: normalizeText(input.description, "description"),
-      executePrompt: normalizeText(input.execute_prompt, "execute_prompt"),
-      verifyPrompt: normalizeText(input.verify_prompt, "verify_prompt"),
+    return db.transaction(() => {
+      const row = S.createWorkflow({
+        name,
+        description: normalizeText(input.description, "description"),
+        executePrompt: normalizeText(input.execute_prompt, "execute_prompt"),
+        verifyPrompt: normalizeText(input.verify_prompt, "verify_prompt"),
+      });
+      S.emitEvent(null, "workflow.created", actorFor(sessionId), {
+        id: row.id,
+        name: row.name,
+      });
+      return workflowJSON(row);
     });
-    S.emitEvent(null, "workflow.created", actorFor(sessionId), {
-      id: row.id,
-      name: row.name,
-    });
-    return workflowJSON(row);
   },
 
   update(
@@ -87,26 +90,28 @@ export const workflows = {
     const nextName =
       patch.name !== undefined ? normalizeName(patch.name) : undefined;
     if (nextName !== undefined) ensureUniqueName(nextName, existing.id);
-    const updated = S.updateWorkflow(existing.id, {
-      name: nextName,
-      description:
-        patch.description !== undefined
-          ? normalizeText(patch.description, "description")
-          : undefined,
-      executePrompt:
-        patch.execute_prompt !== undefined
-          ? normalizeText(patch.execute_prompt, "execute_prompt")
-          : undefined,
-      verifyPrompt:
-        patch.verify_prompt !== undefined
-          ? normalizeText(patch.verify_prompt, "verify_prompt")
-          : undefined,
+    return db.transaction(() => {
+      const updated = S.updateWorkflow(existing.id, {
+        name: nextName,
+        description:
+          patch.description !== undefined
+            ? normalizeText(patch.description, "description")
+            : undefined,
+        executePrompt:
+          patch.execute_prompt !== undefined
+            ? normalizeText(patch.execute_prompt, "execute_prompt")
+            : undefined,
+        verifyPrompt:
+          patch.verify_prompt !== undefined
+            ? normalizeText(patch.verify_prompt, "verify_prompt")
+            : undefined,
+      });
+      S.emitEvent(null, "workflow.updated", actorFor(sessionId), {
+        id: existing.id,
+        name: updated!.name,
+      });
+      return workflowJSON(updated!);
     });
-    S.emitEvent(null, "workflow.updated", actorFor(sessionId), {
-      id: existing.id,
-      name: updated!.name,
-    });
-    return workflowJSON(updated!);
   },
 
   delete(name: string, sessionId?: string | null) {
@@ -116,10 +121,12 @@ export const workflows = {
         409,
         "workflow is referenced by an active workflow run",
       );
-    S.deleteWorkflow(existing.id);
-    S.emitEvent(null, "workflow.deleted", actorFor(sessionId), {
-      id: existing.id,
-      name: existing.name,
+    db.transaction(() => {
+      S.deleteWorkflow(existing.id);
+      S.emitEvent(null, "workflow.deleted", actorFor(sessionId), {
+        id: existing.id,
+        name: existing.name,
+      });
     });
     return { ok: true };
   },

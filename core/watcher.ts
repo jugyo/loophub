@@ -1,3 +1,4 @@
+import { db } from "./db.ts";
 import { revParse } from "./git.ts";
 import * as S from "./store.ts";
 
@@ -14,12 +15,16 @@ export async function sweepPullUpdates(): Promise<any[]> {
       continue;
     }
     if (cur !== p.head_sha) {
-      S.setHeadSha(p.issue_id, cur);
-      S.touchIssue(p.issue_id);
+      // The ref read is done; the observed SHA and the event announcing it commit together, so a
+      // recorded SHA never suppresses the event a later sweep would otherwise emit for it.
       emitted.push(
-        S.emitEvent(p.repo_id, "pull_request.updated", p.author, {
-          number: p.number,
-          sha: cur,
+        db.transaction(() => {
+          S.setHeadSha(p.issue_id, cur);
+          S.touchIssue(p.issue_id);
+          return S.emitEvent(p.repo_id, "pull_request.updated", p.author, {
+            number: p.number,
+            sha: cur,
+          });
         }),
       );
     }

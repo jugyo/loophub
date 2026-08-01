@@ -1,3 +1,4 @@
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import { sweepMergeReadyNotifications } from "../merge-ready-notifications.ts";
 import { notificationJSON } from "../serialize.ts";
@@ -96,30 +97,37 @@ function assertResourceNumber(
   return number;
 }
 
+// The generated notifications and the cursor that says they were generated advance together: a
+// cursor moved without its notifications would silently drop them.
 function backfillFromSignals(): void {
-  const cursors = S.notificationSourceCursors();
-  const highWatermarks = S.notificationSourceHighWatermarks();
-  for (const signal of S.listNotificationSignalRows(cursors, highWatermarks)) {
-    const content = contentForSignal(signal);
-    const row = S.createNotification({
-      repoId: signal.repo_id,
-      kind: signal.kind,
-      title: content.title,
-      body: content.body,
-      resourceKind: "pull",
-      resourceNumber: signal.number,
-      sourceKey: signal.source_key,
-      createdAt: signal.created_at,
-    });
-    if (row) {
-      S.emitEvent(row.repo_id, "notification.created", "loophub", {
-        id: row.id,
-        kind: row.kind,
-        number: row.resource_number,
+  db.transaction(() => {
+    const cursors = S.notificationSourceCursors();
+    const highWatermarks = S.notificationSourceHighWatermarks();
+    for (const signal of S.listNotificationSignalRows(
+      cursors,
+      highWatermarks,
+    )) {
+      const content = contentForSignal(signal);
+      const row = S.createNotification({
+        repoId: signal.repo_id,
+        kind: signal.kind,
+        title: content.title,
+        body: content.body,
+        resourceKind: "pull",
+        resourceNumber: signal.number,
+        sourceKey: signal.source_key,
+        createdAt: signal.created_at,
       });
+      if (row) {
+        S.emitEvent(row.repo_id, "notification.created", "loophub", {
+          id: row.id,
+          kind: row.kind,
+          number: row.resource_number,
+        });
+      }
     }
-  }
-  S.advanceNotificationSourceCursors(highWatermarks);
+    S.advanceNotificationSourceCursors(highWatermarks);
+  });
 }
 
 async function refreshGeneratedNotifications(): Promise<void> {
@@ -159,23 +167,25 @@ export const notifications = {
       typeof input.herdrPaneId === "string" && input.herdrPaneId.trim() !== ""
         ? input.herdrPaneId
         : null;
-    const row = S.createNotification({
-      repoId: repo.id,
-      kind,
-      title: assertTitle(input.title),
-      body: assertBody(input.body),
-      resourceKind,
-      resourceNumber,
-      sourceKey,
-      herdrPaneId,
+    return db.transaction(() => {
+      const row = S.createNotification({
+        repoId: repo.id,
+        kind,
+        title: assertTitle(input.title),
+        body: assertBody(input.body),
+        resourceKind,
+        resourceNumber,
+        sourceKey,
+        herdrPaneId,
+      });
+      if (!row) throw new ServiceError(409, "notification already exists");
+      S.emitEvent(row.repo_id, "notification.created", actorFor(sessionId), {
+        id: row.id,
+        kind: row.kind,
+        number: row.resource_number,
+      });
+      return notificationJSON(row);
     });
-    if (!row) throw new ServiceError(409, "notification already exists");
-    S.emitEvent(row.repo_id, "notification.created", actorFor(sessionId), {
-      id: row.id,
-      kind: row.kind,
-      number: row.resource_number,
-    });
-    return notificationJSON(row);
   },
 
   async list(
@@ -200,25 +210,31 @@ export const notifications = {
     const repo = S.getRepoById(current.repo_id);
     if (!repo) throw new ServiceError(404, "Not Found");
 
-    const row = S.markNotificationRead(id) ?? notificationOr404(id);
-    if (!current.read_at && row.read_at) {
-      S.emitEvent(row.repo_id, "notification.updated", actorFor(sessionId), {
-        id: row.id,
-        read_at: row.read_at,
-      });
-    }
-    return notificationJSON(row);
+    return db.transaction(() => {
+      const row = S.markNotificationRead(id) ?? notificationOr404(id);
+      if (!current.read_at && row.read_at) {
+        S.emitEvent(row.repo_id, "notification.updated", actorFor(sessionId), {
+          id: row.id,
+          read_at: row.read_at,
+        });
+      }
+      return notificationJSON(row);
+    });
   },
 
   async readAll(sessionId?: string | null): Promise<{ count: number }> {
+    // The refresh above runs git/GitHub-derived readiness checks, so it stays outside; the mark-read
+    // sweep and the events announcing it are transactional.
     await refreshGeneratedNotifications();
-    const rows = S.markAllNotificationsRead();
-    const repoIds = new Set(rows.map((row) => row.repo_id));
     const actor = actorFor(sessionId);
-    for (const repoId of repoIds) {
-      S.emitEvent(repoId, "notification.updated", actor, { read_all: true });
-    }
-    return { count: rows.length };
+    return db.transaction(() => {
+      const rows = S.markAllNotificationsRead();
+      const repoIds = new Set(rows.map((row) => row.repo_id));
+      for (const repoId of repoIds) {
+        S.emitEvent(repoId, "notification.updated", actor, { read_all: true });
+      }
+      return { count: rows.length };
+    });
   },
 
   sweepMergeReady: sweepMergeReadyNotifications,

@@ -9,6 +9,7 @@ import {
   updateConfig,
   updateDevCostLimitUsd,
 } from "../config.ts";
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import { CODING_AGENTS, isCodingAgent } from "../runtimes.ts";
 import type { GlobalSettingsWire } from "../serialize.ts";
@@ -163,17 +164,22 @@ export const settings = {
     if (input.devCostLimitUsd !== undefined) {
       updateDevCostLimitUsd(input.devCostLimitUsd);
     }
-    if (input.theme !== undefined) {
-      S.setInstanceSetting(THEME_KEY, input.theme);
-    }
-    if (input.workflowContractLanguage !== undefined) {
-      S.setInstanceSetting(
-        WORKFLOW_CONTRACT_LANGUAGE_KEY,
-        input.workflowContractLanguage,
-      );
-    }
+    // The config.json writes above are filesystem work and stay outside the transaction: only the
+    // SQLite-backed settings and their event share a rollback boundary, so a failed DB write never
+    // looks like it also reverted config.json.
     const actor = actorFor(sessionId);
-    S.emitEvent(null, "settings.updated", actor, input);
+    db.transaction(() => {
+      if (input.theme !== undefined) {
+        S.setInstanceSetting(THEME_KEY, input.theme);
+      }
+      if (input.workflowContractLanguage !== undefined) {
+        S.setInstanceSetting(
+          WORKFLOW_CONTRACT_LANGUAGE_KEY,
+          input.workflowContractLanguage,
+        );
+      }
+      S.emitEvent(null, "settings.updated", actor, input);
+    });
     return settings.get();
   },
 };

@@ -8,6 +8,7 @@ import {
   normalizeCodingAgent,
   worktreeRoot,
 } from "../config.ts";
+import { db } from "../db.ts";
 import {
   acquireDevLock,
   devLockPath,
@@ -1048,32 +1049,36 @@ function updateRunLifecycle(
   transition: WorkflowRunTransition,
   sessionId: string | null | undefined,
 ): WorkflowRunUpdateResult {
-  const updated = S.updateWorkflowRun(run.id, patch);
-  if (!updated) throw new ServiceError(404, "Workflow run not found");
-  S.emitWorkflowEvent(
-    updated.repo_id,
-    "workflow_run.updated",
-    actorFor(sessionId),
-    {
-      id: updated.id,
-      transition,
-      status: updated.status,
-      current_step: updated.current_step,
-      rework_count: updated.rework_count,
-      ...(transition === "await_human" || transition === "resume_after_human"
-        ? { needs_human_reason: updated.needs_human_reason }
-        : {}),
-      ...(transition === "activate_step"
-        ? {
-            active_step: updated.active_step,
-            active_session_id: updated.active_session_id,
-          }
-        : {}),
-      issue_number: updated.issue_number,
-      pr_number: updated.pr_number,
-    },
-  );
-  return { run: runJSON(updated) };
+  // Every lifecycle transition commits its run-row patch together with the event the parent
+  // reconciles from, so a parent can never wake on a transition the run row does not carry.
+  return db.transaction(() => {
+    const updated = S.updateWorkflowRun(run.id, patch);
+    if (!updated) throw new ServiceError(404, "Workflow run not found");
+    S.emitWorkflowEvent(
+      updated.repo_id,
+      "workflow_run.updated",
+      actorFor(sessionId),
+      {
+        id: updated.id,
+        transition,
+        status: updated.status,
+        current_step: updated.current_step,
+        rework_count: updated.rework_count,
+        ...(transition === "await_human" || transition === "resume_after_human"
+          ? { needs_human_reason: updated.needs_human_reason }
+          : {}),
+        ...(transition === "activate_step"
+          ? {
+              active_step: updated.active_step,
+              active_session_id: updated.active_session_id,
+            }
+          : {}),
+        issue_number: updated.issue_number,
+        pr_number: updated.pr_number,
+      },
+    );
+    return { run: runJSON(updated) };
+  });
 }
 
 // Explicit, human-decided budget increase by the run's persisted fixed increment. The guards keep
@@ -1097,6 +1102,7 @@ function increaseRunCostLimit(
   if (run.cost_increment_usd === null || run.cost_limit_usd === null) {
     throw new ServiceError(409, "Workflow run has no persisted cost limit");
   }
+  const incrementUsd = run.cost_increment_usd;
   if (run.cost_limit_usd !== input.expectedLimitUsd) {
     throw new ServiceError(
       409,
@@ -1111,35 +1117,40 @@ function increaseRunCostLimit(
       `no cost exceeded event exists for limit $${input.expectedLimitUsd}`,
     );
   }
-  const increased = S.increaseWorkflowRunCostLimit(
-    run.id,
-    input.expectedLimitUsd,
-  );
-  if (!increased) {
-    throw new ServiceError(
-      409,
-      "Workflow cost limit was not increased because its state changed",
+  const increased = db.transaction(() => {
+    const applied = S.increaseWorkflowRunCostLimit(
+      run.id,
+      input.expectedLimitUsd,
     );
-  }
-  // The parent waits on this event in `lh workflow next --watch`; it carries the interrupted step so
-  // the wake is legible in run history even though reconciliation re-observes the run row.
-  S.emitWorkflowEvent(
-    repo.id,
-    "workflow_run.cost_limit_increased",
-    actorFor(sessionId),
-    {
-      id: run.id,
-      issue_number: run.issue_number,
-      pr_number: run.pr_number,
-      active_step: run.active_step,
-      increment_usd: run.cost_increment_usd,
-      previous_limit_usd: increased.previous_limit_usd,
-      current_limit_usd: increased.current_limit_usd,
-    },
-  );
+    if (!applied) {
+      throw new ServiceError(
+        409,
+        "Workflow cost limit was not increased because its state changed",
+      );
+    }
+    // The parent waits on this event in `lh workflow next --watch`; it carries the interrupted step
+    // so the wake is legible in run history even though reconciliation re-observes the run row. The
+    // raised limit and this wake commit together: a wake without the raise would resume a run that
+    // is still over budget.
+    S.emitWorkflowEvent(
+      repo.id,
+      "workflow_run.cost_limit_increased",
+      actorFor(sessionId),
+      {
+        id: run.id,
+        issue_number: run.issue_number,
+        pr_number: run.pr_number,
+        active_step: run.active_step,
+        increment_usd: incrementUsd,
+        previous_limit_usd: applied.previous_limit_usd,
+        current_limit_usd: applied.current_limit_usd,
+      },
+    );
+    return applied;
+  });
   return {
     run: run.id,
-    increment_usd: run.cost_increment_usd,
+    increment_usd: incrementUsd,
     ...increased,
   };
 }
@@ -1238,20 +1249,34 @@ export const workflowRuns = {
 
       const costIncrementUsd = devCostLimitUsd();
 
-      const run = S.createWorkflowRun({
-        workflowId: workflow.id,
-        repoId: r.id,
-        issueNumber: issue.number,
-        prNumber: opened.number,
-        status: "running",
-        currentStep: "execute",
-        autoMode: true,
-        runtime,
-        model: input.model?.trim() || null,
-        contractLanguage,
-        parentSessionId: sessionId,
-        costIncrementUsd,
-        costLimitUsd: costIncrementUsd,
+      // The worktree provisioning and dev lock above are done. The run row and its start event
+      // commit together — the parent's watch takes that event id as its lower bound, so a run row
+      // without it is unwatchable. The contract file is written afterwards: it lives in a different
+      // failure domain (filesystem), and no transaction can cover both.
+      const run = db.transaction(() => {
+        const created = S.createWorkflowRun({
+          workflowId: workflow.id,
+          repoId: r.id,
+          issueNumber: issue.number,
+          prNumber: opened.number,
+          status: "running",
+          currentStep: "execute",
+          autoMode: true,
+          runtime,
+          model: input.model?.trim() || null,
+          contractLanguage,
+          parentSessionId: sessionId,
+          costIncrementUsd,
+          costLimitUsd: costIncrementUsd,
+        });
+        S.emitWorkflowEvent(r.id, "workflow_run.started", actorFor(sessionId), {
+          id: created.id,
+          workflow_id: workflow.id,
+          issue_number: issue.number,
+          pr_number: opened.number,
+          session_id: sessionId,
+        });
+        return created;
       });
 
       const systemPromptPath = writeParentContract(
@@ -1266,14 +1291,6 @@ export const workflowRuns = {
           contractLanguage,
         ),
       );
-
-      S.emitWorkflowEvent(r.id, "workflow_run.started", actorFor(sessionId), {
-        id: run.id,
-        workflow_id: workflow.id,
-        issue_number: issue.number,
-        pr_number: opened.number,
-        session_id: sessionId,
-      });
 
       return {
         run: {
@@ -1884,22 +1901,6 @@ export const workflowRuns = {
     const sessionId = input.sessionId;
     if (input.agentName)
       validateWorkflowStepAgentName(input.agentName, run.id, step);
-    S.registerAgentSession(
-      sessionId,
-      "workflow-step",
-      sessionId,
-      input.agentName ?? `Workflow ${step} run #${run.id}`,
-      runRuntime(run),
-      "workflow-step",
-    );
-    S.linkSession(sessionId, prIssue.id);
-    const withSession = S.appendWorkflowRunStepSession(run.id, step, sessionId);
-    if (!withSession) throw new ServiceError(404, "Workflow run not found");
-    const withActive = S.updateWorkflowRun(run.id, {
-      activeStep: step,
-      activeSessionId: sessionId,
-    });
-    if (!withActive) throw new ServiceError(404, "Workflow run not found");
     if (step === "verify") {
       if (!input.headSha || !/^[0-9a-f]{40,64}$/u.test(input.headSha)) {
         throw new ServiceError(
@@ -1920,43 +1921,70 @@ export const workflowRuns = {
         ? ["", messages.handoffParentNoteHeading, input.note.trim()]
         : []),
     ].join("\n");
-    const handoff = S.createHandoff({
-      repoId: r.id,
-      prId: prIssue.id,
-      issueId: issue.id,
-      sessionId: run.parent_session_id,
-      phase: step,
-      direction: "down",
-      fromRole: "parent",
-      toRole: `${step}-step`,
-      body: handoffBody,
-      hash: createHash("sha256").update(handoffBody).digest("hex"),
-      summary: messages.handoffSummary(step),
-    });
-    S.emitEvent(r.id, "handoff.recorded", actorFor(run.parent_session_id), {
-      number: run.pr_number,
-      pr_number: run.pr_number,
-      issue_number: run.issue_number,
-      id: handoff.id,
-      seq: handoff.seq,
-      phase: step,
-      direction: "down",
-    });
-    S.emitWorkflowEvent(
-      r.id,
-      "workflow_step.launched",
-      actorFor(run.parent_session_id),
-      {
-        id: run.id,
+    // The agent is already spawned by the caller; this is the persistence boundary that records it.
+    // Session registration, its PR link, the run's step/active state, the handoff and both events
+    // commit as one — a run that claims an active step must also carry the session and handoff that
+    // step was launched with.
+    const withActive = db.transaction(() => {
+      S.registerAgentSession(
+        sessionId,
+        "workflow-step",
+        sessionId,
+        input.agentName ?? `Workflow ${step} run #${run.id}`,
+        runRuntime(run),
+        "workflow-step",
+      );
+      S.linkSession(sessionId, prIssue.id);
+      const withSession = S.appendWorkflowRunStepSession(
+        run.id,
         step,
-        session_id: sessionId,
-        handoff_id: handoff.id,
-        head_sha: input.headSha ?? null,
-        // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely (#1008).
-        issue_number: run.issue_number,
+        sessionId,
+      );
+      if (!withSession) throw new ServiceError(404, "Workflow run not found");
+      const activated = S.updateWorkflowRun(run.id, {
+        activeStep: step,
+        activeSessionId: sessionId,
+      });
+      if (!activated) throw new ServiceError(404, "Workflow run not found");
+      const handoff = S.createHandoff({
+        repoId: r.id,
+        prId: prIssue.id,
+        issueId: issue.id,
+        sessionId: run.parent_session_id,
+        phase: step,
+        direction: "down",
+        fromRole: "parent",
+        toRole: `${step}-step`,
+        body: handoffBody,
+        hash: createHash("sha256").update(handoffBody).digest("hex"),
+        summary: messages.handoffSummary(step),
+      });
+      S.emitEvent(r.id, "handoff.recorded", actorFor(run.parent_session_id), {
+        number: run.pr_number,
         pr_number: run.pr_number,
-      },
-    );
+        issue_number: run.issue_number,
+        id: handoff.id,
+        seq: handoff.seq,
+        phase: step,
+        direction: "down",
+      });
+      S.emitWorkflowEvent(
+        r.id,
+        "workflow_step.launched",
+        actorFor(run.parent_session_id),
+        {
+          id: run.id,
+          step,
+          session_id: sessionId,
+          handoff_id: handoff.id,
+          head_sha: input.headSha ?? null,
+          // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely (#1008).
+          issue_number: run.issue_number,
+          pr_number: run.pr_number,
+        },
+      );
+      return activated;
+    });
     return { run: runJSON(withActive), session_id: sessionId };
   },
 

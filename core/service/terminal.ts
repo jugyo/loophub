@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
+import { db } from "../db.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
 import {
   ENV_ISSUE_CREATE_HERDR_LAUNCH,
@@ -756,12 +757,16 @@ export const terminal = {
             ).then(() => "");
       const agentPaneId = parseHerdrAgentPaneId(agentOut);
       if (issueCreateLaunchId != null && agentPaneId) {
-        const registeredPane = S.upsertIssueHerdrPane({
-          launchId: issueCreateLaunchId,
-          repoId: r.id,
-          paneId: agentPaneId,
-          sessionName: plan.sessionName,
-        });
+        // The Herdr launch above is done; the pane row and the claim that keeps it from being swept
+        // are registered together, so a registered pane is never left unclaimed.
+        const registeredPane = db.transaction(() =>
+          S.upsertIssueHerdrPane({
+            launchId: issueCreateLaunchId,
+            repoId: r.id,
+            paneId: agentPaneId,
+            sessionName: plan.sessionName,
+          }),
+        );
         // The launch RPC must not wait for cleanup subprocesses. This only handles the rare
         // issue-created-and-closed-before-registration ordering; failures stay visible in the
         // server log and are not retried.

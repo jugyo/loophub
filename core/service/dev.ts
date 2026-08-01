@@ -1,3 +1,4 @@
+import { db } from "../db.ts";
 import * as S from "../store.ts";
 import { worktreeBranch } from "../worktree-path.ts";
 import { pulls } from "./pulls.ts";
@@ -61,12 +62,14 @@ export const dev = {
       // about to spawn (latest-writer-wins), so `lh resume`/retro resolve the current session rather
       // than a stale one. (The old model re-assigned the issue on every run.)
       if (sessionId && attributeSession) {
-        S.setPullSession(existing.id, sessionId);
-        // setPullSession also appends the session to session_links (#298) — the PR's related-sessions
-        // list and the prior session's now-"superseded" verdict change here. Emit a PR-scoped event so
-        // the open detail refreshes (the create path below gets this via pull_request.opened).
-        S.emitEvent(r.id, "pull_request.updated", actorFor(sessionId), {
-          number: existing.number,
+        db.transaction(() => {
+          S.setPullSession(existing.id, sessionId);
+          // setPullSession also appends the session to session_links (#298) — the PR's related-sessions
+          // list and the prior session's now-"superseded" verdict change here. Emit a PR-scoped event so
+          // the open detail refreshes (the create path below gets this via pull_request.opened).
+          S.emitEvent(r.id, "pull_request.updated", actorFor(sessionId), {
+            number: existing.number,
+          });
         });
       }
       return { created: false, number: existing.number };
@@ -106,9 +109,11 @@ export const dev = {
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
     if (sessionId) {
-      S.setPullSession(row.id, sessionId);
-      S.emitEvent(r.id, "pull_request.updated", actorFor(sessionId), {
-        number: row.number,
+      db.transaction(() => {
+        S.setPullSession(row.id, sessionId);
+        S.emitEvent(r.id, "pull_request.updated", actorFor(sessionId), {
+          number: row.number,
+        });
       });
     }
     return { number: row.number };

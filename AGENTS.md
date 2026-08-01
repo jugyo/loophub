@@ -87,6 +87,13 @@ When a handler starts looping over git/DB calls and branching on the results, th
 it should move into a `service/*.ts` procedure (see `worktrees.plan` / `worktrees.remove` for the
 `lh worktree prune` command).
 
+### Command transaction boundaries
+
+A DB-mutating service procedure commits its state changes and the events announcing them together,
+via `Db.transaction`. Keep git, spawn, HTTP and filesystem work outside the callback. See
+[command transaction boundaries](docs/command-transaction-boundaries.ja.md) for how the owner is
+chosen and for the per-procedure inventory.
+
 ### Wire types (core vs web)
 
 `core/serialize.ts` is the single source of truth for wire shapes. `web/src/api/types.ts` derives

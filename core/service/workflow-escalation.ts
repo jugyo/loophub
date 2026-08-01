@@ -37,6 +37,10 @@ function reasonText(value: string): string {
   return reason;
 }
 
+// Claim, effect and completion are deliberately three commit points, not one transaction: the claim
+// must be durable before the effect runs, so a crash mid-effect leaves a pending receipt an operator
+// can see rather than a silently retried escalation. The effect itself owns whatever atomicity its
+// own writes need.
 function runEffect(
   run: number,
   event: number,

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import { handoffJSON } from "../serialize.ts";
 import * as S from "../store.ts";
@@ -103,35 +104,37 @@ export const handoffs = {
       input.hash?.trim() ||
       (body ? createHash("sha256").update(body).digest("hex") : undefined);
 
-    const row = S.createHandoff({
-      repoId: r.id,
-      prId,
-      issueId,
-      sessionId: sessionLink,
-      phase,
-      direction,
-      fromRole: input.from?.trim() || undefined,
-      toRole: input.to?.trim() || undefined,
-      body,
-      src,
-      hash,
-      summary: input.summary?.trim() || undefined,
-      model: input.model?.trim() || undefined,
-      cost: input.cost?.trim() || undefined,
-    });
+    return db.transaction(() => {
+      const row = S.createHandoff({
+        repoId: r.id,
+        prId,
+        issueId,
+        sessionId: sessionLink,
+        phase,
+        direction,
+        fromRole: input.from?.trim() || undefined,
+        toRole: input.to?.trim() || undefined,
+        body,
+        src,
+        hash,
+        summary: input.summary?.trim() || undefined,
+        model: input.model?.trim() || undefined,
+        cost: input.cost?.trim() || undefined,
+      });
 
-    // Emit a PR-scoped event so polling refreshes the PR detail's handoff section. payload.number
-    // is the PR number (the routing key event-keys.ts maps to the pull detail); pr_number is a
-    // duplicate for consumers that read it. For an issue-only handoff there is no PR to scope to.
-    S.emitEvent(r.id, "handoff.recorded", actorFor(sessionId), {
-      ...(prNumber != null ? { number: prNumber, pr_number: prNumber } : {}),
-      ...(issueNumber != null ? { issue_number: issueNumber } : {}),
-      id: row.id,
-      seq: row.seq,
-      phase,
-      direction,
+      // Emit a PR-scoped event so polling refreshes the PR detail's handoff section. payload.number
+      // is the PR number (the routing key event-keys.ts maps to the pull detail); pr_number is a
+      // duplicate for consumers that read it. For an issue-only handoff there is no PR to scope to.
+      S.emitEvent(r.id, "handoff.recorded", actorFor(sessionId), {
+        ...(prNumber != null ? { number: prNumber, pr_number: prNumber } : {}),
+        ...(issueNumber != null ? { issue_number: issueNumber } : {}),
+        id: row.id,
+        seq: row.seq,
+        phase,
+        direction,
+      });
+      return handoffJSON(row);
     });
-    return handoffJSON(row);
   },
 
   list(

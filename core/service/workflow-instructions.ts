@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
 import { HERDR_ID, herdrPaneRunArgv } from "../terminal/terminal-launch.ts";
@@ -82,24 +83,34 @@ function instructionEffect(
   return `${EFFECT_PREFIX}${digest}`;
 }
 
+// A decision with no pane operation of its own: the receipt and the cursor it retires commit
+// together, so a recorded decision never leaves its event to be dispatched again.
 function completeDecision(
   runId: number,
   eventId: number,
   effect: string,
 ): void {
-  const claimed = S.beginWorkflowEventEffect(runId, eventId, effect, "subject");
-  if (!claimed?.acquired) {
-    throw new ServiceError(
-      409,
-      `could not record Workflow instruction decision for event #${eventId}`,
+  db.transaction(() => {
+    const claimed = S.beginWorkflowEventEffect(
+      runId,
+      eventId,
+      effect,
+      "subject",
     );
-  }
-  if (!S.completeWorkflowEventEffect(runId, eventId, effect)) {
-    throw new ServiceError(
-      500,
-      `could not complete Workflow instruction decision for event #${eventId}`,
-    );
-  }
+    if (!claimed?.acquired) {
+      throw new ServiceError(
+        409,
+        `could not record Workflow instruction decision for event #${eventId}`,
+      );
+    }
+    if (!S.completeWorkflowEventEffect(runId, eventId, effect)) {
+      throw new ServiceError(
+        500,
+        `could not complete Workflow instruction decision for event #${eventId}`,
+      );
+    }
+    S.advanceWorkflowRunEventCursor(runId, eventId);
+  });
 }
 
 async function sendInstruction(
@@ -134,21 +145,24 @@ export const workflowInstructions = {
         `Workflow run #${run.id} parent session does not match`,
       );
     }
-    const pane = S.registerHerdrPane({
-      repoId: repo.id,
-      launchId: input.launch_id,
-      paneId: input.pane_id,
-      sessionName: input.session_name,
-      displayName: `Workflow parent #${run.id}`,
-      origin: "workflow",
+    // The pane row and the link that makes it findable as this run's parent are one registration.
+    return db.transaction(() => {
+      const pane = S.registerHerdrPane({
+        repoId: repo.id,
+        launchId: input.launch_id,
+        paneId: input.pane_id,
+        sessionName: input.session_name,
+        displayName: `Workflow parent #${run.id}`,
+        origin: "workflow",
+      });
+      S.linkHerdrPaneResource({
+        repoId: repo.id,
+        launchId: pane.launch_id,
+        resourceKind: "workflow_run",
+        resourceKey: String(run.id),
+      });
+      return pane;
     });
-    S.linkHerdrPaneResource({
-      repoId: repo.id,
-      launchId: pane.launch_id,
-      resourceKind: "workflow_run",
-      resourceKey: String(run.id),
-    });
-    return pane;
   },
 
   async dispatchRun(runId: number): Promise<WorkflowInstructionDispatchResult> {
@@ -231,7 +245,6 @@ export const workflowInstructions = {
     );
     if (previous?.effect === effect) {
       completeDecision(run.id, event.id, effect);
-      S.advanceWorkflowRunEventCursor(run.id, event.id);
       return {
         status: "skipped",
         run: run.id,
@@ -241,7 +254,6 @@ export const workflowInstructions = {
     }
     if (instruction.action === "wait" || instruction.action === "complete") {
       completeDecision(run.id, event.id, effect);
-      S.advanceWorkflowRunEventCursor(run.id, event.id);
       return {
         status: "skipped",
         run: run.id,
@@ -278,14 +290,18 @@ export const workflowInstructions = {
     }
 
     await sendInstruction(repo, registeredPane, instructionText(instruction));
-    const completed = S.completeWorkflowEventEffect(run.id, event.id, effect);
-    if (!completed) {
-      throw new ServiceError(
-        500,
-        `could not complete Workflow instruction event #${event.id}`,
-      );
-    }
-    S.advanceWorkflowRunEventCursor(run.id, event.id);
+    // The pane operation is done and cannot be undone, so this is a second short DB region: the
+    // receipt completion and the cursor advance still commit together.
+    db.transaction(() => {
+      const completed = S.completeWorkflowEventEffect(run.id, event.id, effect);
+      if (!completed) {
+        throw new ServiceError(
+          500,
+          `could not complete Workflow instruction event #${event.id}`,
+        );
+      }
+      S.advanceWorkflowRunEventCursor(run.id, event.id);
+    });
     return {
       status: "delivered",
       run: run.id,

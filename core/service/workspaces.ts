@@ -1,3 +1,4 @@
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import {
   repoJSON,
@@ -28,14 +29,18 @@ function setArchived(
 ) {
   const r = repoOr404(repo);
   workspaceOr404(r.id, branch);
-  S.setWorkspaceArchived(r.id, branch, archived);
-  const workspace = workspaceOr404(r.id, branch);
-  S.emitEvent(
-    r.id,
-    archived ? "workspace.archived" : "workspace.unarchived",
-    actorFor(sessionId),
-    { branch },
-  );
+  const workspace = db.transaction(() => {
+    S.setWorkspaceArchived(r.id, branch, archived);
+    const updated = workspaceOr404(r.id, branch);
+    S.emitEvent(
+      r.id,
+      archived ? "workspace.archived" : "workspace.unarchived",
+      actorFor(sessionId),
+      { branch },
+    );
+    return updated;
+  });
+  // The branch existence check shells out to git, so it stays outside the transaction.
   return workspaceJSON(workspace, localBranchExists(r.local_path, branch));
 }
 
@@ -87,8 +92,12 @@ export const workspaces = {
       r.default_branch,
       "workspace branch",
     );
-    const workspace = S.createWorkspace(r.id, branch);
-    S.emitEvent(r.id, "workspace.created", actorFor(sessionId), { branch });
+    // The branch is created in git first; only the registry row and its event are transactional.
+    const workspace = db.transaction(() => {
+      const created = S.createWorkspace(r.id, branch);
+      S.emitEvent(r.id, "workspace.created", actorFor(sessionId), { branch });
+      return created;
+    });
     return workspaceJSON(workspace, true);
   },
 

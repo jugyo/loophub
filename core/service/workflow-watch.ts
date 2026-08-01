@@ -138,8 +138,9 @@ export const workflowWatch = {
   // workflow next --watch` owns the cursor around this wait.
   //
   // A run with no `workflow_run.started` event gets a visible error rather than a fallback to 0:
-  // the start path writes the run row, its contract files and the event without a transaction, so
-  // a missing start is a broken run an operator must decide about, not a backlog to replay.
+  // the run row and its start event now commit together, so a missing start means the row was
+  // written by something other than the start path — a broken run an operator must decide about,
+  // not a backlog to replay.
   async waitForEvent(
     input: WorkflowEventWaitInput,
     deps: WorkflowWatchDeps = defaultDeps,

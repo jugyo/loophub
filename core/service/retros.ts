@@ -1,3 +1,4 @@
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import {
   isRetroStatus,
@@ -67,30 +68,33 @@ export const retros = {
     const implSession: string | null = S.primaryDevSessionForPull(prRow.id);
 
     const actor = actorFor(sessionId);
-    const row = S.createRetro({
-      repoId: r.id,
-      issueId,
-      prId: prRow.id,
-      sessionId: implSession,
-      rubricJson: JSON.stringify(rubric),
-      findingsJson: JSON.stringify(findings),
-      status,
-      redacted: input.redacted,
-      redactRuleset: input.redact_ruleset ?? null,
+    return db.transaction(() => {
+      const row = S.createRetro({
+        repoId: r.id,
+        issueId,
+        prId: prRow.id,
+        sessionId: implSession,
+        rubricJson: JSON.stringify(rubric),
+        findingsJson: JSON.stringify(findings),
+        status,
+        redacted: input.redacted,
+        redactRuleset: input.redact_ruleset ?? null,
+      });
+
+      const payload: {
+        retro_id: number;
+        pr_number: number;
+        issue_number?: number;
+        session_id?: string;
+        status: string;
+      } = { retro_id: row.id, pr_number: prRow.number, status };
+      if (linkedIssue?.number != null)
+        payload.issue_number = linkedIssue.number;
+      if (implSession) payload.session_id = implSession;
+      S.emitEvent(r.id, "session.retro.created", actor, payload);
+
+      return retroJSON(row);
     });
-
-    const payload: {
-      retro_id: number;
-      pr_number: number;
-      issue_number?: number;
-      session_id?: string;
-      status: string;
-    } = { retro_id: row.id, pr_number: prRow.number, status };
-    if (linkedIssue?.number != null) payload.issue_number = linkedIssue.number;
-    if (implSession) payload.session_id = implSession;
-    S.emitEvent(r.id, "session.retro.created", actor, payload);
-
-    return retroJSON(row);
   },
 
   list(name: string, opts: { pr?: number; status?: string } = {}) {

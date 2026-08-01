@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import {
   type GithubIssueDeps,
@@ -272,25 +273,28 @@ export const issues = {
     ensureWritable(r);
     if (!input.title) throw new ServiceError(422, "title is required");
     const actor = actorFor(sessionId);
+    // The branch validation shells out to git, so it must finish before the DB phase below.
     const targetBranch = resolveTargetBranch(r, input) ?? null;
-    const issue = S.createIssue(
-      r.id,
-      "issue",
-      input.title,
-      input.body ?? "",
-      actor,
-      targetBranch,
-    );
-    if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
-    // Structured acceptance criteria (#1894): appended in given order, blanks dropped. Each gets a
-    // stable id at insert; the markdown `## Acceptance criteria` section is never parsed.
-    for (const text of input.acceptance_criteria ?? []) {
-      const trimmed = text.trim();
-      if (trimmed) S.addAcceptanceCriterion(issue.id, trimmed);
-    }
-    if (currentPane) linkIssueToCurrentPane(r.id, issue.id, currentPane);
-    S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
-    return issueJSON(S.getIssue(r.id, issue.number)!, r);
+    return db.transaction(() => {
+      const issue = S.createIssue(
+        r.id,
+        "issue",
+        input.title,
+        input.body ?? "",
+        actor,
+        targetBranch,
+      );
+      if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
+      // Structured acceptance criteria (#1894): appended in given order, blanks dropped. Each gets a
+      // stable id at insert; the markdown `## Acceptance criteria` section is never parsed.
+      for (const text of input.acceptance_criteria ?? []) {
+        const trimmed = text.trim();
+        if (trimmed) S.addAcceptanceCriterion(issue.id, trimmed);
+      }
+      if (currentPane) linkIssueToCurrentPane(r.id, issue.id, currentPane);
+      S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
+      return issueJSON(S.getIssue(r.id, issue.number)!, r);
+    });
   },
 
   // #614: import a GitHub issue into this repo as a loophub issue — copy its title/body verbatim (no
@@ -325,26 +329,29 @@ export const issues = {
       );
     }
     const actor = actorFor(sessionId);
-    const issue = S.createIssue(r.id, "issue", gh.title, gh.body, actor);
-    const link = S.recordGithubIssue({
-      issueId: issue.id,
-      owner: ref.owner,
-      repo: ref.repo,
-      number: ref.number,
-      url: gh.url || input.url.trim(),
-      createdBy: actor,
+    // The GitHub fetch above is already done; only the synchronous DB phase is transactional.
+    return db.transaction(() => {
+      const issue = S.createIssue(r.id, "issue", gh.title, gh.body, actor);
+      const link = S.recordGithubIssue({
+        issueId: issue.id,
+        owner: ref.owner,
+        repo: ref.repo,
+        number: ref.number,
+        url: gh.url || input.url.trim(),
+        createdBy: actor,
+      });
+      // Emit issue.opened (not a bespoke issue.imported): an imported issue is a normal newly-opened
+      // loophub issue, so it must reach the same consumers as `create` — chiefly the workflow worker,
+      // which only dispatches on SUPPORTED_EVENTS (issue.opened / pull_request.opened, see workflow.ts).
+      // The `github` field marks the import in the event stream without diverging the event type.
+      S.emitEvent(r.id, "issue.opened", actor, {
+        number: issue.number,
+        github: `${ref.owner}/${ref.repo}#${ref.number}`,
+      });
+      const out = issueJSON(S.getIssue(r.id, issue.number)!, r);
+      out.github_issue = githubIssueJSON(link);
+      return out;
     });
-    // Emit issue.opened (not a bespoke issue.imported): an imported issue is a normal newly-opened
-    // loophub issue, so it must reach the same consumers as `create` — chiefly the workflow worker,
-    // which only dispatches on SUPPORTED_EVENTS (issue.opened / pull_request.opened, see workflow.ts).
-    // The `github` field marks the import in the event stream without diverging the event type.
-    S.emitEvent(r.id, "issue.opened", actor, {
-      number: issue.number,
-      github: `${ref.owner}/${ref.repo}#${ref.number}`,
-    });
-    const out = issueJSON(S.getIssue(r.id, issue.number)!, r);
-    out.github_issue = githubIssueJSON(link);
-    return out;
   },
 
   // Plain edits only (title/body/state/labels/target branch). Assignment has dedicated procedures.
@@ -376,65 +383,70 @@ export const issues = {
     ) {
       throw new ServiceError(422, 'state must be "open" or "closed"');
     }
+    const state = patch.state as "open" | "closed" | undefined;
     const actor = actorFor(sessionId);
     const wasOpen = row.state === "open";
+    // The branch validation shells out to git, so it must finish before the DB phase below. Closing
+    // an issue also closes its open linked PRs, so that cascade shares this one transaction.
     const targetBranch = resolveTargetBranch(r, patch);
 
-    const fields: Parameters<typeof S.updateIssue>[1] = {};
-    if (patch.title !== undefined) fields.title = patch.title;
-    if (patch.body !== undefined) fields.body = patch.body;
-    if (patch.state !== undefined) fields.state = patch.state;
-    if (targetBranch !== undefined) fields.target_branch = targetBranch;
-    if (Object.keys(fields).length) S.updateIssue(row.id, fields);
-    if (patch.labels !== undefined) {
-      S.setLabels(r.id, row.id, patch.labels);
-      S.emitEvent(r.id, "issue.labeled", actor, {
-        number: row.number,
-        labels: patch.labels,
-      });
-    }
-    if (patch.state === "closed" && wasOpen) {
-      S.emitEvent(
-        r.id,
-        row.kind === "pull" ? "pull_request.updated" : "issue.closed",
-        actor,
-        {
+    return db.transaction(() => {
+      const fields: Parameters<typeof S.updateIssue>[1] = {};
+      if (patch.title !== undefined) fields.title = patch.title;
+      if (patch.body !== undefined) fields.body = patch.body;
+      if (state !== undefined) fields.state = state;
+      if (targetBranch !== undefined) fields.target_branch = targetBranch;
+      if (Object.keys(fields).length) S.updateIssue(row.id, fields);
+      if (patch.labels !== undefined) {
+        S.setLabels(r.id, row.id, patch.labels);
+        S.emitEvent(r.id, "issue.labeled", actor, {
           number: row.number,
-          source_payload_version: SOURCE_PAYLOAD_VERSION,
-        },
-      );
-      if (row.kind !== "pull") {
-        closeOpenPullsForIssue({
-          repoId: r.id,
-          linkedIssueId: row.id,
-          actor,
+          labels: patch.labels,
         });
       }
-    } else if (patch.state === "open" && !wasOpen) {
-      S.emitEvent(
-        r.id,
-        row.kind === "pull" ? "pull_request.updated" : "issue.reopened",
-        actor,
-        {
-          number: row.number,
-        },
-      );
-    }
-    if (
-      patch.title !== undefined ||
-      patch.body !== undefined ||
-      targetBranchChanged
-    ) {
-      S.emitEvent(
-        r.id,
-        row.kind === "pull" ? "pull_request.updated" : "issue.updated",
-        actor,
-        {
-          number: row.number,
-        },
-      );
-    }
-    return issueJSON(S.getIssue(r.id, row.number)!, r);
+      if (state === "closed" && wasOpen) {
+        S.emitEvent(
+          r.id,
+          row.kind === "pull" ? "pull_request.updated" : "issue.closed",
+          actor,
+          {
+            number: row.number,
+            source_payload_version: SOURCE_PAYLOAD_VERSION,
+          },
+        );
+        if (row.kind !== "pull") {
+          closeOpenPullsForIssue({
+            repoId: r.id,
+            linkedIssueId: row.id,
+            actor,
+          });
+        }
+      } else if (state === "open" && !wasOpen) {
+        S.emitEvent(
+          r.id,
+          row.kind === "pull" ? "pull_request.updated" : "issue.reopened",
+          actor,
+          {
+            number: row.number,
+          },
+        );
+      }
+      if (
+        patch.title !== undefined ||
+        patch.body !== undefined ||
+        targetBranchChanged
+      ) {
+        S.emitEvent(
+          r.id,
+          row.kind === "pull" ? "pull_request.updated" : "issue.updated",
+          actor,
+          {
+            number: row.number,
+          },
+        );
+      }
+      return issueJSON(S.getIssue(r.id, row.number)!, r);
+    });
   },
 
   addLabels(
@@ -447,12 +459,14 @@ export const issues = {
     ensureWritable(r);
     const row = issueOr404(r, number);
     const actor = actorFor(sessionId);
-    S.addLabels(r.id, row.id, names);
-    S.emitEvent(r.id, "issue.labeled", actor, {
-      number: row.number,
-      labels: names,
+    return db.transaction(() => {
+      S.addLabels(r.id, row.id, names);
+      S.emitEvent(r.id, "issue.labeled", actor, {
+        number: row.number,
+        labels: names,
+      });
+      return S.issueLabels(row.id).map(labelJSON);
     });
-    return S.issueLabels(row.id).map(labelJSON);
   },
 
   // Structured acceptance criteria authoring (#1894), CLI-only (the Web surface is read-only). The
@@ -472,9 +486,11 @@ export const issues = {
     if (!trimmed) {
       throw new ServiceError(422, "acceptance criterion text is required");
     }
-    const created = S.addAcceptanceCriterion(row.id, trimmed);
-    S.touchIssue(row.id);
-    return acceptanceCriterionDetailJSON(created);
+    return db.transaction(() => {
+      const created = S.addAcceptanceCriterion(row.id, trimmed);
+      S.touchIssue(row.id);
+      return acceptanceCriterionDetailJSON(created);
+    });
   },
 
   acSetEnabled(
@@ -490,11 +506,13 @@ export const issues = {
       criterionRef,
       issueNumber,
     );
-    S.setAcceptanceCriterionEnabled(criterion.id, enabled);
-    S.touchIssue(criterion.issue_id);
-    return acceptanceCriterionDetailJSON(
-      S.getAcceptanceCriterion(criterion.id)!,
-    );
+    return db.transaction(() => {
+      S.setAcceptanceCriterionEnabled(criterion.id, enabled);
+      S.touchIssue(criterion.issue_id);
+      return acceptanceCriterionDetailJSON(
+        S.getAcceptanceCriterion(criterion.id)!,
+      );
+    });
   },
 
   // Reorder rewrites `ordinal`; ids stay fixed so future grades stay attached. `orderedIds` must be
@@ -520,8 +538,12 @@ export const issues = {
         "order must list every acceptance criterion id of this issue exactly once",
       );
     }
-    S.reorderAcceptanceCriteria(row.id, orderedIds);
-    S.touchIssue(row.id);
-    return S.listAcceptanceCriteria(row.id).map(acceptanceCriterionDetailJSON);
+    return db.transaction(() => {
+      S.reorderAcceptanceCriteria(row.id, orderedIds);
+      S.touchIssue(row.id);
+      return S.listAcceptanceCriteria(row.id).map(
+        acceptanceCriterionDetailJSON,
+      );
+    });
   },
 };

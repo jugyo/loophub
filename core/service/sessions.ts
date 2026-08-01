@@ -1,4 +1,5 @@
 import { CODING_AGENTS, type CodingAgent, worktreeRoot } from "../config.ts";
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import {
   RUNTIME_CLAUDE_CODE,
@@ -389,28 +390,30 @@ export const sessions = {
       // Pass name/runtime/kind straight through (not `?? null`): the store INSERT path applies
       // `?? null` for new rows, while its UPDATE path preserves the existing value when the arg is
       // undefined. Forcing undefined → null here would defeat that preserve-on-re-register contract.
-      const { session: row, created } = S.registerAgentSession(
-        id,
-        agent,
-        session,
-        name,
-        runtime,
-        kind,
-      );
-      S.emitEvent(
-        null,
-        created ? "agent_session.registered" : "agent_session.updated",
-        agent,
-        {
-          id: row.id,
-          agent: row.agent,
-          session: row.external_session,
-          ...(row.name ? { name: row.name } : {}),
-          ...(row.runtime ? { runtime: row.runtime } : {}),
-          ...(row.kind ? { kind: row.kind } : {}),
-        },
-      );
-      return { session: agentSessionJSON(row), created };
+      return db.transaction(() => {
+        const { session: row, created } = S.registerAgentSession(
+          id,
+          agent,
+          session,
+          name,
+          runtime,
+          kind,
+        );
+        S.emitEvent(
+          null,
+          created ? "agent_session.registered" : "agent_session.updated",
+          agent,
+          {
+            id: row.id,
+            agent: row.agent,
+            session: row.external_session,
+            ...(row.name ? { name: row.name } : {}),
+            ...(row.runtime ? { runtime: row.runtime } : {}),
+            ...(row.kind ? { kind: row.kind } : {}),
+          },
+        );
+        return { session: agentSessionJSON(row), created };
+      });
     } catch (e: any) {
       if (e.message === "CONFLICT_ID" || e.message === "CONFLICT_PAIR") {
         throw new ServiceError(409, "Agent session conflict");
@@ -438,13 +441,15 @@ export const sessions = {
     const targetKind = issue != null ? "issue" : "pull";
     const number = (issue ?? pr) as number;
     const row = issueOr404(r, number, targetKind);
-    S.linkSession(sessionId, row.id);
-    // `agent_session.*` namespace (matches register's agent_session.registered/updated) so the
-    // web event-key router (web/src/lib/event-keys.ts startsWith "agent_session.") invalidates the
-    // agent-sessions queries on a link too.
-    S.emitEvent(r.id, "agent_session.linked", actorFor(sessionId), {
-      session_id: sessionId,
-      [targetKind === "pull" ? "pr" : "issue"]: row.number,
+    db.transaction(() => {
+      S.linkSession(sessionId, row.id);
+      // `agent_session.*` namespace (matches register's agent_session.registered/updated) so the
+      // web event-key router (web/src/lib/event-keys.ts startsWith "agent_session.") invalidates the
+      // agent-sessions queries on a link too.
+      S.emitEvent(r.id, "agent_session.linked", actorFor(sessionId), {
+        session_id: sessionId,
+        [targetKind === "pull" ? "pr" : "issue"]: row.number,
+      });
     });
     return {
       session_id: sessionId,
@@ -496,11 +501,15 @@ export const sessions = {
   recordLiveRateSample(now = new Date()): number | null {
     const rate = liveTokensPerSecond(now);
     if (rate == null) return null;
-    S.recordSessionRateHistory({
-      tokensPerSecond: rate,
-      observedAt: now.toISOString(),
+    db.transaction(() => {
+      S.recordSessionRateHistory({
+        tokensPerSecond: rate,
+        observedAt: now.toISOString(),
+      });
+      S.pruneSessionRateHistory(
+        secondsAgo(now, RATE_HISTORY_RETENTION_SECONDS),
+      );
     });
-    S.pruneSessionRateHistory(secondsAgo(now, RATE_HISTORY_RETENTION_SECONDS));
     return rate;
   },
 
@@ -601,6 +610,7 @@ export const sessions = {
           };
         }
 
+        // The rollout scan reads the filesystem, so it finishes before this session's DB phase.
         const rollouts = findCodexRollouts({
           cwd: target.cwd,
           sessionsDir: input.codexSessionsDir,
@@ -619,47 +629,52 @@ export const sessions = {
         const transcriptPath = rollouts.map((x) => x.path).join("\n");
         const fresh = rollouts.flatMap((x) => x.entries);
         const aggregated = aggregateUsage(fresh);
-        const topLevelUnchanged =
-          !input.full &&
-          modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
-        if (topLevelUnchanged) {
-          saveCodexSubagentUsage(row.id, rollouts);
+        return db.transaction(() => {
+          const topLevelUnchanged =
+            !input.full &&
+            modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
+          if (topLevelUnchanged) {
+            saveCodexSubagentUsage(row.id, rollouts);
+            clearOtherCodexUsageForPull(
+              target.pullIssueId,
+              target.ownerSessionId,
+            );
+            recordUsageSample(row.id);
+            return {
+              session_id: row.id,
+              status: "skipped",
+              transcript_path: transcriptPath,
+              messages: 0,
+              models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+            };
+          }
+
+          S.resetSessionUsage(row.id);
           clearOtherCodexUsageForPull(
             target.pullIssueId,
             target.ownerSessionId,
           );
+          for (const usage of aggregated) {
+            S.upsertSessionUsage(row.id, usage);
+          }
+          saveCodexSubagentUsage(row.id, rollouts);
+          for (const usage of S.listSessionUsage(row.id)) {
+            S.rewriteSessionUsageCost(
+              row.id,
+              usage.model,
+              calculateCostUsd(usage.model, usage),
+            );
+          }
           recordUsageSample(row.id);
+
           return {
             session_id: row.id,
-            status: "skipped",
+            status: fresh.length ? "updated" : "skipped",
             transcript_path: transcriptPath,
-            messages: 0,
+            messages: fresh.length,
             models: S.listSessionUsage(row.id).map(sessionUsageJSON),
           };
-        }
-
-        S.resetSessionUsage(row.id);
-        clearOtherCodexUsageForPull(target.pullIssueId, target.ownerSessionId);
-        for (const usage of aggregated) {
-          S.upsertSessionUsage(row.id, usage);
-        }
-        saveCodexSubagentUsage(row.id, rollouts);
-        for (const usage of S.listSessionUsage(row.id)) {
-          S.rewriteSessionUsageCost(
-            row.id,
-            usage.model,
-            calculateCostUsd(usage.model, usage),
-          );
-        }
-        recordUsageSample(row.id);
-
-        return {
-          session_id: row.id,
-          status: fresh.length ? "updated" : "skipped",
-          transcript_path: transcriptPath,
-          messages: fresh.length,
-          models: S.listSessionUsage(row.id).map(sessionUsageJSON),
-        };
+        });
       }
 
       if (sessionRuntime(row) === RUNTIME_GROK) {
@@ -687,6 +702,7 @@ export const sessions = {
           };
         }
 
+        // The session scan reads the filesystem, so it finishes before this session's DB phase.
         const sessions = findGrokSessionUpdates({
           cwd: target.cwd,
           sessionsDir: input.grokSessionsDir,
@@ -705,45 +721,50 @@ export const sessions = {
         const fresh = sessions.flatMap((x) => x.entries);
         const turns = sessions.flatMap((x) => x.turns);
         const aggregated = aggregateUsage(fresh);
-        const previousTotal = S.totalTokensForSession(row.id);
-        const topLevelUnchanged =
-          !input.full &&
-          modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
-        if (topLevelUnchanged) {
+        return db.transaction(() => {
+          const previousTotal = S.totalTokensForSession(row.id);
+          const topLevelUnchanged =
+            !input.full &&
+            modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
+          if (topLevelUnchanged) {
+            clearOtherGrokUsageForPull(
+              target.pullIssueId,
+              target.ownerSessionId,
+            );
+            // Unchanged totals: keep a heartbeat sample (delta 0). Rate pairs are
+            // only written when turn usage advances.
+            recordUsageSample(row.id);
+            return {
+              session_id: row.id,
+              status: "skipped",
+              transcript_path: transcriptPath,
+              messages: 0,
+              models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+            };
+          }
+
+          S.resetSessionUsage(row.id);
           clearOtherGrokUsageForPull(target.pullIssueId, target.ownerSessionId);
-          // Unchanged totals: keep a heartbeat sample (delta 0). Rate pairs are
-          // only written when turn usage advances.
-          recordUsageSample(row.id);
+          for (const usage of aggregated) {
+            S.upsertSessionUsage(row.id, usage);
+          }
+          for (const usage of S.listSessionUsage(row.id)) {
+            S.rewriteSessionUsageCost(
+              row.id,
+              usage.model,
+              calculateCostUsd(usage.model, usage),
+            );
+          }
+          recordGrokUsageRateSamples(row.id, previousTotal, turns);
+
           return {
             session_id: row.id,
-            status: "skipped",
+            status: fresh.length ? "updated" : "skipped",
             transcript_path: transcriptPath,
-            messages: 0,
+            messages: fresh.length,
             models: S.listSessionUsage(row.id).map(sessionUsageJSON),
           };
-        }
-
-        S.resetSessionUsage(row.id);
-        clearOtherGrokUsageForPull(target.pullIssueId, target.ownerSessionId);
-        for (const usage of aggregated) {
-          S.upsertSessionUsage(row.id, usage);
-        }
-        for (const usage of S.listSessionUsage(row.id)) {
-          S.rewriteSessionUsageCost(
-            row.id,
-            usage.model,
-            calculateCostUsd(usage.model, usage),
-          );
-        }
-        recordGrokUsageRateSamples(row.id, previousTotal, turns);
-
-        return {
-          session_id: row.id,
-          status: fresh.length ? "updated" : "skipped",
-          transcript_path: transcriptPath,
-          messages: fresh.length,
-          models: S.listSessionUsage(row.id).map(sessionUsageJSON),
-        };
+        });
       }
 
       const transcript = findClaudeTranscript(
@@ -797,46 +818,51 @@ export const sessions = {
         cursor.cursor_offset < transcript.size;
       const offset = canContinue ? cursor.cursor_offset : 0;
 
+      // Every transcript read happens here, before the DB phase: the usage rows, the message dedupe
+      // table and the cursor that says how far the transcript was consumed must agree, so a partial
+      // write would make the next sweep resume from a position it never actually reached.
       const parsed = canContinue
         ? parseClaudeUsageJsonl(readTranscriptSlice(transcript.path, offset))
         : [
             ...parseClaudeUsageJsonl(readTranscriptSlice(transcript.path, 0)),
             ...subagents.flatMap((subagent) => subagent.entries),
           ];
-      if (!canContinue) S.resetSessionUsage(row.id);
-      const fresh: UsageEntry[] = [];
-      for (const entry of parsed) {
-        if (S.insertSessionUsageMessage(row.id, entry.message_id))
-          fresh.push(entry);
-      }
+      return db.transaction(() => {
+        if (!canContinue) S.resetSessionUsage(row.id);
+        const fresh: UsageEntry[] = [];
+        for (const entry of parsed) {
+          if (S.insertSessionUsageMessage(row.id, entry.message_id))
+            fresh.push(entry);
+        }
 
-      for (const usage of aggregateUsage(fresh)) {
-        S.upsertSessionUsage(row.id, usage);
-      }
-      if (!canContinue) saveClaudeSubagentUsage(row.id, subagents);
-      for (const usage of S.listSessionUsage(row.id)) {
-        S.rewriteSessionUsageCost(
-          row.id,
-          usage.model,
-          calculateCostUsd(usage.model, usage),
-        );
-      }
-      recordUsageSample(row.id);
+        for (const usage of aggregateUsage(fresh)) {
+          S.upsertSessionUsage(row.id, usage);
+        }
+        if (!canContinue) saveClaudeSubagentUsage(row.id, subagents);
+        for (const usage of S.listSessionUsage(row.id)) {
+          S.rewriteSessionUsageCost(
+            row.id,
+            usage.model,
+            calculateCostUsd(usage.model, usage),
+          );
+        }
+        recordUsageSample(row.id);
 
-      S.upsertSessionUsageCursor({
-        sessionId: row.id,
-        transcriptPath: transcriptStats.transcriptPath,
-        cursorOffset: transcriptStats.size,
-        mtimeMs: transcriptStats.mtimeMs,
+        S.upsertSessionUsageCursor({
+          sessionId: row.id,
+          transcriptPath: transcriptStats.transcriptPath,
+          cursorOffset: transcriptStats.size,
+          mtimeMs: transcriptStats.mtimeMs,
+        });
+
+        return {
+          session_id: row.id,
+          status: fresh.length ? "updated" : "skipped",
+          transcript_path: transcriptStats.transcriptPath,
+          messages: fresh.length,
+          models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+        };
       });
-
-      return {
-        session_id: row.id,
-        status: fresh.length ? "updated" : "skipped",
-        transcript_path: transcriptStats.transcriptPath,
-        messages: fresh.length,
-        models: S.listSessionUsage(row.id).map(sessionUsageJSON),
-      };
     });
 
     return {

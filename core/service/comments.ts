@@ -1,3 +1,4 @@
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import { commentJSON } from "../serialize.ts";
 import * as S from "../store.ts";
@@ -35,12 +36,14 @@ export const comments = {
     const row = issueOr404(r, number);
     if (!body) throw new ServiceError(422, "body is required");
     const { actor, authorType } = commentActor(sessionId);
-    const m = S.createComment(row.id, actor, body, authorType);
-    S.emitEvent(r.id, "issue.commented", actor, {
-      number: row.number,
-      ...(sessionId ? { session_id: sessionId } : {}),
+    return db.transaction(() => {
+      const m = S.createComment(row.id, actor, body, authorType);
+      S.emitEvent(r.id, "issue.commented", actor, {
+        number: row.number,
+        ...(sessionId ? { session_id: sessionId } : {}),
+      });
+      return commentWire(m);
     });
-    return commentWire(m);
   },
 
   createForPull(
@@ -83,8 +86,12 @@ export const comments = {
       throw new ServiceError(422, "unsupported PR comment reaction");
     }
     const actor = actorFor(sessionId);
-    S.setCommentReaction(comment.id, actor, emoji);
-    return commentWire(comment, actor);
+    // The reaction toggle reads the current row before writing, so the write and the read that
+    // renders it belong to one transaction.
+    return db.transaction(() => {
+      S.setCommentReaction(comment.id, actor, emoji);
+      return commentWire(comment, actor);
+    });
   },
 
   reactHumanForPull(
@@ -103,8 +110,10 @@ export const comments = {
     if (!(COMMENT_REACTIONS as readonly string[]).includes(emoji)) {
       throw new ServiceError(422, "unsupported PR comment reaction");
     }
-    S.setCommentReaction(comment.id, "me", emoji);
-    return commentWire(comment, "me");
+    return db.transaction(() => {
+      S.setCommentReaction(comment.id, "me", emoji);
+      return commentWire(comment, "me");
+    });
   },
 };
 
@@ -116,15 +125,17 @@ function createPullComment(
   authorType: S.CommentAuthorType,
   sessionId?: string | null,
 ) {
-  const m = S.createComment(row.id, actor, body, authorType);
-  // `author_type` is what tells a Workflow run whether this comment is an instruction: only a
-  // human's is. The run reads it off the source rather than being told by a separate event.
-  S.emitEvent(repo.id, "pull_request.commented", actor, {
-    number: row.number,
-    comment_id: m.id,
-    author_type: authorType,
-    source_payload_version: SOURCE_PAYLOAD_VERSION,
-    ...(sessionId ? { session_id: sessionId } : {}),
+  return db.transaction(() => {
+    const m = S.createComment(row.id, actor, body, authorType);
+    // `author_type` is what tells a Workflow run whether this comment is an instruction: only a
+    // human's is. The run reads it off the source rather than being told by a separate event.
+    S.emitEvent(repo.id, "pull_request.commented", actor, {
+      number: row.number,
+      comment_id: m.id,
+      author_type: authorType,
+      source_payload_version: SOURCE_PAYLOAD_VERSION,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    });
+    return commentWire(m);
   });
-  return commentWire(m);
 }

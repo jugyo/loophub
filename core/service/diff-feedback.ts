@@ -1,3 +1,4 @@
+import { db } from "../db.ts";
 import {
   type DiffLine,
   type DiffSide,
@@ -521,7 +522,9 @@ async function precomputeLocations(
   );
   const files = await filesByPair.get(pairKey)!;
 
-  await Promise.all(
+  // Resolve every location against git first, then write the whole cache in one transaction: the
+  // anchor resolution reads the diff, which must not happen while the writer lock is held.
+  const resolved = await Promise.all(
     missingThreads.map(async (thread) => {
       const originalKey = `${thread.base_sha}:${thread.head_sha}`;
       let originalFiles = filesByPair.get(originalKey);
@@ -556,7 +559,7 @@ async function precomputeLocations(
         originalAnchor,
         DEFAULT_CONTEXT_RADIUS,
       );
-      S.upsertDiffFeedbackLocation({
+      return {
         thread_id: thread.id,
         base_sha: pair.baseSha,
         head_sha: pair.headSha,
@@ -569,9 +572,12 @@ async function precomputeLocations(
         original_context_json: originalContext
           ? JSON.stringify(originalContext)
           : null,
-      });
+      };
     }),
   );
+  db.transaction(() => {
+    for (const row of resolved) S.upsertDiffFeedbackLocation(row);
+  });
   return missingThreads.length;
 }
 
@@ -864,29 +870,38 @@ export const diffFeedback = {
     const actor = actorFor(sessionId);
     const path = file.headFilename ?? file.filename;
     const originalPath = file.previousFilename ?? null;
-    const thread = S.createDiffFeedbackThread({
-      issueId: row.id,
-      prNumber: number,
-      baseSha: input.baseSha,
-      headSha: input.headSha,
-      path,
-      originalPath,
-      side: input.side,
-      startLine: input.startLine,
-      endLine: input.endLine,
-      actor,
-    });
-    const comment = S.createDiffFeedbackMessage(thread.id, actor, input.body);
-    // `session_id` travels so a Workflow run can tell a comment written by one of its own
-    // children from one it has to hand to Execute. The comment itself stays canonical in the DB,
-    // which Execute reads back with `lh pr feedback`.
-    S.emitEvent(r.id, "pull_request.diff_feedback_created", actor, {
-      number,
-      thread_id: thread.id,
-      comment_id: comment.id,
-      session_id: sessionId ?? null,
-      source_payload_version: SOURCE_PAYLOAD_VERSION,
-      ...anchorPayload(thread),
+    // The anchor is resolved from the diff above; only the thread, its first message and the event
+    // are transactional.
+    const { thread, comment } = db.transaction(() => {
+      const created = S.createDiffFeedbackThread({
+        issueId: row.id,
+        prNumber: number,
+        baseSha: input.baseSha,
+        headSha: input.headSha,
+        path,
+        originalPath,
+        side: input.side,
+        startLine: input.startLine,
+        endLine: input.endLine,
+        actor,
+      });
+      const message = S.createDiffFeedbackMessage(
+        created.id,
+        actor,
+        input.body,
+      );
+      // `session_id` travels so a Workflow run can tell a comment written by one of its own
+      // children from one it has to hand to Execute. The comment itself stays canonical in the DB,
+      // which Execute reads back with `lh pr feedback`.
+      S.emitEvent(r.id, "pull_request.diff_feedback_created", actor, {
+        number,
+        thread_id: created.id,
+        comment_id: message.id,
+        session_id: sessionId ?? null,
+        source_payload_version: SOURCE_PAYLOAD_VERSION,
+        ...anchorPayload(created),
+      });
+      return { thread: created, comment: message };
     });
     return {
       thread: await threadJSON(r.local_path, pull, thread),
@@ -908,14 +923,17 @@ export const diffFeedback = {
     const thread = threadForPull(row.id, threadId);
     if (!body) throw new ServiceError(422, "body is required");
     const actor = actorFor(sessionId);
-    const reply = S.createDiffFeedbackMessage(thread.id, actor, body);
-    S.emitEvent(r.id, "pull_request.diff_feedback_replied", actor, {
-      number,
-      thread_id: thread.id,
-      reply_message_id: reply.id,
-      session_id: sessionId ?? null,
-      source_payload_version: SOURCE_PAYLOAD_VERSION,
-      ...anchorPayload(thread),
+    const reply = db.transaction(() => {
+      const message = S.createDiffFeedbackMessage(thread.id, actor, body);
+      S.emitEvent(r.id, "pull_request.diff_feedback_replied", actor, {
+        number,
+        thread_id: thread.id,
+        reply_message_id: message.id,
+        session_id: sessionId ?? null,
+        source_payload_version: SOURCE_PAYLOAD_VERSION,
+        ...anchorPayload(thread),
+      });
+      return message;
     });
     return {
       thread: await threadJSON(r.local_path, pull, thread),
@@ -960,11 +978,15 @@ export const diffFeedback = {
       throw new ServiceError(422, "unsupported diff feedback reaction");
     }
     const actor = actorFor(sessionId);
-    S.setDiffFeedbackReaction(message.id, actor, emoji);
-    return diffFeedbackMessageJSON(
-      message,
-      S.listDiffFeedbackReactions(message.id),
-      actor,
-    );
+    // The reaction toggle reads the current row before writing, so the write and the read that
+    // renders it belong to one transaction.
+    return db.transaction(() => {
+      S.setDiffFeedbackReaction(message.id, actor, emoji);
+      return diffFeedbackMessageJSON(
+        message,
+        S.listDiffFeedbackReactions(message.id),
+        actor,
+      );
+    });
   },
 };

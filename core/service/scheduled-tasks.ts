@@ -1,4 +1,5 @@
 import { agentEffort, agentModel, type CodingAgent } from "../config.ts";
+import { db } from "../db.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
 import { CODING_AGENTS, isCodingAgent } from "../runtimes.ts";
 import { scheduledTaskJSON, scheduledTaskRunJSON } from "../serialize.ts";
@@ -106,6 +107,10 @@ function timeToMinutes(t: string): number | null {
 // Fire one task once: create a run row, launch a herdr tab running the prompt, and finalize the run
 // with the launch outcome + tab/pane refs. Returns the run wire, or null when the fire was skipped
 // (a scheduled slot already claimed by a concurrent tick — the UNIQUE(task_id, fire_key) collision).
+//
+// The claim and the finalization are deliberately separate commit points around the herdr launch:
+// the slot must be durably claimed before a subprocess can start, so one transaction spanning both
+// would either hold the writer lock across the launch or lose the once-per-day guard.
 async function fireScheduledTask(
   task: S.ScheduledTaskRow,
   opts: {
@@ -266,20 +271,22 @@ export const scheduledTasks = {
   ) {
     const r = repoOr404(repoName);
     ensureWritable(r);
-    const row = S.createScheduledTask({
-      repoId: r.id,
-      title: requireNonEmpty(input.title, "title"),
-      prompt: requireNonEmpty(input.prompt, "prompt"),
-      agent: normalizeAgent(input.agent),
-      timesJson: JSON.stringify(normalizeTimes(input.times)),
-      model: optionalTrim(input.model),
-      effort: optionalTrim(input.effort),
+    return db.transaction(() => {
+      const row = S.createScheduledTask({
+        repoId: r.id,
+        title: requireNonEmpty(input.title, "title"),
+        prompt: requireNonEmpty(input.prompt, "prompt"),
+        agent: normalizeAgent(input.agent),
+        timesJson: JSON.stringify(normalizeTimes(input.times)),
+        model: optionalTrim(input.model),
+        effort: optionalTrim(input.effort),
+      });
+      S.emitEvent(r.id, "scheduled_task.created", actorFor(sessionId), {
+        id: row.id,
+        title: row.title,
+      });
+      return scheduledTaskJSON(row);
     });
-    S.emitEvent(r.id, "scheduled_task.created", actorFor(sessionId), {
-      id: row.id,
-      title: row.title,
-    });
-    return scheduledTaskJSON(row);
   },
 
   update(
@@ -300,27 +307,30 @@ export const scheduledTasks = {
     const existing = S.getScheduledTaskById(id);
     if (!existing || existing.repo_id !== r.id)
       throw new ServiceError(404, "Not Found");
-    const updated = S.updateScheduledTask(id, {
-      title:
-        patch.title !== undefined
-          ? requireNonEmpty(patch.title, "title")
-          : undefined,
-      prompt:
-        patch.prompt !== undefined
-          ? requireNonEmpty(patch.prompt, "prompt")
-          : undefined,
-      agent:
-        patch.agent !== undefined ? normalizeAgent(patch.agent) : undefined,
-      timesJson:
-        patch.times !== undefined
-          ? JSON.stringify(normalizeTimes(patch.times))
-          : undefined,
-      model: patch.model !== undefined ? optionalTrim(patch.model) : undefined,
-      effort:
-        patch.effort !== undefined ? optionalTrim(patch.effort) : undefined,
+    return db.transaction(() => {
+      const updated = S.updateScheduledTask(id, {
+        title:
+          patch.title !== undefined
+            ? requireNonEmpty(patch.title, "title")
+            : undefined,
+        prompt:
+          patch.prompt !== undefined
+            ? requireNonEmpty(patch.prompt, "prompt")
+            : undefined,
+        agent:
+          patch.agent !== undefined ? normalizeAgent(patch.agent) : undefined,
+        timesJson:
+          patch.times !== undefined
+            ? JSON.stringify(normalizeTimes(patch.times))
+            : undefined,
+        model:
+          patch.model !== undefined ? optionalTrim(patch.model) : undefined,
+        effort:
+          patch.effort !== undefined ? optionalTrim(patch.effort) : undefined,
+      });
+      S.emitEvent(r.id, "scheduled_task.updated", actorFor(sessionId), { id });
+      return scheduledTaskJSON(updated!);
     });
-    S.emitEvent(r.id, "scheduled_task.updated", actorFor(sessionId), { id });
-    return scheduledTaskJSON(updated!);
   },
 
   delete(repoName: string, id: number, sessionId?: string | null) {
@@ -328,8 +338,10 @@ export const scheduledTasks = {
     const existing = S.getScheduledTaskById(id);
     if (!existing || existing.repo_id !== r.id)
       throw new ServiceError(404, "Not Found");
-    S.deleteScheduledTask(id);
-    S.emitEvent(r.id, "scheduled_task.deleted", actorFor(sessionId), { id });
+    db.transaction(() => {
+      S.deleteScheduledTask(id);
+      S.emitEvent(r.id, "scheduled_task.deleted", actorFor(sessionId), { id });
+    });
     return { ok: true };
   },
 

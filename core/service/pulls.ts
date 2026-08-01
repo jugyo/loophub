@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { db } from "../db.ts";
 import { parsePatchWithCoordinates } from "../diff-anchor.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
@@ -178,22 +179,27 @@ export const pulls = {
       revParse(r.local_path, head),
       revParse(r.local_path, base),
     ]);
-    S.createPull(
-      row.id,
-      head,
-      base,
-      headSha,
-      linkedIssueId,
-      sessionId ?? null,
-      resolvedBaseSha,
-      // A PR-number-derived branch is deliberately recorded before it exists so a launcher can
-      // provision it. Persist that fact explicitly; nullable head_sha is only watcher data and is
-      // not reliable lifecycle provenance.
-      input.headFromNumber != null && headSha == null,
-    );
-    S.emitEvent(r.id, "pull_request.opened", actor, {
-      number: row.number,
-      linked_issue: linkedNumber ?? undefined,
+    // The head branch name can be derived from the PR number, so the issue row above must be
+    // committed before these SHAs can be read. That git read is what splits this command into two
+    // DB phases; the pull row and its event, which must agree, share the second one.
+    db.transaction(() => {
+      S.createPull(
+        row.id,
+        head,
+        base,
+        headSha,
+        linkedIssueId,
+        sessionId ?? null,
+        resolvedBaseSha,
+        // A PR-number-derived branch is deliberately recorded before it exists so a launcher can
+        // provision it. Persist that fact explicitly; nullable head_sha is only watcher data and is
+        // not reliable lifecycle provenance.
+        input.headFromNumber != null && headSha == null,
+      );
+      S.emitEvent(r.id, "pull_request.opened", actor, {
+        number: row.number,
+        linked_issue: linkedNumber ?? undefined,
+      });
     });
     return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
@@ -225,15 +231,20 @@ export const pulls = {
       body: patch.body,
       state: patch.state as "open" | "closed" | undefined,
     };
-    S.updateIssue(row.id, issuePatch);
-    S.emitEvent(r.id, "pull_request.updated", actor, {
-      number: row.number,
-      // A close is a fact a Workflow run reacts to, so the closing update carries the source
-      // marker. Reconciliation reads the PR's own state, not this payload; the marker only tells
-      // the run that no legacy twin will follow.
-      ...(closesPull ? { source_payload_version: SOURCE_PAYLOAD_VERSION } : {}),
+    const updated = db.transaction(() => {
+      S.updateIssue(row.id, issuePatch);
+      S.emitEvent(r.id, "pull_request.updated", actor, {
+        number: row.number,
+        // A close is a fact a Workflow run reacts to, so the closing update carries the source
+        // marker. Reconciliation reads the PR's own state, not this payload; the marker only tells
+        // the run that no legacy twin will follow.
+        ...(closesPull
+          ? { source_payload_version: SOURCE_PAYLOAD_VERSION }
+          : {}),
+      });
+      return S.getIssue(r.id, row.number)!;
     });
-    return pullJSON(r, S.getIssue(r.id, row.number)!);
+    return pullJSON(r, updated);
   },
 
   delete(name: string, number: number, sessionId?: string | null) {
@@ -241,8 +252,10 @@ export const pulls = {
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
     const actor = actorFor(sessionId);
-    S.deletePull(row.id, r.id, row.number);
-    S.emitEvent(r.id, "pull_request.deleted", actor, { number });
+    db.transaction(() => {
+      S.deletePull(row.id, r.id, row.number);
+      S.emitEvent(r.id, "pull_request.deleted", actor, { number });
+    });
     return { ok: true } as const;
   },
 
@@ -376,19 +389,21 @@ export const pulls = {
         "github_number must be a positive integer, or derivable from a .../pull/<number> url",
       );
     const actor = actorFor(sessionId);
-    const rec = S.recordGithubPull({
-      issueId: row.id,
-      number: github_number as number,
-      url: trimmedUrl,
-      branch: branch ?? null,
-      createdBy: actor,
+    return db.transaction(() => {
+      const rec = S.recordGithubPull({
+        issueId: row.id,
+        number: github_number as number,
+        url: trimmedUrl,
+        branch: branch ?? null,
+        createdBy: actor,
+      });
+      S.emitEvent(r.id, "pull_request.github_pr_recorded", actor, {
+        number: row.number,
+        github_number,
+        url: rec.url,
+      });
+      return githubPullJSON(rec);
     });
-    S.emitEvent(r.id, "pull_request.github_pr_recorded", actor, {
-      number: row.number,
-      github_number,
-      url: rec.url,
-    });
-    return githubPullJSON(rec);
   },
 
   // #411: orchestrate submitting a loophub PR to GitHub as a Draft PR in one place — push the head
@@ -496,26 +511,29 @@ export const pulls = {
         `GitHub returned an unexpected PR URL: ${gh.url}`,
       );
     const actor = actorFor(sessionId);
-    S.recordGithubPull({
-      issueId: row.id,
-      number: gh.number,
-      url: trimmedUrl,
-      branch,
-      createdBy: actor,
-    });
     // #848: remember which head SHA we just pushed, so the UI can later tell when local commits added
     // after this export have not yet reached the GitHub branch (head resolves — the push above needed
-    // it — but tolerate a null defensively rather than throw after the PR is already created).
+    // it — but tolerate a null defensively rather than throw after the PR is already created). Read it
+    // before the DB phase so the push, `gh` and this git read all stay outside the transaction.
     const pushedSha = await revParse(repoPath, head);
-    const rec = pushedSha
-      ? S.setGithubPushed(row.id, pushedSha)
-      : S.getGithubPull(row.id)!;
-    S.emitEvent(r.id, "pull_request.github_pr_recorded", actor, {
-      number: row.number,
-      github_number: gh.number,
-      url: rec.url,
+    return db.transaction(() => {
+      S.recordGithubPull({
+        issueId: row.id,
+        number: gh.number,
+        url: trimmedUrl,
+        branch,
+        createdBy: actor,
+      });
+      const rec = pushedSha
+        ? S.setGithubPushed(row.id, pushedSha)
+        : S.getGithubPull(row.id)!;
+      S.emitEvent(r.id, "pull_request.github_pr_recorded", actor, {
+        number: row.number,
+        github_number: gh.number,
+        url: rec.url,
+      });
+      return githubPullJSON(rec);
     });
-    return githubPullJSON(rec);
   },
 
   // #848: push the loophub PR's current head to the branch of its already-recorded GitHub PR, so
@@ -588,14 +606,16 @@ export const pulls = {
 
     const actor = actorFor(sessionId);
     const pushedSha = await revParse(repoPath, head);
-    const rec = pushedSha ? S.setGithubPushed(row.id, pushedSha) : gh;
-    S.emitEvent(r.id, "pull_request.github_pr_pushed", actor, {
-      number: row.number,
-      github_number: gh.number,
-      sha: pushedSha,
-      force,
+    return db.transaction(() => {
+      const rec = pushedSha ? S.setGithubPushed(row.id, pushedSha) : gh;
+      S.emitEvent(r.id, "pull_request.github_pr_pushed", actor, {
+        number: row.number,
+        github_number: gh.number,
+        sha: pushedSha,
+        force,
+      });
+      return githubPullJSON(rec);
     });
-    return githubPullJSON(rec);
   },
 
   async merge(
@@ -643,18 +663,22 @@ export const pulls = {
       throw new ServiceError(409, "Merge conflict");
     }
     if (!res.merged) throw new ServiceError(422, "Merge failed");
-    const closedIssue = S.setMerged(row.id, res.sha!, method);
-    S.emitEvent(r.id, "pull_request.merged", actor, {
-      number: row.number,
-      sha: res.sha,
-      source_payload_version: SOURCE_PAYLOAD_VERSION,
-    });
-    if (closedIssue != null) {
-      S.emitEvent(r.id, "issue.closed", actor, {
-        number: closedIssue,
-        closed_by_pull: row.number,
+    // The git merge is done; the merge state, the linked issue it closes and both events commit
+    // together so a merged PR is never recorded without the closure it caused.
+    db.transaction(() => {
+      const closedIssue = S.setMerged(row.id, res.sha!, method);
+      S.emitEvent(r.id, "pull_request.merged", actor, {
+        number: row.number,
+        sha: res.sha,
+        source_payload_version: SOURCE_PAYLOAD_VERSION,
       });
-    }
+      if (closedIssue != null) {
+        S.emitEvent(r.id, "issue.closed", actor, {
+          number: closedIssue,
+          closed_by_pull: row.number,
+        });
+      }
+    });
     return { merged: true, sha: res.sha };
   },
 

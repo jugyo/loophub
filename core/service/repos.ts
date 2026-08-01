@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import {
   branchExists,
@@ -57,12 +58,16 @@ export const repos = {
     const [owner, rname] = S.splitName(name);
     if (S.getRepo(owner, rname))
       throw new ServiceError(422, `already registered: ${owner}/${rname}`);
+    // The filesystem and git validation above is done; only the registration row and its event are
+    // transactional.
     const branch = await defaultBranch(abs);
-    const created = S.createRepo(name, abs, branch);
-    S.emitEvent(created.id, "repo.created", actorFor(sessionId), {
-      full_name: created.full_name,
+    return db.transaction(() => {
+      const created = S.createRepo(name, abs, branch);
+      S.emitEvent(created.id, "repo.created", actorFor(sessionId), {
+        full_name: created.full_name,
+      });
+      return repoJSON(created);
     });
-    return repoJSON(created);
   },
 
   list(archived: "active" | "archived" | "all" = "active") {
@@ -78,11 +83,13 @@ export const repos = {
       throw new ServiceError(422, "archived must be a boolean");
     const r = repoOr404(name);
     const actor = actorFor(sessionId);
-    S.setRepoArchived(r.id, archived);
-    S.emitEvent(r.id, archived ? "repo.archived" : "repo.unarchived", actor, {
-      full_name: r.full_name,
+    return db.transaction(() => {
+      S.setRepoArchived(r.id, archived);
+      S.emitEvent(r.id, archived ? "repo.archived" : "repo.unarchived", actor, {
+        full_name: r.full_name,
+      });
+      return repoJSON(repoOr404(name));
     });
-    return repoJSON(repoOr404(name));
   },
 
   setFavorite(name: string, favorite: boolean, sessionId?: string | null) {
@@ -90,11 +97,16 @@ export const repos = {
       throw new ServiceError(422, "favorite must be a boolean");
     const r = repoOr404(name);
     const actor = actorFor(sessionId);
-    S.setRepoFavorite(r.id, favorite);
-    S.emitEvent(r.id, favorite ? "repo.favorited" : "repo.unfavorited", actor, {
-      full_name: r.full_name,
+    return db.transaction(() => {
+      S.setRepoFavorite(r.id, favorite);
+      S.emitEvent(
+        r.id,
+        favorite ? "repo.favorited" : "repo.unfavorited",
+        actor,
+        { full_name: r.full_name },
+      );
+      return repoJSON(repoOr404(name));
     });
-    return repoJSON(repoOr404(name));
   },
 
   // #485: rename a repo's owner/name (full_name). The row keeps its id, so issues/PRs/events
@@ -174,10 +186,22 @@ export const repos = {
       );
     }
 
+    // The worktree listing and dev-lock scan above are done; the identity row and its event commit
+    // together so a renamed repo always carries the event that records the old name.
     const [oldOwner, oldName] = S.splitName(r.full_name);
+    const actor = actorFor(sessionId);
     let updated: S.Repo | null;
     try {
-      updated = S.updateRepo(oldOwner, oldName, { full_name: full });
+      updated = db.transaction(() => {
+        const row = S.updateRepo(oldOwner, oldName, { full_name: full });
+        if (row) {
+          S.emitEvent(r.id, "repo.renamed", actor, {
+            full_name: full,
+            from: r.full_name,
+          });
+        }
+        return row;
+      });
     } catch (e) {
       // The pre-checks above race against concurrent create/rename calls (async gap at the
       // worktree listing). The byte-exact UNIQUE(full_name) constraint backstops only an
@@ -190,11 +214,6 @@ export const repos = {
       throw e;
     }
     if (!updated) throw new ServiceError(404, "Not Found");
-    const actor = actorFor(sessionId);
-    S.emitEvent(r.id, "repo.renamed", actor, {
-      full_name: full,
-      from: r.full_name,
-    });
     return repoJSON(updated);
   },
 
@@ -219,12 +238,14 @@ export const repos = {
       );
     }
     const actor = actorFor(sessionId);
-    S.setRepoMergeMode(r.id, stored);
-    S.emitEvent(r.id, "repo.merge_mode_changed", actor, {
-      full_name: r.full_name,
-      merge_mode: stored,
+    return db.transaction(() => {
+      S.setRepoMergeMode(r.id, stored);
+      S.emitEvent(r.id, "repo.merge_mode_changed", actor, {
+        full_name: r.full_name,
+        merge_mode: stored,
+      });
+      return repoJSON(repoOr404(name));
     });
-    return repoJSON(repoOr404(name));
   },
 
   // #406: resolved merge-mode view for the repo settings UI — the raw stored setting, whether the
@@ -277,16 +298,20 @@ export const repos = {
       const trimmed = value.trim();
       return trimmed === "" ? null : trimmed;
     };
-    S.setRepoAgentConfig(r.id, {
-      override: input.override,
-      runtime: (input.runtime as CodingAgent | null | undefined) ?? null,
-      model: normalizeText(input.model),
-      effort: normalizeText(input.effort),
+    db.transaction(() => {
+      S.setRepoAgentConfig(r.id, {
+        override: input.override,
+        runtime: (input.runtime as CodingAgent | null | undefined) ?? null,
+        model: normalizeText(input.model),
+        effort: normalizeText(input.effort),
+      });
+      S.emitEvent(r.id, "repo.agent_config_changed", actorFor(sessionId), {
+        full_name: r.full_name,
+        override: input.override,
+      });
     });
-    S.emitEvent(r.id, "repo.agent_config_changed", actorFor(sessionId), {
-      full_name: r.full_name,
-      override: input.override,
-    });
+    // Serialized outside the transaction: the effective config resolves the application defaults
+    // from config.json, which is a filesystem read.
     return repoAgentConfigJSON(repoOr404(name));
   },
 
@@ -363,9 +388,13 @@ export const repos = {
     return repoJSON(updated);
   },
 
+  // The repository and worktree checkouts on disk are deliberately left alone; only the registry
+  // rows go, and they go together — a half-removed repo would leave orphan issues and events behind.
   remove(name: string) {
     const [owner, rname] = S.splitName(name);
     if (!S.getRepo(owner, rname)) throw new ServiceError(404, "Not Found");
-    S.deleteRepo(owner, rname);
+    db.transaction(() => {
+      S.deleteRepo(owner, rname);
+    });
   },
 };

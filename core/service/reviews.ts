@@ -1,3 +1,4 @@
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import { revParse } from "../git.ts";
 import {
@@ -195,41 +196,45 @@ export const reviews = {
     const submissionHeadSha =
       (await revParse(r.local_path, pull.head_ref)) ?? pull.head_sha ?? null;
     const headSha = input.headSha ?? submissionHeadSha;
-    // The review row and its per-criterion grades are written in one transaction so a review never
-    // exists without the grades it carries (#1895). Line comments stay separate, as before.
-    const v = S.createReviewWithAcResults(
-      row.id,
-      actor,
-      event,
-      input.body ?? "",
-      headSha,
-      model,
-      acResults,
-    );
-    for (const cm of lineComments) {
-      S.createReviewComment(row.id, v.id, actor, {
-        path: cm.path,
-        line: cm.line,
-        side: cm.side,
-        body: cm.body,
+    // The head SHA read above is the last git call; the review row, its per-criterion grades, its
+    // line comments and the submission event all commit together (#1895), so a review never exists
+    // without the grades, comments or event it carries.
+    const wire = db.transaction(() => {
+      const v = S.createReviewWithAcResults(
+        row.id,
+        actor,
+        event,
+        input.body ?? "",
+        headSha,
+        model,
+        acResults,
+      );
+      for (const cm of lineComments) {
+        S.createReviewComment(row.id, v.id, actor, {
+          path: cm.path,
+          line: cm.line,
+          side: cm.side,
+          body: cm.body,
+        });
+      }
+      // The review row remains the sole verdict source. This event is the reliable observation
+      // trigger for a Workflow parent, independent of whether the Verify child later manages to
+      // declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human FEEDBACK)
+      // review straight to Execute, since it will not appear in the run's own step status, and
+      // `submission_head_sha` is the boundary an unaddressed review is measured from.
+      S.emitEvent(r.id, "pull_request.review_submitted", actor, {
+        number: row.number,
+        state: event,
+        comments: lineComments.length,
+        session_id: sessionId ?? null,
+        review_id: v.id,
+        submission_head_sha: submissionHeadSha,
+        source_payload_version: SOURCE_PAYLOAD_VERSION,
       });
-    }
-    // The review row remains the sole verdict source. This event is the reliable observation
-    // trigger for a Workflow parent, independent of whether the Verify child later manages to
-    // declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human FEEDBACK)
-    // review straight to Execute, since it will not appear in the run's own step status, and
-    // `submission_head_sha` is the boundary an unaddressed review is measured from.
-    S.emitEvent(r.id, "pull_request.review_submitted", actor, {
-      number: row.number,
-      state: event,
-      comments: lineComments.length,
-      session_id: sessionId ?? null,
-      review_id: v.id,
-      submission_head_sha: submissionHeadSha,
-      source_payload_version: SOURCE_PAYLOAD_VERSION,
+      return reviewJSON(v, reviewAcResultsJSON(v.id));
     });
     return {
-      ...reviewJSON(v, reviewAcResultsJSON(v.id)),
+      ...wire,
       comments: lineComments.length,
       warnings: verdictWarnings(event, acResults),
     };
