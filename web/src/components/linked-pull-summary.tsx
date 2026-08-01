@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { TriangleAlert } from "lucide-react";
+import { RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
@@ -107,7 +107,7 @@ function Metrics({
   if (parts.length === 0) return null;
   return (
     <span
-      className="ml-auto shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground/70 tabular-nums"
+      className="shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground/70 tabular-nums"
       title={parts.map(({ label }) => label).join(" · ")}
     >
       {parts.map(({ kind, label }, index) => (
@@ -124,6 +124,27 @@ function Metrics({
           </span>
         </span>
       ))}
+    </span>
+  );
+}
+
+// #2147: how many Execute -> Verify loops the PR's workflow run has taken. The looping arrows carry
+// the meaning, so the row spends no width on the word "rework" and reads as a count at a glance. A
+// run that has not reworked yet says nothing, so only rows worth noticing carry the marker.
+function WorkflowReworkCount({
+  count,
+}: {
+  count: LinkedPull["workflow_rework_count"];
+}) {
+  if (!count) return null;
+  return (
+    <span
+      data-linked-pull-rework
+      className="flex shrink-0 items-center gap-1 whitespace-nowrap tabular-nums text-muted-foreground/70"
+      title={`Workflow rework ×${count}`}
+    >
+      <RefreshCw className="size-3" aria-hidden="true" />
+      {count}
     </span>
   );
 }
@@ -543,7 +564,12 @@ export function LinkedPullSummaryRow({
           working={showWorkingEffect}
           conflict={operationalStatus.tone === "conflict"}
         />
-        <Metrics pull={pull} overBudget={costStopped !== null} />
+        {/* The row's right edge: the rework count sits directly left of the cost metrics, so the
+            two run totals a human scans for read as one group. */}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <WorkflowReworkCount count={pull.workflow_rework_count} />
+          <Metrics pull={pull} overBudget={costStopped !== null} />
+        </div>
       </div>
       {popover.open ? (
         <PullPopover

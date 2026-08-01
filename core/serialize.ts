@@ -306,6 +306,10 @@ export interface IssueListPullSummaryWire extends PullSummaryWire {
   // in the PR-detail sidebar (#456), not a new calculation. Omitted when there is no dev session to
   // anchor from (the detail path renders that as "N/A"; the sub-row just drops the item).
   work_duration_total?: { seconds: number; basis: PullWorkDurationBasis };
+  // #2147: how many Execute -> Verify loops the PR's latest workflow run has taken, so an issue
+  // list shows a PR that keeps circling without opening its run. Omitted when no workflow run is
+  // linked to the PR; zero means a linked run that has not reworked yet.
+  workflow_rework_count?: number;
 }
 
 // Herdr pane captured from the New Issue flow (#670). Narrowed from its compatibility store row —

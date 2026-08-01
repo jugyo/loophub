@@ -252,6 +252,11 @@ async function linkedPullDetail(
     status.forkBaseSha && status.baseSha
       ? await commitsAhead(repo.local_path, status.forkBaseSha, status.baseSha)
       : 0;
+  // #2147: the latest workflow run's rework count, so the issue list can show how many
+  // Execute -> Verify loops the PR has taken. `workflow_runs` is indexed on (workflow_id, status)
+  // only, so this scans the table — cheap against a table that holds one row per run and far below
+  // the git fan-out this sub-row already pays. The list never asks Web to fetch run state per PR.
+  const workflowRun = S.latestWorkflowRunForPull(repo.id, pr.number);
   return {
     number: pr.number,
     title: pr.title,
@@ -289,6 +294,8 @@ async function linkedPullDetail(
           },
         }
       : {}),
+    // #2147: rework loops of the linked workflow run, omitted when the PR has no run.
+    ...(workflowRun ? { workflow_rework_count: workflowRun.rework_count } : {}),
   };
 }
 
