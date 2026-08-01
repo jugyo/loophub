@@ -8,8 +8,9 @@ import { workflowRuns } from "./workflow-runs.ts";
 
 const EFFECT_PREFIX = "workflow.instruction:";
 const MISSING_PARENT_EFFECT = `${EFFECT_PREFIX}parent-pane-missing`;
+const UNREADY_PARENT_EFFECT = `${EFFECT_PREFIX}parent-not-ready`;
 const HERDR_TIMEOUT_MS = 15_000;
-const PARENT_PANE_REGISTRATION_GRACE_MS = 120_000;
+const PARENT_LAUNCH_GRACE_MS = 120_000;
 
 export type WorkflowInstructionDispatchResult =
   | { status: "idle" }
@@ -42,10 +43,8 @@ function parentPane(run: S.WorkflowRunRow): string | null | undefined {
   return HERDR_ID.test(matches[0].pane_id) ? matches[0].pane_id : null;
 }
 
-function parentPaneRegistrationPending(run: S.WorkflowRunRow): boolean {
-  return (
-    Date.now() - Date.parse(run.created_at) < PARENT_PANE_REGISTRATION_GRACE_MS
-  );
+function parentLaunchPending(run: S.WorkflowRunRow): boolean {
+  return Date.now() - Date.parse(run.created_at) < PARENT_LAUNCH_GRACE_MS;
 }
 
 function instructionText(
@@ -140,6 +139,28 @@ export const workflowInstructions = {
     return pane;
   },
 
+  // The parent agent's own declaration that it is running and reads its pane, which is the fact
+  // delivery waits for. Nothing here authenticates the caller: the signal exists for timing, and the
+  // same CLI already lets a human hand the parent an instruction directly.
+  markParentReady(
+    name: string,
+    input: { run: number },
+  ): { run: number; ready_at: string } {
+    const repo = repoOr404(name);
+    const run = S.getWorkflowRun(input.run);
+    if (!run || run.repo_id !== repo.id) {
+      throw new ServiceError(404, `Workflow run #${input.run} not found`);
+    }
+    const ready = S.markWorkflowRunParentReady(run.id);
+    if (!ready?.parent_ready_at) {
+      throw new ServiceError(
+        500,
+        `could not record parent readiness for Workflow run #${run.id}`,
+      );
+    }
+    return { run: ready.id, ready_at: ready.parent_ready_at };
+  },
+
   async dispatchRun(runId: number): Promise<WorkflowInstructionDispatchResult> {
     const run = S.getWorkflowRun(runId);
     if (!run) return { status: "idle" };
@@ -184,26 +205,32 @@ export const workflowInstructions = {
         `Repository for Workflow run #${run.id} not found`,
       );
     }
-    // A run is created before its parent pane is launched and registered. Until that explicit
-    // readiness signal exists, allow the bounded launch window without reconciling the event.
-    // Afterward, claim a durable failure receipt so a lost registration is visible exactly once.
+    // A run is created before its parent pane is launched and registered, and the agent in that pane
+    // only starts reading it later still. Both facts gate delivery: `send-text` writes bytes to the
+    // pane's terminal, and an agent that has not finished starting never reads what was written
+    // before it attached — the delivery would record itself as done and the run would wait forever.
+    // Allow the bounded launch window for both without reconciling the event; afterward, claim a
+    // durable failure receipt so a parent that never came up is visible exactly once.
     const registeredPane = parentPane(run);
-    if (registeredPane === undefined) {
-      if (parentPaneRegistrationPending(run)) return { status: "idle" };
+    const paneMissing = registeredPane === undefined;
+    if (paneMissing || !run.parent_ready_at) {
+      if (parentLaunchPending(run)) return { status: "idle" };
       const claimed = S.beginWorkflowEventEffect(
         run.id,
         event.id,
-        MISSING_PARENT_EFFECT,
+        paneMissing ? MISSING_PARENT_EFFECT : UNREADY_PARENT_EFFECT,
       );
       if (!claimed?.acquired) {
         throw new ServiceError(
           409,
-          `could not record missing parent pane for Workflow run #${run.id}`,
+          `could not record unusable parent pane for Workflow run #${run.id}`,
         );
       }
       throw new ServiceError(
         409,
-        `parent pane registration timed out for Workflow run #${run.id}`,
+        paneMissing
+          ? `parent pane registration timed out for Workflow run #${run.id}`
+          : `parent agent readiness timed out for Workflow run #${run.id}`,
       );
     }
 

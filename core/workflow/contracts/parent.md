@@ -21,7 +21,10 @@ uses these shared invariants throughout:
 
 ## Instruction loop
 
-Repeat this loop:
+Before the loop, run `lh workflow parent-ready <run> --repo '<repo>'` once. Instructions are held until that signal
+arrives, because text written to this pane before your agent reads it is lost.
+
+Then repeat this loop:
 
 1. Wait for a `workflow instruction: {...}` text input delivered to this pane. Do not fetch an instruction yourself,
    poll, sleep, or create a background watcher.

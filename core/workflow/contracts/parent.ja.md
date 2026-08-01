@@ -21,7 +21,10 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 
 ## Instruction loop
 
-次の loop を繰り返す。
+loop に入る前に `lh workflow parent-ready <run> --repo '<repo>'` を 1 回実行する。agent が読み取る前にこの pane へ
+書かれた text は失われるため、この signal が届くまで instruction は保留される。
+
+その上で次の loop を繰り返す。
 
 1. この pane に入力される `workflow instruction: {...}` 形式の text を待つ。instruction を自分から
    取りに行かない。poll、sleep、background watcher は実行しない。

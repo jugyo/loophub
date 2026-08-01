@@ -125,9 +125,12 @@ logic へ event と現在 state を渡す。生成結果は `workflow instructio
 （[根本原因](herdr-prompt-unsent-root-cause.ja.md)）。
 repository の `.loophub/workflow.yml` はこの経路に関与しない。
 
-CLI は parent の Herdr 起動成功後に pane 座標を run へ登録する。worker はその登録前には最古の event を
-run 作成から 2 分間だけ未処理のまま待つ。猶予後も pane row が無ければ missing-parent receipt と worker
-error を一度残し、自動再試行しない。登録後は event id 順に判断する。各 event の判断は action、reason、
+CLI は parent の Herdr 起動成功後に pane 座標を run へ登録し、その pane の agent は起動プロンプトの指示で
+`lh workflow parent-ready <run>` を実行して readiness を記録する。pane 登録は pane の存在しか示さず、
+起動途中の agent はまだ pane を読んでいないため、この 2 つが揃うまで配送しない。worker は最古の event を
+run 作成から 2 分間だけ未処理のまま待つ。猶予後も pane row が無ければ missing-parent receipt、readiness が
+無ければ parent-not-ready receipt と worker error を一度残し、自動再試行しない。両方が揃うと event id 順に
+判断する。各 event の判断は action、reason、
 instructions の fingerprint を receipt に記録し、直前の event と同じ instruction だけを入力せずに処理済みにする。
 注入開始前に `workflow.instruction:<fingerprint>` effect receipt を claim し、成功後に complete する。
 登録済み pane の座標不備や送信途中の失敗は、自動再実行すると二重入力になり得るため pending receipt と
@@ -165,8 +168,8 @@ receipt の粒度は effect が何に対して一度きりかで決まる。汎�
 ある。
 
 service test は正しい parent pane の特定、構造化 instruction、cursor の順序どおりの前進、連続する同一判断の
-重複防止、起動猶予内の pane 未登録、猶予後の pane 欠落、登録座標不備、送信途中 failure、terminal run の
-扱いを実 DB と fake herdr で確認する。integration test は実 git / DB 状態に対する `workflowRuns.next` の
+重複防止、起動猶予内の pane 未登録、readiness 未着時の保留、猶予後の pane 欠落と readiness 欠落、登録座標
+不備、送信途中 failure、terminal run の扱いを実 DB と fake herdr で確認する。integration test は実 git / DB 状態に対する `workflowRuns.next` の
 結果と、pane へ入力された instruction の JSON が同一であることを比較する。
 
 ```sh

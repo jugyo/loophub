@@ -132,6 +132,9 @@ export interface WorkflowRunRow {
   // `running`. NULL on legacy rows and after resume.
   needs_human_reason: string | null;
   parent_session_id: string | null;
+  // When the parent agent declared it can read its pane. NULL until that signal arrives, which is
+  // what keeps instruction delivery from writing to an agent that has not started reading yet.
+  parent_ready_at: string | null;
   step_sessions_json: string;
   // The child pane most recently launched or reactivated for live input. This can intentionally
   // differ from current_step while additional Execute work runs after a fresh Verify pass.
@@ -208,6 +211,20 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
   return db
     .query(`SELECT * FROM workflow_runs WHERE id = ?`)
     .get(id) as WorkflowRunRow | null;
+}
+
+// Record that the parent agent can read its pane. COALESCE keeps the first signal, so a parent that
+// repeats the declaration — a resumed one, or one that runs the command twice — is a no-op.
+export function markWorkflowRunParentReady(id: number): WorkflowRunRow | null {
+  const t = now();
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET parent_ready_at = COALESCE(parent_ready_at, ?), updated_at = ?
+       WHERE id = ?
+       RETURNING *`,
+    )
+    .get(t, t, id) as WorkflowRunRow | null;
 }
 
 // Move the run event bookmark forward. The guard keeps the cursor monotonic when two consumers race.

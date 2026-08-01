@@ -885,6 +885,21 @@ export const MIGRATIONS: Migration[] = [
     );
   `,
   ),
+  // Explicit readiness signal from the parent agent (#2156). A registered pane only proves the pane
+  // exists, not that the agent behind it reads its input yet, so an instruction delivered while the
+  // agent was still starting was written to a terminal nothing was reading and was lost.
+  // Every run that exists when this migration runs was launched under the older prompt and will
+  // never send the signal, so backfill those rows from created_at: only runs started afterward —
+  // whose launch prompt asks for it — wait for the signal.
+  {
+    id: "057-workflow-runs-parent-ready-at",
+    run(db) {
+      addColumnIfMissing(db, "workflow_runs", "parent_ready_at", "TEXT");
+      db.exec(
+        `UPDATE workflow_runs SET parent_ready_at = created_at WHERE parent_ready_at IS NULL`,
+      );
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

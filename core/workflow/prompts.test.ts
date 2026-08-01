@@ -38,7 +38,8 @@ test("the English parent prompt remains byte-identical", () => {
       "worktree: . (cwd. base branch: main)",
       "",
       "## Instruction",
-      "Orchestrate this run through Execute -> Verify as described in your contract.",
+      "Run `lh workflow parent-ready 42 --repo 'me/workflow-run'` first, before anything else. Instructions are delivered to this pane only after that signal.",
+      "Then orchestrate this run through Execute -> Verify as described in your contract.",
       "Wait for workflow instructions delivered to this pane, execute their structured `instructions`, then return to waiting as described in the contract. Do not invoke slash-style commands.",
       "",
     ].join("\n"),
@@ -55,6 +56,9 @@ test("the Japanese parent prompt translates prose without changing commands", ()
   expect(prompt).toContain("current step: execute");
   expect(prompt).toContain("## 指示");
   expect(prompt).toContain(
+    "`lh workflow parent-ready 42 --repo 'me/workflow-run'` を実行してください。",
+  );
+  expect(prompt).toContain(
     "contract の記述に従い、この run を Execute -> Verify の順に orchestrate してください。",
   );
   expect(prompt).toContain(
@@ -67,6 +71,11 @@ test("the Japanese parent prompt translates prose without changing commands", ()
 // The worker delivers every transition decision to the parent pane.
 test("the parent prompt starts from worker-delivered instructions", () => {
   const prompt = parentUserPrompt(INPUT, "en");
+  // Delivery is held until the parent declares it reads the pane, so the prompt has to ask for that
+  // signal before anything else (#2156).
+  expect(prompt).toContain(
+    "Run `lh workflow parent-ready 42 --repo 'me/workflow-run'` first",
+  );
   expect(prompt).toContain(
     "Wait for workflow instructions delivered to this pane",
   );

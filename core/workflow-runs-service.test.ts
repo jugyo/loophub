@@ -335,6 +335,14 @@ test("instruction delivery preserves the real next decision for the same state",
       session_name: "me-instruction-parity",
       pane_id: "w1:p1",
     });
+    // A registered pane is not yet an agent that reads it, so nothing is delivered — and nothing is
+    // recorded as delivered — until the parent declares itself ready (#2156).
+    await expect(
+      svc.workflowInstructions.dispatchRun(started.run.id),
+    ).resolves.toEqual({ status: "idle" });
+    svc.workflowInstructions.markParentReady(repo.full_name, {
+      run: started.run.id,
+    });
     await expect(
       svc.workflowInstructions.dispatchRun(started.run.id),
     ).resolves.toMatchObject({
@@ -349,9 +357,10 @@ test("instruction delivery preserves the real next decision for the same state",
       .split("\n")
       .find((line) => line.includes(marker));
     expect(delivery).toBeDefined();
-    const payload = (delivery as string).slice(
-      (delivery as string).indexOf(marker) + marker.length,
-    );
+    // The body travels inside a bracketed paste, so the JSON ends at the closing marker.
+    const payload = (delivery as string)
+      .slice((delivery as string).indexOf(marker) + marker.length)
+      .split("[201~")[0];
     expect(JSON.parse(payload)).toEqual(expected);
   } finally {
     process.env.PATH = originalPath;

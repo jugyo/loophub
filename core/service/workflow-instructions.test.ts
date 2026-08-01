@@ -77,7 +77,18 @@ function fakeHerdr() {
   return { bin, log };
 }
 
+// The launch handshake a delivery waits for: the launcher registers the pane, then the parent agent
+// declares it reads that pane. Tests that exercise the gate itself do the two steps separately.
 function registerParent(
+  input: ReturnType<typeof fixture>,
+  paneId: string | null = "w1:p1",
+) {
+  const pane = registerParentPane(input, paneId);
+  markParentReady(input);
+  return pane;
+}
+
+function registerParentPane(
   input: ReturnType<typeof fixture>,
   paneId: string | null = "w1:p1",
 ) {
@@ -86,6 +97,12 @@ function registerParent(
     launch_id: input.run.parent_session_id as string,
     session_name: "me-repo",
     pane_id: paneId,
+  });
+}
+
+function markParentReady(input: ReturnType<typeof fixture>) {
+  return svc.workflowInstructions.markParentReady(input.repo.full_name, {
+    run: input.run.id,
   });
 }
 
@@ -218,6 +235,103 @@ test("a parent pane can register during launch grace", async () => {
     next.mockRestore();
     process.env.PATH = originalPath;
     rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+// A registered pane only means the pane exists. Delivering into it while the agent is still starting
+// writes text nothing reads, and the delivery still records itself as completed, so the run stalls
+// forever (#2156).
+test("delivery waits for the parent agent's readiness signal, not just its pane", async () => {
+  const input = fixture("unready-parent");
+  const fake = fakeHerdr();
+  registerParentPane(input);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toEqual({ status: "idle" });
+    expect(herdrCalls(fake.log)).toBe("");
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(0);
+    expect(
+      S.getWorkflowEventEffectWithPrefix(
+        input.run.id,
+        input.event.id,
+        "workflow.instruction:",
+      ),
+    ).toBeNull();
+    expect(next).not.toHaveBeenCalled();
+
+    markParentReady(input);
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({
+      status: "delivered",
+      event: input.event.id,
+      pane_id: "w1:p1",
+    });
+    expect(herdrCalls(fake.log)).toContain("pane send-text w1:p1");
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("a parent that never signals readiness after launch grace fails visibly and is not retried", async () => {
+  const input = fixture("never-ready-parent");
+  const fake = fakeHerdr();
+  registerParentPane(input);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const now = vi
+    .spyOn(Date, "now")
+    .mockReturnValue(Date.parse(input.run.created_at) + 5 * 60_000);
+  const next = vi.spyOn(svc.workflowRuns, "next");
+  try {
+    expect(await svc.workflowInstructions.dispatchPending()).toContainEqual(
+      expect.objectContaining({
+        status: "failed",
+        run: input.run.id,
+        error: expect.stringContaining("parent agent readiness timed out"),
+      }),
+    );
+    expect(herdrCalls(fake.log)).toBe("");
+    expect(
+      S.getWorkflowEventEffectWithPrefix(
+        input.run.id,
+        input.event.id,
+        "workflow.instruction:",
+      )?.status,
+    ).toBe("pending");
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(0);
+
+    await expect(svc.workflowInstructions.dispatchPending()).resolves.toEqual(
+      [],
+    );
+    expect(herdrCalls(fake.log)).toBe("");
+    expect(next).not.toHaveBeenCalled();
+  } finally {
+    now.mockRestore();
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("a repeated readiness signal keeps the first one", () => {
+  const input = fixture("repeated-ready");
+  try {
+    const first = markParentReady(input);
+    expect(first).toMatchObject({ run: input.run.id });
+    expect(markParentReady(input).ready_at).toBe(first.ready_at);
+  } finally {
     rmSync(input.repoPath, { recursive: true, force: true });
   }
 });
