@@ -116,12 +116,33 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("a diff comment records its anchor on the domain event, not a copy of itself", async () => {
+test("a diff comment stores its current location and anchor event immediately", async () => {
   const created = await createThread("Why is this changed?");
+  const listed = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
+  const location = S.listDiffFeedbackLocations(
+    S.getIssue(repoId, prNumber)!.id,
+    baseSha,
+    headSha,
+  )[0];
   const event = S.listEvents(0, repoId, 100).find(
     (row) => row.type === "pull_request.diff_feedback_created",
   );
 
+  expect(created.thread).toMatchObject({
+    freshness: "current",
+    placement: "inline",
+    resolved_anchor: { path: "a.txt", start_line: 2, end_line: 2 },
+  });
+  expect(listed).toMatchObject({
+    freshness: "current",
+    placement: "inline",
+    resolved_anchor: { path: "a.txt", start_line: 2, end_line: 2 },
+  });
+  expect(location).toMatchObject({
+    freshness: "current",
+    placement: "inline",
+    outdated_reason: null,
+  });
   expect(event).toBeDefined();
   // The commenter is the event's own actor, and the body stays in the comment row the ids name.
   expect(event!.actor).toBe("me");

@@ -849,9 +849,11 @@ export const diffFeedback = {
       path: input.path,
       side: input.side,
     });
+    const lines = file ? parsePatchWithCoordinates(file.patch) : null;
     if (
       !file ||
-      !linesForAnchor(parsePatchWithCoordinates(file.patch), {
+      !lines ||
+      !linesForAnchor(lines, {
         side: input.side,
         startLine: input.startLine,
         endLine: input.endLine,
@@ -875,6 +877,25 @@ export const diffFeedback = {
       startLine: input.startLine,
       endLine: input.endLine,
       actor,
+    });
+    const resolvedAnchor = {
+      path: thread.path,
+      original_path: thread.original_path,
+      side: thread.side as DiffSide,
+      start_line: thread.start_line,
+      end_line: thread.end_line,
+    };
+    S.upsertDiffFeedbackLocation({
+      thread_id: thread.id,
+      base_sha: input.baseSha,
+      head_sha: input.headSha,
+      resolved_anchor_json: JSON.stringify(resolvedAnchor),
+      freshness: "current",
+      outdated_reason: null,
+      placement: "inline",
+      original_context_json: JSON.stringify(
+        contextJSON(lines, anchorOf(thread), DEFAULT_CONTEXT_RADIUS),
+      ),
     });
     const comment = S.createDiffFeedbackMessage(thread.id, actor, input.body);
     const source = S.emitEvent(

@@ -1595,7 +1595,7 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    expect(await screen.findByText("outdated")).toBeTruthy();
+    expect(await screen.findByText("Diff anchor outdated")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
       target: { value: "Still relevant" },
     });
@@ -1679,7 +1679,7 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    expect(await screen.findByText("outdated")).toBeTruthy();
+    expect(await screen.findByText("Diff anchor outdated")).toBeTruthy();
     expect(screen.queryByLabelText("Previous diff threads")).toBeNull();
     const threadRow = screen
       .getByLabelText("Diff thread 1")
@@ -2796,7 +2796,9 @@ describe("DiffFeedbackHistory", () => {
     );
 
     expect(await screen.findByText("No diff.")).toBeTruthy();
-    expect(await screen.findByText("unavailable")).toBeTruthy();
+    expect(
+      await screen.findByText("Diff anchor location unavailable"),
+    ).toBeTruthy();
     expect(
       await screen.findByText("This conversation remains visible."),
     ).toBeTruthy();
@@ -2808,5 +2810,56 @@ describe("DiffFeedbackHistory", () => {
     expect(
       screen.queryByRole("button", { name: /submit (review|comments)/i }),
     ).toBeNull();
+  });
+
+  it("explains inline unavailable fallback separately for human and agent conversations", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              id: 7,
+              freshness: "unavailable",
+              placement: "inline",
+              created_by: "unknown",
+            }),
+            feedbackThread({
+              id: 8,
+              freshness: "outdated",
+              created_by: "executor #12-1",
+            }),
+          ],
+        }),
+      }),
+    );
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <DiffFeedbackHistory owner="me" repo="proj" number={30} />
+      </QueryClientProvider>,
+    );
+
+    const humanThread = await screen.findByLabelText("Diff thread 7");
+    expect(within(humanThread).getByText("@human")).toBeTruthy();
+    expect(
+      within(humanThread).getByText("Diff anchor location unavailable"),
+    ).toBeTruthy();
+    expect(
+      within(humanThread).getByTitle(
+        "The current location of this saved diff anchor has not been determined.",
+      ),
+    ).toBeTruthy();
+    for (const agentStatus of ["working", "blocked", "done", "idle"]) {
+      expect(within(humanThread).queryByText(agentStatus)).toBeNull();
+    }
+
+    const agentThread = await screen.findByLabelText("Diff thread 8");
+    expect(within(agentThread).getByText("@executor #12-1")).toBeTruthy();
+    expect(within(agentThread).getByText("Diff anchor outdated")).toBeTruthy();
+    expect(
+      within(agentThread).getByTitle(
+        "The saved diff anchor is outdated (modified).",
+      ),
+    ).toBeTruthy();
   });
 });

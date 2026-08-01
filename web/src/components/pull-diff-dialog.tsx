@@ -1657,6 +1657,12 @@ function ThreadCard({
     thread.freshness === "current" && thread.resolved_anchor
       ? thread.resolved_anchor
       : thread.anchor;
+  const freshnessTitle =
+    thread.freshness === "unavailable"
+      ? "The current location of this saved diff anchor has not been determined."
+      : thread.freshness === "outdated"
+        ? `The saved diff anchor is outdated${thread.outdated_reason ? ` (${thread.outdated_reason})` : ""}.`
+        : undefined;
 
   function submitReply() {
     const trimmed = replyBody.trim();
@@ -1671,23 +1677,28 @@ function ThreadCard({
       aria-label={`Diff thread ${thread.id}`}
     >
       <header className="mb-2 flex items-center justify-between gap-2 text-xs">
+        <span className="font-semibold">
+          @{diffFeedbackAuthor(thread.created_by)}
+        </span>
         <div className="flex items-center gap-2">
-          <span className="font-semibold">
-            @{diffFeedbackAuthor(thread.created_by)}
-          </span>
           {thread.freshness !== "current" ? (
-            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">
+            <span
+              title={freshnessTitle}
+              className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300"
+            >
+              Diff anchor
+              {thread.freshness === "unavailable" ? " location" : ""}{" "}
               {thread.freshness}
             </span>
           ) : null}
+          <span className="text-muted-foreground">
+            {displayedAnchor.path} · {displayedAnchor.side}{" "}
+            {displayedAnchor.start_line}
+            {displayedAnchor.end_line === displayedAnchor.start_line
+              ? ""
+              : `–${displayedAnchor.end_line}`}
+          </span>
         </div>
-        <span className="text-muted-foreground">
-          {displayedAnchor.path} · {displayedAnchor.side}{" "}
-          {displayedAnchor.start_line}
-          {displayedAnchor.end_line === displayedAnchor.start_line
-            ? ""
-            : `–${displayedAnchor.end_line}`}
-        </span>
       </header>
       {thread.freshness !== "current" && thread.original_context ? (
         <pre
