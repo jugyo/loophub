@@ -25,6 +25,8 @@ convention changes.
   and events instead.
 - Keep data-selection semantics in `core`; Web should request the desired result set rather
   than reconstruct it from partial responses.
+- Keep structural labels in generated documents — section headings, template keys, and other
+  schema-like text — in a stable shared language. Localize prose, not document structure.
 - Before answering review feedback with another defensive mechanism, apply these principles.
   For plausible but human-recoverable failures, explicitly accepting the risk can be correct.
 - Background reading that informs how we design agent loops lives in

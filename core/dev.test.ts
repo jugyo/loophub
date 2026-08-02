@@ -79,12 +79,14 @@ describe("dev.openPr", () => {
     expect(pull.base.ref).toBe("main");
     expect(pull.linked_issue?.number).toBe(issue.number);
     expect(pull.body).toContain(`Closes #${issue.number}`);
-    expect(pull.body).toContain("## 実装計画");
-    expect(pull.body).toContain("source edit 前");
+    expect(pull.body).toContain("## Implementation plan");
+    expect(pull.body).not.toContain("## 実装計画");
+    expect(pull.body).toContain("ソース編集前");
     expect(pull.body).toContain("変更予定ファイル/領域");
     expect(pull.body).toContain("再利用する既存 API/component/module");
     expect(pull.body).toContain("スコープ境界");
     expect(pull.body).toContain("更新・実行するテスト");
+    expect(pull.body).toContain("## Evidence");
     expect(pull.body).toContain("**Visual evidence gate**: TODO");
     expect(
       S.getPull(S.getIssue(S.getRepo("me", "proj")!.id, first.number)!.id)

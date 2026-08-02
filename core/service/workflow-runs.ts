@@ -1111,7 +1111,7 @@ export const workflowRuns = {
 
     const opened = await dev.openPr(
       r.full_name,
-      { issue: issue.number },
+      { issue: issue.number, language: contractLanguage },
       sessionId,
       { attributeSession: false },
     );

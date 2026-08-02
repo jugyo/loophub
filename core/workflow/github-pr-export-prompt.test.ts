@@ -23,19 +23,41 @@ test("interpolates the repo and PR number into the lh commands", () => {
   }
 });
 
-test("instructs writing the title/body in the target's language, not fixed English", () => {
+test("instructs writing the title/body in the configured language", () => {
   const en = githubPrExportPrompt({
     repo: "me/proj",
     prNumber: 1,
     language: "en",
   });
-  expect(en).toContain("do not fix them to English");
+  expect(en).toContain("write their natural-language content in English");
+  expect(en).toContain("Do not infer a different language");
   const ja = githubPrExportPrompt({
     repo: "me/proj",
     prNumber: 1,
     language: "ja",
   });
-  expect(ja).toContain("英語に固定しない");
+  expect(ja).toContain("自然言語部分は日本語で記述");
+  expect(ja).toContain("別の言語を推測しない");
+});
+
+test("preserves source-like content in both configured languages", () => {
+  const en = githubPrExportPrompt({
+    repo: "me/proj",
+    prNumber: 1,
+    language: "en",
+  });
+  expect(en).toContain(
+    "Keep code, identifiers, commands, paths, and quoted log or error text in their original form.",
+  );
+
+  const ja = githubPrExportPrompt({
+    repo: "me/proj",
+    prNumber: 1,
+    language: "ja",
+  });
+  expect(ja).toContain(
+    "code、identifier、command、path、引用した log / error text は翻訳せず原文のまま維持してください。",
+  );
 });
 
 test("keeps the double-create guard and the post-create verification GET", () => {

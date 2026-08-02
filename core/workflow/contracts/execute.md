@@ -55,9 +55,9 @@ parent; treat an identical launch note the same way.
 2. Inspect the relevant code and show a concrete implementation plan in this session.
 3. Implement a focused change that matches the surrounding naming, types, tests, and style.
 4. Get the repository's standard tests, lint, and typecheck green.
-5. Commit the implementation on the current head branch. Update the summary, acceptance criteria,
-   test plan, and evidence with `lh pr update <pr> --repo '<repo>' --body ...`. Add attachments or
-   comments as needed.
+5. Commit the implementation on the current head branch. Update both the PR title and body with
+   `lh pr update <pr> --repo '<repo>' --title <title> --body ...`, including the summary, acceptance
+   criteria, test plan, and evidence. Add attachments or comments as needed.
 6. Commit any code change, then run `lh workflow turn done --repo '<repo>' --run <run>` exactly once
    per turn. Running it without a commit is valid only for a confirmation or metadata-only turn that
    requires no HEAD advance.

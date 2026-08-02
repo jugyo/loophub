@@ -98,10 +98,15 @@ test("Japanese parent delegates action procedures to delivered structured instru
 
 test("Execute pulls domain state itself and declares turn done", () => {
   const execute = workflowContractText("execute");
+  const japanese = workflowContractText("execute", "ja");
 
   expect(execute).toContain("lh issue view <n> --json");
   expect(execute).toContain("Read its body and comments");
   expect(execute).toContain("lh pr update <pr>");
+  expect(execute).toContain("--title <title> --body ...");
+  expect(execute).toContain("both the PR title and body");
+  expect(japanese).toContain("--title <title> --body ...");
+  expect(japanese).toContain("PR の title と body の両方");
   expect(execute).toContain(
     "lh workflow turn done --repo '<repo>' --run <run>",
   );

@@ -522,6 +522,99 @@ test("start snapshots the contract language for parent and every later step", as
   ]);
 });
 
+test("start creates the initial PR title and body in the configured language", async () => {
+  const workflow = S.createWorkflow({
+    name: "localized-pr",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const repoPaths: string[] = [];
+
+  try {
+    const { repo: japaneseRepo, path: japaneseRepoPath } = freshRepo(
+      "me/workflow-pr-japanese",
+    );
+    repoPaths.push(japaneseRepoPath);
+    const englishIssue = S.createIssue(
+      japaneseRepo.id,
+      "issue",
+      "Add an English feature",
+      "",
+      "me",
+    );
+    svc.settings.update({ workflowContractLanguage: "ja" });
+    const japaneseRun = await svc.workflowRuns.start(
+      japaneseRepo.full_name,
+      { issue: englishIssue.number, workflowId: workflow.id },
+      "c7c7c7c7-c7c7-47c7-87c7-c7c7c7c7c7c7",
+    );
+    const japanesePr = await svc.pulls.get(
+      japaneseRepo.full_name,
+      japaneseRun.pr.number,
+    );
+    expect(japanesePr.title).toBe(`Issue #${englishIssue.number} を実装する`);
+    expect(japanesePr.body).toBe(
+      [
+        "## Implementation plan",
+        "",
+        "<!-- Execute ステップはソース編集前にここを短い実装プランで更新してください。",
+        "含める内容: 変更予定ファイル/領域、再利用する既存 API/component/module、スコープ境界、更新・実行するテスト。 -->",
+        "",
+        "## Evidence",
+        "",
+        "- **Visual evidence gate**: TODO - `UI / visual candidate: yes|no` を記録する。`yes` の場合はスクリーンショット、または具体的な `N/A` の理由を記載する。",
+        "",
+        `Closes #${englishIssue.number}`,
+        "",
+      ].join("\n"),
+    );
+
+    const { repo: englishRepo, path: englishRepoPath } = freshRepo(
+      "me/workflow-pr-english",
+    );
+    repoPaths.push(englishRepoPath);
+    const japaneseIssue = S.createIssue(
+      englishRepo.id,
+      "issue",
+      "日本語の機能を追加する",
+      "",
+      "me",
+    );
+    svc.settings.update({ workflowContractLanguage: "en" });
+    const englishRun = await svc.workflowRuns.start(
+      englishRepo.full_name,
+      { issue: japaneseIssue.number, workflowId: workflow.id },
+      "d8d8d8d8-d8d8-48d8-88d8-d8d8d8d8d8d8",
+    );
+    const englishPr = await svc.pulls.get(
+      englishRepo.full_name,
+      englishRun.pr.number,
+    );
+    expect(englishPr.title).toBe(`Implement issue #${japaneseIssue.number}`);
+    expect(englishPr.body).toBe(
+      [
+        "## Implementation plan",
+        "",
+        "<!-- Before editing source, briefly update this section with the implementation plan.",
+        "Include: files/areas to change, existing APIs/components/modules to reuse, scope boundaries, and tests to update or run. -->",
+        "",
+        "## Evidence",
+        "",
+        "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",
+        "",
+        `Closes #${japaneseIssue.number}`,
+        "",
+      ].join("\n"),
+    );
+  } finally {
+    svc.settings.update({ workflowContractLanguage: "en" });
+    for (const path of repoPaths) {
+      rmSync(path, { recursive: true, force: true });
+    }
+  }
+});
+
 test("cost limit increases are explicit, guarded, and repeatable", async () => {
   const repo = S.createRepo("me/workflow-cost-limit", REPO_PATH);
   const pull = S.createIssue(repo.id, "pull", "Cost-limited PR", "", "me");

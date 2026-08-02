@@ -1,4 +1,5 @@
 import * as S from "../store.ts";
+import type { WorkflowContractLanguage } from "../workflow/contracts.ts";
 import { worktreeBranch } from "../worktree-path.ts";
 import { pulls } from "./pulls.ts";
 import {
@@ -9,16 +10,41 @@ import {
   repoOr404,
 } from "./shared.ts";
 
-function defaultPrBody(issue: number): string {
+function defaultPrTitle(
+  issue: number,
+  language: WorkflowContractLanguage,
+): string {
+  return language === "ja"
+    ? `Issue #${issue} を実装する`
+    : `Implement issue #${issue}`;
+}
+
+function defaultPrBody(
+  issue: number,
+  language: WorkflowContractLanguage,
+): string {
+  const [planIntro, planDetails, visualEvidence] =
+    language === "en"
+      ? [
+          "<!-- Before editing source, briefly update this section with the implementation plan.",
+          "Include: files/areas to change, existing APIs/components/modules to reuse, scope boundaries, and tests to update or run. -->",
+          "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",
+        ]
+      : [
+          "<!-- Execute ステップはソース編集前にここを短い実装プランで更新してください。",
+          "含める内容: 変更予定ファイル/領域、再利用する既存 API/component/module、スコープ境界、更新・実行するテスト。 -->",
+          "- **Visual evidence gate**: TODO - `UI / visual candidate: yes|no` を記録する。`yes` の場合はスクリーンショット、または具体的な `N/A` の理由を記載する。",
+        ];
+
   return [
-    "## 実装計画",
+    "## Implementation plan",
     "",
-    "<!-- Execute ステップは source edit 前にここを短い実装プランで更新してください。",
-    "含める内容: 変更予定ファイル/領域、再利用する既存 API/component/module、スコープ境界、更新・実行するテスト。 -->",
+    planIntro,
+    planDetails,
     "",
     "## Evidence",
     "",
-    "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",
+    visualEvidence,
     "",
     `Closes #${issue}`,
     "",
@@ -47,7 +73,13 @@ export const dev = {
   // same already-open PR can never overwrite the winner's session pointer.
   async openPr(
     name: string,
-    input: { issue: number; head?: string; base?: string; body?: string },
+    input: {
+      issue: number;
+      head?: string;
+      base?: string;
+      body?: string;
+      language?: WorkflowContractLanguage;
+    },
     sessionId?: string | null,
     opts: { attributeSession?: boolean } = {},
   ): Promise<{ created: boolean; number: number }> {
@@ -75,11 +107,14 @@ export const dev = {
       assertExistingLocalBranch(r.local_path, issueRow.target_branch);
     }
     const base = input.base ?? issueRow.target_branch ?? r.default_branch;
-    const body = input.body ?? defaultPrBody(input.issue);
+    const body =
+      input.body ?? defaultPrBody(input.issue, input.language ?? "ja");
     const pr = await pulls.create(
       name,
       {
-        title: issueRow.title,
+        title: input.language
+          ? defaultPrTitle(input.issue, input.language)
+          : issueRow.title,
         body,
         head: input.head,
         headFromNumber: input.head ? undefined : worktreeBranch,
