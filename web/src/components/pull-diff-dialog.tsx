@@ -1657,12 +1657,6 @@ function ThreadCard({
     thread.freshness === "current" && thread.resolved_anchor
       ? thread.resolved_anchor
       : thread.anchor;
-  const freshnessTitle =
-    thread.freshness === "unavailable"
-      ? "The current location of this saved diff anchor has not been determined."
-      : thread.freshness === "outdated"
-        ? `The saved diff anchor is outdated${thread.outdated_reason ? ` (${thread.outdated_reason})` : ""}.`
-        : undefined;
 
   function submitReply() {
     const trimmed = replyBody.trim();
@@ -1680,36 +1674,8 @@ function ThreadCard({
         <span className="font-semibold">
           @{diffFeedbackAuthor(thread.created_by)}
         </span>
-        <div className="flex items-center gap-2">
-          {thread.freshness !== "current" ? (
-            <span
-              title={freshnessTitle}
-              className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300"
-            >
-              Diff anchor
-              {thread.freshness === "unavailable" ? " location" : ""}{" "}
-              {thread.freshness}
-            </span>
-          ) : null}
-          <span className="text-muted-foreground">
-            {displayedAnchor.path} · {displayedAnchor.side}{" "}
-            {displayedAnchor.start_line}
-            {displayedAnchor.end_line === displayedAnchor.start_line
-              ? ""
-              : `–${displayedAnchor.end_line}`}
-          </span>
-        </div>
+        <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
       </header>
-      {thread.freshness !== "current" && thread.original_context ? (
-        <pre
-          className="mb-2 overflow-x-auto rounded-md border bg-muted/20 p-2 font-mono text-xs"
-          aria-label={`Historical context for thread ${thread.id}`}
-        >
-          {thread.original_context
-            .map((line) => `${line.anchored ? ">" : " "} ${line.text}`)
-            .join("\n")}
-        </pre>
-      ) : null}
       <div className="space-y-2">
         {thread.messages.map((message) => (
           <div key={message.id} className="rounded-md bg-muted/20 p-2">
@@ -1806,6 +1772,119 @@ function ThreadCard({
         </div>
       </div>
     </article>
+  );
+}
+
+type DisplayedDiffAnchor = Pick<
+  DiffFeedbackThread["anchor"],
+  "path" | "side" | "start_line" | "end_line"
+>;
+
+function DiffAnchorInfoPopover({
+  thread,
+  anchor,
+}: {
+  thread: DiffFeedbackThread;
+  anchor: DisplayedDiffAnchor;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const line = `${anchor.side} ${anchor.start_line}${
+    anchor.end_line === anchor.start_line ? "" : `–${anchor.end_line}`
+  }`;
+  const status =
+    thread.freshness.charAt(0).toUpperCase() + thread.freshness.slice(1);
+  const reason = thread.outdated_reason
+    ? thread.outdated_reason.charAt(0).toUpperCase() +
+      thread.outdated_reason.slice(1)
+    : null;
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative shrink-0">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label={`Show diff anchor information for thread ${thread.id}`}
+        aria-expanded={open}
+        className="size-6 text-muted-foreground"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Info className="size-3.5" />
+      </Button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-label={`Diff anchor information for thread ${thread.id}`}
+          className="absolute right-0 top-full z-20 mt-1 w-96 max-w-[calc(100vw-3rem)] rounded-md border bg-background p-3 text-foreground shadow-md"
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.stopPropagation();
+            setOpen(false);
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <h4 className="text-sm font-semibold">Diff anchor</h4>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Close diff anchor information"
+              className="-mr-1 -mt-1 size-6 text-muted-foreground"
+              onClick={() => setOpen(false)}
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
+          <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+            <dt className="text-muted-foreground">Status</dt>
+            <dd
+              className={cn(
+                thread.freshness !== "current" &&
+                  "text-amber-700 dark:text-amber-300",
+              )}
+            >
+              {status}
+            </dd>
+            <dt className="text-muted-foreground">Path</dt>
+            <dd className="break-all font-mono">{anchor.path}</dd>
+            <dt className="text-muted-foreground">Location</dt>
+            <dd className="font-mono">{line}</dd>
+            {reason ? (
+              <>
+                <dt className="text-muted-foreground">Reason</dt>
+                <dd>{reason}</dd>
+              </>
+            ) : null}
+          </dl>
+          {thread.freshness !== "current" && thread.original_context ? (
+            <div className="mt-3">
+              <h5 className="mb-1 text-xs font-medium">Historical context</h5>
+              <pre
+                className="overflow-x-auto rounded-md border bg-muted/20 p-2 font-mono text-xs"
+                aria-label={`Historical context for thread ${thread.id}`}
+              >
+                {thread.original_context
+                  .map(
+                    (contextLine) =>
+                      `${contextLine.anchored ? ">" : " "} ${contextLine.text}`,
+                  )
+                  .join("\n")}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

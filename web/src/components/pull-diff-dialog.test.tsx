@@ -1351,7 +1351,18 @@ describe("DiffFileDialog", () => {
     });
 
     const card = await screen.findByLabelText("Diff thread 1");
-    expect(within(card).getByText("web/src/a.ts · RIGHT 2")).toBeTruthy();
+    expect(within(card).queryByText("RIGHT 2")).toBeNull();
+    fireEvent.click(
+      within(card).getByRole("button", {
+        name: "Show diff anchor information for thread 1",
+      }),
+    );
+    const anchorInfo = within(card).getByRole("dialog", {
+      name: "Diff anchor information for thread 1",
+    });
+    expect(within(anchorInfo).getByText("Current")).toBeTruthy();
+    expect(within(anchorInfo).getByText("web/src/a.ts")).toBeTruthy();
+    expect(within(anchorInfo).getByText("RIGHT 2")).toBeTruthy();
     expect(
       screen.getByLabelText("New line 1").hasAttribute("data-thread-anchor"),
     ).toBe(false);
@@ -1595,7 +1606,9 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    expect(await screen.findByText("Diff anchor outdated")).toBeTruthy();
+    const card = await screen.findByLabelText("Diff thread 1");
+    expect(within(card).queryByText("Outdated")).toBeNull();
+    expect(within(card).queryByText("RIGHT 1–2")).toBeNull();
     fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
       target: { value: "Still relevant" },
     });
@@ -1679,7 +1692,11 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    expect(await screen.findByText("Diff anchor outdated")).toBeTruthy();
+    const card = await screen.findByLabelText("Diff thread 1");
+    expect(within(card).queryByText("Outdated")).toBeNull();
+    expect(
+      within(card).queryByLabelText("Historical context for thread 1"),
+    ).toBeNull();
     expect(screen.queryByLabelText("Previous diff threads")).toBeNull();
     const threadRow = screen
       .getByLabelText("Diff thread 1")
@@ -1687,8 +1704,20 @@ describe("DiffFileDialog", () => {
     expect(
       within(threadRow as HTMLElement).getByText("const x = 1;"),
     ).toBeTruthy();
+    fireEvent.click(
+      within(card).getByRole("button", {
+        name: "Show diff anchor information for thread 1",
+      }),
+    );
+    const anchorInfo = within(card).getByRole("dialog", {
+      name: "Diff anchor information for thread 1",
+    });
+    expect(within(anchorInfo).getByText("Outdated")).toBeTruthy();
+    expect(within(anchorInfo).getByText("Modified")).toBeTruthy();
+    expect(within(anchorInfo).getByText("RIGHT 1")).toBeTruthy();
     expect(
-      screen.getByLabelText("Historical context for thread 1").textContent,
+      within(anchorInfo).getByLabelText("Historical context for thread 1")
+        .textContent,
     ).toContain("> +new one");
     fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
       target: { value: "Still relevant" },
@@ -2796,9 +2825,8 @@ describe("DiffFeedbackHistory", () => {
     );
 
     expect(await screen.findByText("No diff.")).toBeTruthy();
-    expect(
-      await screen.findByText("Diff anchor location unavailable"),
-    ).toBeTruthy();
+    const card = await screen.findByLabelText("Diff thread 7");
+    expect(within(card).queryByText("Unavailable")).toBeNull();
     expect(
       await screen.findByText("This conversation remains visible."),
     ).toBeTruthy();
@@ -2841,25 +2869,27 @@ describe("DiffFeedbackHistory", () => {
 
     const humanThread = await screen.findByLabelText("Diff thread 7");
     expect(within(humanThread).getByText("@human")).toBeTruthy();
-    expect(
-      within(humanThread).getByText("Diff anchor location unavailable"),
-    ).toBeTruthy();
-    expect(
-      within(humanThread).getByTitle(
-        "The current location of this saved diff anchor has not been determined.",
-      ),
-    ).toBeTruthy();
+    expect(within(humanThread).queryByText("Unavailable")).toBeNull();
+    fireEvent.click(
+      within(humanThread).getByRole("button", {
+        name: "Show diff anchor information for thread 7",
+      }),
+    );
+    expect(within(humanThread).getByText("Unavailable")).toBeTruthy();
+    expect(within(humanThread).getByText("RIGHT 1–2")).toBeTruthy();
     for (const agentStatus of ["working", "blocked", "done", "idle"]) {
       expect(within(humanThread).queryByText(agentStatus)).toBeNull();
     }
 
     const agentThread = await screen.findByLabelText("Diff thread 8");
     expect(within(agentThread).getByText("@executor #12-1")).toBeTruthy();
-    expect(within(agentThread).getByText("Diff anchor outdated")).toBeTruthy();
-    expect(
-      within(agentThread).getByTitle(
-        "The saved diff anchor is outdated (modified).",
-      ),
-    ).toBeTruthy();
+    expect(within(agentThread).queryByText("Outdated")).toBeNull();
+    fireEvent.click(
+      within(agentThread).getByRole("button", {
+        name: "Show diff anchor information for thread 8",
+      }),
+    );
+    expect(within(agentThread).getByText("Outdated")).toBeTruthy();
+    expect(within(agentThread).getByText("Modified")).toBeTruthy();
   });
 });
