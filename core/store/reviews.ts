@@ -1,10 +1,12 @@
 import { db, now } from "../db.ts";
+import type { CommentAuthorType } from "./comments.ts";
 import { getPull } from "./pulls.ts";
 
 export interface ReviewRow {
   id: number;
   issue_id: number;
   author: string;
+  author_type: CommentAuthorType;
   event: string;
   body: string;
   head_sha: string | null;
@@ -17,6 +19,7 @@ export interface ReviewCommentRow {
   issue_id: number;
   review_id: number | null;
   author: string;
+  author_type: CommentAuthorType;
   body: string;
   path: string;
   line: number | null;
@@ -64,13 +67,24 @@ export function createReview(
   body: string,
   headSha: string | null = null,
   model: string | null = null,
+  authorType: CommentAuthorType = "system",
 ): ReviewRow {
   return db
     .query(
-      `INSERT INTO reviews (issue_id, author, event, body, head_sha, model, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      `INSERT INTO reviews
+       (issue_id, author, author_type, event, body, head_sha, model, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(issueId, author, event, body, headSha, model, now()) as ReviewRow;
+    .get(
+      issueId,
+      author,
+      authorType,
+      event,
+      body,
+      headSha,
+      model,
+      now(),
+    ) as ReviewRow;
 }
 
 // Create a review row and its per-criterion grades atomically (#1895). The grades are children of
@@ -86,10 +100,19 @@ export function createReviewWithAcResults(
   headSha: string | null,
   model: string | null,
   acResults: { criterionId: number; verdict: string; note: string }[],
+  authorType: CommentAuthorType = "system",
 ): ReviewRow {
   db.run("BEGIN IMMEDIATE");
   try {
-    const review = createReview(issueId, author, event, body, headSha, model);
+    const review = createReview(
+      issueId,
+      author,
+      event,
+      body,
+      headSha,
+      model,
+      authorType,
+    );
     for (const r of acResults)
       createReviewAcResult(review.id, r.criterionId, r.verdict, r.note);
     db.run("COMMIT");
@@ -217,17 +240,20 @@ export function createReviewComment(
   issueId: number,
   reviewId: number,
   author: string,
+  authorType: CommentAuthorType,
   c: { path: string; line?: number; side?: string; body: string },
 ): ReviewCommentRow {
   return db
     .query(
-      `INSERT INTO review_comments (issue_id, review_id, author, body, path, line, side, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      `INSERT INTO review_comments
+       (issue_id, review_id, author, author_type, body, path, line, side, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       issueId,
       reviewId,
       author,
+      authorType,
       c.body,
       c.path,
       c.line ?? null,

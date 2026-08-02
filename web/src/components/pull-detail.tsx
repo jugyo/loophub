@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
+import { CommentAuthorLabel } from "@/components/comment-author-label";
 import { CommentId } from "@/components/comment-id";
 import { CopyButton } from "@/components/copy-button";
 import {
@@ -47,7 +48,6 @@ import {
 import { WorkDuration } from "@/components/work-duration";
 import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import { pullDetailBadges } from "@/lib/badges";
-import { commentAuthor } from "@/lib/comment-author";
 import { errorMessage } from "@/lib/error-message";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
@@ -789,7 +789,10 @@ function CommentList({
             className="rounded-md border p-3"
           >
             <header className="mb-1 text-sm font-medium">
-              @{commentAuthor(c)}{" "}
+              <CommentAuthorLabel
+                author={c.user.login}
+                authorType={c.author_type}
+              />{" "}
               <span className="text-xs font-normal text-muted-foreground">
                 {relativeTime(c.created_at)}
               </span>{" "}

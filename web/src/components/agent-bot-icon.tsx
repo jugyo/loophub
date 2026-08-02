@@ -5,14 +5,18 @@ export function AgentBotIcon({
   working = false,
   needsAttention = false,
   inactive = false,
+  label,
 }: {
   working?: boolean;
   needsAttention?: boolean;
   inactive?: boolean;
+  label?: string;
 }) {
   return (
     <span
       data-agent-bot-icon
+      role={label ? "img" : undefined}
+      aria-label={label}
       className={cn(
         "relative flex size-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground",
         working &&

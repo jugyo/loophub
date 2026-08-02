@@ -9,6 +9,7 @@ import type {
   Repo,
   ReviewCommentRow,
   ReviewResponseRow,
+  ReviewRow,
 } from "./store.ts";
 
 // Isolate the DB before serialize.ts -> store.ts -> db.ts runs its import-time setup (see AGENTS.md).
@@ -562,6 +563,7 @@ describe("pure row -> wire serializers", () => {
       issue_id: 3,
       review_id: 5,
       author: "reviewer",
+      author_type: "agent",
       body: "off by one",
       path: "core/serialize.ts",
       line: 42,
@@ -572,11 +574,37 @@ describe("pure row -> wire serializers", () => {
       id: 11,
       pull_request_review_id: 5,
       user: { login: "reviewer" },
+      author_type: "agent",
       path: "core/serialize.ts",
       line: 42,
       side: "RIGHT",
       body: "off by one",
       created_at: "2026-07-05T00:00:00Z",
+    });
+  });
+
+  test("reviewJSON keeps the persisted author type", () => {
+    const row: ReviewRow = {
+      id: 10,
+      issue_id: 3,
+      author: "reviewer",
+      author_type: "agent",
+      event: "PASS",
+      body: "looks good",
+      head_sha: "abc123",
+      model: "gpt-test",
+      created_at: "2026-07-05T00:00:00Z",
+    };
+    expect(serialize.reviewJSON(row, [])).toEqual({
+      id: 10,
+      user: { login: "reviewer" },
+      author_type: "agent",
+      state: "PASS",
+      body: "looks good",
+      head_sha: "abc123",
+      model: "gpt-test",
+      submitted_at: "2026-07-05T00:00:00Z",
+      ac_results: [],
     });
   });
 

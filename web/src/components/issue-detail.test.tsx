@@ -320,9 +320,15 @@ describe("IssueDetail", () => {
     const human = (await screen.findByText("Shipping it.")).closest("article");
     expect(human?.textContent).toContain("@human");
     expect(human?.textContent).not.toContain("@me");
+    expect(
+      within(human as HTMLElement).queryByLabelText("AI agent"),
+    ).toBeNull();
 
     const agent = screen.getByText("Looks good.").closest("article");
     expect(agent?.textContent).toContain("@design-bot");
+    expect(
+      within(agent as HTMLElement).getByLabelText("AI agent"),
+    ).toBeTruthy();
   });
 
   it("keeps bottom spacing after the comments section", async () => {

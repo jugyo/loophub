@@ -199,12 +199,14 @@ export function useCreateDiffFeedback(
         resolved_by: null,
         resolved_at: null,
         created_by: "me",
+        created_by_type: "human",
         created_at: createdAt,
         messages: [
           {
             id: messageId,
             thread_id: threadId,
             author: "me",
+            author_type: "human",
             body: input.body,
             created_at: createdAt,
             reactions: [],
@@ -243,6 +245,7 @@ export function useReplyDiffFeedback(
         id: messageId,
         thread_id: input.threadId,
         author: "me",
+        author_type: "human",
         body: input.body,
         created_at: new Date().toISOString(),
         reactions: [],

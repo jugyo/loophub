@@ -129,10 +129,12 @@ test("a diff comment stores its current location and anchor event immediately", 
   );
 
   expect(created.thread).toMatchObject({
+    created_by_type: "human",
     freshness: "current",
     placement: "inline",
     resolved_anchor: { path: "a.txt", start_line: 2, end_line: 2 },
   });
+  expect(created.comment.author_type).toBe("human");
   expect(listed).toMatchObject({
     freshness: "current",
     placement: "inline",
@@ -199,6 +201,7 @@ test("an Execute reply answers the comment without waking its own parent", async
 
   expect(replied.reply).toMatchObject({
     author: "executor #1-1",
+    author_type: "agent",
     body: "Renamed for clarity.",
   });
   expect(runEvents()).toHaveLength(before);

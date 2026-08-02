@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { type RefObject, useRef, useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
+import { CommentAuthorLabel } from "@/components/comment-author-label";
 import {
   DetailHeaderTitle,
   DetailStickyHeader,
@@ -32,7 +33,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { issueBadges, issueCanStartWork, stateBadge } from "@/lib/badges";
-import { commentAuthor } from "@/lib/comment-author";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useAttachmentUpload } from "@/lib/use-attachment-upload";
@@ -408,7 +408,10 @@ function CommentList({
           className="rounded-md border p-3"
         >
           <header className="mb-1 text-sm font-medium">
-            @{commentAuthor(c)}{" "}
+            <CommentAuthorLabel
+              author={c.user.login}
+              authorType={c.author_type}
+            />{" "}
             <span className="text-xs font-normal text-muted-foreground">
               {relativeTime(c.created_at)}
             </span>

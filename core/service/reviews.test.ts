@@ -105,6 +105,18 @@ beforeAll(async () => {
     executePrompt: "",
     verifyPrompt: "",
   }).id;
+  S.registerAgentSession(
+    "reviewer-session",
+    "codex",
+    "reviewer-external",
+    "reviewer",
+  );
+  S.registerAgentSession(
+    "human-session",
+    "me",
+    "human-external",
+    "human-reviewer",
+  );
 });
 
 afterAll(() => {
@@ -127,6 +139,7 @@ test("a human REQUEST_CHANGES on a PR with a running run emits review_submitted 
   );
 
   const events = reviewEvents();
+  expect(review.author_type).toBe("human");
   expect(events.length).toBe(before + 1);
   expect(JSON.parse(events.at(-1)!.payload)).toEqual({
     id: runId,
@@ -154,11 +167,12 @@ test("review responses stay linked to their review and optional review comment",
   );
   const comment = svc.reviews.listComments("me/reviews", pr).at(-1)!;
   expect(svc.reviews.get("me/reviews", pr, review.id)).toMatchObject({
-    review: { id: review.id, body: "please fix" },
+    review: { id: review.id, author_type: "agent", body: "please fix" },
     comments: [
       {
         id: comment.id,
         pull_request_review_id: review.id,
+        author_type: "agent",
         body: "fix this line",
       },
     ],

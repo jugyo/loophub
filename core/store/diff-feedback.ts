@@ -1,4 +1,5 @@
 import { db, now } from "../db.ts";
+import type { CommentAuthorType } from "./comments.ts";
 
 export interface DiffFeedbackThreadRow {
   id: number;
@@ -12,6 +13,7 @@ export interface DiffFeedbackThreadRow {
   start_line: number;
   end_line: number;
   created_by: string;
+  created_by_type: CommentAuthorType;
   created_at: string;
   resolved_by: string | null;
   resolved_at: string | null;
@@ -21,6 +23,7 @@ export interface DiffFeedbackMessageRow {
   id: number;
   thread_id: number;
   author: string;
+  author_type: CommentAuthorType;
   body: string;
   created_at: string;
 }
@@ -107,13 +110,14 @@ export function createDiffFeedbackThread(input: {
   startLine: number;
   endLine: number;
   actor: string;
+  authorType: CommentAuthorType;
 }): DiffFeedbackThreadRow {
   return db
     .query(
       `INSERT INTO diff_feedback_threads
        (issue_id, pr_number, base_sha, head_sha, path, original_path, side,
-        start_line, end_line, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        start_line, end_line, created_by, created_by_type, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.issueId,
@@ -126,6 +130,7 @@ export function createDiffFeedbackThread(input: {
       input.startLine,
       input.endLine,
       input.actor,
+      input.authorType,
       now(),
     ) as DiffFeedbackThreadRow;
 }
@@ -222,14 +227,15 @@ export function createDiffFeedbackMessage(
   threadId: number,
   author: string,
   body: string,
+  authorType: CommentAuthorType = "system",
 ): DiffFeedbackMessageRow {
   return db
     .query(
       `INSERT INTO diff_feedback_messages
-       (thread_id, author, body, created_at)
-       VALUES (?, ?, ?, ?) RETURNING *`,
+       (thread_id, author, author_type, body, created_at)
+       VALUES (?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(threadId, author, body, now()) as DiffFeedbackMessageRow;
+    .get(threadId, author, authorType, body, now()) as DiffFeedbackMessageRow;
 }
 
 export function listDiffFeedbackReactions(

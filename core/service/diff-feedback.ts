@@ -32,7 +32,13 @@ import {
 } from "../serialize.ts";
 import * as S from "../store.ts";
 import { workflowStepSessionIds } from "../workflow/herdr-agents.ts";
-import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
+import {
+  actorFor,
+  commentActor,
+  ensureWritable,
+  issueOr404,
+  repoOr404,
+} from "./shared.ts";
 import { projectWorkflowRunDiffFeedback } from "./workflow-run-events.ts";
 
 const FULL_SHA = /^[0-9a-f]{40}$/i;
@@ -377,6 +383,7 @@ function threadWire(
     resolved_by: thread.resolved_by,
     resolved_at: thread.resolved_at,
     created_by: thread.created_by,
+    created_by_type: thread.created_by_type,
     created_at: thread.created_at,
     messages: S.listDiffFeedbackMessages(thread.id).map((message) =>
       diffFeedbackMessageJSON(
@@ -863,7 +870,7 @@ export const diffFeedback = {
         422,
         "anchor does not resolve to selectable diff lines",
       );
-    const actor = actorFor(sessionId);
+    const { actor, authorType } = commentActor(sessionId);
     const path = file.headFilename ?? file.filename;
     const originalPath = file.previousFilename ?? null;
     const thread = S.createDiffFeedbackThread({
@@ -877,6 +884,7 @@ export const diffFeedback = {
       startLine: input.startLine,
       endLine: input.endLine,
       actor,
+      authorType,
     });
     const resolvedAnchor = {
       path: thread.path,
@@ -897,7 +905,12 @@ export const diffFeedback = {
         contextJSON(lines, anchorOf(thread), DEFAULT_CONTEXT_RADIUS),
       ),
     });
-    const comment = S.createDiffFeedbackMessage(thread.id, actor, input.body);
+    const comment = S.createDiffFeedbackMessage(
+      thread.id,
+      actor,
+      input.body,
+      authorType,
+    );
     const source = S.emitEvent(
       r.id,
       "pull_request.diff_feedback_created",
@@ -937,8 +950,13 @@ export const diffFeedback = {
     const pull = S.getPull(row.id)!;
     const thread = threadForPull(row.id, threadId);
     if (!body) throw new ServiceError(422, "body is required");
-    const actor = actorFor(sessionId);
-    const reply = S.createDiffFeedbackMessage(thread.id, actor, body);
+    const { actor, authorType } = commentActor(sessionId);
+    const reply = S.createDiffFeedbackMessage(
+      thread.id,
+      actor,
+      body,
+      authorType,
+    );
     const source = S.emitEvent(
       r.id,
       "pull_request.diff_feedback_replied",

@@ -401,6 +401,7 @@ export interface DiffFeedbackMessageWire {
   id: number;
   thread_id: number;
   author: string;
+  author_type: S.CommentAuthorType;
   body: string;
   created_at: string;
   reactions: DiffFeedbackReactionWire[];
@@ -444,6 +445,7 @@ export interface DiffFeedbackThreadWire {
   resolved_by: string | null;
   resolved_at: string | null;
   created_by: string;
+  created_by_type: S.CommentAuthorType;
   created_at: string;
   messages: DiffFeedbackMessageWire[];
 }
@@ -493,6 +495,7 @@ export function diffFeedbackMessageJSON(
     id: row.id,
     thread_id: row.thread_id,
     author: row.author,
+    author_type: row.author_type,
     body: row.body,
     created_at: row.created_at,
     reactions: Array.from(counts, ([emoji, reaction]) => ({
@@ -1016,6 +1019,7 @@ export interface ReviewAcResultWire {
 export interface ReviewWire {
   id: number;
   user: UserWire;
+  author_type: S.CommentAuthorType;
   // Not narrowed to "PASS" | "REQUEST_CHANGES" | "COMMENT" | "FEEDBACK": reviews.create
   // (core/service/reviews.ts) only special-cases "APPROVE" -> "PASS" and otherwise stores the
   // caller's uppercased string verbatim, so the wire value isn't actually guaranteed to be one of
@@ -1040,6 +1044,7 @@ export function reviewJSON(
   return {
     id: v.id,
     user: { login: v.author },
+    author_type: v.author_type,
     state: v.event,
     body: v.body,
     head_sha: v.head_sha ?? null,
@@ -1069,6 +1074,7 @@ export interface ReviewCommentWire {
   id: number;
   pull_request_review_id: number | null;
   user: UserWire;
+  author_type: S.CommentAuthorType;
   path: string;
   line: number | null;
   // Not narrowed to "LEFT" | "RIGHT": reviews.create passes the caller's `side` straight through
@@ -1084,6 +1090,7 @@ export function reviewCommentJSON(m: S.ReviewCommentRow): ReviewCommentWire {
     id: m.id,
     pull_request_review_id: m.review_id,
     user: { login: m.author },
+    author_type: m.author_type,
     path: m.path,
     line: m.line,
     side: m.side,

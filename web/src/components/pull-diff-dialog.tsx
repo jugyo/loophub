@@ -19,6 +19,7 @@ import type {
   PullFile,
   PullLineComment,
 } from "@/api/types";
+import { CommentAuthorLabel } from "@/components/comment-author-label";
 import { CommentId } from "@/components/comment-id";
 import { CopyButton } from "@/components/copy-button";
 import { DiffCommentCount } from "@/components/diff-comment-count";
@@ -33,7 +34,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { diffFeedbackAuthor } from "@/lib/comment-author";
 import {
   type DiffLineKind,
   type PositionedDiffLine,
@@ -902,7 +902,11 @@ function FileDiffContent({
       {comments.map((c) => (
         <div key={c.id} className="m-2 rounded-md border bg-muted/20 p-2">
           <div className="mb-1 text-xs">
-            💬 @{c.user.login}{" "}
+            💬{" "}
+            <CommentAuthorLabel
+              author={c.user.login}
+              authorType={c.author_type}
+            />{" "}
             <span className="text-muted-foreground">
               {c.path}:{c.line ?? "?"}
             </span>{" "}
@@ -1672,7 +1676,10 @@ function ThreadCard({
     >
       <header className="mb-2 flex items-center justify-between gap-2 text-xs">
         <span className="font-semibold">
-          @{diffFeedbackAuthor(thread.created_by)}
+          <CommentAuthorLabel
+            author={thread.created_by}
+            authorType={thread.created_by_type}
+          />
         </span>
         <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
       </header>
@@ -1680,7 +1687,10 @@ function ThreadCard({
         {thread.messages.map((message) => (
           <div key={message.id} className="rounded-md bg-muted/20 p-2">
             <div className="mb-1 text-xs text-muted-foreground">
-              @{diffFeedbackAuthor(message.author)}{" "}
+              <CommentAuthorLabel
+                author={message.author}
+                authorType={message.author_type}
+              />{" "}
               <CommentId id={message.id} />
             </div>
             <Markdown owner={owner} repo={repo}>

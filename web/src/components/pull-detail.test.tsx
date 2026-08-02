@@ -116,6 +116,7 @@ const reviews: PullReview[] = [
   {
     id: 1,
     user: { login: "design-bot" },
+    author_type: "agent",
     state: "PASS",
     body: "LGTM",
     head_sha: pull.commits![0].sha,
@@ -130,6 +131,7 @@ const lineComments: PullLineComment[] = [
     id: 1,
     pull_request_review_id: 1,
     user: { login: "design-bot" },
+    author_type: "agent",
     path: "web/src/a.ts",
     line: 1,
     side: "RIGHT",
@@ -172,21 +174,26 @@ const diffFeedback: DiffFeedbackThread[] = [
     },
     freshness: "current",
     created_by: "reviewer",
+    created_by_type: "agent",
     created_at: "2026-07-29T00:00:00Z",
     messages: [
       {
         id: 1,
         thread_id: 1,
         author: "reviewer",
+        author_type: "agent",
         body: "First comment",
         created_at: "2026-07-29T00:00:00Z",
+        reactions: [],
       },
       {
         id: 2,
         thread_id: 1,
         author: "author",
+        author_type: "agent",
         body: "Reply",
         created_at: "2026-07-29T00:01:00Z",
+        reactions: [],
       },
     ],
   },
@@ -366,9 +373,15 @@ describe("PullDetail", () => {
     const human = (await screen.findByText("Thanks!")).closest("article");
     expect(human?.textContent).toContain("@human");
     expect(human?.textContent).not.toContain("@me");
+    expect(
+      within(human as HTMLElement).queryByLabelText("AI agent"),
+    ).toBeNull();
 
     const agent = screen.getByText("Rebased on main.").closest("article");
     expect(agent?.textContent).toContain("@impl-bot");
+    expect(
+      within(agent as HTMLElement).getByLabelText("AI agent"),
+    ).toBeTruthy();
   });
 
   it("shows a PR comment before the request settles and reconciles it once", async () => {
@@ -1178,6 +1191,7 @@ describe("PullDetail", () => {
       {
         id: 2,
         user: { login: "design-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "needs work",
         head_sha: "old1234deadbeef",
@@ -1187,6 +1201,7 @@ describe("PullDetail", () => {
       {
         id: 1,
         user: { login: "design-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "LGTM now",
         head_sha: pull.commits![0].sha,
@@ -1258,6 +1273,7 @@ describe("PullDetail", () => {
       {
         id: 1,
         user: { login: "design-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "older feedback",
         head_sha: "older12",
@@ -1267,6 +1283,7 @@ describe("PullDetail", () => {
       {
         id: 2,
         user: { login: "design-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "newest feedback",
         head_sha: "newer34",
@@ -1327,6 +1344,7 @@ describe("PullDetail", () => {
       {
         id: 1,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "round 1: needs work",
         head_sha: pull.commits![0].sha,
@@ -1336,6 +1354,7 @@ describe("PullDetail", () => {
       {
         id: 2,
         user: { login: "security-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "security ok",
         head_sha: pull.commits![0].sha,
@@ -1345,6 +1364,7 @@ describe("PullDetail", () => {
       {
         id: 3,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "round 2: looks good now",
         head_sha: pull.commits![0].sha,
@@ -1404,6 +1424,7 @@ describe("PullDetail", () => {
       {
         id: 1,
         user: { login: "security-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "security ok",
         head_sha: pull.commits![0].sha,
@@ -1413,6 +1434,7 @@ describe("PullDetail", () => {
       {
         id: 2,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "still needs work",
         head_sha: pull.commits![0].sha,

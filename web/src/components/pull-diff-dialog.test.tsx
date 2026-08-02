@@ -86,6 +86,7 @@ const lineComments: PullLineComment[] = [
     id: 1,
     pull_request_review_id: 1,
     user: { login: "design-bot" },
+    author_type: "agent",
     path: "web/src/a.ts",
     line: 1,
     side: "RIGHT",
@@ -112,12 +113,14 @@ function feedbackThread(
     id: 1,
     pr_number: 30,
     created_by: "reviewer",
+    created_by_type: "agent",
     created_at: "2026-07-28T00:00:00Z",
     messages: [
       {
         id: 11,
         thread_id: 1,
         author: "reviewer",
+        author_type: "agent",
         body: "Please revisit this range.",
         created_at: "2026-07-28T00:00:00Z",
         reactions: [],
@@ -335,6 +338,9 @@ describe("DiffFileDialog", () => {
     expect(within(dialog).getByLabelText("Comment ID 1").textContent).toBe(
       "#1",
     );
+    expect(within(dialog).getAllByLabelText("AI agent").length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("shows diff feedback message IDs without obscuring the comment body", async () => {
@@ -535,6 +541,7 @@ describe("DiffFileDialog", () => {
         },
         freshness: "current",
         created_by: "me",
+        created_by_type: "human",
         created_at: "2026-07-28T00:00:00Z",
         messages: [],
       },
@@ -665,6 +672,7 @@ describe("DiffFileDialog", () => {
       const thread = feedbackThread({
         id: 9,
         created_by: "me",
+        created_by_type: "human",
         anchor: {
           ...feedbackThread().anchor,
           start_line: 1,
@@ -675,6 +683,7 @@ describe("DiffFileDialog", () => {
             id: 19,
             thread_id: 9,
             author: "me",
+            author_type: "human",
             body: "Keyboard feedback",
             created_at: "2026-07-28T00:01:00Z",
             reactions: [],
@@ -853,6 +862,7 @@ describe("DiffFileDialog", () => {
             id: 12,
             thread_id: thread.id,
             author: "me",
+            author_type: "human",
             body: params.body,
             created_at: "2026-07-30T00:00:00Z",
             reactions: [],
@@ -1288,6 +1298,7 @@ describe("DiffFileDialog", () => {
           threads: [
             feedbackThread({
               created_by: "unknown",
+              created_by_type: "human",
               anchor: {
                 ...feedbackThread().anchor,
                 start_line: 1,
@@ -1298,6 +1309,7 @@ describe("DiffFileDialog", () => {
                   id: 11,
                   thread_id: 1,
                   author: "unknown",
+                  author_type: "human",
                   body: "Please rename this.",
                   created_at: "2026-07-28T00:00:00Z",
                   reactions: [],
@@ -1306,6 +1318,7 @@ describe("DiffFileDialog", () => {
                   id: 12,
                   thread_id: 1,
                   author: "executor #12-1",
+                  author_type: "agent",
                   body: "Renamed.",
                   created_at: "2026-07-28T00:02:00Z",
                   reactions: [],
@@ -1322,6 +1335,7 @@ describe("DiffFileDialog", () => {
     expect(within(card).getAllByText("@human")).toHaveLength(2);
     expect(within(card).getByText("@executor #12-1")).toBeTruthy();
     expect(within(card).queryByText("@unknown")).toBeNull();
+    expect(within(card).getAllByLabelText("AI agent")).toHaveLength(1);
   });
 
   it("renders a current thread at its resolved coordinates", async () => {
@@ -1402,6 +1416,7 @@ describe("DiffFileDialog", () => {
                   id: 12,
                   thread_id: 2,
                   author: "reviewer",
+                  author_type: "agent",
                   body: "Please check the replacement.",
                   created_at: "2026-07-28T00:01:00Z",
                   reactions: [],
@@ -1589,6 +1604,7 @@ describe("DiffFileDialog", () => {
         id: 12,
         thread_id: 1,
         author: "me",
+        author_type: "human",
         body: "Still relevant",
         created_at: "2026-07-28T00:02:00Z",
         reactions: [],
@@ -2796,12 +2812,14 @@ describe("DiffFeedbackHistory", () => {
           },
           freshness: "unavailable",
           created_by: "reviewer",
+          created_by_type: "agent",
           created_at: "2026-07-28T00:00:00Z",
           messages: [
             {
               id: 11,
               thread_id: 7,
               author: "reviewer",
+              author_type: "agent",
               body: "This conversation remains visible.",
               created_at: "2026-07-28T00:00:00Z",
             },
@@ -2851,11 +2869,13 @@ describe("DiffFeedbackHistory", () => {
               freshness: "unavailable",
               placement: "inline",
               created_by: "unknown",
+              created_by_type: "human",
             }),
             feedbackThread({
               id: 8,
               freshness: "outdated",
               created_by: "executor #12-1",
+              created_by_type: "agent",
             }),
           ],
         }),

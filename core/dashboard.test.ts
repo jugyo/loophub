@@ -305,6 +305,7 @@ describe("dashboard.overview", () => {
       startLine: 1,
       endLine: 1,
       actor: "me",
+      authorType: "human",
     });
     S.createDiffFeedbackMessage(thread.id, "me", "on this line");
     S.createDiffFeedbackMessage(thread.id, "agent", "fixed");

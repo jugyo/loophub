@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commentAuthor, diffFeedbackAuthor } from "./comment-author";
+import { commentAuthor } from "./comment-author";
 
 describe("commentAuthor", () => {
   it("shows a human post as @human whatever actor name it was stored under", () => {
@@ -18,17 +18,5 @@ describe("commentAuthor", () => {
     expect(
       commentAuthor({ user: { login: "unknown" }, author_type: "system" }),
     ).toBe("unknown");
-  });
-});
-
-describe("diffFeedbackAuthor", () => {
-  it("shows both human actor names as @human", () => {
-    expect(diffFeedbackAuthor("me")).toBe("human");
-    expect(diffFeedbackAuthor("unknown")).toBe("human");
-  });
-
-  it("keeps an agent session name", () => {
-    expect(diffFeedbackAuthor("reviewer")).toBe("reviewer");
-    expect(diffFeedbackAuthor("executor #12-1")).toBe("executor #12-1");
   });
 });

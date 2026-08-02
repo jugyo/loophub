@@ -207,6 +207,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   issue_id    INTEGER NOT NULL REFERENCES issues(id),
   author      TEXT NOT NULL,
+  author_type TEXT NOT NULL DEFAULT 'system' CHECK (author_type IN ('human', 'agent', 'system')),
   event       TEXT NOT NULL,
   body        TEXT NOT NULL DEFAULT '',
   head_sha    TEXT,
@@ -219,6 +220,7 @@ CREATE TABLE IF NOT EXISTS review_comments (
   issue_id    INTEGER NOT NULL REFERENCES issues(id),
   review_id   INTEGER REFERENCES reviews(id),
   author      TEXT NOT NULL,
+  author_type TEXT NOT NULL CHECK (author_type IN ('human', 'agent', 'system')),
   body        TEXT NOT NULL,
   path        TEXT NOT NULL,
   line        INTEGER,
@@ -251,6 +253,7 @@ CREATE TABLE IF NOT EXISTS diff_feedback_threads (
   start_line     INTEGER NOT NULL CHECK (start_line > 0),
   end_line       INTEGER NOT NULL CHECK (end_line >= start_line),
   created_by     TEXT NOT NULL,
+  created_by_type TEXT NOT NULL CHECK (created_by_type IN ('human', 'agent', 'system')),
   created_at     TEXT NOT NULL,
   resolved_by    TEXT,
   resolved_at    TEXT
@@ -275,6 +278,7 @@ CREATE TABLE IF NOT EXISTS diff_feedback_messages (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   thread_id   INTEGER NOT NULL REFERENCES diff_feedback_threads(id) ON DELETE CASCADE,
   author      TEXT NOT NULL,
+  author_type TEXT NOT NULL CHECK (author_type IN ('human', 'agent', 'system')),
   body        TEXT NOT NULL,
   created_at  TEXT NOT NULL
 );

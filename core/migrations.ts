@@ -947,6 +947,102 @@ export const MIGRATIONS: Migration[] = [
       ON review_responses(issue_id, review_id, created_at, id);
   `,
   ),
+  {
+    id: "061-comment-author-types",
+    run(db) {
+      addColumnIfMissing(
+        db,
+        "review_comments",
+        "author_type",
+        "TEXT NOT NULL DEFAULT 'system' CHECK (author_type IN ('human', 'agent', 'system'))",
+      );
+      addColumnIfMissing(
+        db,
+        "diff_feedback_threads",
+        "created_by_type",
+        "TEXT NOT NULL DEFAULT 'system' CHECK (created_by_type IN ('human', 'agent', 'system'))",
+      );
+      addColumnIfMissing(
+        db,
+        "diff_feedback_messages",
+        "author_type",
+        "TEXT NOT NULL DEFAULT 'system' CHECK (author_type IN ('human', 'agent', 'system'))",
+      );
+
+      // Historical rows have no session id, but the session ledger is still a trustworthy record
+      // of which stored actor names belonged to humans or coding agents. Ambiguous/unattributed
+      // names intentionally remain `system` instead of being guessed from their appearance.
+      for (const [table, authorColumn, typeColumn] of [
+        ["comments", "author", "author_type"],
+        ["review_comments", "author", "author_type"],
+        ["diff_feedback_threads", "created_by", "created_by_type"],
+        ["diff_feedback_messages", "author", "author_type"],
+      ] as const) {
+        db.exec(`
+          UPDATE ${table}
+          SET ${typeColumn} = CASE
+            WHEN EXISTS (
+              SELECT 1 FROM agent_sessions session
+              WHERE session.agent = 'me'
+                AND COALESCE(NULLIF(session.name, ''), session.agent) = ${table}.${authorColumn}
+            ) AND NOT EXISTS (
+              SELECT 1 FROM agent_sessions session
+              WHERE session.agent <> 'me'
+                AND COALESCE(NULLIF(session.name, ''), session.agent) = ${table}.${authorColumn}
+            ) THEN 'human'
+            WHEN EXISTS (
+              SELECT 1 FROM agent_sessions session
+              WHERE session.agent <> 'me'
+                AND COALESCE(NULLIF(session.name, ''), session.agent) = ${table}.${authorColumn}
+            ) AND NOT EXISTS (
+              SELECT 1 FROM agent_sessions session
+              WHERE session.agent = 'me'
+                AND COALESCE(NULLIF(session.name, ''), session.agent) = ${table}.${authorColumn}
+            ) THEN 'agent'
+            ELSE 'system'
+          END
+          WHERE ${typeColumn} = 'system'
+        `);
+      }
+    },
+  },
+  {
+    id: "062-review-author-types",
+    run(db) {
+      addColumnIfMissing(
+        db,
+        "reviews",
+        "author_type",
+        "TEXT NOT NULL DEFAULT 'system' CHECK (author_type IN ('human', 'agent', 'system'))",
+      );
+      db.exec(`
+        UPDATE reviews
+        SET author_type = CASE
+          WHEN model IS NOT NULL THEN 'agent'
+          WHEN EXISTS (
+            SELECT 1 FROM agent_sessions session
+            WHERE session.agent = 'me'
+              AND COALESCE(NULLIF(session.name, ''), session.agent) = reviews.author
+          ) AND NOT EXISTS (
+            SELECT 1 FROM agent_sessions session
+            WHERE session.agent <> 'me'
+              AND COALESCE(NULLIF(session.name, ''), session.agent) = reviews.author
+          ) THEN 'human'
+          WHEN EXISTS (
+            SELECT 1 FROM agent_sessions session
+            WHERE session.agent <> 'me'
+              AND COALESCE(NULLIF(session.name, ''), session.agent) = reviews.author
+          ) AND NOT EXISTS (
+            SELECT 1 FROM agent_sessions session
+            WHERE session.agent = 'me'
+              AND COALESCE(NULLIF(session.name, ''), session.agent) = reviews.author
+          ) THEN 'agent'
+          ELSE 'system'
+        END
+        WHERE author_type = 'system'
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

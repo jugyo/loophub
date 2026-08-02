@@ -105,7 +105,7 @@ function createWorkflowReview(input: {
     "workflow",
   );
   for (let i = 0; i < (input.findings ?? 0); i++) {
-    S.createReviewComment(input.prIssueId, review.id, author, {
+    S.createReviewComment(input.prIssueId, review.id, author, "agent", {
       path: `file-${i}.ts`,
       line: i + 1,
       body: "needs a fix",

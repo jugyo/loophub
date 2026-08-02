@@ -8,7 +8,13 @@ import {
   reviewResponseJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
-import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
+import {
+  actorFor,
+  commentActor,
+  ensureWritable,
+  issueOr404,
+  repoOr404,
+} from "./shared.ts";
 
 // The per-criterion grades of one review (#1895), joined to the rubric text via `criterion_id`.
 // A criterion disabled after grading still resolves here (grade rows are never deleted). Shared by
@@ -289,7 +295,7 @@ export const reviews = {
     // validate ownership and coverage here and reject with a visible error rather than silently
     // correcting (CLAUDE.md「可視エラーを優先」).
     const acResults = validateAcResults(row, input.acResults);
-    const actor = actorFor(sessionId);
+    const { actor, authorType } = commentActor(sessionId);
     // Bind the review to the live head it was made against. The watcher-backed
     // stored SHA can lag immediately after a rebase, so it is only a fallback
     // when the ref cannot be resolved. Workflow placement may pass its pinned
@@ -308,9 +314,10 @@ export const reviews = {
       headSha,
       model,
       acResults,
+      authorType,
     );
     for (const cm of lineComments) {
-      S.createReviewComment(row.id, v.id, actor, {
+      S.createReviewComment(row.id, v.id, actor, authorType, {
         path: cm.path,
         line: cm.line,
         side: cm.side,
