@@ -6,6 +6,7 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
+  useParams,
 } from "@tanstack/react-router";
 import {
   cleanup,
@@ -17,8 +18,16 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
-import type { Repo, RepoMergeMode, Workspace } from "@/api/types";
-import { RepoSettingsPage } from "./repo-settings-page";
+import type {
+  Repo,
+  RepoAgentConfig,
+  RepoMergeMode,
+  Workspace,
+} from "@/api/types";
+import {
+  RepoSettingsPage,
+  type RepoSettingsSection,
+} from "./repo-settings-page";
 
 afterEach(() => {
   cleanup();
@@ -51,7 +60,37 @@ function mergeMode(setting: RepoMergeMode["setting"]): RepoMergeMode {
   };
 }
 
+function agentConfig(override = false): RepoAgentConfig {
+  return {
+    setting: {
+      override,
+      runtime: override ? "codex" : null,
+      model: override ? "gpt-5.6-sol" : null,
+      effort: override ? "high" : null,
+    },
+    effective: {
+      runtime: override ? "codex" : "claude-code",
+      model: override ? "gpt-5.6-sol" : "opus",
+      effort: override ? "high" : "medium",
+    },
+  };
+}
+
 function mockFetch(initialArchived: boolean, patchFails = false) {
+  let activeWorkspaces: Workspace[] = [
+    {
+      branch: "workspace/current",
+      created_at: "2026-01-02T00:00:00Z",
+      archived_at: null,
+      branch_exists: true,
+    },
+    {
+      branch: "workspace/missing",
+      created_at: "2026-01-03T00:00:00Z",
+      archived_at: null,
+      branch_exists: false,
+    },
+  ];
   let archivedWorkspaces: Workspace[] = [
     {
       branch: "workspace/old",
@@ -63,6 +102,7 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
   return mockRpcFetch({
     "repos/get": () => repo(initialArchived),
     "repos/mergeMode": () => mergeMode(null),
+    "repos/agentConfig": () => agentConfig(),
     "repos/setArchived": (p) => {
       if (patchFails) throw new RpcFault(500, "boom");
       return repo(p.archived);
@@ -75,23 +115,56 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
       if (patchFails) throw new RpcFault(500, "boom");
       return { ...repo(initialArchived), merge_mode: p.mode };
     },
+    "repos/setAgentConfig": (p) => {
+      if (patchFails) throw new RpcFault(500, "boom");
+      return agentConfig(p.override);
+    },
     "repos/update": (p) => {
       if (patchFails) throw new RpcFault(422, "branch not found: nope");
       return { ...repo(initialArchived), default_branch: p.default_branch };
     },
-    "workspaces/listArchived": () => archivedWorkspaces,
+    "workspaces/listForSettings": () => activeWorkspaces,
+    "workspaces/listArchivedForSettings": () => archivedWorkspaces,
+    "workspaces/create": (p) => {
+      if (patchFails) throw new RpcFault(422, "workspace create failed");
+      const workspace: Workspace = {
+        branch: p.branch,
+        created_at: "2026-08-02T00:00:00Z",
+        archived_at: null,
+        branch_exists: true,
+      };
+      activeWorkspaces = [...activeWorkspaces, workspace];
+      return workspace;
+    },
+    "workspaces/archive": (p) => {
+      if (patchFails) throw new RpcFault(500, "workspace archive failed");
+      const workspace = activeWorkspaces.find((w) => w.branch === p.branch)!;
+      activeWorkspaces = activeWorkspaces.filter((w) => w.branch !== p.branch);
+      const archived = {
+        ...workspace,
+        archived_at: "2026-08-02T00:00:00Z",
+      };
+      archivedWorkspaces = [...archivedWorkspaces, archived];
+      return archived;
+    },
     "workspaces/unarchive": (p) => {
       if (patchFails) throw new RpcFault(500, "workspace restore failed");
       const workspace = archivedWorkspaces.find((w) => w.branch === p.branch)!;
       archivedWorkspaces = archivedWorkspaces.filter(
         (w) => w.branch !== p.branch,
       );
-      return { ...workspace, archived_at: null };
+      const active = { ...workspace, archived_at: null };
+      activeWorkspaces = [...activeWorkspaces, active];
+      return active;
     },
   });
 }
 
-function renderSettings(initialArchived = false, patchFails = false) {
+function renderSettings(
+  initialArchived = false,
+  patchFails = false,
+  initialEntry = "/r/me/proj/settings",
+) {
   vi.stubGlobal("fetch", mockFetch(initialArchived, patchFails));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -100,11 +173,38 @@ function renderSettings(initialArchived = false, patchFails = false) {
   const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo/settings",
-    component: SettingsRouteComponent,
+    component: () => <SettingsRouteComponent section="general" />,
   });
-  function SettingsRouteComponent() {
-    const { owner, repo } = settingsRoute.useParams();
-    return <RepoSettingsPage owner={owner} repo={repo} />;
+  const pullRequestsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/settings/pull-requests",
+    component: () => <SettingsRouteComponent section="pull-requests" />,
+  });
+  const codingAgentRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/settings/coding-agent",
+    component: () => <SettingsRouteComponent section="coding-agent" />,
+  });
+  const workspacesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/settings/workspaces",
+    component: () => <SettingsRouteComponent section="workspaces" />,
+  });
+  const archiveRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/settings/archive",
+    component: () => <SettingsRouteComponent section="archive" />,
+  });
+  function SettingsRouteComponent({
+    section,
+  }: {
+    section: RepoSettingsSection;
+  }) {
+    const { owner, repo } = useParams({ strict: false }) as {
+      owner: string;
+      repo: string;
+    };
+    return <RepoSettingsPage owner={owner} repo={repo} section={section} />;
   }
   // Rename navigates to the renamed repo's settings URL (still `settingsRoute`,
   // just with new params); unarchive-on-archive navigates home.
@@ -114,8 +214,15 @@ function renderSettings(initialArchived = false, patchFails = false) {
     component: () => <div data-testid="home-page" />,
   });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, settingsRoute]),
-    history: createMemoryHistory({ initialEntries: ["/r/me/proj/settings"] }),
+    routeTree: rootRoute.addChildren([
+      indexRoute,
+      settingsRoute,
+      pullRequestsRoute,
+      codingAgentRoute,
+      workspacesRoute,
+      archiveRoute,
+    ]),
+    history: createMemoryHistory({ initialEntries: [initialEntry] }),
   });
   const rendered = render(
     <QueryClientProvider client={queryClient}>
@@ -126,6 +233,63 @@ function renderSettings(initialArchived = false, patchFails = false) {
 }
 
 describe("RepoSettingsPage", () => {
+  it("navigates between settings sections and keeps the selection in the URL", async () => {
+    const { router } = renderSettings();
+
+    expect(
+      await screen.findByRole("heading", { name: "General" }),
+    ).toBeTruthy();
+    const general = screen.getByRole("link", { name: "General" });
+    expect(general.getAttribute("aria-current")).toBe("page");
+    expect(general.getAttribute("href")).toBe("/r/me/proj/settings");
+    expect(
+      screen.getByRole("link", { name: "Coding agent" }).getAttribute("href"),
+    ).toBe("/r/me/proj/settings/coding-agent");
+    expect(
+      screen.getByRole("link", { name: "Workspaces" }).getAttribute("href"),
+    ).toBe("/r/me/proj/settings/workspaces");
+    expect(
+      screen.getByRole("link", { name: "Archive" }).getAttribute("href"),
+    ).toBe("/r/me/proj/settings/archive");
+
+    const pullRequests = screen.getByRole("link", { name: "Pull requests" });
+    expect(pullRequests.getAttribute("href")).toBe(
+      "/r/me/proj/settings/pull-requests",
+    );
+    pullRequests.focus();
+    expect(document.activeElement).toBe(pullRequests);
+    fireEvent.click(pullRequests);
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        "/r/me/proj/settings/pull-requests",
+      ),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "PR action" }),
+    ).toBeTruthy();
+    expect(pullRequests.getAttribute("aria-current")).toBe("page");
+    expect(
+      screen
+        .getByRole("link", { name: "General" })
+        .getAttribute("aria-current"),
+    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Rename" })).toBeNull();
+  });
+
+  it("restores a directly addressed settings section", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/workspaces");
+
+    expect(
+      await screen.findByRole("heading", { name: "Archived workspaces" }),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Workspaces" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+  });
+
   it("does not render a duplicate content heading or repo back link", async () => {
     renderSettings(false);
 
@@ -181,7 +345,7 @@ describe("RepoSettingsPage", () => {
   });
 
   it("confirms then PATCHes archived:true", async () => {
-    renderSettings(false);
+    renderSettings(false, false, "/r/me/proj/settings/archive");
     fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -196,7 +360,7 @@ describe("RepoSettingsPage", () => {
   });
 
   it("offers Unarchive for an archived repo", async () => {
-    renderSettings(true);
+    renderSettings(true, false, "/r/me/proj/settings/archive");
     expect(
       await screen.findByRole("button", { name: "Unarchive" }),
     ).toBeTruthy();
@@ -204,7 +368,7 @@ describe("RepoSettingsPage", () => {
   });
 
   it("keeps the dialog open and shows an error when the archive PATCH fails", async () => {
-    renderSettings(false, true);
+    renderSettings(false, true, "/r/me/proj/settings/archive");
     fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
     fireEvent.click(
       within(await screen.findByRole("dialog")).getByRole("button", {
@@ -274,17 +438,32 @@ describe("RepoSettingsPage", () => {
     expect(await screen.findByText(/branch not found/)).toBeTruthy();
   });
 
-  it("lists archived workspaces and unarchives one", async () => {
-    renderSettings(false);
+  it("lists archived workspaces in a dialog and unarchives one", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/workspaces");
 
     const section = (
       await screen.findByRole("heading", { name: "Archived workspaces" })
     ).closest("section")!;
-    expect(within(section).getByText("workspace/old")).toBeTruthy();
-    fireEvent.click(
-      within(section).getByRole("button", {
-        name: "Unarchive workspace/old",
+    expect(within(section).queryByText("workspace/old")).toBeNull();
+    const trigger = within(section).getByRole("button", {
+      name: "View archived workspaces (1)",
+    });
+    expect(trigger.className).toContain("text-muted-foreground");
+    fireEvent.click(trigger);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Archived workspaces",
+    });
+    expect(within(dialog).queryByText("Unarchive workspace/old?")).toBeNull();
+    expect(
+      within(dialog).getByRole("button", {
+        name: "Close archived workspaces",
       }),
+    ).toBeTruthy();
+    expect(within(dialog).getByText("workspace/old")).toBeTruthy();
+    expect(within(dialog).getByText("Branch exists")).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Unarchive workspace/old" }),
     );
 
     await waitFor(() => {
@@ -294,30 +473,133 @@ describe("RepoSettingsPage", () => {
       });
     });
     await waitFor(() =>
-      expect(within(section).queryByText("workspace/old")).toBeNull(),
+      expect(within(dialog).queryByText("workspace/old")).toBeNull(),
     );
+    expect(within(dialog).getByText("No archived workspaces.")).toBeTruthy();
+  });
+
+  it("lists active workspaces with branch status and archives one", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/workspaces");
+
+    const section = (
+      await screen.findByRole("heading", { name: "Active workspaces" })
+    ).closest("section")!;
+    expect(within(section).getByText("workspace/current")).toBeTruthy();
+    expect(within(section).getByText("workspace/missing")).toBeTruthy();
+    expect(within(section).getByText("Branch exists")).toBeTruthy();
+    expect(within(section).getByText("Branch missing")).toBeTruthy();
+
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Archive workspace/current",
+      }),
+    );
+
+    expect(rpcCall("workspaces/archive")).toBeUndefined();
+    const dialog = await screen.findByRole("dialog", {
+      name: "Archive workspace/current",
+    });
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() =>
+      expect(rpcCall("workspaces/archive")?.params).toMatchObject({
+        repo: "me/proj",
+        branch: "workspace/current",
+      }),
+    );
+    await waitFor(() =>
+      expect(within(section).queryByText("workspace/current")).toBeNull(),
+    );
+    const archivedSection = screen
+      .getByRole("heading", { name: "Archived workspaces" })
+      .closest("section")!;
+    fireEvent.click(
+      within(archivedSection).getByRole("button", {
+        name: "View archived workspaces (2)",
+      }),
+    );
+    expect(
+      within(
+        await screen.findByRole("dialog", { name: "Archived workspaces" }),
+      ).getByText("workspace/current"),
+    ).toBeTruthy();
+  });
+
+  it("creates a workspace with the existing branch-based procedure", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/workspaces");
+
+    fireEvent.click(await screen.findByRole("button", { name: "New" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "New workspace",
+    });
+    fireEvent.change(within(dialog).getByRole("textbox"), {
+      target: { value: "workspace/new" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create workspace" }),
+    );
+
+    await waitFor(() =>
+      expect(rpcCall("workspaces/create")?.params).toMatchObject({
+        repo: "me/proj",
+        branch: "workspace/new",
+      }),
+    );
+    expect(await screen.findByText("workspace/new")).toBeTruthy();
+  });
+
+  it("shows workspace archive failures and keeps the active row", async () => {
+    renderSettings(false, true, "/r/me/proj/settings/workspaces");
+
+    const section = (
+      await screen.findByRole("heading", { name: "Active workspaces" })
+    ).closest("section")!;
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Archive workspace/current",
+      }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Archive workspace/current",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    expect(
+      await within(dialog).findByText(/workspace archive failed/),
+    ).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(within(section).getByText("workspace/current")).toBeTruthy();
   });
 
   it("shows workspace unarchive failures", async () => {
-    renderSettings(false, true);
+    renderSettings(false, true, "/r/me/proj/settings/workspaces");
 
     const section = (
       await screen.findByRole("heading", { name: "Archived workspaces" })
     ).closest("section")!;
     fireEvent.click(
       within(section).getByRole("button", {
-        name: "Unarchive workspace/old",
+        name: "View archived workspaces (1)",
       }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Archived workspaces",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Unarchive workspace/old" }),
     );
 
     expect(
-      await within(section).findByText(/workspace restore failed/),
+      await within(dialog).findByText(/workspace restore failed/),
     ).toBeTruthy();
-    expect(within(section).getByText("workspace/old")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(within(dialog).getByText("workspace/old")).toBeTruthy();
   });
 
   it("switches the PR action and persists via repos/setMergeMode", async () => {
-    renderSettings(false);
+    renderSettings(false, false, "/r/me/proj/settings/pull-requests");
     const group = await screen.findByRole("radiogroup", {
       name: /pr action/i,
     });
@@ -331,6 +613,27 @@ describe("RepoSettingsPage", () => {
       const call = rpcCall("repos/setMergeMode");
       expect(call).toBeTruthy();
       expect(call!.params).toMatchObject({ mode: "github_pr" });
+    });
+  });
+
+  it("keeps the Coding agent override accessible and persists changes", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/coding-agent");
+    const group = await screen.findByRole("radiogroup", {
+      name: /override application coding agent settings/i,
+    });
+    const override = within(group).getByRole("radio", {
+      name: /on \(override for this repo\)/i,
+    });
+    fireEvent.click(override);
+
+    await waitFor(() => {
+      expect(rpcCall("repos/setAgentConfig")?.params).toMatchObject({
+        name: "me/proj",
+        override: true,
+        runtime: "claude-code",
+        model: "",
+        effort: "",
+      });
     });
   });
 });

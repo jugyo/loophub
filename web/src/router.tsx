@@ -6,7 +6,13 @@ import { issueDetailRoute } from "./routes/issues";
 import { pullDetailRoute } from "./routes/pulls";
 import { refRoute } from "./routes/ref";
 import { repoRoute } from "./routes/repo";
-import { repoSettingsRoute } from "./routes/repo-settings";
+import {
+  repoSettingsArchiveRoute,
+  repoSettingsCodingAgentRoute,
+  repoSettingsPullRequestsRoute,
+  repoSettingsRoute,
+  repoSettingsWorkspacesRoute,
+} from "./routes/repo-settings";
 import { rootRoute } from "./routes/root";
 import { sessionsRoute } from "./routes/sessions";
 import { settingsRoute } from "./routes/settings";
@@ -22,6 +28,10 @@ const routeTree = rootRoute.addChildren([
   archivedRoute,
   repoRoute,
   repoSettingsRoute,
+  repoSettingsPullRequestsRoute,
+  repoSettingsCodingAgentRoute,
+  repoSettingsWorkspacesRoute,
+  repoSettingsArchiveRoute,
   issueDetailRoute,
   pullDetailRoute,
   refRoute,

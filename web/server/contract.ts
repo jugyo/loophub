@@ -539,6 +539,20 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.workspaces.listArchived(p.repo),
   },
+  "workspaces/listForSettings": {
+    description:
+      "List registered workspaces for repository settings, excluding the default branch.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.workspaces.listForSettings(p.repo),
+  },
+  "workspaces/listArchivedForSettings": {
+    description:
+      "List archived workspaces for repository settings, excluding the default branch.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.workspaces.listArchivedForSettings(p.repo),
+  },
   "workspaces/create": {
     description: "Create and register a workspace branch.",
     params: params({ repo, branch: strNonEmpty, session_id: sid }, [

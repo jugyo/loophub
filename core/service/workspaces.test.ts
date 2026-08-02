@@ -133,6 +133,26 @@ test("workspaces.list reports a deleted registry branch as missing", () => {
   );
 });
 
+test("settings lists exclude the default branch without changing generic lists", () => {
+  const repo = S.getRepo("me", "proj")!;
+  S.createWorkspace(repo.id, repo.default_branch);
+
+  expect(svc.workspaces.list("me/proj")).toContainEqual(
+    expect.objectContaining({ branch: repo.default_branch }),
+  );
+  expect(svc.workspaces.listForSettings("me/proj")).not.toContainEqual(
+    expect.objectContaining({ branch: repo.default_branch }),
+  );
+
+  S.setWorkspaceArchived(repo.id, repo.default_branch, true);
+  expect(svc.workspaces.listArchived("me/proj")).toContainEqual(
+    expect.objectContaining({ branch: repo.default_branch }),
+  );
+  expect(svc.workspaces.listArchivedForSettings("me/proj")).not.toContainEqual(
+    expect.objectContaining({ branch: repo.default_branch }),
+  );
+});
+
 test("workspaces archive and unarchive only change the registry and emit events", () => {
   svc.workspaces.create("me/proj", { branch: "archive/me" });
 
