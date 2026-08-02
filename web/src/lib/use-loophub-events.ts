@@ -101,6 +101,23 @@ export function useLoopHubEvents(): void {
 
     const poll = async () => {
       try {
+        if (cursor === 0) {
+          // No stored cursor means this client has never seen an event, not that it is behind by
+          // the whole history. Replaying from id 0 pages through every event ever recorded — on a
+          // long-lived instance that is thousands of back-to-back polls, each invalidating the
+          // same keys again. The mounted queries already fetched current state, so start at the
+          // newest id and only follow what happens from here.
+          const newest = await listEvents({
+            since: 0,
+            order: "desc",
+            limit: 1,
+          });
+          if (stopped) return;
+          cursor = newest[0]?.id ?? 0;
+          setLastEventId(cursor);
+          schedule();
+          return;
+        }
         const events = await listEvents({ since: cursor, limit: POLL_LIMIT });
         if (stopped) return;
         if (events.length === 0) {
