@@ -6,6 +6,7 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
+  useParams,
 } from "@tanstack/react-router";
 import {
   cleanup,
@@ -17,8 +18,16 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
-import type { Repo, RepoMergeMode, Workspace } from "@/api/types";
-import { RepoSettingsPage } from "./repo-settings-page";
+import type {
+  Repo,
+  RepoAgentConfig,
+  RepoMergeMode,
+  Workspace,
+} from "@/api/types";
+import {
+  RepoSettingsPage,
+  type RepoSettingsSection,
+} from "./repo-settings-page";
 
 afterEach(() => {
   cleanup();
@@ -51,6 +60,22 @@ function mergeMode(setting: RepoMergeMode["setting"]): RepoMergeMode {
   };
 }
 
+function agentConfig(override = false): RepoAgentConfig {
+  return {
+    setting: {
+      override,
+      runtime: override ? "codex" : null,
+      model: override ? "gpt-5.6-sol" : null,
+      effort: override ? "high" : null,
+    },
+    effective: {
+      runtime: override ? "codex" : "claude-code",
+      model: override ? "gpt-5.6-sol" : "opus",
+      effort: override ? "high" : "medium",
+    },
+  };
+}
+
 function mockFetch(initialArchived: boolean, patchFails = false) {
   let archivedWorkspaces: Workspace[] = [
     {
@@ -63,6 +88,7 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
   return mockRpcFetch({
     "repos/get": () => repo(initialArchived),
     "repos/mergeMode": () => mergeMode(null),
+    "repos/agentConfig": () => agentConfig(),
     "repos/setArchived": (p) => {
       if (patchFails) throw new RpcFault(500, "boom");
       return repo(p.archived);
@@ -74,6 +100,10 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
     "repos/setMergeMode": (p) => {
       if (patchFails) throw new RpcFault(500, "boom");
       return { ...repo(initialArchived), merge_mode: p.mode };
+    },
+    "repos/setAgentConfig": (p) => {
+      if (patchFails) throw new RpcFault(500, "boom");
+      return agentConfig(p.override);
     },
     "repos/update": (p) => {
       if (patchFails) throw new RpcFault(422, "branch not found: nope");
@@ -91,7 +121,11 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
   });
 }
 
-function renderSettings(initialArchived = false, patchFails = false) {
+function renderSettings(
+  initialArchived = false,
+  patchFails = false,
+  initialEntry = "/r/me/proj/settings",
+) {
   vi.stubGlobal("fetch", mockFetch(initialArchived, patchFails));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -100,11 +134,38 @@ function renderSettings(initialArchived = false, patchFails = false) {
   const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo/settings",
-    component: SettingsRouteComponent,
+    component: () => <SettingsRouteComponent section="general" />,
   });
-  function SettingsRouteComponent() {
-    const { owner, repo } = settingsRoute.useParams();
-    return <RepoSettingsPage owner={owner} repo={repo} />;
+  const pullRequestsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/settings/pull-requests",
+    component: () => <SettingsRouteComponent section="pull-requests" />,
+  });
+  const codingAgentRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/settings/coding-agent",
+    component: () => <SettingsRouteComponent section="coding-agent" />,
+  });
+  const workspacesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/settings/workspaces",
+    component: () => <SettingsRouteComponent section="workspaces" />,
+  });
+  const archiveRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/settings/archive",
+    component: () => <SettingsRouteComponent section="archive" />,
+  });
+  function SettingsRouteComponent({
+    section,
+  }: {
+    section: RepoSettingsSection;
+  }) {
+    const { owner, repo } = useParams({ strict: false }) as {
+      owner: string;
+      repo: string;
+    };
+    return <RepoSettingsPage owner={owner} repo={repo} section={section} />;
   }
   // Rename navigates to the renamed repo's settings URL (still `settingsRoute`,
   // just with new params); unarchive-on-archive navigates home.
@@ -114,8 +175,15 @@ function renderSettings(initialArchived = false, patchFails = false) {
     component: () => <div data-testid="home-page" />,
   });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, settingsRoute]),
-    history: createMemoryHistory({ initialEntries: ["/r/me/proj/settings"] }),
+    routeTree: rootRoute.addChildren([
+      indexRoute,
+      settingsRoute,
+      pullRequestsRoute,
+      codingAgentRoute,
+      workspacesRoute,
+      archiveRoute,
+    ]),
+    history: createMemoryHistory({ initialEntries: [initialEntry] }),
   });
   const rendered = render(
     <QueryClientProvider client={queryClient}>
@@ -126,6 +194,63 @@ function renderSettings(initialArchived = false, patchFails = false) {
 }
 
 describe("RepoSettingsPage", () => {
+  it("navigates between settings sections and keeps the selection in the URL", async () => {
+    const { router } = renderSettings();
+
+    expect(
+      await screen.findByRole("heading", { name: "General" }),
+    ).toBeTruthy();
+    const general = screen.getByRole("link", { name: "General" });
+    expect(general.getAttribute("aria-current")).toBe("page");
+    expect(general.getAttribute("href")).toBe("/r/me/proj/settings");
+    expect(
+      screen.getByRole("link", { name: "Coding agent" }).getAttribute("href"),
+    ).toBe("/r/me/proj/settings/coding-agent");
+    expect(
+      screen.getByRole("link", { name: "Workspaces" }).getAttribute("href"),
+    ).toBe("/r/me/proj/settings/workspaces");
+    expect(
+      screen.getByRole("link", { name: "Archive" }).getAttribute("href"),
+    ).toBe("/r/me/proj/settings/archive");
+
+    const pullRequests = screen.getByRole("link", { name: "Pull requests" });
+    expect(pullRequests.getAttribute("href")).toBe(
+      "/r/me/proj/settings/pull-requests",
+    );
+    pullRequests.focus();
+    expect(document.activeElement).toBe(pullRequests);
+    fireEvent.click(pullRequests);
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        "/r/me/proj/settings/pull-requests",
+      ),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "PR action" }),
+    ).toBeTruthy();
+    expect(pullRequests.getAttribute("aria-current")).toBe("page");
+    expect(
+      screen
+        .getByRole("link", { name: "General" })
+        .getAttribute("aria-current"),
+    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Rename" })).toBeNull();
+  });
+
+  it("restores a directly addressed settings section", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/workspaces");
+
+    expect(
+      await screen.findByRole("heading", { name: "Archived workspaces" }),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Workspaces" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+  });
+
   it("does not render a duplicate content heading or repo back link", async () => {
     renderSettings(false);
 
@@ -181,7 +306,7 @@ describe("RepoSettingsPage", () => {
   });
 
   it("confirms then PATCHes archived:true", async () => {
-    renderSettings(false);
+    renderSettings(false, false, "/r/me/proj/settings/archive");
     fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -196,7 +321,7 @@ describe("RepoSettingsPage", () => {
   });
 
   it("offers Unarchive for an archived repo", async () => {
-    renderSettings(true);
+    renderSettings(true, false, "/r/me/proj/settings/archive");
     expect(
       await screen.findByRole("button", { name: "Unarchive" }),
     ).toBeTruthy();
@@ -204,7 +329,7 @@ describe("RepoSettingsPage", () => {
   });
 
   it("keeps the dialog open and shows an error when the archive PATCH fails", async () => {
-    renderSettings(false, true);
+    renderSettings(false, true, "/r/me/proj/settings/archive");
     fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
     fireEvent.click(
       within(await screen.findByRole("dialog")).getByRole("button", {
@@ -275,7 +400,7 @@ describe("RepoSettingsPage", () => {
   });
 
   it("lists archived workspaces and unarchives one", async () => {
-    renderSettings(false);
+    renderSettings(false, false, "/r/me/proj/settings/workspaces");
 
     const section = (
       await screen.findByRole("heading", { name: "Archived workspaces" })
@@ -299,7 +424,7 @@ describe("RepoSettingsPage", () => {
   });
 
   it("shows workspace unarchive failures", async () => {
-    renderSettings(false, true);
+    renderSettings(false, true, "/r/me/proj/settings/workspaces");
 
     const section = (
       await screen.findByRole("heading", { name: "Archived workspaces" })
@@ -317,7 +442,7 @@ describe("RepoSettingsPage", () => {
   });
 
   it("switches the PR action and persists via repos/setMergeMode", async () => {
-    renderSettings(false);
+    renderSettings(false, false, "/r/me/proj/settings/pull-requests");
     const group = await screen.findByRole("radiogroup", {
       name: /pr action/i,
     });
@@ -331,6 +456,27 @@ describe("RepoSettingsPage", () => {
       const call = rpcCall("repos/setMergeMode");
       expect(call).toBeTruthy();
       expect(call!.params).toMatchObject({ mode: "github_pr" });
+    });
+  });
+
+  it("keeps the Coding agent override accessible and persists changes", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/coding-agent");
+    const group = await screen.findByRole("radiogroup", {
+      name: /override application coding agent settings/i,
+    });
+    const override = within(group).getByRole("radio", {
+      name: /on \(override for this repo\)/i,
+    });
+    fireEvent.click(override);
+
+    await waitFor(() => {
+      expect(rpcCall("repos/setAgentConfig")?.params).toMatchObject({
+        name: "me/proj",
+        override: true,
+        runtime: "claude-code",
+        model: "",
+        effort: "",
+      });
     });
   });
 });

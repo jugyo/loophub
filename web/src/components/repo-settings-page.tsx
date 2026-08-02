@@ -4,8 +4,15 @@
 // own screen instead of a cramped dropdown. Same RPCs/hooks as before (repos/rename,
 // repos/setArchived, repos/mergeMode, repos/setMergeMode); only the presentation moved.
 
-import { useNavigate } from "@tanstack/react-router";
-import { Check } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import {
+  Archive,
+  Bot,
+  Check,
+  GitPullRequestArrow,
+  Settings2,
+  SquareKanban,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CodingAgent, MergeMode } from "@/api/types";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
@@ -36,12 +43,75 @@ const MERGE_MODE_LABELS: Record<MergeMode, string> = {
   github_pr: "Create PR on GitHub",
 };
 
+const REPO_SETTINGS_SECTIONS = [
+  "general",
+  "pull-requests",
+  "coding-agent",
+  "workspaces",
+  "archive",
+] as const;
+
+export type RepoSettingsSection = (typeof REPO_SETTINGS_SECTIONS)[number];
+
+type RepoSettingsPath =
+  | "/r/$owner/$repo/settings"
+  | "/r/$owner/$repo/settings/pull-requests"
+  | "/r/$owner/$repo/settings/coding-agent"
+  | "/r/$owner/$repo/settings/workspaces"
+  | "/r/$owner/$repo/settings/archive";
+
+const SETTINGS_NAV_ITEMS: Array<{
+  id: RepoSettingsSection;
+  label: string;
+  description: string;
+  icon: typeof Settings2;
+  path: RepoSettingsPath;
+}> = [
+  {
+    id: "general",
+    label: "General",
+    description: "Repository identity and base branch.",
+    icon: Settings2,
+    path: "/r/$owner/$repo/settings",
+  },
+  {
+    id: "pull-requests",
+    label: "Pull requests",
+    description: "Default action for pull requests.",
+    icon: GitPullRequestArrow,
+    path: "/r/$owner/$repo/settings/pull-requests",
+  },
+  {
+    id: "coding-agent",
+    label: "Coding agent",
+    description: "Repository-specific agent defaults.",
+    icon: Bot,
+    path: "/r/$owner/$repo/settings/coding-agent",
+  },
+  {
+    id: "workspaces",
+    label: "Workspaces",
+    description: "Archived workspace management.",
+    icon: SquareKanban,
+    path: "/r/$owner/$repo/settings/workspaces",
+  },
+  {
+    id: "archive",
+    label: "Archive",
+    description: "Repository visibility and access.",
+    icon: Archive,
+    path: "/r/$owner/$repo/settings/archive",
+  },
+];
+
 export function RepoSettingsPage({
   owner,
   repo,
+  section,
 }: {
   owner: string;
   repo: string;
+  section: RepoSettingsSection;
 }) {
   const { data } = useRepo(owner, repo);
   const loaded = data !== undefined;
@@ -50,25 +120,92 @@ export function RepoSettingsPage({
   return (
     <div
       data-debug-component="RepoSettingsPage"
-      className="mx-auto max-w-content"
+      className="mx-auto flex max-w-content items-start gap-8"
     >
-      <RenameSection owner={owner} repo={repo} loaded={loaded} />
-      <BaseBranchSection
-        owner={owner}
-        repo={repo}
-        loaded={loaded}
-        current={data?.default_branch ?? ""}
-      />
-      <MergeModeSection owner={owner} repo={repo} />
-      <AgentConfigSection owner={owner} repo={repo} />
-      <ArchivedWorkspacesSection owner={owner} repo={repo} />
-      <ArchiveSection
-        owner={owner}
-        repo={repo}
-        loaded={loaded}
-        archived={archived}
-      />
+      <aside className="sticky top-6 w-56 shrink-0 border-r pr-6">
+        <h1 className="px-3 text-sm font-semibold">Repository settings</h1>
+        <p className="mt-1 truncate px-3 text-xs text-muted-foreground">
+          {owner}/{repo}
+        </p>
+        <nav aria-label="Repository settings" className="mt-5 space-y-1">
+          {SETTINGS_NAV_ITEMS.map((item) => {
+            const active = item.id === section;
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.id}
+                to={item.path}
+                params={{ owner, repo }}
+                activeOptions={{ exact: true }}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  active
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <Icon className="size-4 shrink-0" aria-hidden="true" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+
+      <div
+        role="region"
+        aria-labelledby={`repo-settings-${section}-heading`}
+        className="min-w-0 flex-1 pb-8"
+      >
+        <SectionHeader section={section} />
+        {section === "general" ? (
+          <>
+            <RenameSection owner={owner} repo={repo} loaded={loaded} />
+            <BaseBranchSection
+              owner={owner}
+              repo={repo}
+              loaded={loaded}
+              current={data?.default_branch ?? ""}
+            />
+          </>
+        ) : null}
+        {section === "pull-requests" ? (
+          <MergeModeSection owner={owner} repo={repo} />
+        ) : null}
+        {section === "coding-agent" ? (
+          <AgentConfigSection owner={owner} repo={repo} />
+        ) : null}
+        {section === "workspaces" ? (
+          <ArchivedWorkspacesSection owner={owner} repo={repo} />
+        ) : null}
+        {section === "archive" ? (
+          <ArchiveSection
+            owner={owner}
+            repo={repo}
+            loaded={loaded}
+            archived={archived}
+          />
+        ) : null}
+      </div>
     </div>
+  );
+}
+
+function SectionHeader({ section }: { section: RepoSettingsSection }) {
+  const item = SETTINGS_NAV_ITEMS.find(
+    (candidate) => candidate.id === section,
+  )!;
+  return (
+    <header className="border-b pb-5">
+      <h2
+        id={`repo-settings-${section}-heading`}
+        className="text-xl font-semibold"
+      >
+        {item.label}
+      </h2>
+      <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+    </header>
   );
 }
 
