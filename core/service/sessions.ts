@@ -244,15 +244,17 @@ function saveUsageSamples(
   plan: UsageSamplePlan | null,
 ): void {
   if (!plan) return;
-  for (const sample of plan.samples) {
-    S.recordSessionUsageSample({
-      sessionId,
-      totalTokens: sample.totalTokens,
-      observedAt: sample.observedAt,
-      tokenDelta: sample.tokenDelta,
-    });
-  }
-  S.pruneSessionUsageSamples(plan.pruneBefore);
+  db.transaction(() => {
+    for (const sample of plan.samples) {
+      S.recordSessionUsageSample({
+        sessionId,
+        totalTokens: sample.totalTokens,
+        observedAt: sample.observedAt,
+        tokenDelta: sample.tokenDelta,
+      });
+    }
+    S.pruneSessionUsageSamples(plan.pruneBefore);
+  });
 }
 
 // Retention for the persisted live-rate history (#1123). Longer than the 600s sample TTL so a rate time

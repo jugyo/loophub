@@ -702,6 +702,65 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   rmSync(projectsDir, { recursive: true, force: true });
 });
 
+test("sessions.usageSync rolls back an unchanged Claude sample when pruning fails", () => {
+  const sessionId = "99999999-0000-0000-0000-000000000012";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  const projectsDir = mkdtempSync(join(tmpdir(), "lh-claude-sample-tx-"));
+  const projectDir = join(projectsDir, "repo-worktree");
+  mkdirSync(projectDir);
+  writeFileSync(
+    join(projectDir, `${sessionId}.jsonl`),
+    assistantLine("msg_1", "claude-sonnet-4-6-20260601", {
+      input_tokens: 100,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 10,
+    }),
+  );
+
+  svc.sessions.usageSync({ sessionId, projectsDir });
+  D.db.run(
+    `INSERT INTO session_usage_samples
+       (session_id, total_tokens, token_delta, observed_at)
+     VALUES (?, ?, ?, ?)`,
+    [sessionId, 100, 0, "2000-01-01T00:00:00.000Z"],
+  );
+  const countSamples = () =>
+    (
+      D.db
+        .query(
+          `SELECT COUNT(*) AS count
+           FROM session_usage_samples
+           WHERE session_id = ?`,
+        )
+        .get(sessionId) as { count: number }
+    ).count;
+  expect(countSamples()).toBe(2);
+
+  D.db.exec(
+    `CREATE TRIGGER fail_usage_sample_prune
+     BEFORE DELETE ON session_usage_samples
+     WHEN OLD.session_id = '${sessionId}'
+     BEGIN SELECT RAISE(ABORT, 'injected usage sample prune failure'); END`,
+  );
+  try {
+    expect(() => svc.sessions.usageSync({ sessionId, projectsDir })).toThrow(
+      "injected usage sample prune failure",
+    );
+  } finally {
+    D.db.run("DROP TRIGGER fail_usage_sample_prune");
+    rmSync(projectsDir, { recursive: true, force: true });
+  }
+
+  expect(countSamples()).toBe(2);
+});
+
 test("sessions.usageSync rejects a stale Claude dedupe plan", () => {
   const sessionId = "99999999-0000-0000-0000-000000000011";
   svc.sessions.register({
