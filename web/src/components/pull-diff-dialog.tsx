@@ -1674,13 +1674,7 @@ function ThreadCard({
       className="m-2 rounded-md border bg-background p-3 font-sans text-sm"
       aria-label={`Diff thread ${thread.id}`}
     >
-      <header className="mb-2 flex items-center justify-between gap-2 text-xs">
-        <span className="font-semibold">
-          <CommentAuthorLabel
-            author={thread.created_by}
-            authorType={thread.created_by_type}
-          />
-        </span>
+      <header className="mb-2 flex justify-end">
         <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
       </header>
       <div className="space-y-2">

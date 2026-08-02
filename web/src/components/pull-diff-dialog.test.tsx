@@ -1289,6 +1289,27 @@ describe("DiffFileDialog", () => {
     await waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
   });
 
+  it("shows the author once for a single-message conversation", async () => {
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+
+    const card = await screen.findByLabelText("Diff thread 1");
+    expect(within(card).getAllByText("@reviewer")).toHaveLength(1);
+  });
+
   // #2129: a diff conversation stores only an author name, so the human actor names read as
   // @human while an agent session keeps its own name.
   it("shows a human diff conversation as @human and leaves an agent reply alone", async () => {
@@ -1331,9 +1352,8 @@ describe("DiffFileDialog", () => {
     });
 
     const card = await screen.findByLabelText("Diff thread 1");
-    // The thread creator and their own message; the agent reply is untouched.
-    expect(within(card).getAllByText("@human")).toHaveLength(2);
-    expect(within(card).getByText("@executor #12-1")).toBeTruthy();
+    expect(within(card).getAllByText("@human")).toHaveLength(1);
+    expect(within(card).getAllByText("@executor #12-1")).toHaveLength(1);
     expect(within(card).queryByText("@unknown")).toBeNull();
     expect(within(card).getAllByLabelText("AI agent")).toHaveLength(1);
   });
@@ -2870,12 +2890,28 @@ describe("DiffFeedbackHistory", () => {
               placement: "inline",
               created_by: "unknown",
               created_by_type: "human",
+              messages: [
+                {
+                  ...feedbackThread().messages[0],
+                  thread_id: 7,
+                  author: "unknown",
+                  author_type: "human",
+                },
+              ],
             }),
             feedbackThread({
               id: 8,
               freshness: "outdated",
               created_by: "executor #12-1",
               created_by_type: "agent",
+              messages: [
+                {
+                  ...feedbackThread().messages[0],
+                  thread_id: 8,
+                  author: "executor #12-1",
+                  author_type: "agent",
+                },
+              ],
             }),
           ],
         }),
