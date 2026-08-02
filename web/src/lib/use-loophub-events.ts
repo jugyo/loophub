@@ -37,6 +37,7 @@ function invalidateReconnectQueries(
     ["pulls"],
     ["pull"],
     queryKeys.agentSessions(),
+    queryKeys.agentCostSummary(),
     queryKeys.terminalSessions(),
     queryKeys.events(),
     queryKeys.dashboard(),

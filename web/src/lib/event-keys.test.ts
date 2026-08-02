@@ -78,6 +78,11 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["agent-sessions"]);
   });
 
+  it("leaves the cost summary alone on agent_session events", () => {
+    const keys = queryKeysForEvent(ev({ type: "agent_session.updated" }));
+    expect(keys).not.toContainEqual(["agent-cost-summary"]);
+  });
+
   it("falls back to broad keys when repo is absent", () => {
     const keys = queryKeysForEvent(
       ev({ type: "issue.labeled", repo: undefined, payload: { number: 5 } }),
