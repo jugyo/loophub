@@ -103,9 +103,9 @@ function renderSettings(
     defaultOptions: { queries: { retry: false } },
   });
   const rootRoute = createRootRoute({ component: Outlet });
-  const indexRoute = createRoute({
+  const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: "/",
+    path: "/settings",
     component: () => <SettingsPage />,
   });
   const workflowsRoute = createRoute({
@@ -114,8 +114,8 @@ function renderSettings(
     component: () => <div data-testid="workflows-page" />,
   });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, workflowsRoute]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: rootRoute.addChildren([settingsRoute, workflowsRoute]),
+    history: createMemoryHistory({ initialEntries: ["/settings"] }),
   });
   const result = render(
     <QueryClientProvider client={queryClient}>
@@ -140,21 +140,25 @@ async function openModelDropdown(label: string): Promise<HTMLElement> {
 }
 
 describe("SettingsPage", () => {
-  it("shows Agent and Workflows tabs with Agent selected initially", async () => {
+  it("shows the settings sidebar with Agent selected initially", async () => {
     renderSettings();
 
-    const tablist = await screen.findByRole("tablist", {
-      name: "Settings categories",
+    const navigation = await screen.findByRole("navigation", {
+      name: "Settings",
     });
-    const agentTab = within(tablist).getByRole("tab", { name: "Agent" });
-    const workflowsTab = within(tablist).getByRole("tab", {
+    const agentLink = within(navigation).getByRole("link", { name: "Agent" });
+    const workflowsLink = within(navigation).getByRole("link", {
       name: "Workflows",
     });
 
-    expect(agentTab.getAttribute("aria-selected")).toBe("true");
-    expect(workflowsTab.getAttribute("aria-selected")).toBe("false");
+    expect(agentLink.getAttribute("href")).toBe("/settings");
+    expect(agentLink.getAttribute("aria-current")).toBe("page");
+    expect(workflowsLink.getAttribute("href")).toBe("/settings/workflows");
+    expect(workflowsLink.getAttribute("aria-current")).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
 
-    const agentPanel = screen.getByRole("tabpanel", { name: "Agent" });
+    const agentPanel = screen.getByRole("region", { name: "Agent" });
+    expect(screen.queryByRole("main")).toBeNull();
     expect(
       within(agentPanel).getByRole("heading", { name: "Coding agent" }),
     ).toBeTruthy();
@@ -166,10 +170,10 @@ describe("SettingsPage", () => {
     expect(screen.queryByRole("link", { name: "Manage workflows" })).toBeNull();
   });
 
-  it("opens the Workflows tab at /settings/workflows", async () => {
+  it("opens Workflows settings from the sidebar", async () => {
     const { router } = renderSettings();
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Workflows" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Workflows" }));
 
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/settings/workflows"),

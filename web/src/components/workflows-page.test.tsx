@@ -94,19 +94,21 @@ afterEach(() => {
 });
 
 describe("WorkflowsPage", () => {
-  it("shows the shared tab navigation and returns to Agent settings", async () => {
+  it("shows the settings sidebar and returns to Agent settings", async () => {
     const { router } = renderPage({});
 
-    const tablist = await screen.findByRole("tablist", {
-      name: "Settings categories",
+    const navigation = await screen.findByRole("navigation", {
+      name: "Settings",
     });
-    expect(
-      within(tablist)
-        .getByRole("tab", { name: "Workflows" })
-        .getAttribute("aria-selected"),
-    ).toBe("true");
+    const workflowsLink = within(navigation).getByRole("link", {
+      name: "Workflows",
+    });
+    const agentLink = within(navigation).getByRole("link", { name: "Agent" });
+    expect(workflowsLink.getAttribute("aria-current")).toBe("page");
+    expect(agentLink.getAttribute("aria-current")).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
 
-    fireEvent.click(within(tablist).getByRole("tab", { name: "Agent" }));
+    fireEvent.click(agentLink);
 
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/settings"),
@@ -114,18 +116,17 @@ describe("WorkflowsPage", () => {
     expect(screen.getByTestId("settings-page")).toBeTruthy();
   });
 
-  it("shows the shared settings header above the workflow management content", async () => {
+  it("shows the shared settings layout above the workflow management content", async () => {
     renderPage({});
 
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+      await screen.findByRole("heading", { name: "Settings" }),
     ).toBeTruthy();
-    expect(
-      screen.getByText("Instance-level settings for this LoopHub server."),
-    ).toBeTruthy();
+    expect(screen.getByText("Instance-level settings")).toBeTruthy();
     expect(
       screen.getByRole("heading", { level: 2, name: "Workflows" }),
     ).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Workflows" })).toBeTruthy();
     expect(await screen.findByText("No workflows yet.")).toBeTruthy();
   });
 

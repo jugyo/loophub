@@ -1,11 +1,10 @@
 // Instance-level settings (#474) — the first entry point for global config.json settings, as
 // opposed to the per-repo settings screen (see repo-settings-page.tsx's MergeModeSection).
 
-import { useNavigate } from "@tanstack/react-router";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CodingAgent } from "@/api/types";
-import { SettingsHeader } from "@/components/settings-header";
+import { SettingsLayout } from "@/components/settings-header";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -162,7 +161,6 @@ function AgentModelEffortDropdown({
 }
 
 export function SettingsPage() {
-  const navigate = useNavigate();
   const { data, isLoading } = useSettings();
   const update = useUpdateSettings();
   const devCostLimitUsd = data?.devCostLimitUsd ?? 10;
@@ -181,23 +179,8 @@ export function SettingsPage() {
     !devCostLimitError && parsedDevCostLimit !== devCostLimitUsd;
 
   return (
-    <div data-debug-component="SettingsPage" className="mx-auto max-w-content">
-      <SettingsHeader
-        activeTab="agent"
-        onTabChange={(tab) => {
-          if (tab === "workflows") {
-            void navigate({ to: "/settings/workflows" });
-          }
-        }}
-        panelIds={{ agent: "settings-agent-panel" }}
-      />
-
-      <div
-        id="settings-agent-panel"
-        role="tabpanel"
-        aria-labelledby="settings-agent-tab"
-        className="mt-6"
-      >
+    <div data-debug-component="SettingsPage">
+      <SettingsLayout section="agent">
         <section data-debug-component="CodingAgentSettings">
           <h2 className="text-sm font-medium">Coding agent</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -330,7 +313,7 @@ export function SettingsPage() {
             </p>
           ) : null}
         </section>
-      </div>
+      </SettingsLayout>
     </div>
   );
 }

@@ -4,12 +4,11 @@
 // are the only user-configurable part. Same workflows/* RPCs the CLI uses; this is the
 // management UI. Start-workflow and run status are intentionally out of scope here.
 
-import { useNavigate } from "@tanstack/react-router";
 import { Check, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
 import type { Workflow, WorkflowContracts } from "@/api/types";
-import { SettingsHeader } from "@/components/settings-header";
+import { SettingsLayout } from "@/components/settings-header";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
@@ -71,38 +70,15 @@ function trapDialogFocus(
 }
 
 export function WorkflowsPage() {
-  const navigate = useNavigate();
   const { data: workflows, isLoading, isError } = useWorkflows();
 
   return (
-    <div data-debug-component="WorkflowsPage" className="mx-auto max-w-content">
-      <SettingsHeader
-        activeTab="workflows"
-        onTabChange={(tab) => {
-          if (tab === "agent") void navigate({ to: "/settings" });
-        }}
-        panelIds={{ workflows: "settings-workflow-management-panel" }}
-      />
-
-      <div
-        id="settings-workflow-management-panel"
-        role="tabpanel"
-        aria-labelledby="settings-workflows-tab"
-        className="mt-6"
-      >
+    <div data-debug-component="WorkflowsPage">
+      <SettingsLayout section="workflows">
         <WorkflowContractLanguageSettings />
 
         <section className="mt-8">
-          <h2 className="text-2xl font-semibold">Workflows</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Workflows are global prompt bundles for the fixed Execute/Verify
-            development loop. Each step's prompt is the only configurable part;
-            the step contracts are fixed.
-          </p>
-
-          <div className="mt-4">
-            <NewWorkflowButton />
-          </div>
+          <NewWorkflowButton />
 
           <div className="mt-6 flex flex-col gap-3">
             {isLoading ? (
@@ -120,7 +96,7 @@ export function WorkflowsPage() {
             )}
           </div>
         </section>
-      </div>
+      </SettingsLayout>
     </div>
   );
 }
