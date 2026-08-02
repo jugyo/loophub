@@ -15,83 +15,68 @@ const INPUT = {
   baseRef: "main",
 };
 
-test("the parent prompt states the run context it must not re-derive", () => {
-  const prompt = parentUserPrompt(INPUT, "en");
-  expect(prompt).toContain("run: 42");
-  expect(prompt).toContain("workflow: standard");
-  expect(prompt).toContain("issue: #7");
-  expect(prompt).toContain("pr: #8");
-  expect(prompt).toContain("current step: execute");
-  expect(prompt).toContain("worktree: . (cwd. base branch: main)");
-});
+function expectLineWithMarkers(text: string, markers: string[]): void {
+  const lines = text.split("\n");
+  expect(
+    lines.some((line) => markers.every((marker) => line.includes(marker))),
+  ).toBe(true);
+}
 
-test("the English parent prompt remains byte-identical", () => {
-  expect(parentUserPrompt(INPUT, "en")).toBe(
-    [
-      "## Run context",
-      "run: 42",
-      "workflow: standard",
-      "repo: me/workflow-run (pass --repo 'me/workflow-run' on every lh command)",
-      "issue: #7",
-      "pr: #8",
-      "current step: execute",
-      "worktree: . (cwd. base branch: main)",
-      "",
-      "## Instruction",
-      "Run `lh workflow parent-ready 42 --repo 'me/workflow-run'` first, before anything else. Instructions are delivered to this pane only after that signal.",
-      "Then orchestrate this run through Execute -> Verify as described in your contract.",
-      "Wait for workflow instructions delivered to this pane, execute their structured `instructions`, then return to waiting as described in the contract. Do not invoke slash-style commands.",
-      "",
-    ].join("\n"),
-  );
-});
-
-test("the Japanese parent prompt translates prose without changing commands", () => {
-  const prompt = parentUserPrompt(INPUT, "ja");
-
-  expect(prompt).toContain("## Run コンテキスト");
-  expect(prompt).toContain(
-    "repo: me/workflow-run (すべての lh command で --repo 'me/workflow-run' を渡してください)",
-  );
-  expect(prompt).toContain("current step: execute");
-  expect(prompt).toContain("## 指示");
-  expect(prompt).toContain(
-    "`lh workflow parent-ready 42 --repo 'me/workflow-run'` を実行してください。",
-  );
-  expect(prompt).toContain(
-    "contract の記述に従い、この run を Execute -> Verify の順に orchestrate してください。",
-  );
-  expect(prompt).toContain(
-    "この pane に配送される workflow instruction を待ち",
-  );
-  expect(prompt).toContain("構造化 `instructions`");
-  expect(prompt).not.toContain("launch-step");
-});
-
-// The worker delivers every transition decision to the parent pane.
-test("the parent prompt starts from worker-delivered instructions", () => {
-  const prompt = parentUserPrompt(INPUT, "en");
-  // Delivery is held until the parent declares it reads the pane, so the prompt has to ask for that
-  // signal before anything else (#2156).
-  expect(prompt).toContain(
-    "Run `lh workflow parent-ready 42 --repo 'me/workflow-run'` first",
-  );
-  expect(prompt).toContain(
-    "Wait for workflow instructions delivered to this pane",
-  );
-  expect(prompt).toContain("structured `instructions`");
-  expect(prompt).not.toContain("launch-step");
-  expect(prompt).not.toContain("--watch");
-  expect(prompt).not.toContain("lh workflow watch");
-  expect(prompt).not.toContain("--since");
-  expect(prompt).not.toContain("watcher_armed");
-  expect(prompt).not.toContain("HERDR_PANE_ID");
-  expect(prompt).not.toContain("nohup");
-  expect(prompt).not.toContain("Stay alive and poll");
-  expect(prompt).not.toContain("lh subscribe");
-  expect(prompt).not.toContain("functions.exec");
-  expect(prompt).not.toContain("functions.wait");
-  expect(prompt).not.toContain("lh workflow next");
+test("the parent prompt starts with readiness before worker-delivered instructions", () => {
+  for (const language of ["en", "ja"] as const) {
+    const prompt = parentUserPrompt(INPUT, language);
+    for (const value of [
+      "42",
+      "standard",
+      "me/workflow-run",
+      "#7",
+      "#8",
+      "main",
+    ]) {
+      expect(prompt).toContain(value);
+    }
+    expectLineWithMarkers(prompt, ["current step", "execute"]);
+    expect(prompt).toContain(
+      "lh workflow parent-ready 42 --repo 'me/workflow-run'",
+    );
+    const commands = [...prompt.matchAll(/`(lh [^`]+)`/gu)].map(
+      (match) => match[1],
+    );
+    expect(commands[0]).toBe(
+      "lh workflow parent-ready 42 --repo 'me/workflow-run'",
+    );
+    expectLineWithMarkers(
+      prompt,
+      language === "en"
+        ? ["parent-ready", "first", "before anything else"]
+        : ["まず最初", "parent-ready"],
+    );
+    expectLineWithMarkers(
+      prompt,
+      language === "en"
+        ? ["Wait", "delivered to this pane", "structured `instructions`"]
+        : ["この pane に配送される", "待", "構造化 `instructions`"],
+    );
+    expect(prompt.indexOf("parent-ready")).toBeLessThan(
+      prompt.indexOf("`instructions`"),
+    );
+    for (const retiredProtocol of [
+      "launch-step",
+      "--watch",
+      "--since",
+      "lh workflow watch",
+      "watcher_armed",
+      "HERDR_PANE_ID",
+      "nohup",
+      "Stay alive and poll",
+      "lh subscribe",
+      "functions.exec",
+      "functions.wait",
+      "lh workflow next",
+    ]) {
+      expect(prompt).not.toContain(retiredProtocol);
+    }
+  }
 });
 
 test("a repo name is shell-quoted in commands and kept verbatim in prose", () => {

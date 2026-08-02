@@ -53,6 +53,7 @@ import type {
   ThemeWire,
   UserWire,
   WebConfigWire,
+  WorkerCompatibilityWire,
   WorkflowContractLanguageWire,
   WorkflowContractsWire,
   WorkflowRunHistoryEventWire,
@@ -250,6 +251,7 @@ export type AcceptanceCriterion = AcceptanceCriterionWire;
 /** A global workflow definition (#997): Execute/Verify prompt bundle. */
 export type Workflow = WorkflowWire;
 export type WorkflowContracts = WorkflowContractsWire;
+export type WorkerCompatibility = WorkerCompatibilityWire;
 
 /** Display state of a Workflow run linked to an issue / PR (#1008). */
 export type WorkflowRunState = WorkflowRunStateWire;

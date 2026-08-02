@@ -19,8 +19,7 @@ import type {
   PullFile,
   PullLineComment,
 } from "@/api/types";
-import { CommentAuthorLabel } from "@/components/comment-author-label";
-import { CommentId } from "@/components/comment-id";
+import { CommentMetadata } from "@/components/comment-metadata";
 import { CopyButton } from "@/components/copy-button";
 import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
@@ -901,16 +900,17 @@ function FileDiffContent({
       ) : null}
       {comments.map((c) => (
         <div key={c.id} className="m-2 rounded-md border bg-muted/20 p-2">
-          <div className="mb-1 text-xs">
-            💬{" "}
-            <CommentAuthorLabel
+          <div className="mb-1 flex min-w-0 items-start gap-2">
+            <CommentMetadata
               author={c.user.login}
               authorType={c.author_type}
-            />{" "}
-            <span className="text-muted-foreground">
+              createdAt={c.created_at}
+              id={c.id}
+              className="flex-1"
+            />
+            <span className="shrink-0 text-xs text-muted-foreground">
               {c.path}:{c.line ?? "?"}
-            </span>{" "}
-            <CommentId id={c.id} />
+            </span>
           </div>
           <Markdown owner={owner} repo={repo}>
             {c.body}
@@ -1680,13 +1680,13 @@ function ThreadCard({
       <div className="space-y-2">
         {thread.messages.map((message) => (
           <div key={message.id} className="rounded-md bg-muted/20 p-2">
-            <div className="mb-1 text-xs text-muted-foreground">
-              <CommentAuthorLabel
-                author={message.author}
-                authorType={message.author_type}
-              />{" "}
-              <CommentId id={message.id} />
-            </div>
+            <CommentMetadata
+              author={message.author}
+              authorType={message.author_type}
+              createdAt={message.created_at}
+              id={message.id}
+              className="mb-1"
+            />
             <Markdown owner={owner} repo={repo}>
               {message.body}
             </Markdown>

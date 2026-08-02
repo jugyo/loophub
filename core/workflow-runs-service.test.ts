@@ -272,7 +272,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       phase: "execute",
       direction: "down",
       body: [
-        `Launch Workflow execute step for run #${result.run.id}.`,
+        `Launch Workflow execute step for run ${result.run.id}.`,
         "",
         "## Inputs",
         `- repo: ${repo.full_name}`,
@@ -507,7 +507,7 @@ test("start snapshots the contract language for parent and every later step", as
   ).toEqual([
     expect.objectContaining({
       body: [
-        `Workflow execute step を run #${started.run.id} 向けに起動します。`,
+        `Workflow execute step を run ${started.run.id} 向けに起動します。`,
         "",
         "## 入力",
         `- repo: ${repo.full_name}`,
@@ -955,7 +955,9 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
 
   // A running, unheld run exposes its budget but offers no increase.
   expect(
-    svc.workflowRuns.stateForIssue(repo.full_name, { issue: pull.number }),
+    await svc.workflowRuns.stateForIssue(repo.full_name, {
+      issue: pull.number,
+    }),
   ).toMatchObject({
     cost_increment_usd: 2.5,
     cost_limit_usd: 2.5,
@@ -979,7 +981,9 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
     parentSessionId,
   );
   expect(
-    svc.workflowRuns.stateForPull(repo.full_name, { pull: pull.number }),
+    await svc.workflowRuns.stateForPull(repo.full_name, {
+      pull: pull.number,
+    }),
   ).toMatchObject({ cost_limit_increase_available: true });
 
   expect(
@@ -996,7 +1000,9 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
   });
   // The new limit is visible and no longer increasable: the hold now has no matching event.
   expect(
-    svc.workflowRuns.stateForIssue(repo.full_name, { issue: pull.number }),
+    await svc.workflowRuns.stateForIssue(repo.full_name, {
+      issue: pull.number,
+    }),
   ).toMatchObject({
     cost_limit_usd: 5,
     cost_limit_increase_available: false,
@@ -1116,7 +1122,7 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     parent,
   );
   expect(
-    svc.workflowRuns.stateForPull(repo.full_name, {
+    await svc.workflowRuns.stateForPull(repo.full_name, {
       pull: started.pr.number,
     }),
   ).toMatchObject({
@@ -1130,9 +1136,11 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     parent,
   );
   expect(
-    svc.workflowRuns.stateForPull(repo.full_name, {
-      pull: started.pr.number,
-    })?.active_verify_head_sha,
+    (
+      await svc.workflowRuns.stateForPull(repo.full_name, {
+        pull: started.pr.number,
+      })
+    )?.active_verify_head_sha,
   ).toBeNull();
   const resumedVerify = await svc.workflowRuns.resumeAfterHuman(
     repo.full_name,
@@ -1674,6 +1682,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(continuing.status).toBe("running");
+  expect(continuing.done).toBe(true);
   expect(continuing.head_sha).toBe(headA);
   expect(continuing.steps.verify.latest_review).toMatchObject({
     event: "pass",
@@ -1691,6 +1700,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(staleStatus.head_sha).toBe(headB);
+  expect(staleStatus.done).toBe(false);
   expect(staleStatus.steps.verify.complete).toBe(false);
   expect(staleStatus.steps.verify.latest_review).toMatchObject({
     fresh: false,
@@ -1719,6 +1729,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(continuing.status).toBe("running");
+  expect(continuing.done).toBe(true);
   expect(continuing.steps.verify.latest_review).toMatchObject({
     event: "pass",
     fresh: true,
@@ -3323,6 +3334,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     findings_count: 2,
   });
   expect(byIssue?.verification_status).toBe("unverified");
+  expect(byIssue?.done).toBe(false);
 
   const byPull = await svc.workflowRuns.stateForPull(repo.full_name, {
     pull: prIssue.number,
@@ -3338,15 +3350,18 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     headSha: reviewedHead,
     body: "Current HEAD passes.",
   });
-  expect(
-    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
-      ?.verification_status,
-  ).toBe("verified");
+  const verified = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: prIssue.number,
+  });
+  expect(verified?.verification_status).toBe("verified");
+  expect(verified?.done).toBe(true);
+  expect(verified?.merge_conflict).toBe(false);
   S.setHeadSha(prIssue.id, "1".repeat(40));
-  expect(
-    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
-      ?.verification_status,
-  ).toBe("stale");
+  const stale = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: prIssue.number,
+  });
+  expect(stale?.verification_status).toBe("stale");
+  expect(stale?.done).toBe(false);
 
   S.updateWorkflowRun(run.id, { needsHumanReason: "waiting for guidance" });
   const waiting = await svc.workflowRuns.stateForPull(repo.full_name, {
@@ -3417,8 +3432,11 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
     parent,
   );
   expect(
-    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
-      ?.active_verify_head_sha,
+    (
+      await svc.workflowRuns.stateForPull(repo.full_name, {
+        pull: prIssue.number,
+      })
+    )?.active_verify_head_sha,
   ).toBe(firstHead);
 
   await svc.reviews.create(
@@ -3428,8 +3446,11 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
     firstVerifier,
   );
   expect(
-    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
-      ?.active_verify_head_sha,
+    (
+      await svc.workflowRuns.stateForPull(repo.full_name, {
+        pull: prIssue.number,
+      })
+    )?.active_verify_head_sha,
   ).toBeNull();
 
   const secondVerifier = "25252525-2525-4252-8252-252525252525";
@@ -3446,8 +3467,11 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
     parent,
   );
   expect(
-    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
-      ?.active_verify_head_sha,
+    (
+      await svc.workflowRuns.stateForPull(repo.full_name, {
+        pull: prIssue.number,
+      })
+    )?.active_verify_head_sha,
   ).toBe(secondHead);
 });
 
@@ -3762,7 +3786,7 @@ test("history ranks lifecycle events by what a human judges the run by (#1867)",
     "workflow_run.teleported:Run teleported",
   ]);
   expect(history[2].description).toContain("Execute finished implementing");
-  expect(history[3].description).toContain(`Review #${changesRequested.id}`);
+  expect(history[3].description).toContain(`Review ${changesRequested.id}`);
   expect(history[6].description).toContain("$40.07 passed the $40.00 limit");
   expect(history[8].description).toContain("from $40.00 to $60.00");
   expect(history[10].description).toContain("GitHub PR #512");
@@ -3801,7 +3825,7 @@ test("history falls back to an unknown verdict when the review row is gone (#186
   expect(history).toHaveLength(1);
   expect(history[0].label).toBe("Review submitted");
   expect(history[0].significance).toBe("routine");
-  expect(history[0].description).toContain("Review #77");
+  expect(history[0].description).toContain("Review 77");
 });
 
 test("status and next observe the run's event trail with a single load (#1912)", async () => {

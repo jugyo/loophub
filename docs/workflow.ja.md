@@ -99,7 +99,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    `lh workflow deliver --run <run> --text '<single-line instruction>'` を使う。コマンドが最新 Execute
    session と登録済み実行 target を解決し、live control target を更新して、改行・制御文字を空白に
    sanitize した指示を agent-control port 経由で送る。rework は
-   `orchestrator: address review #<id>` のみ（findings の要約・解釈はしない）。deliver が non-zero の
+   `orchestrator: address review <id>` のみ（findings の要約・解釈はしない）。deliver が non-zero の
    場合は retry や relaunch を行わず人間へ渡す。run は生きている Execute child を 1 つしか持たず、
    それがある run への `launch-step --step execute` は 409 で失敗する（同じ worktree を 2 つの child が
    編集する二重起動を、成功として記録させないため）。fresh launch の確認は active step/session も
@@ -215,9 +215,9 @@ contract を検証する。
    進まない**（親が HEAD 前進を観測しないため）。
 
 human follow-up が source の修正を要求する場合、Execute は対象を読んだ後、PR comment には編集前に
-top-level の `lh pr comment` で対象 `comment #<id>`、認識したこと、対応する意思を明記する。diff feedback
-には編集前に対象 thread の `lh pr feedback reply` で対象 `comment #<id>`、認識したこと、対応する意思を
-明記する。review rework は、注入された `review #<id>`、その review と `review comment`、対応 commit、
+top-level の `lh pr comment` で対象 `comment <id>`、認識したこと、対応する意思を明記する。diff feedback
+には編集前に対象 thread の `lh pr feedback reply` で対象 `comment <id>`、認識したこと、対応する意思を
+明記する。review rework は、注入された `review <id>`、その review と `review comment`、対応 commit、
 `workflow_run.turn_done` event から対応関係を追跡する。文章での応答が必要なら
 `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>` で対象に紐づけ、
 top-level の `lh pr comment` は使わない。質問、確認、PR metadata の更新のみなど source の修正を伴わない
@@ -227,7 +227,7 @@ follow-up では、編集前の着手返信を必須としない。
 continuing instruction など）は、自然に Issue / PR への追加要望と読めるならそのように扱い、同じ
 issue・PR に対して実装する。完了後は通常の Execute と同じく **commit（ドメイン変更がある場合）→
 必要なら PR body / comment / attachment の更新 → `lh workflow turn done`** に戻る。rework
-（`address review #<id>`）は review 対応であり追加要望とは別だが、どちらも完了後の経路は同じ。
+（`address review <id>`）は review 対応であり追加要望とは別だが、どちらも完了後の経路は同じ。
 質問のみ・判断待ちは escalate して同 pane で待機し、確認のみや HEAD を進めない更新（PR body 等）は
 commit せず turn done してよい（親は HEAD 不変なら既存 pass を維持し、HEAD 前進時だけ fresh Verify
 する）。issue body への追記は必須ではない。
@@ -367,7 +367,7 @@ deliver が失敗した場合、生きている Execute child がある run へ�
 終了させるのは人間である。
 
 rework 上限は 8。rework は parent の **1 行の**
-`lh workflow deliver --text 'orchestrator: address review #<id>'` による同じ Execute session への注入で行う。
+`lh workflow deliver --text 'orchestrator: address review <id>'` による同じ Execute session への注入で行う。
 コマンドは DB 上の最新 Execute session と保存済み実行 target を再利用する。`request-rework` は
 `current_step` を `execute` に戻すのと同じ更新で `active_step` / `active_session_id` をその Execute child に
 向け直す。両者を一度 null にすると、生きている child が居るのに「Execute 未起動」に見える窓ができ、

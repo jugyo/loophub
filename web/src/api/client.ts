@@ -39,6 +39,7 @@ import type {
   TerminalLaunchResult,
   Theme,
   WebConfig,
+  WorkerCompatibility,
   Workflow,
   WorkflowContracts,
   WorkflowRunHistoryEvent,
@@ -287,6 +288,10 @@ type WorkflowUpdatePatch = Omit<Partial<WorkflowInput>, "name"> & {
 
 export function listWorkflows() {
   return rpc<Workflow[]>("workflows/list", {});
+}
+
+export function getWorkerStatus() {
+  return rpc<WorkerCompatibility>("worker/status", {});
 }
 
 export function getWorkflowContracts() {

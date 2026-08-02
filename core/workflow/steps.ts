@@ -54,6 +54,32 @@ function reviewIsFresh(
   );
 }
 
+export type WorkflowDoneInput = {
+  currentHead: string | null;
+  latestReview: WorkflowLatestReviewState | null;
+  prClosed: boolean;
+  prMerged: boolean;
+  mergeConflict: boolean;
+};
+
+/**
+ * Whether the Workflow has reached its pre-merge Done state.
+ *
+ * Done is an observable PR/review fact, not a run lifecycle or agent state: an
+ * open PR is Done only while its current HEAD has a fresh passing review and
+ * can still be merged without a conflict. Closing or merging the PR moves the
+ * run into its separate terminal lifecycle instead.
+ */
+export function workflowDone(input: WorkflowDoneInput): boolean {
+  return (
+    !input.prClosed &&
+    !input.prMerged &&
+    !input.mergeConflict &&
+    input.latestReview?.event === "pass" &&
+    reviewIsFresh(input.latestReview, input.currentHead)
+  );
+}
+
 /**
  * Evaluate each Workflow step's observable state as a pure query over the
  * domain: the worktree HEAD and the run's latest Verify review.
@@ -77,7 +103,7 @@ export function evaluateWorkflowSteps(
   }
   if (input.latestReview && !input.headAheadOfLatestReview) {
     executeMissing.push(
-      `head has not advanced past review #${input.latestReview.id} (${input.latestReview.event})`,
+      `head has not advanced past review ${input.latestReview.id} (${input.latestReview.event})`,
     );
   }
   const execute: WorkflowStepStatus = {

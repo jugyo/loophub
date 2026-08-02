@@ -9,10 +9,7 @@ import {
 } from "@/components/herdr-badge";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useToast } from "@/components/toast";
-import {
-  WorkflowStepTracker,
-  workflowTrackerState,
-} from "@/components/workflow-step-tracker";
+import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
 import { YesNoPrompt } from "@/components/yes-no-prompt";
 import {
   costStoppedBadge,
@@ -305,7 +302,6 @@ function WorkflowMiniProgress({
   onStageInteract,
   showWorkflowNode = false,
   working,
-  conflict,
 }: {
   owner: string;
   repo: string;
@@ -316,8 +312,6 @@ function WorkflowMiniProgress({
   showWorkflowNode?: boolean;
   /** Whether the linked agent is actively working (glow the current stage pill). */
   working: boolean;
-  /** PR is in merge conflict — flip the terminal Done pill to "Conflict!" (#1659). */
-  conflict: boolean;
 }) {
   const { data: state } = useWorkflowRunForPull(owner, repo, pull.number);
   const [acknowledgedCostHold, setAcknowledgedCostHold] =
@@ -352,7 +346,6 @@ function WorkflowMiniProgress({
         showWorkflowNode={showWorkflowNode}
         size="sm"
         working={working}
-        conflict={conflict}
         // The badge below already marks the hold, so the tracker drops its "needs human" (#1932).
         overBudget={state.cost_limit_increase_available}
       />
@@ -473,14 +466,11 @@ export function LinkedPullSummaryRow({
     operationalStatus.tone === "review-changes" ||
     workspace?.status === "blocked";
   const isDone = pull.merged || pull.state === "closed";
-  // A linked workflow run that reached Done (Verify passed — the tracker's
-  // terminal, `workflowTrackerState().verified`) means the run is effectively
-  // finished, so the pulse stops even while the PR stays open and a live herdr
-  // agent still reads "working" (#1877). No run linked → false → unchanged.
+  // A linked workflow run that reached canonical Done means the work is ready for a human merge
+  // decision, so the pulse stops even while the PR stays open and a live agent still reads
+  // "working" (#1877). No run linked means false and keeps the previous behavior.
   const { data: workflowRun } = useWorkflowRunForPull(owner, repo, pull.number);
-  const workflowDone = workflowRun
-    ? workflowTrackerState(workflowRun).verified
-    : false;
+  const workflowDone = workflowRun?.done ?? false;
   // The indigo pulse/ring means a live herdr agent is actively working (signal
   // B). A dirty worktree alone no longer triggers it (#1125), so a session that
   // ended with uncommitted changes stops reading "working" forever.
@@ -578,7 +568,6 @@ export function LinkedPullSummaryRow({
           onStageInteract={popover.close}
           showWorkflowNode
           working={showWorkingEffect}
-          conflict={operationalStatus.tone === "conflict"}
         />
         {/* The row's right edge: the rework count sits directly left of the cost metrics, so the
             two run totals a human scans for read as one group, with how much has been said on the

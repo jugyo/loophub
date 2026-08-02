@@ -32,6 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { WorkerLaunchUnavailable } from "@/components/worker-compatibility-warning";
 import { issueBadges, issueCanStartWork, stateBadge } from "@/lib/badges";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
@@ -43,6 +44,7 @@ import {
   usePostComment,
   useSetIssueState,
 } from "@/queries/issues";
+import { useWorkerLaunchGate } from "@/queries/worker-status";
 import { useWorkflows } from "@/queries/workflows";
 
 export function IssueDetail({
@@ -213,6 +215,7 @@ function StartWorkflowControls({
   const { launchTerminal } = useTerminalLauncher();
   const navigate = useNavigate();
   const { data: workflows, isLoading } = useWorkflows();
+  const { canStartWorkflow, showRemediation } = useWorkerLaunchGate();
   const [isLaunching, startLaunching] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -233,7 +236,7 @@ function StartWorkflowControls({
       <DropdownMenuTrigger asChild>
         <Button
           title="Start a saved workflow in auto mode (no approval prompts, no sandbox)"
-          disabled={isLaunching || isLoading}
+          disabled={isLaunching || isLoading || !canStartWorkflow}
         >
           {isLaunching ? (
             <Loader2 className="size-4 animate-spin" />
@@ -277,6 +280,7 @@ function StartWorkflowControls({
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
+      {showRemediation ? <WorkerLaunchUnavailable /> : null}
     </DropdownMenu>
   );
 }

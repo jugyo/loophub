@@ -51,6 +51,7 @@ import {
   parseHerdrWorkspaceId,
   type TerminalLaunchRepo,
 } from "../terminal/terminal-launch.ts";
+import { workerCompatibility } from "../worker-protocol.ts";
 import {
   legacyWorktreePath,
   resolveWorktreeIdentity,
@@ -456,7 +457,8 @@ export const terminal = {
   async launch(input: TerminalLaunchInput): Promise<TerminalLaunchResultWire> {
     // New workflow (Settings > Workflows) is global: `lh workflow create` takes no repo, so this
     // launch has none to pin to. It runs from the LoopHub-home cwd instead and skips all the
-    // repo/worktree machinery below (#1889).
+    // repo/worktree machinery below (#1889). Worker compatibility deliberately gates only
+    // workflow-run below; it must not broaden into general terminal health management.
     if (input.workflow === "workflow-create")
       return launchWorkflowCreateHerdr(input);
     if (!input.repo) throw new ServiceError(422, "repo is required");
@@ -465,12 +467,24 @@ export const terminal = {
     // workflow-run (Start workflow): worktree/PR/lock/run provisioning and the parent
     // herdr launch are entirely `lh workflow start`'s job (#1007) — this RPC only spawns it.
     // Short-circuits before any of the tab/workspace-pinning machinery below, which the other
-    // workflows still use.
+    // workflows still use. Keep the protection here limited to rejecting a new run; restarting or
+    // otherwise recovering the worker remains an explicit operator action.
     if (input.workflow === "workflow-run") {
       if (!input.issueNumber)
         throw new ServiceError(422, "issueNumber is required");
       if (!input.workflowId)
         throw new ServiceError(422, "workflowId is required");
+      const compatibility = workerCompatibility(S.getWorkerRuntime());
+      if (compatibility.status !== "compatible") {
+        const observed =
+          compatibility.observed_protocol_version === null
+            ? "unknown"
+            : String(compatibility.observed_protocol_version);
+        throw new ServiceError(
+          409,
+          `lh-worker is ${compatibility.status}; start or restart it before starting a workflow (required protocol ${compatibility.required_protocol_version}, observed ${observed})`,
+        );
+      }
       return launchWorkflowRunHerdr(r, input.issueNumber, input.workflowId);
     }
 

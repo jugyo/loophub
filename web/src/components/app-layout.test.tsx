@@ -25,6 +25,19 @@ vi.mock("@/queries/terminal", () => ({
     isError: false,
   }),
 }));
+vi.mock("@/queries/worker-status", () => ({
+  useWorkerLaunchGate: () => ({
+    data: {
+      status: "compatible",
+      required_protocol_version: 1,
+      observed_protocol_version: 1,
+      started_at: "2026-08-02T00:00:00Z",
+      heartbeat_at: "2026-08-02T00:00:01Z",
+    },
+    isError: false,
+    showRemediation: false,
+  }),
+}));
 
 vi.mock("@/components/app-statusbar", () => ({
   AppStatusbar: () => <footer data-testid="app-statusbar">Status</footer>,

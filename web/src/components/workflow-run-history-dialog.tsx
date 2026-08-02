@@ -68,14 +68,14 @@ export function WorkflowRunHistoryDialog({
         data-debug-component="WorkflowRunHistoryDialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`Workflow run #${state.id} history`}
+        aria-label={`Workflow run ${state.id} history`}
         className="flex w-full max-w-4xl flex-col rounded-lg border bg-background shadow-lg"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-center justify-between gap-3 border-b px-5 py-4">
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold">
-              {state.workflow_name ?? "Workflow"} · run #{state.id}
+              {state.workflow_name ?? "Workflow"} · run {state.id}
             </h2>
             <p className="text-sm text-muted-foreground">
               Lifecycle history for this Workflow run
@@ -97,7 +97,7 @@ export function WorkflowRunHistoryDialog({
               label="Workflow"
               value={state.workflow_name ?? "Workflow"}
             />
-            <Metadata label="Run" value={`#${state.id}`} />
+            <Metadata label="Run" value={String(state.id)} />
             <div>
               <dt className="text-xs text-muted-foreground">Status</dt>
               <dd className="mt-1">

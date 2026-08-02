@@ -59,14 +59,11 @@ export function WorkflowRunStatusSection({
   repo,
   state,
   showHistory = false,
-  conflict = false,
 }: {
   owner: string;
   repo: string;
   state: WorkflowRunState | null | undefined;
   showHistory?: boolean;
-  /** PR is in merge conflict — flip the shared tracker's Done pill to "Conflict!" (#1659). */
-  conflict?: boolean;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [acknowledgedCostHold, setAcknowledgedCostHold] =
@@ -97,7 +94,7 @@ export function WorkflowRunStatusSection({
     : state;
   const status = needsHuman(displayState)
     ? { label: "Needs human", tone: "cost-stopped" as const }
-    : state.status === "running" && state.verification_status === "verified"
+    : state.done
       ? { label: "Verified", tone: "review-passed" as const }
       : state.status === "running" && state.verification_status === "stale"
         ? { label: "Reverify required", tone: "review-changes" as const }
@@ -110,10 +107,7 @@ export function WorkflowRunStatusSection({
     state.status === "running" &&
     state.needs_human_reason === null &&
     state.verification_status === "stale";
-  const isVerified =
-    state.status === "running" &&
-    state.needs_human_reason === null &&
-    state.verification_status === "verified";
+  const isVerified = state.done;
   const working = isPullHerdrWorking(
     herdrSessionsError ? undefined : herdrSessions,
     `${owner}/${repo}`,
@@ -137,7 +131,7 @@ export function WorkflowRunStatusSection({
           <span className="font-medium">
             {state.workflow_name ?? "workflow"}
           </span>
-          <span className="text-muted-foreground">run #{state.id}</span>
+          <span className="text-muted-foreground">run {state.id}</span>
           {state.rework_count > 0 ? (
             <span className="text-muted-foreground">
               · rework ×{state.rework_count}/{state.rework_limit}
@@ -153,7 +147,6 @@ export function WorkflowRunStatusSection({
           herdrUnavailable={herdrSessionsError}
           size="md"
           working={working}
-          conflict={conflict}
           overBudget={overBudget}
         />
 

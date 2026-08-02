@@ -39,13 +39,13 @@ function contentForSignal(signal: S.NotificationSignalRow): {
   if (signal.reason === "workflow_cost_exceeded") {
     return {
       title: "Workflow cost limit exceeded",
-      body: `Workflow run #${signal.workflow_run_id} for ${signal.repo_full_name} Issue #${signal.issue_number} / PR #${signal.number} exceeded the configured cost limit: $${signal.cost_usd} > $${signal.limit_usd}.`,
+      body: `Workflow run ${signal.workflow_run_id} for ${signal.repo_full_name} Issue #${signal.issue_number} / PR #${signal.number} exceeded the configured cost limit: $${signal.cost_usd} > $${signal.limit_usd}.`,
     };
   }
   if (signal.reason === "workflow_rework_limit") {
     return {
       title: "Workflow rework limit reached",
-      body: `Workflow run #${signal.workflow_run_id} for ${signal.repo_full_name} Issue #${signal.issue_number} / PR #${signal.number} reached the rework limit. ${signal.detail}`,
+      body: `Workflow run ${signal.workflow_run_id} for ${signal.repo_full_name} Issue #${signal.issue_number} / PR #${signal.number} reached the rework limit. ${signal.detail}`,
     };
   }
   throw new Error(`unsupported notification signal reason: ${signal.reason}`);

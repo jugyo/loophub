@@ -78,6 +78,8 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     updated_at: "2026-07-10T00:00:00Z",
     latest_review: null,
     verification_status: "unverified",
+    done: false,
+    merge_conflict: false,
     ...partial,
   };
 }
@@ -182,6 +184,7 @@ describe("WorkflowRunStatusSection", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
+          done: true,
         })}
       />,
     );

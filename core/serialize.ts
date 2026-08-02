@@ -21,6 +21,11 @@ import type {
 } from "./terminal/herdr-status.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
 import type { Theme } from "./theme.ts";
+import {
+  type WorkerCompatibility,
+  type WorkerRuntimeRecord,
+  workerCompatibility,
+} from "./worker-protocol.ts";
 import type { WorkflowContractLanguage } from "./workflow/contracts.ts";
 import {
   parseWorkflowEventPayload,
@@ -35,6 +40,15 @@ import type { WorkflowStepStatuses } from "./workflow/steps.ts";
 export type { CodingAgent } from "./runtimes.ts";
 export type { Theme as ThemeWire } from "./theme.ts";
 export type { WorkflowContractLanguage as WorkflowContractLanguageWire } from "./workflow/contracts.ts";
+
+export type WorkerCompatibilityWire = WorkerCompatibility;
+
+export function workerCompatibilityJSON(
+  runtime: WorkerRuntimeRecord | null,
+  nowMs = Date.now(),
+): WorkerCompatibilityWire {
+  return workerCompatibility(runtime, nowMs);
+}
 
 export interface AgentSettingsWire {
   model: string;
@@ -1414,6 +1428,10 @@ export interface WorkflowRunStateWire {
   updated_at: string;
   latest_review: WorkflowRunReviewSummaryWire | null;
   verification_status: "unverified" | "verified" | "stale";
+  // Canonical pre-merge Done state. This remains distinct from the run lifecycle `status` and is
+  // false when a merge conflict blocks the otherwise fresh passing review.
+  done: boolean;
+  merge_conflict: boolean;
 }
 
 export interface WorkflowPendingEffectReceiptWire {
@@ -1448,6 +1466,8 @@ export interface WorkflowStepStatusWire {
   head_ahead_of_base: boolean;
   head_ahead_of_latest_review: boolean;
   merge_conflict: boolean;
+  // Canonical pre-merge Done state derived from the current HEAD, its pinned review, and PR state.
+  done: boolean;
   // The linked PR's own domain state. The run's terminal condition is read from these fields
   // rather than from a close / merge event, so every route lands on the same reconciliation.
   pr_merged: boolean;
@@ -1470,6 +1490,8 @@ export function workflowRunStateJSON(input: {
   costLimitUsd: number;
   costLimitIncreaseAvailable: boolean;
   activeVerifyHeadSha: string | null;
+  done: boolean;
+  mergeConflict: boolean;
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1491,6 +1513,8 @@ export function workflowRunStateJSON(input: {
     updated_at: run.updated_at,
     latest_review: input.latestReview,
     verification_status: input.verificationStatus,
+    done: input.done,
+    merge_conflict: input.mergeConflict,
   };
 }
 
@@ -1663,7 +1687,9 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
   "workflow_run.started": {
     label: "Run started",
     description: ({ payload }) =>
-      `Workflow run #${String(payload.id ?? "")} started.`,
+      payload.id === undefined
+        ? "Workflow run started."
+        : `Workflow run ${String(payload.id)} started.`,
     significance: "default",
   },
   "workflow_run.updated": {
@@ -1823,7 +1849,7 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
           : "Review submitted",
     description: ({ payload, reviewVerdict }) => {
       const reviewId = payloadNumber(payload, "review_id");
-      const subject = reviewId !== null ? `Review #${reviewId}` : "A review";
+      const subject = reviewId !== null ? `Review ${reviewId}` : "A review";
       return reviewVerdict === "PASS"
         ? `${subject} passed on the linked PR — Verify cleared this implementation.`
         : reviewVerdict === "REQUEST_CHANGES"
@@ -1840,7 +1866,7 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     description: ({ payload }) => {
       const threadId = payloadNumber(payload, "thread_id");
       return threadId !== null
-        ? `A comment landed on diff conversation #${threadId}. The parent hands it to Execute.`
+        ? `A comment landed on diff conversation ${threadId}. The parent hands it to Execute.`
         : "A comment landed on the PR diff. The parent hands it to Execute.";
     },
     significance: "notable",
@@ -1850,7 +1876,7 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     description: ({ payload }) => {
       const commentId = payloadNumber(payload, "comment_id");
       return commentId !== null
-        ? `PR comment #${commentId} was sent to Execute.`
+        ? `PR comment ${commentId} was sent to Execute.`
         : "A PR comment was sent to Execute.";
     },
     significance: "notable",

@@ -690,7 +690,7 @@ describe("workflowActionPlan", () => {
         reason: "changes",
         review_id: 9,
       }).commands.at(-1)?.args,
-    ).toContain("orchestrator: address review #9");
+    ).toContain("orchestrator: address review 9");
     expect(
       plan({ action: "cost_hold", reason: "cost", event_id: 11 }).commands[0]
         ?.args,
@@ -727,7 +727,7 @@ describe("workflowActionPlan", () => {
     });
     expect(diffFeedback.commands[1]?.input).toBeUndefined();
     expect(diffFeedback.commands[1]?.args).toContain(
-      "orchestrator: address diff feedback thread #73 comment #108",
+      "orchestrator: address diff feedback thread 73 comment 108",
     );
   });
 
@@ -757,7 +757,7 @@ describe("workflowActionPlan", () => {
     });
     expect(comment.commands[1]?.input).toBeUndefined();
     expect(comment.commands[1]?.args).toContain(
-      "orchestrator: address PR comment #19",
+      "orchestrator: address PR comment 19",
     );
   });
 

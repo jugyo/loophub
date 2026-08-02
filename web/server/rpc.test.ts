@@ -88,6 +88,45 @@ test("a known method routes to the service and returns a result", async () => {
   expect(got.result.title).toBe("hello");
 });
 
+test("worker status is exposed and an unconfirmed worker blocks only workflow launch", async () => {
+  db.run("DELETE FROM worker_runtime");
+  const before = {
+    pulls: (db.query("SELECT count(*) AS count FROM pulls").get() as any).count,
+    runs: (db.query("SELECT count(*) AS count FROM workflow_runs").get() as any)
+      .count,
+    sessions: (
+      db.query("SELECT count(*) AS count FROM agent_sessions").get() as any
+    ).count,
+  };
+
+  const status: any = await call("worker/status", {});
+  expect(status.result).toMatchObject({
+    status: "missing",
+    required_protocol_version: 1,
+    observed_protocol_version: null,
+  });
+
+  const launch: any = await call("terminal/launch", {
+    repo: "me/proj",
+    workflow: "workflow-run",
+    issueNumber: 1,
+    workflowId: 1,
+  });
+  expect(launch.error.data.status).toBe(409);
+  expect(launch.error.message).toContain("start or restart");
+  expect({
+    pulls: (db.query("SELECT count(*) AS count FROM pulls").get() as any).count,
+    runs: (db.query("SELECT count(*) AS count FROM workflow_runs").get() as any)
+      .count,
+    sessions: (
+      db.query("SELECT count(*) AS count FROM agent_sessions").get() as any
+    ).count,
+  }).toEqual(before);
+
+  const issue: any = await call("issues/get", { repo: "me/proj", number: 1 });
+  expect(issue.result.title).toBe("hello");
+});
+
 test("search/query routes a repository-scoped query to the search service", async () => {
   const query = vi.spyOn(svc.search, "query").mockReturnValue([
     {

@@ -343,7 +343,7 @@ describe("DiffFileDialog", () => {
     );
   });
 
-  it("shows diff feedback message IDs without obscuring the comment body", async () => {
+  it("shows consistent diff feedback metadata without obscuring the comment body", async () => {
     renderDialog({
       handlers: {
         "diffFeedback/list": () => ({
@@ -354,6 +354,13 @@ describe("DiffFileDialog", () => {
                 start_line: 1,
                 end_line: 1,
               },
+              messages: [
+                {
+                  ...feedbackThread().messages[0],
+                  id: 123,
+                  author: "reviewer-with-a-long-desktop-username",
+                },
+              ],
             }),
           ],
         }),
@@ -361,9 +368,21 @@ describe("DiffFileDialog", () => {
     });
 
     const thread = await screen.findByLabelText("Diff thread 1");
-    expect(within(thread).getByLabelText("Comment ID 11").textContent).toBe(
-      "#11",
+    const author = within(thread).getByText(
+      "@reviewer-with-a-long-desktop-username",
     );
+    const time = thread.querySelector("time")!;
+    const id = within(thread).getByLabelText("Comment ID 123");
+
+    expect(time.getAttribute("datetime")).toBe("2026-07-28T00:00:00Z");
+    expect(id.textContent).toBe("#123");
+    expect(id.classList).toContain("ml-auto");
+    expect(
+      author.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      time.compareDocumentPosition(id) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(within(thread).getByText("Please revisit this range.")).toBeTruthy();
   });
 

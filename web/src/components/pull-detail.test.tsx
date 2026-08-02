@@ -566,10 +566,21 @@ describe("PullDetail", () => {
     const composer = screen.getByLabelText("Add a PR comment");
     const firstCommentCard = firstComment.closest("article")!;
     const secondCommentCard = secondComment.closest("article")!;
+    const firstAuthor = within(firstCommentCard).getByText("@human");
+    const firstTime = firstCommentCard.querySelector("time")!;
+    const firstId = within(firstCommentCard).getByLabelText("Comment ID 9");
 
+    expect(firstTime.getAttribute("datetime")).toBe("2026-06-18T11:45:00Z");
+    expect(firstId.textContent).toBe("#9");
+    expect(firstId.classList).toContain("ml-auto");
     expect(
-      within(firstCommentCard).getByLabelText("Comment ID 9").textContent,
-    ).toBe("#9");
+      firstAuthor.compareDocumentPosition(firstTime) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      firstTime.compareDocumentPosition(firstId) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       within(secondCommentCard).getByLabelText("Comment ID 10").textContent,
     ).toBe("#10");
@@ -1608,7 +1619,7 @@ describe("PullDetail", () => {
     expect(headings).toHaveLength(1);
     expect(headings[0].closest("aside")).toBeTruthy();
     expect(screen.getByText("Implementation loop")).toBeTruthy();
-    expect(screen.getByText("run #12")).toBeTruthy();
+    expect(screen.getByText("run 12")).toBeTruthy();
     expect(screen.getByText("Verify")).toBeTruthy();
     expect(screen.getByText("· rework ×2/8")).toBeTruthy();
     expect(screen.getByText("Needs human")).toBeTruthy();
@@ -1820,6 +1831,8 @@ describe("PullDetail", () => {
         updated_at: "2026-06-18T12:00:00Z",
         latest_review: null,
         verification_status: "verified",
+        done: true,
+        merge_conflict: false,
       }),
     });
 

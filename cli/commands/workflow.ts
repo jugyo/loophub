@@ -653,6 +653,7 @@ async function stepStatus(): Promise<void> {
   console.log(`cost_increment_usd\t${result.cost_increment_usd}`);
   console.log(`cost_limit_usd\t${result.cost_limit_usd}`);
   console.log(`head\t${display(result.head_sha ?? "(unresolved)")}`);
+  console.log(`done\t${result.done}`);
   if (result.last_turn_done_at !== null) {
     console.log(`last_turn_done\t${display(result.last_turn_done_at)}`);
   }

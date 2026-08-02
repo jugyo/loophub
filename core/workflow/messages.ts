@@ -125,9 +125,9 @@ const WORKFLOW_MESSAGE_CATALOG = {
     ja: "do not read the PR",
   },
   handoffLaunchIntro: {
-    en: (step, runId) => `Launch Workflow ${step} step for run #${runId}.`,
+    en: (step, runId) => `Launch Workflow ${step} step for run ${runId}.`,
     ja: (step, runId) =>
-      `Workflow ${step} step を run #${runId} 向けに起動します。`,
+      `Workflow ${step} step を run ${runId} 向けに起動します。`,
   },
   handoffParentNoteHeading: {
     en: "## Note from parent",

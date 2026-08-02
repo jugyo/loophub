@@ -47,6 +47,8 @@ function state(partial: Partial<WorkflowRunState> = {}): WorkflowRunState {
     updated_at: "2026-07-17T00:00:00Z",
     latest_review: null,
     verification_status: "unverified",
+    done: false,
+    merge_conflict: false,
     ...partial,
   };
 }
@@ -377,6 +379,7 @@ describe("WorkflowStepTracker", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
+          done: true,
         })}
       />,
     );
@@ -396,6 +399,7 @@ describe("WorkflowStepTracker", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
+          done: true,
         })}
       />,
     );
@@ -409,6 +413,7 @@ describe("WorkflowStepTracker", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
+          done: true,
         })}
         working
       />,
@@ -425,9 +430,10 @@ describe("WorkflowStepTracker", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
+          done: false,
+          merge_conflict: true,
         })}
         working
-        conflict
       />,
     );
     expect(screen.getByText("Conflict!").className).not.toContain(
@@ -475,8 +481,7 @@ describe("WorkflowStepTracker", () => {
   it("flips the terminal Done pill to Conflict! in a danger tone when the PR conflicts", () => {
     render(
       <WorkflowStepTracker
-        state={state({ current_step: "execute" })}
-        conflict
+        state={state({ current_step: "execute", merge_conflict: true })}
       />,
     );
     // The terminal pill now reads "Conflict!" (danger red), not "Done".
@@ -493,12 +498,7 @@ describe("WorkflowStepTracker", () => {
   });
 
   it("keeps the plain Done pill when the PR does not conflict", () => {
-    render(
-      <WorkflowStepTracker
-        state={state({ current_step: "execute" })}
-        conflict={false}
-      />,
-    );
+    render(<WorkflowStepTracker state={state({ current_step: "execute" })} />);
     expect(screen.getByText("Done")).toBeTruthy();
     expect(screen.queryByText("Conflict!")).toBeNull();
   });
@@ -509,8 +509,9 @@ describe("WorkflowStepTracker", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
+          done: false,
+          merge_conflict: true,
         })}
-        conflict
       />,
     );
     // Even a verified run shows Conflict! — the PR still can't merge.

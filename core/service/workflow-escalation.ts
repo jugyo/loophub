@@ -108,7 +108,7 @@ export const workflowEscalation = {
         `escalation for this run and reason already targets Issue #${issueNumber}`,
       );
     }
-    const body = `Workflow run #${run.id} requires human guidance: ${reason}`;
+    const body = `Workflow run ${run.id} requires human guidance: ${reason}`;
     const issueComment = runEffect(
       run.id,
       event.id,

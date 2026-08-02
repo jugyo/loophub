@@ -8,7 +8,10 @@ describe("CommentAuthorLabel", () => {
       <CommentAuthorLabel author="same-name" authorType="agent" />,
     );
     expect(screen.getByText("@same-name")).toBeTruthy();
-    expect(screen.getByLabelText("AI agent")).toBeTruthy();
+    const agentIcon = screen.getByLabelText("AI agent");
+    expect(agentIcon.className).toContain("bg-primary-subtle");
+    expect(agentIcon.className).toContain("text-link");
+    expect(agentIcon.className).not.toContain("text-muted-foreground");
 
     rerender(<CommentAuthorLabel author="same-name" authorType="system" />);
     expect(screen.queryByLabelText("AI agent")).toBeNull();

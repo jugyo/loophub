@@ -146,6 +146,8 @@ function makeWorkflowRunState(
     updated_at: "2026-07-17T00:00:00Z",
     latest_review: null,
     verification_status: "unverified",
+    done: false,
+    merge_conflict: false,
     ...overrides,
   };
 }
@@ -347,6 +349,7 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
       makeWorkflowRunState({
         current_step: "verify",
         verification_status: "verified",
+        done: true,
       }),
     );
     const tracker = (await screen.findByText("Done")).closest(
@@ -389,9 +392,12 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
   });
 
   it("flips the mini tracker's Done pill to Conflict! when the PR is in merge conflict (#1659)", async () => {
-    renderRowWithRun(makeWorkflowRunState({ current_step: "execute" }), {
-      mergeable_state: "conflict",
-    });
+    renderRowWithRun(
+      makeWorkflowRunState({
+        current_step: "execute",
+        merge_conflict: true,
+      }),
+    );
     const tracker = (await screen.findByText("Conflict!")).closest(
       "[data-workflow-step-tracker]",
     );
@@ -410,10 +416,11 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
         status: "completed",
         current_step: "verify",
         verification_status: "verified",
+        done: false,
       }),
     );
-    // `status === completed` is not the terminal — `verified` requires a running run, so Done
-    // stays unreached and Verify remains the current stage.
+    // `status === completed` is a separate lifecycle state, so canonical Done stays unreached and
+    // Verify remains the current stage.
     const tracker = (await screen.findByText("Done")).closest(
       "[data-workflow-step-tracker]",
     );
@@ -473,6 +480,7 @@ describe("LinkedPullSummaryRow working pulse vs workflow Done (#1877)", () => {
       makeWorkflowRunState({
         current_step: "verify",
         verification_status: "verified",
+        done: true,
       }),
     );
     await screen.findByRole("link", { name: "PR #10" });

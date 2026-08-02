@@ -1043,6 +1043,17 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  sql(
+    "063-create-worker-runtime",
+    `
+    CREATE TABLE IF NOT EXISTS worker_runtime (
+      singleton        INTEGER PRIMARY KEY CHECK (singleton = 1),
+      protocol_version INTEGER NOT NULL,
+      started_at       TEXT NOT NULL,
+      heartbeat_at     TEXT NOT NULL
+    );
+  `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

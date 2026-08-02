@@ -152,7 +152,7 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
     repoName,
   ]);
   expect(next.instructions.commands[1]?.args).toContain(
-    `orchestrator: address PR comment #${human.id}`,
+    `orchestrator: address PR comment ${human.id}`,
   );
 
   const detail = await svc.pulls.get(repoName, prNumber);

@@ -169,7 +169,7 @@ const RENDERED_EVENT_CASES: Array<{
     type: "workflow_run.started",
     payload: { id: 12 },
     label: "Run started",
-    description: "Workflow run #12 started.",
+    description: "Workflow run 12 started.",
     significance: "default",
   },
   {
@@ -177,7 +177,7 @@ const RENDERED_EVENT_CASES: Array<{
     type: "workflow_run.started",
     payload: {},
     label: "Run started",
-    description: "Workflow run # started.",
+    description: "Workflow run started.",
     significance: "default",
   },
   {
@@ -372,7 +372,7 @@ const RENDERED_EVENT_CASES: Array<{
     reviewVerdict: "PASS",
     label: "Review passed",
     description:
-      "Review #5 passed on the linked PR — Verify cleared this implementation.",
+      "Review 5 passed on the linked PR — Verify cleared this implementation.",
     significance: "notable",
   },
   {
@@ -382,7 +382,7 @@ const RENDERED_EVENT_CASES: Array<{
     reviewVerdict: "REQUEST_CHANGES",
     label: "Review requested changes",
     description:
-      "Review #5 requested changes on the linked PR. The run reworks unless a human steps in.",
+      "Review 5 requested changes on the linked PR. The run reworks unless a human steps in.",
     significance: "routine",
   },
   {
@@ -391,7 +391,7 @@ const RENDERED_EVENT_CASES: Array<{
     payload: { review_id: 5 },
     label: "Review submitted",
     description:
-      "Review #5 was submitted on the linked PR. Its verdict decides whether the run advances or reworks.",
+      "Review 5 was submitted on the linked PR. Its verdict decides whether the run advances or reworks.",
     significance: "routine",
   },
   {
@@ -402,6 +402,23 @@ const RENDERED_EVENT_CASES: Array<{
     description:
       "A review was submitted on the linked PR. Its verdict decides whether the run advances or reworks.",
     significance: "routine",
+  },
+  {
+    name: "diff_feedback",
+    type: "workflow_run.diff_feedback",
+    payload: { thread_id: 8 },
+    label: "Diff comment received",
+    description:
+      "A comment landed on diff conversation 8. The parent hands it to Execute.",
+    significance: "notable",
+  },
+  {
+    name: "pr_comment",
+    type: "workflow_run.pr_comment",
+    payload: { comment_id: 9 },
+    label: "PR comment received",
+    description: "PR comment 9 was sent to Execute.",
+    significance: "notable",
   },
   {
     name: "github_event",

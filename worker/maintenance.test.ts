@@ -67,6 +67,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
       conflictSweepMs: Number.NaN,
       herdrSweepMs: Number.NaN,
       worktreePruneSweepMs: Number.NaN,
+      workerHeartbeatMs: 0,
     }),
   ).toEqual({
     sweepMs: 0,
@@ -77,6 +78,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
     herdrSweepMs: M.DEFAULT_HERDR_SWEEP_MS,
     worktreePruneSweepMs: M.DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
+    workerHeartbeatMs: 0,
   });
 
   expect(M.normalizeMaintenanceLoopOptions()).toEqual({
@@ -88,6 +90,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
     herdrSweepMs: M.DEFAULT_HERDR_SWEEP_MS,
     worktreePruneSweepMs: M.DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
+    workerHeartbeatMs: M.DEFAULT_WORKER_HEARTBEAT_MS,
   });
 });
 
@@ -110,6 +113,7 @@ test("maintenance summary reports disabled loops as off", () => {
       conflictSweepMs: 0,
       herdrSweepMs: 0,
       worktreePruneSweepMs: 0,
+      workerHeartbeatMs: 25,
     }),
   ).toEqual({
     pullSweep: "off",
@@ -120,7 +124,26 @@ test("maintenance summary reports disabled loops as off", () => {
     conflictSweep: "off",
     herdrSweep: "off",
     worktreePruneSweep: "off",
+    workerHeartbeat: "25ms",
   });
+});
+
+test("worker heartbeat immediately upserts one runtime generation and refreshes it", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-02T00:00:00Z"));
+  const stop = M.startWorkerHeartbeat(5_000, "2026-08-01T23:59:59Z");
+  try {
+    expect(S.getWorkerRuntime()).toMatchObject({
+      protocol_version: 1,
+      started_at: "2026-08-01T23:59:59Z",
+      heartbeat_at: "2026-08-02T00:00:00.000Z",
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(S.getWorkerRuntime()?.heartbeat_at).toBe("2026-08-02T00:00:05.000Z");
+  } finally {
+    stop();
+    vi.useRealTimers();
+  }
 });
 
 test("GitHub feedback sweep runs at its configured interval and logs per-PR failures", async () => {

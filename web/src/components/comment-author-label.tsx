@@ -18,7 +18,12 @@ export function CommentAuthorLabel({
 
   return (
     <span className="inline-flex items-center gap-1">
-      {authorType === "agent" ? <AgentBotIcon label="AI agent" /> : null}
+      {authorType === "agent" ? (
+        <AgentBotIcon
+          label="AI agent"
+          className="bg-primary-subtle text-link"
+        />
+      ) : null}
       <span>@{displayAuthor}</span>
     </span>
   );
