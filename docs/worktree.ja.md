@@ -74,7 +74,7 @@ flowchart TD
 4. worktree があれば再利用し、無ければ base から作る（共有 provision ヘルパ）。
 5. session を linked PR に紐づけ、エージェントを worktree cwd で起動する。
 
-`lh resume` で PR の開発セッションを再開する場合も、head branch と worktree は PR 番号に揃える。
+既存 PR に対する workflow や maintenance も、head branch と worktree を PR 番号で解決する。
 
 ---
 

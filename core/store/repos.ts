@@ -184,6 +184,7 @@ export function deleteRepo(owner: string, name: string): boolean {
   const issueIds = issues.map((i) => i.id);
   if (issueIds.length) {
     const ph = issueIds.map(() => "?").join(",");
+    db.run(`DELETE FROM review_responses WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM review_comments WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM reviews WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM comments WHERE issue_id IN (${ph})`, issueIds);

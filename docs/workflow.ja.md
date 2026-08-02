@@ -8,16 +8,16 @@
 
 - **fact はドメイン状態に書く** — 完了・commits・review などの事実は event / git / DB に記録する。
   エージェント間の直接メッセージ（提出物・artifact）は存在しない。
-- **instruction は injection で配達する** — agent への入力は起動プロンプト、または生きている pane
-  への注入で届ける。**live Execute へのテキスト注入**は `lh workflow deliver`、コスト超過時の
-  実 Esc 入力だけは `herdr pane send-keys <pane_id> Escape` を使う。子の**起動**は
+- **instruction は injection で配達する** — agent への入力は起動プロンプト、または保存済みの実行
+  target への注入で届ける。**live Execute へのテキスト注入**は `lh workflow deliver`、コスト超過時の
+  実 Esc 入力は agent-control port の key input を使う。子の**起動**は
   `lh workflow launch-step`、**観測**は
   `lh workflow step status` のまま。event 到着時の次の action 判断は worker が既存の reconcile logic で行い、
   構造化 workflow instruction を対象 run の parent pane へ直接注入する。親は blocking watcher を持たない。
   子は親の pane・topology を知らない。
-- **rework / 継続作業は同じ Execute セッションを優先する**（#1556）— live な executor pane があれば
+- **rework / 継続作業は同じ Execute セッションを優先する**（#1556）— Execute の実行 target があれば
   parent が `lh workflow deliver` で `orchestrator:` を注入し、毎回 fresh Execute を起こさない。
-  deliver が pane / agent / session を解決できない、または注入に失敗したときだけ `launch-step` で
+  deliver が session / target を解決できない、または注入に失敗したときだけ `launch-step` で
   fresh 起動する。**Verify は常に
   fresh child**（注入で再利用しない）。注入するかどうかの判断は parent contract に置き、engine
   には持たせない。
@@ -69,7 +69,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
     │
     ├─ request_changes review → 生きている Execute pane へ「review <id> に対応せよ」を注入 → fresh Verify
     └─ fresh pass review → run は running のまま次の worker instruction を待つ
-         ├─ 追加指示 → Execute pane へ注入（閉じていれば --note 付き launch）
+         ├─ 追加指示 → 生きている Execute pane へ注入（注入できなければ人間へ渡す）
          ├─ turn done ＋ HEAD 前進 → fresh Verify
          ├─ turn done ＋ HEAD 不変 → pass は fresh のまま待機
          └─ 明示的 stop → run を恒久終了（merge は人間）
@@ -83,8 +83,9 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    `action`（判断済みの次の行動）、`observed`（その判断に使われた state）、`event`（契機になった run event）
    を読む。task completion と event は timing signal であり、完了や verdict そのものではない。
 2. `lh workflow launch-step` で Execute / Verify child を起動する（engine が input ポインタを解決）。
-   出力の `agent` 行（Herdr name、例: `executor #<run>-<seq>`）と `session` 行は domain state に
-   記録され、`lh workflow deliver` が注入時に最新 Execute を解決する。
+   child の session と実行基盤上の target は関連付けて domain state に記録され、
+   `lh workflow deliver` が run の最新 Execute session から target を解決する。配送時に live agent の
+   一覧を探索しない。
 3. **遷移は「turn done event の観測 → `lh workflow step status` で HEAD / review 状態を観測」で決める。**
    宣言はタイミングの合図であり真実を代替しない。宣言があっても HEAD が前進していなければ Verify を
    起動しない。pane 出力・子の自己申告・idle 検知・**注入の成功自体**は遷移判断に使わない。
@@ -96,11 +97,12 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    `increase-cost-limit --expected-limit <usd>` を実行する。
 5. request_changes / 継続指示 / merge conflict は **同じ Execute 注入経路** として
    `lh workflow deliver --run <run> --text '<single-line instruction>'` を使う。コマンドが最新 Execute
-   child と登録済み session id を解決し、live control target を更新して、改行・制御文字を空白に
-   sanitize した指示を pane へ送る。`pane_id` があれば `agent_status: done` でも利用できる。rework は
+   session と登録済み実行 target を解決し、live control target を更新して、改行・制御文字を空白に
+   sanitize した指示を agent-control port 経由で送る。rework は
    `orchestrator: address review #<id>` のみ（findings の要約・解釈はしない）。deliver が non-zero の
-   場合だけ `launch-step`
-   （`--review` / `--note`）で fresh relaunch する。fresh launch の確認は active step/session も
+   場合は retry や relaunch を行わず人間へ渡す。run は生きている Execute child を 1 つしか持たず、
+   それがある run への `launch-step --step execute` は 409 で失敗する（同じ worktree を 2 つの child が
+   編集する二重起動を、成功として記録させないため）。fresh launch の確認は active step/session も
    自動記録する。修正後の Verify は常に fresh child とする。
 6. コスト上限超過では event payload の `usage_session_id` と `active_step` /
    `active_session_id` を区別し、run を needs-human hold にしてから active child の pane だけに
@@ -118,7 +120,10 @@ rework は通常 Execute の turn done 後に届く。継続指示が作業中�
 worker は run が所有する 3 つの subject —— run 自身、その issue、その PR —— の event を
 `workflow_runs.event_cursor` より後から検出し、`lh workflow next` と同じ reconcile / action-plan logic へ
 event と現在 state を渡す。生成結果は `workflow instruction: <JSON>` の
-1 行として、run に登録済みの唯一の parent pane に単一の `pane run` request で注入・投稿する。
+1 行として、run に登録済みの唯一の parent pane に `pane send-text` で注入し、その成功後に
+`pane send-keys Enter` で投稿する。本文は bracketed paste で囲んで送るため、閉じ marker 以降の
+`Enter` は coding agent の paste 処理に取り込まれない。request を分けること自体は保証にならない
+（[根本原因](herdr-prompt-unsent-root-cause.ja.md)）。
 repository の `.loophub/workflow.yml` はこの経路に関与しない。
 
 購読の下端は run 自身の `workflow_run.started` event を含む。selector の exclusive bound には
@@ -130,11 +135,14 @@ error になる。event は 1 行ずつ進めるため、間に挟まった無�
 source event の instruction ownership は payload marker ごとに決まる。marker のない旧 source は state
 observation だけを wake し、instruction receipt を作らず cursor を進める。その legacy twin が instruction と
 receipt を所有する。marker のある source は自身が instruction と receipt を所有し、後着した legacy twin は
-superseded として receipt を作らず cursor だけを進める。この判定は parent watch と worker dispatch で共通である。
+superseded として receipt を作らず cursor だけを進める。
 
-CLI は parent の Herdr 起動成功後に pane 座標を run へ登録する。worker はその登録前には最古の event を
-run 作成から 2 分間だけ未処理のまま待つ。猶予後も pane row が無ければ missing-parent receipt と worker
-error を一度残し、自動再試行しない。登録後は event id 順に判断する。各 event の判断は action、reason、
+CLI は parent の Herdr 起動成功後に pane 座標を run へ登録し、その pane の agent は起動プロンプトの指示で
+`lh workflow parent-ready <run>` を実行して readiness を記録する。pane 登録は pane の存在しか示さず、
+起動途中の agent はまだ pane を読んでいないため、この 2 つが揃うまで配送しない。worker は最古の event を
+run 作成から 2 分間だけ未処理のまま待つ。猶予後も pane row が無ければ missing-parent receipt、readiness が
+無ければ parent-not-ready receipt と worker error を一度残し、自動再試行しない。両方が揃うと event id 順に
+判断する。各 event の判断は action、reason、
 instructions の fingerprint を receipt に記録し、直前の event と同じ instruction だけを入力せずに処理済みにする。
 注入開始前に `workflow.instruction:<fingerprint>` effect receipt を claim し、成功後に complete する。
 登録済み pane の座標不備や送信途中の失敗は、自動再実行すると二重入力になり得るため pending receipt と
@@ -145,9 +153,9 @@ progression instruction を送らず cursor だけ進める。
 GitHub reference の event は親の変更要否判断を必要とするため、`read_github_reference`
 action を届ける。action は event id と canonical reference だけを含み、untrusted な comment 本文は含まない。
 親は `gh api` で参照を読んでから
-`lh workflow next <run> --repo <repo> --event <event_id> --requires-changes true|false --json` を実行する。
-どちらの呼び出しが必要かは action が示すため、親の prompt にこの二段呼び出し規則を持たない。
-人間からの直接指示は待たずに `--note <text|->` で渡す。
+`lh workflow instruction <run> --repo <repo> --event <event_id> --requires-changes true|false --json` を実行する。
+この二段目が必要かどうかは action が示すため、親の prompt にこの規則を持たない。
+人間からの直接指示は待たずに `lh workflow instruction <run> --note <text|->` で渡す。
 
 `workflow_run.cost_exceeded` の event は `cost_hold` action を返す。親は `lh workflow cost-hold` を実行して
 次の instruction を待つ。hold 中の event 再送に対しても同じ action が返るが、effect が
@@ -172,8 +180,8 @@ receipt の粒度は effect が何に対して一度きりかで決まる。汎�
 ある。
 
 service test は正しい parent pane の特定、構造化 instruction、cursor の順序どおりの前進、連続する同一判断の
-重複防止、起動猶予内の pane 未登録、猶予後の pane 欠落、登録座標不備、送信途中 failure、terminal run の
-扱いを実 DB と fake herdr で確認する。integration test は実 git / DB 状態に対する `workflowRuns.next` の
+重複防止、起動猶予内の pane 未登録、readiness 未着時の保留、猶予後の pane 欠落と readiness 欠落、登録座標
+不備、送信途中 failure、terminal run の扱いを実 DB と fake herdr で確認する。integration test は実 git / DB 状態に対する `workflowRuns.next` の
 結果と、pane へ入力された instruction の JSON が同一であることを比較する。
 
 ```sh
@@ -197,7 +205,8 @@ contract を検証する。
 
 ### 3.2 Execute agent（ドメインを知る pull 型開発者）
 
-1. `lh issue view` / `lh pr view` で issue・PR（rework 時は対応すべき review）を自分で読む。
+1. `lh issue view` / `lh pr view` で issue・PR を読み、rework 時は
+   `lh pr review view <pr> --review <id> --json` で対象 review と全 review comments を読む。
 2. 関連コードを見て最小の実装計画を session 内に持つ（独立 artifact として提出しない）。
 3. 実装し、repo 標準の test / lint / typecheck を green にする。
 4. 結果を **ドメイン状態** に書く: commits、`lh pr update` による PR body、`lh attachment add`、
@@ -205,13 +214,14 @@ contract を検証する。
 5. ターン完了を `lh workflow turn done`（payload なし）で宣言する。**commit 前に宣言しても run は
    進まない**（親が HEAD 前進を観測しないため）。
 
-human follow-up が source の修正を要求する場合、Execute は対象を読んだ後、編集前に短い着手返信を
-投稿する。PR comment には top-level の `lh pr comment` で対象 `comment #<id>`、認識したこと、対応する
-意思を明記する。diff feedback には対象 thread の `lh pr feedback reply` で対象 `comment #<id>`、
-認識したこと、対応する意思を明記する。review rework には top-level の `lh pr comment` で対象
-`review #<id>`、対応するすべての `review comment #<id>`、finding を認識したことと対応する意思を
-明記する。質問、確認、PR metadata の更新のみなど source の修正を伴わない follow-up では、この着手返信を
-必須としない。
+human follow-up が source の修正を要求する場合、Execute は対象を読んだ後、PR comment には編集前に
+top-level の `lh pr comment` で対象 `comment #<id>`、認識したこと、対応する意思を明記する。diff feedback
+には編集前に対象 thread の `lh pr feedback reply` で対象 `comment #<id>`、認識したこと、対応する意思を
+明記する。review rework は、注入された `review #<id>`、その review と `review comment`、対応 commit、
+`workflow_run.turn_done` event から対応関係を追跡する。文章での応答が必要なら
+`lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>` で対象に紐づけ、
+top-level の `lh pr comment` は使わない。質問、確認、PR metadata の更新のみなど source の修正を伴わない
+follow-up では、編集前の着手返信を必須としない。
 
 `orchestrator:` 注入や launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
 continuing instruction など）は、自然に Issue / PR への追加要望と読めるならそのように扱い、同じ
@@ -302,12 +312,11 @@ sweep 再送）。生存している親は再送間隔より早く hold を確�
 usage 集約であり、中断対象ではない。中断対象は別フィールドの `active_step` /
 `active_session_id` である。passing Verify 後の追加 Execute 中も `current_step` は Verify のままだが、
 直前の `deliver` が行った live-control target 更新により active target は Execute になる。親はその
-step の最新 child pane を
-解決し、まず run を `await-human` で hold してから
-`herdr pane send-keys <pane_id> Escape` で実 Esc を送り、同じ pane に
+step の active session に関連付けられた実行 target を解決し、まず run を `await-human` で hold
+してから agent-control port で実 Esc を送り、同じ target に
 `orchestrator: Cost limit exceeded: current $<cost>, limit $<limit>. Wait for human instruction.`
-という 1 行を一度だけ通知する。`herdr pane run <pane_id> Escape` は文字列 `Escape` を入力するため
-使わない。ここまでが `cost-hold` の効果であり、粒度が event id 単位でないのは、同じ上限に対して event が
+という 1 行を一度だけ通知する。key input と text input は別の port 操作である。ここまでが
+`cost-hold` の効果であり、粒度が event id 単位でないのは、同じ上限に対して event が
 再送されるためである。停止中に溜まった event を drain したときの `cost-hold` は `already_completed` を
 返し、effect を再発火しない。親は worker instruction の `cost_hold` action を実行したら次の instruction を
 待つだけで、続行可否を自分では問わない。event の
@@ -338,34 +347,38 @@ hold を維持する。
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
 | Execute | `workflow_run.escalated` を受領 | event の reason で `escalate-human` → Issue comment に通知。run state は変えず、人間の指示まで step launch も rework もしない |
 | Execute / Verify | `workflow_run.cost_exceeded` を受領 | `cost_hold` action → `cost-hold` が active child を解決 → `await-human` → 実 Esc + 1 行通知（再送分は `already_completed` で effect を発火しない）→ loop に戻る |
-| Cost hold | 人間が増額 | 人間が期待上限付き専用操作で `B` 増額 → hold を解除。Execute は同じ pane で続行、Verify は current HEAD に fresh launch |
+| Cost hold | 人間が増額 | 人間が期待上限付き専用操作で `B` 増額 → hold を解除。Execute は同じ target で続行、Verify は current HEAD に fresh launch |
 | Cost hold | 増額なし | hold を維持し、子起動・注入・自動遷移を行わず次の明示的指示を待つ |
 | Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
 | Human wait | Execute の turn done 後、HEAD が不変 | hold を維持し、追加作業または明示的 resume を待つ |
 | Verify | 最新 review が fresh + pass | run を `running` のまま維持し、次の worker instruction を待つ |
-| Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、`lh workflow deliver` で既存 Execute pane へ注入する。deliver が失敗すれば `--note` 付きで Execute を launch |
+| Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、`lh workflow deliver` で既存 Execute target へ注入する。deliver が失敗すれば二重起動を避けて人間へ渡す |
 | Verified + continuing | Execute の turn done 後、HEAD が passing review より前進 | run は Verify のまま、現在の HEAD に対する Verify を fresh launch |
 | Verified + continuing | Execute の turn done 後、HEAD が不変 | 既存 pass は fresh のまま。Verify を起動せず待機を続ける |
 | Verify | 最新 review が fresh + request_changes | rework → Execute |
 
-fresh pass は現在の HEAD を検証するが、run を完了・凍結しない。parent agent と Execute pane を維持し、
+fresh pass は現在の HEAD を検証するが、run を完了・凍結しない。parent agent と Execute target を維持し、
 同じ run で追加作業を受け付ける。追加指示時に run は人間待ち hold ではないため `run resume` を使わない。
-生きている Execute pane へ parent が `lh workflow deliver` で `orchestrator: <instruction>` を注入し、
-deliver が失敗した場合は `lh workflow launch-step --step execute --note <instruction>` で起動する。
+保存済みの Execute target へ parent が `lh workflow deliver` で `orchestrator: <instruction>` を注入する。
+deliver が失敗した場合、生きている Execute child がある run への `launch-step --step execute` は拒否される
+ため、error を見える状態のまま人間の判断へ渡す。
 その後の turn done で HEAD が進んでいれば fresh Verify を起動し、PR body・comment・attachment だけが
 変わって HEAD が不変なら既存 pass を fresh のまま維持する。run を恒久終了する command は無く、
 終了させるのは人間である。
 
-rework 上限は 8。新規 launch より先に parent が **1 行の**
-`lh workflow deliver --text 'orchestrator: address review #<id>'` で同じ Execute session への注入を試す。
-コマンドは `pane_id` があれば `agent_status: done` の pane も再利用する。agent / session / pane を
-解決できない、または注入に失敗して non-zero になった場合に限り `--review <id>` で Execute child を
-再 launch する。修正後の Verify は常に fresh child とする。注入の成功自体を execute complete の根拠
+rework 上限は 8。rework は parent の **1 行の**
+`lh workflow deliver --text 'orchestrator: address review #<id>'` による同じ Execute session への注入で行う。
+コマンドは DB 上の最新 Execute session と保存済み実行 target を再利用する。`request-rework` は
+`current_step` を `execute` に戻すのと同じ更新で `active_step` / `active_session_id` をその Execute child に
+向け直す。両者を一度 null にすると、生きている child が居るのに「Execute 未起動」に見える窓ができ、
+その窓で worker が reconcile すると二重起動する（#2150）。session / target を解決できない、または注入に
+失敗して non-zero になった場合は、二重起動を避けて人間の判断へ渡す。
+修正後の Verify は常に fresh child とする。注入の成功自体を execute complete の根拠
 にしない — 次の遷移は `lh workflow step status` の HEAD / review 観測のみ。
 
 上限到達後に fresh な request_changes を観測したときは rework せず、`escalate-human` で Issue comment に
 通知する。この escalation は run を DB で hold しない（`needs_human_reason` は null のまま）ため、復帰は
-人間の指示を `lh workflow next <run> --note <text>` に渡すことで行い、返る action は既存 Execute pane への
+人間の指示を `lh workflow instruction <run> --note <text>` に渡すことで行い、返る action は既存 Execute target への
 `deliver` である。`run resume` を経由しないので rework count は上限のまま残り、以降の request_changes は
 毎回 escalation として人間に戻る。`run resume` は cost hold のような `await-human` による明示的 hold を
 解除する経路として残る。
@@ -380,8 +393,7 @@ read-only 表示だけ維持する。
 
 fresh pass 後も run は complete せず `running` + `verification_status: verified` のまま保つ。run を恒久
 終了する command は無い。コスト超過時は `cost-hold` が needs-human hold を先に設定し、
-`herdr pane send-keys <pane_id> Escape` で active child だけを中断する（child の Esc 送信自体に lh CLI
-ラッパーは無い）。人間の判断なしには増額も再開もしない。
+agent-control port の key input で active child だけを中断する。人間の判断なしには増額も再開もしない。
 `resume` は `await-human` による明示的 hold を人間の指示で解除する command であり、fresh pass 後の
 追加作業には使わない。
 
@@ -399,11 +411,9 @@ lh workflow deliver --run <id> --text <single-line-instruction> # 最新 Execute
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
 lh workflow escalate-human --reason <text> [--run <id>] [--issue <n>] # Issue comment を冪等に記録
-lh workflow next <run> [--watch | --event <id> [--requires-changes true|false] | --note <text|->] --json # 観測済み state から次の action を返す（--watch は次の run event まで block）
+lh workflow instruction <run> (--event <id> --requires-changes true|false | --note <text|->) --json # 親の入力（GitHub reference の判断 / 人間の直接指示）に対する instruction を返す
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測
-# cost interrupt の live child control
-herdr pane send-keys <pane_id> Escape       # コスト超過時に active child へ実 Esc を送る
 ```
 
 `lh workflow step output` は廃止した。Verify の出力は `lh pr review --commit <sha>`
@@ -419,17 +429,24 @@ herdr pane send-keys <pane_id> Escape       # コスト超過時に active child
   install ではこれらのテーブルを作成しない。一時ロック用の `workflow_placement_claims` のみ DROP する。
 - CLI・RPC / wire type・Web UI・run history・本書から artifact 契約前提の API・表示・用語を削除した。
   Workflow 専用の語彙として残るのは **input**（起動時に子へ渡すポインタ群）のみである。
+- `lh workflow next` は廃止した。状態変化からの進行判断は worker の instruction 配送が担い、親が
+  instruction を取りに行く経路（`--watch` を含む）は無い。親自身の入力—GitHub reference に対する
+  変更要否の判断と、人間からの直接指示—だけを `lh workflow instruction` で渡す。
 
 ## 10. 実装境界
 
 | 層 | 責務 |
 |---|---|
+| `core/agent-control.ts` | text input、key input、close を抽象化する agent-control port |
 | `core/workflow/contracts/` | parent / Execute / Verify contract |
 | `core/workflow/compose.ts` | contract render と「ポインタ + step prompt」の launch prompt 合成 |
 | `core/workflow/steps.ts` | HEAD / review 観測から 2 step の状態を導く pure query |
 | `core/service/workflow-runs.ts` | run start、child launch、turn done、status、rework |
 | `core/service/workflow-instructions.ts` | run event から parent pane への構造化 instruction 配送 |
+| `core/service/agent-control.ts` | provider に対応する agent-control adapter の選択 |
+| `core/service/herdr-agent-control.ts` | agent-control port の Herdr adapter |
 | `worker/runner.ts` | workflow instruction 配送と repository automation の event tail |
+| `core/store/agent-execution-targets.ts` | agent session と実行 target の関連の persistence |
 | `core/store/workflows.ts` | 2 prompt と workflow run / effect receipt の persistence |
 | `core/serialize.ts` | workflow / run の wire shape |
 | `cli/commands/workflow.ts` | flag 解析と JSON / text 表示だけの thin CLI |
@@ -439,7 +456,7 @@ herdr pane send-keys <pane_id> Escape       # コスト超過時に active child
 
 - 「Execute → turn done → Verify pass → running のまま追加指示を待機」「追加指示 → Execute 注入または
   `--note` 付き launch → HEAD 前進時だけ fresh Verify」「request_changes → rework 注入（review id のみ、
-  同じ Execute セッション優先）→ turn done → fresh Verify pass」「pane 無し時だけ fresh Execute
+  同じ Execute セッション優先）→ turn done → fresh Verify pass」「target 無し時だけ fresh Execute
   launch」「注入テキストは 1 行」「注入成功は遷移根拠にしない」「宣言なしタイムアウト → 人間へ可視化」
   「明示的 stop」の基本フローが artifact なしで決定的に進行する。
 - rework 注入 round が `rework_count` + `workflow_run.turn_done` + `step_sessions_json.execute` の
@@ -456,11 +473,11 @@ herdr pane send-keys <pane_id> Escape       # コスト超過時に active child
 - 親 rollout と同じ累積 token counter prefix を引き継ぐ fork 子 2 本を集約しても prefix は 1 回だけ
   加算され、各子は fork 後の増分だけになる。
 - `workflow_run.cost_exceeded` は usage 更新元と active step/session を別フィールドで記録し、親は
-  fresh launch または注入直前に記録した active pane を hold 後に
-  `send-keys ... Escape` で中断し、1 行通知を一度だけ送る。
+  fresh launch または注入直前に記録した active target を hold 後に key input で中断し、
+  1 行通知を一度だけ送る。
 - 上限超過のまま hold されていない run には `workflow_run.cost_exceeded` が再送間隔ごとに再送され、
   親が wake 後・`cost-hold` 前に停止しても後続 wake で hold できる。hold 確立後と増額後は再送されない。
-- 停止中に溜まった再送 event を親が順に処理しても、Esc・pane 通知・yes / no の継続確認はいずれも一度しか
+- 停止中に溜まった再送 event を親が順に処理しても、Esc・child 通知・yes / no の継続確認はいずれも一度しか
   発火しない。`cost.hold` の receipt は event id 単位ではなく (run, 累計上限) 単位で、同じ上限に対する
   後続 event は `already_completed` になる。親はこれを skip するため、増額・resume 済みの子を再び中断せず、
   決定済みの質問を人間へ再提示せず、古い `limit_usd` で増額を試みず、pending receipt も残さない。

@@ -1,4 +1,5 @@
 export * from "./store/acceptance-criteria.ts";
+export * from "./store/agent-execution-targets.ts";
 export * from "./store/comments.ts";
 export * from "./store/diff-feedback.ts";
 export * from "./store/events.ts";
@@ -14,7 +15,6 @@ export * from "./store/pulls.ts";
 export * from "./store/repos.ts";
 export * from "./store/retros.ts";
 export * from "./store/reviews.ts";
-export * from "./store/scheduled-tasks.ts";
 export * from "./store/search.ts";
 export * from "./store/session-usage.ts";
 export * from "./store/sessions.ts";

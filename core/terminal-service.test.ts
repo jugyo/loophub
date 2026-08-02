@@ -39,8 +39,8 @@ test("terminal.launch attaches a specific reason and the retryable herdr command
     process.env.PATH = "";
     await svc.terminal.launch({
       repo: "me/herdr-launch-svc",
-      workflow: "scheduled-task-create",
-      prompt: "Create a scheduled task.",
+      workflow: "issue-create",
+      prompt: "Create an issue.",
     });
   } catch (e) {
     err = e as ServiceError;
@@ -50,10 +50,10 @@ test("terminal.launch attaches a specific reason and the retryable herdr command
 
   if (!err) throw new Error("expected terminal.launch to reject");
   expect(err.name).toBe("ServiceError");
-  // The retryable command is the eventual agent start after the best-effort Scheduled Task
-  // placement hits the same deliberate ENOENT.
+  // New Issue first probes the shared workspace before starting an agent, so this is the command
+  // that encounters the deliberate ENOENT and must be reported for a local retry.
   expect(err.data?.command).toMatch(/^herdr /);
-  expect(err.data?.command).toContain("agent start");
+  expect(err.data?.command).toContain("workspace list");
   expect(err.data?.command).toContain("me-herdr-launch-svc-");
   expect(err.message).toBe("herdr command not found on PATH");
   expect(err.data?.session).toBeUndefined();

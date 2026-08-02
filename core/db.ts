@@ -298,6 +298,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   issue_id    INTEGER NOT NULL REFERENCES issues(id),
   author      TEXT NOT NULL,
+  author_type TEXT NOT NULL DEFAULT 'system' CHECK (author_type IN ('human', 'agent', 'system')),
   event       TEXT NOT NULL,
   body        TEXT NOT NULL DEFAULT '',
   head_sha    TEXT,
@@ -310,12 +311,26 @@ CREATE TABLE IF NOT EXISTS review_comments (
   issue_id    INTEGER NOT NULL REFERENCES issues(id),
   review_id   INTEGER REFERENCES reviews(id),
   author      TEXT NOT NULL,
+  author_type TEXT NOT NULL CHECK (author_type IN ('human', 'agent', 'system')),
   body        TEXT NOT NULL,
   path        TEXT NOT NULL,
   line        INTEGER,
   side        TEXT,
   created_at  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS review_responses (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id          INTEGER NOT NULL REFERENCES issues(id),
+  review_id         INTEGER NOT NULL REFERENCES reviews(id),
+  review_comment_id INTEGER REFERENCES review_comments(id),
+  author            TEXT NOT NULL,
+  body              TEXT NOT NULL,
+  created_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_responses_issue_review
+  ON review_responses(issue_id, review_id, created_at, id);
 
 CREATE TABLE IF NOT EXISTS diff_feedback_threads (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -329,6 +344,7 @@ CREATE TABLE IF NOT EXISTS diff_feedback_threads (
   start_line     INTEGER NOT NULL CHECK (start_line > 0),
   end_line       INTEGER NOT NULL CHECK (end_line >= start_line),
   created_by     TEXT NOT NULL,
+  created_by_type TEXT NOT NULL CHECK (created_by_type IN ('human', 'agent', 'system')),
   created_at     TEXT NOT NULL,
   resolved_by    TEXT,
   resolved_at    TEXT
@@ -353,6 +369,7 @@ CREATE TABLE IF NOT EXISTS diff_feedback_messages (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   thread_id   INTEGER NOT NULL REFERENCES diff_feedback_threads(id) ON DELETE CASCADE,
   author      TEXT NOT NULL,
+  author_type TEXT NOT NULL CHECK (author_type IN ('human', 'agent', 'system')),
   body        TEXT NOT NULL,
   created_at  TEXT NOT NULL
 );
@@ -440,6 +457,20 @@ CREATE INDEX IF NOT EXISTS idx_events_repo_ready_number_id
 CREATE INDEX IF NOT EXISTS idx_events_repo_cost_stopped_number_session_id
   ON events(repo_id, json_extract(payload, '$.number'), json_extract(payload, '$.session_id'), id)
   WHERE type = 'dev.cost_stopped';
+-- Workflow lifecycle lookups by run id (workflowRunsWithPendingEvents in store/workflows.ts,
+-- eventsForWorkflowRun in store/events.ts). The first of those runs once per second in the worker's
+-- event tail and, without this index, re-scanned every event after each run's cursor -- a cost that
+-- grows with both the events table and the number of recorded runs, and that blocks the whole worker
+-- event loop because node:sqlite is synchronous. Unlike the two indexes above this one covers a
+-- whole type family rather than a single literal type, so its partial condition repeats the
+-- callers' GLOB pair verbatim (SQLite matches partial indexes syntactically, so the query text has
+-- to keep both GLOBs in that exact form). The CAST is load-bearing too: run ids are compared
+-- against workflow_runs.id, an INTEGER-affinity column, and SQLite only uses an expression index
+-- when the comparison's affinity matches the indexed expression's -- a bare json_extract has none,
+-- so the correlated lookup silently fell back to a scan.
+CREATE INDEX IF NOT EXISTS idx_events_repo_workflow_run_id
+  ON events(repo_id, CAST(json_extract(payload, '$.id') AS INTEGER), id)
+  WHERE type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*';
 
 CREATE TABLE IF NOT EXISTS agent_sessions (
   id                TEXT PRIMARY KEY,
@@ -453,11 +484,22 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   UNIQUE (agent, external_session)
 );
 
+-- Runtime-specific address for controlling a live agent. Workflow code resolves targets through
+-- the owning session and delegates operations to an agent-control adapter.
+CREATE TABLE IF NOT EXISTS agent_execution_targets (
+  session_id  TEXT PRIMARY KEY REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  provider    TEXT NOT NULL,
+  target_id   TEXT NOT NULL,
+  context     TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
 -- Generalized session<->target links (#298). A session can relate to any issues row — an
 -- issue (kind=issue) OR a PR (kind=pull) — and a single issue/PR can carry many sessions
 -- (dev, review, issue-create, ...), so this is a plain many-to-many bridge keyed by the pair.
 -- This replaces the old 1:1 pulls.session_id attribution (dropped in #316): the PR's primary dev
--- session — the anchor lh resume/retro resolve from — is now derived as the latest kind='dev' link
+-- session — the usage attribution/retro anchor — is now derived as the latest kind='dev' link
 -- here (store.primaryDevSessionForPull). The session's own kind lives on agent_sessions.kind;
 -- created_at is when the link was made (the basis for ordering the related-sessions list newest-first).
 CREATE TABLE IF NOT EXISTS session_links (
@@ -760,12 +802,8 @@ CREATE INDEX IF NOT EXISTS idx_herdr_pane_claims_active
   ON herdr_pane_claims(pane_id)
   WHERE released_at IS NULL;
 
--- Scheduled tasks (#880). A repo-scoped, saved prompt that a coding agent (claude-code / codex) runs
--- automatically at one or more times of day. times_json is an array of "HH:MM" local-time strings —
--- each registered time fires once per day (dedup is enforced by scheduled_task_runs.fire_key, not
--- here). model/effort are NULL when unset, resolved at fire time from the per-agent application
--- defaults (core/config.ts agentModel/agentEffort). Deliberately NOT cron: the whole point is a small
--- fixed set of daily times, so a list of times replaces a cron expression (#880 out of scope).
+-- Retired scheduled-task storage. Keep these tables so existing installations retain their saved
+-- rows and historical run metadata; there is intentionally no active service or worker producer.
 CREATE TABLE IF NOT EXISTS scheduled_tasks (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id     INTEGER NOT NULL REFERENCES repos(id),
@@ -781,14 +819,8 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_repo ON scheduled_tasks(repo_id, id);
 
--- One row per fire of a scheduled task — meta only (#880; the agent's output body stays on the herdr
--- side, not persisted here). A fire is either 'scheduled' (a registered time arrived, worker sweep) or
--- 'manual' (Run now). fire_key is the dedup key for the once-per-day guarantee: for scheduled fires it
--- is "<local-date>T<HH:MM>" and UNIQUE(task_id, fire_key) makes a second sweep tick for the same
--- time/day throw instead of double-firing; for manual fires it is NULL (SQLite allows many NULLs in a
--- UNIQUE, so Run now is never blocked). status is the launch outcome: 'running' while the herdr launch
--- is in flight, then 'success' (agent pane captured) or 'failure' (error recorded). herdr_tab_id /
--- herdr_pane_id reference the launched herdr tab/pane so a human can find the live output.
+-- Historical run metadata for the retired scheduled-task feature. Retained for non-destructive
+-- compatibility with databases created while the feature was active.
 CREATE TABLE IF NOT EXISTS scheduled_task_runs (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id        INTEGER NOT NULL REFERENCES scheduled_tasks(id),
@@ -816,6 +848,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   repo_id        INTEGER NOT NULL REFERENCES repos(id),
   kind           TEXT NOT NULL
                    CHECK (kind IN ('merge_ready', 'over_budget', 'human_attention')),
+  severity       TEXT NOT NULL DEFAULT 'info'
+                   CHECK (severity IN ('info', 'warning')),
   title          TEXT NOT NULL,
   body           TEXT NOT NULL,
   resource_kind  TEXT NOT NULL CHECK (resource_kind IN ('issue', 'pull', 'repo')),

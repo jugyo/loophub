@@ -23,7 +23,7 @@ export function AppLayout() {
   const [repoSwitcherRequest, setRepoSwitcherRequest] = useState(0);
   useScrollToTop(mainRef);
   return (
-    // TerminalControllerProvider wraps the content so New Issue / Build / Resume buttons can
+    // TerminalControllerProvider wraps the content so terminal launch buttons can
     // launch a Herdr session via useTerminalLauncher() and surface its launch feedback / error
     // dialog here at the shell level.
     <TerminalControllerProvider>

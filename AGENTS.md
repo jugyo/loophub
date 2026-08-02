@@ -25,6 +25,8 @@ convention changes.
   and events instead.
 - Keep data-selection semantics in `core`; Web should request the desired result set rather
   than reconstruct it from partial responses.
+- Keep structural labels in generated documents — section headings, template keys, and other
+  schema-like text — in a stable shared language. Localize prose, not document structure.
 - Before answering review feedback with another defensive mechanism, apply these principles.
   For plausible but human-recoverable failures, explicitly accepting the risk can be correct.
 - Background reading that informs how we design agent loops lives in
@@ -43,8 +45,8 @@ run development loops while a human supervises with minimal attention.
 - **Pull request (PR)**: a reviewable implementation proposal linked to an issue. It owns the
   head/base refs, draft and review state, and merge outcome; it is the unit that is delivered.
 - **Session**: one recorded agent-runtime invocation. Sessions can be linked to issues or PRs;
-  multiple sessions may contribute to one PR, while its primary development session is the
-  resume and retrospective anchor.
+  multiple sessions may contribute to one PR, while its primary development session is the usage
+  attribution and retrospective anchor. LoopHub does not resume coding-agent sessions.
 - **Workspace**: a local Git branch used as an integration target for a group of issues and
   their PRs. Its registry row only makes the branch visible to LoopHub; unlike a worktree, a
   workspace has no dedicated checkout.
@@ -71,7 +73,7 @@ core/    Pure domain library (Node): db, config, store, git, events, links, watc
 cli/     `lh` command — commands/ grouped by noun; imports core directly, no HTTP
 web/     `lh-web` process: core + JSON-RPC 2.0, plus the SPA
 worker/  `lh-worker` resident process: tails shared events, runs per-repo workflow.yml,
-         and owns maintenance sweep loops (PR sweep, usage, GitHub merge sync, cost stop, scheduled tasks)
+         and owns maintenance sweep loops (PR sweep, usage, GitHub merge sync, cost stop)
 ```
 
 ### Responsibility split (core vs cli)
@@ -130,6 +132,13 @@ npm run format           # biome format --write (apply formatting)
 
 Lint/format use [Biome](https://biomejs.dev). Config is `biome.json`; the linter is a
 minimal recommended set (type-aware checks stay with `npm run typecheck`).
+
+## Attached documents
+
+An issue or PR body can link a document attachment (`[findings.md](/attachments/<sha256>)`),
+typically a hand-off from an earlier investigation. Read one with `lh attachment get
+<sha256|url>` — text goes to stdout, `--json` reports its metadata and stored path. Attach
+one with `lh attachment add --file <path>` and put the printed markdown in the body.
 
 ## Tests
 

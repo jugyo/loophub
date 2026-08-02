@@ -1,18 +1,18 @@
 import { copyFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { branchExists, revParse, worktreeAdd, worktreeList } from "./git.ts";
-import type { WorktreeScheme } from "./resume.ts";
 import {
   legacyWorktreeBranch,
   legacyWorktreePath,
+  type WorktreeScheme,
   worktreeBranch,
   worktreePath,
 } from "./worktree-path.ts";
 
 // Provisions the on-disk git worktree for a PR's (or, under scheme "legacy-issue", an issue's)
 // dev loop. Originally `cli/dev.ts`-only; lives in core so Workflow / herdr launchers
-// (terminal.launch) and resume can provision a worktree without going through a removed CLI
-// command — see `core/terminal/terminal-launch.ts` / the herdr worktree-open flow.
+// (terminal.launch) can provision a worktree without going through a removed CLI command — see
+// `core/terminal/terminal-launch.ts` / the herdr worktree-open flow.
 
 // Resolve symlinks when the path exists; fall back to lexical normalization otherwise.
 function canonical(p: string): string {
@@ -103,7 +103,7 @@ export async function provisionWorktree(
     (w) => canonical(w.path) === canonical(path),
   );
 
-  // A launcher-managed PR with no recorded head is only a resumable partial provision while its
+  // A launcher-managed PR with no recorded head is only a recoverable partial provision while its
   // conventional branch/worktree still points at the recorded fork point. A deleted PR may leave
   // both behind; if its number were reused, accepting a different HEAD here would silently turn
   // stale commits into the new PR's implementation.

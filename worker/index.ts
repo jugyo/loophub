@@ -3,7 +3,7 @@
 // Runs only while invoked (no daemon).
 //   lh-worker [--poll-ms <ms>] [--sweep-ms <ms>] [--usage-sweep-ms <ms>]
 //             [--github-merge-sweep-ms <ms>] [--github-feedback-sweep-ms <ms>]
-//             [--closed-pull-cleanup-sweep-ms <ms>] [--scheduled-task-sweep-ms <ms>]
+//             [--closed-pull-cleanup-sweep-ms <ms>]
 //             [--conflict-sweep-ms <ms>] [--herdr-sweep-ms <ms>]
 //             [--worktree-prune-sweep-ms <ms>]
 // Like lh-web, it touches the DB through core, so it must carry the --experimental-sqlite flag
@@ -17,7 +17,6 @@ import {
   DEFAULT_GITHUB_FEEDBACK_SWEEP_MS,
   DEFAULT_GITHUB_MERGE_SWEEP_MS,
   DEFAULT_HERDR_SWEEP_MS,
-  DEFAULT_SCHEDULED_TASK_SWEEP_MS,
   DEFAULT_SWEEP_MS,
   DEFAULT_USAGE_SWEEP_MS,
   DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
@@ -44,10 +43,6 @@ let closedPullCleanupSweepMs = Number(
   process.env.LOOPHUB_CLOSED_PULL_CLEANUP_SWEEP_MS ??
     DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
 );
-let scheduledTaskSweepMs = Number(
-  process.env.LOOPHUB_SCHEDULED_TASK_SWEEP_MS ??
-    DEFAULT_SCHEDULED_TASK_SWEEP_MS,
-);
 let conflictSweepMs = Number(
   process.env.LOOPHUB_CONFLICT_SWEEP_MS ?? DEFAULT_CONFLICT_SWEEP_MS,
 );
@@ -68,8 +63,6 @@ for (let i = 0; i < argv.length; i++) {
     githubFeedbackSweepMs = Number(argv[++i]);
   else if (argv[i] === "--closed-pull-cleanup-sweep-ms")
     closedPullCleanupSweepMs = Number(argv[++i]);
-  else if (argv[i] === "--scheduled-task-sweep-ms")
-    scheduledTaskSweepMs = Number(argv[++i]);
   else if (argv[i] === "--conflict-sweep-ms")
     conflictSweepMs = Number(argv[++i]);
   else if (argv[i] === "--herdr-sweep-ms") herdrSweepMs = Number(argv[++i]);
@@ -85,7 +78,6 @@ const maintenanceOptions = normalizeMaintenanceLoopOptions({
   githubMergeSweepMs,
   githubFeedbackSweepMs,
   closedPullCleanupSweepMs,
-  scheduledTaskSweepMs,
   conflictSweepMs,
   herdrSweepMs,
   worktreePruneSweepMs,
@@ -94,7 +86,7 @@ const worker = startWorker({ pollMs });
 const maintenance = startMaintenanceLoops(maintenanceOptions);
 const summary = maintenanceSummary(maintenanceOptions);
 workerLog.info(
-  `lh-worker started (events poll ${pollMs}ms; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; github feedback sweep ${summary.githubFeedbackSweep}; closed pull cleanup sweep ${summary.closedPullCleanupSweep}; scheduled task sweep ${summary.scheduledTaskSweep}; conflict sweep ${summary.conflictSweep}; herdr sweep ${summary.herdrSweep}; worktree prune sweep ${summary.worktreePruneSweep})`,
+  `lh-worker started (events poll ${pollMs}ms; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; github feedback sweep ${summary.githubFeedbackSweep}; closed pull cleanup sweep ${summary.closedPullCleanupSweep}; conflict sweep ${summary.conflictSweep}; herdr sweep ${summary.herdrSweep}; worktree prune sweep ${summary.worktreePruneSweep})`,
 );
 
 let isShuttingDown = false;

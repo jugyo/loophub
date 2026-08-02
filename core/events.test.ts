@@ -36,3 +36,17 @@ test("formatEvent leaves subjects empty for a payload that names nothing", () =>
   expect(ev.payload).toBeNull();
   expect(ev.subjects).toEqual([]);
 });
+
+test("formatEvent keeps historical event types after their producer is retired", () => {
+  const ev = formatEvent({
+    id: 8,
+    type: "scheduled_task.created",
+    actor: "me",
+    payload: JSON.stringify({ id: 3, title: "Daily triage" }),
+    created_at: "2026-01-02T00:00:00Z",
+    repo_id: 1,
+  });
+
+  expect(ev.type).toBe("scheduled_task.created");
+  expect(ev.payload).toEqual({ id: 3, title: "Daily triage" });
+});

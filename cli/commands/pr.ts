@@ -317,6 +317,25 @@ export async function run(): Promise<void> {
     if (!flags.json)
       console.log(`pushed to GitHub PR #${g.number} branch ${g.branch}`);
   } else if (sub === "review") {
+    if (rest[0] === "view") {
+      if (!flags.review) fail("--review is required");
+      const detail = await runOp(() =>
+        s.reviews.get(repo, Number(rest[1]), Number(flags.review)),
+      );
+      out(detail);
+      if (!flags.json) {
+        console.log(
+          `review #${detail.review.id}: ${detail.review.state} by @${detail.review.user.login}`,
+        );
+        if (detail.review.body) console.log(detail.review.body);
+        for (const comment of detail.comments) {
+          console.log(
+            `comment #${comment.id}\t${comment.path}:${comment.line ?? "-"}\t${comment.body}`,
+          );
+        }
+      }
+      return;
+    }
     // Two-channel review inputs (#1895): `--comments` (line comments) and `--ac-results` (per-
     // criterion grades). Each is inline JSON or a file path — stdin (`-`) is gone, so the two
     // channels never contend for it.
@@ -351,6 +370,48 @@ export async function run(): Promise<void> {
       console.log(
         `review ${res.id} submitted: ${res.state} (${res.comments} line comment(s))`,
       );
+  } else if (sub === "review-response") {
+    const [action, numberText] = rest;
+    const number = Number(numberText);
+    if (!flags.review) fail("--review is required");
+    const reviewId = Number(flags.review);
+    if (action === "add") {
+      if (flags.body === undefined) fail("--body is required");
+      const response = await runOp(async () =>
+        s.reviews.createResponse(
+          repo,
+          number,
+          {
+            reviewId,
+            ...(flags["review-comment"]
+              ? { reviewCommentId: Number(flags["review-comment"]) }
+              : {}),
+            body: flags.body ?? "",
+          },
+          await writeSession(),
+        ),
+      );
+      out(response);
+      if (!flags.json)
+        console.log(
+          `responded to review #${response.pull_request_review_id} (response ${response.id})`,
+        );
+    } else if (action === "list") {
+      const responses = await runOp(() =>
+        s.reviews.listResponses(repo, number, reviewId),
+      );
+      out(responses);
+      if (!flags.json)
+        responses.forEach((response) => {
+          console.log(
+            `#${response.id}\treview #${response.pull_request_review_id}${
+              response.pull_request_review_comment_id
+                ? ` comment #${response.pull_request_review_comment_id}`
+                : ""
+            }\t@${response.user.login}\t${response.body}`,
+          );
+        });
+    } else usage();
   } else if (sub === "close" || sub === "reopen") {
     const number = Number(rest[0]);
     const state = sub === "close" ? "closed" : "open";

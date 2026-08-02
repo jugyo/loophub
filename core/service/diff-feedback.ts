@@ -34,7 +34,13 @@ import {
 import * as S from "../store.ts";
 import { workflowStepSessionIds } from "../workflow/herdr-agents.ts";
 import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
-import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
+import {
+  actorFor,
+  commentActor,
+  ensureWritable,
+  issueOr404,
+  repoOr404,
+} from "./shared.ts";
 
 const FULL_SHA = /^[0-9a-f]{40}$/i;
 export const DIFF_FEEDBACK_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
@@ -378,6 +384,7 @@ function threadWire(
     resolved_by: thread.resolved_by,
     resolved_at: thread.resolved_at,
     created_by: thread.created_by,
+    created_by_type: thread.created_by_type,
     created_at: thread.created_at,
     messages: S.listDiffFeedbackMessages(thread.id).map((message) =>
       diffFeedbackMessageJSON(
@@ -855,9 +862,11 @@ export const diffFeedback = {
       path: input.path,
       side: input.side,
     });
+    const lines = file ? parsePatchWithCoordinates(file.patch) : null;
     if (
       !file ||
-      !linesForAnchor(parsePatchWithCoordinates(file.patch), {
+      !lines ||
+      !linesForAnchor(lines, {
         side: input.side,
         startLine: input.startLine,
         endLine: input.endLine,
@@ -867,7 +876,7 @@ export const diffFeedback = {
         422,
         "anchor does not resolve to selectable diff lines",
       );
-    const actor = actorFor(sessionId);
+    const { actor, authorType } = commentActor(sessionId);
     const path = file.headFilename ?? file.filename;
     const originalPath = file.previousFilename ?? null;
     // The anchor is resolved from the diff above; only the thread, its first message and the event
@@ -884,11 +893,32 @@ export const diffFeedback = {
         startLine: input.startLine,
         endLine: input.endLine,
         actor,
+        authorType,
+      });
+      const resolvedAnchor = {
+        path: created.path,
+        original_path: created.original_path,
+        side: created.side as DiffSide,
+        start_line: created.start_line,
+        end_line: created.end_line,
+      };
+      S.upsertDiffFeedbackLocation({
+        thread_id: created.id,
+        base_sha: input.baseSha,
+        head_sha: input.headSha,
+        resolved_anchor_json: JSON.stringify(resolvedAnchor),
+        freshness: "current",
+        outdated_reason: null,
+        placement: "inline",
+        original_context_json: JSON.stringify(
+          contextJSON(lines, anchorOf(created), DEFAULT_CONTEXT_RADIUS),
+        ),
       });
       const message = S.createDiffFeedbackMessage(
         created.id,
         actor,
         input.body,
+        authorType,
       );
       // `session_id` travels so a Workflow run can tell a comment written by one of its own
       // children from one it has to hand to Execute. The comment itself stays canonical in the DB,
@@ -922,9 +952,14 @@ export const diffFeedback = {
     const pull = S.getPull(row.id)!;
     const thread = threadForPull(row.id, threadId);
     if (!body) throw new ServiceError(422, "body is required");
-    const actor = actorFor(sessionId);
+    const { actor, authorType } = commentActor(sessionId);
     const reply = db.transaction(() => {
-      const message = S.createDiffFeedbackMessage(thread.id, actor, body);
+      const message = S.createDiffFeedbackMessage(
+        thread.id,
+        actor,
+        body,
+        authorType,
+      );
       S.emitEvent(r.id, "pull_request.diff_feedback_replied", actor, {
         number,
         thread_id: thread.id,

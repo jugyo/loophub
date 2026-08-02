@@ -76,6 +76,12 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
       "codex",
       "workflow-step",
     );
+    S.registerAgentExecutionTarget({
+      sessionId: childSessionId,
+      provider: "herdr",
+      targetId: "w1:p2",
+      context: "test-session",
+    });
     S.appendWorkflowRunStepSession(run.id, "execute", childSessionId);
     S.updateWorkflowRun(run.id, {
       activeStep: "execute",
@@ -110,6 +116,7 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
   };
   const event = emit();
   const log = join(home, `herdr-${run.id}.log`);
+  writeFileSync(log, "");
   writeFileSync(
     join(home, `agents-${run.id}.json`),
     JSON.stringify({
@@ -196,11 +203,12 @@ test("lh workflow cost-hold holds the run, sends Escape, and notifies the active
     "Cost limit exceeded: current $12.5, limit $10; human decision required",
   );
   const log = readFileSync(input.log, "utf8");
-  expect(log).toContain("agent list");
+  expect(log).not.toContain("agent list");
   expect(log).toContain("pane send-keys w1:p2 Escape");
   expect(log).toContain(
-    "pane run w1:p2 orchestrator: Cost limit exceeded: current $12.5, limit $10. Wait for human instruction.",
+    "pane send-text w1:p2 \u001b[200~orchestrator: Cost limit exceeded: current $12.5, limit $10. Wait for human instruction.\u001b[201~",
   );
+  expect(log).toContain("pane send-keys w1:p2 Enter");
 });
 
 test("a re-emitted cost event interrupts a run whose parent stopped before cost-hold (#1844)", () => {
@@ -209,8 +217,9 @@ test("a re-emitted cost event interrupts a run whose parent stopped before cost-
     HERDR_LOG: input.log,
     HERDR_AGENTS: join(home, `agents-${input.run}.json`),
   };
-  // The parent woke on the first event and stopped before running cost-hold. `next --watch` had
-  // already advanced its cursor past that event, so only a re-emission can interrupt the run.
+  // The parent was handed the first event's instruction and stopped before running cost-hold. The
+  // worker had already advanced its cursor past that event, so only a re-emission can interrupt the
+  // run.
   const reemitted = input.reemit();
   expect(reemitted).not.toBe(input.event);
 
@@ -236,8 +245,8 @@ test("queued re-emissions the parent drains after a hold do not replay the inter
     HERDR_LOG: input.log,
     HERDR_AGENTS: join(home, `agents-${input.run}.json`),
   };
-  // Detection kept re-emitting while the parent was away, so `next --watch` still has these queued
-  // after its cursor and wakes the parent on each one in turn.
+  // Detection kept re-emitting while the parent was away, so these stay queued after the worker's
+  // cursor and are delivered to the parent one at a time.
   const queued = [input.reemit(), input.reemit()];
   expect(runCli(costHoldArgs(input), env).status).toBe(0);
   const heldLog = readFileSync(input.log, "utf8");
@@ -344,7 +353,7 @@ test("a partial cost-hold failure is visible and leaves the run held", () => {
   expect(failed.stderr).toContain("cost hold failed at Escape");
   expect(failed.stderr).toContain("completed: await-human");
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).not.toBeNull();
-  expect(readFileSync(input.log, "utf8")).not.toContain("pane run");
+  expect(readFileSync(input.log, "utf8")).not.toContain("pane send-text");
 
   const logAfterFailure = readFileSync(input.log, "utf8");
   const replay = runCli(costHoldArgs(input), {
@@ -366,7 +375,7 @@ test("a missing active child is visible and still establishes the hold", () => {
   });
 
   expect(result.status).not.toBe(0);
-  expect(result.stderr).toContain("cost hold failed at pane resolution");
+  expect(result.stderr).toContain("cost hold failed at target resolution");
   expect(result.stderr).toContain("completed: await-human");
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).not.toBeNull();
 });

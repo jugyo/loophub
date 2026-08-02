@@ -82,6 +82,19 @@ test("the retired Inbox schema is absent on a fresh database", () => {
   expect(names).toEqual([]);
 });
 
+test("the retired scheduled-task schema is retained for stored data", () => {
+  const names = (
+    D.db
+      .query(
+        `SELECT name FROM sqlite_schema
+         WHERE name IN ('scheduled_tasks', 'scheduled_task_runs')
+         ORDER BY name`,
+      )
+      .all() as { name: string }[]
+  ).map((row) => row.name);
+  expect(names).toEqual(["scheduled_task_runs", "scheduled_tasks"]);
+});
+
 function explain(sql: string, params: unknown[]): string {
   const rows = D.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as {
     detail: string;
@@ -100,6 +113,7 @@ test("events query-optimization indexes exist", () => {
   expect(names).toContain("idx_events_type_id");
   expect(names).toContain("idx_events_repo_ready_number_id");
   expect(names).toContain("idx_events_repo_cost_stopped_number_session_id");
+  expect(names).toContain("idx_events_repo_workflow_run_id");
 });
 
 test("notification signal sweep (type + id range, no repo_id) uses idx_events_type_id", () => {
@@ -153,4 +167,42 @@ test("hasCostStopEvent / hasAnyCostStopEvent use the cost_stopped partial index"
       [1, 5],
     ),
   ).toContain("idx_events_repo_cost_stopped_number_session_id");
+});
+
+test("eventsForWorkflowRun seeks the workflow run-id partial index", () => {
+  // Mirrors store/events.ts eventsForWorkflowRun. Unlike the single-type indexes above, this
+  // partial index covers a type family, so the query has to repeat the same GLOB pair.
+  expect(
+    explain(
+      `SELECT * FROM events
+       WHERE repo_id = ?
+         AND (type GLOB 'workflow_run.*'
+           OR type GLOB 'workflow_step.*')
+         AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
+       ORDER BY id ASC`,
+      [1, 5],
+    ),
+  ).toContain("idx_events_repo_workflow_run_id");
+});
+
+test("workflowRunsWithPendingEvents seeks the workflow run-id partial index per run", () => {
+  // Mirrors store/workflows.ts workflowRunsWithPendingEvents, which the worker's event tail runs
+  // once per second. The CAST is what keeps this a seek: the run id comes from workflow_runs.id,
+  // an INTEGER-affinity column, and SQLite skips an expression index whose affinity does not
+  // match the comparison's — dropping the CAST turns each run into a full scan of the repo's
+  // events with no other visible symptom.
+  const plan = explain(
+    `SELECT run.* FROM workflow_runs run
+     WHERE EXISTS (
+       SELECT 1 FROM events event
+       WHERE event.repo_id = run.repo_id
+         AND (event.type GLOB 'workflow_run.*'
+           OR event.type GLOB 'workflow_step.*')
+         AND CAST(json_extract(event.payload, '$.id') AS INTEGER) = run.id
+         AND event.id > run.event_cursor
+     )
+     ORDER BY run.id`,
+    [],
+  );
+  expect(plan).toContain("idx_events_repo_workflow_run_id");
 });

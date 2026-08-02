@@ -17,6 +17,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as attachments from "@/api/attachments";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
@@ -68,6 +69,14 @@ const comments: IssueComment[] = [
     created_at: "2026-06-17T11:30:00Z",
     reactions: [],
   },
+  {
+    id: 5,
+    user: { login: "me" },
+    author_type: "human",
+    body: "Shipping it.",
+    created_at: "2026-06-17T11:40:00Z",
+    reactions: [],
+  },
 ];
 
 function mockFetch(
@@ -112,7 +121,7 @@ function renderDetail(
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <WebConfigProvider config={{ experimental: false, debug: false }}>
+      <WebConfigProvider config={{ debug: false }}>
         <IssueDetail owner="me" repo="proj" number={12} />
       </WebConfigProvider>
     ),
@@ -303,6 +312,25 @@ describe("IssueDetail", () => {
     expect(chip.getAttribute("title")).toBe("Target branch: feature/foo-bar");
   });
 
+  // #2129: a human post reads as @human whatever actor name it was stored under; agent posts keep
+  // their own author.
+  it("shows a human comment as @human and leaves an agent comment alone", async () => {
+    renderDetail();
+
+    const human = (await screen.findByText("Shipping it.")).closest("article");
+    expect(human?.textContent).toContain("@human");
+    expect(human?.textContent).not.toContain("@me");
+    expect(
+      within(human as HTMLElement).queryByLabelText("AI agent"),
+    ).toBeNull();
+
+    const agent = screen.getByText("Looks good.").closest("article");
+    expect(agent?.textContent).toContain("@design-bot");
+    expect(
+      within(agent as HTMLElement).getByLabelText("AI agent"),
+    ).toBeTruthy();
+  });
+
   it("keeps bottom spacing after the comments section", async () => {
     renderDetail();
 
@@ -311,6 +339,32 @@ describe("IssueDetail", () => {
 
     expect(commentsSection?.className).toContain("pb-6");
     expect(commentsSection?.textContent).toContain("Looks good.");
+  });
+
+  // #2151: documents (not just pasted images) can be attached from the UI.
+  it("attaches a document picked with the file picker to the comment body", async () => {
+    const sha = "d".repeat(64);
+    const upload = vi.spyOn(attachments, "uploadAttachment").mockResolvedValue({
+      sha256: sha,
+      filename: "findings.md",
+      mime: "text/markdown",
+      size: 7,
+      url: `/attachments/${sha}`,
+      markdown: `[findings.md](/attachments/${sha})`,
+    });
+    renderDetail();
+
+    const textarea = (await screen.findByLabelText(
+      "Add a comment",
+    )) as HTMLTextAreaElement;
+    const picker = screen.getByLabelText("Attach a file") as HTMLInputElement;
+    const doc = new File(["# notes"], "findings.md", { type: "text/markdown" });
+    fireEvent.change(picker, { target: { files: [doc] } });
+
+    await waitFor(() =>
+      expect(textarea.value).toBe(`[findings.md](/attachments/${sha})\n`),
+    );
+    expect(upload).toHaveBeenCalledOnce();
   });
 
   it("does not navigate with the removed u shortcut", async () => {
@@ -429,7 +483,6 @@ describe("IssueDetail", () => {
           updated_at: "2026-06-17T10:00:00Z",
           kind: "issue-create",
           linked_at: "2026-06-17T11:00:00Z",
-          resume: { resumable: true },
         },
       ],
     }));
@@ -621,6 +674,8 @@ describe("IssueDetail", () => {
       const call = rpcCall("comments/create");
       expect(call).toBeTruthy();
       expect(call!.params.body).toContain("Nice work");
+      // #2129: posted as the supervising human, not as an unregistered browser session.
+      expect(call!.params.session_id).toBeUndefined();
     });
 
     await waitFor(() => expect(textarea.value).toBe(""));

@@ -270,4 +270,47 @@ describe("dashboard.overview", () => {
     expect(linked).not.toHaveProperty("implementation");
     expect(linked).not.toHaveProperty("review");
   });
+
+  test("linked PR totals its comments and diff comments (#2152)", async () => {
+    const issue = svc.issues.create("me/proj", { title: "gets comment count" });
+    const pr = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+
+    const totalComments = async () => {
+      const overview: any = await svc.dashboard.overview();
+      return overview.issues.find((i: any) => i.issue.number === issue.number)
+        ?.issue.linked_pull_requests[0].total_comments;
+    };
+
+    // A PR nobody has said anything on reports zero, not an absent field.
+    expect(await totalComments()).toBe(0);
+
+    svc.comments.createHumanForPull("me/proj", pr.number, "one comment");
+    const repo = S.getRepo("me", "proj")!;
+    const thread = S.createDiffFeedbackThread({
+      issueId: S.getIssue(repo.id, pr.number)!.id,
+      prNumber: pr.number,
+      baseSha: "base",
+      headSha: "head",
+      path: "a.txt",
+      originalPath: null,
+      side: "RIGHT",
+      startLine: 1,
+      endLine: 1,
+      actor: "me",
+      authorType: "human",
+    });
+    S.createDiffFeedbackMessage(thread.id, "me", "on this line");
+    S.createDiffFeedbackMessage(thread.id, "agent", "fixed");
+
+    // One conversation comment plus both messages of the diff thread, as a single number.
+    expect(await totalComments()).toBe(3);
+  });
 });

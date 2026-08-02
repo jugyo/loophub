@@ -64,7 +64,6 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
       githubMergeSweepMs: 0,
       githubFeedbackSweepMs: 0,
       closedPullCleanupSweepMs: Number.NaN,
-      scheduledTaskSweepMs: Number.NaN,
       conflictSweepMs: Number.NaN,
       herdrSweepMs: Number.NaN,
       worktreePruneSweepMs: Number.NaN,
@@ -75,7 +74,6 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     githubMergeSweepMs: 0,
     githubFeedbackSweepMs: 0,
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
-    scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
     herdrSweepMs: M.DEFAULT_HERDR_SWEEP_MS,
     worktreePruneSweepMs: M.DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
@@ -87,7 +85,6 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     githubMergeSweepMs: M.DEFAULT_GITHUB_MERGE_SWEEP_MS,
     githubFeedbackSweepMs: M.DEFAULT_GITHUB_FEEDBACK_SWEEP_MS,
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
-    scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
     herdrSweepMs: M.DEFAULT_HERDR_SWEEP_MS,
     worktreePruneSweepMs: M.DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
@@ -110,7 +107,6 @@ test("maintenance summary reports disabled loops as off", () => {
       githubMergeSweepMs: 0,
       githubFeedbackSweepMs: 30,
       closedPullCleanupSweepMs: 600000,
-      scheduledTaskSweepMs: 0,
       conflictSweepMs: 0,
       herdrSweepMs: 0,
       worktreePruneSweepMs: 0,
@@ -121,7 +117,6 @@ test("maintenance summary reports disabled loops as off", () => {
     githubMergeSweep: "off",
     githubFeedbackSweep: "30ms",
     closedPullCleanupSweep: "600000ms",
-    scheduledTaskSweep: "off",
     conflictSweep: "off",
     herdrSweep: "off",
     worktreePruneSweep: "off",
@@ -325,13 +320,15 @@ test("a slow worktree prune blocks neither other sweeps nor its own next tick", 
   }
 });
 
-test("herdr snapshot sweep persists the snapshot every tick", async () => {
+test("herdr snapshot sweep persists the snapshot every tick and logs capture failures", async () => {
   vi.useFakeTimers();
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
   const snapshotSpy = vi
     .spyOn(svc.terminal, "snapshotHerdrSessions")
     .mockResolvedValue({
       repos: 1,
-      running_repos: 1,
+      running_repos: 2,
+      capture_failed_repos: 1,
       changed: true,
       captured_at: "2026-07-19T00:00:00.000Z",
     });
@@ -339,10 +336,18 @@ test("herdr snapshot sweep persists the snapshot every tick", async () => {
   try {
     await vi.advanceTimersByTimeAsync(10);
     expect(snapshotSpy).toHaveBeenCalledTimes(1);
+    // A repo whose agent list could not be read shows up in the operational log, not just in
+    // the Agents page (#2142).
+    expect(out).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "herdr snapshot sweep completed duration_ms=0 repos=1 running_repos=2 capture_failed_repos=1 changed=1",
+      ),
+    );
     await vi.advanceTimersByTimeAsync(10);
     expect(snapshotSpy).toHaveBeenCalledTimes(2);
   } finally {
     stop();
+    out.mockRestore();
     snapshotSpy.mockRestore();
     vi.useRealTimers();
   }

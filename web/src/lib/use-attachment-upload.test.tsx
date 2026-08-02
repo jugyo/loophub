@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import * as attach from "@/api/attachments";
-import { useImageUpload } from "./use-image-upload";
+import { useAttachmentUpload } from "./use-attachment-upload";
 
 afterEach(() => {
   cleanup();
@@ -13,7 +13,7 @@ afterEach(() => {
 function Harness() {
   const [body, setBody] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
-  const img = useImageUpload({
+  const upload = useAttachmentUpload({
     value: body,
     onChange: setBody,
     textareaRef: ref,
@@ -25,10 +25,15 @@ function Harness() {
         ref={ref}
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        onPaste={img.onPaste}
-        onDrop={img.onDrop}
+        onPaste={upload.onPaste}
+        onDrop={upload.onDrop}
       />
-      <span data-testid="uploading">{img.uploading ? "yes" : "no"}</span>
+      <input
+        aria-label="picker"
+        type="file"
+        onChange={(e) => upload.upload(Array.from(e.target.files ?? []))}
+      />
+      <span data-testid="uploading">{upload.uploading ? "yes" : "no"}</span>
     </>
   );
 }
@@ -53,7 +58,7 @@ test("pasting an image inserts a placeholder, then swaps in the returned markdow
   fireEvent.paste(ta, { clipboardData: { files: [pngFile()], items: [] } });
 
   // Optimistic placeholder appears immediately.
-  expect(ta.value).toContain("![Uploading pic.png…]");
+  expect(ta.value).toContain("[Uploading pic.png…]");
 
   // After upload resolves, the placeholder is replaced by the real embed markdown.
   await waitFor(() =>
@@ -62,9 +67,54 @@ test("pasting an image inserts a placeholder, then swaps in the returned markdow
   expect(spy).toHaveBeenCalledOnce();
 });
 
+test("dropping a document uploads it and inserts a plain link", async () => {
+  vi.spyOn(attach, "uploadAttachment").mockResolvedValue({
+    sha256: "b".repeat(64),
+    filename: "findings.md",
+    mime: "text/markdown",
+    size: 7,
+    url: `/attachments/${"b".repeat(64)}`,
+    markdown: `[findings.md](/attachments/${"b".repeat(64)})`,
+  });
+
+  const { getByLabelText } = render(<Harness />);
+  const ta = getByLabelText("b") as HTMLTextAreaElement;
+  const md = new File(["# notes"], "findings.md", { type: "text/markdown" });
+
+  fireEvent.drop(ta, { dataTransfer: { files: [md], items: [] } });
+
+  await waitFor(() =>
+    expect(ta.value).toBe(`[findings.md](/attachments/${"b".repeat(64)})\n`),
+  );
+});
+
+test("files chosen through a picker are uploaded too", async () => {
+  const spy = vi.spyOn(attach, "uploadAttachment").mockResolvedValue({
+    sha256: "c".repeat(64),
+    filename: "notes.txt",
+    mime: "text/plain",
+    size: 2,
+    url: `/attachments/${"c".repeat(64)}`,
+    markdown: `[notes.txt](/attachments/${"c".repeat(64)})`,
+  });
+
+  const { getByLabelText } = render(<Harness />);
+  const picker = getByLabelText("picker") as HTMLInputElement;
+  const ta = getByLabelText("b") as HTMLTextAreaElement;
+
+  fireEvent.change(picker, {
+    target: { files: [new File(["hi"], "notes.txt", { type: "text/plain" })] },
+  });
+
+  await waitFor(() =>
+    expect(ta.value).toBe(`[notes.txt](/attachments/${"c".repeat(64)})\n`),
+  );
+  expect(spy).toHaveBeenCalledOnce();
+});
+
 test("a failed upload replaces the placeholder with an error note", async () => {
   vi.spyOn(attach, "uploadAttachment").mockRejectedValue(
-    new Error("Image too large"),
+    new Error("Unsupported attachment extension: .pdf"),
   );
 
   const { getByLabelText } = render(<Harness />);
@@ -73,16 +123,17 @@ test("a failed upload replaces the placeholder with an error note", async () => 
   fireEvent.drop(ta, { dataTransfer: { files: [pngFile()], items: [] } });
 
   await waitFor(() =>
-    expect(ta.value).toContain("![upload failed: Image too large]()"),
+    expect(ta.value).toContain(
+      "[upload failed: Unsupported attachment extension: .pdf]()",
+    ),
   );
 });
 
-test("non-image pastes are ignored (no upload)", () => {
+test("a paste carrying no files is left to the textarea (no upload)", () => {
   const spy = vi.spyOn(attach, "uploadAttachment");
   const { getByLabelText } = render(<Harness />);
   const ta = getByLabelText("b") as HTMLTextAreaElement;
-  const txt = new File(["hi"], "note.txt", { type: "text/plain" });
-  fireEvent.paste(ta, { clipboardData: { files: [txt], items: [] } });
+  fireEvent.paste(ta, { clipboardData: { files: [], items: [] } });
   expect(spy).not.toHaveBeenCalled();
   expect(ta.value).toBe("");
 });

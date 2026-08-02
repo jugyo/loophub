@@ -10,7 +10,7 @@
 // (throwing ServiceError with an HTTP-style status), mirroring core/service.ts.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { configDir } from "./config.ts";
 import { db, now } from "./db.ts";
@@ -29,6 +29,8 @@ const EXT_TO_MIME: Record<string, string> = {
   ".webp": "image/webp",
   ".html": "text/html",
   ".htm": "text/html",
+  ".md": "text/markdown",
+  ".txt": "text/plain",
 };
 const ALLOWED_MIME = new Set(Object.values(EXT_TO_MIME));
 
@@ -98,6 +100,40 @@ function resolveMime(filename: string, declaredMime: string | null): string {
     }
   }
   return extMime;
+}
+
+// A reference as it appears in a body: the bare sha256, the stable
+// `/attachments/<sha256>` URL, or an absolute URL ending in that path.
+const REF = /^(?:\S*\/attachments\/)?([0-9a-f]{64})$/;
+
+/** Resolve an attachment reference to its sha256, or null when it isn't one. */
+export function parseAttachmentRef(ref: string): string | null {
+  return REF.exec(ref.trim())?.[1] ?? null;
+}
+
+export interface StoredAttachment {
+  attachment: Attachment;
+  /** On-disk path of the blob, so a caller can read it directly. */
+  path: string;
+  data: Buffer;
+}
+
+/**
+ * Load a stored blob with its metadata, given any reference form. Used by
+ * `lh attachment get` so an agent can read a document attached to an issue
+ * without going through HTTP.
+ */
+export function readAttachment(ref: string): StoredAttachment {
+  const sha256 = parseAttachmentRef(ref);
+  if (!sha256) {
+    throw new ServiceError(400, `Not an attachment reference: ${ref}`);
+  }
+  const attachment = getAttachment(sha256);
+  const path = blobPath(sha256);
+  if (!attachment || !existsSync(path)) {
+    throw new ServiceError(404, `Attachment not found: ${sha256}`);
+  }
+  return { attachment, path, data: readFileSync(path) };
 }
 
 export function getAttachment(sha256: string): Attachment | null {

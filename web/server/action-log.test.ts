@@ -50,9 +50,12 @@ describe("logHumanAction", () => {
 
   it("omits absent optional identifiers", () => {
     const out = stdout();
-    A.logHumanAction("terminal/launch", { repo: "o/r", workflow: "resume" });
+    A.logHumanAction("terminal/launch", {
+      repo: "o/r",
+      workflow: "issue-create",
+    });
     expect(out.mock.calls[0][0]).toMatch(
-      /INFO human action: launch workflow=resume repo=o\/r$/,
+      /INFO human action: launch workflow=issue-create repo=o\/r$/,
     );
   });
 

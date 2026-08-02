@@ -141,6 +141,11 @@ export interface WorkflowRunRow {
   // `running`. NULL on legacy rows and after resume.
   needs_human_reason: string | null;
   parent_session_id: string | null;
+  // When the parent agent declared it can read its pane. NULL until that signal arrives, which is
+  // what keeps instruction delivery from writing to an agent that has not started reading yet.
+  parent_ready_at: string | null;
+  // Set only when the readiness write was serialized before any instruction receipt claim.
+  parent_ready_confirmed: number;
   step_sessions_json: string;
   // The child pane most recently launched or reactivated for live input. This can intentionally
   // differ from current_step while additional Execute work runs after a fresh Verify pass.
@@ -217,6 +222,47 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
   return db
     .query(`SELECT * FROM workflow_runs WHERE id = ?`)
     .get(id) as WorkflowRunRow | null;
+}
+
+// Legacy timestamp-only write retained for tests that model rows created before the confirmed
+// handshake. Production readiness goes through markWorkflowRunParentReadyIfNoEffect below.
+export function markWorkflowRunParentReady(id: number): WorkflowRunRow | null {
+  const t = now();
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET parent_ready_at = COALESCE(parent_ready_at, ?), updated_at = ?
+       WHERE id = ?
+       RETURNING *`,
+    )
+    .get(t, t, id) as WorkflowRunRow | null;
+}
+
+// Linearize the first readiness signal against an instruction claim. If an older worker claims the
+// event first, this update leaves readiness unset; if this update wins, any later claim and pane
+// write happen after the parent declared itself ready. Repeated confirmed signals keep the original
+// timestamp.
+export function markWorkflowRunParentReadyIfNoEffect(
+  id: number,
+  effectPrefix: string,
+): WorkflowRunRow | null {
+  const t = now();
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET parent_ready_at = COALESCE(parent_ready_at, ?),
+           parent_ready_confirmed = 1,
+           updated_at = ?
+       WHERE id = ?
+         AND (parent_ready_confirmed = 1 OR (
+           parent_ready_at IS NULL AND NOT EXISTS (
+             SELECT 1 FROM workflow_event_effects
+             WHERE run_id = ? AND effect GLOB ?
+           )
+         ))
+       RETURNING *`,
+    )
+    .get(t, t, id, id, `${effectPrefix}*`) as WorkflowRunRow | null;
 }
 
 // Move the run event bookmark forward. The guard keeps the cursor monotonic when two consumers race.

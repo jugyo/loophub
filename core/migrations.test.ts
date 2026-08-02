@@ -147,6 +147,132 @@ test("the one-time data migrations converged instead of running on every boot", 
   ]);
 });
 
+test("comment author backfill uses unambiguous session identities", () => {
+  D.db.exec(`
+    INSERT INTO agent_sessions
+      (id, agent, external_session, name, created_at, updated_at)
+    VALUES
+      ('human-commenter', 'me', 'human-commenter', 'person', 't3', 't3'),
+      ('human-collision', 'me', 'human-collision', 'shared', 't3', 't3'),
+      ('agent-collision', 'codex', 'agent-collision', 'shared', 't3', 't3');
+    INSERT INTO comments
+      (issue_id, author, author_type, body, created_at, updated_at)
+    VALUES
+      (10, 'dev', 'system', 'historical agent comment', 't3', 't3'),
+      (10, 'shared', 'agent', 'classified agent comment', 't3', 't3'),
+      (10, 'person', 'human', 'classified human comment', 't3', 't3');
+    INSERT INTO review_comments
+      (issue_id, review_id, author, author_type, body, path, created_at)
+    VALUES
+      (10, 1, 'dev', 'system', 'agent', 'a.ts', 't3'),
+      (10, 1, 'person', 'system', 'human', 'a.ts', 't3'),
+      (10, 1, 'shared', 'system', 'ambiguous', 'a.ts', 't3');
+    INSERT INTO diff_feedback_threads
+      (id, issue_id, pr_number, base_sha, head_sha, path, side, start_line,
+       end_line, created_by, created_by_type, created_at)
+    VALUES
+      (71, 10, 7, 'base', 'head', 'a.ts', 'RIGHT', 1, 1, 'dev', 'system', 't3');
+    INSERT INTO diff_feedback_messages
+      (thread_id, author, author_type, body, created_at)
+    VALUES
+      (71, 'person', 'system', 'human', 't3'),
+      (71, 'shared', 'system', 'ambiguous', 't3');
+    INSERT INTO reviews
+      (issue_id, author, author_type, event, body, model, created_at)
+    VALUES
+      (10, 'dev', 'system', 'COMMENT', 'modeled agent', 'gpt-test', 't3'),
+      (10, 'person', 'system', 'COMMENT', 'human', NULL, 't3'),
+      (10, 'shared', 'agent', 'COMMENT', 'classified agent', NULL, 't3');
+  `);
+
+  M.MIGRATIONS.find(
+    (migration) => migration.id === "061-comment-author-types",
+  )?.run(D.db);
+  M.MIGRATIONS.find(
+    (migration) => migration.id === "062-review-author-types",
+  )?.run(D.db);
+
+  expect(
+    D.db.query(`SELECT author, author_type FROM comments ORDER BY id`).all(),
+  ).toEqual([
+    { author: "dev", author_type: "agent" },
+    { author: "shared", author_type: "agent" },
+    { author: "person", author_type: "human" },
+  ]);
+  expect(
+    D.db
+      .query(`SELECT author, author_type FROM review_comments ORDER BY id`)
+      .all(),
+  ).toEqual([
+    { author: "dev", author_type: "agent" },
+    { author: "person", author_type: "human" },
+    { author: "shared", author_type: "system" },
+  ]);
+  expect(
+    D.db
+      .query(
+        `SELECT created_by, created_by_type FROM diff_feedback_threads WHERE id = 71`,
+      )
+      .get(),
+  ).toEqual({ created_by: "dev", created_by_type: "agent" });
+  expect(
+    D.db
+      .query(
+        `SELECT author, author_type FROM diff_feedback_messages WHERE thread_id = 71 ORDER BY id`,
+      )
+      .all(),
+  ).toEqual([
+    { author: "person", author_type: "human" },
+    { author: "shared", author_type: "system" },
+  ]);
+  expect(
+    D.db
+      .query(`SELECT author, author_type FROM reviews WHERE id > 1 ORDER BY id`)
+      .all(),
+  ).toEqual([
+    { author: "dev", author_type: "agent" },
+    { author: "person", author_type: "human" },
+    { author: "shared", author_type: "agent" },
+  ]);
+});
+
+test("readiness confirmation backfill treats same-timestamp receipts as ambiguous", () => {
+  D.db.exec(`
+    INSERT INTO workflow_runs
+      (id, workflow_id, repo_id, issue_number, pr_number, status, current_step,
+       parent_ready_at, parent_ready_confirmed, cost_increment_usd, cost_limit_usd,
+       created_at, updated_at)
+    VALUES
+      (901, NULL, 1, 901, 902, 'running', 'execute', 't5', 0, 5, 5, 't4', 't5'),
+      (902, NULL, 1, 903, 904, 'running', 'execute', 't5', 0, 5, 5, 't4', 't5');
+    INSERT INTO events (id, repo_id, type, actor, payload, created_at)
+    VALUES
+      (901, 1, 'workflow_run.started', 'me', '{"id":901}', 't4'),
+      (902, 1, 'workflow_run.started', 'me', '{"id":902}', 't4');
+    INSERT INTO workflow_event_effects
+      (run_id, event_id, effect, status, created_at, updated_at)
+    VALUES
+      (901, 901, 'workflow.instruction:ambiguous', 'completed', 't5', 't5'),
+      (902, 902, 'workflow.instruction:safe', 'completed', 't6', 't6');
+  `);
+
+  M.MIGRATIONS.find(
+    (migration) => migration.id === "058-workflow-runs-parent-ready-confirmed",
+  )?.run(D.db);
+
+  expect(
+    D.db
+      .query(
+        `SELECT id, parent_ready_confirmed FROM workflow_runs
+         WHERE id IN (901, 902) ORDER BY id`,
+      )
+      .all(),
+  ).toEqual([
+    { id: 901, parent_ready_confirmed: 0 },
+    { id: 902, parent_ready_confirmed: 1 },
+  ]);
+});
+
 // Columns whose migrated shape legitimately differs from the fresh schema. SQLite cannot add a
 // NOT NULL column without a default, and there is no defensible default cost budget to invent for
 // runs created before the columns existed, so an upgraded database keeps them nullable.

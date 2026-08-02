@@ -11,19 +11,19 @@
 - `repo` — 対象の `owner/name`。
 - `issue` — Issue 番号。本文と comment を `lh issue view <n> --json` で読み、両方を仕様として扱います。
 - `pr` — この run が届ける PR 番号。`lh pr view` / `lh pr update` で読み書きします。
-- `address review`（rework のみ）— 解決する Verify review の id。`lh pr view <pr> --json` で review と
-  review comment を読み、すべての finding に対応します。
+- `address review`（rework のみ）— 解決する Verify review の id。
+  `lh pr review view <pr> --review <id> --json` で review と全 review comment を読み、すべての finding に対応します。
 - worktree — 編集とテストに使う cwd。
 
 launch note と `orchestrator:` で始まる同じ指示は同様に扱います。
 
 ## Follow-up の分類
 
-- **Rework（`orchestrator: address review #<id>`）** — 指定された review と review comments を自分で読みます。
-  解決に source の修正が必要なら、編集前に `lh pr comment <pr> --body <text>` で短い top-level の着手返信を
-  投稿します。返信には `review #<id>` と対応するすべての `review comment #<id>` を明記し、finding を
-  認識したことと対応する意思を示します。すべての finding を解決します。これは review への対応であり、
-  Issue の自由な拡張ではありません。
+- **Rework（`orchestrator: address review #<id>`）** — 指定された review と全 review comments を
+  `lh pr review view <pr> --review <id> --json` で読みます。
+  すべての finding を解決します。review pointer、対応 commit、workflow の turn 記録が対応関係を保持します。
+  文章での応答が必要なら `lh pr review-response add <pr> --review <id> [--review-comment <id>]
+  --body <text>` で対象に紐づけ、top-level の `lh pr comment` は使いません。
 - **Diff feedback（`orchestrator: address diff feedback thread #<t> comment #<c>`）** —
   `lh pr feedback pending <pr> --run <run> --json` で未対応の会話と anchor 周辺の diff を読み、
   `lh pr feedback reply <t> --pr <pr> --body <text>` ですべてに返信します。source の修正が必要な会話では、
@@ -53,9 +53,9 @@ launch note と `orchestrator:` で始まる同じ指示は同様に扱います
 4. repository の標準 tests / lint / typecheck を green にします。
 5. 実装を現在の head branch に commit します。コミットは追記的に行い、push 済みの履歴は
    書き換えません（amend / rebase / force-push を避ける）。公開済み履歴の書き換えは既存の
-   PR・レビュー・コミットリンクを壊すためです。続いて `lh pr update <pr>
-   --repo '<repo>' --body ...` で summary、acceptance criteria、test plan、evidence を更新します。
-   必要に応じて attachment / comment を追加します。
+   PR・レビュー・コミットリンクを壊すためです。続いて、PR の title と body の両方を
+   `lh pr update <pr> --repo '<repo>' --title <title> --body ...` で更新し、body に summary、
+   acceptance criteria、test plan、evidence を含めます。必要に応じて attachment / comment を追加します。
 6. code change は commit してから、turn ごとに
    `lh workflow turn done --repo '<repo>' --run <run>` を 1 回実行します。確認や metadata 更新だけで
    HEAD を進める必要がない turn に限り、commit なしで実行できます。

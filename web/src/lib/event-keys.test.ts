@@ -294,18 +294,6 @@ describe("queryKeysForEvent", () => {
     expect(issueOnlyKeys).toContainEqual(["pulls", "me/proj"]);
   });
 
-  it("maps scheduled_task events to the repo's task list and the task's detail (#880)", () => {
-    const keys = queryKeysForEvent(
-      ev({
-        type: "scheduled_task.updated",
-        repo: "me/proj",
-        payload: { id: 5 },
-      }),
-    );
-    expect(keys).toContainEqual(["scheduled-tasks", "me/proj"]);
-    expect(keys).toContainEqual(["scheduled-task", "me/proj", 5]);
-  });
-
   it("maps workflow run lifecycle events to both detail views and the run history (#1008)", () => {
     const keys = queryKeysForEvent(
       ev({
@@ -339,25 +327,6 @@ describe("queryKeysForEvent", () => {
     ["pull_request.updated", "an array", [1, 2], ["pull", "me/proj"]],
     ["pull_request.updated", "a primitive", 12, ["pull", "me/proj"]],
     ["pull_request.updated", "a legacy object", {}, ["pull", "me/proj"]],
-    ["scheduled_task.updated", "null", null, ["scheduled-task", "me/proj"]],
-    [
-      "scheduled_task.updated",
-      "an array",
-      [1, 2],
-      ["scheduled-task", "me/proj"],
-    ],
-    [
-      "scheduled_task.updated",
-      "a primitive",
-      12,
-      ["scheduled-task", "me/proj"],
-    ],
-    [
-      "scheduled_task.updated",
-      "a legacy object",
-      {},
-      ["scheduled-task", "me/proj"],
-    ],
   ])("falls back to the %s detail prefix when the payload is %s", (type, _label, payload, detailPrefix) => {
     const keys = queryKeysForEvent(ev({ type, repo: "me/proj", payload }));
     expect(keys).toContainEqual(detailPrefix);
@@ -370,5 +339,63 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["repos"]);
     expect(keys).toContainEqual(["repo", "acme/renamed"]);
     expect(keys).not.toContainEqual(["repo", "me/proj"]);
+  });
+
+  // #2147: the issue list shows the run's rework count, so both transitions that change it must
+  // refresh the list — and only those, since the list refetch costs a git fan-out per row.
+  it("refreshes the issue views when a run's rework count changes (#2147)", () => {
+    const reworked = queryKeysForEvent(
+      ev({
+        type: "workflow_run.updated",
+        repo: "me/proj",
+        payload: {
+          id: 7,
+          transition: "request_rework",
+          issue_number: 12,
+          pr_number: 13,
+          rework_count: 3,
+        },
+      }),
+    );
+    expect(reworked).toContainEqual(["issues", "me/proj"]);
+    expect(reworked).toContainEqual(["dashboard"]);
+
+    // A human-instructed resume resets the count to zero, so a row left showing the old number
+    // would read as "still circling" right after the run was released from its hold.
+    const resumed = queryKeysForEvent(
+      ev({
+        type: "workflow_run.updated",
+        repo: "me/proj",
+        payload: {
+          id: 7,
+          transition: "resume_after_human",
+          issue_number: 12,
+          pr_number: 13,
+          rework_count: 0,
+        },
+      }),
+    );
+    expect(resumed).toContainEqual(["issues", "me/proj"]);
+    expect(resumed).toContainEqual(["dashboard"]);
+
+    const otherTransition = queryKeysForEvent(
+      ev({
+        type: "workflow_run.updated",
+        repo: "me/proj",
+        payload: {
+          id: 7,
+          transition: "activate_step",
+          issue_number: 12,
+          pr_number: 13,
+        },
+      }),
+    );
+    expect(otherTransition).toContainEqual([
+      "workflow-run",
+      "pull",
+      "me/proj",
+      13,
+    ]);
+    expect(otherTransition).not.toContainEqual(["issues", "me/proj"]);
   });
 });

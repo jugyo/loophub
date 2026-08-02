@@ -82,6 +82,7 @@ function git(args: string[], path = REPO_PATH): void {
 function fakeRuntime(
   opts: {
     agentStartExit?: number;
+    agentStartJson?: string;
     focusedState?: Record<string, string>;
     paneCloseExit?: number;
     paneListJson?: string;
@@ -91,6 +92,7 @@ function fakeRuntime(
 ) {
   const {
     agentStartExit = 0,
+    agentStartJson = '{"result":{"agent":{"pane_id":"w1:p3"}}}',
     focusedState,
     paneCloseExit = 0,
     paneListJson = "",
@@ -139,7 +141,7 @@ case " $command " in
   *" pane close "*) change_focus_if_closing pane_id "$3"; exit ${paneCloseExit} ;;
   *" tab close "*) change_focus_if_closing tab_id "$3"; exit 0 ;;
   *" tab create "*) change_focus_without_no_focus; printf '%s' '${tabCreateJson}'; exit 0 ;;
-  *" agent start "*) change_focus_without_no_focus; exit ${agentStartExit} ;;
+  *" agent start "*) change_focus_without_no_focus; printf '%s' '${agentStartJson}'; exit ${agentStartExit} ;;
   *" workspace focus "*|*" tab focus "*|*" agent focus "*|*" pane focus "*) change_focus; exit 0 ;;
 esac
 exit 0
@@ -526,30 +528,35 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   expect(existsSync(body.lock_path)).toBe(true);
   expect(body.parent.user_prompt).not.toMatch(/^\/lh-/m);
 
-  const nextJson = run([
+  const instructionJson = run([
     "workflow",
-    "next",
+    "instruction",
     String(body.run.id),
     "--repo",
     REPO,
+    "--note",
+    "start on the first acceptance criterion",
     "--json",
   ]);
-  expect(nextJson.exitCode, nextJson.stderr).toBe(0);
-  expect(JSON.parse(nextJson.stdout)).toMatchObject({
-    action: "launch_execute",
+  expect(instructionJson.exitCode, instructionJson.stderr).toBe(0);
+  expect(JSON.parse(instructionJson.stdout)).toMatchObject({
+    action: "deliver",
+    delivery_reason: "human_instruction",
   });
 
-  const nextText = run([
+  const instructionText = run([
     "workflow",
-    "next",
+    "instruction",
     String(body.run.id),
     "--repo",
     REPO,
+    "--note",
+    "start on the first acceptance criterion",
   ]);
-  expect(nextText.exitCode, nextText.stderr).toBe(0);
-  expect(nextText.stdout.trim().split("\n")).toEqual([
-    "launch_execute",
-    "Execute has not started.",
+  expect(instructionText.exitCode, instructionText.stderr).toBe(0);
+  expect(instructionText.stdout.trim().split("\n")).toEqual([
+    "deliver",
+    "A human supplied additional work for Execute.",
   ]);
 });
 
@@ -653,6 +660,8 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     expect(log).not.toMatch(/(?:workspace|tab|agent) focus/);
     expectUnrelatedHerdrFocus(runtime);
 
+    // The layout is step-agnostic, and the run now owns a live Execute child, so the launch that
+    // exercises the missing-tab-id fallback is a Verify one (#2150).
     const legacyLaunch = run(
       [
         "workflow",
@@ -662,7 +671,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
         "--run",
         String(body.run.id),
         "--step",
-        "execute",
+        "verify",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
@@ -808,6 +817,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
   });
   const freshRuntime = fakeRuntime({
     focusedState: UNRELATED_HERDR_FOCUS,
+    agentStartJson: '{"result":{"agent":{"pane_id":"w1:p5"}}}',
     paneListJson: JSON.stringify({
       result: {
         panes: [

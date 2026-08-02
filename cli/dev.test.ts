@@ -15,7 +15,6 @@ import {
   buildClaudeArgs,
   buildCodexArgs,
   buildGrokArgs,
-  buildResumeArgs,
   buildRuntimeLaunch,
   devLockPath,
   formatSpawnCommand,
@@ -113,23 +112,6 @@ test("buildClaudeArgs carries the session id and the slash command", () => {
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
   expect(args[args.length - 1]).toBe("/lh-build 42");
   expect(args).toContain("--permission-mode");
-});
-
-test("buildResumeArgs resumes a UUID session id with no extra flags", () => {
-  // `lh resume` re-enters an existing session: just `claude --resume <id>`, no --session-id,
-  // slash command, or sandbox settings.
-  expect(
-    buildResumeArgs({ sessionId: "d8a43602-f469-4b03-8fa8-0af5200f22b3" }),
-  ).toEqual(["--resume", "d8a43602-f469-4b03-8fa8-0af5200f22b3"]);
-});
-
-test("buildResumeArgs rejects a flag-like / non-UUID session id (argv injection guard)", () => {
-  expect(() =>
-    buildResumeArgs({ sessionId: "--dangerously-skip-permissions" }),
-  ).toThrow(/invalid session id/);
-  expect(() => buildResumeArgs({ sessionId: "sid-9" })).toThrow(
-    /invalid session id/,
-  );
 });
 
 test("buildClaudeArgs sets --name to the session name and keeps the slash command last", () => {

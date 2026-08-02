@@ -157,6 +157,7 @@ describe("PullCommitsSection", () => {
         {
           id: 1,
           user: { login: "quality-bot" },
+          author_type: "agent",
           state: "PASS",
           body: "Looks good.",
           head_sha: pushedCommits[0].sha,
@@ -188,6 +189,7 @@ describe("PullCommitsSection", () => {
       {
         id: 1,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "**Looks good.** [Details](https://example.com)",
         head_sha: commits![0].sha,
@@ -201,6 +203,7 @@ describe("PullCommitsSection", () => {
         id: 10,
         pull_request_review_id: 1,
         user: { login: "quality-bot" },
+        author_type: "agent",
         path: "web/src/a.ts",
         line: 4,
         side: "RIGHT",
@@ -250,10 +253,15 @@ describe("PullCommitsSection", () => {
       reviewDialog.querySelector('[data-debug-component="ReviewItem"]'),
     ).toBeTruthy();
     expect(within(reviewDialog).getByText(/PASS/)).toBeTruthy();
-    expect(within(reviewDialog).getByText("@quality-bot")).toBeTruthy();
+    expect(within(reviewDialog).getAllByText("@quality-bot")).toHaveLength(2);
     expect(within(reviewDialog).getByText("claude-opus-4-8")).toBeTruthy();
     expect(within(reviewDialog).getByText("Looks good.")).toBeTruthy();
     expect(within(reviewDialog).getByText("web/src/a.ts:4")).toBeTruthy();
+    // Both the review body author and its line-comment author carry the same trusted type.
+    expect(within(reviewDialog).getAllByLabelText("AI agent")).toHaveLength(2);
+    expect(
+      within(reviewDialog).getByLabelText("Comment ID 10").textContent,
+    ).toBe("#10");
     expect(within(reviewDialog).getByText("Keep this guard.")).toBeTruthy();
     fireEvent.click(closeButton);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -280,6 +288,7 @@ describe("PullCommitsSection", () => {
       {
         id: 6,
         user: { login: "verifier #7-1" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "One criterion unmet.",
         head_sha: commits![0].sha,
@@ -349,6 +358,7 @@ describe("PullCommitsSection", () => {
       {
         id: 7,
         user: { login: "verifier #7-1" },
+        author_type: "agent",
         state: "PASS",
         body: "Looks good.",
         head_sha: commits![0].sha,
@@ -377,6 +387,7 @@ describe("PullCommitsSection", () => {
       {
         id: 1,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "Known review",
         head_sha: commits![0].sha,
@@ -387,6 +398,7 @@ describe("PullCommitsSection", () => {
       {
         id: 2,
         user: { login: "legacy-bot" },
+        author_type: "agent",
         state: "COMMENT",
         body: "Legacy review",
         head_sha: null,
@@ -397,6 +409,7 @@ describe("PullCommitsSection", () => {
       {
         id: 3,
         user: { login: "security-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "Review for a commit outside this diff",
         head_sha: "cccccccccccccccccccccccccccccccccccccccc",
@@ -431,6 +444,7 @@ describe("PullCommitsSection", () => {
       {
         id: 4,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "Round 1",
         head_sha: commits![0].sha,
@@ -441,6 +455,7 @@ describe("PullCommitsSection", () => {
       {
         id: 5,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "Round 2",
         head_sha: commits![0].sha,

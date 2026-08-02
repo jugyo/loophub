@@ -439,10 +439,9 @@ export const MIGRATIONS: Migration[] = [
     "035-reviews-approve-to-pass",
     "UPDATE reviews SET event = 'PASS' WHERE event = 'APPROVE'",
   ),
-  // agent_sessions.runtime records which runtime launched the session (e.g. "claude-code"), so
-  // `lh resume` picks the resume command by runtime instead of inferring it from the agent label.
-  // Pre-existing rows get NULL and rely on the lh-build → claude-code backward-compat fallback
-  // (core/resume.ts sessionRuntime).
+  // agent_sessions.runtime records which runtime launched the session (e.g. "claude-code") instead
+  // of inferring it from the agent label. Pre-existing rows get NULL and rely on the lh-build →
+  // claude-code backward-compat fallback (core/session-runtime.ts sessionRuntime).
   addColumn("036-agent-sessions-runtime", "agent_sessions", "runtime", "TEXT"),
   // agent_sessions.kind labels the session's purpose (#298): "dev" / "review" / "issue-create" / …
   // (extensible — stored as a free TEXT, not an enum, so new kinds need no migration). Pre-existing
@@ -470,7 +469,7 @@ export const MIGRATIONS: Migration[] = [
   // issue assignee); #298 generalized attribution into the session_links N:M bridge. The 1:1 pointer
   // is now derivable as "the PR's latest kind='dev' linked session" (store.primaryDevSessionForPull),
   // so #316 retires the column: migrate any legacy value into session_links, then DROP it.
-  // resume/retro derive the anchor from session_links from here on.
+  // Usage attribution/retro derive the anchor from session_links from here on.
   //
   // Guarded on a still-present legacy column so a database that never had either one does not
   // rebuild the pulls/issues tables (SQLite DROP COLUMN rewrites the table). The order matters:
@@ -508,7 +507,8 @@ export const MIGRATIONS: Migration[] = [
         dropColumnIfPresent(db, "issues", "assignee_session_id");
       }
       // (#298) Mirror every PR's dev session into session_links (kind='dev') before the column
-      // drops, so resume/retro keep resolving it. INSERT OR IGNORE is idempotent (PK is the pair)
+      // drops, so usage attribution/retro keep resolving it. INSERT OR IGNORE is idempotent
+      // (PK is the pair)
       // and preserves any link a newer build already wrote. INNER JOIN agent_sessions (not LEFT):
       // session_links.session_id has an FK to agent_sessions and foreign_keys is ON; an FK violation
       // is NOT suppressed by OR IGNORE and would abort the whole INSERT...SELECT. A pre-#298
@@ -872,6 +872,177 @@ export const MIGRATIONS: Migration[] = [
     );
   `,
   ),
+  sql(
+    "056-agent-execution-targets",
+    `
+    CREATE TABLE IF NOT EXISTS agent_execution_targets (
+      session_id  TEXT PRIMARY KEY REFERENCES agent_sessions(id) ON DELETE CASCADE,
+      provider    TEXT NOT NULL,
+      target_id   TEXT NOT NULL,
+      context     TEXT,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+  `,
+  ),
+  // Explicit readiness signal from the parent agent (#2156). A registered pane only proves the pane
+  // exists, not that the agent behind it reads its input yet, so an instruction delivered while the
+  // agent was still starting was written to a terminal nothing was reading and was lost.
+  // Every run that exists when this migration runs was launched under the older prompt and will
+  // never send the signal, so backfill those rows from created_at: only runs started afterward —
+  // whose launch prompt asks for it — wait for the signal.
+  {
+    id: "057-workflow-runs-parent-ready-at",
+    run(db) {
+      addColumnIfMissing(db, "workflow_runs", "parent_ready_at", "TEXT");
+      db.exec(
+        `UPDATE workflow_runs SET parent_ready_at = created_at WHERE parent_ready_at IS NULL`,
+      );
+    },
+  },
+  // Persist whether readiness was serialized before any instruction claim. Timestamps are only
+  // second-precision, so equality cannot establish order; existing rows with a receipt at or before
+  // readiness remain unconfirmed and surface the ambiguity through the existing error path.
+  {
+    id: "058-workflow-runs-parent-ready-confirmed",
+    run(db) {
+      addColumnIfMissing(
+        db,
+        "workflow_runs",
+        "parent_ready_confirmed",
+        "INTEGER NOT NULL DEFAULT 0",
+      );
+      db.exec(`
+        UPDATE workflow_runs AS run
+        SET parent_ready_confirmed = 1
+        WHERE parent_ready_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM workflow_event_effects AS effect
+            WHERE effect.run_id = run.id
+              AND effect.effect GLOB 'workflow.instruction:*'
+              AND effect.created_at <= run.parent_ready_at
+          )
+      `);
+    },
+  },
+  addColumn(
+    "059-notifications-severity",
+    "notifications",
+    "severity",
+    "TEXT NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning'))",
+  ),
+  sql(
+    "060-review-responses",
+    `
+    CREATE TABLE IF NOT EXISTS review_responses (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id          INTEGER NOT NULL REFERENCES issues(id),
+      review_id         INTEGER NOT NULL REFERENCES reviews(id),
+      review_comment_id INTEGER REFERENCES review_comments(id),
+      author            TEXT NOT NULL,
+      body              TEXT NOT NULL,
+      created_at        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_review_responses_issue_review
+      ON review_responses(issue_id, review_id, created_at, id);
+  `,
+  ),
+  {
+    id: "061-comment-author-types",
+    run(db) {
+      addColumnIfMissing(
+        db,
+        "review_comments",
+        "author_type",
+        "TEXT NOT NULL DEFAULT 'system' CHECK (author_type IN ('human', 'agent', 'system'))",
+      );
+      addColumnIfMissing(
+        db,
+        "diff_feedback_threads",
+        "created_by_type",
+        "TEXT NOT NULL DEFAULT 'system' CHECK (created_by_type IN ('human', 'agent', 'system'))",
+      );
+      addColumnIfMissing(
+        db,
+        "diff_feedback_messages",
+        "author_type",
+        "TEXT NOT NULL DEFAULT 'system' CHECK (author_type IN ('human', 'agent', 'system'))",
+      );
+
+      // Historical rows have no session id, but the session ledger is still a trustworthy record
+      // of which stored actor names belonged to humans or coding agents. Ambiguous/unattributed
+      // names intentionally remain `system` instead of being guessed from their appearance.
+      for (const [table, authorColumn, typeColumn] of [
+        ["comments", "author", "author_type"],
+        ["review_comments", "author", "author_type"],
+        ["diff_feedback_threads", "created_by", "created_by_type"],
+        ["diff_feedback_messages", "author", "author_type"],
+      ] as const) {
+        db.exec(`
+          UPDATE ${table}
+          SET ${typeColumn} = CASE
+            WHEN EXISTS (
+              SELECT 1 FROM agent_sessions session
+              WHERE session.agent = 'me'
+                AND COALESCE(NULLIF(session.name, ''), session.agent) = ${table}.${authorColumn}
+            ) AND NOT EXISTS (
+              SELECT 1 FROM agent_sessions session
+              WHERE session.agent <> 'me'
+                AND COALESCE(NULLIF(session.name, ''), session.agent) = ${table}.${authorColumn}
+            ) THEN 'human'
+            WHEN EXISTS (
+              SELECT 1 FROM agent_sessions session
+              WHERE session.agent <> 'me'
+                AND COALESCE(NULLIF(session.name, ''), session.agent) = ${table}.${authorColumn}
+            ) AND NOT EXISTS (
+              SELECT 1 FROM agent_sessions session
+              WHERE session.agent = 'me'
+                AND COALESCE(NULLIF(session.name, ''), session.agent) = ${table}.${authorColumn}
+            ) THEN 'agent'
+            ELSE 'system'
+          END
+          WHERE ${typeColumn} = 'system'
+        `);
+      }
+    },
+  },
+  {
+    id: "062-review-author-types",
+    run(db) {
+      addColumnIfMissing(
+        db,
+        "reviews",
+        "author_type",
+        "TEXT NOT NULL DEFAULT 'system' CHECK (author_type IN ('human', 'agent', 'system'))",
+      );
+      db.exec(`
+        UPDATE reviews
+        SET author_type = CASE
+          WHEN model IS NOT NULL THEN 'agent'
+          WHEN EXISTS (
+            SELECT 1 FROM agent_sessions session
+            WHERE session.agent = 'me'
+              AND COALESCE(NULLIF(session.name, ''), session.agent) = reviews.author
+          ) AND NOT EXISTS (
+            SELECT 1 FROM agent_sessions session
+            WHERE session.agent <> 'me'
+              AND COALESCE(NULLIF(session.name, ''), session.agent) = reviews.author
+          ) THEN 'human'
+          WHEN EXISTS (
+            SELECT 1 FROM agent_sessions session
+            WHERE session.agent <> 'me'
+              AND COALESCE(NULLIF(session.name, ''), session.agent) = reviews.author
+          ) AND NOT EXISTS (
+            SELECT 1 FROM agent_sessions session
+            WHERE session.agent = 'me'
+              AND COALESCE(NULLIF(session.name, ''), session.agent) = reviews.author
+          ) THEN 'agent'
+          ELSE 'system'
+        END
+        WHERE author_type = 'system'
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

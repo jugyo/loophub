@@ -1,12 +1,7 @@
 import { createHash } from "node:crypto";
 import { type CodingAgent, codingAgent } from "../config.ts";
-import { buildRuntimeArgs, runtimeApprovalArgs } from "../runtime-args.ts";
+import { buildRuntimeArgs } from "../runtime-args.ts";
 import { RUNTIMES } from "../runtimes.ts";
-import {
-  type ScheduledTaskNotificationContext,
-  scheduledTaskNotificationEnv,
-  scheduledTaskNotificationPromptSuffix,
-} from "../scheduled-task-notification.ts";
 import type { WorkflowStep } from "../workflow/compose.ts";
 import { workflowStepHerdrAgentName } from "../workflow/herdr-agents.ts";
 
@@ -98,15 +93,8 @@ export function herdrCommandLine(plan: HerdrLaunchPlan): string {
 
 export function commandForHerdrLaunch(input: {
   repo: string;
-  workflow?:
-    | "issue-create"
-    | "workflow-create"
-    | "scheduled-task-create"
-    | "resume"
-    | "github-pr-export";
+  workflow?: "issue-create" | "workflow-create" | "github-pr-export";
   prNumber?: number;
-  session?: string;
-  cwd?: string;
   codingAgent?: CodingAgent;
   model?: string;
   // One-shot reasoning effort for New issue launches (#1534). Maps to `lh issue new --effort`.
@@ -149,17 +137,9 @@ export function commandForHerdrLaunch(input: {
     // workflow-create instructions as its initial prompt, mirroring the New issue flow's `--prompt`.
     // `lh workflow create` is global (no repo), so this runs from the LoopHub-home cwd the service
     // pins for it, not a repo worktree. The agent/model come from the global effective config
-    // (`codingAgent()`), same non-repo default as scheduled-task-create.
+    // (`codingAgent()`).
     const agent = input.codingAgent ?? codingAgent();
     const argv = buildRuntimeArgs({ runtime: agent, prompt: input.prompt });
-    return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
-  }
-  if (input.workflow === "scheduled-task-create" && input.prompt) {
-    const agent = input.codingAgent ?? codingAgent();
-    const argv = buildRuntimeArgs({
-      runtime: agent,
-      prompt: input.prompt,
-    });
     return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
   if (input.workflow === "github-pr-export" && input.prNumber && input.prompt) {
@@ -173,55 +153,7 @@ export function commandForHerdrLaunch(input: {
     });
     return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
-  if (input.workflow === "resume" && input.session) {
-    const resume = `claude --resume ${shellArg(input.session)}`;
-    return input.cwd ? `cd ${shellArg(input.cwd)} && ${resume}` : resume;
-  }
   return "";
-}
-
-// Builds the inner shell command a scheduled task (#880) runs in its herdr pane: the saved prompt
-// handed to the agent's non-interactive mode. Claude uses `claude -p <prompt>` (print mode); Codex
-// uses `codex exec <prompt>`. A scheduled fire is unattended, so both launch in a no-approval-prompt
-// mode — there is no human to answer a mid-run prompt. runtimeApprovalArgs supplies each runtime's
-// full auto-mode arguments, including Codex's `--dangerously-bypass-approvals-and-sandbox`. The
-// print/exec invocation shape is scheduled-task-specific, so it stays here; only the approval
-// posture is shared.
-// `model` applies to both; `effort` is a Codex-only reasoning knob (claude has no effort flag),
-// passed as its `model_reasoning_effort` config override. The prompt (and every interpolated value)
-// is single-quote-escaped before it reaches `zsh -lc`, so a crafted prompt cannot inject a command.
-export function buildScheduledTaskCommand(input: {
-  agent: CodingAgent;
-  prompt: string;
-  model?: string | null;
-  effort?: string | null;
-  context?: ScheduledTaskNotificationContext;
-}): string {
-  const promptText = input.context
-    ? `${input.prompt.trimEnd()}${scheduledTaskNotificationPromptSuffix(input.context)}`
-    : input.prompt;
-  const prompt = shellArg(promptText);
-  const envPrefix = input.context
-    ? `${Object.entries(scheduledTaskNotificationEnv(input.context))
-        .map(([key, value]) => `${key}=${shellArg(value)}`)
-        .join(" ")} `
-    : "";
-  const model = input.model?.trim();
-  if (input.agent === "codex") {
-    const parts = [
-      "codex",
-      "exec",
-      ...runtimeApprovalArgs("codex").map(shellArg),
-    ];
-    if (model) parts.push("--model", shellArg(model));
-    const effort = input.effort?.trim();
-    if (effort) parts.push("-c", shellArg(`model_reasoning_effort=${effort}`));
-    parts.push(prompt);
-    return `${envPrefix}${parts.join(" ")}`;
-  }
-  const parts = ["claude", "-p", prompt, ...runtimeApprovalArgs("claude-code")];
-  if (model) parts.push("--model", shellArg(model));
-  return `${envPrefix}${parts.join(" ")}`;
 }
 
 // Creates the tab the agent will start in (`herdr agent start --tab <ID>`), so launches open
@@ -399,12 +331,9 @@ export function herdrTabFocusArgv(
   return ["herdr", "--session", herdrSessionName(repo), "tab", "focus", tabId];
 }
 
-// Switches focus (workspace + tab + pane, in one call) to an already-running agent, by pane id
-// (#578's Resume dedup; reused by #579's issue-list Herdr badge). Unlike herdrWorkspaceFocusArgv
-// above, this doesn't require the caller to know which workspace/tab the target lives in —
-// `herdr agent focus` resolves that itself — which matters for Resume (a session's tab can land
-// in any workspace, not just the one currently in front) and equally for the badge (it only knows
-// the agent's pane id, not its workspace/tab).
+// Switches focus (workspace + tab + pane, in one call) to an already-running agent, by pane id.
+// Unlike herdrWorkspaceFocusArgv above, this doesn't require the caller to know which workspace/tab
+// the target lives in; the issue-list badge only knows the agent's pane id.
 export function herdrAgentFocusArgv(
   repo: TerminalLaunchRepo,
   target: string,
@@ -432,66 +361,6 @@ export function herdrPaneCloseArgv(
     "pane",
     "close",
     paneId,
-  ];
-}
-
-// Sends a key press to a pane (#832's cost-limit stop). Unlike herdrPaneCloseArgv this doesn't
-// touch pane/tab state — it just injects a keystroke (e.g. `Escape`) into whatever the pane is
-// running, which for an idle claude/codex TUI cancels the current turn without killing the agent
-// (the issue's "auto で kill しない、Esc を送る程度に留める"). The `key` is a herdr key name, not
-// arbitrary text; callers pass a fixed literal, never process output.
-export function herdrPaneSendKeysArgv(
-  repo: TerminalLaunchRepo,
-  paneId: string,
-  key: string,
-): string[] {
-  return [
-    "herdr",
-    "--session",
-    herdrSessionName(repo),
-    "pane",
-    "send-keys",
-    paneId,
-    key,
-  ];
-}
-
-// Writes literal text to a pane without invoking a shell. Herdr's send-text contract treats the
-// argument after paneId as the text positional, including when it starts with `-`; inserting `--`
-// would instead send that marker as the text. Callers that also need to submit use
-// herdrPaneRunArgv so user input can never be parsed as a command by LoopHub.
-export function herdrPaneSendTextArgv(
-  repo: TerminalLaunchRepo,
-  paneId: string,
-  text: string,
-): string[] {
-  return [
-    "herdr",
-    "--session",
-    herdrSessionName(repo),
-    "pane",
-    "send-text",
-    paneId,
-    text,
-  ];
-}
-
-// Writes literal text and submits it with Enter in one Herdr request. Keep prompt delivery on this
-// atomic input path: separate send-text and send-keys requests can leave text in the input field
-// without submitting it.
-export function herdrPaneRunArgv(
-  repo: TerminalLaunchRepo,
-  paneId: string,
-  text: string,
-): string[] {
-  return [
-    "herdr",
-    "--session",
-    herdrSessionName(repo),
-    "pane",
-    "run",
-    paneId,
-    text,
   ];
 }
 

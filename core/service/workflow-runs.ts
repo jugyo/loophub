@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { AgentExecutionTarget } from "../agent-control.ts";
 import {
   agentModel,
   type CodingAgent,
@@ -17,7 +18,6 @@ import {
 } from "../dev-lock.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
-import { resolveWorktreeIdentity } from "../resume.ts";
 import {
   effectiveRepoAgentConfigFor,
   type WorkflowOutOfBandReviewWire,
@@ -30,16 +30,7 @@ import {
   workflowRunStateJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
-import {
-  NO_PANE_ID_PREFIX,
-  parseHerdrAgentList,
-} from "../terminal/herdr-status.ts";
-import {
-  buildWorkflowStepHerdrLaunchPlan,
-  HERDR_ID,
-  herdrSessionName,
-} from "../terminal/terminal-launch.ts";
-import { parsePreviousWorkflowVerifyPane } from "../terminal/workflow-pane-layout.ts";
+import { buildWorkflowStepHerdrLaunchPlan } from "../terminal/terminal-launch.ts";
 import {
   composeWorkflowLaunchPrompt,
   renderWorkflowContract,
@@ -60,7 +51,6 @@ import {
 import {
   nextWorkflowChildSequence,
   parseWorkflowHerdrAgentName,
-  type WorkflowHerdrAgent,
   workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
 import { workflowMessages } from "../workflow/messages.ts";
@@ -103,13 +93,14 @@ import {
 import {
   legacyWorktreePath,
   worktreePath as prWorktreePath,
+  resolveWorktreeIdentity,
 } from "../worktree-path.ts";
 import {
   provisionWorktree,
   shouldCreateMissingConventionBranch,
 } from "../worktree-provision.ts";
+import { agentControl, assertAgentExecutionTarget } from "./agent-control.ts";
 import { dev } from "./dev.ts";
-import { runHerdr } from "./herdr-runner.ts";
 import { reviewAcResultsJSON } from "./reviews.ts";
 import { workflowContractLanguage } from "./settings.ts";
 import {
@@ -120,7 +111,6 @@ import {
   repoOr404,
   UNKNOWN_ACTOR,
 } from "./shared.ts";
-import { workflowWatch } from "./workflow-watch.ts";
 
 export type WorkflowRunStartResult = {
   run: {
@@ -222,6 +212,14 @@ export type WorkflowConfirmStepLaunchResult = {
   session_id: string;
 };
 
+function executionTarget(row: S.AgentExecutionTargetRow): AgentExecutionTarget {
+  return {
+    provider: row.provider,
+    targetId: row.target_id,
+    context: row.context,
+  };
+}
+
 export type WorkflowTurnDoneResult = {
   run: number;
   event_id: number;
@@ -249,9 +247,9 @@ export type WorkflowStepInputResult = {
 export type WorkflowStepStatusResult = WorkflowStepStatusWire;
 
 // The action plus the facts it was decided from. The snapshot travels with the action so the parent
-// never has to re-observe state to act on it, and `event` names the run event this call woke on
-// (`--watch`) or was pointed at (`--event`) — the parent needs its id for event-scoped commands
-// such as `lh workflow cost-hold` and for reading a GitHub reference.
+// never has to re-observe state to act on it, and `event` names the run event the call was pointed
+// at (`--event`) — the parent needs its id for event-scoped commands such as `lh workflow cost-hold`
+// and for reading a GitHub reference.
 export type WorkflowNextResult = WorkflowNextAction & {
   instructions: ReturnType<typeof workflowActionPlan>;
   observed: WorkflowStepStatusWire;
@@ -973,6 +971,19 @@ function costLimitIncreaseAvailable(
   );
 }
 
+// A run owns at most one live Execute child: two children share one worktree and edit the same
+// files, and only the newest one receives `deliver` input, so the child actually doing the rework
+// goes silent. Nothing else stops a launch from adding a second one, and a silent duplicate is
+// invisible to the human supervising the run — fail the launch instead (#2150).
+function assertNoLiveExecuteChild(run: S.WorkflowRunRow, step: WorkflowStep) {
+  if (step !== "execute") return;
+  if (run.active_step !== "execute" || !run.active_session_id) return;
+  throw new ServiceError(
+    409,
+    `Workflow run #${run.id} already has a live Execute session (${run.active_session_id})`,
+  );
+}
+
 function assertParentActor(
   run: S.WorkflowRunRow,
   sessionId: string | null | undefined,
@@ -1128,8 +1139,8 @@ function increaseRunCostLimit(
         "Workflow cost limit was not increased because its state changed",
       );
     }
-    // The parent waits on this event in `lh workflow next --watch`; it carries the interrupted step
-    // so the wake is legible in run history even though reconciliation re-observes the run row. The
+    // The worker turns this event into the parent's next instruction. It carries the interrupted
+    // step so the wake is legible in run history even though reconciliation re-observes the run row. The
     // raised limit and this wake commit together: a wake without the raise would resume a run that
     // is still over budget.
     S.emitWorkflowEvent(
@@ -1188,7 +1199,7 @@ export const workflowRuns = {
 
     const opened = await dev.openPr(
       r.full_name,
-      { issue: issue.number },
+      { issue: issue.number, language: contractLanguage },
       sessionId,
       { attributeSession: false },
     );
@@ -1487,74 +1498,37 @@ export const workflowRuns = {
       throw new ServiceError(422, "workflow deliver requires non-empty text");
     }
 
-    const sessionName = herdrSessionName(repo);
-    const agentsOut = await runHerdr(
-      "herdr",
-      ["--session", sessionName, "agent", "list"],
-      repo.local_path,
-      { captureStdout: true, timeoutMs: 15_000 },
-    );
-    const latest = parseHerdrAgentList(agentsOut)
-      .map((agent) => ({
-        agent,
-        parsed: parseWorkflowHerdrAgentName(agent.name),
-      }))
-      .filter(
-        (
-          candidate,
-        ): candidate is {
-          agent: ReturnType<typeof parseHerdrAgentList>[number];
-          parsed: Extract<WorkflowHerdrAgent, { kind: "step" }>;
-        } =>
-          candidate.parsed?.kind === "step" &&
-          candidate.parsed.runId === run.id &&
-          candidate.parsed.step === "execute",
-      )
-      .sort((a, b) => b.parsed.sequence - a.parsed.sequence)[0];
-    if (!latest) {
-      throw new ServiceError(
-        404,
-        `No Execute agent found for Workflow run #${run.id}`,
-      );
-    }
-    if (
-      latest.agent.id.startsWith(NO_PANE_ID_PREFIX) ||
-      !HERDR_ID.test(latest.agent.id)
-    ) {
-      throw new ServiceError(
-        422,
-        `Execute agent "${latest.agent.name}" has no valid pane_id`,
-      );
-    }
-
-    const matchingSessions = workflowStepSessionIds(
+    const executeSessionId = workflowStepSessionIds(
       run.step_sessions_json,
       "execute",
-    ).filter(
-      (candidate) => S.getAgentSession(candidate)?.name === latest.agent.name,
-    );
-    if (matchingSessions.length !== 1) {
+    ).at(-1);
+    if (!executeSessionId) {
       throw new ServiceError(
-        422,
-        `Cannot resolve the registered Execute session for agent "${latest.agent.name}"`,
+        404,
+        `No Execute session found for Workflow run #${run.id}`,
       );
     }
-    const executeSessionId = matchingSessions[0];
+    const session = S.getAgentSession(executeSessionId);
+    const target = S.getAgentExecutionTarget(executeSessionId);
+    if (!session || !target) {
+      throw new ServiceError(
+        422,
+        `Execute session ${executeSessionId} has no execution target`,
+      );
+    }
     workflowRuns.activateStep(
       name,
       { run: run.id, step: "execute", sessionId: executeSessionId },
       sessionId,
     );
-    await runHerdr(
-      "herdr",
-      ["--session", sessionName, "pane", "run", latest.agent.id, text],
-      repo.local_path,
-      { timeoutMs: 15_000 },
+    await agentControl(repo.local_path, executionTarget(target)).inputText(
+      executionTarget(target),
+      text,
     );
     return {
       run: run.id,
-      agent_name: latest.agent.name,
-      pane_id: latest.agent.id,
+      agent_name: session.name ?? executeSessionId,
+      pane_id: target.target_id,
       session_id: executeSessionId,
       text,
     };
@@ -1706,13 +1680,20 @@ export const workflowRuns = {
     if (run.rework_count >= WORKFLOW_REWORK_LIMIT) {
       throw new ServiceError(409, "Workflow rework limit reached");
     }
+    // The Execute child that will address the review is still live in its pane, so hand
+    // `active_step` straight back to it instead of clearing it first. Clearing left a window where
+    // `current_step` was already `execute` while `active_step` was null: a worker dispatch landing
+    // in that window reads "Execute has not started" and launches a second Execute child into the
+    // same worktree (#2150). The `deliver` that follows re-activates the same session.
+    const executeSessionId =
+      workflowStepSessionIds(run.step_sessions_json, "execute").at(-1) ?? null;
     return updateRunLifecycle(
       run,
       {
         currentStep: "execute",
         reworkCount: run.rework_count + 1,
-        activeStep: null,
-        activeSessionId: null,
+        activeStep: executeSessionId ? "execute" : null,
+        activeSessionId: executeSessionId,
       },
       "request_rework",
       sessionId,
@@ -1741,6 +1722,7 @@ export const workflowRuns = {
     assertAutomaticProgressAllowed(run);
     assertParentActor(run, sessionId);
     const step = workflowStep(input.step);
+    assertNoLiveExecuteChild(run, step);
     const childSessionId = randomUUID();
     const workflow = run.workflow_id
       ? S.getWorkflowById(run.workflow_id)
@@ -1841,7 +1823,7 @@ export const workflowRuns = {
     };
   },
 
-  async closePreviousVerifyPane(
+  async closePreviousVerifyAgent(
     name: string,
     input: { run: number },
     sessionId: string | null | undefined,
@@ -1855,23 +1837,15 @@ export const workflowRuns = {
     assertAutomaticProgressAllowed(run);
     assertParentActor(run, sessionId);
 
-    const sessionName = herdrSessionName(r);
-    const paneList = await runHerdr(
-      "herdr",
-      ["--session", sessionName, "pane", "list"],
-      r.local_path,
-      { captureStdout: true, timeoutMs: 15_000 },
-    );
-    const previous = parsePreviousWorkflowVerifyPane(paneList, run.id);
-    if (!previous) {
-      throw new ServiceError(500, "Herdr pane list returned invalid JSON");
-    }
-    if (!previous.paneId) return;
-    await runHerdr(
-      "herdr",
-      ["--session", sessionName, "pane", "close", previous.paneId],
-      r.local_path,
-      { timeoutMs: 15_000 },
+    const previousSession = workflowStepSessionIds(
+      run.step_sessions_json,
+      "verify",
+    ).at(-1);
+    if (!previousSession) return;
+    const target = S.getAgentExecutionTarget(previousSession);
+    if (!target) return;
+    await agentControl(r.local_path, executionTarget(target)).close(
+      executionTarget(target),
     );
   },
 
@@ -1882,6 +1856,7 @@ export const workflowRuns = {
       step: string;
       sessionId: string;
       agentName?: string;
+      executionTarget: AgentExecutionTarget;
       pointers: WorkflowInputPointer[];
       headSha?: string;
       note?: string;
@@ -1901,6 +1876,7 @@ export const workflowRuns = {
     const sessionId = input.sessionId;
     if (input.agentName)
       validateWorkflowStepAgentName(input.agentName, run.id, step);
+    assertAgentExecutionTarget(input.executionTarget);
     if (step === "verify") {
       if (!input.headSha || !/^[0-9a-f]{40,64}$/u.test(input.headSha)) {
         throw new ServiceError(
@@ -1934,6 +1910,12 @@ export const workflowRuns = {
         runRuntime(run),
         "workflow-step",
       );
+      S.registerAgentExecutionTarget({
+        sessionId,
+        provider: input.executionTarget.provider,
+        targetId: input.executionTarget.targetId,
+        context: input.executionTarget.context,
+      });
       S.linkSession(sessionId, prIssue.id);
       const withSession = S.appendWorkflowRunStepSession(
         run.id,
@@ -2174,9 +2156,9 @@ export const workflowRuns = {
     return observeWorkflowRunStatus(r, run, workflowRunEventProjection(run));
   },
 
-  // Advise the parent's next action from observed state. With `watch`, the call blocks on the run's
-  // next event before observing, so the parent's whole loop is this one command: no cursor to carry,
-  // no separate status observation, and no event delivery protocol.
+  // Decide the run's next action from observed state. The worker calls this per undigested event to
+  // produce the instruction it delivers to the parent pane; the parent calls it only to submit its
+  // own input — a direct human instruction, or its verdict on GitHub references it was asked to read.
   async next(
     name: string,
     input: {
@@ -2184,53 +2166,24 @@ export const workflowRuns = {
       event?: number;
       note?: string;
       requiresChanges?: boolean;
-      watch?: boolean;
     },
     sessionId?: string | null,
   ): Promise<WorkflowNextResult> {
-    const externalInputs = [
-      input.event !== undefined,
-      input.note !== undefined,
-      input.watch === true,
-    ].filter(Boolean).length;
-    if (externalInputs > 1) {
+    if (input.event !== undefined && input.note !== undefined) {
       throw new ServiceError(
         422,
-        "workflow next accepts either watch, event, or note",
+        "workflow instruction accepts either an event or a note",
       );
     }
     const r = repoOr404(name);
-    // Reading the row is a lookup, not a snapshot: the watch below re-reads it after its wake.
-    const readRun = (): S.WorkflowRunRow => {
-      const row = workflowRunOr404(input.run);
-      if (row.repo_id !== r.id) {
-        throw new ServiceError(404, "Workflow run not found for repo");
-      }
-      return row;
-    };
-    let run = readRun();
-    let wakeEvent: LoopEvent | null = null;
-    // A run that already reached a terminal status has no further event worth waiting for; blocking
-    // would leave the caller parked forever instead of returning the terminal action once.
-    if (input.watch && run.status === "running") {
-      wakeEvent = await workflowWatch.waitForEvent({
-        repo: name,
-        run,
-        since: run.event_cursor,
-      });
-      // Move the cursor before observing: this wake is spent either way, and reconciliation reads
-      // the state the event produced rather than the event itself.
-      S.advanceWorkflowRunEventCursor(run.id, wakeEvent.id);
-      // That state usually lives on the run row: the events worth waking for are records of writes
-      // to the run itself (a human resuming it, a raised cost limit). Re-read the row so
-      // reconciliation observes what the wake announced instead of what was true when the wait
-      // began — otherwise the wake is spent on a stale hold that never clears.
-      run = readRun();
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
     }
-    if (wakeEvent === null && input.event !== undefined) {
-      // `--event` names any event of the run's subjects, matched by the same predicate the watch
-      // selects with: the GitHub two-call protocol hands back a source event id, and a lookup
-      // narrower than the selector would reject the id it just returned.
+    let wakeEvent: LoopEvent | null = null;
+    if (input.event !== undefined) {
+      // `--event` names any event of the run's subjects, matched by the same predicate the worker
+      // selector uses. The GitHub two-call protocol can therefore return a source event directly.
       const row = S.workflowSubjectEventById({
         repoId: r.id,
         runId: run.id,
@@ -2265,10 +2218,9 @@ export const workflowRuns = {
     // closes the PR and reaches this same path.
     // Record it from the observation rather than from the PR operation itself — that keeps the run
     // lifecycle owned by this service, makes every close / merge route land on the same result
-    // (the PR's own state is the fact), and covers the wake path too: a watcher that was already
-    // blocked when the operation landed records the completion on the wake that follows. A
-    // completed run is no longer a `running` target for cost detection, so no further cost-exceeded
-    // edge can fire for it.
+    // (the PR's own state is the fact), and covers the event path too: the close event the operation
+    // produced records the completion when its instruction is decided. A completed run is no longer
+    // a `running` target for cost detection, so no further cost-exceeded edge can fire for it.
     const completedNow =
       observedState.pr_closed && S.getWorkflowRun(run.id)?.status === "running"
         ? updateRunLifecycle(

@@ -3,12 +3,20 @@ import { ServiceError } from "../errors.ts";
 import { revParse } from "../git.ts";
 import {
   type ReviewAcResultWire,
+  type ReviewDetailWire,
   reviewCommentJSON,
   reviewJSON,
+  reviewResponseJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
 import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
-import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
+import {
+  actorFor,
+  commentActor,
+  ensureWritable,
+  issueOr404,
+  repoOr404,
+} from "./shared.ts";
 
 // The per-criterion grades of one review (#1895), joined to the rubric text via `criterion_id`.
 // A criterion disabled after grading still resolves here (grade rows are never deleted). Shared by
@@ -151,6 +159,92 @@ export const reviews = {
     return S.listReviewComments(row.id).map(reviewCommentJSON);
   },
 
+  get(name: string, number: number, reviewId: number): ReviewDetailWire {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const review = S.listReviews(row.id).find(
+      (candidate) => candidate.id === reviewId,
+    );
+    if (!review) {
+      throw new ServiceError(
+        404,
+        `review #${reviewId} not found on PR #${number}`,
+      );
+    }
+    return {
+      review: reviewJSON(review, reviewAcResultsJSON(review.id)),
+      comments: S.listReviewComments(row.id)
+        .filter((comment) => comment.review_id === review.id)
+        .map(reviewCommentJSON),
+    };
+  },
+
+  listResponses(name: string, number: number, reviewId?: number) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    if (
+      reviewId !== undefined &&
+      !S.listReviews(row.id).some((review) => review.id === reviewId)
+    ) {
+      throw new ServiceError(
+        404,
+        `review #${reviewId} not found on PR #${number}`,
+      );
+    }
+    return S.listReviewResponses(row.id, reviewId).map(reviewResponseJSON);
+  },
+
+  createResponse(
+    name: string,
+    number: number,
+    input: { reviewId: number; reviewCommentId?: number; body: string },
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const review = S.listReviews(row.id).find(
+      (candidate) => candidate.id === input.reviewId,
+    );
+    if (!review) {
+      throw new ServiceError(
+        404,
+        `review #${input.reviewId} not found on PR #${number}`,
+      );
+    }
+    if (!input.body.trim()) {
+      throw new ServiceError(422, "review response body is required");
+    }
+    const reviewCommentId = input.reviewCommentId ?? null;
+    if (
+      reviewCommentId !== null &&
+      !S.listReviewComments(row.id).some(
+        (comment) =>
+          comment.id === reviewCommentId && comment.review_id === review.id,
+      )
+    ) {
+      throw new ServiceError(
+        404,
+        `review comment #${reviewCommentId} not found on review #${review.id}`,
+      );
+    }
+    const actor = actorFor(sessionId);
+    const response = S.createReviewResponse(
+      row.id,
+      review.id,
+      reviewCommentId,
+      actor,
+      input.body,
+    );
+    S.emitEvent(r.id, "pull_request.review_response_created", actor, {
+      number: row.number,
+      review_id: review.id,
+      review_comment_id: reviewCommentId,
+      response_id: response.id,
+    });
+    return reviewResponseJSON(response);
+  },
+
   async create(
     name: string,
     number: number,
@@ -187,7 +281,7 @@ export const reviews = {
     // validate ownership and coverage here and reject with a visible error rather than silently
     // correcting (CLAUDE.md「可視エラーを優先」).
     const acResults = validateAcResults(row, input.acResults);
-    const actor = actorFor(sessionId);
+    const { actor, authorType } = commentActor(sessionId);
     // Bind the review to the live head it was made against. The watcher-backed
     // stored SHA can lag immediately after a rebase, so it is only a fallback
     // when the ref cannot be resolved. Workflow placement may pass its pinned
@@ -208,9 +302,10 @@ export const reviews = {
         headSha,
         model,
         acResults,
+        authorType,
       );
       for (const cm of lineComments) {
-        S.createReviewComment(row.id, v.id, actor, {
+        S.createReviewComment(row.id, v.id, actor, authorType, {
           path: cm.path,
           line: cm.line,
           side: cm.side,

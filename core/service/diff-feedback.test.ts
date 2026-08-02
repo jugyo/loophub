@@ -128,12 +128,35 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("a diff comment records its anchor on the domain event, not a copy of itself", async () => {
+test("a diff comment stores its current location and anchor event immediately", async () => {
   const created = await createThread("Why is this changed?");
+  const listed = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
+  const location = S.listDiffFeedbackLocations(
+    S.getIssue(repoId, prNumber)!.id,
+    baseSha,
+    headSha,
+  )[0];
   const event = S.listEvents(0, repoId, 100).find(
     (row) => row.type === "pull_request.diff_feedback_created",
   );
 
+  expect(created.thread).toMatchObject({
+    created_by_type: "human",
+    freshness: "current",
+    placement: "inline",
+    resolved_anchor: { path: "a.txt", start_line: 2, end_line: 2 },
+  });
+  expect(created.comment.author_type).toBe("human");
+  expect(listed).toMatchObject({
+    freshness: "current",
+    placement: "inline",
+    resolved_anchor: { path: "a.txt", start_line: 2, end_line: 2 },
+  });
+  expect(location).toMatchObject({
+    freshness: "current",
+    placement: "inline",
+    outdated_reason: null,
+  });
   expect(event).toBeDefined();
   // The commenter is the event's own actor, and the body stays in the comment row the ids name.
   expect(event!.actor).toBe("me");
@@ -195,6 +218,7 @@ test("an Execute reply answers the comment without waking its own parent", async
 
   expect(replied.reply).toMatchObject({
     author: "executor #1-1",
+    author_type: "agent",
     body: "Renamed for clarity.",
   });
   // The reply is recorded like any other, but it carries the Execute child's session id, so the

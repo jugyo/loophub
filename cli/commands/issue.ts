@@ -6,7 +6,7 @@ import {
   ENV_ISSUE_CREATE_SESSION,
   LH_ISSUE_CREATE_SESSION_AGENT,
   SESSION_KIND_ISSUE_CREATE,
-} from "../../core/resume.ts";
+} from "../../core/session-runtime.ts";
 import { issueCreatePrompt } from "../../core/workflow/issue-create-prompt.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
@@ -232,7 +232,7 @@ export async function run(): Promise<void> {
     out(i);
     if (!flags.json) console.log(`created #${i.number}`);
     // When this create runs inside a `lh issue new` AI session, link that session to the issue
-    // it just filed (#299) so it appears in the issue's related-sessions list and is resumable.
+    // it just filed (#299) so it appears in the issue's related-sessions list.
     // Best-effort: a link failure must not fail the create the user asked for.
     const createSession = process.env[ENV_ISSUE_CREATE_SESSION];
     if (createSession) {

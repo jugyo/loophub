@@ -86,6 +86,7 @@ const lineComments: PullLineComment[] = [
     id: 1,
     pull_request_review_id: 1,
     user: { login: "design-bot" },
+    author_type: "agent",
     path: "web/src/a.ts",
     line: 1,
     side: "RIGHT",
@@ -112,12 +113,14 @@ function feedbackThread(
     id: 1,
     pr_number: 30,
     created_by: "reviewer",
+    created_by_type: "agent",
     created_at: "2026-07-28T00:00:00Z",
     messages: [
       {
         id: 11,
         thread_id: 1,
         author: "reviewer",
+        author_type: "agent",
         body: "Please revisit this range.",
         created_at: "2026-07-28T00:00:00Z",
         reactions: [],
@@ -332,6 +335,36 @@ describe("DiffFileDialog", () => {
     expect(within(dialog).getAllByText("nice constant").length).toBeGreaterThan(
       0,
     );
+    expect(within(dialog).getByLabelText("Comment ID 1").textContent).toBe(
+      "#1",
+    );
+    expect(within(dialog).getAllByLabelText("AI agent").length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("shows diff feedback message IDs without obscuring the comment body", async () => {
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+
+    const thread = await screen.findByLabelText("Diff thread 1");
+    expect(within(thread).getByLabelText("Comment ID 11").textContent).toBe(
+      "#11",
+    );
+    expect(within(thread).getByText("Please revisit this range.")).toBeTruthy();
   });
 
   it("starts in split view and switches to unified view", () => {
@@ -386,6 +419,22 @@ describe("DiffFileDialog", () => {
     expect(unifiedTable?.querySelectorAll("colgroup col")).toHaveLength(3);
     expect(unifiedTable?.parentElement?.classList).not.toContain(
       "overflow-x-auto",
+    );
+  });
+
+  it("keeps line numbers on the first line of wrapped rows in both views", () => {
+    renderDialog();
+
+    const splitNumber = screen.getByLabelText("Old line 1");
+    expect(splitNumber.classList).toContain("align-top");
+    expect(splitNumber.nextElementSibling?.classList).toContain("align-top");
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+
+    const unifiedNumber = screen.getByLabelText("Old line 1");
+    expect(unifiedNumber.classList).toContain("align-top");
+    expect(screen.getByText("const x = 1;").closest("td")?.classList).toContain(
+      "align-top",
     );
   });
 
@@ -492,6 +541,7 @@ describe("DiffFileDialog", () => {
         },
         freshness: "current",
         created_by: "me",
+        created_by_type: "human",
         created_at: "2026-07-28T00:00:00Z",
         messages: [],
       },
@@ -622,6 +672,7 @@ describe("DiffFileDialog", () => {
       const thread = feedbackThread({
         id: 9,
         created_by: "me",
+        created_by_type: "human",
         anchor: {
           ...feedbackThread().anchor,
           start_line: 1,
@@ -632,6 +683,7 @@ describe("DiffFileDialog", () => {
             id: 19,
             thread_id: 9,
             author: "me",
+            author_type: "human",
             body: "Keyboard feedback",
             created_at: "2026-07-28T00:01:00Z",
             reactions: [],
@@ -810,6 +862,7 @@ describe("DiffFileDialog", () => {
             id: 12,
             thread_id: thread.id,
             author: "me",
+            author_type: "human",
             body: params.body,
             created_at: "2026-07-30T00:00:00Z",
             reactions: [],
@@ -1236,6 +1289,75 @@ describe("DiffFileDialog", () => {
     await waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
   });
 
+  it("shows the author once for a single-message conversation", async () => {
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+
+    const card = await screen.findByLabelText("Diff thread 1");
+    expect(within(card).getAllByText("@reviewer")).toHaveLength(1);
+  });
+
+  // #2129: a diff conversation stores only an author name, so the human actor names read as
+  // @human while an agent session keeps its own name.
+  it("shows a human diff conversation as @human and leaves an agent reply alone", async () => {
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              created_by: "unknown",
+              created_by_type: "human",
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+              messages: [
+                {
+                  id: 11,
+                  thread_id: 1,
+                  author: "unknown",
+                  author_type: "human",
+                  body: "Please rename this.",
+                  created_at: "2026-07-28T00:00:00Z",
+                  reactions: [],
+                },
+                {
+                  id: 12,
+                  thread_id: 1,
+                  author: "executor #12-1",
+                  author_type: "agent",
+                  body: "Renamed.",
+                  created_at: "2026-07-28T00:02:00Z",
+                  reactions: [],
+                },
+              ],
+            }),
+          ],
+        }),
+      },
+    });
+
+    const card = await screen.findByLabelText("Diff thread 1");
+    expect(within(card).getAllByText("@human")).toHaveLength(1);
+    expect(within(card).getAllByText("@executor #12-1")).toHaveLength(1);
+    expect(within(card).queryByText("@unknown")).toBeNull();
+    expect(within(card).getAllByLabelText("AI agent")).toHaveLength(1);
+  });
+
   it("renders a current thread at its resolved coordinates", async () => {
     const patch = "@@ -1 +1,2 @@\n-old\n+new one\n+new two";
     const view = renderDialog({
@@ -1263,7 +1385,18 @@ describe("DiffFileDialog", () => {
     });
 
     const card = await screen.findByLabelText("Diff thread 1");
-    expect(within(card).getByText("web/src/a.ts · RIGHT 2")).toBeTruthy();
+    expect(within(card).queryByText("RIGHT 2")).toBeNull();
+    fireEvent.click(
+      within(card).getByRole("button", {
+        name: "Show diff anchor information for thread 1",
+      }),
+    );
+    const anchorInfo = within(card).getByRole("dialog", {
+      name: "Diff anchor information for thread 1",
+    });
+    expect(within(anchorInfo).getByText("Current")).toBeTruthy();
+    expect(within(anchorInfo).getByText("web/src/a.ts")).toBeTruthy();
+    expect(within(anchorInfo).getByText("RIGHT 2")).toBeTruthy();
     expect(
       screen.getByLabelText("New line 1").hasAttribute("data-thread-anchor"),
     ).toBe(false);
@@ -1303,6 +1436,7 @@ describe("DiffFileDialog", () => {
                   id: 12,
                   thread_id: 2,
                   author: "reviewer",
+                  author_type: "agent",
                   body: "Please check the replacement.",
                   created_at: "2026-07-28T00:01:00Z",
                   reactions: [],
@@ -1490,6 +1624,7 @@ describe("DiffFileDialog", () => {
         id: 12,
         thread_id: 1,
         author: "me",
+        author_type: "human",
         body: "Still relevant",
         created_at: "2026-07-28T00:02:00Z",
         reactions: [],
@@ -1507,7 +1642,9 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    expect(await screen.findByText("outdated")).toBeTruthy();
+    const card = await screen.findByLabelText("Diff thread 1");
+    expect(within(card).queryByText("Outdated")).toBeNull();
+    expect(within(card).queryByText("RIGHT 1–2")).toBeNull();
     fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
       target: { value: "Still relevant" },
     });
@@ -1591,7 +1728,11 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    expect(await screen.findByText("outdated")).toBeTruthy();
+    const card = await screen.findByLabelText("Diff thread 1");
+    expect(within(card).queryByText("Outdated")).toBeNull();
+    expect(
+      within(card).queryByLabelText("Historical context for thread 1"),
+    ).toBeNull();
     expect(screen.queryByLabelText("Previous diff threads")).toBeNull();
     const threadRow = screen
       .getByLabelText("Diff thread 1")
@@ -1599,8 +1740,20 @@ describe("DiffFileDialog", () => {
     expect(
       within(threadRow as HTMLElement).getByText("const x = 1;"),
     ).toBeTruthy();
+    fireEvent.click(
+      within(card).getByRole("button", {
+        name: "Show diff anchor information for thread 1",
+      }),
+    );
+    const anchorInfo = within(card).getByRole("dialog", {
+      name: "Diff anchor information for thread 1",
+    });
+    expect(within(anchorInfo).getByText("Outdated")).toBeTruthy();
+    expect(within(anchorInfo).getByText("Modified")).toBeTruthy();
+    expect(within(anchorInfo).getByText("RIGHT 1")).toBeTruthy();
     expect(
-      screen.getByLabelText("Historical context for thread 1").textContent,
+      within(anchorInfo).getByLabelText("Historical context for thread 1")
+        .textContent,
     ).toContain("> +new one");
     fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
       target: { value: "Still relevant" },
@@ -2679,12 +2832,14 @@ describe("DiffFeedbackHistory", () => {
           },
           freshness: "unavailable",
           created_by: "reviewer",
+          created_by_type: "agent",
           created_at: "2026-07-28T00:00:00Z",
           messages: [
             {
               id: 11,
               thread_id: 7,
               author: "reviewer",
+              author_type: "agent",
               body: "This conversation remains visible.",
               created_at: "2026-07-28T00:00:00Z",
             },
@@ -2708,7 +2863,8 @@ describe("DiffFeedbackHistory", () => {
     );
 
     expect(await screen.findByText("No diff.")).toBeTruthy();
-    expect(await screen.findByText("unavailable")).toBeTruthy();
+    const card = await screen.findByLabelText("Diff thread 7");
+    expect(within(card).queryByText("Unavailable")).toBeNull();
     expect(
       await screen.findByText("This conversation remains visible."),
     ).toBeTruthy();
@@ -2720,5 +2876,76 @@ describe("DiffFeedbackHistory", () => {
     expect(
       screen.queryByRole("button", { name: /submit (review|comments)/i }),
     ).toBeNull();
+  });
+
+  it("explains inline unavailable fallback separately for human and agent conversations", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              id: 7,
+              freshness: "unavailable",
+              placement: "inline",
+              created_by: "unknown",
+              created_by_type: "human",
+              messages: [
+                {
+                  ...feedbackThread().messages[0],
+                  thread_id: 7,
+                  author: "unknown",
+                  author_type: "human",
+                },
+              ],
+            }),
+            feedbackThread({
+              id: 8,
+              freshness: "outdated",
+              created_by: "executor #12-1",
+              created_by_type: "agent",
+              messages: [
+                {
+                  ...feedbackThread().messages[0],
+                  thread_id: 8,
+                  author: "executor #12-1",
+                  author_type: "agent",
+                },
+              ],
+            }),
+          ],
+        }),
+      }),
+    );
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <DiffFeedbackHistory owner="me" repo="proj" number={30} />
+      </QueryClientProvider>,
+    );
+
+    const humanThread = await screen.findByLabelText("Diff thread 7");
+    expect(within(humanThread).getByText("@human")).toBeTruthy();
+    expect(within(humanThread).queryByText("Unavailable")).toBeNull();
+    fireEvent.click(
+      within(humanThread).getByRole("button", {
+        name: "Show diff anchor information for thread 7",
+      }),
+    );
+    expect(within(humanThread).getByText("Unavailable")).toBeTruthy();
+    expect(within(humanThread).getByText("RIGHT 1–2")).toBeTruthy();
+    for (const agentStatus of ["working", "blocked", "done", "idle"]) {
+      expect(within(humanThread).queryByText(agentStatus)).toBeNull();
+    }
+
+    const agentThread = await screen.findByLabelText("Diff thread 8");
+    expect(within(agentThread).getByText("@executor #12-1")).toBeTruthy();
+    expect(within(agentThread).queryByText("Outdated")).toBeNull();
+    fireEvent.click(
+      within(agentThread).getByRole("button", {
+        name: "Show diff anchor information for thread 8",
+      }),
+    );
+    expect(within(agentThread).getByText("Outdated")).toBeTruthy();
+    expect(within(agentThread).getByText("Modified")).toBeTruthy();
   });
 });

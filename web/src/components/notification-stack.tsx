@@ -23,14 +23,20 @@ const MAX_VISIBLE_NOTIFICATIONS = 5;
 const STACK_ITEM_CLASSES =
   "pointer-events-auto rounded-md border bg-background p-3 text-sm text-foreground shadow-lg";
 
-function kindIcon(kind: Notification["kind"]) {
+function notificationIcon(notification: Notification) {
+  if (notification.severity === "warning") return AlertTriangle;
+  const kind = notification.kind;
   if (kind === "merge_ready") return CheckCircle2;
   if (kind === "over_budget") return CircleDollarSign;
   if (kind === "human_attention") return Info;
   return AlertTriangle;
 }
 
-function kindTone(kind: Notification["kind"]): string {
+function notificationTone(notification: Notification): string {
+  if (notification.severity === "warning") {
+    return "text-amber-700 dark:text-amber-300";
+  }
+  const kind = notification.kind;
   if (kind === "merge_ready") return "text-emerald-700 dark:text-emerald-300";
   if (kind === "over_budget") return "text-amber-700 dark:text-amber-300";
   if (kind === "human_attention") return "text-sky-700 dark:text-sky-300";
@@ -206,15 +212,16 @@ function NotificationItem({
   herdrPaneId: string | null;
   herdrPending: boolean;
 }) {
-  const Icon = kindIcon(notification.kind);
+  const Icon = notificationIcon(notification);
   const label = resourceLabel(notification);
   return (
     <article
       data-debug-component="NotificationItem"
+      data-severity={notification.severity}
       className={cn(STACK_ITEM_CLASSES, "flex items-start gap-3")}
     >
       <Icon
-        className={cn("mt-0.5 size-4 shrink-0", kindTone(notification.kind))}
+        className={cn("mt-0.5 size-4 shrink-0", notificationTone(notification))}
         aria-hidden="true"
       />
       <Link

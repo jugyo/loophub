@@ -90,6 +90,76 @@ test("issues.get reports an open linked pull request", async () => {
   expect(detail.has_open_pull_request).toBe(true);
 });
 
+test("issues.list carries the linked PR's workflow rework count (#2147)", async () => {
+  const repo = S.getRepo("me", "proj");
+  if (!repo) throw new Error("repo missing");
+  const issue = svc.issues.create("me/proj", {
+    title: "reworked pull request",
+  });
+  git(["branch", "feature/reworked-pull-request"]);
+  const pull = await svc.pulls.create("me/proj", {
+    title: "reworked pull request",
+    head: "feature/reworked-pull-request",
+    issue: issue.number,
+  });
+  const workflow = S.createWorkflow({
+    name: "rework-count",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+  });
+
+  const withoutRework = (
+    (await svc.issues.list("me/proj", {
+      kind: "issue",
+      state: "open",
+    })) as any[]
+  ).find((item) => item.number === issue.number);
+  // A linked run reports its count from the first loop, so zero distinguishes "has not reworked
+  // yet" from "no run at all"; only the UI decides that zero is not worth showing.
+  expect(withoutRework.linked_pull_requests[0].workflow_rework_count).toBe(0);
+
+  S.updateWorkflowRun(run.id, { reworkCount: 3 });
+  const reworked = (
+    (await svc.issues.list("me/proj", {
+      kind: "issue",
+      state: "open",
+    })) as any[]
+  ).find((item) => item.number === issue.number);
+  expect(reworked.linked_pull_requests[0].workflow_rework_count).toBe(3);
+});
+
+test("issues.list omits the rework count for a PR with no workflow run (#2147)", async () => {
+  const issue = svc.issues.create("me/proj", { title: "runless pull request" });
+  git(["branch", "feature/runless-pull-request"]);
+  await svc.pulls.create("me/proj", {
+    title: "runless pull request",
+    head: "feature/runless-pull-request",
+    issue: issue.number,
+  });
+
+  const item = (
+    (await svc.issues.list("me/proj", {
+      kind: "issue",
+      state: "open",
+    })) as any[]
+  ).find((entry) => entry.number === issue.number);
+
+  expect(item.linked_pull_requests[0]).not.toHaveProperty(
+    "workflow_rework_count",
+  );
+});
+
 test("issues.create stores and exposes a target branch", async () => {
   const issue = svc.issues.create("me/proj", {
     title: "branch-targeted",

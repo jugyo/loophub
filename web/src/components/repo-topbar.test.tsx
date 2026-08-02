@@ -7,14 +7,13 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { WebConfigProvider } from "@/lib/web-config";
 import { RepoTopbar } from "./repo-topbar";
 
 afterEach(() => {
   cleanup();
 });
 
-function renderRepoTopbar(initialPath: string, experimental = true) {
+function renderRepoTopbar(initialPath: string) {
   const rootRoute = createRootRoute({
     component: RepoTopbar,
   });
@@ -33,11 +32,6 @@ function renderRepoTopbar(initialPath: string, experimental = true) {
     path: "/r/$owner/$repo/issues/$number",
     component: () => null,
   });
-  const repoScheduledTasksRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/r/$owner/$repo/scheduled-tasks",
-    component: () => null,
-  });
   const repoSettingsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo/settings",
@@ -53,18 +47,13 @@ function renderRepoTopbar(initialPath: string, experimental = true) {
       indexRoute,
       repoRoute,
       issueDetailRoute,
-      repoScheduledTasksRoute,
       repoSettingsRoute,
       pullDetailRoute,
     ]),
     history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
 
-  return render(
-    <WebConfigProvider config={{ experimental, debug: false }}>
-      <RouterProvider router={router} />
-    </WebConfigProvider>,
-  );
+  return render(<RouterProvider router={router} />);
 }
 
 describe("RepoTopbar", () => {
@@ -97,20 +86,8 @@ describe("RepoTopbar", () => {
       screen.getByRole("link", { name: /Issues/ }).getAttribute("href"),
     ).toBe("/r/me/proj");
     expect(
-      screen.getByRole("link", { name: /Scheduled task/ }).getAttribute("href"),
-    ).toBe("/r/me/proj/scheduled-tasks");
-    expect(
       screen.getByRole("link", { name: /Settings/ }).getAttribute("href"),
     ).toBe("/r/me/proj/settings");
-  });
-
-  it("hides the scheduled task tab unless experimental UI is enabled", async () => {
-    renderRepoTopbar("/r/me/proj", false);
-
-    await screen.findByRole("navigation", { name: "Repository navigation" });
-    expect(screen.queryByRole("link", { name: /Scheduled task/ })).toBeNull();
-    expect(screen.getByRole("link", { name: /Issues/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Settings/ })).toBeTruthy();
   });
 
   it("does not make the repository section tabs a scrolling topbar region", async () => {
@@ -124,14 +101,14 @@ describe("RepoTopbar", () => {
   });
 
   it("marks the current repository section active", async () => {
-    renderRepoTopbar("/r/me/proj/scheduled-tasks");
+    renderRepoTopbar("/r/me/proj/settings");
 
     const active = await screen.findByRole("link", {
-      name: /Scheduled task/,
+      name: /Settings/,
       current: "page",
     });
 
-    expect(active.getAttribute("href")).toBe("/r/me/proj/scheduled-tasks");
+    expect(active.getAttribute("href")).toBe("/r/me/proj/settings");
     expect(
       screen.getByRole("link", { name: /Issues/ }).getAttribute("aria-current"),
     ).toBeNull();

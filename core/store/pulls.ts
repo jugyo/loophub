@@ -102,7 +102,7 @@ export function createPull(
     ],
   );
   // The PR's dev session is recorded only in the generalized session_links bridge (kind='dev'); the
-  // PR's resume/retro anchor is derived from there (primaryDevSessionForPull). #316 dropped the
+  // PR's usage attribution/retro anchor is derived there (primaryDevSessionForPull). #316 dropped
   // denormalized pulls.session_id, so this link is now the single source of truth — mirroring
   // setPullSession, which does the same when the session is (re-)attributed after creation (#298).
   if (sessionId) {
@@ -212,6 +212,7 @@ export function deletePull(
     // These tables reference issues without ON DELETE CASCADE. Remove only rows owned by this PR;
     // session records, worktrees, and repository-level events remain untouched.
     for (const table of [
+      "review_responses",
       "review_comments",
       "reviews",
       "comments",

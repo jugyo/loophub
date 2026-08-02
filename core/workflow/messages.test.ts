@@ -20,7 +20,7 @@ test("the English workflow message catalog preserves every composed fixed phrase
     [
       "## Language",
       "",
-      "Write this run's natural-language outputs (plans, reports, reviews, summaries, notes, and comments) in English. Keep code, identifiers, commands, paths, and quoted log or error text in their original form.",
+      "Write all natural-language content generated for this run in English. This includes conversation outputs (plans, reports, reviews, summaries, notes, and comments) and artifacts such as issue and pull request titles and bodies, acceptance criteria, review text, and commit messages. Keep code, identifiers, commands, paths, and quoted log or error text in their original form.",
     ].join("\n"),
   );
   expect(messages.inputsHeading).toBe("## Inputs");
@@ -56,7 +56,7 @@ test("the Japanese workflow message catalog translates prose and preserves struc
     [
       "## 言語",
       "",
-      "この run の自然言語出力(plan、report、review、summary、note、comment)は日本語で書く。code、identifier、command、path、引用した log / error text は原文のまま維持する。",
+      "この run で生成する自然言語コンテンツは、commit message を除いてすべて日本語で書く。会話上の出力（plan、report、review、summary、note、comment）に加え、issue や pull request の title と body、acceptance criteria、review 文などの成果物も含む。section heading や定型 label など文書構造を支えるテキストは、既存の共通表記を維持する。commit message は repository convention に従い英語で書く。code、identifier、command、path、引用した log / error text は原文のまま維持する。",
     ].join("\n"),
   );
   expect(messages.inputsHeading).toBe("## 入力");

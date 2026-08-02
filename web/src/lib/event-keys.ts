@@ -31,9 +31,6 @@ export const queryKeys = {
   terminalSessions: () => ["terminal", "sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
-  scheduledTasks: (full: string) => ["scheduled-tasks", full] as const,
-  scheduledTask: (full: string, id: number) =>
-    ["scheduled-task", full, id] as const,
   workflows: () => ["workflows"] as const,
   workflowRunForIssue: (full: string, number: number) =>
     ["workflow-run", "issue", full, number] as const,
@@ -69,7 +66,6 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   const issueNumber = numberedSubject(event, "issue");
   const pullNumber = numberedSubject(event, "pull");
   const workflowRunId = identifiedSubject(event, "workflow_run");
-  const scheduledTaskId = identifiedSubject(event, "scheduled_task");
   if (isNotificationSourceEvent(event)) {
     keys.push([...queryKeys.notifications()]);
   }
@@ -145,20 +141,6 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["issue"]);
     }
     keys.push([...queryKeys.dashboard()]);
-  } else if (type.startsWith("scheduled_task.")) {
-    // Scheduled task CRUD (#880) alters the repo's task list for every connected client, not just
-    // the tab that made the change (whose mutation hook already invalidates onSuccess). The event
-    // names the task, but create/delete change the whole list, so invalidate the list by prefix
-    // plus the specific task's detail when the subject carries an id.
-    if (repo) {
-      keys.push([...queryKeys.scheduledTasks(repo)]);
-      if (scheduledTaskId !== null)
-        keys.push([...queryKeys.scheduledTask(repo, scheduledTaskId)]);
-      else keys.push(["scheduled-task", repo]);
-    } else {
-      keys.push(["scheduled-tasks"]);
-      keys.push(["scheduled-task"]);
-    }
   } else if (
     type === "workflow.created" ||
     type === "workflow.updated" ||
@@ -173,6 +155,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     type.startsWith("workflow_run.") ||
     type.startsWith("workflow_step.")
   ) {
+    const payload = eventPayloadRecord(event.payload);
     // A Workflow run's step / status / rework count is shown on issue and PR detail (#1008). These
     // lifecycle events (workflow_run.started/updated/turn_done, workflow_step.launched) name the
     // run's issue and PR as well as the run itself, so refresh both detail views' run-state query.
@@ -192,6 +175,24 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       }
     } else {
       keys.push(["workflow-run"]);
+    }
+    // #2147: issue rows also embed the run's rework count (issueListItemJSON -> linkedPullDetail),
+    // so the two transitions that change it — request_rework increments, resume_after_human resets
+    // it to zero — have to refresh the issue views the same way a PR change does above. Scoped to
+    // those transitions rather than the whole namespace: the other lifecycle moves leave the count
+    // as it was, and an issue-list refetch pays a git fan-out per row.
+    if (
+      payload?.transition === "request_rework" ||
+      payload?.transition === "resume_after_human"
+    ) {
+      if (repo) {
+        keys.push([...queryKeys.issues(repo)]);
+        keys.push(["issue", repo]); // prefix: all open issue details for the repo
+      } else {
+        keys.push(["issues"]);
+        keys.push(["issue"]);
+      }
+      keys.push([...queryKeys.dashboard()]);
     }
   } else if (type.startsWith("notification.")) {
     keys.push([...queryKeys.notifications()]);

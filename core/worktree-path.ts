@@ -1,8 +1,8 @@
-// The deterministic PR worktree convention (shared by Workflow and resume): path and branch are derived purely from
+// The deterministic PR worktree convention: path and branch are derived purely from
 // the PR number (no slug), so any consumer can reconstruct them without a ledger. Keyed by PR
 // (not issue, #463) so multiple PRs linked to the same issue get independent worktrees instead
 // of colliding on one. Kept in core (not cli/dev.ts) so both the CLI and core/service.ts (e.g.
-// `lh resume`) share one source of truth. cli/dev.ts re-exports these for its existing callers/
+// worktree consumers share one source of truth. cli/dev.ts re-exports these for its existing callers/
 // tests. See also worktree-prune.ts (prNumberFromBranch) which decodes the same branch convention.
 import { realpathSync } from "node:fs";
 import {
@@ -14,6 +14,27 @@ import {
   resolve,
   sep,
 } from "node:path";
+import { issueNumberFromBranch } from "./worktree-prune.ts";
+
+export type WorktreeScheme = "pr" | "legacy-issue";
+
+export interface WorktreeIdentity {
+  scheme: WorktreeScheme;
+  number: number;
+}
+
+// Preserve the legacy issue-number convention only when the PR head explicitly identifies it.
+// Current and off-convention branches use the PR number so multiple PRs for one issue cannot share
+// a worktree.
+export function resolveWorktreeIdentity(
+  headRef: string | null,
+  prNumber: number,
+): WorktreeIdentity {
+  const legacyIssue = issueNumberFromBranch(headRef);
+  if (legacyIssue != null)
+    return { scheme: "legacy-issue", number: legacyIssue };
+  return { scheme: "pr", number: prNumber };
+}
 
 // Prefer the realpath when the target exists so macOS /var → /private/var (and similar
 // symlink roots) still compare equal between process.cwd() and a configured worktreeRoot.
@@ -65,8 +86,8 @@ export function worktreePath(
 //
 // Before #463, worktree/branch were keyed by issue number: a second PR opened for the same
 // issue would collide on the first PR's worktree. Launchers no longer create these, but a
-// worktree provisioned before this change may still be on disk, so resume/prune keep
-// recognizing it via these helpers rather than orphaning it.
+// worktree provisioned before this change may still be on disk, so maintenance and usage
+// attribution keep recognizing it via these helpers rather than orphaning it.
 
 export function legacyWorktreeBranch(issue: number): string {
   return `loophub/issue-${issue}`;

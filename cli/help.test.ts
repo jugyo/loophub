@@ -96,6 +96,7 @@ describe("--help", () => {
       args: ["pr", "review", "--help"],
       usage: "lh pr review <number> [options]",
       options: [
+        "--review <id>",
         "--event <verdict>",
         "--body <text>",
         "--commit <sha>",
@@ -107,10 +108,26 @@ describe("--help", () => {
       ],
     },
     {
-      args: ["workflow", "next", "--help"],
-      usage: "lh workflow next <run>",
+      args: ["pr", "review-response", "--help"],
+      usage: "lh pr review-response add <number> --review <id> [options]",
       options: [
-        "--watch",
+        "--review <id>",
+        "--review-comment <id>",
+        "--body <text>",
+        "--repo <owner/name>",
+        "--json",
+        "--help",
+      ],
+    },
+    {
+      args: ["pr", "review", "view", "--help"],
+      usage: "lh pr review view <number> --review <id> [options]",
+      options: ["--review <id>", "--repo <owner/name>", "--json", "--help"],
+    },
+    {
+      args: ["workflow", "instruction", "--help"],
+      usage: "lh workflow instruction <run>",
+      options: [
         "--event <id>",
         "--requires-changes <bool>",
         "--note <text|->",
@@ -139,7 +156,16 @@ describe("--help", () => {
 
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout).toContain("lh — LoopHub CLI");
+    expect(result.stdout).not.toContain("lh resume");
     expect(result.stdout).not.toContain("ready-for-review");
+  });
+
+  test("rejects the retired resume command", () => {
+    const result = lh(["resume", "1"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("lh — LoopHub CLI");
+    expect(result.stdout).not.toContain("lh resume");
   });
 
   test("rejects an unknown nested command instead of showing parent help", () => {

@@ -134,9 +134,7 @@ function renderInRouter(
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <WebConfigProvider config={{ experimental: false, debug: false }}>
-        {ui}
-      </WebConfigProvider>
+      <WebConfigProvider config={{ debug: false }}>{ui}</WebConfigProvider>
     ),
   });
   const detailRoute = createRoute({
@@ -246,6 +244,27 @@ describe("PullRow", () => {
 });
 
 describe("IssueRow", () => {
+  it("shows the issue comment count at the right of the row", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ comments: 3 })} />,
+    );
+
+    const count = await screen.findByLabelText("3 comments");
+    expect(count.textContent).toBe("3");
+    expect(count.querySelector("svg")).toBeTruthy();
+    // Match the linked-PR comment layout by keeping the count at the row's right edge.
+    expect(count.nextElementSibling).toBeNull();
+  });
+
+  it("does not show a comment count when the issue has no comments", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ comments: 0 })} />,
+    );
+
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(screen.queryByLabelText(/comments?$/)).toBeNull();
+  });
+
   it("shows the workspace above the issue title", async () => {
     renderInRouter(
       <IssueRow
@@ -1370,6 +1389,39 @@ describe("agent cost display (#783)", () => {
     expect(cost?.textContent).toBe("$30");
     expect(cost?.className).toContain("text-muted-foreground/70");
     expect(cost?.className).not.toContain("text-amber");
+  });
+});
+
+// #2152: the linked-PR sub-row shows how much has been said on the PR — its comments plus every
+// diff comment — as one number on the right of the row.
+describe("comment count on the linked-PR sub-row (#2152)", () => {
+  it("shows the total as an icon and a number, with no label text", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ total_comments: 4 })],
+        })}
+      />,
+    );
+    const count = await screen.findByLabelText("4 comments");
+    expect(count.textContent).toBe("4");
+    expect(count.querySelector("svg")).toBeTruthy();
+  });
+
+  it("stays quiet when the PR has no comments", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ total_comments: 0 })],
+        })}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(screen.queryByLabelText(/comments?$/)).toBeNull();
   });
 });
 

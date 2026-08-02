@@ -148,6 +148,16 @@ describe("buildSessionTree / buildAgentsTrees", () => {
     expect(buildAgentsTrees(undefined)).toEqual([]);
     expect(buildAgentsTrees({ repos: [] })).toEqual([]);
   });
+
+  it("carries stale_since onto the tree so a carried-over group can be marked", () => {
+    expect(buildSessionTree(sample.repos[0])?.staleSince).toBeUndefined();
+    expect(
+      buildSessionTree({
+        ...sample.repos[0],
+        stale_since: "2026-07-31T00:00:00.000Z",
+      })?.staleSince,
+    ).toBe("2026-07-31T00:00:00.000Z");
+  });
 });
 
 describe("AgentsPage", () => {
@@ -199,6 +209,34 @@ describe("AgentsPage", () => {
 
     // working agents get the bot icon; every agent row has one.
     expect(document.querySelectorAll("[data-agent-bot-icon]").length).toBe(4);
+  });
+
+  it("names repos whose agent list could not be read and marks their stale sections", async () => {
+    herdrSessions.value = {
+      repos: [{ ...sample.repos[0], stale_since: "2026-07-31T00:00:00.000Z" }],
+      capture_failed_repos: ["me/proj", "me/other"],
+      captured_at: new Date().toISOString(),
+    };
+    renderAgentsPage();
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /Could not read the agent list for me\/proj, me\/other/,
+    );
+    const section = screen.getByRole("region", {
+      name: "Herdr session lh-me-proj",
+    });
+    expect(
+      within(section).getByText(/Last known agents, captured/),
+    ).toBeTruthy();
+  });
+
+  it("shows no capture warning when every repo was captured", async () => {
+    herdrSessions.value = { ...sample, captured_at: new Date().toISOString() };
+    renderAgentsPage();
+
+    expect(await screen.findByRole("heading", { name: "Agents" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/Last known agents/)).toBeNull();
   });
 
   it("opens focusable agents in Herdr and disables non-focusable ones", async () => {

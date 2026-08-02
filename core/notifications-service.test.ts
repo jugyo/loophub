@@ -80,6 +80,7 @@ test("list generates merge-ready and over-budget notifications", async () => {
       }),
       expect.objectContaining({
         kind: "over_budget",
+        severity: "warning",
         title: "Over budget",
         resource: {
           kind: "pull",
@@ -94,6 +95,131 @@ test("list generates merge-ready and over-budget notifications", async () => {
 
   await svc.notifications.list({ limit: 20 });
   expect((await svc.notifications.unreadCount()).count).toBe(2);
+});
+
+test("list creates warning notifications for Workflow cost and rework limit events", async () => {
+  const repoPath = initGitRepo("lh-notifications-workflow-limits-");
+  await svc.repos.create({ path: repoPath, name: "me/workflow-limits" });
+  const repo = S.getRepo("me", "workflow-limits")!;
+  const issue = S.createIssue(repo.id, "issue", "Workflow issue", "", "me");
+  const pull = S.createIssue(repo.id, "pull", "Workflow PR", "", "me");
+  S.createPull(pull.id, "workflow-limits", "main", "sha-workflow", issue.id);
+  const workflow = S.createWorkflow({
+    name: "notification-limits",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 20,
+  });
+  S.updateWorkflowRun(run.id, { reworkCount: 8 });
+  const costPayload = {
+    id: run.id,
+    number: pull.number,
+    pr_number: pull.number,
+    parent_session_id: null,
+    session_id: "usage-session",
+    usage_session_id: "usage-session",
+    active_step: "verify",
+    active_session_id: "verify-session",
+    cost_usd: 21.5,
+    limit_usd: 20,
+    increment_usd: 10,
+    next_limit_usd: 30,
+  };
+  S.emitEvent(repo.id, "workflow_run.cost_exceeded", "lh-worker", costPayload);
+  // Detection may re-emit while the parent is unavailable. The run/limit source key keeps this one
+  // logical exceedance idempotent.
+  S.emitEvent(repo.id, "workflow_run.cost_exceeded", "lh-worker", costPayload);
+  S.getOrCreateWorkflowHumanEscalationEvent(repo.id, "parent", {
+    id: run.id,
+    issue_number: issue.number,
+    reason:
+      "Fresh review #42 requests changes, but the rework limit of 8 has been reached.",
+  });
+
+  await svc.notifications.list({ limit: 100 });
+  const notifications = (await svc.notifications.list({ limit: 100 })).filter(
+    (notification: any) => notification.repo.name === "me/workflow-limits",
+  );
+
+  expect(notifications).toHaveLength(2);
+  expect(notifications).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "over_budget",
+        severity: "warning",
+        title: "Workflow cost limit exceeded",
+        body: expect.stringMatching(
+          new RegExp(
+            `Workflow run #${run.id}.*me/workflow-limits.*Issue #${issue.number} / PR #${pull.number}.*\\$21.5 > \\$20`,
+          ),
+        ),
+        resource: expect.objectContaining({
+          kind: "pull",
+          number: pull.number,
+        }),
+      }),
+      expect.objectContaining({
+        kind: "human_attention",
+        severity: "warning",
+        title: "Workflow rework limit reached",
+        body: expect.stringMatching(
+          new RegExp(
+            `Workflow run #${run.id}.*me/workflow-limits.*Issue #${issue.number} / PR #${pull.number}.*rework limit of 8 has been reached`,
+          ),
+        ),
+        resource: expect.objectContaining({
+          kind: "pull",
+          number: pull.number,
+        }),
+      }),
+    ]),
+  );
+  S.setMerged(pull.id, "merged-workflow-limits", "merge");
+});
+
+test("list does not create Workflow limit warnings below the limits", async () => {
+  const repoPath = initGitRepo("lh-notifications-workflow-normal-");
+  await svc.repos.create({ path: repoPath, name: "me/workflow-normal" });
+  const repo = S.getRepo("me", "workflow-normal")!;
+  const issue = S.createIssue(repo.id, "issue", "Normal issue", "", "me");
+  const pull = S.createIssue(repo.id, "pull", "Normal PR", "", "me");
+  S.createPull(pull.id, "workflow-normal", "main", "sha-normal", issue.id);
+  const workflow = S.createWorkflow({
+    name: "notification-normal",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 20,
+  });
+  S.updateWorkflowRun(run.id, { reworkCount: 7 });
+
+  const notifications = await svc.notifications.list({ limit: 100 });
+
+  expect(
+    notifications.some(
+      (notification: any) => notification.repo.name === "me/workflow-normal",
+    ),
+  ).toBe(false);
+  S.setMerged(pull.id, "merged-workflow-normal", "merge");
 });
 
 test("ready-for-review alone does not generate a notification", async () => {

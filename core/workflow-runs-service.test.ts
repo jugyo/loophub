@@ -20,6 +20,28 @@ let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
 let A: typeof import("./attachments.ts");
 
+function confirmStepLaunch(
+  name: string,
+  input: Omit<
+    Parameters<typeof svc.workflowRuns.confirmStepLaunch>[1],
+    "executionTarget"
+  >,
+  actorSessionId?: string | null,
+) {
+  return svc.workflowRuns.confirmStepLaunch(
+    name,
+    {
+      ...input,
+      executionTarget: {
+        provider: "herdr",
+        targetId: `p-${input.sessionId}`,
+        context: "test-session",
+      },
+    },
+    actorSessionId,
+  );
+}
+
 function git(args: string[]): void {
   const result = spawnSync("git", ["-C", REPO_PATH, ...args], {
     encoding: "utf8",
@@ -83,44 +105,12 @@ function createWorkflowReview(input: {
     "workflow",
   );
   for (let i = 0; i < (input.findings ?? 0); i++) {
-    S.createReviewComment(input.prIssueId, review.id, author, {
+    S.createReviewComment(input.prIssueId, review.id, author, "agent", {
       path: `file-${i}.ts`,
       line: i + 1,
       body: "needs a fix",
     });
   }
-}
-
-// The next event the run's subscription holds, resolved exactly as the consumer resolves it.
-function pendingWake(repoId: number, run: number) {
-  const row = S.getWorkflowRun(run)!;
-  const started = S.workflowRunStartedEventId(repoId, run);
-  return S.nextWorkflowSubjectEvent({
-    repoId,
-    runId: run,
-    issueNumber: row.issue_number,
-    prNumber: row.pr_number,
-    afterId: Math.max(row.event_cursor, (started ?? 1) - 1),
-  });
-}
-
-// Consume every wake the run already holds, so a `--watch` that follows genuinely blocks instead
-// of returning a queued one. Returns the ids consumed, oldest first.
-async function drainQueuedWakes(
-  repoFullName: string,
-  repoId: number,
-  run: number,
-): Promise<number[]> {
-  const consumed: number[] = [];
-  for (let queued = pendingWake(repoId, run); queued; ) {
-    expect(
-      (await svc.workflowRuns.next(repoFullName, { run, watch: true })).event
-        ?.id,
-    ).toBe(queued.id);
-    consumed.push(queued.id);
-    queued = pendingWake(repoId, run);
-  }
-  return consumed;
 }
 
 beforeAll(async () => {
@@ -255,7 +245,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(launched.herdr.command).toContain("'--permission-mode' 'auto'");
   expect(launched.agent_name).toBe(`executor #${result.run.id}-1`);
 
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: result.run.id,
@@ -345,6 +335,12 @@ test("instruction delivery preserves the real next decision for the same state",
       session_name: "me-instruction-parity",
       pane_id: "w1:p1",
     });
+    // A registered pane is not yet an agent that reads it, so nothing is delivered — and nothing is
+    // recorded as delivered — until the parent declares itself ready (#2156).
+    await expect(
+      svc.workflowInstructions.dispatchRun(started.run.id),
+    ).resolves.toEqual({ status: "idle" });
+    S.markWorkflowRunParentReady(started.run.id);
     await expect(
       svc.workflowInstructions.dispatchRun(started.run.id),
     ).resolves.toMatchObject({
@@ -359,9 +355,10 @@ test("instruction delivery preserves the real next decision for the same state",
       .split("\n")
       .find((line) => line.includes(marker));
     expect(delivery).toBeDefined();
-    const payload = (delivery as string).slice(
-      (delivery as string).indexOf(marker) + marker.length,
-    );
+    // The body travels inside a bracketed paste, so the JSON ends at the closing marker.
+    const payload = (delivery as string)
+      .slice((delivery as string).indexOf(marker) + marker.length)
+      .split("[201~")[0];
     expect(JSON.parse(payload)).toEqual(expected);
   } finally {
     process.env.PATH = originalPath;
@@ -418,7 +415,7 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   expect(launched.herdr.command).not.toContain("--session-id");
   expect(launched.herdr.command).toContain("'--model' 'gpt-5.5'");
 
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: result.run.id,
@@ -492,7 +489,7 @@ test("start snapshots the contract language for parent and every later step", as
     "review submission target (do not read the PR)",
   );
 
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -523,6 +520,99 @@ test("start snapshots the contract language for parent and every later step", as
       summary: "execute step を起動",
     }),
   ]);
+});
+
+test("start creates the initial PR title and body in the configured language", async () => {
+  const workflow = S.createWorkflow({
+    name: "localized-pr",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const repoPaths: string[] = [];
+
+  try {
+    const { repo: japaneseRepo, path: japaneseRepoPath } = freshRepo(
+      "me/workflow-pr-japanese",
+    );
+    repoPaths.push(japaneseRepoPath);
+    const englishIssue = S.createIssue(
+      japaneseRepo.id,
+      "issue",
+      "Add an English feature",
+      "",
+      "me",
+    );
+    svc.settings.update({ workflowContractLanguage: "ja" });
+    const japaneseRun = await svc.workflowRuns.start(
+      japaneseRepo.full_name,
+      { issue: englishIssue.number, workflowId: workflow.id },
+      "c7c7c7c7-c7c7-47c7-87c7-c7c7c7c7c7c7",
+    );
+    const japanesePr = await svc.pulls.get(
+      japaneseRepo.full_name,
+      japaneseRun.pr.number,
+    );
+    expect(japanesePr.title).toBe(`Issue #${englishIssue.number} を実装する`);
+    expect(japanesePr.body).toBe(
+      [
+        "## Implementation plan",
+        "",
+        "<!-- Execute ステップはソース編集前にここを短い実装プランで更新してください。",
+        "含める内容: 変更予定ファイル/領域、再利用する既存 API/component/module、スコープ境界、更新・実行するテスト。 -->",
+        "",
+        "## Evidence",
+        "",
+        "- **Visual evidence gate**: TODO - `UI / visual candidate: yes|no` を記録する。`yes` の場合はスクリーンショット、または具体的な `N/A` の理由を記載する。",
+        "",
+        `Closes #${englishIssue.number}`,
+        "",
+      ].join("\n"),
+    );
+
+    const { repo: englishRepo, path: englishRepoPath } = freshRepo(
+      "me/workflow-pr-english",
+    );
+    repoPaths.push(englishRepoPath);
+    const japaneseIssue = S.createIssue(
+      englishRepo.id,
+      "issue",
+      "日本語の機能を追加する",
+      "",
+      "me",
+    );
+    svc.settings.update({ workflowContractLanguage: "en" });
+    const englishRun = await svc.workflowRuns.start(
+      englishRepo.full_name,
+      { issue: japaneseIssue.number, workflowId: workflow.id },
+      "d8d8d8d8-d8d8-48d8-88d8-d8d8d8d8d8d8",
+    );
+    const englishPr = await svc.pulls.get(
+      englishRepo.full_name,
+      englishRun.pr.number,
+    );
+    expect(englishPr.title).toBe(`Implement issue #${japaneseIssue.number}`);
+    expect(englishPr.body).toBe(
+      [
+        "## Implementation plan",
+        "",
+        "<!-- Before editing source, briefly update this section with the implementation plan.",
+        "Include: files/areas to change, existing APIs/components/modules to reuse, scope boundaries, and tests to update or run. -->",
+        "",
+        "## Evidence",
+        "",
+        "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",
+        "",
+        `Closes #${japaneseIssue.number}`,
+        "",
+      ].join("\n"),
+    );
+  } finally {
+    svc.settings.update({ workflowContractLanguage: "en" });
+    for (const path of repoPaths) {
+      rmSync(path, { recursive: true, force: true });
+    }
+  }
 });
 
 test("cost limit increases are explicit, guarded, and repeatable", async () => {
@@ -921,7 +1011,7 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
     previous_limit_usd: 2.5,
     current_limit_usd: 5,
   });
-  // The parent, still waiting in `next --watch`, resumes the step the cost hold interrupted.
+  // The parent resumes the step the cost hold interrupted.
   expect(
     await svc.workflowRuns.next(repo.full_name, {
       run: run.id,
@@ -963,7 +1053,7 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -1013,7 +1103,7 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -1102,7 +1192,7 @@ test("a grok run's steps launch grok, not claude (#1521)", async () => {
   expect(launched.herdr.command).not.toContain("--session-id");
   expect(launched.herdr.command).toContain("'--model' 'grok-code-fast-1'");
 
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: result.run.id,
@@ -1288,7 +1378,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -1409,7 +1499,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -1550,36 +1640,19 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   });
 
   // A human can request ordinary additional work while the pass is fresh. The run is not held and
-  // remains at Verify; the parent may launch and register another Execute child with the human note.
-  const additionalExecute = await svc.workflowRuns.launchStep(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "execute",
-      note: "Add another requested change.",
-    },
-    parent,
-  );
-  expect(additionalExecute.run).toMatchObject({
-    status: "running",
-    current_step: "verify",
-    needs_human_reason: null,
-  });
-  expect(additionalExecute.user_prompt).toContain(
-    "Add another requested change.",
-  );
-  svc.workflowRuns.confirmStepLaunch(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "execute",
-      sessionId: additionalExecute.session_id,
-      agentName: additionalExecute.agent_name,
-      pointers: additionalExecute.pointers,
-      note: "Add another requested change.",
-    },
-    parent,
-  );
+  // remains at Verify, and the work goes to the Execute child that is still live: launching a
+  // second executor into the same worktree is refused rather than silently recorded (#2150).
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      {
+        run: started.run.id,
+        step: "execute",
+        note: "Add another requested change.",
+      },
+      parent,
+    ),
+  ).rejects.toMatchObject({ status: 409 });
 
   // A passing review verifies the current HEAD without terminating the run. Uploading an
   // attachment and embedding it in the PR body are non-code edits: neither moves HEAD, so the same
@@ -1612,7 +1685,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
-    additionalExecute.session_id,
+    exec.session_id,
   );
   const staleStatus = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
@@ -1653,17 +1726,17 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   });
 }, 30_000);
 
-test("next --watch waits for one run event, owns its cursor, and keeps deciding from state", async () => {
-  const { repo } = freshRepo("me/workflow-watch-next");
+test("a decision from one event never spends the worker's delivery cursor", async () => {
+  const { repo } = freshRepo("me/workflow-event-decision");
   const issue = S.createIssue(
     repo.id,
     "issue",
-    "Watch",
+    "Decide",
     "## Acceptance criteria\n- [ ] Works\n",
     "me",
   );
   const workflow = S.createWorkflow({
-    name: "watch-next-wf",
+    name: "event-decision-wf",
     description: "",
     executePrompt: "",
     verifyPrompt: "",
@@ -1675,38 +1748,36 @@ test("next --watch waits for one run event, owns its cursor, and keeps deciding 
     parent,
   );
   const run = started.run.id;
-  const watch = () =>
-    svc.workflowRuns.next(repo.full_name, { run, watch: true });
 
   await expect(
-    svc.workflowRuns.next(repo.full_name, { run, watch: true, note: "hi" }),
-  ).rejects.toThrow("either watch, event, or note");
-
-  // The events `start` already recorded are undigested, so each wake returns immediately, oldest
-  // first, and moves the durable cursor without the caller passing one.
-  const queued = await drainQueuedWakes(repo.full_name, repo.id, run);
-  expect(queued.length).toBeGreaterThan(0);
-  expect(S.getWorkflowRun(run)?.event_cursor).toBe(queued.at(-1));
+    svc.workflowRuns.next(repo.full_name, { run, event: 1, note: "hi" }),
+  ).rejects.toThrow("either an event or a note");
 
   const wake = S.emitEvent(repo.id, "workflow_run.updated", "test", {
     id: run,
   });
-  const first = await watch();
+  const first = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: wake.id,
+  });
   expect(first).toMatchObject({ action: "launch_execute" });
   expect(first.event?.id).toBe(wake.id);
   expect(first.observed.run).toBe(run);
   expect(first.observed.steps.execute.complete).toBe(false);
-  expect(S.getWorkflowRun(run)?.event_cursor).toBe(wake.id);
+  // Advancing the cursor is the worker's delivery decision alone; deciding an action never moves it.
+  expect(S.getWorkflowRun(run)?.event_cursor).toBe(0);
 
   // The parent stopped before executing that action. Reconciliation reads state, not the spent
-  // event, so the next wake decides the same action again.
-  S.emitEvent(repo.id, "workflow_run.updated", "test", { id: run });
-  const afterLostAction = await watch();
+  // event, so the same event decides the same action again.
+  const afterLostAction = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: wake.id,
+  });
   expect(afterLostAction.action).toBe(first.action);
   expect(afterLostAction.reason).toBe(first.reason);
 
-  // A GitHub reference cannot carry the parent's changes decision into a wake, so the watch returns
-  // the reference-reading action instead of a transition; the parent evaluates it with `--event`.
+  // A GitHub reference cannot carry the parent's changes decision, so the event alone decides the
+  // reference-reading action instead of a transition; the parent then submits its verdict.
   const github = S.emitEvent(
     repo.id,
     "workflow_run.github_event",
@@ -1718,21 +1789,24 @@ test("next --watch waits for one run event, owns its cursor, and keeps deciding 
           kind: "issue_comment",
           id: 9,
           updated_at: "2026-07-23T00:00:00Z",
-          reference: "repos/me/workflow-watch/issues/comments/9",
+          reference: "repos/me/workflow-event-decision/issues/comments/9",
         },
       ],
     },
   );
-  const watchedGithub = await watch();
-  expect(watchedGithub.event?.id).toBe(github.id);
-  expect(watchedGithub).toMatchObject({
+  const referenced = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: github.id,
+  });
+  expect(referenced.event?.id).toBe(github.id);
+  expect(referenced).toMatchObject({
     action: "read_github_reference",
     event_id: github.id,
-    references: ["repos/me/workflow-watch/issues/comments/9"],
+    references: ["repos/me/workflow-event-decision/issues/comments/9"],
     instructions: {
       boundary: "parent_judgement",
       decision: {
-        inputs: ["repos/me/workflow-watch/issues/comments/9"],
+        inputs: ["repos/me/workflow-event-decision/issues/comments/9"],
       },
     },
   });
@@ -1743,21 +1817,6 @@ test("next --watch waits for one run event, owns its cursor, and keeps deciding 
       requiresChanges: true,
     }),
   ).toMatchObject({ action: "deliver", delivery_reason: "github_feedback" });
-
-  // With nothing undigested the call blocks until the run records its next event.
-  const pending = watch();
-  const late = await new Promise<ReturnType<typeof S.emitEvent>>((resolve) =>
-    setTimeout(
-      () =>
-        resolve(
-          S.emitEvent(repo.id, "workflow_run.turn_done", "executor", {
-            id: run,
-          }),
-        ),
-      50,
-    ),
-  );
-  expect((await pending).event?.id).toBe(late.id);
 }, 20_000);
 
 // #1859: the GitHub half of the two-call protocol lives in the action, not in the parent prompt.
@@ -1904,9 +1963,9 @@ test("next returns cost_hold for every cost-exceeded wake and the receipt keeps 
   ).resolves.toMatchObject({ status: "already_completed", completed: [] });
 }, 20_000);
 
-// #1808: the merged PR is the run's terminal condition. Before this, a parent kept watching a run
-// whose PR had shipped and only stopped once its cost limit was exceeded (run #306).
-test("a merged PR completes the run, unblocks the watcher, and ends cost detection", async () => {
+// #1808: the merged PR is the run's terminal condition. Before this, a parent kept reconciling a
+// run whose PR had shipped and only stopped once its cost limit was exceeded (run #306).
+test("a merged PR completes the run and ends cost detection", async () => {
   const { repo } = freshRepo("me/workflow-merge-terminal");
   const issue = S.createIssue(
     repo.id,
@@ -1948,17 +2007,17 @@ test("a merged PR completes the run, unblocks the watcher, and ends cost detecti
   });
   expect(S.getWorkflowRun(run)?.status).toBe("running");
 
-  // Digest the events the run already recorded so the watch below genuinely blocks instead of
-  // returning a queued wake.
-  await drainQueuedWakes(repo.full_name, repo.id, run);
-
-  // The reported failure (#1806 / run #306): the parent is already blocked in `--watch` when the
-  // merge lands, so completion has to be recorded on the wake that follows — not only on a call
-  // that starts with an already-merged PR.
-  const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The merge source itself is the run's wake; no run-scoped projection is needed.
   await svc.pulls.merge(repo.full_name, started.pr.number, "merge");
-  const completed = await blocked;
+  const source = S.listEvents(0, repo.id, 1_000).findLast(
+    (event) =>
+      event.type === "pull_request.merged" &&
+      JSON.parse(event.payload).number === started.pr.number,
+  )!;
+  const completed = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: source.id,
+  });
   expect(completed).toMatchObject({ action: "complete" });
   // Merge closes the PR, and the run reads that from the merge source itself — no run-scoped
   // close twin is written for it any more.
@@ -1975,12 +2034,8 @@ test("a merged PR completes the run, unblocks the watcher, and ends cost detecti
   expect(completed.observed.status).toBe("completed");
   expect(S.getWorkflowRun(run)?.status).toBe("completed");
 
-  // A terminal run never blocks the caller again: the watch returns the same action without an
-  // event to wake on, so the parent can exit instead of starting another watcher.
-  const replayed = await svc.workflowRuns.next(repo.full_name, {
-    run,
-    watch: true,
-  });
+  // A terminal run keeps deciding the same terminal action, so a later state change cannot revive it.
+  const replayed = await svc.workflowRuns.next(repo.full_name, { run });
   expect(replayed).toMatchObject({ action: "complete", event: null });
 
   // No further cost-exceeded edge can fire for a run that is no longer running.
@@ -2038,7 +2093,7 @@ test("any merge route that leaves the PR merged completes the run", async () => 
   expect(S.getWorkflowRun(run)?.status).toBe("completed");
 }, 20_000);
 
-test("closing an unmerged PR wakes its watcher and completes the run", async () => {
+test("closing an unmerged PR completes the run", async () => {
   const { repo } = freshRepo("me/workflow-close-route");
   const issue = S.createIssue(
     repo.id,
@@ -2061,13 +2116,17 @@ test("closing an unmerged PR wakes its watcher and completes the run", async () 
   );
   const run = started.run.id;
 
-  await drainQueuedWakes(repo.full_name, repo.id, run);
-
-  const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
-  await new Promise((resolve) => setTimeout(resolve, 50));
   svc.pulls.update(repo.full_name, started.pr.number, { state: "closed" });
 
-  const completed = await blocked;
+  const source = S.listEvents(0, repo.id, 1_000).findLast(
+    (event) =>
+      event.type === "pull_request.updated" &&
+      JSON.parse(event.payload).number === started.pr.number,
+  )!;
+  const completed = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: source.id,
+  });
   expect(completed).toMatchObject({ action: "complete" });
   expect(completed.observed).toMatchObject({
     pr_merged: false,
@@ -2087,7 +2146,7 @@ test("closing an unmerged PR wakes its watcher and completes the run", async () 
   });
 }, 20_000);
 
-test("closing a PR through issues.update wakes its watcher and completes the run", async () => {
+test("closing a PR through issues.update completes the run", async () => {
   const { repo } = freshRepo("me/workflow-issue-update-close");
   const issue = S.createIssue(
     repo.id,
@@ -2108,13 +2167,17 @@ test("closing a PR through issues.update wakes its watcher and completes the run
   });
   const run = started.run.id;
 
-  await drainQueuedWakes(repo.full_name, repo.id, run);
-
-  const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
-  await new Promise((resolve) => setTimeout(resolve, 50));
   svc.issues.update(repo.full_name, started.pr.number, { state: "closed" });
 
-  const completed = await blocked;
+  const source = S.listEvents(0, repo.id, 1_000).findLast(
+    (event) =>
+      event.type === "pull_request.updated" &&
+      JSON.parse(event.payload).number === started.pr.number,
+  )!;
+  const completed = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    event: source.id,
+  });
   expect(completed).toMatchObject({
     action: "complete",
     observed: { pr_closed: true, status: "completed" },
@@ -2150,7 +2213,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2356,7 +2419,7 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2406,7 +2469,7 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2516,7 +2579,7 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2653,7 +2716,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2683,7 +2746,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2724,33 +2787,35 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     current_step: "execute",
     rework_count: 1,
   });
-
-  // The parent relaunches Execute with the review-id pointer; the pointer names the review, not a
-  // summary of its findings.
-  const rexec = await svc.workflowRuns.launchStep(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "execute",
-      review: reviewId,
-    },
-    parent,
-  );
-  expect(rexec.pointers).toContainEqual({
-    label: "address review",
-    value: `#${reviewId}`,
+  // The rework goes to the Execute child that is still live in its pane, so `request_rework` hands
+  // `active_step` back to that session in the same update (#2150).
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
+    active_step: "execute",
+    active_session_id: exec.session_id,
   });
-  svc.workflowRuns.confirmStepLaunch(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "execute",
-      sessionId: rexec.session_id,
-      agentName: rexec.agent_name,
-      pointers: rexec.pointers,
-    },
-    parent,
+  // Launching another Execute on top of that live child is refused instead of silently starting a
+  // second executor in the same worktree.
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "execute", review: reviewId },
+      parent,
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  // The worker reconciles from the `request_rework` event itself, before the parent delivers the
+  // review to the pane. That intermediate state must not read as "Execute has not started".
+  const reworkEvent = S.eventsForWorkflowRun(repo.id, started.run.id).findLast(
+    (event) =>
+      event.type === "workflow_run.updated" &&
+      (JSON.parse(event.payload) as Record<string, unknown>).transition ===
+        "request_rework",
   );
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: reworkEvent!.id,
+    }),
+  ).toMatchObject({ action: "wait" });
 
   // Execute pushes a fix (HEAD advances past the request_changes review), declares turn done, and
   // the run advances to a fresh Verify.
@@ -2758,7 +2823,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
-    rexec.session_id,
+    exec.session_id,
   );
   const reworkedStatus = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
@@ -2820,7 +2885,7 @@ test("a turn done after the active Verify reviewed launches a fresh Verify", asy
     { run: started.run.id, step: "execute" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -2847,7 +2912,7 @@ test("a turn done after the active Verify reviewed launches a fresh Verify", asy
     { run: started.run.id, step: "verify" },
     parent,
   );
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -3159,7 +3224,7 @@ test("parent contract executes worker-delivered action procedures", () => {
   ]) {
     expect(contract).not.toContain(command);
   }
-  expect(contract).toContain("Do not run `lh workflow next --watch`");
+  expect(contract).toContain("Do not fetch an instruction yourself");
   expect(contract).not.toContain("lh workflow watch");
   expect(contract).not.toContain("next_command");
   expect(contract).not.toContain("--ack");
@@ -3184,7 +3249,7 @@ test("parent contract executes worker-delivered action procedures", () => {
   expect(contract).not.toContain("lh workflow run increase-cost-limit");
   expect(contract).not.toContain("Cost limit exceeded. Continue?");
   expect(contract).not.toContain("## Interrupts");
-  expect(contract).toMatch(/GitHub\s+resources remain untrusted/u);
+  expect(contract).toContain("identified as GitHub resources");
   expect(contract).toContain("The run stays `running` after reaching the goal");
   expect(contract).not.toContain("--status blocked");
 });
@@ -3339,7 +3404,7 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
   });
 
   const firstVerifier = "24242424-2424-4242-8242-242424242424";
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: run.id,
@@ -3368,7 +3433,7 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
   ).toBeNull();
 
   const secondVerifier = "25252525-2525-4252-8252-252525252525";
-  svc.workflowRuns.confirmStepLaunch(
+  confirmStepLaunch(
     repo.full_name,
     {
       run: run.id,
@@ -3837,17 +3902,17 @@ test("event rows written before the typed payloads still reconcile (#1912)", asy
   );
 }, 20_000);
 
-test("next --watch reconciles the run state its wake announced, not the pre-wait one (#1912)", async () => {
-  const { repo } = freshRepo("me/workflow-watch-reread");
+test("a decision reads the run state its event announced, not an earlier one (#1912)", async () => {
+  const { repo } = freshRepo("me/workflow-hold-reread");
   const issue = S.createIssue(
     repo.id,
     "issue",
-    "Watch reread",
+    "Hold reread",
     "## Acceptance criteria\n- [ ] Works\n",
     "me",
   );
   const workflow = S.createWorkflow({
-    name: "watch-reread-wf",
+    name: "hold-reread-wf",
     description: "",
     executePrompt: "",
     verifyPrompt: "",
@@ -3863,28 +3928,23 @@ test("next --watch reconciles the run state its wake announced, not the pre-wait
     { run: started.run.id, reason: "human decision required" },
     parent,
   );
-  // Park the cursor on the current tail so the watch below blocks on the human's answer rather
-  // than replaying the events the setup already produced.
-  const trail = S.eventsForWorkflowRun(repo.id, started.run.id);
-  S.advanceWorkflowRunEventCursor(started.run.id, trail[trail.length - 1].id);
 
-  const watching = svc.workflowRuns.next(repo.full_name, {
-    run: started.run.id,
-    watch: true,
-  });
-  // The human clears the hold while the parent is blocked. Its `workflow_run.updated` event is
-  // both the wake and the only record that the hold is gone.
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The human clears the hold. Its `workflow_run.updated` event is the only record that the hold
+  // is gone, so the decision for that event must observe the run row as the event left it.
   await svc.workflowRuns.resumeAfterHuman(
     repo.full_name,
     { run: started.run.id, step: "execute" },
     parent,
   );
+  const resumed = S.eventsForWorkflowRun(repo.id, started.run.id).at(-1)!;
 
-  const woken = await watching;
-  expect(woken.observed.awaiting_human).toBe(false);
-  expect(woken.observed.needs_human_reason).toBeNull();
-  expect(woken.action).toBe("launch_execute");
+  const decided = await svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
+    event: resumed.id,
+  });
+  expect(decided.observed.awaiting_human).toBe(false);
+  expect(decided.observed.needs_human_reason).toBeNull();
+  expect(decided.action).toBe("launch_execute");
 }, 30_000);
 
 test("successive runs on one PR do not blend their review submissions", async () => {

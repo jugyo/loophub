@@ -36,14 +36,18 @@ export const comments = {
     const row = issueOr404(r, number);
     if (!body) throw new ServiceError(422, "body is required");
     const { actor, authorType } = commentActor(sessionId);
-    return db.transaction(() => {
-      const m = S.createComment(row.id, actor, body, authorType);
-      S.emitEvent(r.id, "issue.commented", actor, {
-        number: row.number,
-        ...(sessionId ? { session_id: sessionId } : {}),
-      });
-      return commentWire(m);
-    });
+    return createIssueComment(r, row, body, actor, authorType, sessionId);
+  },
+
+  // The Web UI posts on behalf of the supervising human without registering a session, which
+  // `commentActor()` would attribute to the unnamed system actor. Record the human directly, the
+  // way `createHumanForPull` does for pull requests.
+  createHumanForIssue(name: string, number: number, body: string) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number);
+    if (!body) throw new ServiceError(422, "body is required");
+    return createIssueComment(r, row, body, "me", "human", null);
   },
 
   createForPull(
@@ -116,6 +120,24 @@ export const comments = {
     });
   },
 };
+
+function createIssueComment(
+  repo: S.Repo,
+  row: S.IssueRow,
+  body: string,
+  actor: string,
+  authorType: S.CommentAuthorType,
+  sessionId?: string | null,
+) {
+  return db.transaction(() => {
+    const m = S.createComment(row.id, actor, body, authorType);
+    S.emitEvent(repo.id, "issue.commented", actor, {
+      number: row.number,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    });
+    return commentWire(m);
+  });
+}
 
 function createPullComment(
   repo: S.Repo,

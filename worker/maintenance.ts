@@ -8,7 +8,6 @@ import type { WorktreeAutoPruneResult } from "../core/service/worktrees.ts";
 import {
   events,
   notifications,
-  scheduledTasks,
   sessions,
   terminal,
   workflowRuns,
@@ -30,10 +29,6 @@ export const DEFAULT_GITHUB_FEEDBACK_SWEEP_MS = 60000;
 // reporting usage is — the agent has already lost its purpose, and the grace window before a kill
 // is measured in hours — so this cleanup runs on its own coarse interval.
 export const DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS = 600000;
-// #880: scheduled tasks fire at minute-precision times of day, so a coarse tick is enough to catch a
-// due minute promptly. Each tick is only a cheap DB scan unless a task is actually due (then it
-// launches a herdr tab), so this stays infrequent.
-export const DEFAULT_SCHEDULED_TASK_SWEEP_MS = 30000;
 // #1232: detecting an open PR's clean -> conflict transition recomputes merge-tree over every open
 // PR, the same local git cost the merge-ready check in the pull sweep already pays. A base advances
 // only when a sibling merges — infrequent, and a human merge is never seconds away — so this runs on
@@ -55,7 +50,6 @@ export interface MaintenanceLoopOptions {
   githubMergeSweepMs?: number;
   githubFeedbackSweepMs?: number;
   closedPullCleanupSweepMs?: number;
-  scheduledTaskSweepMs?: number;
   conflictSweepMs?: number;
   herdrSweepMs?: number;
   worktreePruneSweepMs?: number;
@@ -67,7 +61,6 @@ export interface NormalizedMaintenanceLoopOptions {
   githubMergeSweepMs: number;
   githubFeedbackSweepMs: number;
   closedPullCleanupSweepMs: number;
-  scheduledTaskSweepMs: number;
   conflictSweepMs: number;
   herdrSweepMs: number;
   worktreePruneSweepMs: number;
@@ -94,10 +87,6 @@ export function normalizeMaintenanceLoopOptions(
     closedPullCleanupSweepMs: finiteOrDefault(
       opts.closedPullCleanupSweepMs,
       DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
-    ),
-    scheduledTaskSweepMs: finiteOrDefault(
-      opts.scheduledTaskSweepMs,
-      DEFAULT_SCHEDULED_TASK_SWEEP_MS,
     ),
     conflictSweepMs: finiteOrDefault(
       opts.conflictSweepMs,
@@ -159,8 +148,6 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
       opts.closedPullCleanupSweepMs > 0
         ? `${opts.closedPullCleanupSweepMs}ms`
         : "off",
-    scheduledTaskSweep:
-      opts.scheduledTaskSweepMs > 0 ? `${opts.scheduledTaskSweepMs}ms` : "off",
     conflictSweep:
       opts.conflictSweepMs > 0 ? `${opts.conflictSweepMs}ms` : "off",
     herdrSweep: opts.herdrSweepMs > 0 ? `${opts.herdrSweepMs}ms` : "off",
@@ -186,9 +173,6 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.closedPullCleanupSweepMs > 0
       ? startClosedPullCleanupSweep(normalized.closedPullCleanupSweepMs)
-      : () => {},
-    normalized.scheduledTaskSweepMs > 0
-      ? startScheduledTaskSweep(normalized.scheduledTaskSweepMs)
       : () => {},
     normalized.conflictSweepMs > 0
       ? startConflictSweep(normalized.conflictSweepMs)
@@ -423,40 +407,6 @@ export function startUsageSweep(
   };
 }
 
-// Fire scheduled tasks whose registered times have come due (#880). Each tick asks the core service
-// which registered times are due now (across all repos) and launches a herdr tab for each; the
-// once-per-day guarantee and the run-log bookkeeping live in scheduledTasks.sweep, so this loop only
-// schedules it and logs the outcome.
-export function startScheduledTaskSweep(
-  intervalMs = DEFAULT_SCHEDULED_TASK_SWEEP_MS,
-): () => void {
-  let stopped = false;
-  let running = false;
-
-  const tick = async () => {
-    if (stopped || running) return;
-    running = true;
-    const startedAt = logLoopStarted("scheduled task sweep");
-    try {
-      const result = await scheduledTasks.sweep();
-      logLoopCompleted("scheduled task sweep", startedAt, {
-        fired: result.fired,
-      });
-    } catch (err) {
-      logLoopFailed("scheduled task sweep", startedAt, err);
-    } finally {
-      running = false;
-    }
-  };
-
-  const timer = setInterval(tick, intervalMs);
-  if (typeof timer.unref === "function") timer.unref();
-  return () => {
-    stopped = true;
-    clearInterval(timer);
-  };
-}
-
 // Kill dev agents left running more than an hour after their PR closes (#926), from one worker-owned
 // Herdr tick. The closed PR has already lost its purpose and the grace window before a kill is
 // measured in hours, so this cleanup is not time-sensitive and runs on its own coarse
@@ -515,6 +465,9 @@ export function startHerdrSnapshotSweep(
       logLoopCompleted("herdr snapshot sweep", startedAt, {
         repos: result.repos,
         running_repos: result.running_repos,
+        // Non-zero means some repo's agent list could not be captured this tick and is showing
+        // its last known agents instead (#2142) — the snapshot names those repos.
+        capture_failed_repos: result.capture_failed_repos,
         changed: result.changed ? 1 : 0,
       });
     } catch (err) {

@@ -46,6 +46,16 @@ function wire(status: string): HerdrSessionsWire {
   };
 }
 
+// Same repo as wire(), but this tick's `herdr agent list` capture failed for it: the sweep reports
+// the repo instead of dropping its group, which is what "no agents" would look like.
+function captureFailedWire(): HerdrSessionsWire {
+  return {
+    repos: [],
+    running_repos: ["me/app"],
+    capture_failed_repos: ["me/app"],
+  };
+}
+
 function terminalUpdateEvents(): number {
   return S.listEvents(0, null, 1000).filter(
     (e) => e.type === "terminal.sessions_updated",
@@ -88,4 +98,57 @@ test("snapshot sweep persists the wire and emits only on a signature change", as
   expect(third.changed).toBe(true);
   expect(terminalUpdateEvents()).toBe(2);
   expect(S.getHerdrSessionSnapshot()?.snapshot).toEqual(wire("idle"));
+});
+
+test("a failed per-repo capture keeps the last known agents and says so (#2142)", async () => {
+  let current = wire("working");
+  const sweep = () => Promise.resolve(current);
+
+  const captured = await C.snapshotHerdrSessionsImpl({ sweep });
+  expect(captured.capture_failed_repos).toBe(0);
+  const capturedAt = captured.captured_at;
+  const eventsBefore = terminalUpdateEvents();
+
+  // Capture fails: the repo's agents survive, tagged with when they were last seen, and the
+  // failure itself is named on the wire rather than looking like an idle repo.
+  current = captureFailedWire();
+  const failed = await C.snapshotHerdrSessionsImpl({ sweep });
+  expect(failed.capture_failed_repos).toBe(1);
+  expect(failed.repos).toBe(1);
+  expect(failed.changed).toBe(true);
+  const stale = S.getHerdrSessionSnapshot()?.snapshot;
+  expect(stale?.capture_failed_repos).toEqual(["me/app"]);
+  expect(stale?.repos[0].agents.map((a) => a.id)).toEqual(["p1"]);
+  expect(stale?.repos[0].stale_since).toBe(capturedAt);
+  expect(terminalUpdateEvents()).toBe(eventsBefore + 1);
+
+  // Still failing: stale_since stays pinned to the last successful capture, so the signature is
+  // unchanged and a repo that keeps failing does not emit an event every tick.
+  const stillFailing = await C.snapshotHerdrSessionsImpl({ sweep });
+  expect(stillFailing.changed).toBe(false);
+  expect(S.getHerdrSessionSnapshot()?.snapshot.repos[0].stale_since).toBe(
+    capturedAt,
+  );
+  expect(terminalUpdateEvents()).toBe(eventsBefore + 1);
+
+  // Recovered: the fresh group replaces the carried-over one, tag and failure list gone.
+  current = wire("working");
+  const recovered = await C.snapshotHerdrSessionsImpl({ sweep });
+  expect(recovered.capture_failed_repos).toBe(0);
+  expect(recovered.changed).toBe(true);
+  expect(S.getHerdrSessionSnapshot()?.snapshot).toEqual(wire("working"));
+});
+
+test("a repo that never captured successfully is reported without inventing agents", async () => {
+  const sweep = () =>
+    Promise.resolve<HerdrSessionsWire>({
+      repos: [],
+      running_repos: ["me/other"],
+      capture_failed_repos: ["me/other"],
+    });
+
+  const result = await C.snapshotHerdrSessionsImpl({ sweep });
+  expect(result.capture_failed_repos).toBe(1);
+  expect(result.repos).toBe(0);
+  expect(svc.terminal.sessions().capture_failed_repos).toEqual(["me/other"]);
 });

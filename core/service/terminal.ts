@@ -3,15 +3,12 @@ import { randomUUID } from "node:crypto";
 import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
 import { db } from "../db.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
-import {
-  ENV_ISSUE_CREATE_HERDR_LAUNCH,
-  resolveWorktreeIdentity,
-} from "../resume.ts";
 import type {
   HerdrRepoSessionsWire,
   HerdrSessionsWire,
   TerminalLaunchResultWire,
 } from "../serialize.ts";
+import { ENV_ISSUE_CREATE_HERDR_LAUNCH } from "../session-runtime.ts";
 import * as S from "../store.ts";
 import {
   cleanupClosedIssuePanesImpl,
@@ -24,11 +21,8 @@ import {
 import {
   herdrPullWorkspacesFromAgentList,
   NO_PANE_ID_PREFIX,
-  paneRunsClaudeResume,
-  parseHerdrAgentList,
   parseHerdrAgentRead,
   parseHerdrPaneLayout,
-  parseHerdrPaneProcessInfo,
   parseHerdrSessionListIfValid,
   parseHerdrWorkspaceListIfValid,
 } from "../terminal/herdr-status.ts";
@@ -42,7 +36,6 @@ import {
   herdrAgentFocusArgv,
   herdrCommandLine,
   herdrPaneCloseArgv,
-  herdrPaneRunArgv,
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
@@ -58,7 +51,12 @@ import {
   parseHerdrWorkspaceId,
   type TerminalLaunchRepo,
 } from "../terminal/terminal-launch.ts";
-import { legacyWorktreePath, worktreePath } from "../worktree-path.ts";
+import {
+  legacyWorktreePath,
+  resolveWorktreeIdentity,
+  worktreePath,
+} from "../worktree-path.ts";
+import { isHerdrPromptError, sendHerdrPrompt } from "./herdr-prompt.ts";
 import {
   isHerdrExitError,
   runHerdr,
@@ -77,8 +75,6 @@ export interface TerminalLaunchInput {
   workflow?:
     | "issue-create"
     | "workflow-create"
-    | "scheduled-task-create"
-    | "resume"
     | "github-pr-export"
     | "workflow-run";
   issueNumber?: number;
@@ -86,8 +82,6 @@ export interface TerminalLaunchInput {
   // Saved workflow id for the "workflow-run" launch (#1007). Set by the issue-detail Start
   // workflow dropdown; maps to `lh workflow start ... --workflow-id <id>`.
   workflowId?: number;
-  session?: string;
-  cwd?: string;
   targetBranch?: string;
   prompt?: string;
   // One-shot agent/model/effort overrides from the issue-create (New issue) dropdown
@@ -405,12 +399,6 @@ async function resolveHerdrWorktreeTarget(
   input: TerminalLaunchInput,
 ): Promise<string | null> {
   try {
-    if (input.workflow === "resume") {
-      // The client already resolved the PR's worktree path (issue/pull detail's worktree_path,
-      // #345); an issue-create session (no worktree) omits cwd and resumes from the repo root
-      // instead, which is exactly what the repo-root tab-create fallback gives it.
-      return input.cwd ?? null;
-    }
     if (input.workflow === "github-pr-export" && input.prNumber) {
       const prRow = issueOr404(r, input.prNumber, "pull");
       const headRef = S.getPull(prRow.id)!.head_ref;
@@ -492,8 +480,6 @@ export const terminal = {
       repo: r.full_name,
       workflow: input.workflow,
       prNumber: input.prNumber,
-      session: input.session,
-      cwd: input.cwd,
       codingAgent: input.workflow === "issue-create" ? input.agent : undefined,
       model: input.workflow === "issue-create" ? input.model : undefined,
       effort: input.workflow === "issue-create" ? input.effort : undefined,
@@ -503,7 +489,6 @@ export const terminal = {
       // as the agent prompt.
       prompt:
         input.workflow === "issue-create" ||
-        input.workflow === "scheduled-task-create" ||
         input.workflow === "github-pr-export"
           ? input.prompt
           : undefined,
@@ -516,37 +501,11 @@ export const terminal = {
 
     const repo = { full_name: r.full_name, local_path: r.local_path };
 
-    // Resume dedup (#578): if a pane in this repo's herdr session is already running
-    // `claude --resume <session>` for this exact session, switch focus to it instead of piling
-    // on another tab. Scoped to the "resume" workflow only — every other workflow (Build,
-    // New Issue, github-pr-export) starts a fresh agent run each time by design. Best-effort:
-    // any probe failure (herdr not running, nothing to find) falls through to the normal launch
-    // below, same failure tolerance as sessions()/agentRead() above.
-    if (input.workflow === "resume" && input.session) {
-      const sessionName = herdrSessionName(repo);
-      const existingPaneId = await findResumePaneId(sessionName, input.session);
-      if (existingPaneId) {
-        const focus = herdrAgentFocusArgv(repo, existingPaneId);
-        try {
-          await runHerdr(focus[0], focus.slice(1), r.local_path, {
-            timeoutMs: 10_000,
-          });
-          return { backend: "herdr", focused: true, session_name: sessionName };
-        } catch {
-          // The pane found above can vanish (closed) or herdr can wedge between the probe and
-          // this call — unlike the probe itself, this is the actual action, so a failure here
-          // must not surface as a hard error for a Resume click that would otherwise have
-          // succeeded via a fresh tab; fall through to the normal launch below (#578 review).
-        }
-      }
-    }
-
-    // New Issue launches share one labelled workspace per repo session; Scheduled Task creation
-    // keeps its own fresh workspace (#935). Neither has a PR worktree to pin to. Worktree-backed
-    // workflows instead open a workspace pinned to the PR's real worktree (#551, below).
+    // New Issue launches share one labelled workspace per repo session. They have no PR worktree
+    // to pin to. Worktree-backed workflows instead open a workspace pinned to the PR's real
+    // worktree (#551, below).
     const isNewIssue = input.workflow === "issue-create";
-    const usesRepoRootWorkspace =
-      isNewIssue || input.workflow === "scheduled-task-create";
+    const usesRepoRootWorkspace = isNewIssue;
     let releaseNewIssueLaunch = isNewIssue
       ? await acquireNewIssueLaunchLock(herdrSessionName(repo))
       : null;
@@ -660,7 +619,7 @@ export const terminal = {
         workspaceId = existingWorkspaceId ? null : parseHerdrWorkspaceId(out);
         createdWorkspace = existingWorkspaceId === null;
       } else {
-        // Worktree-backed workflows (resume/github-pr-export, #551) open the herdr
+        // Worktree-backed workflows (github-pr-export, #551) open the herdr
         // workspace directly at the PR's real worktree path, so herdr's own workspace/worktree
         // metadata reflects it — instead of a plain repo-root tab the launched command cd's
         // into. Falls back to that plain tab below when there is no resolvable worktree path
@@ -1011,9 +970,8 @@ export const terminal = {
   },
 
   // Switches herdr's focus to a running agent's pane — the issue-list "Herdr running" badge's
-  // click action (#579). Reuses `herdr agent focus` (#578's herdrAgentFocusArgv), the same
-  // one-call workspace+tab+pane focus the Resume dedup above already relies on. Like killAgent
-  // above, a user-initiated action must fail visibly rather than degrade silently.
+  // click action (#579). Like killAgent above, a user-initiated action must fail visibly rather
+  // than degrade silently.
   async focusAgent(input: { repo: string; paneId: string }): Promise<{
     ok: true;
   }> {
@@ -1082,15 +1040,20 @@ export const terminal = {
         "The Herdr agent is no longer running for this PR",
       );
 
-    const submit = herdrPaneRunArgv(r, input.paneId, input.text);
     try {
-      await runHerdr(submit[0], submit.slice(1), r.local_path, {
+      await sendHerdrPrompt({
+        sessionName: herdrSessionName(r),
+        paneId: input.paneId,
+        text: input.text,
+        cwd: r.local_path,
         timeoutMs: 10_000,
       });
-    } catch {
+    } catch (e) {
       throw new ServiceError(
         409,
-        "The Herdr agent disappeared before the input could be sent",
+        isHerdrPromptError(e) && e.phase === "submit"
+          ? "The input was written, but Herdr could not submit it; check the pane before retrying"
+          : "The Herdr agent disappeared before the input could be sent",
       );
     }
     return { ok: true };
@@ -1106,56 +1069,4 @@ function clampAgentReadLines(lines: number | undefined): number {
     Math.max(Math.trunc(lines as number), 1),
     HERDR_AGENT_READ_MAX_LINES,
   );
-}
-
-// Finds the pane already running `claude --resume <session>` in a herdr session, if any (#578's
-// Resume dedup — see the call site in terminal.launch above). Checks every agent's foreground
-// process, not just its display name, since two Resume launches for different sessions can share
-// one (see paneRunsClaudeResume's doc). Best-effort like sweepHerdrSessions: any herdr
-// failure (not running, no session yet, unparseable output) degrades to "nothing found" rather
-// than blocking the launch this backs.
-async function findResumePaneId(
-  sessionName: string,
-  session: string,
-): Promise<string | null> {
-  let agentsOut: string;
-  try {
-    agentsOut = await runHerdrCapture([
-      "--session",
-      sessionName,
-      "agent",
-      "list",
-    ]);
-  } catch {
-    return null;
-  }
-  // HERDR_ID excludes the NO_PANE_ID_PREFIX control byte too, so this one check covers both "no
-  // real pane to probe" and "pane_id isn't shaped like a real herdr id" — the latter matters
-  // because, from here on, agent.id is spliced into further herdr argv (`pane process-info
-  // --pane`, and the caller's `agent focus`), the same trust boundary killAgent's HERDR_ID check
-  // guards for a client-supplied paneId (#578 review).
-  const agents = parseHerdrAgentList(agentsOut).filter((a) =>
-    HERDR_ID.test(a.id),
-  );
-  const hits = await Promise.all(
-    agents.map(async (agent) => {
-      try {
-        const infoOut = await runHerdrCapture([
-          "--session",
-          sessionName,
-          "pane",
-          "process-info",
-          "--pane",
-          agent.id,
-        ]);
-        const processes = parseHerdrPaneProcessInfo(infoOut);
-        return processes && paneRunsClaudeResume(processes, session)
-          ? agent.id
-          : null;
-      } catch {
-        return null;
-      }
-    }),
-  );
-  return hits.find((id): id is string => id !== null) ?? null;
 }

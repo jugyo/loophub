@@ -1,6 +1,5 @@
 export interface LhWebArgs {
   port: number;
-  experimental: boolean;
   debug: boolean;
   help: boolean;
 }
@@ -9,7 +8,6 @@ export const LH_WEB_HELP = `Usage: lh-web [options]
 
 Options:
   --port <n>       HTTP port (default: LOOPHUB_PORT or 8730)
-  --experimental   Show experimental Web UI, including scheduled tasks
   --debug          Show Web UI debugging controls
   -h, --help       Show this help
 `;
@@ -28,7 +26,6 @@ export function parseLhWebArgs(
 ): LhWebArgs {
   const result: LhWebArgs = {
     port: numberOption("LOOPHUB_PORT", env.LOOPHUB_PORT ?? "8730"),
-    experimental: false,
     debug: false,
     help: false,
   };
@@ -36,7 +33,6 @@ export function parseLhWebArgs(
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--port") result.port = numberOption(arg, argv[++i]);
-    else if (arg === "--experimental") result.experimental = true;
     else if (arg === "--debug") result.debug = true;
     else if (arg === "--help" || arg === "-h") result.help = true;
     else throw new Error(`unknown option: ${arg}`);

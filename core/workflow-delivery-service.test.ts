@@ -60,25 +60,6 @@ function runCli(args: string[], parentSession: string) {
   };
 }
 
-function agentList(
-  run: number,
-  agents: Array<{
-    sequence: number;
-    paneId?: string;
-    status?: string;
-  }>,
-): string {
-  return JSON.stringify({
-    result: {
-      agents: agents.map((agent) => ({
-        name: `executor #${run}-${agent.sequence}`,
-        agent_status: agent.status ?? "working",
-        ...(agent.paneId ? { pane_id: agent.paneId } : {}),
-      })),
-    },
-  });
-}
-
 beforeAll(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@example.local"]);
@@ -93,9 +74,8 @@ beforeAll(async () => {
     `#!/bin/sh
 printf '%s\\n' "$*" >> "$HERDR_TEST_LOG"
 case "$*" in
-  *"agent list"*) printf '%s' "$HERDR_TEST_AGENT_LIST" ;;
-  *"pane run"*)
-    if [ "$HERDR_TEST_FAIL_RUN" = "1" ]; then exit 7; fi
+  *"pane send-keys"*)
+    if [ "$HERDR_TEST_FAIL_SUBMIT" = "1" ]; then exit 7; fi
     ;;
 esac
 `,
@@ -109,8 +89,7 @@ esac
 afterAll(() => {
   process.env.PATH = ORIGINAL_PATH;
   delete process.env.HERDR_TEST_LOG;
-  delete process.env.HERDR_TEST_AGENT_LIST;
-  delete process.env.HERDR_TEST_FAIL_RUN;
+  delete process.env.HERDR_TEST_FAIL_SUBMIT;
   rmSync(HOME, { recursive: true, force: true });
   rmSync(REPO_PATH, { recursive: true, force: true });
   rmSync(BIN_PATH, { recursive: true, force: true });
@@ -140,6 +119,11 @@ test("deliver activates the latest Execute session and sends one sanitized line 
       step: "execute",
       sessionId: oldSession,
       agentName: `executor #${started.run.id}-1`,
+      executionTarget: {
+        provider: "herdr",
+        targetId: "w1:p1",
+        context: "test-session",
+      },
       pointers: [],
     },
     parent,
@@ -151,15 +135,15 @@ test("deliver activates the latest Execute session and sends one sanitized line 
       step: "execute",
       sessionId: latestSession,
       agentName: `executor #${started.run.id}-2`,
+      executionTarget: {
+        provider: "herdr",
+        targetId: "w1:p2",
+        context: "test-session",
+      },
       pointers: [],
     },
     parent,
   );
-  process.env.HERDR_TEST_AGENT_LIST = agentList(started.run.id, [
-    { sequence: 1, paneId: "w1:p1" },
-    { sequence: 2, paneId: "w1:p2", status: "done" },
-  ]);
-
   const delivered = await svc.workflowRuns.deliver(
     repo.full_name,
     {
@@ -181,46 +165,19 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     active_session_id: latestSession,
   });
   expect(readFileSync(HERDR_LOG, "utf8")).toContain(
-    `pane run w1:p2 orchestrator: address review #9`,
+    `pane send-text w1:p2 \u001b[200~orchestrator: address review #9\u001b[201~`,
   );
+  expect(readFileSync(HERDR_LOG, "utf8")).toContain(
+    "pane send-keys w1:p2 Enter",
+  );
+  expect(readFileSync(HERDR_LOG, "utf8")).not.toContain("agent list");
+  expect(S.getAgentExecutionTarget(latestSession)).toMatchObject({
+    provider: "herdr",
+    target_id: "w1:p2",
+    context: "test-session",
+  });
 
-  process.env.HERDR_TEST_AGENT_LIST = agentList(started.run.id + 1, [
-    { sequence: 1, paneId: "w2:p1" },
-  ]);
-  await expect(
-    svc.workflowRuns.deliver(
-      repo.full_name,
-      { run: started.run.id, text: "orchestrator: continue" },
-      parent,
-    ),
-  ).rejects.toThrowError(/No Execute agent found/);
-
-  process.env.HERDR_TEST_AGENT_LIST = agentList(started.run.id, [
-    { sequence: 3, paneId: "w1:p3" },
-  ]);
-  await expect(
-    svc.workflowRuns.deliver(
-      repo.full_name,
-      { run: started.run.id, text: "orchestrator: continue" },
-      parent,
-    ),
-  ).rejects.toThrowError(/Cannot resolve the registered Execute session/);
-
-  process.env.HERDR_TEST_AGENT_LIST = agentList(started.run.id, [
-    { sequence: 2 },
-  ]);
-  await expect(
-    svc.workflowRuns.deliver(
-      repo.full_name,
-      { run: started.run.id, text: "orchestrator: continue" },
-      parent,
-    ),
-  ).rejects.toThrowError(/pane_id/);
-
-  process.env.HERDR_TEST_AGENT_LIST = agentList(started.run.id, [
-    { sequence: 2, paneId: "w1:p2" },
-  ]);
-  process.env.HERDR_TEST_FAIL_RUN = "1";
+  process.env.HERDR_TEST_FAIL_SUBMIT = "1";
   await expect(
     svc.workflowRuns.deliver(
       repo.full_name,
@@ -229,7 +186,7 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     ),
   ).rejects.toThrowError(/status 7/);
 
-  delete process.env.HERDR_TEST_FAIL_RUN;
+  delete process.env.HERDR_TEST_FAIL_SUBMIT;
   const cliResult = runCli(
     [
       "workflow",
@@ -249,9 +206,16 @@ test("deliver activates the latest Execute session and sends one sanitized line 
   );
   expect(cliResult.stdout).toContain("pane\tw1:p2");
 
-  process.env.HERDR_TEST_AGENT_LIST = agentList(started.run.id, [
-    { sequence: 2 },
-  ]);
+  const unaddressedSession = "44444444-4444-4444-8444-444444444444";
+  S.registerAgentSession(
+    unaddressedSession,
+    "workflow-step",
+    unaddressedSession,
+    `executor #${started.run.id}-3`,
+    "codex",
+    "workflow-step",
+  );
+  S.appendWorkflowRunStepSession(started.run.id, "execute", unaddressedSession);
   const failedCliResult = runCli(
     [
       "workflow",
@@ -266,5 +230,5 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     parent,
   );
   expect(failedCliResult.exitCode).toBe(1);
-  expect(failedCliResult.stderr).toContain("has no valid pane_id");
+  expect(failedCliResult.stderr).toContain("has no execution target");
 }, 20_000);

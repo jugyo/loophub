@@ -5,22 +5,13 @@
 // whose values come from live git / worktree state live in serialize-status.ts, so this
 // module needs neither node:fs nor core/git.ts and is testable without a git repo.
 
-import {
-  agentEffort,
-  agentModel,
-  resolveEffectiveAgentConfig,
-} from "./config.ts";
+import { resolveEffectiveAgentConfig } from "./config.ts";
 import type { GhPrStatus } from "./github.ts";
 import { linkedRef } from "./links.ts";
 import type { MergeMode } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import type { EffectiveAgentConfig } from "./repo-agent-config.ts";
 import { normalizeRepoAgentRuntime } from "./repo-agent-config.ts";
-import {
-  resolveRuntimeResume,
-  SESSION_KIND_ISSUE_CREATE,
-  sessionRuntime,
-} from "./resume.ts";
 import type { CodingAgent } from "./runtimes.ts";
 import * as S from "./store.ts";
 import type {
@@ -39,8 +30,8 @@ import type { WorkflowHerdrAgent } from "./workflow/herdr-agents.ts";
 import type { WorkflowStepStatuses } from "./workflow/steps.ts";
 
 // Wire-type SSOT (AGENTS.md): the coding-runtime id is part of several wire shapes below (agent cost
-// summary, scheduled tasks, per-agent settings). Re-export it from the registry so web/src/api/types.ts
-// derives `CodingAgent` from core via a type-only import instead of re-declaring the union.
+// summary and per-agent settings). Re-export it from the registry so web/src/api/types.ts derives
+// `CodingAgent` from core via a type-only import instead of re-declaring the union.
 export type { CodingAgent } from "./runtimes.ts";
 export type { Theme as ThemeWire } from "./theme.ts";
 export type { WorkflowContractLanguage as WorkflowContractLanguageWire } from "./workflow/contracts.ts";
@@ -259,7 +250,6 @@ export interface AgentCostSummaryWire {
 
 export interface RelatedSessionWire extends AgentSessionWire {
   linked_at: string | null;
-  resume: { resumable: boolean; reason?: string };
 }
 
 export interface LabelWire {
@@ -306,6 +296,13 @@ export interface IssueListPullSummaryWire extends PullSummaryWire {
   // in the PR-detail sidebar (#456), not a new calculation. Omitted when there is no dev session to
   // anchor from (the detail path renders that as "N/A"; the sub-row just drops the item).
   work_duration_total?: { seconds: number; basis: PullWorkDurationBasis };
+  // #2147: how many Execute -> Verify loops the PR's latest workflow run has taken, so an issue
+  // list shows a PR that keeps circling without opening its run. Omitted when no workflow run is
+  // linked to the PR; zero means a linked run that has not reworked yet.
+  workflow_rework_count?: number;
+  // #2152: comments on the PR for the sub-row — its conversation comments plus every diff-comment
+  // message, as one total. Zero when the PR has neither.
+  total_comments: number;
 }
 
 // Herdr pane captured from the New Issue flow (#670). Narrowed from its compatibility store row —
@@ -404,6 +401,7 @@ export interface DiffFeedbackMessageWire {
   id: number;
   thread_id: number;
   author: string;
+  author_type: S.CommentAuthorType;
   body: string;
   created_at: string;
   reactions: DiffFeedbackReactionWire[];
@@ -447,6 +445,7 @@ export interface DiffFeedbackThreadWire {
   resolved_by: string | null;
   resolved_at: string | null;
   created_by: string;
+  created_by_type: S.CommentAuthorType;
   created_at: string;
   messages: DiffFeedbackMessageWire[];
 }
@@ -496,6 +495,7 @@ export function diffFeedbackMessageJSON(
     id: row.id,
     thread_id: row.thread_id,
     author: row.author,
+    author_type: row.author_type,
     body: row.body,
     created_at: row.created_at,
     reactions: Array.from(counts, ([emoji, reaction]) => ({
@@ -714,71 +714,19 @@ export function sessionSubagentUsageJSON(
   };
 }
 
-// One entry in a PR/issue's "related sessions" list (#298). Wraps agentSessionJSON with `linked_at`
-// (when the session was attached to this target) and a `resume` verdict that follows core/resume.ts'
-// runtime-based judgment:
-//   - resumable=true  → `lh resume <pr>` would re-enter this session (claude-code + UUID id, and it
-//     is the PR's current primary attribution).
-//   - resumable=false → `reason` says why: a runtime this build cannot resume ("unknown-runtime"),
-//     nothing resumable on the row ("no-session"), an issue-linked session that is resumed via its
-//     PR rather than the issue ("resume-via-pull"), a past dev session a newer one replaced as the
-//     PR's anchor ("superseded"), or a session that is simply not the PR's resume anchor — a non-dev
-//     session, or any session on a PR with no anchor at all ("not-anchor"). resume is intentionally
-//     runtime-level only — it reflects whether the runtime + anchor make `lh resume <pr>` meaningful,
-//     not whether the worktree/branch still survive on disk.
-//
-// `lh resume <pr>` re-enters exactly the PR's primary dev session (primaryDevSessionForPull =
-// primarySessionId, #316). So a row is resumable ONLY when it IS that anchor; everything else is
-// reported with a reason. The anchor check must compare equality directly (not "anchor exists AND
-// not this row"), otherwise a PR with no anchor at all (primarySessionId null — reachable by linking
-// a session via `sessions.link`
-// to a PR that never had a dev session) would fall through and be mislabeled resumable.
+// One entry in a PR/issue's "related sessions" list (#298). Existing session metadata, including
+// the external runtime session id exposed as `session`, remains readable.
 export function relatedSessionJSON(
   row: S.LinkedAgentSessionRow,
-  opts: { container: "issue" | "pull"; primarySessionId?: string | null },
 ): RelatedSessionWire {
-  const base = agentSessionJSON(row);
-  const rr = resolveRuntimeResume(sessionRuntime(row), row.external_session);
-  let resume: { resumable: boolean; reason?: string };
-  if (!rr.ok) {
-    resume = { resumable: false, reason: rr.reason };
-  } else if (opts.container !== "pull") {
-    // Issue container. An `issue-create` session (the New Issue AI flow, #299) has no PR and no dev
-    // worktree, so it resumes directly off the issue with `claude --resume <id>` (resume by session
-    // id, not by PR). Any other issue-linked session is a dev/review session whose resume anchor is
-    // its PR, so it is still resumed via that PR ("resume-via-pull").
-    resume =
-      row.kind === SESSION_KIND_ISSUE_CREATE
-        ? { resumable: true }
-        : { resumable: false, reason: "resume-via-pull" };
-  } else if (opts.primarySessionId && row.id === opts.primarySessionId) {
-    resume = { resumable: true };
-  } else if (opts.primarySessionId && row.kind === "dev") {
-    // A dev session on this PR that a newer dev session replaced as the resume anchor.
-    resume = { resumable: false, reason: "superseded" };
-  } else {
-    // Runtime-resumable but not the PR's anchor: a non-dev session linked to the PR, or a PR with
-    // no anchor at all (primarySessionId null). `lh resume <pr>` has nothing of this row to re-enter.
-    resume = { resumable: false, reason: "not-anchor" };
-  }
-  return { ...base, linked_at: row.linked_at ?? null, resume };
+  return { ...agentSessionJSON(row), linked_at: row.linked_at ?? null };
 }
 
-// The full related-sessions list for an issues row (issue or PR), newest link first. `primarySessionId`
-// is the PR's primary dev session (primaryDevSessionForPull) — the one `lh resume <pr>` actually
-// re-enters — so only that row is marked directly resumable; pass it for PR containers, omit it for
-// issue containers.
+// The full related-sessions list for an issues row (issue or PR), newest link first.
 export function relatedSessionsJSON(
   containerRow: S.IssueRow,
-  opts: { primarySessionId?: string | null } = {},
 ): RelatedSessionWire[] {
-  const container = containerRow.kind === "pull" ? "pull" : "issue";
-  return S.listSessionsForIssue(containerRow.id).map((row) =>
-    relatedSessionJSON(row, {
-      container,
-      primarySessionId: opts.primarySessionId,
-    }),
-  );
+  return S.listSessionsForIssue(containerRow.id).map(relatedSessionJSON);
 }
 
 export interface UsageTotalsWire {
@@ -821,11 +769,20 @@ export interface HerdrRepoSessionsWire {
   agents: HerdrSessionAgentWire[];
   pull_workspaces: HerdrPullWorkspace[];
   issue_workspaces: HerdrIssueWorkspace[];
+  // Set only on a group carried over from an earlier snapshot because this repo's `agent list`
+  // capture failed (#2142): the ISO time of the last capture that actually produced this group.
+  // Absent means the group is this tick's live capture.
+  stale_since?: string;
 }
 
 export interface HerdrSessionsWire {
   repos: HerdrRepoSessionsWire[];
   running_repos?: string[];
+  // Repos whose `herdr agent list` capture failed on the tick that wrote this snapshot (#2142).
+  // Their `repos` entry — when one was already known — is the carried-over group tagged with
+  // `stale_since`; a repo listed here with no `repos` entry never captured successfully. Absent
+  // when every running repo captured, so "no agents" and "capture failed" stay distinguishable.
+  capture_failed_repos?: string[];
   // When lh-worker last wrote this snapshot (ISO). The `terminal/sessions` RPC is a pure DB read of
   // the worker-owned snapshot (#1665), so a stopped worker leaves this timestamp frozen — clients
   // surface the staleness instead of an automatic herdr fallback that would hide the stopped worker.
@@ -836,15 +793,13 @@ export interface HerdrSessionsWire {
 export type TerminalLaunchBackendWire = "builtin" | "herdr";
 
 // Result of `terminal/launch`: which backend handled it plus the herdr coordinates the client
-// surfaces (session_name / command / cwd / attach). `focused` is true when a "resume" launch
-// switched focus to a terminal already running the session instead of opening a new one (#578).
+// surfaces (session_name / command / cwd / attach).
 export interface TerminalLaunchResultWire {
   backend: TerminalLaunchBackendWire;
   session_name?: string;
   command?: string;
   cwd?: string;
   attach?: string;
-  focused?: boolean;
 }
 
 export function herdrPaneSessionJSON(
@@ -1064,6 +1019,7 @@ export interface ReviewAcResultWire {
 export interface ReviewWire {
   id: number;
   user: UserWire;
+  author_type: S.CommentAuthorType;
   // Not narrowed to "PASS" | "REQUEST_CHANGES" | "COMMENT" | "FEEDBACK": reviews.create
   // (core/service/reviews.ts) only special-cases "APPROVE" -> "PASS" and otherwise stores the
   // caller's uppercased string verbatim, so the wire value isn't actually guaranteed to be one of
@@ -1088,6 +1044,7 @@ export function reviewJSON(
   return {
     id: v.id,
     user: { login: v.author },
+    author_type: v.author_type,
     state: v.event,
     body: v.body,
     head_sha: v.head_sha ?? null,
@@ -1117,6 +1074,7 @@ export interface ReviewCommentWire {
   id: number;
   pull_request_review_id: number | null;
   user: UserWire;
+  author_type: S.CommentAuthorType;
   path: string;
   line: number | null;
   // Not narrowed to "LEFT" | "RIGHT": reviews.create passes the caller's `side` straight through
@@ -1132,9 +1090,35 @@ export function reviewCommentJSON(m: S.ReviewCommentRow): ReviewCommentWire {
     id: m.id,
     pull_request_review_id: m.review_id,
     user: { login: m.author },
+    author_type: m.author_type,
     path: m.path,
     line: m.line,
     side: m.side,
+    body: m.body,
+    created_at: m.created_at,
+  };
+}
+
+export interface ReviewDetailWire {
+  review: ReviewWire;
+  comments: ReviewCommentWire[];
+}
+
+export interface ReviewResponseWire {
+  id: number;
+  pull_request_review_id: number;
+  pull_request_review_comment_id: number | null;
+  user: UserWire;
+  body: string;
+  created_at: string;
+}
+
+export function reviewResponseJSON(m: S.ReviewResponseRow): ReviewResponseWire {
+  return {
+    id: m.id,
+    pull_request_review_id: m.review_id,
+    pull_request_review_comment_id: m.review_comment_id,
+    user: { login: m.author },
     body: m.body,
     created_at: m.created_at,
   };
@@ -1193,6 +1177,7 @@ export function handoffJSON(h: S.HandoffRow): HandoffWire {
 export interface NotificationWire {
   id: number;
   kind: S.NotificationKind;
+  severity: S.NotificationSeverity;
   repo: { name: string };
   title: string;
   body: string;
@@ -1227,6 +1212,7 @@ export function notificationJSON(n: S.NotificationRow): NotificationWire {
   return {
     id: n.id,
     kind: n.kind,
+    severity: n.severity,
     repo: { name: repoName },
     title: n.title,
     body: n.body,
@@ -1347,83 +1333,13 @@ export function retroJSON(row: S.RetroRow) {
 }
 
 // Runtime UI features exposed by lh-web. Keep this wire shape in core so the server and SPA cannot
-// drift when new experimental surfaces are added.
+// drift when runtime controls are added.
 export interface WebConfigWire {
-  experimental: boolean;
   debug: boolean;
 }
 
-export function webConfigJSON(
-  experimental: boolean,
-  debug: boolean,
-): WebConfigWire {
-  return { experimental, debug };
-}
-
-// A scheduled task (#880): a repo-scoped saved prompt a coding agent runs at one or more times of
-// day. `times` is parsed back from the JSON column. `model`/`effort` are the stored overrides (null
-// when unset); `default_model`/`default_effort` are the per-agent application defaults that apply
-// when unset, so the UI can show them as placeholders without re-implementing config resolution.
-export interface ScheduledTaskWire {
-  id: number;
-  title: string;
-  prompt: string;
-  agent: string;
-  times: string[];
-  model: string | null;
-  effort: string | null;
-  default_model: string;
-  default_effort: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export function scheduledTaskJSON(row: S.ScheduledTaskRow): ScheduledTaskWire {
-  const agent = row.agent as CodingAgent;
-  return {
-    id: row.id,
-    title: row.title,
-    prompt: row.prompt,
-    agent: row.agent,
-    times: safeParseArray<string>(row.times_json),
-    model: row.model ?? null,
-    effort: row.effort ?? null,
-    default_model: agentModel(agent),
-    default_effort: agentEffort(agent),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-}
-
-// One fire of a scheduled task (#880) — meta only; the agent's output stays on the herdr side.
-// `trigger` is 'scheduled' | 'manual'; `status` is the launch outcome ('running' | 'success' |
-// 'failure'); the herdr refs point at the launched tab/pane so a human can open the live output.
-export interface ScheduledTaskRunWire {
-  id: number;
-  trigger: string;
-  scheduled_time: string | null;
-  started_at: string;
-  ended_at: string | null;
-  status: string;
-  herdr_tab_id: string | null;
-  herdr_pane_id: string | null;
-  error: string | null;
-}
-
-export function scheduledTaskRunJSON(
-  row: S.ScheduledTaskRunRow,
-): ScheduledTaskRunWire {
-  return {
-    id: row.id,
-    trigger: row.trigger,
-    scheduled_time: row.scheduled_time ?? null,
-    started_at: row.started_at,
-    ended_at: row.ended_at ?? null,
-    status: row.status,
-    herdr_tab_id: row.herdr_tab_id ?? null,
-    herdr_pane_id: row.herdr_pane_id ?? null,
-    error: row.error ?? null,
-  };
+export function webConfigJSON(debug: boolean): WebConfigWire {
+  return { debug };
 }
 
 // A workflow definition (#997): a global prompt bundle for the fixed
@@ -1512,7 +1428,7 @@ export interface WorkflowOutOfBandReviewWire {
   verdict: "feedback" | "request_changes";
 }
 
-// Complete observed state used by the Workflow parent and `lh workflow next`. This wire shape
+// Complete observed state the Workflow parent's instructions are decided from. This wire shape
 // remains in core even though its current presentation is CLI-only, so future web consumers share
 // the same source of truth instead of re-declaring it.
 export interface WorkflowStepStatusWire {

@@ -315,6 +315,37 @@ describe("PullHerdrSection", () => {
     expect(dialog.textContent).toContain("$1.25");
   });
 
+  it.each([
+    { status: "working", statusClass: "text-yellow-500" },
+    { status: "blocked", statusClass: "text-red-500" },
+    { status: "done", statusClass: "text-blue-500" },
+    { status: "idle", statusClass: "text-green-500" },
+  ] as const)("shows the valid $status agent status in the Herdr agent details", ({
+    status,
+    statusClass,
+  }) => {
+    vi.useFakeTimers();
+    herdrSessions.value = {
+      ...running,
+      repos: [
+        {
+          ...running.repos[0],
+          agents: [{ ...running.repos[0].agents[0], status }],
+        },
+      ],
+    };
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+
+    fireEvent.mouseEnter(screen.getByText("orchestrator #7").closest("li")!);
+    act(() => vi.advanceTimersByTime(300));
+
+    const dialog = screen.getByRole("dialog", {
+      name: "orchestrator #7 agent details",
+    });
+    expect(within(dialog).getByText("Status")).toBeTruthy();
+    expect(within(dialog).getByText(status).className).toContain(statusClass);
+  });
+
   it("opens each pane in Herdr through the pane-title terminal icon", () => {
     herdrSessions.value = running;
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);

@@ -144,7 +144,7 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("a dev session opened via lh build surfaces in the PR's related_sessions and is resumable", async () => {
+test("a dev session opened via lh build surfaces in the PR's related_sessions", async () => {
   const issue = svc.issues.create("me/proj", { title: "feature" });
   svc.sessions.register({
     id: DEV_UUID,
@@ -164,13 +164,12 @@ test("a dev session opened via lh build surfaces in the PR's related_sessions an
   expect(pull.related_sessions.length).toBe(1);
   const s = pull.related_sessions[0];
   expect(s.id).toBe(DEV_UUID);
+  expect(s.session).toBe(DEV_UUID);
+  expect(s.runtime).toBe("claude-code");
   expect(s.kind).toBe("dev");
-  // The PR's primary dev session on a claude-code runtime is resumable (runtime-based judgment).
-  expect(s.resume.resumable).toBe(true);
 });
 
-test("a second dev session is added (1:N) and the older one is marked superseded", async () => {
-  // Re-enter the same PR with a new session: latest becomes the resume anchor, both stay listed.
+test("a second dev session is added without hiding the older session", async () => {
   svc.sessions.register({
     id: "aaaaaaaa-0000-0000-0000-000000000099",
     agent: "lh-build",
@@ -189,15 +188,13 @@ test("a second dev session is added (1:N) and the older one is marked superseded
   const byId = Object.fromEntries(
     pull.related_sessions.map((s: any) => [s.id, s]),
   );
-  // The newest (primary) is resumable; the earlier one is superseded.
-  expect(byId["aaaaaaaa-0000-0000-0000-000000000099"].resume.resumable).toBe(
-    true,
+  expect(byId["aaaaaaaa-0000-0000-0000-000000000099"].session).toBe(
+    "aaaaaaaa-0000-0000-0000-000000000099",
   );
-  expect(byId[DEV_UUID].resume.resumable).toBe(false);
-  expect(byId[DEV_UUID].resume.reason).toBe("superseded");
+  expect(byId[DEV_UUID].session).toBe(DEV_UUID);
 });
 
-test("sessions.link attaches a session to an issue; issue detail lists it, resume-via-pull", async () => {
+test("sessions.link attaches a session to an issue and issue detail lists it", async () => {
   svc.sessions.register({
     id: REVIEW_UUID,
     agent: "reviewer",
@@ -215,9 +212,7 @@ test("sessions.link attaches a session to an issue; issue detail lists it, resum
   expect(Array.isArray(issue.related_sessions)).toBe(true);
   const s = issue.related_sessions.find((x: any) => x.id === REVIEW_UUID);
   expect(s.kind).toBe("review");
-  // Issue-linked sessions are resumed via their PR, not the issue directly.
-  expect(s.resume.resumable).toBe(false);
-  expect(s.resume.reason).toBe("resume-via-pull");
+  expect(s.session).toBe(REVIEW_UUID);
 });
 
 test("sessions.link is idempotent and rejects ambiguous / missing targets", async () => {
@@ -473,37 +468,9 @@ test("sessions.costSummary counts legacy build sessions as Claude Code", () => {
   ]);
 });
 
-test("a session linked to a PR with no primary dev session is NOT resumable (not-anchor)", async () => {
-  // Reachable via sessions.link({pr}): a PR opened without a dev session (no kind='dev' link), then a
-  // non-dev session attached (sessions.link is documented as the attach point for kinds beyond dev).
-  // The PR has no dev anchor (primaryDevSessionForPull → null), so `lh resume <pr>` would resolve
-  // nothing and this row must not be resumable.
-  const pr = (await svc.pulls.create("me/proj", {
-    title: "manual PR",
-    head: "manual-branch",
-    base: "main",
-  })) as any;
-  const anchorless = "cccccccc-0000-0000-0000-000000000003";
-  svc.sessions.register({
-    id: anchorless,
-    agent: "reviewer",
-    session: anchorless,
-    runtime: "claude-code",
-    kind: "review",
-  });
-  svc.sessions.link("me/proj", { sessionId: anchorless, pr: pr.number });
-
-  const list = ((await svc.pulls.get("me/proj", pr.number)) as any)
-    .related_sessions;
-  const s = list.find((x: any) => x.id === anchorless);
-  expect(s.resume.resumable).toBe(false);
-  expect(s.resume.reason).toBe("not-anchor");
-});
-
-test("an issue-create session linked to an issue is listed and resumable from the issue (#299)", async () => {
+test("an issue-create session linked to an issue retains its external id (#299)", async () => {
   // `lh issue new` records the filing session as kind=issue-create, then `lh issue create` links it
-  // to the issue it files. It has no PR/dev worktree, so it resumes directly off the issue
-  // (`lh resume --session <id>`), unlike dev/review sessions which resume via their PR.
+  // to the issue it files. Its runtime identity remains readable for attribution and display.
   const issue = svc.issues.create("me/proj", {
     title: "needs filing help",
   }) as any;
@@ -521,44 +488,8 @@ test("an issue-create session linked to an issue is listed and resumable from th
   const s = detail.related_sessions.find((x: any) => x.id === createUuid);
   expect(s).toBeTruthy();
   expect(s.kind).toBe("issue-create");
-  // Resumable directly from the issue — no "resume-via-pull" indirection.
-  expect(s.resume.resumable).toBe(true);
-  expect(s.resume.reason).toBeUndefined();
-});
-
-test("resume.resolveSession resolves an issue-create session and reports failures (#299)", () => {
-  const createUuid = "eeeeeeee-0000-0000-0000-000000000005";
-  svc.sessions.register({
-    id: createUuid,
-    agent: "issue-create",
-    session: createUuid,
-    runtime: "claude-code",
-    kind: "issue-create",
-  });
-  // Happy path: claude-code + UUID id → resumable, returns external_session for `claude --resume`.
-  expect(svc.resume.resolveSession(createUuid)).toEqual({
-    ok: true,
-    runtime: "claude-code",
-    sessionId: createUuid,
-  });
-  // Unknown id → not-found.
-  expect(svc.resume.resolveSession("no-such")).toMatchObject({
-    ok: false,
-    reason: "not-found",
-  });
-  // A runtime this build cannot resume → unknown-runtime (distinct from no-session).
-  const codexUuid = "ffffffff-0000-0000-0000-000000000006";
-  svc.sessions.register({
-    id: codexUuid,
-    agent: "issue-create",
-    session: codexUuid,
-    runtime: "codex",
-    kind: "issue-create",
-  });
-  expect(svc.resume.resolveSession(codexUuid)).toMatchObject({
-    ok: false,
-    reason: "unknown-runtime",
-  });
+  expect(s.session).toBe(createUuid);
+  expect(s.runtime).toBe("claude-code");
 });
 
 test("sessions.usageSync imports Claude transcript usage incrementally", () => {

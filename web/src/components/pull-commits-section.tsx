@@ -10,6 +10,8 @@
 import { Check, Loader2, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { PullLineComment, PullRequest, PullReview } from "@/api/types";
+import { CommentAuthorLabel } from "@/components/comment-author-label";
+import { CommentId } from "@/components/comment-id";
 import { DiffLines } from "@/components/diff-lines";
 import { DiffStat } from "@/components/diff-stat";
 import { Markdown } from "@/components/markdown";
@@ -402,7 +404,12 @@ function ReviewItem({
         >
           ● {review.state}
         </span>{" "}
-        <span className="font-medium">@{review.user.login}</span>{" "}
+        <span className="font-medium">
+          <CommentAuthorLabel
+            author={review.user.login}
+            authorType={review.author_type}
+          />
+        </span>{" "}
         {review.model ? (
           <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
             {review.model}
@@ -423,10 +430,15 @@ function ReviewItem({
           {comments.map((comment) => (
             <li key={comment.id} className="rounded-md border bg-muted/20 p-2">
               <div className="mb-1 text-xs">
-                💬 @{comment.user.login}{" "}
+                💬{" "}
+                <CommentAuthorLabel
+                  author={comment.user.login}
+                  authorType={comment.author_type}
+                />{" "}
                 <span className="text-muted-foreground">
                   {comment.path}:{comment.line ?? "?"}
-                </span>
+                </span>{" "}
+                <CommentId id={comment.id} />
               </div>
               <Markdown owner={owner} repo={repo}>
                 {comment.body}

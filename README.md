@@ -73,9 +73,12 @@ Web UI の **Start workflow** も同じ経路なので失敗する。issue や P
 
 | ランタイム | 必要な実行ファイル | 備考 |
 |---|---|---|
-| Claude Code（既定） | `claude` | [claude.com/claude-code](https://claude.com/claude-code)。セッション再開（`lh resume`）に対応する唯一のランタイム |
+| Claude Code（既定） | `claude` | [claude.com/claude-code](https://claude.com/claude-code) |
 | Codex | `codex` | [github.com/openai/codex](https://github.com/openai/codex) |
 | Grok Build | `grok` | Grok CLI |
+
+LoopHub はコーディングエージェントの Session を再開しない。各 workflow step は新しい
+agent-runtime invocation として起動し、Session の記録は履歴表示と usage 集計に使う。
 
 既定のランタイム・モデルは Web UI の Settings、またはリポジトリごとの設定で変えられる。
 1 回の起動だけ変えたいときは `--claude-code` / `--codex` / `--grok` と `--model` を使う。

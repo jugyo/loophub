@@ -487,6 +487,39 @@ describe("LinkedPullSummaryRow working pulse vs workflow Done (#1877)", () => {
   });
 });
 
+// #2147: the rework count comes from the issue-list response, so the row shows it without asking
+// for the run state per PR.
+describe("LinkedPullSummaryRow workflow rework count (#2147)", () => {
+  function rework() {
+    return document.querySelector("[data-linked-pull-rework]");
+  }
+
+  it("shows the count alone, directly left of the cost metrics", async () => {
+    renderRowWithRun(null, {
+      workflow_rework_count: 3,
+      total_tokens: 48002,
+    });
+    await screen.findByRole("link", { name: "PR #10" });
+    const marker = rework();
+    expect(marker?.textContent).toBe("3");
+    // The looping-arrows icon carries the "rework" meaning the wording used to.
+    expect(marker?.querySelector("svg")).not.toBeNull();
+    expect(marker?.nextElementSibling?.textContent).toContain("48k");
+  });
+
+  it("shows nothing for a run that has not reworked yet", async () => {
+    renderRowWithRun(null, { workflow_rework_count: 0 });
+    await screen.findByRole("link", { name: "PR #10" });
+    expect(rework()).toBeNull();
+  });
+
+  it("shows nothing for a PR with no workflow run", async () => {
+    renderRowWithRun(null);
+    await screen.findByRole("link", { name: "PR #10" });
+    expect(rework()).toBeNull();
+  });
+});
+
 // #1828: the budget action lives in the shared mini progress, so the Issue list row and the Issue
 // page attempt row both offer it.
 describe("LinkedPullSummaryRow workflow budget (#1828)", () => {

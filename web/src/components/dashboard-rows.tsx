@@ -3,7 +3,7 @@
 // (../lib/badges.ts).
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Loader2, Workflow } from "lucide-react";
+import { ChevronDown, Loader2, MessageSquare, Workflow } from "lucide-react";
 import { useState } from "react";
 import type { Issue, Label, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
@@ -106,6 +106,19 @@ function RowLabels({
           className="shrink-0 whitespace-nowrap"
         />
       ))}
+    </span>
+  );
+}
+
+function IssueCommentCount({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <span
+      aria-label={`${count} ${count === 1 ? "comment" : "comments"}`}
+      className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground/70 tabular-nums"
+    >
+      <MessageSquare aria-hidden="true" className="size-3" />
+      {count}
     </span>
   );
 }
@@ -405,6 +418,7 @@ export function IssueRow({
         <span className="w-16 shrink-0 truncate text-right text-xs text-muted-foreground">
           {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
         </span>
+        <IssueCommentCount count={issue.comments} />
       </div>
       {pulls.length > 0 ? (
         // Own column so the gap between stacked PRs is a touch wider than the

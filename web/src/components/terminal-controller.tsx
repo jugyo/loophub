@@ -1,4 +1,4 @@
-// Herdr launch state shared across the app: consumers (New Issue / Build / Resume buttons) call
+// Herdr launch state shared across the app: consumers call
 // useTerminalLauncher() to start a Herdr session, and the shell (app-layout.tsx) renders the
 // resulting feedback / error dialog here.
 //
@@ -33,8 +33,6 @@ export interface OpenTerminalOptions {
   workflow?:
     | "issue-create"
     | "workflow-create"
-    | "scheduled-task-create"
-    | "resume"
     | "github-pr-export"
     | "workflow-run";
   issueNumber?: number;
@@ -42,8 +40,6 @@ export interface OpenTerminalOptions {
   // Saved workflow id for a "workflow-run" launch (#1007) — the issue-detail Start workflow
   // dropdown sets it; maps to `lh workflow start ... --workflow-id <id>`.
   workflowId?: number;
-  session?: string;
-  cwd?: string;
   targetBranch?: string;
   // Direct initial prompt for launches that should not invoke a slash-command skill.
   prompt?: string;
@@ -123,8 +119,6 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
           issueNumber: opts.issueNumber,
           prNumber: opts.prNumber,
           workflowId: opts.workflowId,
-          session: opts.session,
-          cwd: opts.cwd,
           targetBranch: opts.targetBranch,
           prompt: opts.prompt,
           agent: opts.agent,

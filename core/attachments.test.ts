@@ -74,6 +74,72 @@ test("saveAttachment accepts the .htm extension and canonicalizes its MIME", () 
   expect(r.markdown).toBe(`[report.htm](/attachments/${r.sha256})`);
 });
 
+test("saveAttachment stores a Markdown document and returns a plain link", () => {
+  const doc = Buffer.from("# 調査結果\n\n- ひとつめ\n");
+  const r = A.saveAttachment({
+    data: doc,
+    filename: "findings.md",
+    mime: "text/markdown",
+    author: "me",
+  });
+  expect(r.mime).toBe("text/markdown");
+  expect(r.markdown).toBe(`[findings.md](/attachments/${r.sha256})`);
+  expect(readFileSync(A.blobPath(r.sha256)).equals(doc)).toBe(true);
+});
+
+test("saveAttachment stores plain text, trusting the extension when MIME is absent", () => {
+  const r = A.saveAttachment({
+    data: Buffer.from("plain notes"),
+    filename: "notes.txt",
+    author: "me",
+  });
+  expect(r.mime).toBe("text/plain");
+  expect(r.markdown).toBe(`[notes.txt](/attachments/${r.sha256})`);
+});
+
+test("a document extension with a mismatched MIME is rejected", () => {
+  expect(() =>
+    A.saveAttachment({
+      data: Buffer.from("# doc"),
+      filename: "doc.md",
+      mime: "text/plain",
+      author: "me",
+    }),
+  ).toThrowError(/does not match extension/);
+});
+
+test("parseAttachmentRef accepts a sha256, the URL path, and an absolute URL", () => {
+  const sha = "a".repeat(64);
+  expect(A.parseAttachmentRef(sha)).toBe(sha);
+  expect(A.parseAttachmentRef(` /attachments/${sha} `)).toBe(sha);
+  expect(A.parseAttachmentRef(`http://127.0.0.1:8730/attachments/${sha}`)).toBe(
+    sha,
+  );
+  expect(A.parseAttachmentRef("/attachments/nope")).toBeNull();
+  expect(A.parseAttachmentRef("")).toBeNull();
+});
+
+test("readAttachment returns the stored bytes, path and metadata", () => {
+  const doc = Buffer.from("# hand-off\n");
+  const saved = A.saveAttachment({
+    data: doc,
+    filename: "handoff.md",
+    author: "me",
+  });
+  const r = A.readAttachment(saved.url);
+  expect(r.attachment.filename).toBe("handoff.md");
+  expect(r.attachment.mime).toBe("text/markdown");
+  expect(r.path).toBe(A.blobPath(saved.sha256));
+  expect(r.data.equals(doc)).toBe(true);
+  // Same result from the bare sha256.
+  expect(A.readAttachment(saved.sha256).data.equals(doc)).toBe(true);
+
+  expect(() => A.readAttachment("not-a-ref")).toThrowError(
+    /Not an attachment reference/,
+  );
+  expect(() => A.readAttachment("0".repeat(64))).toThrowError(/not found/);
+});
+
 test("re-uploading the same bytes converges on one blob and one row (dedup)", () => {
   const a = A.saveAttachment({ data: PNG, filename: "a.png", author: "me" });
   const b = A.saveAttachment({ data: PNG, filename: "b.png", author: "you" });

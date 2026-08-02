@@ -111,6 +111,18 @@ beforeAll(async () => {
     executePrompt: "",
     verifyPrompt: "",
   }).id;
+  S.registerAgentSession(
+    "reviewer-session",
+    "codex",
+    "reviewer-external",
+    "reviewer",
+  );
+  S.registerAgentSession(
+    "human-session",
+    "me",
+    "human-external",
+    "human-reviewer",
+  );
 });
 
 afterAll(() => {
@@ -133,6 +145,7 @@ test("a human REQUEST_CHANGES carries review_id and the submission head on its s
   );
 
   const events = reviewEvents();
+  expect(review.author_type).toBe("human");
   expect(events.length).toBe(before + 1);
   expect(JSON.parse(events.at(-1)!.payload)).toEqual({
     number: pr,
@@ -152,8 +165,6 @@ test("a review on a PR with no running run records the same source event", async
   const pr = await newPull("no-run");
   const before = reviewEvents().length;
 
-  // The producer resolves no run and writes no notification of its own: whether a review concerns
-  // a run is the run's question, answered by its subscription.
   await svc.reviews.create(
     "me/reviews",
     pr,
@@ -163,6 +174,93 @@ test("a review on a PR with no running run records the same source event", async
 
   expect(reviewEvents().length).toBe(before + 1);
   expect(runScopedReviewEvents()).toEqual([]);
+});
+
+test("review responses stay linked to their review and optional review comment", async () => {
+  const pr = await newPull("linked-response");
+  const review = await svc.reviews.create(
+    "me/reviews",
+    pr,
+    {
+      event: "REQUEST_CHANGES",
+      body: "please fix",
+      comments: [{ path: "base.txt", line: 1, body: "fix this line" }],
+    },
+    "reviewer-session",
+  );
+  const comment = svc.reviews.listComments("me/reviews", pr).at(-1)!;
+  expect(svc.reviews.get("me/reviews", pr, review.id)).toMatchObject({
+    review: { id: review.id, author_type: "agent", body: "please fix" },
+    comments: [
+      {
+        id: comment.id,
+        pull_request_review_id: review.id,
+        author_type: "agent",
+        body: "fix this line",
+      },
+    ],
+  });
+  S.registerAgentSession(
+    "executor-session",
+    "codex",
+    "executor-external",
+    "executor",
+  );
+
+  const response = svc.reviews.createResponse(
+    "me/reviews",
+    pr,
+    {
+      reviewId: review.id,
+      reviewCommentId: comment.id,
+      body: "fixed in the latest commit",
+    },
+    "executor-session",
+  );
+
+  expect(response).toMatchObject({
+    pull_request_review_id: review.id,
+    pull_request_review_comment_id: comment.id,
+    body: "fixed in the latest commit",
+    user: { login: "executor" },
+  });
+  expect(svc.reviews.listResponses("me/reviews", pr, review.id)).toEqual([
+    response,
+  ]);
+});
+
+test("review responses reject a comment from another review", async () => {
+  const pr = await newPull("mismatched-response");
+  const first = await svc.reviews.create(
+    "me/reviews",
+    pr,
+    {
+      event: "REQUEST_CHANGES",
+      comments: [{ path: "base.txt", line: 1, body: "first" }],
+    },
+    "reviewer-session",
+  );
+  const comment = svc.reviews.listComments("me/reviews", pr).at(-1)!;
+  const second = await svc.reviews.create(
+    "me/reviews",
+    pr,
+    { event: "COMMENT", body: "second" },
+    "reviewer-session",
+  );
+
+  expect(() =>
+    svc.reviews.createResponse(
+      "me/reviews",
+      pr,
+      {
+        reviewId: second.id,
+        reviewCommentId: comment.id,
+        body: "wrong parent",
+      },
+      "executor-session",
+    ),
+  ).toThrow(`review comment #${comment.id} not found on review #${second.id}`);
+  expect(first.id).not.toBe(second.id);
 });
 
 test("a FEEDBACK review carries review_id on its source event too", async () => {

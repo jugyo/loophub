@@ -468,33 +468,6 @@ export function parseHerdrPaneKillTarget(stdout: string): number | null {
 }
 
 /**
- * True when one of a pane's foreground processes is exactly `claude --resume <session>` — the
- * literal argv commandForHerdrLaunch's "resume" workflow execs (a `cd <dir> &&` prefix is a
- * shell builtin, consumed before exec, so it never reaches the OS argv). Used to find a terminal
- * that's already resuming a given session (#578's Resume dedup): the herdr agent's *display name*
- * can't serve this purpose — two Resume launches for different sessions can share one (e.g. two
- * PRs' dev sessions both render as "Resume - dev"), which would make a name match a false
- * positive across unrelated sessions. The running process is ground truth for which session a
- * pane actually holds.
- */
-export function paneRunsClaudeResume(
-  processes: string[][],
-  session: string,
-): boolean {
-  // Exact 3-element match, not just "argv contains --resume somewhere": a looser check would
-  // also match a manually-run `claude --resume <session> --continue` (or any other extra flags)
-  // in an unrelated pane, which is exactly the kind of false positive this function exists to
-  // avoid (#578 review).
-  return processes.some(
-    (argv) =>
-      argv.length === 3 &&
-      argv[0] === "claude" &&
-      argv[1] === "--resume" &&
-      argv[2] === session,
-  );
-}
-
-/**
  * Target pane's size from `herdr --session <name> pane layout --pane <pane_id>`, which
  * prints `{ result: { layout: { area: { width, height, ... } } } }`. `width`/`height` are
  * character-cell counts (columns/rows), used to size the sidebar hover preview to the

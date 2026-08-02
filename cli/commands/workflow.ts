@@ -2,10 +2,13 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
-import { isClaudeSessionId } from "../../core/resume.ts";
 import { buildRuntimeArgs } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
-import { HERDR_ID } from "../../core/terminal/terminal-launch.ts";
+import { isClaudeSessionId } from "../../core/session-runtime.ts";
+import {
+  HERDR_ID,
+  parseHerdrAgentPaneId,
+} from "../../core/terminal/terminal-launch.ts";
 import {
   layoutWorkflowTab,
   WorkflowPaneLayoutError,
@@ -422,7 +425,7 @@ async function launchStep(): Promise<void> {
   preflightStepLaunch(result.runtime);
   if (result.step === "verify") {
     await runOp(() =>
-      s.workflowRuns.closePreviousVerifyPane(
+      s.workflowRuns.closePreviousVerifyAgent(
         repo,
         { run: result.run.id },
         actorSessionId,
@@ -439,7 +442,7 @@ async function launchStep(): Promise<void> {
   for (const pointer of result.pointers) {
     console.log(`input\t${display(pointer.label)}\t${display(pointer.value)}`);
   }
-  const confirm = () =>
+  const confirm = (paneId: string) =>
     runOp(() =>
       s.workflowRuns.confirmStepLaunch(
         repo,
@@ -448,6 +451,11 @@ async function launchStep(): Promise<void> {
           step: result.step,
           sessionId: result.session_id,
           agentName: result.agent_name,
+          executionTarget: {
+            provider: "herdr",
+            targetId: paneId,
+            context: result.herdr.sessionName,
+          },
           pointers: result.pointers,
           headSha: result.head_sha,
           note,
@@ -457,8 +465,10 @@ async function launchStep(): Promise<void> {
     );
   const launched = spawnSync(result.herdr.argv[0], result.herdr.argv.slice(1), {
     encoding: "utf8",
-    stdio: "inherit",
+    stdio: ["inherit", "pipe", "inherit"],
   });
+  const launchStdout = launched.stdout ?? "";
+  if (launchStdout) process.stdout.write(launchStdout);
   if (launched.error) fail(`failed to launch herdr: ${launched.error.message}`);
   if (launched.signal) {
     fail(`herdr terminated by signal ${launched.signal}`);
@@ -466,10 +476,14 @@ async function launchStep(): Promise<void> {
   if (launched.status == null || launched.status !== 0) {
     fail(`herdr exited with status ${launched.status}`);
   }
+  const paneId = parseHerdrAgentPaneId(launchStdout);
+  if (!paneId) {
+    fail("herdr agent start returned no valid pane_id");
+  }
   // The child process is live once agent start succeeds, so persist that truth before ancillary
   // layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
   // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
-  await confirm();
+  await confirm(paneId);
   if (tabId) {
     try {
       layoutWorkflowTab({
@@ -657,7 +671,10 @@ async function stepStatus(): Promise<void> {
   }
 }
 
-async function nextAction(): Promise<void> {
+// The parent's own inputs to the run: a direct human instruction, or its verdict on the GitHub
+// references a delivered instruction asked it to read. State-derived instructions reach the parent
+// through the worker, so this command always carries one input rather than polling for progress.
+async function instruction(): Promise<void> {
   const runId = positiveInt(rest[0], "<run>");
   const event =
     flags.event === undefined ? undefined : positiveInt(flags.event, "--event");
@@ -667,11 +684,11 @@ async function nextAction(): Promise<void> {
       : typeof flags.note === "string"
         ? flags.note
         : undefined;
-  const watch = flags.watch === true;
-  if (
-    [event !== undefined, note !== undefined, watch].filter(Boolean).length > 1
-  ) {
-    fail("workflow next accepts either --watch, --event, or --note");
+  if (event !== undefined && note !== undefined) {
+    fail("workflow instruction accepts either --event or --note");
+  }
+  if (event === undefined && note === undefined) {
+    fail("workflow instruction requires --event or --note");
   }
   const requiresChanges =
     flags["requires-changes"] === undefined
@@ -681,6 +698,9 @@ async function nextAction(): Promise<void> {
         : flags["requires-changes"] === "false"
           ? false
           : fail("--requires-changes must be true or false");
+  if (event !== undefined && requiresChanges === undefined) {
+    fail("--event requires --requires-changes");
+  }
   const repo = await resolveRepo();
   const result = await runOp(async () =>
     (await svc()).workflowRuns.next(repo, {
@@ -688,7 +708,6 @@ async function nextAction(): Promise<void> {
       event,
       note,
       requiresChanges,
-      watch,
     }),
   );
   if (flags.json) {
@@ -727,6 +746,28 @@ async function turnDone(): Promise<void> {
     console.log(
       `declared turn done for Workflow run #${result.run} (event #${result.event_id})`,
     );
+}
+
+// The parent's first act after launch: declare that its agent is up and reads its pane. Instructions
+// are held until this arrives, because bytes written to the pane before the agent attaches to it are
+// lost and the delivery still records itself as done (#2156).
+async function parentReady(): Promise<void> {
+  const runId = positiveInt(rest[0], "<run>");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).workflowInstructions.parentReady(repo, { run: runId }),
+  );
+  if (flags.json) out(result);
+  else {
+    console.log(
+      `parent is ready for Workflow run #${result.run} (${result.ready_at})`,
+    );
+    if (result.instruction.status === "delivered") {
+      console.log(
+        `delivered Workflow instruction for event #${result.instruction.event}`,
+      );
+    }
+  }
 }
 
 async function escalate(): Promise<void> {
@@ -809,7 +850,7 @@ async function effect(): Promise<void> {
   const event = positiveInt(flags.event, "--event");
   if (!flags.effect) fail("--effect is required");
   const repo = await resolveRepo();
-  const service = (await svc()).workflowWatch;
+  const service = (await svc()).workflowEffects;
   const input = { repo, run, event, effect: flags.effect };
   const result = await runOp(() =>
     action === "begin"
@@ -932,14 +973,16 @@ export async function run(): Promise<void> {
     await runLifecycle();
   } else if (sub === "turn") {
     await turnDone();
+  } else if (sub === "parent-ready") {
+    await parentReady();
   } else if (sub === "escalate") {
     await escalate();
   } else if (sub === "deliver") {
     await deliver();
   } else if (sub === "escalate-human") {
     await escalateHuman();
-  } else if (sub === "next") {
-    await nextAction();
+  } else if (sub === "instruction") {
+    await instruction();
   } else if (sub === "effect") {
     await effect();
   } else if (sub === "cost-hold") {

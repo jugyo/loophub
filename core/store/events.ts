@@ -203,7 +203,7 @@ export function workflowSubjectEventById(input: {
  * This is the lower bound of the run's subscription. Without it, widening the subscription from
  * run-scoped twins to the run's whole issue and PR would make every run wake on the backlog its
  * cursor had never needed to skip. A missing started event is a visible error rather than a
- * fallback to 0 — see `workflowWatch.waitForEvent`.
+ * fallback to 0 — the instruction dispatcher treats a missing start event as a visible error.
  */
 export function workflowRunStartedEventId(
   repoId: number,
@@ -324,7 +324,8 @@ export function workflowRunObservationTrail(input: {
 
 // Workflow lifecycle events for one run, oldest first. Match the run id directly rather than the
 // issue / PR numbers also carried in these payloads: a PR may have successive runs, and its history
-// dialog must never blend their timelines.
+// dialog must never blend their timelines. The GLOB pair and the CAST are what let this seek
+// idx_events_repo_workflow_run_id instead of scanning the repo's events (see db.ts).
 export function eventsForWorkflowRun(
   repoId: number,
   runId: number,
@@ -335,7 +336,7 @@ export function eventsForWorkflowRun(
        WHERE repo_id = ?
          AND (type GLOB 'workflow_run.*'
            OR type GLOB 'workflow_step.*')
-         AND json_extract(payload, '$.id') = ?
+         AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
        ORDER BY id ASC`,
     )
     .all(repoId, runId) as EventRow[];
@@ -343,9 +344,10 @@ export function eventsForWorkflowRun(
 
 // Cost detection runs on every usage sweep, so this INSERT collapses a run's repeated over-limit
 // observations into at most one event per `reemitAfterMs` for the same cumulative limit (#1844).
-// It re-emits rather than emitting once: a parent that stopped between wake and `cost-hold` would
-// otherwise never see the interrupt again, because `next --watch` advances its cursor before
-// observing. The caller stops asking once the run is held or its limit is raised.
+// It re-emits rather than emitting once: a parent that stopped between the delivered instruction
+// and `cost-hold` would otherwise never see the interrupt again, because the worker advances its
+// cursor once the instruction is delivered. The caller stops asking once the run is held or its
+// limit is raised.
 export function emitWorkflowRunCostExceeded(
   repoId: number,
   actor: string,

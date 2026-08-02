@@ -774,19 +774,40 @@ describe("workflowActionPlan", () => {
         inputs: ["repos/me/repo/issues/comments/3"],
       },
     });
-    expect(github.decision?.submit?.args).toContain("<true|false>");
+    // Both verdicts are submitted as parent inputs; nothing here asks the parent to fetch an action.
+    expect(github.decision?.submit?.args).toEqual([
+      "workflow",
+      "instruction",
+      "42",
+      "--repo",
+      "me/repo",
+      "--event",
+      "12",
+      "--requires-changes",
+      "<true|false>",
+      "--json",
+    ]);
 
-    expect(
-      plan({
-        action: "ask_human",
-        reason: "Current HEAD could not be resolved.",
-        question_reason: "head_unresolved",
-      }),
-    ).toMatchObject({
+    const asked = plan({
+      action: "ask_human",
+      reason: "Current HEAD could not be resolved.",
+      question_reason: "head_unresolved",
+    });
+    expect(asked).toMatchObject({
       boundary: "human_judgement",
       after: "stop",
       decision: { question: "Current HEAD could not be resolved." },
     });
+    expect(asked.decision?.submit?.args).toEqual([
+      "workflow",
+      "instruction",
+      "42",
+      "--repo",
+      "me/repo",
+      "--note",
+      "<human answer>",
+      "--json",
+    ]);
   });
 
   test("encodes delivery, escalation, wait, and completion without hidden procedures", () => {

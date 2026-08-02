@@ -25,7 +25,6 @@ import {
   existingPullWorktreePath,
   pullWorktreeDirty,
 } from "./pull-worktree.ts";
-import { sessionRuntime } from "./resume.ts";
 import type {
   GithubPullWire,
   IssueListPullSummaryWire,
@@ -46,6 +45,7 @@ import {
   relatedSessionsUsageJSON,
   reviewGateJSON,
 } from "./serialize.ts";
+import { sessionRuntime } from "./session-runtime.ts";
 import * as S from "./store.ts";
 
 // Git-derived status fields for a PR row: mergeable state, diff totals, the
@@ -252,6 +252,11 @@ async function linkedPullDetail(
     status.forkBaseSha && status.baseSha
       ? await commitsAhead(repo.local_path, status.forkBaseSha, status.baseSha)
       : 0;
+  // #2147: the latest workflow run's rework count, so the issue list can show how many
+  // Execute -> Verify loops the PR has taken. `workflow_runs` is indexed on (workflow_id, status)
+  // only, so this scans the table — cheap against a table that holds one row per run and far below
+  // the git fan-out this sub-row already pays. The list never asks Web to fetch run state per PR.
+  const workflowRun = S.latestWorkflowRunForPull(repo.id, pr.number);
   return {
     number: pr.number,
     title: pr.title,
@@ -272,6 +277,8 @@ async function linkedPullDetail(
     github_pull: githubPullJSON(S.getGithubPull(pr.id)),
     // #863: whether this PR was force-stopped for exceeding its cost limit.
     cost_stopped: S.hasAnyCostStopEvent(repo.id, pr.number),
+    // #2152: conversation comments plus diff-comment messages as one total, both counted in SQL.
+    total_comments: S.countComments(pr.id) + S.countDiffFeedbackMessages(pr.id),
     // #783: agent cost (total tokens + cost) for the sub-row, or omitted when no linked session
     // has usage yet.
     ...(usageTotals
@@ -289,6 +296,8 @@ async function linkedPullDetail(
           },
         }
       : {}),
+    // #2147: rework loops of the linked workflow run, omitted when the PR has no run.
+    ...(workflowRun ? { workflow_rework_count: workflowRun.rework_count } : {}),
   };
 }
 
@@ -395,14 +404,12 @@ export async function pullJSON(
       : {}),
     // Detail-only (#298, #456): the PR's related sessions and derived work duration, newest first.
     // Gated so the PR list/dashboard stay O(1) git + no extra per-row query. Both share the same
-    // primarySessionId lookup (primaryDevSessionForPull) — the PR's resume/retro anchor — so it is
-    // computed once here rather than twice.
+    // primarySessionId lookup (primaryDevSessionForPull) is the implementation-session anchor used
+    // by work duration.
     ...(opts.withRelatedSessions
       ? (() => {
           const primarySessionId = S.primaryDevSessionForPull(row.id);
-          const relatedSessions = relatedSessionsJSON(row, {
-            primarySessionId,
-          });
+          const relatedSessions = relatedSessionsJSON(row);
           return {
             related_sessions: relatedSessions,
             related_sessions_usage: relatedSessionsUsageJSON(relatedSessions),

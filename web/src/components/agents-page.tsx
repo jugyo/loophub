@@ -22,6 +22,9 @@ export type SessionTree = {
   name: string;
   pullWorkspaces: PullWorkspaceGroup[];
   otherAgents: HerdrAgent[];
+  /** Set when this repo's `agent list` capture is failing and these agents are the last known
+   * ones (#2142): the ISO time they were captured. */
+  staleSince?: string;
 };
 
 /** Group a session's agents into PR-linked workspaces and everything else. */
@@ -52,6 +55,7 @@ export function buildSessionTree(group: HerdrRepoSessions): SessionTree | null {
     name,
     pullWorkspaces,
     otherAgents,
+    ...(group.stale_since ? { staleSince: group.stale_since } : {}),
   };
 }
 
@@ -79,7 +83,10 @@ export function AgentsPage() {
       </p>
 
       {data && !isError ? (
-        <HerdrSnapshotStaleness capturedAt={data.captured_at} />
+        <>
+          <HerdrSnapshotStaleness capturedAt={data.captured_at} />
+          <HerdrCaptureFailures repos={data.capture_failed_repos} />
+        </>
       ) : null}
 
       <div className="mt-6">
@@ -171,6 +178,32 @@ function HerdrSnapshotStaleness({
   );
 }
 
+// Names the repos whose own `herdr agent list` capture failed on the last sweep (#2142). Without
+// this, such a repo's agents were dropped from the snapshot and the page was indistinguishable
+// from "nothing is running there" — the failure was invisible for as long as it lasted. Repos that
+// were captured before keep showing their last known agents, marked in their own section; a repo
+// never captured successfully appears only here.
+function HerdrCaptureFailures({ repos }: { repos: string[] | undefined }) {
+  if (!repos?.length) return null;
+  return (
+    <p
+      role="alert"
+      className="mt-2 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400"
+    >
+      <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+      Could not read the agent list for {repos.join(", ")} — those agents may be
+      missing or out of date.
+    </p>
+  );
+}
+
+/** Absolute local time — the capture failure freezes this timestamp, so a relative age would
+ * silently drift until the next snapshot change. */
+function formatCaptureTime(iso: string): string {
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleTimeString();
+}
+
 function SessionSection({ tree }: { tree: SessionTree }) {
   return (
     <section
@@ -188,6 +221,13 @@ function SessionSection({ tree }: { tree: SessionTree }) {
         <p className="truncate text-sm text-muted-foreground" title={tree.repo}>
           {tree.repo}
         </p>
+        {tree.staleSince ? (
+          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+            <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+            Last known agents, captured {formatCaptureTime(tree.staleSince)} —
+            the agent list has not been readable since.
+          </p>
+        ) : null}
       </header>
 
       <div className="flex flex-col gap-4">

@@ -66,6 +66,7 @@ function makeNotification(
   return {
     id,
     kind: "merge_ready",
+    severity: "info",
     repo: { name: "me/proj" },
     title: `Notification ${id}`,
     body: `Body ${id}`,
@@ -150,10 +151,10 @@ describe("NotificationStack", () => {
     );
   });
 
-  it("renders each kind with its own icon and tone", async () => {
+  it("renders notification kinds and warning severity with distinct tones", async () => {
     notifications.value = [
       makeNotification(1, { kind: "merge_ready" }),
-      makeNotification(2, { kind: "over_budget" }),
+      makeNotification(2, { kind: "over_budget", severity: "warning" }),
       makeNotification(3, { kind: "human_attention" }),
     ];
 
@@ -174,8 +175,9 @@ describe("NotificationStack", () => {
     expect(mergeReady.getAttribute("class")).toContain("text-emerald-700");
 
     const overBudget = iconFor(2);
-    expect(overBudget.classList).toContain("lucide-circle-dollar-sign");
+    expect(overBudget.classList).toContain("lucide-triangle-alert");
     expect(overBudget.getAttribute("class")).toContain("text-amber-700");
+    expect(overBudget.closest("article")?.dataset.severity).toBe("warning");
 
     const humanAttention = iconFor(3);
     expect(humanAttention.classList).toContain("lucide-info");

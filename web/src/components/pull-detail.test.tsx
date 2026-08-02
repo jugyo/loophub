@@ -116,6 +116,7 @@ const reviews: PullReview[] = [
   {
     id: 1,
     user: { login: "design-bot" },
+    author_type: "agent",
     state: "PASS",
     body: "LGTM",
     head_sha: pull.commits![0].sha,
@@ -130,6 +131,7 @@ const lineComments: PullLineComment[] = [
     id: 1,
     pull_request_review_id: 1,
     user: { login: "design-bot" },
+    author_type: "agent",
     path: "web/src/a.ts",
     line: 1,
     side: "RIGHT",
@@ -145,6 +147,14 @@ const comments: IssueComment[] = [
     author_type: "human",
     body: "Thanks!",
     created_at: "2026-06-18T11:45:00Z",
+    reactions: [],
+  },
+  {
+    id: 11,
+    user: { login: "impl-bot" },
+    author_type: "agent",
+    body: "Rebased on main.",
+    created_at: "2026-06-18T11:50:00Z",
     reactions: [],
   },
 ];
@@ -164,21 +174,26 @@ const diffFeedback: DiffFeedbackThread[] = [
     },
     freshness: "current",
     created_by: "reviewer",
+    created_by_type: "agent",
     created_at: "2026-07-29T00:00:00Z",
     messages: [
       {
         id: 1,
         thread_id: 1,
         author: "reviewer",
+        author_type: "agent",
         body: "First comment",
         created_at: "2026-07-29T00:00:00Z",
+        reactions: [],
       },
       {
         id: 2,
         thread_id: 1,
         author: "author",
+        author_type: "agent",
         body: "Reply",
         created_at: "2026-07-29T00:01:00Z",
+        reactions: [],
       },
     ],
   },
@@ -306,7 +321,6 @@ describe("PullDetail", () => {
     expect(screen.getByText("main")).toBeTruthy();
     expect(screen.getByText("Render diff, reviews, comments.")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Develop" })).toBeNull();
-    expect(screen.queryByText("lh resume me/proj/30")).toBeNull();
 
     // The existing file summary opens its diff in a dialog instead of expanding inline.
     expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
@@ -349,6 +363,25 @@ describe("PullDetail", () => {
     // Bidirectional link back to the issue this PR closes.
     const linked = screen.getByText("#153").closest("a");
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
+  });
+
+  // #2129: a human post reads as @human whatever actor name it was stored under; agent posts keep
+  // their own author.
+  it("shows a human PR comment as @human and leaves an agent comment alone", async () => {
+    renderDetail();
+
+    const human = (await screen.findByText("Thanks!")).closest("article");
+    expect(human?.textContent).toContain("@human");
+    expect(human?.textContent).not.toContain("@me");
+    expect(
+      within(human as HTMLElement).queryByLabelText("AI agent"),
+    ).toBeNull();
+
+    const agent = screen.getByText("Rebased on main.").closest("article");
+    expect(agent?.textContent).toContain("@impl-bot");
+    expect(
+      within(agent as HTMLElement).getByLabelText("AI agent"),
+    ).toBeTruthy();
   });
 
   it("shows a PR comment before the request settles and reconciles it once", async () => {
@@ -531,6 +564,15 @@ describe("PullDetail", () => {
     const firstComment = await screen.findByText("Thanks!");
     const secondComment = screen.getByText("Second comment");
     const composer = screen.getByLabelText("Add a PR comment");
+    const firstCommentCard = firstComment.closest("article")!;
+    const secondCommentCard = secondComment.closest("article")!;
+
+    expect(
+      within(firstCommentCard).getByLabelText("Comment ID 9").textContent,
+    ).toBe("#9");
+    expect(
+      within(secondCommentCard).getByLabelText("Comment ID 10").textContent,
+    ).toBe("#10");
 
     expect(
       firstComment.compareDocumentPosition(secondComment) &
@@ -1149,6 +1191,7 @@ describe("PullDetail", () => {
       {
         id: 2,
         user: { login: "design-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "needs work",
         head_sha: "old1234deadbeef",
@@ -1158,6 +1201,7 @@ describe("PullDetail", () => {
       {
         id: 1,
         user: { login: "design-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "LGTM now",
         head_sha: pull.commits![0].sha,
@@ -1229,6 +1273,7 @@ describe("PullDetail", () => {
       {
         id: 1,
         user: { login: "design-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "older feedback",
         head_sha: "older12",
@@ -1238,6 +1283,7 @@ describe("PullDetail", () => {
       {
         id: 2,
         user: { login: "design-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "newest feedback",
         head_sha: "newer34",
@@ -1298,6 +1344,7 @@ describe("PullDetail", () => {
       {
         id: 1,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "round 1: needs work",
         head_sha: pull.commits![0].sha,
@@ -1307,6 +1354,7 @@ describe("PullDetail", () => {
       {
         id: 2,
         user: { login: "security-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "security ok",
         head_sha: pull.commits![0].sha,
@@ -1316,6 +1364,7 @@ describe("PullDetail", () => {
       {
         id: 3,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "round 2: looks good now",
         head_sha: pull.commits![0].sha,
@@ -1375,6 +1424,7 @@ describe("PullDetail", () => {
       {
         id: 1,
         user: { login: "security-bot" },
+        author_type: "agent",
         state: "PASS",
         body: "security ok",
         head_sha: pull.commits![0].sha,
@@ -1384,6 +1434,7 @@ describe("PullDetail", () => {
       {
         id: 2,
         user: { login: "quality-bot" },
+        author_type: "agent",
         state: "REQUEST_CHANGES",
         body: "still needs work",
         head_sha: pull.commits![0].sha,
@@ -1522,7 +1573,6 @@ describe("PullDetail", () => {
             created_at: "2026-06-18T11:00:00Z",
             updated_at: "2026-06-18T12:00:00Z",
             linked_at: "2026-06-18T11:00:00Z",
-            resume: { resumable: false },
           },
         ],
       }),

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
-import { HERDR_ID, herdrPaneRunArgv } from "../terminal/terminal-launch.ts";
+import { HERDR_ID, herdrSessionName } from "../terminal/terminal-launch.ts";
 import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
 import {
   classifyWorkflowSubjectEvent,
@@ -10,14 +10,15 @@ import {
   type WorkflowTwinSourceRef,
   workflowSubscriptionLowerBound,
 } from "../workflow/source-events.ts";
-import { runHerdr } from "./herdr-runner.ts";
+import { sendHerdrPrompt } from "./herdr-prompt.ts";
 import { repoOr404 } from "./shared.ts";
 import { workflowRuns } from "./workflow-runs.ts";
 
 const EFFECT_PREFIX = "workflow.instruction:";
 const MISSING_PARENT_EFFECT = `${EFFECT_PREFIX}parent-pane-missing`;
+const UNREADY_PARENT_EFFECT = `${EFFECT_PREFIX}parent-not-ready`;
 const HERDR_TIMEOUT_MS = 15_000;
-const PARENT_PANE_REGISTRATION_GRACE_MS = 120_000;
+const PARENT_LAUNCH_GRACE_MS = 120_000;
 
 export type WorkflowInstructionDispatchResult =
   | { status: "idle" }
@@ -80,10 +81,8 @@ function parentPane(run: S.WorkflowRunRow): string | null | undefined {
   return HERDR_ID.test(matches[0].pane_id) ? matches[0].pane_id : null;
 }
 
-function parentPaneRegistrationPending(run: S.WorkflowRunRow): boolean {
-  return (
-    Date.now() - Date.parse(run.created_at) < PARENT_PANE_REGISTRATION_GRACE_MS
-  );
+function parentLaunchPending(run: S.WorkflowRunRow): boolean {
+  return Date.now() - Date.parse(run.created_at) < PARENT_LAUNCH_GRACE_MS;
 }
 
 function instructionText(
@@ -136,13 +135,16 @@ function completeDecision(
   });
 }
 
-async function sendInstruction(
+function sendInstruction(
   repo: S.Repo,
   paneId: string,
   text: string,
 ): Promise<void> {
-  const submit = herdrPaneRunArgv(repo, paneId, text);
-  await runHerdr(submit[0], submit.slice(1), repo.local_path, {
+  return sendHerdrPrompt({
+    sessionName: herdrSessionName(repo),
+    paneId,
+    text,
+    cwd: repo.local_path,
     timeoutMs: HERDR_TIMEOUT_MS,
   });
 }
@@ -186,6 +188,73 @@ export const workflowInstructions = {
       });
       return pane;
     });
+  },
+
+  // Record readiness and synchronously release the instruction that was waiting on it. This keeps
+  // the command's success tied to delivery instead of relying on a later worker poll. A worker that
+  // still has the pre-readiness implementation may have claimed or completed the event already;
+  // surface that existing receipt instead of reporting a successful handshake.
+  async parentReady(
+    name: string,
+    input: { run: number },
+  ): Promise<{
+    run: number;
+    ready_at: string;
+    instruction: WorkflowInstructionDispatchResult;
+  }> {
+    const repo = repoOr404(name);
+    const run = S.getWorkflowRun(input.run);
+    if (!run || run.repo_id !== repo.id) {
+      throw new ServiceError(404, `Workflow run #${input.run} not found`);
+    }
+    const readyRow = S.markWorkflowRunParentReadyIfNoEffect(
+      run.id,
+      EFFECT_PREFIX,
+    );
+    if (!readyRow?.parent_ready_at || readyRow.parent_ready_confirmed !== 1) {
+      const pending = S.pendingWorkflowEventEffectWithPrefix(
+        run.id,
+        EFFECT_PREFIX,
+      );
+      if (pending) {
+        throw new ServiceError(
+          409,
+          `Workflow instruction delivery for event #${pending.event_id} has a pending receipt`,
+        );
+      }
+      const completed = S.latestCompletedWorkflowEventEffectWithPrefix(
+        run.id,
+        Number.MAX_SAFE_INTEGER,
+        EFFECT_PREFIX,
+      );
+      if (completed) {
+        throw new ServiceError(
+          409,
+          `Workflow instruction for event #${completed.event_id} was recorded before parent readiness; delivery cannot be confirmed`,
+        );
+      }
+      throw new ServiceError(
+        500,
+        `could not record parent readiness for Workflow run #${run.id}`,
+      );
+    }
+    const ready = { run: readyRow.id, ready_at: readyRow.parent_ready_at };
+
+    let instruction = await this.dispatchRun(ready.run);
+    while (instruction.status === "skipped") {
+      instruction = await this.dispatchRun(ready.run);
+    }
+    if (instruction.status === "idle") {
+      const current = S.getWorkflowRun(ready.run);
+      const event = current ? pendingEvent(current) : null;
+      if (event) {
+        throw new ServiceError(
+          409,
+          `Workflow instruction for event #${event.id} is pending but was not delivered`,
+        );
+      }
+    }
+    return { ...ready, instruction };
   },
 
   async dispatchRun(runId: number): Promise<WorkflowInstructionDispatchResult> {
@@ -255,27 +324,33 @@ export const workflowInstructions = {
       };
     }
 
-    // A run is created before its parent pane is launched and registered. Until that explicit
-    // readiness signal exists, allow the bounded launch window without reconciling the event.
-    // Afterward, claim a durable failure receipt so a lost registration is visible exactly once.
+    // A run is created before its parent pane is launched and registered, and the agent in that pane
+    // only starts reading it later still. Both facts gate delivery: `send-text` writes bytes to the
+    // pane's terminal, and an agent that has not finished starting never reads what was written
+    // before it attached — the delivery would record itself as done and the run would wait forever.
+    // Allow the bounded launch window for both without reconciling the event; afterward, claim a
+    // durable failure receipt so a parent that never came up is visible exactly once.
     const registeredPane = parentPane(run);
-    if (registeredPane === undefined) {
-      if (parentPaneRegistrationPending(run)) return { status: "idle" };
+    const paneMissing = registeredPane === undefined;
+    if (paneMissing || !run.parent_ready_at) {
+      if (parentLaunchPending(run)) return { status: "idle" };
       const claimed = S.beginWorkflowEventEffect(
         run.id,
         event.id,
-        MISSING_PARENT_EFFECT,
+        paneMissing ? MISSING_PARENT_EFFECT : UNREADY_PARENT_EFFECT,
         "subject",
       );
       if (!claimed?.acquired) {
         throw new ServiceError(
           409,
-          `could not record missing parent pane for Workflow run #${run.id}`,
+          `could not record unusable parent pane for Workflow run #${run.id}`,
         );
       }
       throw new ServiceError(
         409,
-        `parent pane registration timed out for Workflow run #${run.id}`,
+        paneMissing
+          ? `parent pane registration timed out for Workflow run #${run.id}`
+          : `parent agent readiness timed out for Workflow run #${run.id}`,
       );
     }
 

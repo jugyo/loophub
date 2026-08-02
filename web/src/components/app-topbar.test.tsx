@@ -68,7 +68,6 @@ function makeRepo(
 function renderTopbar(
   initialPath = "/",
   onOpenRepoSwitcher = vi.fn(),
-  experimental = false,
   debug = false,
 ) {
   const rootRoute = createRootRoute({
@@ -125,7 +124,7 @@ function renderTopbar(
     router,
     onOpenRepoSwitcher,
     ...render(
-      <WebConfigProvider config={{ experimental, debug }}>
+      <WebConfigProvider config={{ debug }}>
         <RouterProvider router={router} />
       </WebConfigProvider>,
     ),
@@ -134,7 +133,7 @@ function renderTopbar(
 
 describe("AppTopbar", () => {
   it("renders the required top-level links without Archived in the topbar", async () => {
-    const { container } = renderTopbar("/", vi.fn(), false, true);
+    const { container } = renderTopbar("/", vi.fn(), true);
     await screen.findByRole("link", { name: /LoopHub/ });
 
     expect(
@@ -190,7 +189,7 @@ describe("AppTopbar", () => {
     ).toBeNull();
 
     cleanup();
-    renderTopbar("/", vi.fn(), false, true);
+    renderTopbar("/", vi.fn(), true);
     expect(
       await screen.findByRole("button", { name: "Component debug mode" }),
     ).toBeTruthy();

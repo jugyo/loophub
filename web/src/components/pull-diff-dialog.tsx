@@ -19,6 +19,8 @@ import type {
   PullFile,
   PullLineComment,
 } from "@/api/types";
+import { CommentAuthorLabel } from "@/components/comment-author-label";
+import { CommentId } from "@/components/comment-id";
 import { CopyButton } from "@/components/copy-button";
 import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
@@ -900,10 +902,15 @@ function FileDiffContent({
       {comments.map((c) => (
         <div key={c.id} className="m-2 rounded-md border bg-muted/20 p-2">
           <div className="mb-1 text-xs">
-            💬 @{c.user.login}{" "}
+            💬{" "}
+            <CommentAuthorLabel
+              author={c.user.login}
+              authorType={c.author_type}
+            />{" "}
             <span className="text-muted-foreground">
               {c.path}:{c.line ?? "?"}
-            </span>
+            </span>{" "}
+            <CommentId id={c.id} />
           </div>
           <Markdown owner={owner} repo={repo}>
             {c.body}
@@ -1112,7 +1119,7 @@ function UnifiedDiff({
                   />
                   <td
                     className={cn(
-                      "whitespace-pre-wrap break-words pr-4",
+                      "whitespace-pre-wrap break-words pr-4 align-top",
                       (leftAnchored || rightAnchored) &&
                         "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
                       (leftSelected || rightSelected) && "bg-blue-500/10",
@@ -1330,7 +1337,8 @@ function LineNumber({
     <td
       aria-label={line === null ? undefined : `${label} line ${line}`}
       className={cn(
-        "group relative w-12 select-none border-r px-2 text-right text-muted-foreground/70",
+        // align-top keeps the number on the first visual line when the content cell wraps.
+        "group relative w-12 select-none border-r px-2 text-right align-top text-muted-foreground/70",
         choice && "cursor-pointer hover:bg-blue-500/15",
         anchored &&
           "bg-amber-500/15 text-amber-800 shadow-[inset_3px_0_0_0] shadow-amber-500/70 dark:text-amber-200",
@@ -1380,8 +1388,9 @@ function AddCommentButton({
     <button
       type="button"
       // Kept mounted but invisible so it stays reachable by keyboard; the cell below it starts
-      // the same selection when the pointer lands on the hidden button.
-      className="absolute left-0.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded-sm bg-blue-600 text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+      // the same selection when the pointer lands on the hidden button. top-2.5 centers it on the
+      // first line box (leading-5) so it stays beside the number when the content cell wraps.
+      className="absolute left-0.5 top-2.5 flex size-4 -translate-y-1/2 items-center justify-center rounded-sm bg-blue-600 text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
       aria-label={`Comment on ${label}`}
       onClick={onClick}
     >
@@ -1424,7 +1433,7 @@ function SplitLine({
             : `${side === "old" ? "Old" : "New"} line ${lineNumber}`
         }
         className={cn(
-          "group relative w-12 select-none border-r px-2 text-right text-muted-foreground/70",
+          "group relative w-12 select-none border-r px-2 text-right align-top text-muted-foreground/70",
           line && DIFF_LINE_CLASS[line.kind],
           side === "new" && "border-l",
           choice && "cursor-pointer hover:bg-blue-500/15",
@@ -1446,7 +1455,7 @@ function SplitLine({
       </td>
       <td
         className={cn(
-          "min-w-0",
+          "min-w-0 align-top",
           line && DIFF_LINE_CLASS[line.kind],
           anchored &&
             "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
@@ -1665,38 +1674,18 @@ function ThreadCard({
       className="m-2 rounded-md border bg-background p-3 font-sans text-sm"
       aria-label={`Diff thread ${thread.id}`}
     >
-      <header className="mb-2 flex items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold">@{thread.created_by}</span>
-          {thread.freshness !== "current" ? (
-            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">
-              {thread.freshness}
-            </span>
-          ) : null}
-        </div>
-        <span className="text-muted-foreground">
-          {displayedAnchor.path} · {displayedAnchor.side}{" "}
-          {displayedAnchor.start_line}
-          {displayedAnchor.end_line === displayedAnchor.start_line
-            ? ""
-            : `–${displayedAnchor.end_line}`}
-        </span>
+      <header className="mb-2 flex justify-end">
+        <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
       </header>
-      {thread.freshness !== "current" && thread.original_context ? (
-        <pre
-          className="mb-2 overflow-x-auto rounded-md border bg-muted/20 p-2 font-mono text-xs"
-          aria-label={`Historical context for thread ${thread.id}`}
-        >
-          {thread.original_context
-            .map((line) => `${line.anchored ? ">" : " "} ${line.text}`)
-            .join("\n")}
-        </pre>
-      ) : null}
       <div className="space-y-2">
         {thread.messages.map((message) => (
           <div key={message.id} className="rounded-md bg-muted/20 p-2">
             <div className="mb-1 text-xs text-muted-foreground">
-              @{message.author}
+              <CommentAuthorLabel
+                author={message.author}
+                authorType={message.author_type}
+              />{" "}
+              <CommentId id={message.id} />
             </div>
             <Markdown owner={owner} repo={repo}>
               {message.body}
@@ -1787,6 +1776,119 @@ function ThreadCard({
         </div>
       </div>
     </article>
+  );
+}
+
+type DisplayedDiffAnchor = Pick<
+  DiffFeedbackThread["anchor"],
+  "path" | "side" | "start_line" | "end_line"
+>;
+
+function DiffAnchorInfoPopover({
+  thread,
+  anchor,
+}: {
+  thread: DiffFeedbackThread;
+  anchor: DisplayedDiffAnchor;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const line = `${anchor.side} ${anchor.start_line}${
+    anchor.end_line === anchor.start_line ? "" : `–${anchor.end_line}`
+  }`;
+  const status =
+    thread.freshness.charAt(0).toUpperCase() + thread.freshness.slice(1);
+  const reason = thread.outdated_reason
+    ? thread.outdated_reason.charAt(0).toUpperCase() +
+      thread.outdated_reason.slice(1)
+    : null;
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative shrink-0">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label={`Show diff anchor information for thread ${thread.id}`}
+        aria-expanded={open}
+        className="size-6 text-muted-foreground"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Info className="size-3.5" />
+      </Button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-label={`Diff anchor information for thread ${thread.id}`}
+          className="absolute right-0 top-full z-20 mt-1 w-96 max-w-[calc(100vw-3rem)] rounded-md border bg-background p-3 text-foreground shadow-md"
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.stopPropagation();
+            setOpen(false);
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <h4 className="text-sm font-semibold">Diff anchor</h4>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Close diff anchor information"
+              className="-mr-1 -mt-1 size-6 text-muted-foreground"
+              onClick={() => setOpen(false)}
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
+          <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+            <dt className="text-muted-foreground">Status</dt>
+            <dd
+              className={cn(
+                thread.freshness !== "current" &&
+                  "text-amber-700 dark:text-amber-300",
+              )}
+            >
+              {status}
+            </dd>
+            <dt className="text-muted-foreground">Path</dt>
+            <dd className="break-all font-mono">{anchor.path}</dd>
+            <dt className="text-muted-foreground">Location</dt>
+            <dd className="font-mono">{line}</dd>
+            {reason ? (
+              <>
+                <dt className="text-muted-foreground">Reason</dt>
+                <dd>{reason}</dd>
+              </>
+            ) : null}
+          </dl>
+          {thread.freshness !== "current" && thread.original_context ? (
+            <div className="mt-3">
+              <h5 className="mb-1 text-xs font-medium">Historical context</h5>
+              <pre
+                className="overflow-x-auto rounded-md border bg-muted/20 p-2 font-mono text-xs"
+                aria-label={`Historical context for thread ${thread.id}`}
+              >
+                {thread.original_context
+                  .map(
+                    (contextLine) =>
+                      `${contextLine.anchored ? ">" : " "} ${contextLine.text}`,
+                  )
+                  .join("\n")}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

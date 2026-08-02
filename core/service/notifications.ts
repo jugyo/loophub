@@ -36,6 +36,18 @@ function contentForSignal(signal: S.NotificationSignalRow): {
       body: `GitHub reports ${signal.repo_full_name} PR #${signal.number} as merged. Close the LoopHub PR manually to close it in LoopHub.`,
     };
   }
+  if (signal.reason === "workflow_cost_exceeded") {
+    return {
+      title: "Workflow cost limit exceeded",
+      body: `Workflow run #${signal.workflow_run_id} for ${signal.repo_full_name} Issue #${signal.issue_number} / PR #${signal.number} exceeded the configured cost limit: $${signal.cost_usd} > $${signal.limit_usd}.`,
+    };
+  }
+  if (signal.reason === "workflow_rework_limit") {
+    return {
+      title: "Workflow rework limit reached",
+      body: `Workflow run #${signal.workflow_run_id} for ${signal.repo_full_name} Issue #${signal.issue_number} / PR #${signal.number} reached the rework limit. ${signal.detail}`,
+    };
+  }
   throw new Error(`unsupported notification signal reason: ${signal.reason}`);
 }
 
@@ -111,6 +123,7 @@ function backfillFromSignals(): void {
       const row = S.createNotification({
         repoId: signal.repo_id,
         kind: signal.kind,
+        severity: signal.severity,
         title: content.title,
         body: content.body,
         resourceKind: "pull",

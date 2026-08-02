@@ -1,6 +1,6 @@
 // Single registry (SSOT) for coding runtimes: claude-code (default), codex (#458), and grok.
-// Every runtime-specific fact that was previously duplicated across core/config.ts, core/resume.ts,
-// cli/dev.ts, cli/args.ts, core/service/{terminal,settings}.ts, and the web (agent-models.ts /
+// Every runtime-specific fact that was previously duplicated across core/config.ts, cli/dev.ts,
+// cli/args.ts, core/service/{terminal,settings}.ts, and the web (agent-models.ts /
 // settings-page.tsx / linked-pull-summary.tsx / agent-sessions-page.tsx) lives here once, so adding
 // a runtime is (close to) adding one entry below.
 //
@@ -43,10 +43,6 @@ export interface RuntimeDefinition {
   // mirror the `claude --effort` flag; codex's mirror the `model_reasoning_effort` config values.
   // grok's are TENTATIVE — grok has no verified user-facing reasoning-effort scale here.
   effortSuggestions: string[];
-  // Whether `lh resume` can re-enter a session recorded with this runtime. Only claude-code is
-  // resumable today (#164); codex/grok sessions are recorded but resolveRuntimeResume reports
-  // unknown-runtime for them.
-  resumable: boolean;
   // Whether the `--sandbox`/`--allow` managed-settings launch options apply to this runtime. Only
   // claude has that concept; codex/grok don't, and the CLI rejects the `--sandbox`/`--allow`
   // combination for them up front.
@@ -80,7 +76,6 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
       "claude-haiku-4-5-20251001",
     ],
     effortSuggestions: ["low", "medium", "high", "xhigh", "max"],
-    resumable: true,
     sandboxCapable: true,
     autoApproveArgs: ["--permission-mode", "auto"],
   },
@@ -101,7 +96,6 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
       "gpt-5.3-codex-spark",
     ],
     effortSuggestions: ["minimal", "low", "medium", "high"],
-    resumable: false,
     sandboxCapable: false,
     // Codex's closest single flag to Claude Code's auto mode; it also drops the sandbox.
     autoApproveArgs: ["--dangerously-bypass-approvals-and-sandbox"],
@@ -121,7 +115,6 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
       "grok-3",
     ],
     effortSuggestions: ["low", "medium", "high"],
-    resumable: false,
     sandboxCapable: false,
     // Auto-approve all tool executions. The older tentative `--force` is rejected by current `grok`
     // CLIs as unknown, which made Web Start workflow exit the agent pane at once (#1540).

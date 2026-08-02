@@ -34,9 +34,6 @@ import type {
   Repo,
   RepoAgentConfig,
   RepoMergeMode,
-  ScheduledTask,
-  ScheduledTaskRun,
-  ScheduledTaskWithRuns,
   SearchResult,
   Stats,
   TerminalLaunchResult,
@@ -277,83 +274,6 @@ export function setRepoAgentConfig(
   });
 }
 
-// --- scheduled tasks (#880) ---
-export interface ScheduledTaskInput {
-  title: string;
-  prompt: string;
-  agent: CodingAgent;
-  times: string[];
-  model?: string | null;
-  effort?: string | null;
-}
-
-export function listScheduledTasks(owner: string, repo: string) {
-  return rpc<ScheduledTask[]>("scheduledTasks/list", {
-    repo: full(owner, repo),
-  });
-}
-
-export function getScheduledTask(owner: string, repo: string, id: number) {
-  return rpc<ScheduledTaskWithRuns>("scheduledTasks/get", {
-    repo: full(owner, repo),
-    id,
-  });
-}
-
-export function createScheduledTask(
-  owner: string,
-  repo: string,
-  input: ScheduledTaskInput,
-  sessionId: string = getSessionId(),
-) {
-  return rpc<ScheduledTask>("scheduledTasks/create", {
-    repo: full(owner, repo),
-    ...clean({ ...input }),
-    session_id: sessionId,
-  });
-}
-
-export function updateScheduledTask(
-  owner: string,
-  repo: string,
-  id: number,
-  patch: Partial<ScheduledTaskInput>,
-  sessionId: string = getSessionId(),
-) {
-  return rpc<ScheduledTask>("scheduledTasks/update", {
-    repo: full(owner, repo),
-    id,
-    ...clean({ ...patch }),
-    session_id: sessionId,
-  });
-}
-
-export function deleteScheduledTask(
-  owner: string,
-  repo: string,
-  id: number,
-  sessionId: string = getSessionId(),
-) {
-  return rpc<{ ok: true }>("scheduledTasks/delete", {
-    repo: full(owner, repo),
-    id,
-    session_id: sessionId,
-  });
-}
-
-export function runScheduledTask(
-  owner: string,
-  repo: string,
-  id: number,
-  sessionId: string = getSessionId(),
-) {
-  return rpc<ScheduledTaskRun | null>("scheduledTasks/run", {
-    repo: full(owner, repo),
-    id,
-    session_id: sessionId,
-  });
-}
-
 export interface WorkflowInput {
   name: string;
   description?: string;
@@ -522,16 +442,12 @@ export function launchTerminalWorkflow(input: {
   workflow?:
     | "issue-create"
     | "workflow-create"
-    | "scheduled-task-create"
-    | "resume"
     | "github-pr-export"
     | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
   // Saved workflow id for the "workflow-run" launch (#1007).
   workflowId?: number;
-  session?: string;
-  cwd?: string;
   targetBranch?: string;
   prompt?: string;
   // One-shot runtime/model/effort overrides from the New issue dropdown (#1275/#1534).
@@ -684,13 +600,11 @@ export function postIssueComment(
   repo: string,
   number: number,
   body: string,
-  sessionId: string = getSessionId(),
 ) {
   return rpc<IssueComment>("comments/create", {
     repo: full(owner, repo),
     number,
     body,
-    session_id: sessionId,
   });
 }
 

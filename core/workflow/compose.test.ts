@@ -113,7 +113,7 @@ test("the English contract wrapper remains byte-identical", () => {
       "",
       "## Language",
       "",
-      "Write this run's natural-language outputs (plans, reports, reviews, summaries, notes, and comments) in English. Keep code, identifiers, commands, paths, and quoted log or error text in their original form.",
+      "Write all natural-language content generated for this run in English. This includes conversation outputs (plans, reports, reviews, summaries, notes, and comments) and artifacts such as issue and pull request titles and bodies, acceptance criteria, review text, and commit messages. Keep code, identifiers, commands, paths, and quoted log or error text in their original form.",
       "",
       "# Contract",
       "execute /tmp/worktree main",
@@ -179,6 +179,24 @@ test("every rendered contract carries the configured-language instruction", () =
       expect(contract).toContain(
         workflowMessages(language).languageInstruction,
       );
+      expect(contract).toContain(
+        language === "en"
+          ? "pull request titles and bodies"
+          : "pull request の title と body",
+      );
+      expect(contract).toContain(
+        language === "en"
+          ? "quoted log or error text in their original form"
+          : "引用した log / error text は原文のまま維持する",
+      );
+      if (language === "ja") {
+        expect(contract).toContain(
+          "section heading や定型 label など文書構造を支えるテキストは、既存の共通表記を維持する",
+        );
+        expect(contract).toContain(
+          "commit message は repository convention に従い英語で書く",
+        );
+      }
     }
   }
 });

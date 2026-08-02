@@ -51,8 +51,10 @@ const PR_REVIEW_DETAILS = `
 
 Usage:
   lh pr review <number> [options]
+  lh pr review view <number> --review <id> [options]
 
 Options:
+  --review <id>          Target review (required for view).
   --event <verdict>       Review verdict: comment (default), pass, or request_changes.
   --body <text>           Review summary.
   --commit <sha>          Pin the review to this head commit (defaults to the current PR head).
@@ -63,33 +65,55 @@ Options:
   --model <name>          Record the model that produced the review.
   --repo <owner/name>     Repository (defaults to the repository at the current path).
   --session-id <uuid>     Attribute the review to a registered agent session.
-  --json                  Print the submitted review as JSON.
+  --json                  Print the submitted review or review detail as JSON.
   --help                  Show this help without changing the database.`;
 
-const WORKFLOW_NEXT_DETAILS = `
+const PR_REVIEW_VIEW_DETAILS = `
 
 Usage:
-  lh workflow next <run> [--repo <owner/name>]
-    [--watch | --event <id> [--requires-changes true|false] | --note <text|->] [--json]
+  lh pr review view <number> --review <id> [options]
 
 Options:
-  --watch                   Wait for the run's next event, then return one advised action.
-  --event <id>              Advise from a specific observed event.
-  --requires-changes <bool> Supply the parent decision requested by the event.
-  --note <text|->           Process a direct human instruction; - reads the instruction from stdin.
+  --review <id>       Target review (required).
+  --repo <owner/name> Repository (defaults to the repository at the current path).
+  --json              Print the review and all of its line comments as JSON.
+  --help              Show this help without changing the database.`;
+
+const PR_REVIEW_RESPONSE_DETAILS = `
+
+Usage:
+  lh pr review-response add <number> --review <id> [options]
+  lh pr review-response list <number> --review <id> [options]
+
+Options:
+  --review <id>          Target review (required).
+  --review-comment <id>  Optional review comment within the target review.
+  --body <text>          Response body (required for add).
+  --repo <owner/name>    Repository (defaults to the repository at the current path).
+  --session-id <uuid>    Attribute the response to a registered agent session.
+  --json                 Print the response or response list as JSON.
+  --help                 Show this help without changing the database.`;
+
+const WORKFLOW_INSTRUCTION_DETAILS = `
+
+Usage:
+  lh workflow instruction <run> [--repo <owner/name>]
+    (--event <id> --requires-changes true|false | --note <text|->) [--json]
+
+Options:
+  --event <id>              The event whose GitHub references the parent read.
+  --requires-changes <bool> The parent's verdict on those references.
+  --note <text|->           A direct human instruction; - reads the instruction from stdin.
   --repo <owner/name>       Repository (defaults to the repository at the current path).
   --json                    Print the action, observations, and structured instructions as JSON.
   --help                    Show this help without reading or changing the database.
 
 Constraints:
-  --watch, --event, and --note are mutually exclusive.`;
+  --event and --note are mutually exclusive, and exactly one of them is required.
+  --event requires --requires-changes.`;
 
 export const commandHelp: readonly CommandHelp[] = [
   { path: ["info"], description: "Show the resolved LoopHub environment." },
-  {
-    path: ["resume"],
-    description: "Resume the primary development session for a pull request.",
-  },
   { path: ["repo"], description: "Manage registered repositories." },
   { path: ["repo", "add"], description: "Register a local repository." },
   { path: ["repo", "list"], description: "List registered repositories." },
@@ -174,6 +198,16 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Submit a pull request review.",
     details: PR_REVIEW_DETAILS,
   },
+  {
+    path: ["pr", "review", "view"],
+    description: "Show a pull request review and all of its line comments.",
+    details: PR_REVIEW_VIEW_DETAILS,
+  },
+  {
+    path: ["pr", "review-response"],
+    description: "Add or list responses linked to a pull request review.",
+    details: PR_REVIEW_RESPONSE_DETAILS,
+  },
   { path: ["pr", "close"], description: "Close a pull request." },
   { path: ["pr", "reopen"], description: "Reopen a pull request." },
   { path: ["handoff"], description: "Manage agent handoffs." },
@@ -253,9 +287,10 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Notify a human about a workflow escalation.",
   },
   {
-    path: ["workflow", "next"],
-    description: "Advise the next Workflow parent action.",
-    details: WORKFLOW_NEXT_DETAILS,
+    path: ["workflow", "instruction"],
+    description:
+      "Submit a parent input and return the instruction it produces.",
+    details: WORKFLOW_INSTRUCTION_DETAILS,
   },
   {
     path: ["workflow", "step"],

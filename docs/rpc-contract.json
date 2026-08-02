@@ -732,8 +732,6 @@
             "enum": [
               "issue-create",
               "workflow-create",
-              "scheduled-task-create",
-              "resume",
               "github-pr-export",
               "workflow-run"
             ]
@@ -749,12 +747,6 @@
           "workflowId": {
             "type": "integer",
             "minimum": 1
-          },
-          "session": {
-            "type": "string"
-          },
-          "cwd": {
-            "type": "string"
           },
           "targetBranch": {
             "type": "string"
@@ -1299,7 +1291,7 @@
     },
     {
       "name": "comments/create",
-      "description": "Add a comment to an issue.",
+      "description": "Add a human comment to an issue.",
       "params": {
         "type": "object",
         "properties": {
@@ -1312,10 +1304,6 @@
             "minimum": 1
           },
           "body": {
-            "type": "string",
-            "minLength": 1
-          },
-          "session_id": {
             "type": "string",
             "minLength": 1
           }
@@ -1354,6 +1342,41 @@
           "repo",
           "number",
           "body"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pullComments/react",
+      "description": "Toggle a human emoji reaction on a pull request comment.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "comment_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "emoji": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "comment_id",
+          "emoji"
         ],
         "additionalProperties": false
       },
@@ -1411,232 +1434,6 @@
       },
       "result": {
         "type": "array"
-      }
-    },
-    {
-      "name": "scheduledTasks/list",
-      "description": "List a repository's scheduled tasks.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "array"
-      }
-    },
-    {
-      "name": "scheduledTasks/get",
-      "description": "Get one scheduled task by id, with its recent run log.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "id": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "repo",
-          "id"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "scheduledTasks/create",
-      "description": "Create a scheduled task (title, prompt, agent, times, optional model/effort).",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1
-          },
-          "prompt": {
-            "type": "string",
-            "minLength": 1
-          },
-          "agent": {
-            "type": "string",
-            "enum": [
-              "claude-code",
-              "codex"
-            ]
-          },
-          "times": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "model": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "effort": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "title",
-          "prompt",
-          "agent",
-          "times"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "scheduledTasks/update",
-      "description": "Update a scheduled task's fields (only provided fields change).",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "id": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1
-          },
-          "prompt": {
-            "type": "string",
-            "minLength": 1
-          },
-          "agent": {
-            "type": "string",
-            "enum": [
-              "claude-code",
-              "codex"
-            ]
-          },
-          "times": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "model": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "effort": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "id"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "scheduledTasks/delete",
-      "description": "Delete a scheduled task and its run log.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "id": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "id"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "scheduledTasks/run",
-      "description": "Run a scheduled task immediately (Run now), without waiting for a registered time.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "id": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "id"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
       }
     },
     {
@@ -1818,6 +1615,9 @@
           },
           "path": {
             "type": "string"
+          },
+          "ignore_whitespace": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1849,6 +1649,10 @@
           },
           "orphaned": {
             "type": "boolean"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -1989,6 +1793,44 @@
           "number",
           "thread_id",
           "body"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "diffFeedback/resolve",
+      "description": "Resolve or reopen a diff feedback conversation.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "thread_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resolved": {
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "thread_id",
+          "resolved"
         ],
         "additionalProperties": false
       },

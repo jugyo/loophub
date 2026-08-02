@@ -24,14 +24,7 @@ const devCostLimitUsd = {
 } as const;
 const positiveInt = { type: "integer", minimum: 1 } as const;
 const stringArray = { type: "array", items: { type: "string" } } as const;
-// A model/effort override that may be explicitly cleared: a string, or null to fall back to the
-// per-agent application default (#880 scheduled tasks).
 const strOrNull = { type: ["string", "null"] } as const;
-// The coding agent a scheduled task launches (#880).
-const scheduledAgent = {
-  type: "string",
-  enum: ["claude-code", "codex"],
-} as const;
 const workflowFields = {
   description: str,
   execute_prompt: str,
@@ -383,8 +376,6 @@ export const methods: Record<string, MethodDef> = {
           enum: [
             "issue-create",
             "workflow-create",
-            "scheduled-task-create",
-            "resume",
             "github-pr-export",
             "workflow-run",
           ],
@@ -394,8 +385,6 @@ export const methods: Record<string, MethodDef> = {
         // Saved workflow id for the "workflow-run" launch (#1007) — passed to
         // `lh workflow start ... --workflow-id <id>`. Required only for that workflow.
         workflowId: positiveInt,
-        session: str,
-        cwd: str,
         targetBranch: str,
         prompt: str,
         // One-shot New issue overrides (#1275/#1534): force the runtime / model / effort
@@ -417,8 +406,6 @@ export const methods: Record<string, MethodDef> = {
         issueNumber: p.issueNumber,
         prNumber: p.prNumber,
         workflowId: p.workflowId,
-        session: p.session,
-        cwd: p.cwd,
         targetBranch: p.targetBranch,
         prompt: p.prompt,
         agent: p.agent,
@@ -645,13 +632,14 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.comments.list(p.repo, p.number, "me"),
   },
   "comments/create": {
-    description: "Add a comment to an issue.",
-    params: params(
-      { repo, number: positiveInt, body: strNonEmpty, session_id: sid },
-      ["repo", "number", "body"],
-    ),
+    description: "Add a human comment to an issue.",
+    params: params({ repo, number: positiveInt, body: strNonEmpty }, [
+      "repo",
+      "number",
+      "body",
+    ]),
     result: anyObject,
-    handler: (p) => svc.comments.create(p.repo, p.number, p.body, p.session_id),
+    handler: (p) => svc.comments.createHumanForIssue(p.repo, p.number, p.body),
   },
   "pullComments/create": {
     description: "Add a human comment to a pull request.",
@@ -702,97 +690,6 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo }, ["repo"]),
     result: anyArray,
     handler: (p) => svc.labels.list(p.repo),
-  },
-
-  // ---- scheduled tasks (#880) ----
-  "scheduledTasks/list": {
-    description: "List a repository's scheduled tasks.",
-    params: params({ repo }, ["repo"]),
-    result: anyArray,
-    handler: (p) => svc.scheduledTasks.list(p.repo),
-  },
-  "scheduledTasks/get": {
-    description: "Get one scheduled task by id, with its recent run log.",
-    params: params({ repo, id: positiveInt }, ["repo", "id"]),
-    result: anyObject,
-    handler: (p) => svc.scheduledTasks.get(p.repo, p.id),
-  },
-  "scheduledTasks/create": {
-    description:
-      "Create a scheduled task (title, prompt, agent, times, optional model/effort).",
-    params: params(
-      {
-        repo,
-        title: strNonEmpty,
-        prompt: strNonEmpty,
-        agent: scheduledAgent,
-        times: stringArray,
-        model: strOrNull,
-        effort: strOrNull,
-        session_id: sid,
-      },
-      ["repo", "title", "prompt", "agent", "times"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.scheduledTasks.create(
-        p.repo,
-        {
-          title: p.title,
-          prompt: p.prompt,
-          agent: p.agent,
-          times: p.times,
-          model: p.model,
-          effort: p.effort,
-        },
-        p.session_id,
-      ),
-  },
-  "scheduledTasks/update": {
-    description:
-      "Update a scheduled task's fields (only provided fields change).",
-    params: params(
-      {
-        repo,
-        id: positiveInt,
-        title: strNonEmpty,
-        prompt: strNonEmpty,
-        agent: scheduledAgent,
-        times: stringArray,
-        model: strOrNull,
-        effort: strOrNull,
-        session_id: sid,
-      },
-      ["repo", "id"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.scheduledTasks.update(
-        p.repo,
-        p.id,
-        {
-          title: p.title,
-          prompt: p.prompt,
-          agent: p.agent,
-          times: p.times,
-          model: p.model,
-          effort: p.effort,
-        },
-        p.session_id,
-      ),
-  },
-  "scheduledTasks/delete": {
-    description: "Delete a scheduled task and its run log.",
-    params: params({ repo, id: positiveInt, session_id: sid }, ["repo", "id"]),
-    result: anyObject,
-    handler: (p) => svc.scheduledTasks.delete(p.repo, p.id, p.session_id),
-  },
-  "scheduledTasks/run": {
-    description:
-      "Run a scheduled task immediately (Run now), without waiting for a registered time.",
-    params: params({ repo, id: positiveInt, session_id: sid }, ["repo", "id"]),
-    result: anyObject,
-    handler: (p) => svc.scheduledTasks.run(p.repo, p.id),
   },
 
   // ---- pulls ----
