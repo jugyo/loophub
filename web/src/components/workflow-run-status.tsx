@@ -73,6 +73,8 @@ export function WorkflowRunStatusSection({
   const { data: herdrSessions, isError: herdrSessionsError } = useHerdrSessions(
     { enabled: false },
   );
+  const herdrSessionsUnavailable =
+    herdrSessionsError || herdrSessions === undefined;
   useEffect(() => {
     if (
       state?.needs_human_reason === null ||
@@ -108,11 +110,9 @@ export function WorkflowRunStatusSection({
     state.needs_human_reason === null &&
     state.verification_status === "stale";
   const isVerified = state.done;
-  const working = isPullHerdrWorking(
-    herdrSessionsError ? undefined : herdrSessions,
-    `${owner}/${repo}`,
-    state.pr_number,
-  );
+  const working =
+    herdrSessionsUnavailable ||
+    isPullHerdrWorking(herdrSessions, `${owner}/${repo}`, state.pr_number);
   const overBudget = state.cost_limit_increase_available;
 
   return (

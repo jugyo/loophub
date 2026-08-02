@@ -551,20 +551,31 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Needs human")).toBeTruthy();
   });
 
-  it("glows only the current stage pill while the agent is working", () => {
+  it("glows and shows a bot only on stages whose latest agent is working", () => {
     render(
-      <WorkflowStepTracker state={state({ current_step: "verify" })} working />,
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state({ current_step: "verify" })}
+        herdrSessions={herdrSessions}
+      />,
     );
-    // The current stage (Verify) gets the slow glow; the others do not.
+    // Both latest step agents are working, independently of the domain's current step.
     expect(screen.getByText("Verify").className).toContain(
       "animate-[workflow-stage-glow",
     );
-    expect(screen.getByText("Execute").className).not.toContain(
-      "workflow-stage-glow",
+    expect(screen.getByText("Execute").className).toContain(
+      "animate-[workflow-stage-glow",
     );
     expect(screen.getByText("Done").className).not.toContain(
       "workflow-stage-glow",
     );
+    expect(
+      screen.getByRole("img", { name: "Execute agent working" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "Verify agent working" }),
+    ).toBeTruthy();
   });
 
   it("stays static when the agent is not working", () => {
@@ -572,6 +583,75 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Verify").className).not.toContain(
       "workflow-stage-glow",
     );
+  });
+
+  it("ignores an older working attempt when the latest step agent has stopped", () => {
+    const sessions: HerdrSessions = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "lh-me-proj",
+          agents: [
+            {
+              id: "w1:p1",
+              name: "executor #1-1",
+              status: "working",
+              pull: 10,
+              pull_closed: false,
+              focusable: true,
+              workflow: {
+                kind: "step",
+                runId: 1,
+                step: "execute",
+                sequence: 1,
+              },
+            },
+            {
+              id: "w1:p2",
+              name: "executor #1-2",
+              status: "done",
+              pull: 10,
+              pull_closed: false,
+              focusable: true,
+              workflow: {
+                kind: "step",
+                runId: 1,
+                step: "execute",
+                sequence: 2,
+              },
+            },
+          ],
+          pull_workspaces: [],
+          issue_workspaces: [],
+        },
+      ],
+    };
+    render(
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state()}
+        herdrSessions={sessions}
+      />,
+    );
+    expect(screen.getByText("Execute").className).not.toContain(
+      "workflow-stage-glow",
+    );
+    expect(
+      screen.queryByRole("img", { name: "Execute agent working" }),
+    ).toBeNull();
+  });
+
+  it("does not render merge-ready Done styling while any PR agent is working", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({ verification_status: "verified", done: true })}
+        working
+      />,
+    );
+    const done = screen.getByText("Done");
+    expect(done.className).not.toContain("text-green");
+    expect(done.querySelector("svg")).toBeNull();
   });
 
   it("uses larger pills at size md", () => {

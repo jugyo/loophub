@@ -432,10 +432,8 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
   });
 });
 
-// #1877: the bot icon's working pulse must stop once the linked workflow run reaches Done, even
-// while the PR stays open and a live herdr agent still reads "working".
-describe("LinkedPullSummaryRow working pulse vs workflow Done (#1877)", () => {
-  function herdrWorkingOnPull(): HerdrSessions {
+describe("LinkedPullSummaryRow workflow agent activity", () => {
+  function herdrWorkingOnPull(step?: "execute" | "verify"): HerdrSessions {
     return {
       repos: [
         {
@@ -449,6 +447,9 @@ describe("LinkedPullSummaryRow working pulse vs workflow Done (#1877)", () => {
               pull: 10,
               pull_closed: false,
               focusable: true,
+              workflow: step
+                ? { kind: "step", runId: 7, step, sequence: 1 }
+                : undefined,
             },
           ],
           pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
@@ -458,11 +459,30 @@ describe("LinkedPullSummaryRow working pulse vs workflow Done (#1877)", () => {
     };
   }
 
-  function botIcon() {
-    return document.querySelector("[data-agent-bot-icon]") as HTMLElement;
-  }
+  it.each([
+    "execute",
+    "verify",
+  ] as const)("shows the bot and glow inside the latest %s stage", async (step) => {
+    herdrSessionsData.value = herdrWorkingOnPull(step);
+    renderRowWithRun(
+      makeWorkflowRunState({
+        id: 7,
+        current_step: step,
+        verification_status: "unverified",
+      }),
+    );
+    await screen.findByRole("link", { name: "PR #10" });
+    expect(
+      screen.getByRole("img", {
+        name: `${step === "execute" ? "Execute" : "Verify"} agent working`,
+      }).className,
+    ).toContain("linked-pull-pulse");
+    expect(
+      screen.getByText(step === "execute" ? "Execute" : "Verify").className,
+    ).toContain("workflow-stage-glow");
+  });
 
-  it("pulses while the run is running and a live agent is working", async () => {
+  it("does not show a row-level bot for a working non-workflow agent", async () => {
     herdrSessionsData.value = herdrWorkingOnPull();
     renderRowWithRun(
       makeWorkflowRunState({
@@ -471,27 +491,29 @@ describe("LinkedPullSummaryRow working pulse vs workflow Done (#1877)", () => {
       }),
     );
     await screen.findByRole("link", { name: "PR #10" });
-    expect(botIcon().className).toContain("linked-pull-pulse");
+    expect(document.querySelector("[data-agent-bot-icon]")).toBeNull();
   });
 
-  it("stops pulsing once the run reaches Done, even on an open PR with a working agent", async () => {
-    herdrSessionsData.value = herdrWorkingOnPull();
+  it("keeps Done neutral while a PR agent is working", async () => {
+    herdrSessionsData.value = herdrWorkingOnPull("execute");
     renderRowWithRun(
       makeWorkflowRunState({
+        id: 7,
         current_step: "verify",
         verification_status: "verified",
         done: true,
       }),
     );
     await screen.findByRole("link", { name: "PR #10" });
-    expect(botIcon().className).not.toContain("linked-pull-pulse");
+    expect(screen.getByText("Done").className).not.toContain("text-green");
+    expect(screen.getByText("Done").querySelector("svg")).toBeNull();
   });
 
-  it("keeps pulsing for a working agent when no workflow run is linked", async () => {
-    herdrSessionsData.value = herdrWorkingOnPull();
+  it("shows no bot when no workflow run is linked", async () => {
+    herdrSessionsData.value = herdrWorkingOnPull("execute");
     renderRowWithRun(null);
     await screen.findByRole("link", { name: "PR #10" });
-    expect(botIcon().className).toContain("linked-pull-pulse");
+    expect(document.querySelector("[data-agent-bot-icon]")).toBeNull();
   });
 });
 

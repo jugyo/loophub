@@ -974,6 +974,69 @@ describe("PullDetail", () => {
     });
   });
 
+  it("disables Merge while an agent linked to the PR is working", async () => {
+    renderDetail({
+      "terminal/sessions": () => ({
+        repos: [
+          {
+            repo: "me/proj",
+            session_name: "me-proj",
+            agents: [
+              {
+                id: "w1:p1",
+                name: "executor #7-1",
+                status: "working",
+                pull: 30,
+                pull_closed: false,
+                focusable: true,
+              },
+            ],
+            pull_workspaces: [],
+            issue_workspaces: [],
+          },
+        ],
+      }),
+    });
+
+    const button = await screen.findByRole("button", { name: /^Merge$/i });
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(button.getAttribute("title")).toMatch(/agent is working/i);
+    fireEvent.click(button);
+    expect(rpcCall("pulls/merge")).toBeFalsy();
+  });
+
+  it("keeps Merge disabled while agent status is loading", async () => {
+    renderDetail({
+      "terminal/sessions": () => new Promise(() => {}),
+    });
+
+    const button = await screen.findByRole("button", { name: /^Merge$/i });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toMatch(/agent status is available/i);
+    fireEvent.click(button);
+    expect(rpcCall("pulls/merge")).toBeFalsy();
+  });
+
+  it("keeps Merge disabled when agent status cannot be loaded", async () => {
+    renderDetail({
+      "terminal/sessions": () => {
+        throw new RpcFault(500, "agent status unavailable");
+      },
+    });
+
+    const button = await screen.findByRole("button", { name: /^Merge$/i });
+    await waitFor(() => {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(button.getAttribute("title")).toMatch(
+        /agent status is available/i,
+      );
+    });
+    fireEvent.click(button);
+    expect(rpcCall("pulls/merge")).toBeFalsy();
+  });
+
   it("shows a fixed-duration loading state on Merge and re-enables it once loading and the mutation both settle (#560)", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let resolveMerge!: (v: unknown) => void;
@@ -1550,6 +1613,7 @@ describe("PullDetail", () => {
                 status: "working",
                 pull: 30,
                 pull_closed: false,
+                focusable: true,
               },
             ],
             pull_workspaces: [{ pull: 30, pane_id: "%3", status: "working" }],
@@ -1781,6 +1845,13 @@ describe("PullDetail", () => {
                 status: "working",
                 pull: 30,
                 pull_closed: false,
+                focusable: true,
+                workflow: {
+                  kind: "step",
+                  runId: 12,
+                  step: currentStep,
+                  sequence: 1,
+                },
               },
             ],
             pull_workspaces: [{ pull: 30, pane_id: "%3", status: "working" }],

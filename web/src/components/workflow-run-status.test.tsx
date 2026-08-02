@@ -208,6 +208,37 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.getByText("Reverify required")).toBeTruthy();
   });
 
+  it("shows merge-ready Done only after agent status is available", async () => {
+    const verifiedState = state({
+      current_step: "verify",
+      verification_status: "verified",
+      done: true,
+    });
+    const { rerender } = renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={verifiedState}
+      />,
+    );
+
+    const unavailableDone = await screen.findByText("Done");
+    expect(unavailableDone.className).not.toContain("text-green");
+    expect(unavailableDone.querySelector("svg")).toBeNull();
+
+    mocks.herdrSessions = { repos: [] };
+    rerender(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={verifiedState}
+      />,
+    );
+    const availableDone = await screen.findByText("Done");
+    expect(availableDone.className).toContain("text-green");
+    expect(availableDone.querySelector("svg")).toBeTruthy();
+  });
+
   it("surfaces the wait reason, review summary, and issue link while waiting for a human", async () => {
     renderInRouter(
       <WorkflowRunStatusSection

@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router";
 import { MessageSquare, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
-import { AgentBotIcon } from "@/components/agent-bot-icon";
 import {
   findPullHerdrWorkspace,
   isPullHerdrWorking,
@@ -446,6 +445,8 @@ export function LinkedPullSummaryRow({
   const popover = useHoverPopover();
   const { data: herdrSessions, isError: herdrSessionsError } =
     useHerdrSessions();
+  const herdrSessionsUnavailable =
+    herdrSessionsError || herdrSessions === undefined;
   const repoFullName = `${owner}/${repo}`;
   const workspace = findPullHerdrWorkspace(
     herdrSessions,
@@ -461,26 +462,7 @@ export function LinkedPullSummaryRow({
     linkedPullStatus(pull) ?? linkedPullStateBadge(pull);
   const status = operationalStatus;
   const costStopped = costStoppedBadge(pull);
-  const needsAttention =
-    operationalStatus.tone === "conflict" ||
-    operationalStatus.tone === "review-changes" ||
-    workspace?.status === "blocked";
   const isDone = pull.merged || pull.state === "closed";
-  // A linked workflow run that reached canonical Done means the work is ready for a human merge
-  // decision, so the pulse stops even while the PR stays open and a live agent still reads
-  // "working" (#1877). No run linked means false and keeps the previous behavior.
-  const { data: workflowRun } = useWorkflowRunForPull(owner, repo, pull.number);
-  const workflowDone = workflowRun?.done ?? false;
-  // The indigo pulse/ring means a live herdr agent is actively working (signal
-  // B). A dirty worktree alone no longer triggers it (#1125), so a session that
-  // ended with uncommitted changes stops reading "working" forever.
-  const showWorkingEffect = !isDone && !workflowDone && agentWorking;
-  // Idle: an open PR with no live agent and nothing needing attention. Its bot
-  // icon dims to the same inactive tone as done rows (isDone opacity-45 below),
-  // rather than looking active. conflict/changes keep a bright icon + red dot,
-  // and a cost-stopped PR stays bright — it is stalled and needs a human, not idle.
-  const isIdle =
-    !isDone && !showWorkingEffect && !needsAttention && !costStopped;
   const runtimeMetadata = agentRuntimeMetadataLabel(
     pull.agent_runtime,
     pull.agent_model,
@@ -518,17 +500,6 @@ export function LinkedPullSummaryRow({
           dimInactive && isDone && "opacity-45",
         )}
       >
-        <AgentBotIcon
-          working={showWorkingEffect}
-          needsAttention={needsAttention}
-          inactive={isIdle}
-        />
-        <span className="min-w-0 shrink truncate" title={runtimeMetadata}>
-          {runtimeMetadata}
-        </span>
-        <span aria-hidden="true" className="shrink-0 text-muted-foreground/70">
-          ·
-        </span>
         <Link
           to="/r/$owner/$repo/pulls/$number"
           params={{ owner, repo, number: String(pull.number) }}
@@ -567,12 +538,18 @@ export function LinkedPullSummaryRow({
           herdrUnavailable={herdrSessionsError}
           onStageInteract={popover.close}
           showWorkflowNode
-          working={showWorkingEffect}
+          working={agentWorking || herdrSessionsUnavailable}
         />
         {/* The row's right edge: the rework count sits directly left of the cost metrics, so the
             two run totals a human scans for read as one group, with how much has been said on the
             PR closing the row (#2152). */}
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          <span
+            className="max-w-40 truncate text-muted-foreground"
+            title={runtimeMetadata}
+          >
+            {runtimeMetadata}
+          </span>
           <WorkflowReworkCount count={pull.workflow_rework_count} />
           <Metrics pull={pull} overBudget={costStopped !== null} />
           <CommentCount count={pull.total_comments} />
