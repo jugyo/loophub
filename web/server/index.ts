@@ -5,6 +5,7 @@
 // (with HMR) by embedding Vite in middleware mode — no separate dev server. Resident
 // maintenance loops run in lh-worker.
 
+import { configureSlowOperationLogging } from "../../core/slow-operation.ts";
 import { LH_WEB_HELP, type LhWebArgs, parseLhWebArgs } from "./args.ts";
 import { createViteDev, type ViteDev } from "./dev.ts";
 import { createLhWebServer } from "./http.ts";
@@ -28,6 +29,7 @@ const { port } = args;
 setWebRuntimeConfig({
   debug: args.debug,
 });
+configureSlowOperationLogging(args.debug ? log.info : undefined);
 
 // Embed Vite so this single process serves the SPA with HMR alongside /rpc.
 // `vite` is assigned before listen(), so by the time requests arrive it is always set; the

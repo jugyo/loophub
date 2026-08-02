@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { configureSlowOperationLogging } from "../slow-operation.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-workspace-svc-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -71,6 +72,35 @@ test("workspaces.create creates a registry branch from the exact default HEAD", 
   expect(event && JSON.parse(event.payload)).toEqual({
     branch: "integration/stack",
   });
+});
+
+test("workspaces.list reports slow synchronous branch checks", () => {
+  const log = vi.fn();
+  configureSlowOperationLogging(log);
+  let tick = 0;
+  const clock = vi
+    .spyOn(performance, "now")
+    .mockImplementation(() => (tick++ % 2 === 0 ? 10 : 1011));
+
+  try {
+    expect(svc.workspaces.list("me/proj")).toContainEqual(
+      expect.objectContaining({ branch: "integration/stack" }),
+    );
+    expect(log).toHaveBeenCalledWith(
+      `[slow-operation] kind=git duration_ms=1001.0 command=${JSON.stringify([
+        "git",
+        "-C",
+        repoPath,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        "refs/heads/integration/stack",
+      ])}`,
+    );
+  } finally {
+    clock.mockRestore();
+    configureSlowOperationLogging();
+  }
 });
 
 test("workspaces.create rejects invalid and default branch names with 422", () => {

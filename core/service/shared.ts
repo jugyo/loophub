@@ -4,10 +4,10 @@
 // directly (S5); the JSON-RPC layer (S2) wraps the same procedures. No HTTP/Request types
 // leak in here. Modules import their other dependencies from the owning module, not through
 // this one.
-import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { ServiceError } from "../errors.ts";
+import { runGitSync } from "../git.ts";
 import * as S from "../store.ts";
 
 export const MAX_EVENTS_PER_PAGE = 100;
@@ -55,20 +55,16 @@ export function ensureLocalBranchFromDefault(
       `cannot resolve default branch "${defaultBranch}"`,
     );
   }
-  const result = spawnSync(
-    "git",
-    [
-      "-C",
-      repoPath,
-      "branch",
-      "--no-track",
-      "--",
-      branch,
-      `refs/heads/${defaultBranch}`,
-    ],
-    { encoding: "utf8" },
-  );
-  if (result.status !== 0) {
+  const result = runGitSync([
+    "-C",
+    repoPath,
+    "branch",
+    "--no-track",
+    "--",
+    branch,
+    `refs/heads/${defaultBranch}`,
+  ]);
+  if (result.code !== 0) {
     throw new ServiceError(
       422,
       `failed to create ${label} "${branch}" from default branch "${defaultBranch}": ${result.stderr.trim() || result.stdout.trim() || "git branch failed"}`,
@@ -100,23 +96,22 @@ export function assertCreatableLocalBranchName(
   label: string,
 ): void {
   assertOptionSafeLocalBranchName(branch, label);
-  const result = spawnSync(
-    "git",
-    ["check-ref-format", `refs/heads/${branch}`],
-    { encoding: "utf8" },
-  );
-  if (result.status !== 0) {
+  const result = runGitSync(["check-ref-format", `refs/heads/${branch}`]);
+  if (result.code !== 0) {
     throw new ServiceError(422, `${label} must be a local branch name`);
   }
 }
 
 export function localBranchExists(repoPath: string, branch: string): boolean {
-  const result = spawnSync(
-    "git",
-    ["-C", repoPath, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-    { encoding: "utf8" },
-  );
-  return result.status === 0;
+  const result = runGitSync([
+    "-C",
+    repoPath,
+    "show-ref",
+    "--verify",
+    "--quiet",
+    `refs/heads/${branch}`,
+  ]);
+  return result.code === 0;
 }
 
 // Author recorded when the acting session has no `agent_sessions` row. It names no one, so callers

@@ -7,7 +7,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   diffFiles,
   diffStat,
@@ -17,6 +17,7 @@ import {
   isIndexLockError,
   mergePull,
   pathInDiff,
+  runGitSync,
   sleep,
   worktreeAdd,
   worktreeList,
@@ -25,6 +26,7 @@ import {
   worktreeStatus,
 } from "./git.ts";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
+import { configureSlowOperationLogging } from "./slow-operation.ts";
 
 async function makeRepo(): Promise<string> {
   const p = mkdtempSync(join(tmpdir(), "lh-merge-lock-"));
@@ -40,6 +42,68 @@ async function makeRepo(): Promise<string> {
   await git(p, ["checkout", "-q", "main"]);
   return p;
 }
+
+test("git commands expose their argv to slow-operation diagnostics", async () => {
+  const p = await makeRepo();
+  const log = vi.fn();
+  configureSlowOperationLogging(log);
+  const clock = vi
+    .spyOn(performance, "now")
+    .mockReturnValueOnce(10)
+    .mockReturnValueOnce(1011);
+
+  try {
+    await git(p, ["status", "--short"]);
+    expect(log).toHaveBeenCalledWith(
+      `[slow-operation] kind=git duration_ms=1001.0 command=${JSON.stringify([
+        "git",
+        "-C",
+        p,
+        "status",
+        "--short",
+      ])}`,
+    );
+  } finally {
+    clock.mockRestore();
+    configureSlowOperationLogging();
+    rmSync(p, { recursive: true, force: true });
+  }
+});
+
+test("synchronous git commands expose their argv to slow-operation diagnostics", async () => {
+  const p = await makeRepo();
+  const log = vi.fn();
+  configureSlowOperationLogging(log);
+  const clock = vi
+    .spyOn(performance, "now")
+    .mockReturnValueOnce(10)
+    .mockReturnValueOnce(1011);
+
+  try {
+    const result = runGitSync([
+      "-C",
+      p,
+      "show-ref",
+      "--verify",
+      "refs/heads/main",
+    ]);
+    expect(result.code).toBe(0);
+    expect(log).toHaveBeenCalledWith(
+      `[slow-operation] kind=git duration_ms=1001.0 command=${JSON.stringify([
+        "git",
+        "-C",
+        p,
+        "show-ref",
+        "--verify",
+        "refs/heads/main",
+      ])}`,
+    );
+  } finally {
+    clock.mockRestore();
+    configureSlowOperationLogging();
+    rmSync(p, { recursive: true, force: true });
+  }
+});
 
 // index.lock 競合だけをリトライ対象に分類し、本物のエラーは即失敗扱いにする。
 test("isIndexLockError matches only lock contention, not real errors", () => {
