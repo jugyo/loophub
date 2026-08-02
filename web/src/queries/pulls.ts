@@ -559,13 +559,18 @@ function invalidatePull(
   qc.invalidateQueries({ queryKey: ["issue", full(owner, repo)] });
 }
 
-/** Merge a PR, then invalidate the PR + lists. */
+/** Merge a PR, then invalidate the PR and git-derived lists. */
 export function useMergePull(owner: string, repo: string, number: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (mergeMethod: "squash" | "merge" | "rebase") =>
       mergePull(owner, repo, number, mergeMethod),
-    onSuccess: () => invalidatePull(qc, owner, repo, number),
+    onSuccess: () => {
+      invalidatePull(qc, owner, repo, number);
+      qc.invalidateQueries({
+        queryKey: queryKeys.workspaces(full(owner, repo)),
+      });
+    },
   });
 }
 

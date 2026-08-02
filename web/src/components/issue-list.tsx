@@ -36,7 +36,7 @@ import {
   useLabelsList,
 } from "@/queries/issues";
 import { useRepo } from "@/queries/repos";
-import { useWorkspaces } from "@/queries/workspaces";
+import { useUnmergedWorkspaces, useWorkspaces } from "@/queries/workspaces";
 
 const STATE_TABS: {
   value: IssueListFilters["state"];
@@ -167,6 +167,11 @@ export function IssueList({
   const labelsQuery = useLabelsList(owner, repo, labelFilterMode === "select");
   const repoQuery = useRepo(owner, repo);
   const workspacesQuery = useWorkspaces(owner, repo);
+  const unmergedWorkspacesQuery = useUnmergedWorkspaces(
+    owner,
+    repo,
+    showWorkspaceFilter,
+  );
   const navigate = useNavigate();
   const allVisibleIssues = useMemo(() => {
     const pages = query.data?.pages ?? [];
@@ -179,6 +184,9 @@ export function IssueList({
   const activeWorkspaces = workspaces.filter(
     (workspace) => workspace.archived_at === null,
   );
+  const unmergedWorkspaces = Array.isArray(unmergedWorkspacesQuery.data)
+    ? unmergedWorkspacesQuery.data
+    : [];
   const visibleIssues = allVisibleIssues;
   const issueSections = useMemo(
     () => composeIssueSections(visibleIssues, defaultBranch, workspaces),
@@ -470,11 +478,44 @@ export function IssueList({
         />
       </div>
 
-      {query.isLoading || repoQuery.isLoading || workspacesQuery.isLoading ? (
+      {showWorkspaceFilter && unmergedWorkspaces.length > 0 ? (
+        <div
+          data-debug-component="UnmergedWorkspaces"
+          className="flex items-center gap-2 px-1 text-xs text-muted-foreground"
+        >
+          <span>Unmerged workspaces:</span>
+          <ul className="flex flex-wrap items-center gap-1.5">
+            {unmergedWorkspaces.map((workspace) => (
+              <li key={workspace.branch}>
+                <Link
+                  to="/r/$owner/$repo"
+                  params={{ owner, repo }}
+                  search={{
+                    labels: labels || undefined,
+                    state: state === "open" ? undefined : state,
+                    workspace: workspace.branch,
+                  }}
+                  className="block rounded border bg-muted/30 px-1.5 py-0.5 font-mono text-foreground/70 hover:bg-muted hover:text-foreground"
+                >
+                  {workspace.branch}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {query.isLoading ||
+      repoQuery.isLoading ||
+      workspacesQuery.isLoading ||
+      (showWorkspaceFilter && unmergedWorkspacesQuery.isLoading) ? (
         <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading…
         </div>
-      ) : query.isError || repoQuery.isError || workspacesQuery.isError ? (
+      ) : query.isError ||
+        repoQuery.isError ||
+        workspacesQuery.isError ||
+        (showWorkspaceFilter && unmergedWorkspacesQuery.isError) ? (
         <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
           Failed to load.
           {query.error instanceof Error ? ` ${query.error.message}` : null}
@@ -483,6 +524,9 @@ export function IssueList({
             : null}
           {workspacesQuery.error instanceof Error
             ? ` ${workspacesQuery.error.message}`
+            : null}
+          {unmergedWorkspacesQuery.error instanceof Error
+            ? ` ${unmergedWorkspacesQuery.error.message}`
             : null}
         </div>
       ) : visibleIssues.length === 0 ? (

@@ -543,6 +543,12 @@ export function listWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/list", { repo: full(owner, repo) });
 }
 
+export function listUnmergedWorkspaces(owner: string, repo: string) {
+  return rpc<Workspace[]>("workspaces/listUnmerged", {
+    repo: full(owner, repo),
+  });
+}
+
 export function listArchivedWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/listArchived", {
     repo: full(owner, repo),

@@ -163,9 +163,74 @@ test("workspaces.list reports a deleted registry branch as missing", () => {
   );
 });
 
+test("workspaces.listUnmerged selects active existing non-default branches ahead of default", async () => {
+  const repo = S.getRepo("me", "proj")!;
+  S.createWorkspace(repo.id, "main");
+
+  svc.workspaces.create("me/proj", { branch: "unmerged/first" });
+  git(["checkout", "-q", "unmerged/first"]);
+  writeFileSync(join(repoPath, "first.txt"), "first\n");
+  git(["add", "first.txt"]);
+  git(["commit", "-qm", "first workspace commit"]);
+  git(["checkout", "-q", "main"]);
+
+  svc.workspaces.create("me/proj", { branch: "unmerged/second" });
+  git(["checkout", "-q", "unmerged/second"]);
+  writeFileSync(join(repoPath, "second.txt"), "second\n");
+  git(["add", "second.txt"]);
+  git(["commit", "-qm", "second workspace commit"]);
+  git(["checkout", "-q", "main"]);
+
+  svc.workspaces.create("me/proj", { branch: "merged/already" });
+  git(["checkout", "-q", "merged/already"]);
+  writeFileSync(join(repoPath, "merged.txt"), "merged\n");
+  git(["add", "merged.txt"]);
+  git(["commit", "-qm", "merged workspace commit"]);
+  git(["checkout", "-q", "main"]);
+  git(["merge", "--no-ff", "-qm", "merge workspace", "merged/already"]);
+
+  svc.workspaces.create("me/proj", { branch: "missing/ahead" });
+  git(["branch", "-D", "missing/ahead"]);
+
+  svc.workspaces.create("me/proj", { branch: "archived/ahead" });
+  git(["checkout", "-q", "archived/ahead"]);
+  writeFileSync(join(repoPath, "archived.txt"), "archived\n");
+  git(["add", "archived.txt"]);
+  git(["commit", "-qm", "archived workspace commit"]);
+  git(["checkout", "-q", "main"]);
+  svc.workspaces.archive("me/proj", "archived/ahead");
+
+  git(["tag", "main", "refs/heads/main"]);
+  git(["tag", "unmerged/first", "refs/heads/main"]);
+
+  expect(await svc.workspaces.listUnmerged("me/proj")).toEqual([
+    expect.objectContaining({
+      branch: "unmerged/first",
+      archived_at: null,
+      branch_exists: true,
+    }),
+    expect.objectContaining({
+      branch: "unmerged/second",
+      archived_at: null,
+      branch_exists: true,
+    }),
+  ]);
+
+  git(["branch", "-m", "main", "default/temporarily-missing"]);
+  try {
+    await expect(svc.workspaces.listUnmerged("me/proj")).rejects.toMatchObject({
+      status: 500,
+      message: expect.stringContaining("failed to compare workspace branch"),
+    });
+  } finally {
+    git(["branch", "-m", "default/temporarily-missing", "main"]);
+  }
+});
+
 test("settings lists exclude the default branch without changing generic lists", () => {
   const repo = S.getRepo("me", "proj")!;
-  S.createWorkspace(repo.id, repo.default_branch);
+  S.getWorkspace(repo.id, repo.default_branch) ??
+    S.createWorkspace(repo.id, repo.default_branch);
 
   expect(svc.workspaces.list("me/proj")).toContainEqual(
     expect.objectContaining({ branch: repo.default_branch }),

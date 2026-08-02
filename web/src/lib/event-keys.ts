@@ -69,14 +69,20 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["issues"]);
     }
   } else if (type.startsWith("pull_request.")) {
+    const gitGraphChanged =
+      type === "pull_request.updated" || type === "pull_request.merged";
     if (repo) {
       keys.push([...queryKeys.pulls(repo)]);
       if (typeof number === "number") {
         keys.push([...queryKeys.pull(repo, number)]);
       }
+      if (gitGraphChanged) {
+        keys.push([...queryKeys.workspaces(repo)]);
+      }
     } else {
       keys.push(["pulls"]);
       keys.push(["pull"]);
+      if (gitGraphChanged) keys.push(["workspaces"]);
     }
     // Issue rows embed their linked PR's live status (mergeable/conflict, working,
     // review state, diff totals) via issueListItemJSON, so a PR change must also

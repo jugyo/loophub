@@ -1,4 +1,5 @@
 import { ServiceError } from "../errors.ts";
+import { git } from "../git.ts";
 import {
   repoJSON,
   type WorkspaceResolutionWire,
@@ -18,6 +19,25 @@ function workspaceOr404(repoId: number, branch: string): S.Workspace {
   const workspace = S.getWorkspace(repoId, branch);
   if (!workspace) throw new ServiceError(404, "Not Found");
   return workspace;
+}
+
+async function hasUnmergedCommits(
+  repoPath: string,
+  defaultBranch: string,
+  workspaceBranch: string,
+): Promise<boolean> {
+  const result = await git(repoPath, [
+    "rev-list",
+    "--count",
+    `refs/heads/${defaultBranch}..refs/heads/${workspaceBranch}`,
+  ]);
+  if (result.code !== 0) {
+    throw new ServiceError(
+      500,
+      `failed to compare workspace branch "${workspaceBranch}" with default branch "${defaultBranch}": ${result.stderr.trim() || result.stdout.trim() || "git rev-list failed"}`,
+    );
+  }
+  return Number(result.stdout.trim()) > 0;
 }
 
 function setArchived(
@@ -116,6 +136,23 @@ export const workspaces = {
 
   list(repo: string) {
     return listWorkspaceRows(repo, false, false);
+  },
+
+  async listUnmerged(repo: string) {
+    const r = repoOr404(repo);
+    const candidates = S.listWorkspaces(r.id).filter(
+      (workspace) =>
+        workspace.branch !== r.default_branch &&
+        localBranchExists(r.local_path, workspace.branch),
+    );
+    const unmerged = await Promise.all(
+      candidates.map((workspace) =>
+        hasUnmergedCommits(r.local_path, r.default_branch, workspace.branch),
+      ),
+    );
+    return candidates
+      .filter((_workspace, index) => unmerged[index])
+      .map((workspace) => workspaceJSON(workspace, true));
   },
 
   listArchived(repo: string) {

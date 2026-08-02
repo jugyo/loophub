@@ -163,6 +163,24 @@ describe("useLoopHubEvents", () => {
     for (const rendered of renders) rendered.unmount();
   });
 
+  it("invalidates git-derived workspace queries after a pull merge event", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([ev(7, "pull_request.merged")]))
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    render(<HookHarness />, { wrapper: wrapper(client) });
+
+    await vi.waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["workspaces", "me/proj"],
+      }),
+    );
+  });
+
   it("continues polling after an empty response using the saved cursor", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

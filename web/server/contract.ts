@@ -539,6 +539,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.workspaces.list(p.repo),
   },
+  "workspaces/listUnmerged": {
+    description:
+      "List active workspaces with commits not merged into the default branch.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.workspaces.listUnmerged(p.repo),
+  },
   "workspaces/listArchived": {
     description: "List archived workspaces in a repository.",
     params: params({ repo }, ["repo"]),

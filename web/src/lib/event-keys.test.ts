@@ -32,6 +32,7 @@ describe("queryKeysForEvent", () => {
     );
     expect(keys).toContainEqual(["pulls", "me/proj"]);
     expect(keys).toContainEqual(["pull", "me/proj", 13]);
+    expect(keys).toContainEqual(["workspaces", "me/proj"]);
   });
 
   it("maps a global terminal.sessions_updated event to the terminal sessions query (#1665)", () => {
@@ -60,6 +61,7 @@ describe("queryKeysForEvent", () => {
     );
     expect(keys).toContainEqual(["issues", "me/proj"]);
     expect(keys).toContainEqual(["issue", "me/proj"]);
+    expect(keys).toContainEqual(["workspaces", "me/proj"]);
   });
 
   it("falls back to broad issue keys for a repo-less pull_request event (#324)", () => {
@@ -68,6 +70,7 @@ describe("queryKeysForEvent", () => {
     );
     expect(keys).toContainEqual(["issues"]);
     expect(keys).toContainEqual(["issue"]);
+    expect(keys).toContainEqual(["workspaces"]);
   });
 
   it("maps agent_session events to agent-sessions", () => {
