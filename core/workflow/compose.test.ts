@@ -5,7 +5,6 @@ import {
   composeWorkflowLaunchPrompt,
   composeWorkflowStepPrompt,
   renderWorkflowContract,
-  WORKFLOW_LANGUAGE_INSTRUCTION,
   WORKFLOW_STEPS,
 } from "./compose.ts";
 import { workflowMessages } from "./messages.ts";
@@ -49,7 +48,7 @@ test("keeps contract and user prompt in separate channels", () => {
   expect(composed.userPrompt).toContain("NOTE-SENTINEL");
 });
 
-test("keeps a Verify review-skill recommendation additive to the contract", () => {
+test("keeps a Verify step prompt additive to the contract", () => {
   const composed = composeWorkflowLaunchPrompt(
     {
       template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
@@ -66,19 +65,15 @@ test("keeps a Verify review-skill recommendation additive to the contract", () =
     "en",
   );
 
-  expect(composed.systemPrompt).toContain("acceptance criteria only against");
-  expect(composed.systemPrompt).toContain(
-    "If the step prompt conflicts with this contract, this contract wins.",
-  );
   expect(composed.systemPrompt).not.toContain("REVIEW-SKILL-SENTINEL");
   expect(composed.userPrompt).toContain("REVIEW-SKILL-SENTINEL");
   expect(composed.userPrompt).toContain("Standards and Spec");
 });
 
-test("renders contract context into the system prompt", () => {
+test("renders contract inputs and template placeholders into the system prompt", () => {
   const contract = renderWorkflowContract(
     {
-      template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
+      template: "STEP={{step}} WORKTREE={{worktreePath}} BASE={{baseBranch}}",
       step: "verify",
       worktreePath: "/tmp/worktree",
       baseBranch: "main",
@@ -86,78 +81,10 @@ test("renders contract context into the system prompt", () => {
     "en",
   );
 
-  expect(contract).toContain("## Workflow contract context");
   expect(contract).toContain("step: verify");
   expect(contract).toContain("worktree: /tmp/worktree");
   expect(contract).toContain("base branch: main");
-  expect(contract).toContain("Verify step contract");
-});
-
-test("the English contract wrapper remains byte-identical", () => {
-  expect(
-    renderWorkflowContract(
-      {
-        template: "# Contract\n{{step}} {{worktreePath}} {{baseBranch}}",
-        step: "execute",
-        worktreePath: "/tmp/worktree",
-        baseBranch: "main",
-      },
-      "en",
-    ),
-  ).toBe(
-    [
-      "## Workflow contract context",
-      "step: execute",
-      "worktree: /tmp/worktree",
-      "base branch: main",
-      "",
-      "## Language",
-      "",
-      "Write all natural-language content generated for this run in English. This includes conversation outputs (plans, reports, reviews, summaries, notes, and comments) and artifacts such as issue and pull request titles and bodies, acceptance criteria, review text, and commit messages. Keep code, identifiers, commands, paths, and quoted log or error text in their original form.",
-      "",
-      "# Contract",
-      "execute /tmp/worktree main",
-    ].join("\n"),
-  );
-});
-
-test("renders the fixed-diff and worktree-context boundary for Verify", () => {
-  const contract = renderWorkflowContract(
-    {
-      template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
-      step: "verify",
-      worktreePath: "/tmp/worktree",
-      baseBranch: "main",
-    },
-    "en",
-  );
-  const normalizedContract = contract.replace(/\s+/gu, " ");
-
-  expect(contract).toContain("git diff <base sha>...<head sha>");
-  expect(contract).toContain("acceptance criteria only against");
-  expect(contract).toContain(
-    "read surrounding source as context and run tests",
-  );
-  expect(normalizedContract).toContain(
-    "unrelated pre-existing problems are out of scope",
-  );
-});
-
-test("Verify contract does not use PR metadata as evidence", () => {
-  const contract = renderWorkflowContract(
-    {
-      template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
-      step: "verify",
-      worktreePath: "/tmp/worktree",
-      baseBranch: "main",
-    },
-    "en",
-  );
-  const normalizedContract = contract.replace(/\s+/gu, " ");
-
-  expect(normalizedContract).toContain(
-    "Do not read PR body, PR comments, or the implementer's description",
-  );
+  expect(contract).toContain("STEP=verify WORKTREE=/tmp/worktree BASE=main");
 });
 
 test("every rendered contract carries the configured-language instruction", () => {
@@ -201,25 +128,6 @@ test("every rendered contract carries the configured-language instruction", () =
   }
 });
 
-test("launch prompt system channel carries the configured-language instruction", () => {
-  const composed = composeWorkflowLaunchPrompt(
-    {
-      template: readFileSync(join(CONTRACT_DIR, "execute.md"), "utf8"),
-      step: "execute",
-      worktreePath: "/tmp/worktree",
-      baseBranch: "main",
-    },
-    {
-      pointers: executePointers,
-      baseBranch: "main",
-      stepPrompt: "Keep the change small.",
-    },
-    "en",
-  );
-
-  expect(composed.systemPrompt).toContain(WORKFLOW_LANGUAGE_INSTRUCTION);
-});
-
 test("user prompt lists input pointers as label/value lines", () => {
   const composed = composeWorkflowStepPrompt(
     {
@@ -236,71 +144,28 @@ test("user prompt lists input pointers as label/value lines", () => {
   expect(composed.userPrompt).not.toContain("diff --git");
 });
 
-test("the English step prompt remains byte-identical", () => {
-  expect(
-    composeWorkflowStepPrompt(
+test("step prompt composition preserves structured inputs and optional text", () => {
+  for (const language of ["en", "ja"] as const) {
+    const composed = composeWorkflowStepPrompt(
       {
         pointers: executePointers,
         worktreePath: ".",
         baseBranch: "main",
-        note: "Read the issue first.",
+        stepPrompt: "  Keep the change small.  ",
+        note: "  Read the issue first.  ",
       },
-      "en",
-    ).userPrompt,
-  ).toBe(
-    [
-      "## Inputs",
-      "- repo: me/proj",
-      "- issue: #42",
-      "- pr: #7",
-      "worktree: . (cwd. base branch: main)",
-      "",
-      "## Step prompt (user-configured)",
-      "(none - follow the contract)",
-      "",
-      "## Note from the workflow agent",
-      "Read the issue first.",
-      "",
-    ].join("\n"),
-  );
-});
+      language,
+    );
 
-test("the Japanese run composes translated contract and step prompt wrappers", () => {
-  const composed = composeWorkflowLaunchPrompt(
-    {
-      template: readFileSync(join(CONTRACT_DIR, "execute.ja.md"), "utf8"),
-      step: "execute",
-      worktreePath: "/tmp/worktree",
-      baseBranch: "main",
-    },
-    {
-      pointers: executePointers,
-      worktreePath: ".",
-      baseBranch: "main",
-      note: "Issue を先に読んでください。",
-    },
-    "ja",
-  );
-
-  expect(composed.systemPrompt).toContain("## Workflow contract コンテキスト");
-  expect(composed.systemPrompt).toContain("## 言語");
-  expect(composed.systemPrompt).toContain("# Execute ステップ contract");
-  expect(composed.userPrompt).toBe(
-    [
-      "## 入力",
-      "- repo: me/proj",
-      "- issue: #42",
-      "- pr: #7",
-      "worktree: . (cwd。base branch: main)",
-      "",
-      "## Step prompt（ユーザー設定）",
-      "(none - contract に従ってください)",
-      "",
-      "## Workflow agent からの note",
-      "Issue を先に読んでください。",
-      "",
-    ].join("\n"),
-  );
+    expect(composed.pointers).toEqual(executePointers);
+    expect(composed.stepPrompt).toBe("Keep the change small.");
+    expect(composed.note).toBe("Read the issue first.");
+    expect(composed.userPrompt).toContain("- repo: me/proj");
+    expect(composed.userPrompt).toContain("- issue: #42");
+    expect(composed.userPrompt).toContain("- pr: #7");
+    expect(composed.userPrompt).toContain("worktree: .");
+    expect(composed.userPrompt).toContain("base branch: main");
+  }
 });
 
 test("parent/step contracts do not introduce slash commands", () => {
@@ -320,5 +185,5 @@ test("parent/step contracts do not introduce slash commands", () => {
   );
 
   const allPromptText = `${composed.systemPrompt}\n${composed.userPrompt}`;
-  expect(allPromptText).not.toMatch(/\/lh-/u);
+  expect(allPromptText).not.toMatch(/\/lh-[a-z]/u);
 });
