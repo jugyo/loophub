@@ -1,5 +1,5 @@
-import { ENV_ISSUE_CREATE_HERDR_LAUNCH } from "../core/resume.ts";
 import type { CurrentHerdrPaneContext } from "../core/service/issues.ts";
+import { ENV_ISSUE_CREATE_HERDR_LAUNCH } from "../core/session-runtime.ts";
 import { HERDR_ID } from "../core/terminal/terminal-launch.ts";
 
 export function currentHerdrPaneContext(

@@ -15,3 +15,9 @@ test("every runtime defines the auto-approve argv the launch paths append", () =
   ]);
   expect(RUNTIMES.grok.autoApproveArgs).toEqual(["--always-approve"]);
 });
+
+test("runtime definitions do not expose a session resume capability", () => {
+  for (const runtime of Object.values(RUNTIMES)) {
+    expect(runtime).not.toHaveProperty("resumable");
+  }
+});

@@ -156,7 +156,16 @@ describe("--help", () => {
 
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout).toContain("lh — LoopHub CLI");
+    expect(result.stdout).not.toContain("lh resume");
     expect(result.stdout).not.toContain("ready-for-review");
+  });
+
+  test("rejects the retired resume command", () => {
+    const result = lh(["resume", "1"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("lh — LoopHub CLI");
+    expect(result.stdout).not.toContain("lh resume");
   });
 
   test("rejects an unknown nested command instead of showing parent help", () => {

@@ -271,12 +271,7 @@ export interface ScheduledTaskWithRuns extends ScheduledTask {
 
 export type PullRequest = PullWire;
 
-/**
- * A session related to a PR or issue (#298). Mirrors core/serialize.ts relatedSessionJSON: the
- * session metadata plus a runtime-based `resume` verdict. `resumable` true only for the PR's current
- * primary dev session on a resumable runtime; otherwise `reason` says why (e.g. "superseded",
- * "resume-via-pull", "unknown-runtime", "no-session").
- */
+/** A session related to a PR or issue (#298), including its persisted runtime identity. */
 export type RelatedSession = RelatedSessionWire;
 
 export type RelatedSessionsUsage = RelatedSessionsUsageWire;

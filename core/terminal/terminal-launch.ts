@@ -102,11 +102,8 @@ export function commandForHerdrLaunch(input: {
     | "issue-create"
     | "workflow-create"
     | "scheduled-task-create"
-    | "resume"
     | "github-pr-export";
   prNumber?: number;
-  session?: string;
-  cwd?: string;
   codingAgent?: CodingAgent;
   model?: string;
   // One-shot reasoning effort for New issue launches (#1534). Maps to `lh issue new --effort`.
@@ -172,10 +169,6 @@ export function commandForHerdrLaunch(input: {
       prompt: input.prompt,
     });
     return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
-  }
-  if (input.workflow === "resume" && input.session) {
-    const resume = `claude --resume ${shellArg(input.session)}`;
-    return input.cwd ? `cd ${shellArg(input.cwd)} && ${resume}` : resume;
   }
   return "";
 }
@@ -399,12 +392,9 @@ export function herdrTabFocusArgv(
   return ["herdr", "--session", herdrSessionName(repo), "tab", "focus", tabId];
 }
 
-// Switches focus (workspace + tab + pane, in one call) to an already-running agent, by pane id
-// (#578's Resume dedup; reused by #579's issue-list Herdr badge). Unlike herdrWorkspaceFocusArgv
-// above, this doesn't require the caller to know which workspace/tab the target lives in —
-// `herdr agent focus` resolves that itself — which matters for Resume (a session's tab can land
-// in any workspace, not just the one currently in front) and equally for the badge (it only knows
-// the agent's pane id, not its workspace/tab).
+// Switches focus (workspace + tab + pane, in one call) to an already-running agent, by pane id.
+// Unlike herdrWorkspaceFocusArgv above, this doesn't require the caller to know which workspace/tab
+// the target lives in; the issue-list badge only knows the agent's pane id.
 export function herdrAgentFocusArgv(
   repo: TerminalLaunchRepo,
   target: string,

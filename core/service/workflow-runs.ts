@@ -17,7 +17,6 @@ import {
 } from "../dev-lock.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
-import { resolveWorktreeIdentity } from "../resume.ts";
 import {
   effectiveRepoAgentConfigFor,
   type WorkflowOutOfBandReviewWire,
@@ -87,6 +86,7 @@ import {
 import {
   legacyWorktreePath,
   worktreePath as prWorktreePath,
+  resolveWorktreeIdentity,
 } from "../worktree-path.ts";
 import {
   provisionWorktree,

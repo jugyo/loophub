@@ -733,7 +733,6 @@
               "issue-create",
               "workflow-create",
               "scheduled-task-create",
-              "resume",
               "github-pr-export",
               "workflow-run"
             ]
@@ -749,12 +748,6 @@
           "workflowId": {
             "type": "integer",
             "minimum": 1
-          },
-          "session": {
-            "type": "string"
-          },
-          "cwd": {
-            "type": "string"
           },
           "targetBranch": {
             "type": "string"

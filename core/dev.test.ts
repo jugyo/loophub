@@ -410,7 +410,7 @@ describe("dev.openPr", () => {
     expect(prSession(first.number)).toBe("sess-a");
 
     // Re-running with a fresh session reuses the open PR but re-points it (latest-writer-wins), so
-    // `lh resume`/retro resolve the current session, not a stale one.
+    // Usage attribution and retro resolve the current session, not a stale one.
     const second = await svc.dev.openPr(
       "me/proj",
       {

@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
-import { isClaudeSessionId } from "../../core/resume.ts";
 import { buildRuntimeArgs } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
+import { isClaudeSessionId } from "../../core/session-runtime.ts";
 import {
   HERDR_ID,
   parseHerdrAgentPaneId,

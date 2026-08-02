@@ -8,7 +8,6 @@ import * as issueCmd from "./commands/issue.ts";
 import * as notificationCmd from "./commands/notification.ts";
 import * as prCmd from "./commands/pr.ts";
 import * as repoCmd from "./commands/repo.ts";
-import * as resumeCmd from "./commands/resume.ts";
 import * as retroCmd from "./commands/retro.ts";
 import * as sessionCmd from "./commands/session.ts";
 import * as syncCmd from "./commands/sync.ts";
@@ -25,7 +24,6 @@ async function main() {
     return;
   }
   if (group === "info") return infoCmd.run();
-  if (group === "resume") return resumeCmd.run();
   if (group === "repo") return repoCmd.run();
   if (group === "issue") return issueCmd.run();
   if (group === "session") return sessionCmd.run();

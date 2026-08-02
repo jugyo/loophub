@@ -24,7 +24,6 @@ const launchMutation = vi.hoisted(() => ({
         onSuccess?: (result: {
           session_name?: string;
           attach?: string;
-          focused?: boolean;
         }) => void;
         onError?: (e: unknown) => void;
       },
@@ -51,7 +50,6 @@ function LaunchButton({
     | "workflow-run"
     | "issue-create"
     | "scheduled-task-create"
-    | "resume"
     | "github-pr-export";
   agent?: "claude-code" | "codex" | "grok";
   model?: string;
@@ -115,8 +113,6 @@ describe("TerminalController", () => {
         workflow: "workflow-run",
         issueNumber: 444,
         prNumber: undefined,
-        session: undefined,
-        cwd: undefined,
         agent: undefined,
         model: undefined,
       },
@@ -187,40 +183,6 @@ describe("TerminalController", () => {
       }),
       expect.objectContaining({ onError: expect.any(Function) }),
     );
-  });
-
-  it("does not show a toast when the backend focused an existing pane (#578)", async () => {
-    launchMutation.mutate.mockImplementationOnce((_input, opts) => {
-      opts?.onSuccess?.({
-        session_name: "jugyo-loophub-deadbeef",
-        focused: true,
-      });
-    });
-
-    // ToastProvider clears on route change, so it needs a real router in the tree (matches
-    // toast.test.tsx / pull-detail.test.tsx).
-    const rootRoute = createRootRoute({ component: Outlet });
-    const indexRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/",
-      component: () => (
-        <TerminalControllerProvider>
-          <ToastProvider>
-            <ToastViewport />
-            <LaunchButton workflow="resume" />
-          </ToastProvider>
-        </TerminalControllerProvider>
-      ),
-    });
-    const router = createRouter({
-      routeTree: rootRoute.addChildren([indexRoute]),
-      history: createMemoryHistory({ initialEntries: ["/"] }),
-    });
-    render(<RouterProvider router={router} />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Launch" }));
-
-    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows an overlay dialog with the reason, example command, and session-creation hint when the launch fails (#483)", () => {

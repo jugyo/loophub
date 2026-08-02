@@ -25,7 +25,6 @@ import {
   existingPullWorktreePath,
   pullWorktreeDirty,
 } from "./pull-worktree.ts";
-import { sessionRuntime } from "./resume.ts";
 import type {
   GithubPullWire,
   IssueListPullSummaryWire,
@@ -46,6 +45,7 @@ import {
   relatedSessionsUsageJSON,
   reviewGateJSON,
 } from "./serialize.ts";
+import { sessionRuntime } from "./session-runtime.ts";
 import * as S from "./store.ts";
 
 // Git-derived status fields for a PR row: mergeable state, diff totals, the
@@ -404,14 +404,12 @@ export async function pullJSON(
       : {}),
     // Detail-only (#298, #456): the PR's related sessions and derived work duration, newest first.
     // Gated so the PR list/dashboard stay O(1) git + no extra per-row query. Both share the same
-    // primarySessionId lookup (primaryDevSessionForPull) — the PR's resume/retro anchor — so it is
-    // computed once here rather than twice.
+    // primarySessionId lookup (primaryDevSessionForPull) is the implementation-session anchor used
+    // by work duration.
     ...(opts.withRelatedSessions
       ? (() => {
           const primarySessionId = S.primaryDevSessionForPull(row.id);
-          const relatedSessions = relatedSessionsJSON(row, {
-            primarySessionId,
-          });
+          const relatedSessions = relatedSessionsJSON(row);
           return {
             related_sessions: relatedSessions,
             related_sessions_usage: relatedSessionsUsageJSON(relatedSessions),

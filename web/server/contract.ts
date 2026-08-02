@@ -384,7 +384,6 @@ export const methods: Record<string, MethodDef> = {
             "issue-create",
             "workflow-create",
             "scheduled-task-create",
-            "resume",
             "github-pr-export",
             "workflow-run",
           ],
@@ -394,8 +393,6 @@ export const methods: Record<string, MethodDef> = {
         // Saved workflow id for the "workflow-run" launch (#1007) — passed to
         // `lh workflow start ... --workflow-id <id>`. Required only for that workflow.
         workflowId: positiveInt,
-        session: str,
-        cwd: str,
         targetBranch: str,
         prompt: str,
         // One-shot New issue overrides (#1275/#1534): force the runtime / model / effort
@@ -417,8 +414,6 @@ export const methods: Record<string, MethodDef> = {
         issueNumber: p.issueNumber,
         prNumber: p.prNumber,
         workflowId: p.workflowId,
-        session: p.session,
-        cwd: p.cwd,
         targetBranch: p.targetBranch,
         prompt: p.prompt,
         agent: p.agent,

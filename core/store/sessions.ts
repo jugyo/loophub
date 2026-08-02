@@ -179,7 +179,7 @@ export function listSessionLinkedTargets(
 }
 
 // Attribute a dev session to a PR row by recording it in the generalized session_links bridge
-// (kind='dev'). `lh resume`/retro resolve the PR's implementation session from there (#186, #316).
+// (kind='dev'). Usage attribution and retro resolve the PR's implementation session from there.
 // The PR's related-sessions list accumulates every dev session that worked it; the *primary* anchor
 // is the latest-linked one (primaryDevSessionForPull) — a fresh PR re-entry re-links the session
 // it is about to spawn, so latest-writer-wins still holds. As of #316 there is no denormalized
@@ -189,7 +189,7 @@ export function setPullSession(issueId: number, sessionId: string) {
   linkSession(sessionId, issueId);
 }
 
-// The PR's resume/retro anchor (#316): the latest kind='dev' session linked to the PR's issues row.
+// The PR's implementation-session anchor (#316): the latest kind='dev' session linked to the row.
 // Derived from session_links — the single source of truth since pulls.session_id was dropped. `lh
 // dev` links each dev session it opens/re-enters (createPull / setPullSession), and the newest link
 // wins (ORDER BY created_at DESC, rowid DESC), matching the old latest-writer-wins pulls.session_id.

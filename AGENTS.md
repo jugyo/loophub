@@ -43,8 +43,8 @@ run development loops while a human supervises with minimal attention.
 - **Pull request (PR)**: a reviewable implementation proposal linked to an issue. It owns the
   head/base refs, draft and review state, and merge outcome; it is the unit that is delivered.
 - **Session**: one recorded agent-runtime invocation. Sessions can be linked to issues or PRs;
-  multiple sessions may contribute to one PR, while its primary development session is the
-  resume and retrospective anchor.
+  multiple sessions may contribute to one PR, while its primary development session is the usage
+  attribution and retrospective anchor. LoopHub does not resume coding-agent sessions.
 - **Workspace**: a local Git branch used as an integration target for a group of issues and
   their PRs. Its registry row only makes the branch visible to LoopHub; unlike a worktree, a
   workspace has no dedicated checkout.

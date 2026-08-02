@@ -114,10 +114,6 @@ Constraints:
 
 export const commandHelp: readonly CommandHelp[] = [
   { path: ["info"], description: "Show the resolved LoopHub environment." },
-  {
-    path: ["resume"],
-    description: "Resume the primary development session for a pull request.",
-  },
   { path: ["repo"], description: "Manage registered repositories." },
   { path: ["repo", "add"], description: "Register a local repository." },
   { path: ["repo", "list"], description: "List registered repositories." },

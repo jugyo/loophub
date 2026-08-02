@@ -16,11 +16,6 @@ import type { MergeMode } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import type { EffectiveAgentConfig } from "./repo-agent-config.ts";
 import { normalizeRepoAgentRuntime } from "./repo-agent-config.ts";
-import {
-  resolveRuntimeResume,
-  SESSION_KIND_ISSUE_CREATE,
-  sessionRuntime,
-} from "./resume.ts";
 import type { CodingAgent } from "./runtimes.ts";
 import * as S from "./store.ts";
 import type {
@@ -259,7 +254,6 @@ export interface AgentCostSummaryWire {
 
 export interface RelatedSessionWire extends AgentSessionWire {
   linked_at: string | null;
-  resume: { resumable: boolean; reason?: string };
 }
 
 export interface LabelWire {
@@ -721,71 +715,19 @@ export function sessionSubagentUsageJSON(
   };
 }
 
-// One entry in a PR/issue's "related sessions" list (#298). Wraps agentSessionJSON with `linked_at`
-// (when the session was attached to this target) and a `resume` verdict that follows core/resume.ts'
-// runtime-based judgment:
-//   - resumable=true  → `lh resume <pr>` would re-enter this session (claude-code + UUID id, and it
-//     is the PR's current primary attribution).
-//   - resumable=false → `reason` says why: a runtime this build cannot resume ("unknown-runtime"),
-//     nothing resumable on the row ("no-session"), an issue-linked session that is resumed via its
-//     PR rather than the issue ("resume-via-pull"), a past dev session a newer one replaced as the
-//     PR's anchor ("superseded"), or a session that is simply not the PR's resume anchor — a non-dev
-//     session, or any session on a PR with no anchor at all ("not-anchor"). resume is intentionally
-//     runtime-level only — it reflects whether the runtime + anchor make `lh resume <pr>` meaningful,
-//     not whether the worktree/branch still survive on disk.
-//
-// `lh resume <pr>` re-enters exactly the PR's primary dev session (primaryDevSessionForPull =
-// primarySessionId, #316). So a row is resumable ONLY when it IS that anchor; everything else is
-// reported with a reason. The anchor check must compare equality directly (not "anchor exists AND
-// not this row"), otherwise a PR with no anchor at all (primarySessionId null — reachable by linking
-// a session via `sessions.link`
-// to a PR that never had a dev session) would fall through and be mislabeled resumable.
+// One entry in a PR/issue's "related sessions" list (#298). Existing session metadata, including
+// the external runtime session id exposed as `session`, remains readable.
 export function relatedSessionJSON(
   row: S.LinkedAgentSessionRow,
-  opts: { container: "issue" | "pull"; primarySessionId?: string | null },
 ): RelatedSessionWire {
-  const base = agentSessionJSON(row);
-  const rr = resolveRuntimeResume(sessionRuntime(row), row.external_session);
-  let resume: { resumable: boolean; reason?: string };
-  if (!rr.ok) {
-    resume = { resumable: false, reason: rr.reason };
-  } else if (opts.container !== "pull") {
-    // Issue container. An `issue-create` session (the New Issue AI flow, #299) has no PR and no dev
-    // worktree, so it resumes directly off the issue with `claude --resume <id>` (resume by session
-    // id, not by PR). Any other issue-linked session is a dev/review session whose resume anchor is
-    // its PR, so it is still resumed via that PR ("resume-via-pull").
-    resume =
-      row.kind === SESSION_KIND_ISSUE_CREATE
-        ? { resumable: true }
-        : { resumable: false, reason: "resume-via-pull" };
-  } else if (opts.primarySessionId && row.id === opts.primarySessionId) {
-    resume = { resumable: true };
-  } else if (opts.primarySessionId && row.kind === "dev") {
-    // A dev session on this PR that a newer dev session replaced as the resume anchor.
-    resume = { resumable: false, reason: "superseded" };
-  } else {
-    // Runtime-resumable but not the PR's anchor: a non-dev session linked to the PR, or a PR with
-    // no anchor at all (primarySessionId null). `lh resume <pr>` has nothing of this row to re-enter.
-    resume = { resumable: false, reason: "not-anchor" };
-  }
-  return { ...base, linked_at: row.linked_at ?? null, resume };
+  return { ...agentSessionJSON(row), linked_at: row.linked_at ?? null };
 }
 
-// The full related-sessions list for an issues row (issue or PR), newest link first. `primarySessionId`
-// is the PR's primary dev session (primaryDevSessionForPull) — the one `lh resume <pr>` actually
-// re-enters — so only that row is marked directly resumable; pass it for PR containers, omit it for
-// issue containers.
+// The full related-sessions list for an issues row (issue or PR), newest link first.
 export function relatedSessionsJSON(
   containerRow: S.IssueRow,
-  opts: { primarySessionId?: string | null } = {},
 ): RelatedSessionWire[] {
-  const container = containerRow.kind === "pull" ? "pull" : "issue";
-  return S.listSessionsForIssue(containerRow.id).map((row) =>
-    relatedSessionJSON(row, {
-      container,
-      primarySessionId: opts.primarySessionId,
-    }),
-  );
+  return S.listSessionsForIssue(containerRow.id).map(relatedSessionJSON);
 }
 
 export interface UsageTotalsWire {
@@ -852,15 +794,13 @@ export interface HerdrSessionsWire {
 export type TerminalLaunchBackendWire = "builtin" | "herdr";
 
 // Result of `terminal/launch`: which backend handled it plus the herdr coordinates the client
-// surfaces (session_name / command / cwd / attach). `focused` is true when a "resume" launch
-// switched focus to a terminal already running the session instead of opening a new one (#578).
+// surfaces (session_name / command / cwd / attach).
 export interface TerminalLaunchResultWire {
   backend: TerminalLaunchBackendWire;
   session_name?: string;
   command?: string;
   cwd?: string;
   attach?: string;
-  focused?: boolean;
 }
 
 export function herdrPaneSessionJSON(

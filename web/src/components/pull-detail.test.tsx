@@ -314,7 +314,6 @@ describe("PullDetail", () => {
     expect(screen.getByText("main")).toBeTruthy();
     expect(screen.getByText("Render diff, reviews, comments.")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Develop" })).toBeNull();
-    expect(screen.queryByText("lh resume me/proj/30")).toBeNull();
 
     // The existing file summary opens its diff in a dialog instead of expanding inline.
     expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
@@ -1552,7 +1551,6 @@ describe("PullDetail", () => {
             created_at: "2026-06-18T11:00:00Z",
             updated_at: "2026-06-18T12:00:00Z",
             linked_at: "2026-06-18T11:00:00Z",
-            resume: { resumable: false },
           },
         ],
       }),

@@ -58,7 +58,7 @@ export const dev = {
     const existing = S.openPullLinkedToIssue(issueRow.id);
     if (existing) {
       // Re-running against an issue reuses the open PR but must re-point it at the session it is
-      // about to spawn (latest-writer-wins), so `lh resume`/retro resolve the current session rather
+      // about to spawn (latest-writer-wins), so usage/retro resolve the current session rather
       // than a stale one. (The old model re-assigned the issue on every run.)
       if (sessionId && attributeSession) {
         S.setPullSession(existing.id, sessionId);
@@ -91,7 +91,7 @@ export const dev = {
     return { created: true, number: pr.number };
   },
 
-  // Attribute a dev session to an existing PR (via session_links, #316) so `lh resume`/retro can
+  // Attribute a dev session to an existing PR (via session_links, #316) so usage/retro can
   // later find it. Used to attribute the session to a *reused* open PR — deferred here until after
   // the caller's PR-keyed dev lock is won (see dev.openPr's `attributeSession` option), so a losing
   // concurrent launch can never overwrite the winner's pointer. Emits the same `pull_request.updated`

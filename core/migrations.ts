@@ -439,10 +439,9 @@ export const MIGRATIONS: Migration[] = [
     "035-reviews-approve-to-pass",
     "UPDATE reviews SET event = 'PASS' WHERE event = 'APPROVE'",
   ),
-  // agent_sessions.runtime records which runtime launched the session (e.g. "claude-code"), so
-  // `lh resume` picks the resume command by runtime instead of inferring it from the agent label.
-  // Pre-existing rows get NULL and rely on the lh-build → claude-code backward-compat fallback
-  // (core/resume.ts sessionRuntime).
+  // agent_sessions.runtime records which runtime launched the session (e.g. "claude-code") instead
+  // of inferring it from the agent label. Pre-existing rows get NULL and rely on the lh-build →
+  // claude-code backward-compat fallback (core/session-runtime.ts sessionRuntime).
   addColumn("036-agent-sessions-runtime", "agent_sessions", "runtime", "TEXT"),
   // agent_sessions.kind labels the session's purpose (#298): "dev" / "review" / "issue-create" / …
   // (extensible — stored as a free TEXT, not an enum, so new kinds need no migration). Pre-existing
@@ -470,7 +469,7 @@ export const MIGRATIONS: Migration[] = [
   // issue assignee); #298 generalized attribution into the session_links N:M bridge. The 1:1 pointer
   // is now derivable as "the PR's latest kind='dev' linked session" (store.primaryDevSessionForPull),
   // so #316 retires the column: migrate any legacy value into session_links, then DROP it.
-  // resume/retro derive the anchor from session_links from here on.
+  // Usage attribution/retro derive the anchor from session_links from here on.
   //
   // Guarded on a still-present legacy column so a database that never had either one does not
   // rebuild the pulls/issues tables (SQLite DROP COLUMN rewrites the table). The order matters:
@@ -508,7 +507,8 @@ export const MIGRATIONS: Migration[] = [
         dropColumnIfPresent(db, "issues", "assignee_session_id");
       }
       // (#298) Mirror every PR's dev session into session_links (kind='dev') before the column
-      // drops, so resume/retro keep resolving it. INSERT OR IGNORE is idempotent (PK is the pair)
+      // drops, so usage attribution/retro keep resolving it. INSERT OR IGNORE is idempotent
+      // (PK is the pair)
       // and preserves any link a newer build already wrote. INNER JOIN agent_sessions (not LEFT):
       // session_links.session_id has an FK to agent_sessions and foreign_keys is ON; an FK violation
       // is NOT suppressed by OR IGNORE and would abort the whole INSERT...SELECT. A pre-#298

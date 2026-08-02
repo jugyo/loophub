@@ -9,10 +9,10 @@ import { resolve } from "node:path";
 import { worktreeRoot } from "./config.ts";
 import type { GitResult } from "./git.ts";
 import { worktreeStatus } from "./git.ts";
-import { resolveWorktreeIdentity } from "./resume.ts";
 import {
   assertSafeRepoSegments,
   legacyWorktreePath,
+  resolveWorktreeIdentity,
   worktreePath,
 } from "./worktree-path.ts";
 import { porcelainIsDirty } from "./worktree-prune.ts";

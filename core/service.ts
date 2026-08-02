@@ -13,7 +13,6 @@ export { notifications } from "./service/notifications.ts";
 export { pulls } from "./service/pulls.ts";
 export type { Repo } from "./service/repos.ts";
 export { repos } from "./service/repos.ts";
-export { resume } from "./service/resume.ts";
 export { retros } from "./service/retros.ts";
 export { reviews } from "./service/reviews.ts";
 export { scheduledTasks } from "./service/scheduled-tasks.ts";

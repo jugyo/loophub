@@ -176,9 +176,9 @@ test("workflow runs gain durable event-effect receipts", () => {
   ]);
 });
 
-test("the legacy dev-session pointer survives in session_links (resume anchor preserved)", () => {
+test("the legacy dev-session pointer survives in session_links", () => {
   // The pre-#316 pulls.session_id value is now derivable from session_links as the PR's primary dev
-  // session — the exact value `lh resume`/retro resolved before the column was dropped.
+  // session — the exact value usage attribution/retro resolved before the column was dropped.
   expect(S.primaryDevSessionForPull(10)).toBe(
     "11111111-0000-0000-0000-000000000001",
   );

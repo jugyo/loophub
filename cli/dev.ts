@@ -1,6 +1,5 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { isClaudeSessionId } from "../core/resume.ts";
 import { buildRuntimeArgs } from "../core/runtime-args.ts";
 import { CODING_AGENTS, type CodingAgent, RUNTIMES } from "../core/runtimes.ts";
 import {
@@ -243,25 +242,6 @@ export function buildRuntimeLaunch({
   };
 }
 
-// `lh resume <PR id>` re-enters an existing Claude session rather than starting a new one, so the
-// argv is just `claude --resume <session-id>` (no --session-id / slash command / sandbox settings —
-// the original session already carries its history and the worktree is reused). Pure so it can be
-// unit-tested and shares the displayed-vs-spawned single source of truth (formatSpawnCommand).
-// Asserts the id is UUID-shaped (service.resume.resolve already gates this) so a malformed/flag-like
-// value can never reach `claude --resume` as a spoofed flag — see isClaudeSessionId.
-export function buildResumeArgs({
-  sessionId,
-}: {
-  sessionId: string;
-}): string[] {
-  if (!isClaudeSessionId(sessionId)) {
-    throw new Error(
-      `invalid session id for resume: ${JSON.stringify(sessionId)}`,
-    );
-  }
-  return ["--resume", sessionId];
-}
-
 // Single-quote a value for a shell command string so it survives copy-paste / re-exec verbatim.
 // Used by the launch command line shown to the human; even where inputs are validated upstream,
 // quote defensively so the pure builders are safe on any input.
@@ -291,7 +271,7 @@ export function formatSpawnCommand(
 // Path and branch are deterministic from the PR number (no slug, #463). Reuse is derived from
 // disk truth (`git worktree list` + naming convention) — there is no ledger table. The pure
 // path/branch helpers live in core/worktree-path.ts (shared with core/service.ts for
-// `lh resume`); re-exported here so existing cli/dev.ts callers and tests keep importing them.
+// worktree services); re-exported here so existing cli/dev.ts callers and tests keep importing them.
 export {
   legacyWorktreeBranch,
   legacyWorktreePath,

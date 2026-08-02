@@ -3,8 +3,33 @@ import {
   fullNameFromWorktreePath,
   legacyWorktreePath,
   pullNumberFromWorktreePath,
+  resolveWorktreeIdentity,
   worktreePath,
 } from "./worktree-path.ts";
+
+describe("resolveWorktreeIdentity", () => {
+  test("preserves the legacy identity encoded in the head branch", () => {
+    expect(resolveWorktreeIdentity("loophub/issue-7", 9)).toEqual({
+      scheme: "legacy-issue",
+      number: 7,
+    });
+  });
+
+  test("uses the PR identity for current, custom, or absent head branches", () => {
+    expect(resolveWorktreeIdentity("loophub/pr-9", 9)).toEqual({
+      scheme: "pr",
+      number: 9,
+    });
+    expect(resolveWorktreeIdentity("feature-x", 9)).toEqual({
+      scheme: "pr",
+      number: 9,
+    });
+    expect(resolveWorktreeIdentity(null, 9)).toEqual({
+      scheme: "pr",
+      number: 9,
+    });
+  });
+});
 
 describe("pullNumberFromWorktreePath", () => {
   test("recovers the PR number from a worktreePath() output", () => {

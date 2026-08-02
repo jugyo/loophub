@@ -477,7 +477,6 @@ describe("IssueDetail", () => {
           updated_at: "2026-06-17T10:00:00Z",
           kind: "issue-create",
           linked_at: "2026-06-17T11:00:00Z",
-          resume: { resumable: true },
         },
       ],
     }));

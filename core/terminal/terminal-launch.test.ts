@@ -93,14 +93,6 @@ describe("herdr terminal launch", () => {
         codingAgent: "claude-code",
       }),
     ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
-        workflow: "resume",
-        session: "session-1",
-        cwd: "/tmp/work tree",
-      }),
-    ).toBe("cd '/tmp/work tree' && claude --resume 'session-1'");
   });
 
   test("launches the coding agent with the workflow-create prompt as its initial input", () => {

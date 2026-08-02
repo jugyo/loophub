@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 import {
   herdrIssueWorkspacesFromAgentList,
   herdrPullWorkspacesFromAgentList,
-  paneRunsClaudeResume,
   parseHerdrAgentList,
   parseHerdrAgentPlacements,
   parseHerdrAgentRead,
@@ -846,60 +845,6 @@ describe("parseHerdrPaneKillTarget", () => {
     ],
   ])("degrades to null on %s (%s)", (input) => {
     expect(parseHerdrPaneKillTarget(input)).toBeNull();
-  });
-});
-
-describe("paneRunsClaudeResume", () => {
-  const SESSION = "416a33e4-903e-44c9-b0f8-591c65f8b395";
-
-  test("true when a foreground process is exactly claude --resume <session>", () => {
-    expect(
-      paneRunsClaudeResume(
-        [
-          ["node", "/path/to/some-mcp-server"],
-          ["claude", "--resume", SESSION],
-        ],
-        SESSION,
-      ),
-    ).toBe(true);
-  });
-
-  test("false for a different session id (no false positive across sessions, #578)", () => {
-    expect(
-      paneRunsClaudeResume([["claude", "--resume", "other-session"]], SESSION),
-    ).toBe(false);
-  });
-
-  test("false when extra flags surround the resume args (exact match only, #578 review)", () => {
-    expect(
-      paneRunsClaudeResume(
-        [["claude", "--resume", SESSION, "--continue"]],
-        SESSION,
-      ),
-    ).toBe(false);
-    expect(
-      paneRunsClaudeResume(
-        [["claude", "--model", "x", "--resume", SESSION]],
-        SESSION,
-      ),
-    ).toBe(false);
-  });
-
-  test("false when nothing in the pane is claude at all", () => {
-    expect(
-      paneRunsClaudeResume(
-        [["node", "server.js", "--resume", SESSION]],
-        SESSION,
-      ),
-    ).toBe(false);
-  });
-
-  test("false for a bare claude launch with no --resume", () => {
-    expect(paneRunsClaudeResume([["claude"]], SESSION)).toBe(false);
-  });
-
-  test("false on an empty process list", () => {
-    expect(paneRunsClaudeResume([], SESSION)).toBe(false);
   });
 });
 

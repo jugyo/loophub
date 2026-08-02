@@ -401,6 +401,18 @@ test("unknown extra param is rejected (additionalProperties: false)", async () =
   expect(r.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
 });
 
+test.each([
+  "session",
+  "cwd",
+])("terminal/launch rejects retired %s input", async (field) => {
+  const r: any = await call("terminal/launch", {
+    workflow: "workflow-create",
+    prompt: "Create a workflow",
+    [field]: "retired",
+  });
+  expect(r.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+});
+
 test("malformed request (bad jsonrpc) -> -32600", async () => {
   const r: any = await dispatch({
     jsonrpc: "1.0",

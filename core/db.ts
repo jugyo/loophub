@@ -404,7 +404,7 @@ CREATE TABLE IF NOT EXISTS agent_execution_targets (
 -- issue (kind=issue) OR a PR (kind=pull) — and a single issue/PR can carry many sessions
 -- (dev, review, issue-create, ...), so this is a plain many-to-many bridge keyed by the pair.
 -- This replaces the old 1:1 pulls.session_id attribution (dropped in #316): the PR's primary dev
--- session — the anchor lh resume/retro resolve from — is now derived as the latest kind='dev' link
+-- session — the usage attribution/retro anchor — is now derived as the latest kind='dev' link
 -- here (store.primaryDevSessionForPull). The session's own kind lives on agent_sessions.kind;
 -- created_at is when the link was made (the basis for ordering the related-sessions list newest-first).
 CREATE TABLE IF NOT EXISTS session_links (

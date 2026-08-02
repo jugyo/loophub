@@ -240,8 +240,7 @@ export const issues = {
     out.comment_list = S.listComments(row.id).map((comment) =>
       commentJSON(comment, S.listCommentReactions(comment.id)),
     );
-    // Detail-only (#298): the issue's related sessions, newest first. Resume is offered via the
-    // linked PR (relatedSessionJSON marks issue-container rows "resume-via-pull"), not the issue.
+    // Detail-only (#298): the issue's related sessions, newest first.
     out.related_sessions = relatedSessionsJSON(row);
     // Detail-only (#614): the GitHub issue this one was imported from, or null. Mirrors how PR detail
     // surfaces github_pull; kept off the cheap list serializer.

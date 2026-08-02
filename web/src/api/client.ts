@@ -523,15 +523,12 @@ export function launchTerminalWorkflow(input: {
     | "issue-create"
     | "workflow-create"
     | "scheduled-task-create"
-    | "resume"
     | "github-pr-export"
     | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
   // Saved workflow id for the "workflow-run" launch (#1007).
   workflowId?: number;
-  session?: string;
-  cwd?: string;
   targetBranch?: string;
   prompt?: string;
   // One-shot runtime/model/effort overrides from the New issue dropdown (#1275/#1534).

@@ -1,12 +1,5 @@
 import { CODING_AGENTS, type CodingAgent, worktreeRoot } from "../config.ts";
 import { ServiceError } from "../errors.ts";
-import {
-  RUNTIME_CLAUDE_CODE,
-  RUNTIME_CODEX,
-  RUNTIME_GROK,
-  resolveWorktreeIdentity,
-  sessionRuntime,
-} from "../resume.ts";
 import { isCodingAgent } from "../runtimes.ts";
 import {
   type AgentCostSummaryWire,
@@ -14,6 +7,12 @@ import {
   sessionUsageJSON,
 } from "../serialize.ts";
 import { tokensPerFiveMinuteHistory } from "../session-rate-history.ts";
+import {
+  RUNTIME_CLAUDE_CODE,
+  RUNTIME_CODEX,
+  RUNTIME_GROK,
+  sessionRuntime,
+} from "../session-runtime.ts";
 import {
   aggregateUsage,
   type ClaudeSubagentTranscript,
@@ -38,7 +37,11 @@ import {
   planGrokTurnRateSamples,
 } from "../session-usage-rate.ts";
 import * as S from "../store.ts";
-import { legacyWorktreePath, worktreePath } from "../worktree-path.ts";
+import {
+  legacyWorktreePath,
+  resolveWorktreeIdentity,
+  worktreePath,
+} from "../worktree-path.ts";
 import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 
 function worktreeCwdForPullSession(
