@@ -27,12 +27,10 @@ launch note と `orchestrator:` で始まる同じ指示は同様に扱います
 - **Diff feedback（`orchestrator: address diff feedback thread <t> comment <c>`）** —
   `lh pr feedback pending <pr> --run <run> --json` で未対応の会話と anchor 周辺の diff を読み、
   `lh pr feedback reply <t> --pr <pr> --body <text>` ですべてに返信します。source の修正が必要な会話では、
-  編集前にまずその thread へ短く返信し、`comment <c>`、認識したこと、対応する意思を明記します。その後、
-  求められた修正を行います。
+  編集前にまずその thread へ短く返信します。その後、求められた修正を行います。
 - **PR comment（`orchestrator: address PR comment <c>`）** — `lh pr view <pr> --json` で指定された
   comment を読み、本文を追加作業の指示として扱います。source の修正が必要なら、編集前に
-  `lh pr comment <pr> --body <text>` で短い top-level の着手返信を投稿し、`comment <c>`、認識したこと、
-  対応する意思を明記します。
+  `lh pr comment <pr> --body <text>` で短い top-level の着手返信を投稿します。
 - **追加作業** — non-rework の指示が Issue / PR への通常の product / engineering 要求なら、同じ Issue と
   PR に最小限の実装を行います。Issue body の書き換えは不要です。次の Verify や人間に有用なら PR body
   または comment を更新します。
