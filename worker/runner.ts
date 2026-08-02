@@ -61,6 +61,10 @@ interface RunResult {
   durationMs: number;
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function workflowContextFields(input: {
   repo: Repo;
   row: EventRow;
@@ -143,9 +147,10 @@ async function prWorktreePath(repo: Repo, prNumber: number): Promise<string> {
 // Run every configured step for one matched event. Each step runs even if a prior one failed;
 // per-step start/finish are recorded as `workflow.run_started` / `workflow.run_completed`
 // events (visible on the Web timeline) and full output goes to the log file.
-export async function dispatchEvent(row: EventRow): Promise<void> {
-  if (row.repo_id == null) return;
-  const repo = repos.getById(row.repo_id);
+async function dispatchEventOperation(
+  row: EventRow,
+  repo: Repo | null,
+): Promise<void> {
   if (!repo) return;
 
   const payload = parsePayload(row.payload);
@@ -236,6 +241,64 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
   }
 }
 
+// Keep the event-level timing outside the workflow matching branches so no-op and failed events
+// have the same single completion record as events that run configured steps.
+export async function dispatchEvent(row: EventRow): Promise<void> {
+  const startedAt = Date.now();
+  let repo: Repo | null = null;
+  const context = () =>
+    [
+      `repo=${repo?.full_name ?? "-"}`,
+      `event_id=${row.id}`,
+      `event_type=${row.type}`,
+    ].join(" ");
+  try {
+    repo = row.repo_id == null ? null : repos.getById(row.repo_id);
+    await dispatchEventOperation(row, repo);
+    workerLog.info(
+      `lh-worker: event dispatch completed ${context()} duration_ms=${Date.now() - startedAt}`,
+    );
+  } catch (err) {
+    workerLog.error(
+      `lh-worker: event dispatch failed ${context()} duration_ms=${Date.now() - startedAt} error=${errorMessage(err)}`,
+    );
+    throw err;
+  }
+}
+
+export async function dispatchWorkflowInstructions(): Promise<void> {
+  const batchStartedAt = Date.now();
+  let results: Awaited<ReturnType<typeof workflowInstructions.dispatchPending>>;
+  try {
+    results = await workflowInstructions.dispatchPending();
+  } catch (err) {
+    workerLog.error(
+      `lh-worker: workflow instruction delivery failed run_id=- event_id=- duration_ms=${Date.now() - batchStartedAt} error=${errorMessage(err)}`,
+    );
+    return;
+  }
+
+  // One run may consume several non-actionable events before it reaches its final result. Only the
+  // last result is the completion of that run's delivery operation, so log it once. An empty result
+  // is the normal high-frequency poll and intentionally stays silent.
+  const completedByRun = new Map<number, (typeof results)[number]>();
+  for (const result of results) {
+    completedByRun.set(result.run, result);
+  }
+  for (const result of completedByRun.values()) {
+    const event = "event" in result ? (result.event ?? "-") : "-";
+    if (result.status === "failed") {
+      workerLog.error(
+        `lh-worker: workflow instruction delivery failed run_id=${result.run} event_id=${event} duration_ms=${result.durationMs} error=${result.error}`,
+      );
+      continue;
+    }
+    workerLog.info(
+      `lh-worker: workflow instruction delivery completed run_id=${result.run} event_id=${event} outcome=${result.status} duration_ms=${result.durationMs}`,
+    );
+  }
+}
+
 export interface WorkerHandle {
   stop: () => void;
 }
@@ -261,18 +324,7 @@ export function startWorker(
     if (stopped || running) return;
     running = true;
     try {
-      try {
-        const results = await workflowInstructions.dispatchPending();
-        for (const result of results) {
-          if (result.status === "failed") {
-            console.error(
-              `lh-worker: workflow instruction delivery failed for run ${result.run}: ${result.error}`,
-            );
-          }
-        }
-      } catch (e) {
-        console.error("lh-worker: workflow instruction delivery error:", e);
-      }
+      await dispatchWorkflowInstructions();
       for (;;) {
         if (stopped) break;
         const rows = events.page(cursor, null, PAGE) as EventRow[];
@@ -282,9 +334,8 @@ export function startWorker(
           scheduleDiffFeedbackProjection(row);
           try {
             await dispatchEvent(row);
-          } catch (e) {
-            // One failed event must not stall the tail.
-            console.error(`lh-worker: error dispatching event ${row.id}:`, e);
+          } catch {
+            // dispatchEvent logged the failure; one failed event must not stall the tail.
           }
           cursor = Math.max(cursor, row.id);
           writeCursor(cursorPath, cursor);

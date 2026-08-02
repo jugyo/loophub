@@ -15,7 +15,7 @@ const PARENT_LAUNCH_GRACE_MS = 120_000;
 export type WorkflowInstructionDispatchResult =
   | { status: "idle" }
   | { status: "skipped"; run: number; event: number; reason: string }
-  | { status: "failed"; run: number; error: string }
+  | { status: "failed"; run: number; event?: number; error: string }
   | {
       status: "delivered";
       run: number;
@@ -23,6 +23,14 @@ export type WorkflowInstructionDispatchResult =
       pane_id: string;
       action: string;
     };
+
+type WorkflowInstructionPendingResult = Exclude<
+  WorkflowInstructionDispatchResult,
+  { status: "idle" }
+>;
+
+export type WorkflowInstructionDispatchOutcome =
+  WorkflowInstructionPendingResult & { durationMs: number };
 
 function pendingEvent(run: S.WorkflowRunRow): S.EventRow | null {
   return (
@@ -350,27 +358,33 @@ export const workflowInstructions = {
     };
   },
 
-  async dispatchPending(): Promise<WorkflowInstructionDispatchResult[]> {
-    const results: WorkflowInstructionDispatchResult[] = [];
+  async dispatchPending(): Promise<WorkflowInstructionDispatchOutcome[]> {
+    const results: WorkflowInstructionDispatchOutcome[] = [];
     for (const run of S.workflowRunsWithPendingEvents()) {
       if (S.pendingWorkflowEventEffectWithPrefix(run.id, EFFECT_PREFIX))
         continue;
+      const startedAt = Date.now();
+      const runResults: WorkflowInstructionPendingResult[] = [];
       // Consume non-actionable observations, but stop after one injected instruction so a parent
       // has a chance to execute it before another state-derived action is delivered.
       try {
         for (;;) {
           const result = await this.dispatchRun(run.id);
           if (result.status === "idle") break;
-          results.push(result);
+          runResults.push(result);
           if (result.status === "delivered") break;
         }
       } catch (error) {
-        results.push({
+        const current = S.getWorkflowRun(run.id);
+        runResults.push({
           status: "failed",
           run: run.id,
+          event: current ? pendingEvent(current)?.id : undefined,
           error: error instanceof Error ? error.message : String(error),
         });
       }
+      const durationMs = Date.now() - startedAt;
+      results.push(...runResults.map((result) => ({ ...result, durationMs })));
     }
     return results;
   },

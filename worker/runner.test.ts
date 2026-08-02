@@ -106,11 +106,15 @@ test("issue.opened runs steps in repo cwd with LH_* env; a failing step does not
       expect.stringContaining(
         `lh-worker: workflow step started repo=jugyo/wf-issue event_id=${row.id} event_type=issue.opened issue=${issue.number} pr=- task=workflow-step-1`,
       ),
-      expect.stringContaining(
-        `lh-worker: workflow step failed repo=jugyo/wf-issue event_id=${row.id} event_type=issue.opened issue=${issue.number} pr=- task=workflow-step-2 exit_code=3`,
+      expect.stringMatching(
+        new RegExp(
+          `^lh-worker: workflow step failed repo=jugyo/wf-issue event_id=${row.id} event_type=issue.opened issue=${issue.number} pr=- task=workflow-step-2 exit_code=3 duration_ms=\\d+$`,
+        ),
       ),
-      expect.stringContaining(
-        `lh-worker: workflow step completed repo=jugyo/wf-issue event_id=${row.id} event_type=issue.opened issue=${issue.number} pr=- task=workflow-step-3 exit_code=0`,
+      expect.stringMatching(
+        new RegExp(
+          `^lh-worker: workflow step completed repo=jugyo/wf-issue event_id=${row.id} event_type=issue.opened issue=${issue.number} pr=- task=workflow-step-3 exit_code=0 duration_ms=\\d+$`,
+        ),
       ),
     ]),
   );
@@ -245,8 +249,115 @@ test("events without a workflow.yml or unsupported types are no-ops", async () =
   await git(repoPath, ["init", "-q", "-b", "main"]); // no .loophub/workflow.yml
   const repo = S.createRepo("jugyo/wf-none", repoPath);
   const row = S.emitEvent(repo.id, "issue.opened", "me", { number: 1 });
-  await expect(R.dispatchEvent(row)).resolves.toBeUndefined();
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    await expect(R.dispatchEvent(row)).resolves.toBeUndefined();
+    expect(out).toHaveBeenCalledWith(
+      expect.stringMatching(
+        `^lh-worker: event dispatch completed repo=jugyo/wf-none event_id=${row.id} event_type=issue.opened duration_ms=\\d+$`,
+      ),
+    );
+  } finally {
+    out.mockRestore();
+  }
   rmSync(repoPath, { recursive: true, force: true });
+});
+
+test("a failed event dispatch logs its duration and context once", async () => {
+  const repoPath = await makeRepo(
+    ["on:", "  issue.opened:", '    - run: "true"', ""].join("\n"),
+  );
+  const repo = S.createRepo("jugyo/wf-dispatch-failure", repoPath);
+  const row = S.emitEvent(repo.id, "issue.opened", "me", { number: 1 });
+  const emit = vi.spyOn(svc.events, "emit").mockImplementationOnce(() => {
+    throw new Error("event record failed");
+  });
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
+  const err = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await expect(R.dispatchEvent(row)).rejects.toThrow("event record failed");
+    const failures = err.mock.calls.filter(([message]) =>
+      String(message).includes("lh-worker: event dispatch failed"),
+    );
+    expect(failures).toHaveLength(1);
+    expect(String(failures[0]?.[0])).toMatch(
+      new RegExp(
+        `^lh-worker: event dispatch failed repo=jugyo/wf-dispatch-failure event_id=${row.id} event_type=issue.opened duration_ms=\\d+ error=event record failed$`,
+      ),
+    );
+    expect(out).not.toHaveBeenCalledWith(
+      expect.stringContaining("lh-worker: event dispatch completed"),
+    );
+  } finally {
+    emit.mockRestore();
+    out.mockRestore();
+    err.mockRestore();
+    rmSync(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("workflow instruction delivery logs terminal results but not an empty poll", async () => {
+  const dispatch = vi.spyOn(svc.workflowInstructions, "dispatchPending");
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
+  const err = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    dispatch.mockResolvedValueOnce([]);
+    await R.dispatchWorkflowInstructions();
+    expect(out).not.toHaveBeenCalled();
+    expect(err).not.toHaveBeenCalled();
+
+    dispatch.mockResolvedValueOnce([
+      {
+        status: "skipped",
+        run: 17,
+        event: 21,
+        reason: "No instruction needed",
+        durationMs: 40,
+      },
+      {
+        status: "delivered",
+        run: 17,
+        event: 23,
+        pane_id: "w1:p1",
+        action: "launch_execute",
+        durationMs: 40,
+      },
+      {
+        status: "delivered",
+        run: 18,
+        event: 24,
+        pane_id: "w1:p2",
+        action: "launch_verify",
+        durationMs: 3,
+      },
+    ]);
+    await R.dispatchWorkflowInstructions();
+    expect(out).toHaveBeenCalledTimes(2);
+    expect(out).toHaveBeenCalledWith(
+      "lh-worker: workflow instruction delivery completed run_id=17 event_id=23 outcome=delivered duration_ms=40",
+    );
+    expect(out).toHaveBeenCalledWith(
+      "lh-worker: workflow instruction delivery completed run_id=18 event_id=24 outcome=delivered duration_ms=3",
+    );
+
+    dispatch.mockResolvedValueOnce([
+      {
+        status: "failed",
+        run: 19,
+        event: 29,
+        error: "pane send failed",
+        durationMs: 7,
+      },
+    ]);
+    await R.dispatchWorkflowInstructions();
+    expect(err).toHaveBeenCalledWith(
+      "lh-worker: workflow instruction delivery failed run_id=19 event_id=29 duration_ms=7 error=pane send failed",
+    );
+  } finally {
+    dispatch.mockRestore();
+    out.mockRestore();
+    err.mockRestore();
+  }
 });
 
 test("the worker polls workflow instructions independently of workflow.yml", async () => {

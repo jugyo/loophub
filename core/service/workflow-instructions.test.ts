@@ -599,6 +599,107 @@ test("queued lifecycle wakes are processed in order and identical decisions are 
   }
 });
 
+test("dispatchPending reports the event that failed after an earlier event was skipped", async () => {
+  const input = fixture("skip-then-fail");
+  const latest = S.emitWorkflowEvent(
+    input.repo.id,
+    "workflow_run.updated",
+    "me",
+    {
+      id: input.run.id,
+      issue_number: input.run.issue_number,
+      pr_number: input.run.pr_number,
+      transition: "activate_step",
+      status: "running",
+      current_step: "execute",
+      rework_count: 0,
+      active_step: "execute",
+      active_session_id: "execute-session",
+    },
+  );
+  const dispatch = vi
+    .spyOn(svc.workflowInstructions, "dispatchRun")
+    .mockImplementationOnce(async () => {
+      S.advanceWorkflowRunEventCursor(input.run.id, input.event.id);
+      return {
+        status: "skipped",
+        run: input.run.id,
+        event: input.event.id,
+        reason: "No instruction needed",
+      };
+    })
+    .mockRejectedValueOnce(new Error("second event failed"));
+  try {
+    await expect(svc.workflowInstructions.dispatchPending()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "failed",
+          run: input.run.id,
+          event: latest.id,
+          error: "second event failed",
+        }),
+      ]),
+    );
+  } finally {
+    dispatch.mockRestore();
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("dispatchPending measures each run independently", async () => {
+  const slow = fixture("slow-pending-run");
+  const fast = fixture("fast-pending-run");
+  let nowMs = 0;
+  const now = vi.spyOn(Date, "now").mockImplementation(() => nowMs);
+  const dispatch = vi
+    .spyOn(svc.workflowInstructions, "dispatchRun")
+    .mockImplementation(async (runId) => {
+      if (runId === slow.run.id) {
+        nowMs += 100;
+        return {
+          status: "delivered",
+          run: runId,
+          event: slow.event.id,
+          pane_id: "w1:p1",
+          action: "launch_execute",
+        };
+      }
+      if (runId === fast.run.id) {
+        nowMs += 5;
+        return {
+          status: "delivered",
+          run: runId,
+          event: fast.event.id,
+          pane_id: "w1:p2",
+          action: "launch_verify",
+        };
+      }
+      return { status: "idle" };
+    });
+  try {
+    const results = await svc.workflowInstructions.dispatchPending();
+    expect(results).toContainEqual(
+      expect.objectContaining({
+        status: "delivered",
+        run: slow.run.id,
+        durationMs: 100,
+      }),
+    );
+    expect(results).toContainEqual(
+      expect.objectContaining({
+        status: "delivered",
+        run: fast.run.id,
+        durationMs: 5,
+      }),
+    );
+  } finally {
+    dispatch.mockRestore();
+    now.mockRestore();
+    rmSync(slow.repoPath, { recursive: true, force: true });
+    rmSync(fast.repoPath, { recursive: true, force: true });
+  }
+});
+
 test("an ambiguous send failure leaves a visible pending receipt and is not repeated", async () => {
   const input = fixture("send-failure");
   const fake = fakeHerdr();
