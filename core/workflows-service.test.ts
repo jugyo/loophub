@@ -74,6 +74,30 @@ test("update patches fields and can rename uniquely", () => {
   );
 });
 
+test("archive preserves the workflow and run reference while excluding it from the active list", () => {
+  const workflow = svc.workflows.create({ name: "archive-me" });
+  const repo = S.createRepo("me/workflow-archive", HOME);
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 1,
+    prNumber: 2,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+  });
+
+  const archived = svc.workflows.archive("archive-me");
+
+  expect(archived.archived_at).toBeTruthy();
+  expect(svc.workflows.get("archive-me")).toEqual(archived);
+  expect(svc.workflows.list().map((item) => item.name)).not.toContain(
+    "archive-me",
+  );
+  expect(S.getWorkflowRun(run.id)?.workflow_id).toBe(workflow.id);
+});
+
 test("delete is rejected while a running Workflow run references the workflow", () => {
   const workflow = svc.workflows.create({ name: "in-use" });
   const repo = S.createRepo("me/workflow", HOME);

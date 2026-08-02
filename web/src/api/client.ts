@@ -333,6 +333,16 @@ export function deleteWorkflow(
   });
 }
 
+export function archiveWorkflow(
+  name: string,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Workflow>("workflows/archive", {
+    name,
+    session_id: sessionId,
+  });
+}
+
 // Workflow run display state for issue / PR detail (#1008). Returns null when the issue / PR has no run.
 export function getWorkflowRunStateForIssue(repo: string, number: number) {
   return rpc<WorkflowRunState | null>("workflowRuns/stateForIssue", {

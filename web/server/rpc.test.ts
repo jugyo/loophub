@@ -763,6 +763,14 @@ test("workflow CRUD is exposed through JSON-RPC", async () => {
   expect(updated.result.verify_prompt).toBe("Verify independently");
   expect(updated.result.execute_prompt).toBe("Implement");
 
+  const archived: any = await call("workflows/archive", {
+    name: "standard-v2",
+  });
+  expect(archived.result.archived_at).toBeTruthy();
+
+  const active: any = await call("workflows/list", {});
+  expect(active.result.map((w: any) => w.name)).not.toContain("standard-v2");
+
   const deleted: any = await call("workflows/delete", {
     name: "standard-v2",
   });

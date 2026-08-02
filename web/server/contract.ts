@@ -323,6 +323,12 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "workflows/archive": {
+    description: "Archive a global workflow definition.",
+    params: params({ name: strNonEmpty, session_id: sid }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.workflows.archive(p.name, p.session_id),
+  },
   "workflows/delete": {
     description:
       "Delete a global workflow definition unless a running run references it.",

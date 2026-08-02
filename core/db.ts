@@ -832,6 +832,7 @@ CREATE TABLE IF NOT EXISTS workflows (
   description     TEXT NOT NULL DEFAULT '',
   execute_prompt  TEXT NOT NULL DEFAULT '',
   verify_prompt   TEXT NOT NULL DEFAULT '',
+  archived_at     TEXT,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );

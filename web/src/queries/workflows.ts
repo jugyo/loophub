@@ -1,12 +1,12 @@
-// workflow query hooks (#1006): the list query plus create / update / delete mutations for the
+// workflow query hooks (#1006): the list query plus create / update / archive mutations for the
 // Settings > Workflows page. Workflows are global (not repo-scoped), so a single list query key is
 // used. Mutations invalidate that list onSuccess; event-polling invalidation (workflow.* in
 // lib/event-keys.ts) keeps other tabs in sync. The same workflows/* RPCs back the CLI.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  archiveWorkflow,
   createWorkflow,
-  deleteWorkflow,
   getWorkflowContracts,
   listWorkflows,
   updateWorkflow,
@@ -56,10 +56,10 @@ export function useUpdateWorkflow() {
   });
 }
 
-export function useDeleteWorkflow() {
+export function useArchiveWorkflow() {
   const invalidate = useInvalidateWorkflows();
   return useMutation({
-    mutationFn: (name: string) => deleteWorkflow(name),
+    mutationFn: (name: string) => archiveWorkflow(name),
     onSuccess: () => invalidate(),
   });
 }

@@ -1054,6 +1054,12 @@ export const MIGRATIONS: Migration[] = [
     );
   `,
   ),
+  {
+    id: "064-workflows-archived-at",
+    run(db) {
+      addColumnIfMissing(db, "workflows", "archived_at", "TEXT");
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

@@ -1363,6 +1363,7 @@ export interface WorkflowWire {
   description: string;
   execute_prompt: string;
   verify_prompt: string;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1374,6 +1375,7 @@ export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
     description: row.description,
     execute_prompt: row.execute_prompt,
     verify_prompt: row.verify_prompt,
+    archived_at: row.archived_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

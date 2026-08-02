@@ -118,9 +118,10 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   } else if (
     type === "workflow.created" ||
     type === "workflow.updated" ||
+    type === "workflow.archived" ||
     type === "workflow.deleted"
   ) {
-    // workflow CRUD (#1006) is global (not repo-scoped) and alters the workflow list for every
+    // Workflow definition changes (#1006) are global (not repo-scoped) and alter the workflow list for every
     // connected client, not just the tab that made the change (whose mutation hook already
     // invalidates onSuccess). Match only definition CRUD events: repo workflow execution events use
     // the existing workflow.run_* namespace and must not invalidate this unrelated global list.

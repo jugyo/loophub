@@ -262,12 +262,14 @@ function workflowByInput(input: { workflow?: string; workflowId?: number }) {
   }
   if (input.workflowId !== undefined) {
     const workflow = S.getWorkflowById(input.workflowId);
-    if (!workflow) throw new ServiceError(404, "Workflow not found");
+    if (!workflow || workflow.archived_at)
+      throw new ServiceError(404, "Workflow not found");
     return workflow;
   }
   if (input.workflow) {
     const workflow = S.getWorkflowByName(input.workflow.trim());
-    if (!workflow) throw new ServiceError(404, "Workflow not found");
+    if (!workflow || workflow.archived_at)
+      throw new ServiceError(404, "Workflow not found");
     return workflow;
   }
   throw new ServiceError(422, "--workflow or --workflow-id is required");

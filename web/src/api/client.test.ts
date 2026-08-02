@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  archiveWorkflow,
   createRepo,
   createWorkflow,
   deleteWorkflow,
@@ -208,6 +209,13 @@ describe("typed methods translate to contract params", () => {
         verify_prompt: "verify",
         session_id: "session-1",
       },
+    });
+
+    fetchMock = mockRpc({ ok: true });
+    await archiveWorkflow("standard", "session-1");
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "workflows/archive",
+      params: { name: "standard", session_id: "session-1" },
     });
 
     fetchMock = mockRpc({ ok: true });

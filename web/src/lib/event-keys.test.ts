@@ -126,6 +126,17 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["workflows"]);
   });
 
+  it("maps workflow archive events to the global workflows list", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "workflow.archived",
+        repo: undefined,
+        payload: { id: 3, name: "standard" },
+      }),
+    );
+    expect(keys).toContainEqual(["workflows"]);
+  });
+
   it("does not treat repo workflow execution events as workflow definition changes", () => {
     const keys = queryKeysForEvent(
       ev({

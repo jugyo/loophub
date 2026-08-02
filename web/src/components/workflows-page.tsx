@@ -1,5 +1,5 @@
 // Settings > Workflows screen (/settings/workflows, #1006). Lists the instance's workflows and
-// lets you create, edit, and delete them. A workflow is a global prompt bundle for the fixed
+// lets you create, edit, and archive them. A workflow is a global prompt bundle for the fixed
 // Execute/Verify development loop (workflow design: workflow definitions); the two step prompts
 // are the only user-configurable part. Same workflows/* RPCs the CLI uses; this is the
 // management UI. Start-workflow and run status are intentionally out of scope here.
@@ -16,7 +16,7 @@ import { errorMessage } from "@/lib/error-message";
 import { cn } from "@/lib/utils";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 import {
-  useDeleteWorkflow,
+  useArchiveWorkflow,
   useUpdateWorkflow,
   useWorkflowContracts,
   useWorkflows,
@@ -213,8 +213,8 @@ function WorkflowContractLanguageSettings() {
 
 function WorkflowCard({ workflow }: { workflow: Workflow }) {
   const [editing, setEditing] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const del = useDeleteWorkflow();
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const archive = useArchiveWorkflow();
 
   return (
     <div data-debug-component="WorkflowCard" className="rounded-md border p-4">
@@ -238,9 +238,9 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => setConfirmingDelete(true)}
+            onClick={() => setConfirmingArchive(true)}
           >
-            Delete
+            Archive
           </Button>
         </div>
       </div>
@@ -258,27 +258,24 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
         </WorkflowDialog>
       ) : null}
 
-      {confirmingDelete ? (
+      {confirmingArchive ? (
         <ConfirmDialog
-          title={`Delete "${workflow.name}"?`}
-          body="This removes the workflow. This cannot be undone."
-          confirmLabel="Delete"
-          pending={del.isPending}
-          // A delete refused because an active workflow run still references the workflow comes back as
-          // a 409; its message ("workflow is referenced by an active workflow run") is surfaced here so
-          // the refusal is visible instead of a silent no-op.
-          error={del.error ? errorMessage(del.error) : null}
+          title={`Archive "${workflow.name}"?`}
+          body="This removes the workflow from workflow lists and start options. Existing workflow runs are preserved."
+          confirmLabel="Archive"
+          pending={archive.isPending}
+          error={archive.error ? errorMessage(archive.error) : null}
           onConfirm={async () => {
             try {
-              await del.mutateAsync(workflow.name);
+              await archive.mutateAsync(workflow.name);
             } catch {
-              return; // surfaced via del.error above
+              return; // surfaced via archive.error above
             }
-            setConfirmingDelete(false);
+            setConfirmingArchive(false);
           }}
           onCancel={() => {
-            del.reset();
-            setConfirmingDelete(false);
+            archive.reset();
+            setConfirmingArchive(false);
           }}
         />
       ) : null}
