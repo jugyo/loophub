@@ -43,7 +43,6 @@ export async function bootstrap(
 ): Promise<Root> {
   const [webConfig, settingsResult] = await Promise.all([
     dependencies.getWebConfig().catch(() => ({
-      experimental: false,
       debug: false,
     })),
     dependencies.getSettings().then(

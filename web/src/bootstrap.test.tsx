@@ -22,7 +22,6 @@ describe("bootstrap", () => {
     await act(async () => {
       root = await bootstrap(rootElement, {
         getWebConfig: async () => ({
-          experimental: false,
           debug: false,
         }),
         getSettings: async () => {

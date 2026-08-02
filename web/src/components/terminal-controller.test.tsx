@@ -46,11 +46,7 @@ function LaunchButton({
   model,
   effort,
 }: {
-  workflow?:
-    | "workflow-run"
-    | "issue-create"
-    | "scheduled-task-create"
-    | "github-pr-export";
+  workflow?: "workflow-run" | "issue-create" | "github-pr-export";
   agent?: "claude-code" | "codex" | "grok";
   model?: string;
   effort?: string;

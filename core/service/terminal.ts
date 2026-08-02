@@ -74,7 +74,6 @@ export interface TerminalLaunchInput {
   workflow?:
     | "issue-create"
     | "workflow-create"
-    | "scheduled-task-create"
     | "github-pr-export"
     | "workflow-run";
   issueNumber?: number;
@@ -489,7 +488,6 @@ export const terminal = {
       // as the agent prompt.
       prompt:
         input.workflow === "issue-create" ||
-        input.workflow === "scheduled-task-create" ||
         input.workflow === "github-pr-export"
           ? input.prompt
           : undefined,
@@ -502,12 +500,11 @@ export const terminal = {
 
     const repo = { full_name: r.full_name, local_path: r.local_path };
 
-    // New Issue launches share one labelled workspace per repo session; Scheduled Task creation
-    // keeps its own fresh workspace (#935). Neither has a PR worktree to pin to. Worktree-backed
-    // workflows instead open a workspace pinned to the PR's real worktree (#551, below).
+    // New Issue launches share one labelled workspace per repo session. They have no PR worktree
+    // to pin to. Worktree-backed workflows instead open a workspace pinned to the PR's real
+    // worktree (#551, below).
     const isNewIssue = input.workflow === "issue-create";
-    const usesRepoRootWorkspace =
-      isNewIssue || input.workflow === "scheduled-task-create";
+    const usesRepoRootWorkspace = isNewIssue;
     let releaseNewIssueLaunch = isNewIssue
       ? await acquireNewIssueLaunchLock(herdrSessionName(repo))
       : null;

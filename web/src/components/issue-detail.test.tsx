@@ -121,7 +121,7 @@ function renderDetail(
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <WebConfigProvider config={{ experimental: false, debug: false }}>
+      <WebConfigProvider config={{ debug: false }}>
         <IssueDetail owner="me" repo="proj" number={12} />
       </WebConfigProvider>
     ),

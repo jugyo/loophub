@@ -707,12 +707,8 @@ CREATE INDEX IF NOT EXISTS idx_herdr_pane_claims_active
   ON herdr_pane_claims(pane_id)
   WHERE released_at IS NULL;
 
--- Scheduled tasks (#880). A repo-scoped, saved prompt that a coding agent (claude-code / codex) runs
--- automatically at one or more times of day. times_json is an array of "HH:MM" local-time strings —
--- each registered time fires once per day (dedup is enforced by scheduled_task_runs.fire_key, not
--- here). model/effort are NULL when unset, resolved at fire time from the per-agent application
--- defaults (core/config.ts agentModel/agentEffort). Deliberately NOT cron: the whole point is a small
--- fixed set of daily times, so a list of times replaces a cron expression (#880 out of scope).
+-- Retired scheduled-task storage. Keep these tables so existing installations retain their saved
+-- rows and historical run metadata; there is intentionally no active service or worker producer.
 CREATE TABLE IF NOT EXISTS scheduled_tasks (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id     INTEGER NOT NULL REFERENCES repos(id),
@@ -728,14 +724,8 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_repo ON scheduled_tasks(repo_id, id);
 
--- One row per fire of a scheduled task — meta only (#880; the agent's output body stays on the herdr
--- side, not persisted here). A fire is either 'scheduled' (a registered time arrived, worker sweep) or
--- 'manual' (Run now). fire_key is the dedup key for the once-per-day guarantee: for scheduled fires it
--- is "<local-date>T<HH:MM>" and UNIQUE(task_id, fire_key) makes a second sweep tick for the same
--- time/day throw instead of double-firing; for manual fires it is NULL (SQLite allows many NULLs in a
--- UNIQUE, so Run now is never blocked). status is the launch outcome: 'running' while the herdr launch
--- is in flight, then 'success' (agent pane captured) or 'failure' (error recorded). herdr_tab_id /
--- herdr_pane_id reference the launched herdr tab/pane so a human can find the live output.
+-- Historical run metadata for the retired scheduled-task feature. Retained for non-destructive
+-- compatibility with databases created while the feature was active.
 CREATE TABLE IF NOT EXISTS scheduled_task_runs (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id        INTEGER NOT NULL REFERENCES scheduled_tasks(id),

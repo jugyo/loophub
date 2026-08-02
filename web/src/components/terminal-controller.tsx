@@ -33,7 +33,6 @@ export interface OpenTerminalOptions {
   workflow?:
     | "issue-create"
     | "workflow-create"
-    | "scheduled-task-create"
     | "github-pr-export"
     | "workflow-run";
   issueNumber?: number;

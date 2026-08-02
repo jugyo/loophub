@@ -82,6 +82,19 @@ test("the retired Inbox schema is absent on a fresh database", () => {
   expect(names).toEqual([]);
 });
 
+test("the retired scheduled-task schema is retained for stored data", () => {
+  const names = (
+    D.db
+      .query(
+        `SELECT name FROM sqlite_schema
+         WHERE name IN ('scheduled_tasks', 'scheduled_task_runs')
+         ORDER BY name`,
+      )
+      .all() as { name: string }[]
+  ).map((row) => row.name);
+  expect(names).toEqual(["scheduled_task_runs", "scheduled_tasks"]);
+});
+
 function explain(sql: string, params: unknown[]): string {
   const rows = D.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as {
     detail: string;

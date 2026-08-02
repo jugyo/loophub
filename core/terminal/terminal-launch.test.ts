@@ -79,14 +79,6 @@ describe("herdr terminal launch", () => {
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
-        workflow: "scheduled-task-create",
-        codingAgent: "claude-code",
-        prompt: "Create a scheduled task.",
-      }),
-    ).toBe("claude '--permission-mode' 'auto' 'Create a scheduled task.'");
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
         prompt: "Create GitHub PR.",
@@ -196,28 +188,6 @@ describe("herdr terminal launch", () => {
         codingAgent: "claude-code",
       }),
     ).toBe("");
-  });
-
-  test("launches scheduled task creation in auto mode", () => {
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
-        workflow: "scheduled-task-create",
-        codingAgent: "codex",
-        prompt: "Create a scheduled task.",
-      }),
-    ).toBe(
-      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create a scheduled task.'",
-    );
-
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
-        workflow: "scheduled-task-create",
-        codingAgent: "claude-code",
-        prompt: "Create a scheduled task.",
-      }),
-    ).toBe("claude '--permission-mode' 'auto' 'Create a scheduled task.'");
   });
 
   test("reads codingAgent config for GitHub PR export launches when no override is passed (#660)", () => {

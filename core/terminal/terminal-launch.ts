@@ -1,12 +1,7 @@
 import { createHash } from "node:crypto";
 import { type CodingAgent, codingAgent } from "../config.ts";
-import { buildRuntimeArgs, runtimeApprovalArgs } from "../runtime-args.ts";
+import { buildRuntimeArgs } from "../runtime-args.ts";
 import { RUNTIMES } from "../runtimes.ts";
-import {
-  type ScheduledTaskNotificationContext,
-  scheduledTaskNotificationEnv,
-  scheduledTaskNotificationPromptSuffix,
-} from "../scheduled-task-notification.ts";
 import type { WorkflowStep } from "../workflow/compose.ts";
 import { workflowStepHerdrAgentName } from "../workflow/herdr-agents.ts";
 
@@ -98,11 +93,7 @@ export function herdrCommandLine(plan: HerdrLaunchPlan): string {
 
 export function commandForHerdrLaunch(input: {
   repo: string;
-  workflow?:
-    | "issue-create"
-    | "workflow-create"
-    | "scheduled-task-create"
-    | "github-pr-export";
+  workflow?: "issue-create" | "workflow-create" | "github-pr-export";
   prNumber?: number;
   codingAgent?: CodingAgent;
   model?: string;
@@ -146,17 +137,9 @@ export function commandForHerdrLaunch(input: {
     // workflow-create instructions as its initial prompt, mirroring the New issue flow's `--prompt`.
     // `lh workflow create` is global (no repo), so this runs from the LoopHub-home cwd the service
     // pins for it, not a repo worktree. The agent/model come from the global effective config
-    // (`codingAgent()`), same non-repo default as scheduled-task-create.
+    // (`codingAgent()`).
     const agent = input.codingAgent ?? codingAgent();
     const argv = buildRuntimeArgs({ runtime: agent, prompt: input.prompt });
-    return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
-  }
-  if (input.workflow === "scheduled-task-create" && input.prompt) {
-    const agent = input.codingAgent ?? codingAgent();
-    const argv = buildRuntimeArgs({
-      runtime: agent,
-      prompt: input.prompt,
-    });
     return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
   if (input.workflow === "github-pr-export" && input.prNumber && input.prompt) {
@@ -171,50 +154,6 @@ export function commandForHerdrLaunch(input: {
     return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
   return "";
-}
-
-// Builds the inner shell command a scheduled task (#880) runs in its herdr pane: the saved prompt
-// handed to the agent's non-interactive mode. Claude uses `claude -p <prompt>` (print mode); Codex
-// uses `codex exec <prompt>`. A scheduled fire is unattended, so both launch in a no-approval-prompt
-// mode — there is no human to answer a mid-run prompt. runtimeApprovalArgs supplies each runtime's
-// full auto-mode arguments, including Codex's `--dangerously-bypass-approvals-and-sandbox`. The
-// print/exec invocation shape is scheduled-task-specific, so it stays here; only the approval
-// posture is shared.
-// `model` applies to both; `effort` is a Codex-only reasoning knob (claude has no effort flag),
-// passed as its `model_reasoning_effort` config override. The prompt (and every interpolated value)
-// is single-quote-escaped before it reaches `zsh -lc`, so a crafted prompt cannot inject a command.
-export function buildScheduledTaskCommand(input: {
-  agent: CodingAgent;
-  prompt: string;
-  model?: string | null;
-  effort?: string | null;
-  context?: ScheduledTaskNotificationContext;
-}): string {
-  const promptText = input.context
-    ? `${input.prompt.trimEnd()}${scheduledTaskNotificationPromptSuffix(input.context)}`
-    : input.prompt;
-  const prompt = shellArg(promptText);
-  const envPrefix = input.context
-    ? `${Object.entries(scheduledTaskNotificationEnv(input.context))
-        .map(([key, value]) => `${key}=${shellArg(value)}`)
-        .join(" ")} `
-    : "";
-  const model = input.model?.trim();
-  if (input.agent === "codex") {
-    const parts = [
-      "codex",
-      "exec",
-      ...runtimeApprovalArgs("codex").map(shellArg),
-    ];
-    if (model) parts.push("--model", shellArg(model));
-    const effort = input.effort?.trim();
-    if (effort) parts.push("-c", shellArg(`model_reasoning_effort=${effort}`));
-    parts.push(prompt);
-    return `${envPrefix}${parts.join(" ")}`;
-  }
-  const parts = ["claude", "-p", prompt, ...runtimeApprovalArgs("claude-code")];
-  if (model) parts.push("--model", shellArg(model));
-  return `${envPrefix}${parts.join(" ")}`;
 }
 
 // Creates the tab the agent will start in (`herdr agent start --tab <ID>`), so launches open

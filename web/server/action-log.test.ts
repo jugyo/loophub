@@ -52,10 +52,10 @@ describe("logHumanAction", () => {
     const out = stdout();
     A.logHumanAction("terminal/launch", {
       repo: "o/r",
-      workflow: "scheduled-task-create",
+      workflow: "issue-create",
     });
     expect(out.mock.calls[0][0]).toMatch(
-      /INFO human action: launch workflow=scheduled-task-create repo=o\/r$/,
+      /INFO human action: launch workflow=issue-create repo=o\/r$/,
     );
   });
 

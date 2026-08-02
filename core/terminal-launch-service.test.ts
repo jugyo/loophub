@@ -914,28 +914,6 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     );
   });
 
-  test("scheduled task creation also starts in a new workspace with the creation prompt", async () => {
-    herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0), exitWith(0));
-
-    const result = await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "scheduled-task-create",
-      label: "New scheduled task",
-      prompt: "Create a scheduled task.",
-    });
-
-    expect(herdr.calls[0]).toContain("workspace");
-    expect(herdr.calls[0]).toContain("create");
-    expect(herdr.calls[0]).not.toContain("--label");
-    const agentStart = herdr.calls[1];
-    expect(agentStart).toContain("start");
-    expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w4:t1");
-    expect(agentStart).toContain(
-      "claude '--permission-mode' 'auto' 'Create a scheduled task.'",
-    );
-    expect(result).toMatchObject({ backend: "herdr" });
-  });
-
   // Once the agent is running in the new workspace, herdr's active workspace should switch to
   // it automatically (#556) rather than leaving it selectable only by hand.
   test("focuses the newly created workspace once the agent has started (#556)", async () => {

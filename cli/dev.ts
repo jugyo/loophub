@@ -135,8 +135,8 @@ export function buildCodexArgs({
   // the codex CLI's error to raise. Omitted => codex's own default. Control characters are
   // stripped (see display()), same invariant as buildClaudeArgs' model.
   model?: string;
-  // Reasoning effort (`-c model_reasoning_effort=<level>`, #682/#1534). Same Codex config override
-  // the scheduled-task launcher uses. Omitted => codex's own default.
+  // Reasoning effort (`-c model_reasoning_effort=<level>`, #682/#1534). Omitted => codex's own
+  // default.
   effort?: string;
 }): string[] {
   return buildRuntimeArgs({

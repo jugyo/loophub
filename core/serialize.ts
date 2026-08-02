@@ -5,11 +5,7 @@
 // whose values come from live git / worktree state live in serialize-status.ts, so this
 // module needs neither node:fs nor core/git.ts and is testable without a git repo.
 
-import {
-  agentEffort,
-  agentModel,
-  resolveEffectiveAgentConfig,
-} from "./config.ts";
+import { resolveEffectiveAgentConfig } from "./config.ts";
 import type { GhPrStatus } from "./github.ts";
 import { linkedRef } from "./links.ts";
 import type { MergeMode } from "./merge-mode.ts";
@@ -34,8 +30,8 @@ import type { WorkflowHerdrAgent } from "./workflow/herdr-agents.ts";
 import type { WorkflowStepStatuses } from "./workflow/steps.ts";
 
 // Wire-type SSOT (AGENTS.md): the coding-runtime id is part of several wire shapes below (agent cost
-// summary, scheduled tasks, per-agent settings). Re-export it from the registry so web/src/api/types.ts
-// derives `CodingAgent` from core via a type-only import instead of re-declaring the union.
+// summary and per-agent settings). Re-export it from the registry so web/src/api/types.ts derives
+// `CodingAgent` from core via a type-only import instead of re-declaring the union.
 export type { CodingAgent } from "./runtimes.ts";
 export type { Theme as ThemeWire } from "./theme.ts";
 export type { WorkflowContractLanguage as WorkflowContractLanguageWire } from "./workflow/contracts.ts";
@@ -1330,83 +1326,13 @@ export function retroJSON(row: S.RetroRow) {
 }
 
 // Runtime UI features exposed by lh-web. Keep this wire shape in core so the server and SPA cannot
-// drift when new experimental surfaces are added.
+// drift when runtime controls are added.
 export interface WebConfigWire {
-  experimental: boolean;
   debug: boolean;
 }
 
-export function webConfigJSON(
-  experimental: boolean,
-  debug: boolean,
-): WebConfigWire {
-  return { experimental, debug };
-}
-
-// A scheduled task (#880): a repo-scoped saved prompt a coding agent runs at one or more times of
-// day. `times` is parsed back from the JSON column. `model`/`effort` are the stored overrides (null
-// when unset); `default_model`/`default_effort` are the per-agent application defaults that apply
-// when unset, so the UI can show them as placeholders without re-implementing config resolution.
-export interface ScheduledTaskWire {
-  id: number;
-  title: string;
-  prompt: string;
-  agent: string;
-  times: string[];
-  model: string | null;
-  effort: string | null;
-  default_model: string;
-  default_effort: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export function scheduledTaskJSON(row: S.ScheduledTaskRow): ScheduledTaskWire {
-  const agent = row.agent as CodingAgent;
-  return {
-    id: row.id,
-    title: row.title,
-    prompt: row.prompt,
-    agent: row.agent,
-    times: safeParseArray<string>(row.times_json),
-    model: row.model ?? null,
-    effort: row.effort ?? null,
-    default_model: agentModel(agent),
-    default_effort: agentEffort(agent),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-}
-
-// One fire of a scheduled task (#880) — meta only; the agent's output stays on the herdr side.
-// `trigger` is 'scheduled' | 'manual'; `status` is the launch outcome ('running' | 'success' |
-// 'failure'); the herdr refs point at the launched tab/pane so a human can open the live output.
-export interface ScheduledTaskRunWire {
-  id: number;
-  trigger: string;
-  scheduled_time: string | null;
-  started_at: string;
-  ended_at: string | null;
-  status: string;
-  herdr_tab_id: string | null;
-  herdr_pane_id: string | null;
-  error: string | null;
-}
-
-export function scheduledTaskRunJSON(
-  row: S.ScheduledTaskRunRow,
-): ScheduledTaskRunWire {
-  return {
-    id: row.id,
-    trigger: row.trigger,
-    scheduled_time: row.scheduled_time ?? null,
-    started_at: row.started_at,
-    ended_at: row.ended_at ?? null,
-    status: row.status,
-    herdr_tab_id: row.herdr_tab_id ?? null,
-    herdr_pane_id: row.herdr_pane_id ?? null,
-    error: row.error ?? null,
-  };
+export function webConfigJSON(debug: boolean): WebConfigWire {
+  return { debug };
 }
 
 // A workflow definition (#997): a global prompt bundle for the fixed
