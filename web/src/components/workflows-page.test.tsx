@@ -81,7 +81,9 @@ function renderPage(
 
 // Open a workflow's edit dialog: the only remaining create/edit form path is edit (#1889).
 async function openEditDialog() {
-  fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+  const editButton = await screen.findByRole("button", { name: "Edit" });
+  editButton.focus();
+  fireEvent.click(editButton);
   return screen.getByRole("dialog", { name: 'Edit "standard"' });
 }
 
@@ -231,28 +233,73 @@ describe("WorkflowsPage", () => {
     expect(executeField.value).toBe("execute here");
   });
 
-  it("shows both prompt fields at a comfortable multiline height", async () => {
+  it("uses most of the dialog for one large, vertically resizable prompt editor", async () => {
     renderPage({}, [workflow()]);
     const dialog = await openEditDialog();
 
-    for (const name of ["Execute prompt", "Verify prompt"]) {
-      expect(within(dialog).getByRole("textbox", { name }).classList).toContain(
-        "min-h-48",
-      );
-    }
+    expect(dialog.classList).toContain("max-w-7xl");
+    expect(
+      within(dialog).getByRole("textbox", { name: "Name" }).closest("label")
+        ?.parentElement?.classList,
+    ).toContain("flex-col");
+    const editor = within(dialog).getByRole("textbox", {
+      name: "Execute prompt",
+    });
+    expect(within(dialog).getAllByText("Execute prompt")).toHaveLength(1);
+    expect(editor.classList).toContain("min-h-80");
+    expect(editor.classList).toContain("flex-1");
+    expect(editor.classList).toContain("resize-y");
+    expect(
+      within(dialog).queryByRole("textbox", { name: "Verify prompt" }),
+    ).toBeNull();
   });
 
-  it("shows the parent contract read-only on the edit form, without a prompt field of its own", async () => {
+  it("keeps long unsaved prompts across tabs and saves both values together", async () => {
+    const executePrompt = `Execute start\n${"execute detail\n".repeat(80)}Execute end`;
+    const verifyPrompt = `Verify start\n${"verify detail\n".repeat(80)}Verify end`;
+    renderPage({ "workflows/update": () => workflow() }, [workflow()]);
+    const dialog = await openEditDialog();
+
+    fireEvent.change(
+      within(dialog).getByRole("textbox", { name: "Execute prompt" }),
+      { target: { value: executePrompt } },
+    );
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Verify prompt" }));
+    fireEvent.change(
+      within(dialog).getByRole("textbox", { name: "Verify prompt" }),
+      { target: { value: verifyPrompt } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Execute prompt" }),
+    );
+    expect(
+      within(dialog).getByRole("textbox", { name: "Execute prompt" }),
+    ).toHaveProperty("value", executePrompt);
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+    await waitFor(() =>
+      expect(rpcCall("workflows/update")?.params).toMatchObject({
+        execute_prompt: executePrompt,
+        verify_prompt: verifyPrompt,
+      }),
+    );
+  });
+
+  it("shows workflow orchestration read-only without exposing the parent contract name", async () => {
     renderPage({}, [workflow()]);
     const dialog = await openEditDialog();
-    // name + description + the two step prompts; the parent contract adds no editable field.
-    expect(within(dialog).getAllByRole("textbox")).toHaveLength(4);
+    // name + description + the selected step prompt; the parent contract adds no editable field.
+    expect(within(dialog).getAllByRole("textbox")).toHaveLength(3);
+    expect(within(dialog).getByText("Workflow orchestration")).toBeTruthy();
+    expect(within(dialog).queryByText("Parent")).toBeNull();
     fireEvent.click(
       within(dialog).getAllByRole("button", { name: "System prompt" })[0],
     );
 
     const parent = screen.getByRole("dialog", {
-      name: "Parent system prompt",
+      name: "Workflow orchestration system prompt",
     });
     expect(
       await within(parent).findByText(/Parent contract body/),
@@ -285,7 +332,7 @@ describe("WorkflowsPage", () => {
     ).toHaveProperty("value", "unsaved workflow");
   });
 
-  it("focuses the workflow form so Escape closes the dialog immediately", async () => {
+  it("focuses the workflow form, closes with Escape, and restores trigger focus", async () => {
     renderPage({}, [workflow()]);
     const dialog = await openEditDialog();
     const name = within(dialog).getByRole("textbox", { name: "Name" });
@@ -295,6 +342,44 @@ describe("WorkflowsPage", () => {
     expect(
       screen.queryByRole("dialog", { name: 'Edit "standard"' }),
     ).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Edit" }),
+    );
+  });
+
+  it("traps Tab and Shift+Tab focus within the edit dialog", async () => {
+    renderPage({}, [workflow()]);
+    const dialog = await openEditDialog();
+    const close = within(dialog).getByRole("button", {
+      name: 'Close Edit "standard"',
+    });
+    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+
+    cancel.focus();
+    fireEvent.keyDown(cancel, { key: "Tab" });
+    expect(document.activeElement).toBe(close);
+
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(cancel);
+  });
+
+  it("switches prompt tabs with arrow keys and keeps only the active tab focusable", async () => {
+    renderPage({}, [workflow()]);
+    const dialog = await openEditDialog();
+    const execute = within(dialog).getByRole("tab", {
+      name: "Execute prompt",
+    });
+    const verify = within(dialog).getByRole("tab", { name: "Verify prompt" });
+
+    execute.focus();
+    fireEvent.keyDown(execute, { key: "ArrowRight" });
+    expect(verify.getAttribute("aria-selected")).toBe("true");
+    expect(verify.tabIndex).toBe(0);
+    expect(execute.tabIndex).toBe(-1);
+    expect(document.activeElement).toBe(verify);
+    expect(
+      within(dialog).getByRole("textbox", { name: "Verify prompt" }),
+    ).toBeTruthy();
   });
 
   it("shows the fixed system prompt in the configured language", async () => {
@@ -330,7 +415,9 @@ describe("WorkflowsPage", () => {
 
     expect(
       await within(
-        screen.getByRole("dialog", { name: "Parent system prompt" }),
+        screen.getByRole("dialog", {
+          name: "Workflow orchestration system prompt",
+        }),
       ).findByText(/日本語の parent contract 本文/),
     ).toBeTruthy();
   });
@@ -341,9 +428,10 @@ describe("WorkflowsPage", () => {
 
     expect(
       within(dialog).getAllByRole("button", { name: "System prompt" }),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Verify prompt" }));
     fireEvent.click(
-      within(dialog).getAllByRole("button", { name: "System prompt" })[2],
+      within(dialog).getAllByRole("button", { name: "System prompt" })[1],
     );
     const promptDialog = screen.getByRole("dialog", {
       name: "Verify system prompt",
