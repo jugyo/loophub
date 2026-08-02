@@ -155,7 +155,7 @@ export function useRepoAgentConfig(
   enabled = true,
 ) {
   return useQuery({
-    queryKey: [...queryKeys.repo(full(owner, repo)), "agent-config"],
+    queryKey: queryKeys.repoAgentConfig(full(owner, repo)),
     queryFn: () => getRepoAgentConfig(owner, repo),
     enabled: enabled && Boolean(owner && repo),
   });
@@ -177,7 +177,7 @@ export function useSetRepoAgentConfig(owner: string, repo: string) {
     }) => setRepoAgentConfig(owner, repo, input),
     onSuccess: () => {
       qc.invalidateQueries({
-        queryKey: [...queryKeys.repo(full(owner, repo)), "agent-config"],
+        queryKey: queryKeys.repoAgentConfig(full(owner, repo)),
       });
     },
   });

@@ -72,6 +72,28 @@ describe("useLoopHubEvents", () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
+  it("invalidates a shared key once for a whole batch of events", async () => {
+    const batch = Array.from({ length: 20 }, (_, i) => ev(i + 1));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(batch))
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    render(<HookHarness />, { wrapper: wrapper(client) });
+    await vi.waitFor(() => expect(invalidate).toHaveBeenCalled());
+
+    // All 20 events are repo-scoped, so each one maps to ["repo", "me/proj"]. Invalidating per
+    // event would cancel and restart the in-flight refetch of every query under that prefix.
+    const repoKey = JSON.stringify(["repo", "me/proj"]);
+    const repoCalls = invalidate.mock.calls.filter(
+      ([filters]) => JSON.stringify(filters?.queryKey) === repoKey,
+    );
+    expect(repoCalls).toHaveLength(1);
+  });
+
   it("uses the visibility-specific cadence and reschedules on visibility changes", async () => {
     let visibilityState: DocumentVisibilityState = "visible";
     vi.spyOn(document, "visibilityState", "get").mockImplementation(

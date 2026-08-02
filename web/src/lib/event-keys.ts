@@ -24,6 +24,9 @@ export const queryKeys = {
   agentSessions: () => ["agent-sessions"] as const,
   // Keep the 60s cost poll outside the agent-session event invalidation prefix.
   agentCostSummary: () => ["agent-cost-summary"] as const,
+  // Top-level rather than a child of repo(full): every repo-scoped event invalidates that prefix,
+  // but the coding-agent override only changes through repo.agent_config_changed.
+  repoAgentConfig: (full: string) => ["repo-agent-config", full] as const,
   terminalSessions: () => ["terminal", "sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
@@ -198,6 +201,9 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // Dashboard rows embed the repo's full_name and /r/<full_name> links, so any repo
     // metadata change (rename especially) must refresh the cross-repo top page too.
     keys.push([...queryKeys.dashboard()]);
+    if (type === "repo.agent_config_changed" && repo) {
+      keys.push([...queryKeys.repoAgentConfig(repo)]);
+    }
     const from = payload?.from;
     if (typeof from === "string" && from) {
       keys.push([...queryKeys.repo(from)]);

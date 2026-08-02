@@ -78,6 +78,21 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["agent-sessions"]);
   });
 
+  it("leaves the repo agent config alone on ordinary repo-scoped events", () => {
+    const keys = queryKeysForEvent(
+      ev({ type: "issue.updated", repo: "me/proj", payload: { number: 12 } }),
+    );
+    expect(keys).toContainEqual(["repo", "me/proj"]);
+    expect(keys).not.toContainEqual(["repo-agent-config", "me/proj"]);
+  });
+
+  it("maps repo.agent_config_changed to the repo agent config", () => {
+    const keys = queryKeysForEvent(
+      ev({ type: "repo.agent_config_changed", repo: "me/proj" }),
+    );
+    expect(keys).toContainEqual(["repo-agent-config", "me/proj"]);
+  });
+
   it("leaves the cost summary alone on agent_session events", () => {
     const keys = queryKeysForEvent(ev({ type: "agent_session.updated" }));
     expect(keys).not.toContainEqual(["agent-cost-summary"]);

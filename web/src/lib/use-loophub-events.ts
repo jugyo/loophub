@@ -13,15 +13,25 @@ const HIDDEN_POLL_MS = 5000;
 const POLL_LIMIT = 100;
 const ROLLBACK_PROBE_MS = 30_000;
 
-function applyLoopHubEvent(
-  event: LoopEvent,
+// One poll can carry up to POLL_LIMIT events, and most of them invalidate the same repo-scoped
+// prefixes. invalidateQueries cancels an in-flight refetch and starts a new one, so invalidating
+// per event turned a batch of N events into N RPC calls for a single query. Collect the batch's
+// distinct keys first and invalidate each once.
+function applyLoopHubEvents(
+  events: readonly LoopEvent[],
   queryClient: ReturnType<typeof useQueryClient>,
 ): void {
-  if (!event || typeof event.id !== "number") {
-    return;
+  const queryKeys = new Map<string, readonly unknown[]>();
+  for (const event of events) {
+    if (!event || typeof event.id !== "number") {
+      continue;
+    }
+    rememberEventId(event.id);
+    for (const queryKey of queryKeysForEvent(event)) {
+      queryKeys.set(JSON.stringify(queryKey), queryKey);
+    }
   }
-  rememberEventId(event.id);
-  for (const queryKey of queryKeysForEvent(event)) {
+  for (const queryKey of queryKeys.values()) {
     void queryClient.invalidateQueries({ queryKey });
   }
 }
@@ -32,6 +42,7 @@ function invalidateReconnectQueries(
   const queryKeyPrefixes: readonly (readonly unknown[])[] = [
     queryKeys.repos(),
     ["repo"],
+    ["repo-agent-config"],
     ["issues"],
     ["issue"],
     ["pulls"],
@@ -103,8 +114,8 @@ export function useLoopHubEvents(): void {
             cursor = await resetCursorIfServerRolledBack(cursor, queryClient);
           }
         } else {
+          applyLoopHubEvents(events, queryClient);
           for (const event of events) {
-            applyLoopHubEvent(event, queryClient);
             cursor = Math.max(cursor, event.id);
           }
           if (events.length >= POLL_LIMIT) schedule(0);
