@@ -6,11 +6,13 @@ export function AgentBotIcon({
   needsAttention = false,
   inactive = false,
   label,
+  className,
 }: {
   working?: boolean;
   needsAttention?: boolean;
   inactive?: boolean;
   label?: string;
+  className?: string;
 }) {
   return (
     <span
@@ -22,6 +24,7 @@ export function AgentBotIcon({
         working &&
           "animate-[linked-pull-pulse_2.4s_ease-out_infinite] bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/70 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-300/80",
         inactive && "opacity-45",
+        className,
       )}
     >
       <Bot className="size-3" aria-hidden="true" />
