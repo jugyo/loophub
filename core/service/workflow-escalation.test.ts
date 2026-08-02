@@ -78,7 +78,9 @@ test("escalateHuman records one Issue comment across replays", () => {
     },
   });
   expect(S.listComments(issue.id)).toHaveLength(1);
-  expect(S.listComments(issue.id)[0].body).toContain("Rework limit reached.");
+  expect(S.listComments(issue.id)[0].body).toBe(
+    `Workflow run ${run.id} requires human guidance: Rework limit reached.`,
+  );
 });
 
 test("escalateHuman can override the run Issue", () => {

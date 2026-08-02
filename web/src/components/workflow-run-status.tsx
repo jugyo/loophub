@@ -131,7 +131,7 @@ export function WorkflowRunStatusSection({
           <span className="font-medium">
             {state.workflow_name ?? "workflow"}
           </span>
-          <span className="text-muted-foreground">run #{state.id}</span>
+          <span className="text-muted-foreground">run {state.id}</span>
           {state.rework_count > 0 ? (
             <span className="text-muted-foreground">
               · rework ×{state.rework_count}/{state.rework_limit}

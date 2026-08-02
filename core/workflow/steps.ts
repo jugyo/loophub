@@ -103,7 +103,7 @@ export function evaluateWorkflowSteps(
   }
   if (input.latestReview && !input.headAheadOfLatestReview) {
     executeMissing.push(
-      `head has not advanced past review #${input.latestReview.id} (${input.latestReview.event})`,
+      `head has not advanced past review ${input.latestReview.id} (${input.latestReview.event})`,
     );
   }
   const execute: WorkflowStepStatus = {

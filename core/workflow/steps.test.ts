@@ -41,7 +41,7 @@ test("execute incomplete while the fresh review is still pinned to current head"
   });
   expect(status.execute.complete).toBe(false);
   expect(status.execute.missing).toEqual([
-    "head has not advanced past review #7 (request_changes)",
+    "head has not advanced past review 7 (request_changes)",
   ]);
 });
 
@@ -65,7 +65,7 @@ test("execute remains incomplete when a stale review is not an ancestor of HEAD"
 
   expect(status.execute).toEqual({
     complete: false,
-    missing: ["head has not advanced past review #7 (request_changes)"],
+    missing: ["head has not advanced past review 7 (request_changes)"],
   });
 });
 

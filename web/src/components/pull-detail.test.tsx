@@ -1619,7 +1619,7 @@ describe("PullDetail", () => {
     expect(headings).toHaveLength(1);
     expect(headings[0].closest("aside")).toBeTruthy();
     expect(screen.getByText("Implementation loop")).toBeTruthy();
-    expect(screen.getByText("run #12")).toBeTruthy();
+    expect(screen.getByText("run 12")).toBeTruthy();
     expect(screen.getByText("Verify")).toBeTruthy();
     expect(screen.getByText("· rework ×2/8")).toBeTruthy();
     expect(screen.getByText("Needs human")).toBeTruthy();

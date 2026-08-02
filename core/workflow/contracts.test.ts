@@ -63,7 +63,7 @@ test("contracts preserve the workflow command protocol in both languages", () =>
     expect(parent).toContain(
       "lh workflow instruction <run> --repo '<repo>' --note <text|-> --json",
     );
-    expect(parent).toContain("orchestrator: address review #<id>");
+    expect(parent).toContain("orchestrator: address review <id>");
 
     for (const command of [
       "lh workflow next",
@@ -321,19 +321,19 @@ test("Execute keeps follow-up classification and reply destinations together", (
     {
       text: workflowContracts("en").execute,
       categories: [
-        ["Rework", "orchestrator: address review #<id>"],
+        ["Rework", "orchestrator: address review <id>"],
         [
           "Diff feedback",
-          "orchestrator: address diff feedback thread #<t> comment #<c>",
+          "orchestrator: address diff feedback thread <t> comment <c>",
         ],
-        ["PR comment", "orchestrator: address PR comment #<c>"],
+        ["PR comment", "orchestrator: address PR comment <c>"],
         ["Additional work", "ordinary product or engineering work"],
         ["Question-only", "lh workflow escalate"],
         ["Confirmation or no domain change required", "metadata-only"],
         ["Ambiguous but in scope", "smallest implementation"],
       ],
       reworkReply: [
-        "orchestrator: address review #<id>",
+        "orchestrator: address review <id>",
         "lh pr review-response add",
         "do not use a top-level `lh pr comment`",
       ],
@@ -358,19 +358,19 @@ test("Execute keeps follow-up classification and reply destinations together", (
     {
       text: workflowContracts("ja").execute,
       categories: [
-        ["Rework", "orchestrator: address review #<id>"],
+        ["Rework", "orchestrator: address review <id>"],
         [
           "Diff feedback",
-          "orchestrator: address diff feedback thread #<t> comment #<c>",
+          "orchestrator: address diff feedback thread <t> comment <c>",
         ],
-        ["PR comment", "orchestrator: address PR comment #<c>"],
+        ["PR comment", "orchestrator: address PR comment <c>"],
         ["追加作業", "product / engineering 要求"],
         ["質問だけ、または人間の判断待ち", "lh workflow escalate"],
         ["確認のみ、またはドメイン変更不要", "metadata-only"],
         ["曖昧だが scope 内", "最小の実装"],
       ],
       reworkReply: [
-        "orchestrator: address review #<id>",
+        "orchestrator: address review <id>",
         "lh pr review-response add",
         "top-level の `lh pr comment` は使いません",
       ],

@@ -272,7 +272,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       phase: "execute",
       direction: "down",
       body: [
-        `Launch Workflow execute step for run #${result.run.id}.`,
+        `Launch Workflow execute step for run ${result.run.id}.`,
         "",
         "## Inputs",
         `- repo: ${repo.full_name}`,
@@ -507,7 +507,7 @@ test("start snapshots the contract language for parent and every later step", as
   ).toEqual([
     expect.objectContaining({
       body: [
-        `Workflow execute step を run #${started.run.id} 向けに起動します。`,
+        `Workflow execute step を run ${started.run.id} 向けに起動します。`,
         "",
         "## 入力",
         `- repo: ${repo.full_name}`,
@@ -3770,7 +3770,7 @@ test("history ranks lifecycle events by what a human judges the run by (#1867)",
     "workflow_run.teleported:Run teleported",
   ]);
   expect(history[2].description).toContain("Execute finished implementing");
-  expect(history[3].description).toContain(`Review #${changesRequested.id}`);
+  expect(history[3].description).toContain(`Review ${changesRequested.id}`);
   expect(history[6].description).toContain("$40.07 passed the $40.00 limit");
   expect(history[8].description).toContain("from $40.00 to $60.00");
   expect(history[10].description).toContain("GitHub PR #512");
@@ -3809,7 +3809,7 @@ test("history falls back to an unknown verdict when the review row is gone (#186
   expect(history).toHaveLength(1);
   expect(history[0].label).toBe("Review submitted");
   expect(history[0].significance).toBe("routine");
-  expect(history[0].description).toContain("Review #77");
+  expect(history[0].description).toContain("Review 77");
 });
 
 test("status and next observe the run's event trail with a single load (#1912)", async () => {

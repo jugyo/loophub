@@ -394,7 +394,7 @@ function buildStepPointers(input: {
         { label: "issue", value: `#${input.run.issue_number}` },
         { label: "pr", value: `#${input.run.pr_number}` },
         ...(input.reviewId !== undefined
-          ? [{ label: "address review", value: `#${input.reviewId}` }]
+          ? [{ label: "address review", value: String(input.reviewId) }]
           : []),
       ];
     case "verify": {
@@ -414,7 +414,7 @@ function buildStepPointers(input: {
 }
 
 // Validate a rework launch's review pointer: only Execute launches take one (the
-// "address review #<id>" pointer), and it must reference a review on the run's PR.
+// "address review <id>" pointer), and it must reference a review on the run's PR.
 function resolveReworkReview(
   prIssueId: number,
   step: WorkflowStep,

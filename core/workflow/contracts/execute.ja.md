@@ -19,19 +19,19 @@ launch note と `orchestrator:` で始まる同じ指示は同様に扱います
 
 ## Follow-up の分類
 
-- **Rework（`orchestrator: address review #<id>`）** — 指定された review と全 review comments を
+- **Rework（`orchestrator: address review <id>`）** — 指定された review と全 review comments を
   `lh pr review view <pr> --review <id> --json` で読みます。
   すべての finding を解決します。review pointer、対応 commit、workflow の turn 記録が対応関係を保持します。
   文章での応答が必要なら `lh pr review-response add <pr> --review <id> [--review-comment <id>]
   --body <text>` で対象に紐づけ、top-level の `lh pr comment` は使いません。
-- **Diff feedback（`orchestrator: address diff feedback thread #<t> comment #<c>`）** —
+- **Diff feedback（`orchestrator: address diff feedback thread <t> comment <c>`）** —
   `lh pr feedback pending <pr> --run <run> --json` で未対応の会話と anchor 周辺の diff を読み、
   `lh pr feedback reply <t> --pr <pr> --body <text>` ですべてに返信します。source の修正が必要な会話では、
-  編集前にまずその thread へ短く返信し、`comment #<c>`、認識したこと、対応する意思を明記します。その後、
+  編集前にまずその thread へ短く返信し、`comment <c>`、認識したこと、対応する意思を明記します。その後、
   求められた修正を行います。
-- **PR comment（`orchestrator: address PR comment #<c>`）** — `lh pr view <pr> --json` で指定された
+- **PR comment（`orchestrator: address PR comment <c>`）** — `lh pr view <pr> --json` で指定された
   comment を読み、本文を追加作業の指示として扱います。source の修正が必要なら、編集前に
-  `lh pr comment <pr> --body <text>` で短い top-level の着手返信を投稿し、`comment #<c>`、認識したこと、
+  `lh pr comment <pr> --body <text>` で短い top-level の着手返信を投稿し、`comment <c>`、認識したこと、
   対応する意思を明記します。
 - **追加作業** — non-rework の指示が Issue / PR への通常の product / engineering 要求なら、同じ Issue と
   PR に最小限の実装を行います。Issue body の書き換えは不要です。次の Verify や人間に有用なら PR body

@@ -63,7 +63,7 @@ describe("Workflow run history dialog", () => {
           id: 1,
           type: "workflow_run.started",
           label: "Run started",
-          description: "Workflow run #7 started.",
+          description: "Workflow run 7 started.",
           significance: "default",
           input: null,
           step: null,
@@ -77,7 +77,7 @@ describe("Workflow run history dialog", () => {
           description: "Execute step execution started.",
           significance: "default",
           input:
-            "Launch Workflow execute step for run #7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99",
+            "Launch Workflow execute step for run 7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99",
           step: "execute",
           actor: "execute-agent-1",
           created_at: "2026-07-10T00:10:00Z",
@@ -89,7 +89,7 @@ describe("Workflow run history dialog", () => {
           description: "Execute step execution started.",
           significance: "default",
           input:
-            "Launch Workflow execute step for run #7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99\n\n## Note from parent\nAddress review #12.",
+            "Launch Workflow execute step for run 7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99\n\n## Note from parent\nAddress review 12.",
           step: "execute",
           actor: "execute-agent-2",
           created_at: "2026-07-10T00:30:00Z",
@@ -102,9 +102,9 @@ describe("Workflow run history dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "View history" }));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Workflow run #7 history",
+      name: "Workflow run 7 history",
     });
-    expect(within(dialog).getByText("standard · run #7")).toBeTruthy();
+    expect(within(dialog).getByText("standard · run 7")).toBeTruthy();
     expect(within(dialog).getByText("Current step")).toBeTruthy();
     expect(within(dialog).getByText("Rework")).toBeTruthy();
     expect(within(dialog).getByText("1/8")).toBeTruthy();
@@ -125,7 +125,7 @@ describe("Workflow run history dialog", () => {
       expect(details).not.toBeNull();
       expect((details as HTMLDetailsElement).open).toBe(false);
     }
-    expect(within(dialog).getByText(/Address review #12/)).toBeTruthy();
+    expect(within(dialog).getByText(/Address review 12/)).toBeTruthy();
     fireEvent.click(inputSummaries[1] as HTMLElement);
     expect((inputDetails[1] as HTMLDetailsElement).open).toBe(true);
     const runStarted = within(dialog).getByText("Run started").closest("li");
@@ -200,7 +200,7 @@ describe("Workflow run history dialog", () => {
             id: 3,
             type: "workflow_run.started",
             label: "Run started",
-            description: "Workflow run #7 started.",
+            description: "Workflow run 7 started.",
             significance: "default",
             input: null,
             step: null,

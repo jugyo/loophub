@@ -1664,7 +1664,9 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
   "workflow_run.started": {
     label: "Run started",
     description: ({ payload }) =>
-      `Workflow run #${String(payload.id ?? "")} started.`,
+      payload.id === undefined
+        ? "Workflow run started."
+        : `Workflow run ${String(payload.id)} started.`,
     significance: "default",
   },
   "workflow_run.updated": {
@@ -1801,7 +1803,7 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
           : "Review submitted",
     description: ({ payload, reviewVerdict }) => {
       const reviewId = payloadNumber(payload, "review_id");
-      const subject = reviewId !== null ? `Review #${reviewId}` : "A review";
+      const subject = reviewId !== null ? `Review ${reviewId}` : "A review";
       return reviewVerdict === "PASS"
         ? `${subject} passed on the linked PR — Verify cleared this implementation.`
         : reviewVerdict === "REQUEST_CHANGES"
@@ -1818,7 +1820,7 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     description: ({ payload }) => {
       const threadId = payloadNumber(payload, "thread_id");
       return threadId !== null
-        ? `A comment landed on diff conversation #${threadId}. The parent hands it to Execute.`
+        ? `A comment landed on diff conversation ${threadId}. The parent hands it to Execute.`
         : "A comment landed on the PR diff. The parent hands it to Execute.";
     },
     significance: "notable",
@@ -1828,7 +1830,7 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     description: ({ payload }) => {
       const commentId = payloadNumber(payload, "comment_id");
       return commentId !== null
-        ? `PR comment #${commentId} was sent to Execute.`
+        ? `PR comment ${commentId} was sent to Execute.`
         : "A PR comment was sent to Execute.";
     },
     significance: "notable",

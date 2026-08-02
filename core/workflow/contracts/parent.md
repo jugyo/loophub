@@ -61,6 +61,6 @@ Every delivered result includes `instructions`, the complete procedure for its a
 
 Run each command once. Keep a non-zero action error and any completed prior command visible, do not retry or add recovery,
 and ask a human how to proceed. For delivery text, write one concrete single-line instruction from the returned reason and
-observed source. For review rework, the returned command already contains the exact `orchestrator: address review #<id>`
+observed source. For review rework, the returned command already contains the exact `orchestrator: address review <id>`
 message; do not summarize or interpret the findings. Cost hold and escalation commands own their receipts and human
 notifications; never raise the cost limit or merge on the parent's behalf.

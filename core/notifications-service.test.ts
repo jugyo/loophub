@@ -143,7 +143,7 @@ test("list creates warning notifications for Workflow cost and rework limit even
     id: run.id,
     issue_number: issue.number,
     reason:
-      "Fresh review #42 requests changes, but the rework limit of 8 has been reached.",
+      "Fresh review 42 requests changes, but the rework limit of 8 has been reached.",
   });
 
   await svc.notifications.list({ limit: 100 });
@@ -160,7 +160,7 @@ test("list creates warning notifications for Workflow cost and rework limit even
         title: "Workflow cost limit exceeded",
         body: expect.stringMatching(
           new RegExp(
-            `Workflow run #${run.id}.*me/workflow-limits.*Issue #${issue.number} / PR #${pull.number}.*\\$21.5 > \\$20`,
+            `Workflow run ${run.id}.*me/workflow-limits.*Issue #${issue.number} / PR #${pull.number}.*\\$21.5 > \\$20`,
           ),
         ),
         resource: expect.objectContaining({
@@ -174,7 +174,7 @@ test("list creates warning notifications for Workflow cost and rework limit even
         title: "Workflow rework limit reached",
         body: expect.stringMatching(
           new RegExp(
-            `Workflow run #${run.id}.*me/workflow-limits.*Issue #${issue.number} / PR #${pull.number}.*rework limit of 8 has been reached`,
+            `Workflow run ${run.id}.*me/workflow-limits.*Issue #${issue.number} / PR #${pull.number}.*rework limit of 8 has been reached`,
           ),
         ),
         resource: expect.objectContaining({

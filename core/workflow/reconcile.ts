@@ -194,7 +194,7 @@ export function workflowActionPlan(
           "deliver",
           ...scoped,
           "--text",
-          `orchestrator: address review #${action.review_id}`,
+          `orchestrator: address review ${action.review_id}`,
         ),
       ]);
     case "deliver": {
@@ -219,7 +219,7 @@ export function workflowActionPlan(
             "deliver",
             ...scoped,
             "--text",
-            `orchestrator: address diff feedback thread #${action.thread_id} comment #${action.comment_id}`,
+            `orchestrator: address diff feedback thread ${action.thread_id} comment ${action.comment_id}`,
           ),
         ]);
       }
@@ -244,7 +244,7 @@ export function workflowActionPlan(
             "deliver",
             ...scoped,
             "--text",
-            `orchestrator: address PR comment #${action.comment_id}`,
+            `orchestrator: address PR comment ${action.comment_id}`,
           ),
         ]);
       }
@@ -364,7 +364,7 @@ export function reconcileWorkflow(
   if (input.pendingEffectReceipt !== null) {
     return {
       action: "wait",
-      reason: `Effect "${input.pendingEffectReceipt.effect}" for event #${input.pendingEffectReceipt.event_id} has a pending receipt.`,
+      reason: `Effect "${input.pendingEffectReceipt.effect}" for event ${input.pendingEffectReceipt.event_id} has a pending receipt.`,
     };
   }
 
@@ -466,7 +466,7 @@ export function reconcileWorkflow(
   if (input.wake?.kind === "diff_feedback") {
     return {
       action: "deliver",
-      reason: `Diff feedback conversation #${input.wake.threadId} has a new comment for Execute.`,
+      reason: `Diff feedback conversation ${input.wake.threadId} has a new comment for Execute.`,
       delivery_reason: "diff_feedback",
       thread_id: input.wake.threadId,
       comment_id: input.wake.commentId,
@@ -476,7 +476,7 @@ export function reconcileWorkflow(
   if (input.wake?.kind === "pr_comment") {
     return {
       action: "deliver",
-      reason: `PR comment #${input.wake.commentId} has new input for Execute.`,
+      reason: `PR comment ${input.wake.commentId} has new input for Execute.`,
       delivery_reason: "pr_comment",
       comment_id: input.wake.commentId,
     };
@@ -485,7 +485,7 @@ export function reconcileWorkflow(
   if (input.wake?.kind === "out_of_band_review") {
     return {
       action: "deliver",
-      reason: `Out-of-band review #${input.wake.reviewId} requires Execute work.`,
+      reason: `Out-of-band review ${input.wake.reviewId} requires Execute work.`,
       delivery_reason: "out_of_band_review",
       review_id: input.wake.reviewId,
     };
@@ -512,7 +512,7 @@ export function reconcileWorkflow(
   if (outOfBandReview) {
     return {
       action: "deliver",
-      reason: `Out-of-band review #${outOfBandReview.id} (${outOfBandReview.verdict}) has not been addressed.`,
+      reason: `Out-of-band review ${outOfBandReview.id} (${outOfBandReview.verdict}) has not been addressed.`,
       delivery_reason: "out_of_band_review",
       review_id: outOfBandReview.id,
     };
@@ -535,14 +535,14 @@ export function reconcileWorkflow(
     if (input.reworkCount >= input.reworkLimit) {
       return {
         action: "escalate",
-        reason: `Fresh review #${review.id} requests changes, but the rework limit of ${input.reworkLimit} has been reached.`,
+        reason: `Fresh review ${review.id} requests changes, but the rework limit of ${input.reworkLimit} has been reached.`,
         escalation_reason: "rework_limit",
         review_id: review.id,
       };
     }
     return {
       action: "request_rework",
-      reason: `Fresh review #${review.id} requests changes.`,
+      reason: `Fresh review ${review.id} requests changes.`,
       review_id: review.id,
     };
   }
@@ -554,7 +554,7 @@ export function reconcileWorkflow(
   ) {
     return {
       action: "wait",
-      reason: `Fresh review #${review.id} passes the current HEAD.`,
+      reason: `Fresh review ${review.id} passes the current HEAD.`,
     };
   }
 

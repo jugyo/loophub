@@ -141,6 +141,27 @@ describe("Markdown #n references", () => {
     expect(container.textContent).toContain("then");
   });
 
+  it("only linkifies Issue and PR ids when generated ids are mixed in", async () => {
+    const { container } = await renderInRouter(
+      <Markdown owner="me" repo="proj">
+        {
+          "Issue #42, workflow run 7, review 12, PR #43, comment 19, and event 3."
+        }
+      </Markdown>,
+    );
+    const links = Array.from(container.querySelectorAll("a")).map((anchor) => ({
+      href: anchor.getAttribute("href"),
+      text: anchor.textContent,
+    }));
+    expect(links).toEqual([
+      { href: "/r/me/proj/n/42", text: "#42" },
+      { href: "/r/me/proj/n/43", text: "#43" },
+    ]);
+    expect(container.textContent).toContain(
+      "workflow run 7, review 12, PR #43, comment 19, and event 3",
+    );
+  });
+
   it("does not linkify when owner/repo are absent", () => {
     const { container } = render(<Markdown>{"See #123."}</Markdown>);
     expect(container.querySelector("a")).toBeNull();
