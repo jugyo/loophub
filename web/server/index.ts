@@ -35,10 +35,13 @@ configureSlowOperationLogging(args.debug ? log.info : undefined);
 // `vite` is assigned before listen(), so by the time requests arrive it is always set; the
 // guard only covers the brief async startup window.
 let vite: ViteDev | undefined;
-const server = createLhWebServer((req, res, url) => {
-  if (vite) vite.serveStatic(req, res, url);
-  else res.writeHead(503).end("lh-web is starting\n");
-});
+const server = createLhWebServer(
+  (req, res, url) => {
+    if (vite) vite.serveStatic(req, res, url);
+    else res.writeHead(503).end("lh-web is starting\n");
+  },
+  { debug: args.debug },
+);
 
 // Bind to loopback by default: the embedded Vite server transforms and serves web/ source, so
 // it must not be reachable off-host. Override with LOOPHUB_HOST (e.g. 0.0.0.0) only when LAN

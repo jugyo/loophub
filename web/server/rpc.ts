@@ -39,6 +39,25 @@ export interface RpcFailure {
   error: { code: number; message: string; data?: unknown };
 }
 export type RpcResponse = RpcSuccess | RpcFailure;
+export interface RpcCallOutcome {
+  method: string;
+  outcome: "success" | "error";
+  batchIndex?: number;
+}
+export type RpcCallObserver = (call: RpcCallOutcome) => void;
+
+function observeRpcCall(
+  observer: RpcCallObserver | undefined,
+  method: string,
+  outcome: "success" | "error",
+  batchIndex?: number,
+): void {
+  observer?.({
+    method,
+    outcome,
+    ...(batchIndex === undefined ? {} : { batchIndex }),
+  });
+}
 
 function ok(id: Id, result: unknown): RpcSuccess {
   return { jsonrpc: "2.0", id, result };
@@ -72,7 +91,11 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 // Returns a response, or null for a valid notification (request without `id`).
-async function dispatchOne(req: unknown): Promise<RpcResponse | null> {
+async function dispatchOne(
+  req: unknown,
+  observer?: RpcCallObserver,
+  batchIndex?: number,
+): Promise<RpcResponse | null> {
   if (
     !isPlainObject(req) ||
     req.jsonrpc !== "2.0" ||
@@ -83,14 +106,19 @@ async function dispatchOne(req: unknown): Promise<RpcResponse | null> {
   const isNotification = !("id" in req);
   const id = (req.id ?? null) as Id;
 
-  const def = methods[req.method];
-  if (!def)
+  const def = Object.hasOwn(methods, req.method)
+    ? methods[req.method]
+    : undefined;
+  if (!def) {
+    observeRpcCall(observer, req.method, "error", batchIndex);
     return isNotification
       ? null
       : fail(id, METHOD_NOT_FOUND, `Method not found: ${req.method}`);
+  }
 
   const params = req.params ?? {};
   if (!isPlainObject(params)) {
+    observeRpcCall(observer, req.method, "error", batchIndex);
     return isNotification
       ? null
       : fail(id, INVALID_PARAMS, "params must be an object");
@@ -102,6 +130,7 @@ async function dispatchOne(req: unknown): Promise<RpcResponse | null> {
       path: e.instancePath || "/",
       message: e.message ?? "invalid",
     }));
+    observeRpcCall(observer, req.method, "error", batchIndex);
     return isNotification
       ? null
       : fail(id, INVALID_PARAMS, "Invalid params", data);
@@ -111,8 +140,10 @@ async function dispatchOne(req: unknown): Promise<RpcResponse | null> {
     const result = await def.handler(params);
     // Record the human action after it completes, so only performed actions are logged.
     logHumanAction(req.method, params);
+    observeRpcCall(observer, req.method, "success", batchIndex);
     return isNotification ? null : ok(id, result ?? null);
   } catch (e: any) {
+    observeRpcCall(observer, req.method, "error", batchIndex);
     if (isNotification) return null;
     if (isServiceError(e))
       return fail(id, APP_ERROR, e.message, { status: e.status, ...e.data });
@@ -124,6 +155,7 @@ async function dispatchOne(req: unknown): Promise<RpcResponse | null> {
 // batch array -> array of responses (notifications omitted); empty batch -> Invalid Request.
 export async function dispatch(
   payload: unknown,
+  observer?: RpcCallObserver,
 ): Promise<RpcResponse | RpcResponse[] | null> {
   if (Array.isArray(payload)) {
     if (payload.length === 0)
@@ -134,16 +166,19 @@ export async function dispatch(
         INVALID_REQUEST,
         `Batch too large (max ${MAX_RPC_BATCH_SIZE} requests)`,
       );
-    const responses = await Promise.all(payload.map(dispatchOne));
+    const responses = await Promise.all(
+      payload.map((request, index) => dispatchOne(request, observer, index)),
+    );
     return responses.filter((r): r is RpcResponse => r !== null);
   }
-  return dispatchOne(payload);
+  return dispatchOne(payload, observer);
 }
 
 // Parse a raw JSON string then dispatch. Use this at the HTTP boundary (S3) so a parse
 // error becomes a proper JSON-RPC error rather than a thrown exception.
 export async function dispatchRaw(
   raw: string,
+  observer?: RpcCallObserver,
 ): Promise<RpcResponse | RpcResponse[] | null> {
   let payload: unknown;
   try {
@@ -151,7 +186,7 @@ export async function dispatchRaw(
   } catch {
     return fail(null, PARSE_ERROR, "Parse error");
   }
-  return dispatch(payload);
+  return dispatch(payload, observer);
 }
 
 export const ERROR_CODES = {
