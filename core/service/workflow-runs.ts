@@ -17,6 +17,7 @@ import {
 } from "../dev-lock.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
+import { mergePreview, revParse } from "../git.ts";
 import {
   effectiveRepoAgentConfigFor,
   type WorkflowOutOfBandReviewWire,
@@ -75,7 +76,10 @@ import {
   type WorkflowRunProjection,
   workflowStepPhaseAt,
 } from "../workflow/run-projection.ts";
-import type { WorkflowLatestReviewState } from "../workflow/steps.ts";
+import {
+  type WorkflowLatestReviewState,
+  workflowDone,
+} from "../workflow/steps.ts";
 import {
   isHeadAheadOfReview,
   workflowRunProgress as observeWorkflowRunProgress,
@@ -791,6 +795,13 @@ async function observeWorkflowRunStatus(
     head_ahead_of_base: progress.headAheadOfBase,
     head_ahead_of_latest_review: progress.headAheadOfLatestReview,
     merge_conflict: progress.mergeConflict,
+    done: workflowDone({
+      currentHead: progress.currentHead,
+      latestReview: reviewObservation(latestReview),
+      prClosed: prIssue.state === "closed",
+      prMerged: pull.merged === 1,
+      mergeConflict: progress.mergeConflict,
+    }),
     pr_merged: pull.merged === 1,
     pr_closed: prIssue.state === "closed",
     last_turn_done_at: turnDone.at,
@@ -800,14 +811,14 @@ async function observeWorkflowRunStatus(
   };
 }
 
-// Build the issue / PR detail display state (#1008) from a run row. The row is the display-state
-// source (workflow design: CLI / UI); this does not re-derive step-completion truth (that is
-// `workflow step status`).
-// `latest_review` gives the human-readable reason behind a rework / block.
-function workflowRunState(
+// Build the issue / PR detail display state (#1008). Lifecycle fields come from the run row, while
+// Done and verification freshness are observed from the PR's live head and pinned review so Web
+// and `workflow step status` share the same domain meaning. `latest_review` gives the
+// human-readable reason behind a rework / block.
+async function workflowRunState(
   repo: S.Repo,
   run: S.WorkflowRunRow,
-): WorkflowRunStateWire {
+): Promise<WorkflowRunStateWire> {
   const workflowName = run.workflow_id
     ? (S.getWorkflowById(run.workflow_id)?.name ?? null)
     : null;
@@ -832,10 +843,16 @@ function workflowRunState(
     : null;
   const pull = prIssue ? S.getPull(prIssue.id) : null;
   const observedReview = reviewObservation(review);
+  const liveHead = pull ? await revParse(repo.local_path, pull.head_ref) : null;
+  const currentHead = liveHead ?? pull?.head_sha ?? null;
+  const mergeConflict =
+    pull && liveHead
+      ? (await mergePreview(repo.local_path, pull.base_ref, liveHead)).conflict
+      : false;
   const reviewFresh = Boolean(
     observedReview?.headSha &&
-      pull?.head_sha &&
-      observedReview.headSha === pull.head_sha,
+      currentHead &&
+      observedReview.headSha === currentHead,
   );
   const verificationStatus =
     observedReview?.event === "pass" && reviewFresh
@@ -874,6 +891,14 @@ function workflowRunState(
       verifyLaunchPending
         ? verifyHeadSha
         : null,
+    done: workflowDone({
+      currentHead,
+      latestReview: observedReview,
+      prClosed: prIssue?.state === "closed",
+      prMerged: pull?.merged === 1,
+      mergeConflict,
+    }),
+    mergeConflict,
   });
 }
 
@@ -2168,24 +2193,24 @@ export const workflowRuns = {
 
   // Display state for issue / PR detail. Verification is derived from the same current HEAD versus
   // pinned review comparison as `workflow step status`; it is not persisted separately.
-  stateForIssue(
+  async stateForIssue(
     name: string,
     input: { issue: number },
     _sessionId?: string | null,
-  ): WorkflowRunStateWire | null {
+  ): Promise<WorkflowRunStateWire | null> {
     const r = repoOr404(name);
     const run = S.latestWorkflowRunForIssue(r.id, input.issue);
-    return run ? workflowRunState(r, run) : null;
+    return run ? await workflowRunState(r, run) : null;
   },
 
-  stateForPull(
+  async stateForPull(
     name: string,
     input: { pull: number },
     _sessionId?: string | null,
-  ): WorkflowRunStateWire | null {
+  ): Promise<WorkflowRunStateWire | null> {
     const r = repoOr404(name);
     const run = S.latestWorkflowRunForPull(r.id, input.pull);
-    return run ? workflowRunState(r, run) : null;
+    return run ? await workflowRunState(r, run) : null;
   },
 
   // On-demand audit history for the PR detail dialog. The store query matches the persisted run id,

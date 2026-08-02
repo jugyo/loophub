@@ -17,6 +17,8 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 - Verify は**常に fresh child**として起動し、以前の verifier session を再利用しない。
 - ゴール到達後も run は `running` のままとし、人間の指示や新しい event で gap が生じたら reconcile を再開する。
   merge はしない。linked PR の close が run の terminal condition である。
+- `observed.done` が pre-merge の canonical な Done signal である。core が current HEAD、そこに pin された
+  review、blocking PR state から導出する。`status`、`steps`、pane state、child の文章から再構築しない。
 - child-session resume や idle detection は使わない。
 
 ## Instruction loop

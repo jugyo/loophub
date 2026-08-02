@@ -1831,6 +1831,8 @@ describe("PullDetail", () => {
         updated_at: "2026-06-18T12:00:00Z",
         latest_review: null,
         verification_status: "verified",
+        done: true,
+        merge_conflict: false,
       }),
     });
 

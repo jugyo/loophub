@@ -4,9 +4,8 @@
 // exposes the parent/orchestrator pane action. The current stage is colored, the rest are grey, and
 // traversed connectors fill in to convey progression.
 //
-// `execute` / `verify` are the run's real steps; "Done" is the terminal reached when Verify passes
-// (`verification_status: verified`) — NOT `status === completed`, which a passing Verify never sets
-// (#1401 / #1460); that status means the linked PR merged (#1808). A stale verification keeps the
+// `execute` / `verify` are the run's real steps; "Done" is the canonical pre-merge state from core
+// (`done`) — NOT `status === completed`, which means the linked PR closed or merged (#1808). A stale verification keeps the
 // Verify label as-is and is conveyed by the pill's amber tone plus its popover status (#1906); a
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker unless the caller
 // already says why with its own "over budget" marker (#1932).
@@ -90,15 +89,12 @@ export function workflowTrackerState(
   const needsHuman =
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked";
-  const verified =
-    state.status === "running" &&
-    state.needs_human_reason === null &&
-    state.verification_status === "verified";
+  const verified = state.done;
   const stale =
     state.status === "running" &&
     state.needs_human_reason === null &&
     state.verification_status === "stale";
-  // Verify pass advances the tracker to Done (index 2); otherwise it sits on the run's current step.
+  // Canonical Done advances the tracker to index 2; otherwise it sits on the run's current step.
   const stepIndex = state.current_step === "verify" ? 1 : 0;
   const activeIndex = verified ? 2 : stepIndex;
   return { activeIndex, verified, stale, needsHuman };
@@ -107,9 +103,8 @@ export function workflowTrackerState(
 function workflowTrackerTitle(
   state: WorkflowRunState,
   { verified, stale, needsHuman }: WorkflowTrackerState,
-  conflict: boolean,
 ): string {
-  if (conflict) {
+  if (state.merge_conflict) {
     return "Merge conflict — resolve it before this PR can merge";
   }
   if (needsHuman) {
@@ -395,7 +390,6 @@ export function WorkflowStepTracker({
   showWorkflowNode = false,
   size = "sm",
   working = false,
-  conflict = false,
   overBudget = false,
 }: {
   owner?: string;
@@ -418,13 +412,6 @@ export function WorkflowStepTracker({
    */
   working?: boolean;
   /**
-   * PR-level merge conflict (`mergeable_state === "conflict"`), which the run's
-   * {@link WorkflowRunState} does not carry. When set, the terminal "Done" pill flips to a
-   * danger-toned "Conflict!" so the row/section reads as un-mergeable at a glance (#1659).
-   * Defaults to `false`, keeping the plain Execute → Verify → Done pipeline.
-   */
-  conflict?: boolean;
-  /**
    * The run is held on its cost limit and the caller renders its own "over budget" marker. Such a
    * run is always needs-human, so the trailing "needs human" marker would repeat the same warning
    * in less specific words — drop it and let the budget marker speak (#1932). The stage popovers
@@ -438,7 +425,7 @@ export function WorkflowStepTracker({
     size === "md" ? "px-2.5 py-1 text-xs" : "px-2 py-0.5 text-[11px]";
   const connectorSize = size === "md" ? "w-4" : "w-2.5";
   const repoFullName = owner && repo ? `${owner}/${repo}` : undefined;
-  const stateSummary = workflowTrackerTitle(state, tracker, conflict);
+  const stateSummary = workflowTrackerTitle(state, tracker);
   const parentAgent = workflowParentAgent(
     herdrUnavailable ? undefined : herdrSessions,
     repoFullName,
@@ -474,8 +461,8 @@ export function WorkflowStepTracker({
         const isPast = index < activeIndex;
         // A PR-level conflict wins the terminal pill regardless of the run's step: an un-mergeable
         // PR is the most actionable state to surface, so "Done" becomes "Conflict!" (#1659).
-        const isDoneConflict = stage.key === "done" && conflict;
-        const isDoneVerified = stage.key === "done" && verified && !conflict;
+        const isDoneConflict = stage.key === "done" && state.merge_conflict;
+        const isDoneVerified = stage.key === "done" && verified;
         const isStaleVerify = stage.key === "verify" && isCurrent && stale;
         const stageStatus = isDoneConflict
           ? "Conflict"

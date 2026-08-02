@@ -1428,6 +1428,10 @@ export interface WorkflowRunStateWire {
   updated_at: string;
   latest_review: WorkflowRunReviewSummaryWire | null;
   verification_status: "unverified" | "verified" | "stale";
+  // Canonical pre-merge Done state. This remains distinct from the run lifecycle `status` and is
+  // false when a merge conflict blocks the otherwise fresh passing review.
+  done: boolean;
+  merge_conflict: boolean;
 }
 
 export interface WorkflowPendingEffectReceiptWire {
@@ -1462,6 +1466,8 @@ export interface WorkflowStepStatusWire {
   head_ahead_of_base: boolean;
   head_ahead_of_latest_review: boolean;
   merge_conflict: boolean;
+  // Canonical pre-merge Done state derived from the current HEAD, its pinned review, and PR state.
+  done: boolean;
   // The linked PR's own domain state. The run's terminal condition is read from these fields
   // rather than from a close / merge event, so every route lands on the same reconciliation.
   pr_merged: boolean;
@@ -1484,6 +1490,8 @@ export function workflowRunStateJSON(input: {
   costLimitUsd: number;
   costLimitIncreaseAvailable: boolean;
   activeVerifyHeadSha: string | null;
+  done: boolean;
+  mergeConflict: boolean;
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1505,6 +1513,8 @@ export function workflowRunStateJSON(input: {
     updated_at: run.updated_at,
     latest_review: input.latestReview,
     verification_status: input.verificationStatus,
+    done: input.done,
+    merge_conflict: input.mergeConflict,
   };
 }
 

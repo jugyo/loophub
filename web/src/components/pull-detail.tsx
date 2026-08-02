@@ -195,12 +195,7 @@ export function PullDetail({
           className="flex w-full shrink-0 flex-col gap-6 lg:w-80"
         >
           <PullHerdrSection owner={owner} repo={repo} pull={number} />
-          <WorkflowRunSection
-            owner={owner}
-            repo={repo}
-            number={number}
-            conflict={pull.mergeable_state === "conflict"}
-          />
+          <WorkflowRunSection owner={owner} repo={repo} number={number} />
           <WorktreeSection value={pull.worktree_path} />
           {/* GitHub PR status (#850): only for a PR with a linked GitHub PR. Fetched on demand;
             loading/error live in the section. */}
@@ -226,13 +221,10 @@ function WorkflowRunSection({
   owner,
   repo,
   number,
-  conflict,
 }: {
   owner: string;
   repo: string;
   number: number;
-  /** PR is in merge conflict — surface it on the shared step tracker's Done pill (#1659). */
-  conflict: boolean;
 }) {
   const query = useWorkflowRunForPull(owner, repo, number);
   if (query.isLoading) {
@@ -274,7 +266,6 @@ function WorkflowRunSection({
       repo={repo}
       state={query.data}
       showHistory
-      conflict={conflict}
     />
   );
 }

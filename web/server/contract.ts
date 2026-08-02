@@ -332,14 +332,14 @@ export const methods: Record<string, MethodDef> = {
   },
   "workflowRuns/stateForIssue": {
     description:
-      "Display state of the latest Workflow run linked to an issue (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+      "Display state of the latest Workflow run linked to an issue, including canonical pre-merge Done and conflict state, or null when none.",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.workflowRuns.stateForIssue(p.repo, { issue: p.number }),
   },
   "workflowRuns/stateForPull": {
     description:
-      "Display state of the latest Workflow run linked to a PR (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+      "Display state of the latest Workflow run linked to a PR, including canonical pre-merge Done and conflict state, or null when none.",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.workflowRuns.stateForPull(p.repo, { pull: p.number }),
