@@ -52,6 +52,26 @@ afterEach(() => {
 });
 
 describe("useLoopHubEvents", () => {
+  it("does not poll again when its host component rerenders", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient();
+
+    const rendered = render(<HookHarness />, { wrapper: wrapper(client) });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    rendered.rerender(<HookHarness />);
+    rendered.rerender(<HookHarness />);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
   it("uses the visibility-specific cadence and reschedules on visibility changes", async () => {
     let visibilityState: DocumentVisibilityState = "visible";
     vi.spyOn(document, "visibilityState", "get").mockImplementation(

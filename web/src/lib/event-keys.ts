@@ -22,6 +22,8 @@ export const queryKeys = {
   pull: (full: string, number: number) => ["pull", full, number] as const,
   notifications: () => ["notifications"] as const,
   agentSessions: () => ["agent-sessions"] as const,
+  // Keep the 60s cost poll outside the agent-session event invalidation prefix.
+  agentCostSummary: () => ["agent-cost-summary"] as const,
   terminalSessions: () => ["terminal", "sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
