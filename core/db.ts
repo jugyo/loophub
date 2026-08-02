@@ -750,6 +750,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   repo_id        INTEGER NOT NULL REFERENCES repos(id),
   kind           TEXT NOT NULL
                    CHECK (kind IN ('merge_ready', 'over_budget', 'human_attention')),
+  severity       TEXT NOT NULL DEFAULT 'info'
+                   CHECK (severity IN ('info', 'warning')),
   title          TEXT NOT NULL,
   body           TEXT NOT NULL,
   resource_kind  TEXT NOT NULL CHECK (resource_kind IN ('issue', 'pull', 'repo')),

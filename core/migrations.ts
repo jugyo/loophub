@@ -925,6 +925,12 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  addColumn(
+    "059-notifications-severity",
+    "notifications",
+    "severity",
+    "TEXT NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning'))",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

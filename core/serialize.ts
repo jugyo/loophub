@@ -1209,6 +1209,7 @@ export function handoffJSON(h: S.HandoffRow): HandoffWire {
 export interface NotificationWire {
   id: number;
   kind: S.NotificationKind;
+  severity: S.NotificationSeverity;
   repo: { name: string };
   title: string;
   body: string;
@@ -1243,6 +1244,7 @@ export function notificationJSON(n: S.NotificationRow): NotificationWire {
   return {
     id: n.id,
     kind: n.kind,
+    severity: n.severity,
     repo: { name: repoName },
     title: n.title,
     body: n.body,

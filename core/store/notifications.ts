@@ -5,11 +5,13 @@ export type NotificationKind =
   | "merge_ready"
   | "over_budget"
   | "human_attention";
+export type NotificationSeverity = "info" | "warning";
 export type NotificationResourceKind = "issue" | "pull" | "repo";
 
 export interface NotificationInput {
   repoId: number;
   kind: NotificationKind;
+  severity?: NotificationSeverity;
   title: string;
   body: string;
   resourceKind: NotificationResourceKind;
@@ -23,6 +25,7 @@ export interface NotificationRow {
   id: number;
   repo_id: number;
   kind: NotificationKind;
+  severity: NotificationSeverity;
   title: string;
   body: string;
   resource_kind: NotificationResourceKind;
@@ -39,13 +42,14 @@ export function createNotification(
   const row = db
     .query(
       `INSERT OR IGNORE INTO notifications
-        (repo_id, kind, title, body, resource_kind, resource_number, source_key, herdr_pane_id, read_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+        (repo_id, kind, severity, title, body, resource_kind, resource_number, source_key, herdr_pane_id, read_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
        RETURNING *`,
     )
     .get(
       input.repoId,
       input.kind,
+      input.severity ?? "info",
       input.title,
       input.body,
       input.resourceKind,
@@ -150,7 +154,17 @@ export interface NotificationSignalRow {
   number: number;
   title: string;
   kind: NotificationKind;
-  reason: "cost_stopped" | "github_merged";
+  severity: NotificationSeverity;
+  reason:
+    | "cost_stopped"
+    | "github_merged"
+    | "workflow_cost_exceeded"
+    | "workflow_rework_limit";
+  workflow_run_id: number | null;
+  issue_number: number | null;
+  cost_usd: number | null;
+  limit_usd: number | null;
+  detail: string | null;
   source_key: string;
   created_at: string;
 }
@@ -235,7 +249,13 @@ export function listNotificationSignalRows(
       `SELECT * FROM (
          SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
                 'over_budget' AS kind,
+                'warning' AS severity,
                 'cost_stopped' AS reason,
+                NULL AS workflow_run_id,
+                NULL AS issue_number,
+                NULL AS cost_usd,
+                NULL AS limit_usd,
+                NULL AS detail,
                 'cost:' || r.id || ':' || i.number || ':' || e.id AS source_key,
                 e.created_at AS created_at
          FROM events e
@@ -251,7 +271,13 @@ export function listNotificationSignalRows(
          UNION ALL
          SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
                 'human_attention' AS kind,
+                'info' AS severity,
                 'github_merged' AS reason,
+                NULL AS workflow_run_id,
+                NULL AS issue_number,
+                NULL AS cost_usd,
+                NULL AS limit_usd,
+                NULL AS detail,
                 'github-merged:' || r.id || ':' || i.number || ':' || e.id AS source_key,
                 e.created_at AS created_at
          FROM events e
@@ -264,10 +290,64 @@ export function listNotificationSignalRows(
            AND e.id > ?
            AND e.id <= ?
            AND p.merged = 0
+         UNION ALL
+         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
+                'over_budget' AS kind,
+                'warning' AS severity,
+                'workflow_cost_exceeded' AS reason,
+                wr.id AS workflow_run_id,
+                wr.issue_number AS issue_number,
+                json_extract(e.payload, '$.cost_usd') AS cost_usd,
+                json_extract(e.payload, '$.limit_usd') AS limit_usd,
+                NULL AS detail,
+                'workflow-cost:' || r.id || ':' || wr.id || ':' ||
+                  json_extract(e.payload, '$.limit_usd') AS source_key,
+                e.created_at AS created_at
+         FROM events e
+         JOIN repos r ON r.id = e.repo_id
+         JOIN workflow_runs wr ON wr.repo_id = r.id
+          AND wr.id = json_extract(e.payload, '$.id')
+         JOIN issues i ON i.repo_id = r.id
+          AND i.kind = 'pull'
+          AND i.number = wr.pr_number
+         JOIN pulls p ON p.issue_id = i.id
+         WHERE e.type = 'workflow_run.cost_exceeded'
+           AND e.id > ?
+           AND e.id <= ?
+           AND p.merged = 0
+         UNION ALL
+         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
+                'human_attention' AS kind,
+                'warning' AS severity,
+                'workflow_rework_limit' AS reason,
+                wr.id AS workflow_run_id,
+                wr.issue_number AS issue_number,
+                NULL AS cost_usd,
+                NULL AS limit_usd,
+                json_extract(e.payload, '$.reason') AS detail,
+                'workflow-rework:' || r.id || ':' || wr.id || ':' || e.id AS source_key,
+                e.created_at AS created_at
+         FROM events e
+         JOIN repos r ON r.id = e.repo_id
+         JOIN workflow_runs wr ON wr.repo_id = r.id
+          AND wr.id = json_extract(e.payload, '$.id')
+         JOIN issues i ON i.repo_id = r.id
+          AND i.kind = 'pull'
+          AND i.number = wr.pr_number
+         JOIN pulls p ON p.issue_id = i.id
+         WHERE e.type = 'workflow_effect.human_escalation'
+           AND json_extract(e.payload, '$.reason') LIKE '%rework limit%reached%'
+           AND e.id > ?
+           AND e.id <= ?
+           AND p.merged = 0
        ) signals
        ORDER BY signals.created_at ASC`,
     )
     .all(
+      cursors.events,
+      highWatermarks.events,
+      cursors.events,
+      highWatermarks.events,
       cursors.events,
       highWatermarks.events,
       cursors.events,
