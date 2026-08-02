@@ -347,6 +347,25 @@ test("a database migrated from an old schema ends up structurally identical to a
   expect(structure(D.db)).toEqual(structure(fresh));
 });
 
+test("the cache-read rate migration discards incompatible persisted history", () => {
+  const db = D.openDb(join(HOME, "legacy-rate-history.db"));
+  db.run(
+    `INSERT INTO session_rate_history (tokens_per_second, observed_at)
+     VALUES (?, ?)`,
+    [1234, "2040-07-09T11:31:00.000Z"],
+  );
+
+  const migration = M.MIGRATIONS.find(
+    (candidate) => candidate.id === "065-session-usage-sample-cache-read",
+  );
+  expect(migration).toBeDefined();
+  migration!.run(db);
+
+  expect(
+    db.query("SELECT COUNT(*) AS count FROM session_rate_history").get(),
+  ).toEqual({ count: 0 });
+});
+
 test("a failing migration throws, rolls back, and stays out of the ledger", () => {
   const db = D.openDb(join(HOME, "failing.db"));
   const before = appliedIds(db);

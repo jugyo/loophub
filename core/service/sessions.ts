@@ -33,7 +33,7 @@ import {
   type UsageEntry,
 } from "../session-usage.ts";
 import {
-  calculateTokensPerSecond,
+  calculateTokenRates,
   planGrokTurnRateSamples,
 } from "../session-usage-rate.ts";
 import * as S from "../store.ts";
@@ -185,9 +185,9 @@ function secondsAgo(now: Date, seconds: number): string {
 }
 
 function recordUsageSample(sessionId: string): void {
-  const totalTokens = S.totalTokensForSession(sessionId);
-  if (totalTokens == null) return;
-  S.recordSessionUsageSample({ sessionId, totalTokens });
+  const totals = S.tokenTotalsForSession(sessionId);
+  if (totals == null) return;
+  S.recordSessionUsageSample({ sessionId, ...totals });
   S.pruneSessionUsageSamples(secondsAgo(new Date(), 600));
 }
 
@@ -198,16 +198,19 @@ function recordUsageSample(sessionId: string): void {
 // session_usage cost columns.
 function recordGrokUsageRateSamples(
   sessionId: string,
-  previousTotal: number | null,
+  previousTotals: ReturnType<typeof S.tokenTotalsForSession>,
   turns: GrokTurnUsage[],
 ): void {
-  const newTotal = S.totalTokensForSession(sessionId);
-  if (newTotal == null) return;
+  const newTotals = S.tokenTotalsForSession(sessionId);
+  if (newTotals == null) return;
   const plan = planGrokTurnRateSamples({
-    previousTotal: previousTotal ?? 0,
-    newTotal,
+    previousTotal: previousTotals?.totalTokens ?? 0,
+    newTotal: newTotals.totalTokens,
+    previousCacheRead: previousTotals?.cacheReadTokens ?? 0,
+    newCacheRead: newTotals.cacheReadTokens,
     turns: turns.map((turn) => ({
       totalTokens: turn.totalTokens,
+      cacheReadTokens: turn.usage.cache_read_input_tokens,
       apiDurationMs: turn.apiDurationMs,
     })),
   });
@@ -219,8 +222,10 @@ function recordGrokUsageRateSamples(
     S.recordSessionUsageSample({
       sessionId,
       totalTokens: sample.totalTokens,
+      cacheReadTokens: sample.cacheReadTokens,
       observedAt: sample.observedAt,
       tokenDelta: sample.tokenDelta,
+      cacheReadDelta: sample.cacheReadDelta,
     });
   }
   S.pruneSessionUsageSamples(secondsAgo(new Date(), 600));
@@ -233,8 +238,8 @@ const RATE_HISTORY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
 // The live aggregate tokens/sec used by the topbar's current five-minute bucket: in-progress dev and
 // workflow-step sessions over the trailing 60s. The persisted history and current bucket share this
 // definition.
-function liveTokensPerSecond(now: Date): number | null {
-  return calculateTokensPerSecond(
+function liveTokenRates(now: Date) {
+  return calculateTokenRates(
     S.listRecentInProgressSessionUsageSamples(secondsAgo(now, 60)),
     { now },
   );
@@ -465,7 +470,7 @@ export const sessions = {
 
   costSummary(now = new Date()): AgentCostSummaryWire[] {
     const starts = periodStarts(now);
-    const rate = liveTokensPerSecond(now);
+    const rates = liveTokenRates(now);
     const byAgent = new Map<CodingAgent, AgentCostSummaryWire>();
     for (const agent of CODING_AGENTS) {
       byAgent.set(agent, { agent, month: 0, week: 0, day: 0 });
@@ -483,10 +488,11 @@ export const sessions = {
     }
 
     const out = CODING_AGENTS.map((agent) => byAgent.get(agent)!);
-    out[0].tokens_per_second = rate;
+    out[0].tokens_per_second = rates.tokensPerSecond;
+    out[0].cache_read_tokens_per_second = rates.cacheReadTokensPerSecond;
     out[0].tokens_per_5m_history = tokensPerFiveMinuteHistory(
       S.listSessionRateHistory(secondsAgo(now, 3 * 60 * 60)),
-      { now, liveTokensPerSecond: rate },
+      { now, liveTokensPerSecond: rates.tokensPerSecond },
     );
     return out;
   },
@@ -497,7 +503,7 @@ export const sessions = {
   // rate so the table isn't padded with placeholder rows. Returns the recorded rate, or null when
   // nothing was written.
   recordLiveRateSample(now = new Date()): number | null {
-    const rate = liveTokensPerSecond(now);
+    const rate = liveTokenRates(now).tokensPerSecond;
     if (rate == null) return null;
     S.recordSessionRateHistory({
       tokensPerSecond: rate,
@@ -708,7 +714,7 @@ export const sessions = {
         const fresh = sessions.flatMap((x) => x.entries);
         const turns = sessions.flatMap((x) => x.turns);
         const aggregated = aggregateUsage(fresh);
-        const previousTotal = S.totalTokensForSession(row.id);
+        const previousTotals = S.tokenTotalsForSession(row.id);
         const topLevelUnchanged =
           !input.full &&
           modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
@@ -738,7 +744,7 @@ export const sessions = {
             calculateCostUsd(usage.model, usage),
           );
         }
-        recordGrokUsageRateSamples(row.id, previousTotal, turns);
+        recordGrokUsageRateSamples(row.id, previousTotals, turns);
 
         return {
           session_id: row.id,

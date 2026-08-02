@@ -29,6 +29,7 @@ afterEach(() => {
 function costSummaryHandlers(
   tokenRateHistory?: number[],
   tokensPerSecond?: number | null,
+  cacheReadTokensPerSecond?: number | null,
 ) {
   return {
     "sessions/costSummary": () => [
@@ -43,6 +44,9 @@ function costSummaryHandlers(
         ...(tokensPerSecond !== undefined
           ? { tokens_per_second: tokensPerSecond }
           : {}),
+        ...(cacheReadTokensPerSecond !== undefined
+          ? { cache_read_tokens_per_second: cacheReadTokensPerSecond }
+          : {}),
       },
     ],
   };
@@ -52,13 +56,18 @@ function renderSettingsShell(
   initial: GlobalSettings,
   tokenRateHistory?: number[],
   tokensPerSecond?: number | null,
+  cacheReadTokensPerSecond?: number | null,
 ) {
   let settings = structuredClone(initial);
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({
       "settings/get": () => settings,
-      ...costSummaryHandlers(tokenRateHistory, tokensPerSecond),
+      ...costSummaryHandlers(
+        tokenRateHistory,
+        tokensPerSecond,
+        cacheReadTokensPerSecond,
+      ),
       "settings/update": (params) => {
         const agent = params.agent as CodingAgent | undefined;
         settings = {
@@ -251,6 +260,9 @@ describe("AppStatusbar", () => {
     expect(
       within(statusbar).getByLabelText("TPS: n/a tokens per second"),
     ).toBeTruthy();
+    expect(
+      within(statusbar).getByLabelText("Cache TPS: n/a tokens per second"),
+    ).toBeTruthy();
     expect(statusbar.querySelector(".lucide-activity")).toBeNull();
     expect(
       within(statusbar).queryByRole("img", {
@@ -284,7 +296,7 @@ describe("AppStatusbar", () => {
     history[1] = 600_000;
     history[22] = 300_000;
     history[23] = 1_200_000;
-    renderSettingsShell(DEFAULT_SETTINGS, history, 4_000);
+    renderSettingsShell(DEFAULT_SETTINGS, history, 4_000, 2_400);
 
     const statusbar = await screen.findByRole("contentinfo", {
       name: "Application status",
@@ -293,6 +305,10 @@ describe("AppStatusbar", () => {
       "TPS: 4k tokens per second",
     );
     expect(rate.textContent).toContain("4k");
+    expect(
+      within(statusbar).getByLabelText("Cache TPS: 2.4k tokens per second"),
+    ).toBeTruthy();
+    expect(rate.textContent).toContain("cache2.4k");
     expect(statusbar.textContent).not.toContain("Token rate");
     expect(statusbar.textContent).not.toContain("avg / 5m");
 
@@ -312,13 +328,16 @@ describe("AppStatusbar", () => {
   });
 
   it("distinguishes measured zero TPS from unavailable current samples", async () => {
-    renderSettingsShell(DEFAULT_SETTINGS, Array(24).fill(0), 0);
+    renderSettingsShell(DEFAULT_SETTINGS, Array(24).fill(0), 0, 0);
 
     const statusbar = await screen.findByRole("contentinfo", {
       name: "Application status",
     });
     expect(
       within(statusbar).getByLabelText("TPS: 0 tokens per second"),
+    ).toBeTruthy();
+    expect(
+      within(statusbar).getByLabelText("Cache TPS: 0 tokens per second"),
     ).toBeTruthy();
     expect(
       within(statusbar).getByRole("img", {

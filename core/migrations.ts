@@ -1060,6 +1060,29 @@ export const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "workflows", "archived_at", "TEXT");
     },
   },
+  {
+    id: "065-session-usage-sample-cache-read",
+    run(db) {
+      addColumnIfMissing(
+        db,
+        "session_usage_samples",
+        "cache_read_tokens",
+        "INTEGER NOT NULL DEFAULT 0",
+      );
+      addColumnIfMissing(
+        db,
+        "session_usage_samples",
+        "cache_read_delta",
+        "INTEGER NOT NULL DEFAULT 0",
+      );
+      // Existing samples and persisted rate history both include cache reads and cannot be split
+      // after the fact. Discard them instead of briefly inflating regular TPS after upgrade.
+      db.exec(`
+        DELETE FROM session_usage_samples;
+        DELETE FROM session_rate_history;
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

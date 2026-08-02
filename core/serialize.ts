@@ -260,6 +260,8 @@ export interface AgentCostSummaryWire {
   // Current aggregate token throughput for in-progress development sessions. Null means there is no
   // recent, calculable sample; zero is a measured rate.
   tokens_per_second?: number | null;
+  // Current cache-read throughput over the same sessions and observation window as TPS.
+  cache_read_tokens_per_second?: number | null;
 }
 
 export interface RelatedSessionWire extends AgentSessionWire {

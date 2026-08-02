@@ -459,12 +459,15 @@ CREATE TABLE IF NOT EXISTS session_usage (
 
 -- Short-lived observation samples for token-rate display. session_usage stores only cumulative
 -- per-session/model totals, so it cannot reconstruct historical tokens/sec after the fact; rates
--- are estimated from samples recorded at usage-sync time.
+-- are estimated from samples recorded at usage-sync time. token_delta excludes cache reads;
+-- cache_read_delta records that throughput separately.
 CREATE TABLE IF NOT EXISTS session_usage_samples (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id   TEXT NOT NULL REFERENCES agent_sessions(id),
   total_tokens INTEGER NOT NULL,
   token_delta  INTEGER NOT NULL,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_delta  INTEGER NOT NULL DEFAULT 0,
   observed_at  TEXT NOT NULL
 );
 
