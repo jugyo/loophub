@@ -148,6 +148,32 @@ test("workspaces/list routes to the workspace service", async () => {
   ]);
 });
 
+test("workspace settings lists route to settings-specific service methods", async () => {
+  const listForSettings = vi
+    .spyOn(svc.workspaces, "listForSettings")
+    .mockReturnValue([]);
+  const listArchivedForSettings = vi
+    .spyOn(svc.workspaces, "listArchivedForSettings")
+    .mockReturnValue([]);
+
+  try {
+    const active: any = await call("workspaces/listForSettings", {
+      repo: "me/proj",
+    });
+    const archived: any = await call("workspaces/listArchivedForSettings", {
+      repo: "me/proj",
+    });
+
+    expect(active.result).toEqual([]);
+    expect(archived.result).toEqual([]);
+    expect(listForSettings).toHaveBeenCalledWith("me/proj");
+    expect(listArchivedForSettings).toHaveBeenCalledWith("me/proj");
+  } finally {
+    listForSettings.mockRestore();
+    listArchivedForSettings.mockRestore();
+  }
+});
+
 test("workspaces/create routes to the workspace service", async () => {
   const created: any = await call("workspaces/create", {
     repo: "me/proj",

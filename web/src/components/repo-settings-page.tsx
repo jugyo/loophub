@@ -9,12 +9,16 @@ import {
   Archive,
   Bot,
   Check,
+  CircleAlert,
+  CircleCheck,
   GitPullRequestArrow,
   Settings2,
   SquareKanban,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { CodingAgent, MergeMode } from "@/api/types";
+import type { CodingAgent, MergeMode, Workspace } from "@/api/types";
+import { NewWorkspaceButton } from "@/components/new-workspace-button";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
   CODING_AGENT_LABELS,
@@ -33,7 +37,8 @@ import {
   useSetRepoMergeMode,
 } from "@/queries/repos";
 import {
-  useArchivedWorkspaces,
+  useArchivedSettingsWorkspaces,
+  useSettingsWorkspaces,
   useSetWorkspaceArchived,
 } from "@/queries/workspaces";
 import { CODING_AGENTS } from "../../../core/runtimes.ts";
@@ -91,7 +96,7 @@ const SETTINGS_NAV_ITEMS: Array<{
   {
     id: "workspaces",
     label: "Workspaces",
-    description: "Archived workspace management.",
+    description: "Registered integration branches.",
     icon: SquareKanban,
     path: "/r/$owner/$repo/settings/workspaces",
   },
@@ -177,7 +182,7 @@ export function RepoSettingsPage({
           <AgentConfigSection owner={owner} repo={repo} />
         ) : null}
         {section === "workspaces" ? (
-          <ArchivedWorkspacesSection owner={owner} repo={repo} />
+          <WorkspacesSection owner={owner} repo={repo} />
         ) : null}
         {section === "archive" ? (
           <ArchiveSection
@@ -209,67 +214,365 @@ function SectionHeader({ section }: { section: RepoSettingsSection }) {
   );
 }
 
-function ArchivedWorkspacesSection({
-  owner,
-  repo,
-}: {
-  owner: string;
-  repo: string;
-}) {
-  const archived = useArchivedWorkspaces(owner, repo);
-  const unarchive = useSetWorkspaceArchived(owner, repo);
+function WorkspacesSection({ owner, repo }: { owner: string; repo: string }) {
+  const active = useSettingsWorkspaces(owner, repo);
+  const archived = useArchivedSettingsWorkspaces(owner, repo);
+  const setArchived = useSetWorkspaceArchived(owner, repo);
+  const [selectedActive, setSelectedActive] = useState<Workspace | null>(null);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [unarchivingBranch, setUnarchivingBranch] = useState<string | null>(
+    null,
+  );
+
+  async function archiveSelected() {
+    if (!selectedActive) return;
+    try {
+      await setArchived.mutateAsync({
+        branch: selectedActive.branch,
+        archived: true,
+      });
+    } catch {
+      // Keep the confirmation open and surface the mutation error there.
+      return;
+    }
+    setSelectedActive(null);
+  }
+
+  async function unarchiveWorkspace(workspace: Workspace) {
+    setUnarchivingBranch(workspace.branch);
+    try {
+      await setArchived.mutateAsync({
+        branch: workspace.branch,
+        archived: false,
+      });
+    } catch {
+      // Keep the dialog open and surface the mutation error there.
+      return;
+    } finally {
+      setUnarchivingBranch(null);
+    }
+  }
 
   return (
-    <section data-debug-component="ArchivedWorkspacesSection" className="mt-6">
-      <h2 className="text-sm font-medium">Archived workspaces</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Archived workspaces stay registered and keep their Git branches and
-        related issues and PRs.
-      </p>
-      {archived.isLoading ? (
-        <p className="mt-3 text-sm text-muted-foreground">Loading…</p>
-      ) : archived.error ? (
-        <p className="mt-3 text-sm text-destructive">
-          {String(archived.error)}
+    <div data-debug-component="WorkspacesSection">
+      <section className="mt-6">
+        <div className="flex max-w-2xl items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-medium">Active workspaces</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Registered integration branches. Creating a workspace creates its
+              branch from the repository default branch.
+            </p>
+          </div>
+          <NewWorkspaceButton owner={owner} repo={repo} />
+        </div>
+        <ActiveWorkspaceList
+          workspaces={active.data}
+          isLoading={active.isLoading}
+          error={active.error}
+          pending={setArchived.isPending}
+          onArchive={(workspace) => {
+            setArchived.reset();
+            setSelectedActive(workspace);
+          }}
+        />
+        {setArchived.error && !selectedActive && !archivedOpen ? (
+          <p className="mt-3 text-sm text-destructive">
+            {String(setArchived.error)}
+          </p>
+        ) : null}
+      </section>
+
+      <section className="mt-8 border-t pt-6">
+        <h2 className="text-sm font-medium">Archived workspaces</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Archived workspaces stay registered. Archiving does not delete their
+          Git branches, worktrees, issues, or pull requests.
         </p>
-      ) : archived.data?.length ? (
-        <ul className="mt-3 max-w-md divide-y rounded-md border">
-          {archived.data.map((workspace) => (
-            <li
-              key={workspace.branch}
-              className="flex items-center justify-between gap-3 px-3 py-2"
-            >
-              <span className="min-w-0 truncate text-sm">
-                {workspace.branch}
-              </span>
-              <Button
-                size="sm"
-                variant="secondary"
-                aria-label={`Unarchive ${workspace.branch}`}
-                disabled={unarchive.isPending}
-                onClick={() =>
-                  unarchive.mutate({
-                    branch: workspace.branch,
-                    archived: false,
-                  })
-                }
-              >
-                {unarchive.isPending ? "Working…" : "Unarchive"}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 text-sm text-muted-foreground">
-          No archived workspaces.
-        </p>
-      )}
-      {unarchive.error ? (
-        <p className="mt-2 text-sm text-destructive">
-          {String(unarchive.error)}
-        </p>
+        <button
+          type="button"
+          className="mt-3 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={() => {
+            setArchived.reset();
+            setArchivedOpen(true);
+          }}
+        >
+          View archived workspaces
+          {archived.data?.length ? ` (${archived.data.length})` : ""}
+        </button>
+      </section>
+
+      {archivedOpen ? (
+        <ArchivedWorkspacesDialog
+          workspaces={archived.data}
+          isLoading={archived.isLoading}
+          loadError={archived.error}
+          pending={setArchived.isPending}
+          unarchivingBranch={unarchivingBranch}
+          error={setArchived.error ? String(setArchived.error) : null}
+          onUnarchive={unarchiveWorkspace}
+          onCancel={() => {
+            if (setArchived.isPending) return;
+            setArchivedOpen(false);
+            setArchived.reset();
+          }}
+        />
       ) : null}
-    </section>
+      {selectedActive ? (
+        <ArchiveWorkspaceDialog
+          workspace={selectedActive}
+          pending={setArchived.isPending}
+          error={setArchived.error ? String(setArchived.error) : null}
+          onConfirm={archiveSelected}
+          onCancel={() => {
+            if (setArchived.isPending) return;
+            setSelectedActive(null);
+            setArchived.reset();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ActiveWorkspaceList({
+  workspaces,
+  isLoading,
+  error,
+  pending,
+  onArchive,
+}: {
+  workspaces: Workspace[] | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  pending: boolean;
+  onArchive: (workspace: Workspace) => void;
+}) {
+  if (isLoading) {
+    return <p className="mt-3 text-sm text-muted-foreground">Loading…</p>;
+  }
+  if (error) {
+    return <p className="mt-3 text-sm text-destructive">{String(error)}</p>;
+  }
+  if (!workspaces?.length) {
+    return (
+      <p className="mt-3 text-sm text-muted-foreground">
+        No active workspaces.
+      </p>
+    );
+  }
+  return (
+    <ul className="mt-3 max-w-2xl divide-y rounded-md border">
+      {workspaces.map((workspace) => (
+        <li
+          key={workspace.branch}
+          className="flex items-center justify-between gap-4 px-3 py-3"
+        >
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{workspace.branch}</p>
+            <p
+              className={cn(
+                "mt-0.5 flex items-center gap-1 text-xs",
+                workspace.branch_exists
+                  ? "text-muted-foreground"
+                  : "text-destructive",
+              )}
+            >
+              {workspace.branch_exists ? (
+                <CircleCheck className="size-3.5" aria-hidden="true" />
+              ) : (
+                <CircleAlert className="size-3.5" aria-hidden="true" />
+              )}
+              {workspace.branch_exists ? "Branch exists" : "Branch missing"}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label={`Archive ${workspace.branch}`}
+            disabled={pending}
+            onClick={() => onArchive(workspace)}
+          >
+            {pending ? "Working…" : "Archive"}
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ArchivedWorkspacesDialog({
+  workspaces,
+  isLoading,
+  loadError,
+  pending,
+  unarchivingBranch,
+  error,
+  onUnarchive,
+  onCancel,
+}: {
+  workspaces: Workspace[] | undefined;
+  isLoading: boolean;
+  loadError: Error | null;
+  pending: boolean;
+  unarchivingBranch: string | null;
+  error: string | null;
+  onUnarchive: (workspace: Workspace) => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
+      onClick={onCancel}
+    >
+      <div
+        data-debug-component="ArchivedWorkspacesDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Archived workspaces"
+        className="flex w-full max-w-lg flex-col rounded-lg border bg-background p-5 shadow-lg"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold">Archived workspaces</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Unarchive a workspace to make its integration branch active again.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close archived workspaces"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            disabled={pending}
+            onClick={onCancel}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+        {isLoading ? (
+          <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+        ) : null}
+        {loadError ? (
+          <p className="mt-4 text-sm text-destructive">{String(loadError)}</p>
+        ) : null}
+        {!isLoading && !loadError && !workspaces?.length ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            No archived workspaces.
+          </p>
+        ) : null}
+        {workspaces?.length ? (
+          <ul className="mt-4 divide-y rounded-md border">
+            {workspaces.map((workspace) => (
+              <li
+                key={workspace.branch}
+                className="flex items-center justify-between gap-4 px-3 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {workspace.branch}
+                  </p>
+                  <p
+                    className={cn(
+                      "mt-0.5 flex items-center gap-1 text-xs",
+                      workspace.branch_exists
+                        ? "text-muted-foreground"
+                        : "text-destructive",
+                    )}
+                  >
+                    {workspace.branch_exists ? (
+                      <CircleCheck className="size-3.5" aria-hidden="true" />
+                    ) : (
+                      <CircleAlert className="size-3.5" aria-hidden="true" />
+                    )}
+                    {workspace.branch_exists
+                      ? "Branch exists"
+                      : "Branch missing"}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-label={`Unarchive ${workspace.branch}`}
+                  disabled={pending}
+                  onClick={() => onUnarchive(workspace)}
+                >
+                  {unarchivingBranch === workspace.branch
+                    ? "Working…"
+                    : "Unarchive"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {error ? (
+          <p className="mt-3 text-sm text-destructive">{error}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ArchiveWorkspaceDialog({
+  workspace,
+  pending,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  workspace: Workspace;
+  pending: boolean;
+  error: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
+      onClick={onCancel}
+    >
+      <div
+        data-debug-component="ArchiveWorkspaceDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Archive ${workspace.branch}`}
+        className="flex w-full max-w-md flex-col rounded-lg border bg-background p-5 shadow-lg"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold">Archive {workspace.branch}?</h2>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Archiving hides this workspace from active views. Its Git branch,
+          worktrees, issues, and pull requests are not deleted or modified.
+        </p>
+        {error ? (
+          <p className="mt-3 text-sm text-destructive">{error}</p>
+        ) : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} disabled={pending}>
+            {pending ? "Working…" : "Archive"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

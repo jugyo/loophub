@@ -39,6 +39,28 @@ function setArchived(
   return workspaceJSON(workspace, localBranchExists(r.local_path, branch));
 }
 
+function listWorkspaceRows(
+  repo: string,
+  archived: boolean,
+  excludeDefaultBranch: boolean,
+) {
+  const r = repoOr404(repo);
+  const workspaces = archived
+    ? S.listArchivedWorkspaces(r.id)
+    : S.listWorkspaces(r.id);
+  return workspaces
+    .filter(
+      (workspace) =>
+        !excludeDefaultBranch || workspace.branch !== r.default_branch,
+    )
+    .map((workspace) =>
+      workspaceJSON(
+        workspace,
+        localBranchExists(r.local_path, workspace.branch),
+      ),
+    );
+}
+
 export const workspaces = {
   resolve(branch: string): WorkspaceResolutionWire {
     const matches = S.findActiveWorkspacesByBranch(branch);
@@ -93,23 +115,19 @@ export const workspaces = {
   },
 
   list(repo: string) {
-    const r = repoOr404(repo);
-    return S.listWorkspaces(r.id).map((workspace) =>
-      workspaceJSON(
-        workspace,
-        localBranchExists(r.local_path, workspace.branch),
-      ),
-    );
+    return listWorkspaceRows(repo, false, false);
   },
 
   listArchived(repo: string) {
-    const r = repoOr404(repo);
-    return S.listArchivedWorkspaces(r.id).map((workspace) =>
-      workspaceJSON(
-        workspace,
-        localBranchExists(r.local_path, workspace.branch),
-      ),
-    );
+    return listWorkspaceRows(repo, true, false);
+  },
+
+  listForSettings(repo: string) {
+    return listWorkspaceRows(repo, false, true);
+  },
+
+  listArchivedForSettings(repo: string) {
+    return listWorkspaceRows(repo, true, true);
   },
 
   archive(repo: string, branch: string, sessionId?: string | null) {

@@ -533,6 +533,18 @@ export function listArchivedWorkspaces(owner: string, repo: string) {
   });
 }
 
+export function listSettingsWorkspaces(owner: string, repo: string) {
+  return rpc<Workspace[]>("workspaces/listForSettings", {
+    repo: full(owner, repo),
+  });
+}
+
+export function listArchivedSettingsWorkspaces(owner: string, repo: string) {
+  return rpc<Workspace[]>("workspaces/listArchivedForSettings", {
+    repo: full(owner, repo),
+  });
+}
+
 export function createWorkspace(
   owner: string,
   repo: string,
