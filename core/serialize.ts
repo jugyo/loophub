@@ -21,6 +21,11 @@ import type {
 } from "./terminal/herdr-status.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
 import type { Theme } from "./theme.ts";
+import {
+  type WorkerCompatibility,
+  type WorkerRuntimeRecord,
+  workerCompatibility,
+} from "./worker-protocol.ts";
 import type { WorkflowContractLanguage } from "./workflow/contracts.ts";
 import {
   parseWorkflowEventPayload,
@@ -35,6 +40,15 @@ import type { WorkflowStepStatuses } from "./workflow/steps.ts";
 export type { CodingAgent } from "./runtimes.ts";
 export type { Theme as ThemeWire } from "./theme.ts";
 export type { WorkflowContractLanguage as WorkflowContractLanguageWire } from "./workflow/contracts.ts";
+
+export type WorkerCompatibilityWire = WorkerCompatibility;
+
+export function workerCompatibilityJSON(
+  runtime: WorkerRuntimeRecord | null,
+  nowMs = Date.now(),
+): WorkerCompatibilityWire {
+  return workerCompatibility(runtime, nowMs);
+}
 
 export interface AgentSettingsWire {
   model: string;

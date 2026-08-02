@@ -10,10 +10,12 @@ import {
   notifications,
   sessions,
   terminal,
+  workerRuntime,
   workflowRuns,
   worktrees,
 } from "../core/service.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
+import { WORKER_HEARTBEAT_INTERVAL_MS } from "../core/worker-protocol.ts";
 import { workerLog } from "./logger.ts";
 
 export const DEFAULT_SWEEP_MS = 5000;
@@ -43,6 +45,7 @@ export const DEFAULT_HERDR_SWEEP_MS = 3000;
 // twice an hour is already far finer than the grace period. A tick that finds nothing due costs one
 // `git worktree list` per repo.
 export const DEFAULT_WORKTREE_PRUNE_SWEEP_MS = 1800000;
+export const DEFAULT_WORKER_HEARTBEAT_MS = WORKER_HEARTBEAT_INTERVAL_MS;
 
 export interface MaintenanceLoopOptions {
   sweepMs?: number;
@@ -53,6 +56,7 @@ export interface MaintenanceLoopOptions {
   conflictSweepMs?: number;
   herdrSweepMs?: number;
   worktreePruneSweepMs?: number;
+  workerHeartbeatMs?: number;
 }
 
 export interface NormalizedMaintenanceLoopOptions {
@@ -64,6 +68,7 @@ export interface NormalizedMaintenanceLoopOptions {
   conflictSweepMs: number;
   herdrSweepMs: number;
   worktreePruneSweepMs: number;
+  workerHeartbeatMs: number;
 }
 
 export interface MaintenanceHandle {
@@ -96,6 +101,10 @@ export function normalizeMaintenanceLoopOptions(
     worktreePruneSweepMs: finiteOrDefault(
       opts.worktreePruneSweepMs,
       DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
+    ),
+    workerHeartbeatMs: finiteOrDefault(
+      opts.workerHeartbeatMs,
+      DEFAULT_WORKER_HEARTBEAT_MS,
     ),
   };
 }
@@ -153,6 +162,8 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
     herdrSweep: opts.herdrSweepMs > 0 ? `${opts.herdrSweepMs}ms` : "off",
     worktreePruneSweep:
       opts.worktreePruneSweepMs > 0 ? `${opts.worktreePruneSweepMs}ms` : "off",
+    workerHeartbeat:
+      opts.workerHeartbeatMs > 0 ? `${opts.workerHeartbeatMs}ms` : "off",
   };
 }
 
@@ -160,7 +171,11 @@ export function startMaintenanceLoops(
   opts: MaintenanceLoopOptions = {},
 ): MaintenanceHandle {
   const normalized = normalizeMaintenanceLoopOptions(opts);
+  const workerStartedAt = new Date().toISOString();
   const stops = [
+    normalized.workerHeartbeatMs > 0
+      ? startWorkerHeartbeat(normalized.workerHeartbeatMs, workerStartedAt)
+      : () => {},
     normalized.sweepMs > 0 ? startPullSweep(normalized.sweepMs) : () => {},
     normalized.usageSweepMs > 0
       ? startUsageSweep(normalized.usageSweepMs)
@@ -190,6 +205,17 @@ export function startMaintenanceLoops(
       for (const stop of stops) stop();
     },
   };
+}
+
+export function startWorkerHeartbeat(
+  intervalMs = DEFAULT_WORKER_HEARTBEAT_MS,
+  startedAt = new Date().toISOString(),
+): () => void {
+  const tick = () => workerRuntime.heartbeat(startedAt);
+  tick();
+  const timer = setInterval(tick, intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 // Auto-fire pull_request.updated by sweeping open PR head SHAs on the resident worker

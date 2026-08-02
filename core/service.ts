@@ -22,6 +22,7 @@ export { stats } from "./service/stats.ts";
 export { sync } from "./service/sync.ts";
 export type { HerdrRepoSessions } from "./service/terminal.ts";
 export { terminal } from "./service/terminal.ts";
+export { workerRuntime } from "./service/worker-runtime.ts";
 export { workflowCostHold } from "./service/workflow-cost-hold.ts";
 export { workflowEffects } from "./service/workflow-effects.ts";
 export { workflowEscalation } from "./service/workflow-escalation.ts";

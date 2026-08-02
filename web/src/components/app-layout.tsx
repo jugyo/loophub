@@ -15,6 +15,7 @@ import {
   TerminalLaunchErrorDialog,
 } from "@/components/terminal-controller";
 import { ToastProvider, ToastViewport } from "@/components/toast";
+import { WorkerCompatibilityWarning } from "@/components/worker-compatibility-warning";
 import { useScrollToTop } from "@/lib/use-scroll-to-top";
 
 export function AppLayout() {
@@ -39,6 +40,7 @@ export function AppLayout() {
           />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <RepoTopbar />
+            <WorkerCompatibilityWarning />
             <RepoHerdrWarning />
             {/* scroll-pt-11 reserves the detail pages' sticky header height (#2033) at the top
                 of this scrollport, so anything scrolled to (an anchor jump, scrollIntoView)

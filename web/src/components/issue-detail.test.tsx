@@ -86,6 +86,13 @@ function mockFetch(
   return mockRpcFetch({
     "workflowRuns/stateForPull": () => null,
     "terminal/sessions": () => ({ repos: [] }),
+    "worker/status": () => ({
+      status: "compatible",
+      required_protocol_version: 1,
+      observed_protocol_version: 1,
+      started_at: "2026-08-02T00:00:00Z",
+      heartbeat_at: "2026-08-02T00:00:01Z",
+    }),
     ...extraHandlers,
     "issues/get": getIssue,
     "comments/list": () => comments,
@@ -723,6 +730,30 @@ describe("IssueDetail", () => {
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
+  });
+
+  it("disables Start workflow and explains remediation when the worker is stale", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr, {
+      "worker/status": () => ({
+        status: "stale",
+        required_protocol_version: 1,
+        observed_protocol_version: 1,
+        started_at: "2026-08-02T00:00:00Z",
+        heartbeat_at: "2026-08-02T00:00:01Z",
+      }),
+    });
+
+    expect(
+      (await screen.findByRole("button", {
+        name: "Start workflow",
+      })) as HTMLButtonElement,
+    ).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText(
+        "Start or restart lh-worker to enable workflow launches.",
+      ),
+    ).toBeTruthy();
   });
 
   it("shows no implementation-start control on an open issue with an open linked PR", async () => {

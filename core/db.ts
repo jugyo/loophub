@@ -844,6 +844,15 @@ CREATE TABLE IF NOT EXISTS instance_settings (
   updated_at TEXT NOT NULL
 );
 
+-- Runtime identity of the one resident worker sharing this database. The fixed primary key makes
+-- each heartbeat replace the previous process generation instead of accumulating health history.
+CREATE TABLE IF NOT EXISTS worker_runtime (
+  singleton        INTEGER PRIMARY KEY CHECK (singleton = 1),
+  protocol_version INTEGER NOT NULL,
+  started_at       TEXT NOT NULL,
+  heartbeat_at     TEXT NOT NULL
+);
+
 -- Minimal run tracking for the workflow delete guard (#997) plus the run lifecycle state. A
 -- workflow referenced by an active run cannot be deleted.
 CREATE TABLE IF NOT EXISTS workflow_runs (

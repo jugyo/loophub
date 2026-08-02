@@ -20,12 +20,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { WorkerLaunchUnavailable } from "@/components/worker-compatibility-warning";
 import { type Badge as BadgeData, pullBadges } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import type { IssueListFilters } from "@/queries/issues";
+import { useWorkerLaunchGate } from "@/queries/worker-status";
 import { useWorkflows } from "@/queries/workflows";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
@@ -242,6 +244,7 @@ function StartWorkflowButton({
   const { launchTerminal } = useTerminalLauncher();
   const navigate = useNavigate();
   const { data: workflows, isLoading } = useWorkflows();
+  const { canStartWorkflow, showRemediation } = useWorkerLaunchGate();
   const [isLaunching, startLaunching] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -265,7 +268,7 @@ function StartWorkflowButton({
           size="sm"
           className="h-6 gap-1 px-2 text-xs font-normal"
           title="Start a saved workflow in auto mode (no approval prompts, no sandbox)"
-          disabled={isLaunching || isLoading}
+          disabled={isLaunching || isLoading || !canStartWorkflow}
         >
           {isLaunching ? (
             <Loader2 className="size-3 animate-spin" />
@@ -309,6 +312,7 @@ function StartWorkflowButton({
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
+      {showRemediation ? <WorkerLaunchUnavailable compact /> : null}
     </DropdownMenu>
   );
 }
@@ -441,7 +445,7 @@ export function IssueRow({
         // No active attempt: offer to start a workflow from the row, indented
         // to sit where the linked-PR sub-rows render (pl-7). This includes
         // issues whose previous attempts are all closed.
-        <div className="pl-7">
+        <div className="flex items-center gap-2 pl-7">
           <StartWorkflowButton owner={owner} repo={repo} issue={issue} />
         </div>
       ) : null}

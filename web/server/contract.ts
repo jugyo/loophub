@@ -127,6 +127,14 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+
+  "worker/status": {
+    description:
+      "Report whether the resident worker is present, fresh, and workflow-protocol compatible with this Web server.",
+    params: EMPTY_PARAMS,
+    result: anyObject,
+    handler: () => svc.workerRuntime.status(),
+  },
   "repos/rename": {
     description: "Rename a repository's owner/name (full_name) (#485).",
     params: params({ name: repo, new_name: strNonEmpty, session_id: sid }, [

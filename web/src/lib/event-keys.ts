@@ -26,6 +26,7 @@ export const queryKeys = {
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
   workflows: () => ["workflows"] as const,
+  workerStatus: () => ["worker", "status"] as const,
   workflowRunForIssue: (full: string, number: number) =>
     ["workflow-run", "issue", full, number] as const,
   workflowRunForPull: (full: string, number: number) =>

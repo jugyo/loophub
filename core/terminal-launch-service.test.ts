@@ -77,6 +77,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
+let db: typeof import("./db.ts").db;
 let repoPath: string;
 let otherRepoPath: string;
 
@@ -139,6 +140,7 @@ function killedBySignal(signal: string) {
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
+  ({ db } = await import("./db.ts"));
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-tl-repo-"));
   const git = (args: string[]) =>
@@ -176,9 +178,49 @@ beforeEach(() => {
   herdr.script.length = 0;
   lhDev.calls.length = 0;
   lhDev.script.length = 0;
+  const timestamp = new Date().toISOString();
+  S.upsertWorkerRuntime({
+    protocol_version: 1,
+    started_at: timestamp,
+    heartbeat_at: timestamp,
+  });
 });
 
 describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () => {
+  test.each([
+    ["missing", null],
+    [
+      "incompatible",
+      {
+        protocol_version: 2,
+        started_at: new Date().toISOString(),
+        heartbeat_at: new Date().toISOString(),
+      },
+    ],
+    [
+      "stale",
+      {
+        protocol_version: 1,
+        started_at: "2020-01-01T00:00:00Z",
+        heartbeat_at: "2020-01-01T00:00:00Z",
+      },
+    ],
+  ])("rejects a %s worker before spawning the launcher", async (_state, runtime) => {
+    db.run("DELETE FROM worker_runtime");
+    if (runtime) S.upsertWorkerRuntime(runtime);
+
+    await expect(
+      svc.terminal.launch({
+        repo: "me/proj",
+        workflow: "workflow-run",
+        issueNumber: 1,
+        workflowId: 9,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(lhDev.calls).toHaveLength(0);
+    expect(herdr.calls).toHaveLength(0);
+  });
+
   test("forwards the saved workflow and reports the canonical herdr session", async () => {
     lhDev.script.push(exitWith(0));
 
@@ -346,7 +388,8 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
 });
 
 describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
-  test("opens a fresh workspace at the LoopHub-home cwd and starts the workflow-create agent, without a repo", async () => {
+  test("opens a fresh workspace without requiring worker compatibility or a repo", async () => {
+    db.run("DELETE FROM worker_runtime");
     herdr.script.push(
       exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE), // workspace create
       exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'), // agent start
@@ -386,7 +429,8 @@ describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
 });
 
 describe("terminal.launch dedicated workspace orchestration for New Issue", () => {
-  test("creates the dedicated workspace when its repo session is not running yet", async () => {
+  test("creates the dedicated workspace without requiring worker compatibility", async () => {
+    db.run("DELETE FROM worker_runtime");
     herdr.script.push(
       exitWith(1),
       exitWith(0, '{"sessions":[]}'),

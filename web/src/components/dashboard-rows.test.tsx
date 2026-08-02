@@ -124,7 +124,17 @@ function renderInRouter(
   // real RPC returns null for a PR with no run.
   vi.stubGlobal(
     "fetch",
-    mockRpcFetch({ "workflowRuns/stateForPull": () => null, ...handlers }),
+    mockRpcFetch({
+      "workflowRuns/stateForPull": () => null,
+      "worker/status": () => ({
+        status: "compatible",
+        required_protocol_version: 1,
+        observed_protocol_version: 1,
+        started_at: "2026-08-02T00:00:00Z",
+        heartbeat_at: "2026-08-02T00:00:01Z",
+      }),
+      ...handlers,
+    }),
   );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -507,6 +517,30 @@ describe("IssueRow workflow budget (#1828)", () => {
 // #1622: a PR-less issue list row shows a small Start workflow button in the
 // linked-PR position, wiring the same terminal/launch flow as issue-detail.
 describe("IssueRow Start workflow button (#1622)", () => {
+  it("disables launch and shows remediation for an incompatible worker", async () => {
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />, {
+      "workflows/list": () => [{ id: 7, name: "Dev loop" }],
+      "worker/status": () => ({
+        status: "incompatible",
+        required_protocol_version: 1,
+        observed_protocol_version: 2,
+        started_at: "2026-08-02T00:00:00Z",
+        heartbeat_at: "2026-08-02T00:00:01Z",
+      }),
+    });
+
+    expect(
+      (await screen.findByRole("button", {
+        name: /Start workflow/,
+      })) as HTMLButtonElement,
+    ).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText(
+        "Start or restart lh-worker to enable workflow launches.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows the button when the issue has no linked PR", async () => {
     renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />, {
       "workflows/list": () => [],
