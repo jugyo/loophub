@@ -16,8 +16,7 @@ import {
 } from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
-import { CommentAuthorLabel } from "@/components/comment-author-label";
-import { CommentId } from "@/components/comment-id";
+import { CommentMetadata } from "@/components/comment-metadata";
 import { CopyButton } from "@/components/copy-button";
 import {
   DetailHeaderTitle,
@@ -788,15 +787,13 @@ function CommentList({
             data-debug-component="PullComment"
             className="rounded-md border p-3"
           >
-            <header className="mb-1 text-sm font-medium">
-              <CommentAuthorLabel
+            <header className="mb-1">
+              <CommentMetadata
                 author={c.user.login}
                 authorType={c.author_type}
-              />{" "}
-              <span className="text-xs font-normal text-muted-foreground">
-                {relativeTime(c.created_at)}
-              </span>{" "}
-              <CommentId id={c.id} />
+                createdAt={c.created_at}
+                id={c.id}
+              />
             </header>
             <Markdown owner={owner} repo={repo}>
               {c.body}
