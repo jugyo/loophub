@@ -8,6 +8,7 @@ import type {
   GithubPull,
   Repo,
   ReviewCommentRow,
+  ReviewResponseRow,
 } from "./store.ts";
 
 // Isolate the DB before serialize.ts -> store.ts -> db.ts runs its import-time setup (see AGENTS.md).
@@ -576,6 +577,26 @@ describe("pure row -> wire serializers", () => {
       side: "RIGHT",
       body: "off by one",
       created_at: "2026-07-05T00:00:00Z",
+    });
+  });
+
+  test("reviewResponseJSON keeps its review and optional comment targets", () => {
+    const row: ReviewResponseRow = {
+      id: 12,
+      issue_id: 3,
+      review_id: 5,
+      review_comment_id: 11,
+      author: "executor",
+      body: "fixed",
+      created_at: "2026-07-06T00:00:00Z",
+    };
+    expect(serialize.reviewResponseJSON(row)).toEqual({
+      id: 12,
+      pull_request_review_id: 5,
+      pull_request_review_comment_id: 11,
+      user: { login: "executor" },
+      body: "fixed",
+      created_at: "2026-07-06T00:00:00Z",
     });
   });
 

@@ -140,6 +140,92 @@ test("a human REQUEST_CHANGES on a PR with a running run emits review_submitted 
   });
 });
 
+test("review responses stay linked to their review and optional review comment", async () => {
+  const pr = await newPull("linked-response");
+  const review = await svc.reviews.create(
+    "me/reviews",
+    pr,
+    {
+      event: "REQUEST_CHANGES",
+      body: "please fix",
+      comments: [{ path: "base.txt", line: 1, body: "fix this line" }],
+    },
+    "reviewer-session",
+  );
+  const comment = svc.reviews.listComments("me/reviews", pr).at(-1)!;
+  expect(svc.reviews.get("me/reviews", pr, review.id)).toMatchObject({
+    review: { id: review.id, body: "please fix" },
+    comments: [
+      {
+        id: comment.id,
+        pull_request_review_id: review.id,
+        body: "fix this line",
+      },
+    ],
+  });
+  S.registerAgentSession(
+    "executor-session",
+    "codex",
+    "executor-external",
+    "executor",
+  );
+
+  const response = svc.reviews.createResponse(
+    "me/reviews",
+    pr,
+    {
+      reviewId: review.id,
+      reviewCommentId: comment.id,
+      body: "fixed in the latest commit",
+    },
+    "executor-session",
+  );
+
+  expect(response).toMatchObject({
+    pull_request_review_id: review.id,
+    pull_request_review_comment_id: comment.id,
+    body: "fixed in the latest commit",
+    user: { login: "executor" },
+  });
+  expect(svc.reviews.listResponses("me/reviews", pr, review.id)).toEqual([
+    response,
+  ]);
+});
+
+test("review responses reject a comment from another review", async () => {
+  const pr = await newPull("mismatched-response");
+  const first = await svc.reviews.create(
+    "me/reviews",
+    pr,
+    {
+      event: "REQUEST_CHANGES",
+      comments: [{ path: "base.txt", line: 1, body: "first" }],
+    },
+    "reviewer-session",
+  );
+  const comment = svc.reviews.listComments("me/reviews", pr).at(-1)!;
+  const second = await svc.reviews.create(
+    "me/reviews",
+    pr,
+    { event: "COMMENT", body: "second" },
+    "reviewer-session",
+  );
+
+  expect(() =>
+    svc.reviews.createResponse(
+      "me/reviews",
+      pr,
+      {
+        reviewId: second.id,
+        reviewCommentId: comment.id,
+        body: "wrong parent",
+      },
+      "executor-session",
+    ),
+  ).toThrow(`review comment #${comment.id} not found on review #${second.id}`);
+  expect(first.id).not.toBe(second.id);
+});
+
 test("a substantive review on a PR with no running run does not emit review_submitted", async () => {
   const pr = await newPull("no-run");
   const before = reviewEvents().length;

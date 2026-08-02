@@ -2,8 +2,10 @@ import { ServiceError } from "../errors.ts";
 import { revParse } from "../git.ts";
 import {
   type ReviewAcResultWire,
+  type ReviewDetailWire,
   reviewCommentJSON,
   reviewJSON,
+  reviewResponseJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
 import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
@@ -163,6 +165,92 @@ export const reviews = {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     return S.listReviewComments(row.id).map(reviewCommentJSON);
+  },
+
+  get(name: string, number: number, reviewId: number): ReviewDetailWire {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const review = S.listReviews(row.id).find(
+      (candidate) => candidate.id === reviewId,
+    );
+    if (!review) {
+      throw new ServiceError(
+        404,
+        `review #${reviewId} not found on PR #${number}`,
+      );
+    }
+    return {
+      review: reviewJSON(review, reviewAcResultsJSON(review.id)),
+      comments: S.listReviewComments(row.id)
+        .filter((comment) => comment.review_id === review.id)
+        .map(reviewCommentJSON),
+    };
+  },
+
+  listResponses(name: string, number: number, reviewId?: number) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    if (
+      reviewId !== undefined &&
+      !S.listReviews(row.id).some((review) => review.id === reviewId)
+    ) {
+      throw new ServiceError(
+        404,
+        `review #${reviewId} not found on PR #${number}`,
+      );
+    }
+    return S.listReviewResponses(row.id, reviewId).map(reviewResponseJSON);
+  },
+
+  createResponse(
+    name: string,
+    number: number,
+    input: { reviewId: number; reviewCommentId?: number; body: string },
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const review = S.listReviews(row.id).find(
+      (candidate) => candidate.id === input.reviewId,
+    );
+    if (!review) {
+      throw new ServiceError(
+        404,
+        `review #${input.reviewId} not found on PR #${number}`,
+      );
+    }
+    if (!input.body.trim()) {
+      throw new ServiceError(422, "review response body is required");
+    }
+    const reviewCommentId = input.reviewCommentId ?? null;
+    if (
+      reviewCommentId !== null &&
+      !S.listReviewComments(row.id).some(
+        (comment) =>
+          comment.id === reviewCommentId && comment.review_id === review.id,
+      )
+    ) {
+      throw new ServiceError(
+        404,
+        `review comment #${reviewCommentId} not found on review #${review.id}`,
+      );
+    }
+    const actor = actorFor(sessionId);
+    const response = S.createReviewResponse(
+      row.id,
+      review.id,
+      reviewCommentId,
+      actor,
+      input.body,
+    );
+    S.emitEvent(r.id, "pull_request.review_response_created", actor, {
+      number: row.number,
+      review_id: review.id,
+      review_comment_id: reviewCommentId,
+      response_id: response.id,
+    });
+    return reviewResponseJSON(response);
   },
 
   async create(

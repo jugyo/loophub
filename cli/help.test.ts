@@ -96,6 +96,7 @@ describe("--help", () => {
       args: ["pr", "review", "--help"],
       usage: "lh pr review <number> [options]",
       options: [
+        "--review <id>",
         "--event <verdict>",
         "--body <text>",
         "--commit <sha>",
@@ -105,6 +106,23 @@ describe("--help", () => {
         "--json",
         "--help",
       ],
+    },
+    {
+      args: ["pr", "review-response", "--help"],
+      usage: "lh pr review-response add <number> --review <id> [options]",
+      options: [
+        "--review <id>",
+        "--review-comment <id>",
+        "--body <text>",
+        "--repo <owner/name>",
+        "--json",
+        "--help",
+      ],
+    },
+    {
+      args: ["pr", "review", "view", "--help"],
+      usage: "lh pr review view <number> --review <id> [options]",
+      options: ["--review <id>", "--repo <owner/name>", "--json", "--help"],
     },
     {
       args: ["workflow", "instruction", "--help"],

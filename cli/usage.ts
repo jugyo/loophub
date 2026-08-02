@@ -19,7 +19,7 @@ export function usage(): void {
   lh issue search|list|view|create|import|update|comment|close|label  [--repo owner/repo]
   lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
-  lh pr list|view|diff|create|update|comment|merge|review|close|reopen  [--repo owner/repo]
+  lh pr list|view|diff|create|update|comment|merge|review|review-response|close|reopen  [--repo owner/repo]
   lh pr feedback list|create <pr> | pending <pr> --run <id> | view|reply|resolve|reopen <conversation> --pr <pr> | react <message> --pr <pr> --emoji <emoji> [--context <lines>] [--repo owner/repo]
   lh notification send --kind merge_ready|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
@@ -66,8 +66,11 @@ export function usage(): void {
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     lh pr review 3 --event pass --body "no issues found" --commit <head sha>
+    lh pr review view 3 --review 7 --json
     lh pr review 3 --comments '[{"path":"a.txt","line":2,"body":"typo"}]'   # inline JSON or a file path
     lh pr review 3 --event pass --body "all criteria met" --ac-results '[{"criterion_id":"1-1","verdict":"pass","note":""}]'
+    lh pr review-response add 3 --review 7 [--review-comment 9] --body "addressed in the latest commit"
+    lh pr review-response list 3 --review 7 --json
     lh pr feedback create 3 --base-sha <sha> --head-sha <sha> --path a.txt --side RIGHT --start-line 2 --end-line 2 --body "why?"
     lh pr feedback list 3 --json
     lh pr feedback pending 3 --run 42 --json      # conversations this Workflow run has not answered, with diff context

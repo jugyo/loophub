@@ -763,6 +763,7 @@ export const pulls = {
       },
       reviews: S.listReviews(issueRow.id),
       review_comments: S.listReviewComments(issueRow.id),
+      review_responses: S.listReviewResponses(issueRow.id),
       comments: S.listComments(issueRow.id),
       events,
       session: sessionRow ? agentSessionJSON(sessionRow) : null,

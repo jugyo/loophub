@@ -195,3 +195,86 @@ test("lh pr review soft-warns a pass contradicted by a failing grade", () => {
   );
   expect(review.stdout).toContain("submitted: PASS");
 });
+
+test("lh pr review view reads comments and review-response stays linked", () => {
+  const number = createPull("feature-review-response");
+  const reviewed = lh([
+    "pr",
+    "review",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--event",
+    "request_changes",
+    "--body",
+    "please fix",
+    "--comments",
+    JSON.stringify([
+      {
+        path: "feature-review-response.txt",
+        line: 1,
+        body: "fix this line",
+      },
+    ]),
+    "--json",
+  ]);
+  expect(reviewed.exitCode, reviewed.stderr).toBe(0);
+  const reviewId = JSON.parse(reviewed.stdout).id;
+
+  const viewed = lh([
+    "pr",
+    "review",
+    "view",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--review",
+    String(reviewId),
+    "--json",
+  ]);
+  expect(viewed.exitCode, viewed.stderr).toBe(0);
+  expect(JSON.parse(viewed.stdout)).toMatchObject({
+    review: { id: reviewId, body: "please fix" },
+    comments: [
+      {
+        pull_request_review_id: reviewId,
+        path: "feature-review-response.txt",
+        body: "fix this line",
+      },
+    ],
+  });
+
+  const added = lh([
+    "pr",
+    "review-response",
+    "add",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--review",
+    String(reviewId),
+    "--body",
+    "fixed in the latest commit",
+    "--json",
+  ]);
+  expect(added.exitCode, added.stderr).toBe(0);
+  expect(JSON.parse(added.stdout)).toMatchObject({
+    pull_request_review_id: reviewId,
+    pull_request_review_comment_id: null,
+    body: "fixed in the latest commit",
+  });
+
+  const listed = lh([
+    "pr",
+    "review-response",
+    "list",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--review",
+    String(reviewId),
+    "--json",
+  ]);
+  expect(listed.exitCode, listed.stderr).toBe(0);
+  expect(JSON.parse(listed.stdout)).toHaveLength(1);
+});

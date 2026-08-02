@@ -226,6 +226,19 @@ CREATE TABLE IF NOT EXISTS review_comments (
   created_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS review_responses (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id          INTEGER NOT NULL REFERENCES issues(id),
+  review_id         INTEGER NOT NULL REFERENCES reviews(id),
+  review_comment_id INTEGER REFERENCES review_comments(id),
+  author            TEXT NOT NULL,
+  body              TEXT NOT NULL,
+  created_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_responses_issue_review
+  ON review_responses(issue_id, review_id, created_at, id);
+
 CREATE TABLE IF NOT EXISTS diff_feedback_threads (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   issue_id       INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,

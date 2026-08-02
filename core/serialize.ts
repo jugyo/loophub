@@ -1156,6 +1156,31 @@ export function reviewCommentJSON(m: S.ReviewCommentRow): ReviewCommentWire {
   };
 }
 
+export interface ReviewDetailWire {
+  review: ReviewWire;
+  comments: ReviewCommentWire[];
+}
+
+export interface ReviewResponseWire {
+  id: number;
+  pull_request_review_id: number;
+  pull_request_review_comment_id: number | null;
+  user: UserWire;
+  body: string;
+  created_at: string;
+}
+
+export function reviewResponseJSON(m: S.ReviewResponseRow): ReviewResponseWire {
+  return {
+    id: m.id,
+    pull_request_review_id: m.review_id,
+    pull_request_review_comment_id: m.review_comment_id,
+    user: { login: m.author },
+    body: m.body,
+    created_at: m.created_at,
+  };
+}
+
 // An orchestrator<->subagent handoff (#352), as shown in the PR detail's Handoffs section. `body`
 // is inline content (instruction / Verify report) when present; otherwise `src` references a
 // canonical copy (plan=PR, diff=commit) and `hash` is its content hash.

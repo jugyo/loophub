@@ -13,7 +13,7 @@ usage that they do not provide, consult `lh --help` or the relevant subcommand's
   both as the spec.
 - `pr` — the PR number this run delivers. Read and update it with `lh pr view` / `lh pr update`.
 - `address review` (rework only) — the Verify review id to resolve. Read the review and its comments
-  with `lh pr view <pr> --json`, and address every finding.
+  with `lh pr review view <pr> --review <id> --json`, and address every finding.
 - The worktree — the cwd available for editing and testing.
 
 During the session, messages beginning with `orchestrator:` are instructions from the workflow
@@ -21,11 +21,12 @@ parent; treat an identical launch note the same way.
 
 ## Classify follow-ups
 
-- **Rework (`orchestrator: address review #<id>`)** — read the specified review and its review
-  comments yourself. If resolving it requires source changes, before editing post a brief top-level
-  `lh pr comment <pr> --body <text>` acknowledgement that identifies `review #<id>` and every
-  applicable `review comment #<id>`, acknowledges the findings, and states that you will address
-  them. Resolve every finding; this is a review response, not a free-form extension of the issue.
+- **Rework (`orchestrator: address review #<id>`)** — read the specified review and all its review
+  comments with `lh pr review view <pr> --review <id> --json` and resolve every finding. The review
+  pointer, resulting commit, and workflow
+  turn record preserve the association. If a written response is needed, attach it with
+  `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>`; do not use a
+  top-level `lh pr comment`.
 - **Diff feedback (`orchestrator: address diff feedback thread #<t> comment #<c>`)** — read the
   unanswered conversations and their diff context with `lh pr feedback pending <pr> --run <run> --json`,
   and reply to each with `lh pr feedback reply <t> --pr <pr> --body <text>`. For any conversation

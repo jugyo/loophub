@@ -31,8 +31,16 @@ test("createRepo normalizes slashless names to me/<name> (RETURNING row)", () =>
   expect(S.getRepo("me", "proj")?.id).toBe(repo.id);
 });
 
-test("deleteRepo removes Workflow runs before deleting the repo", () => {
+test("deleteRepo removes Workflow runs and review responses before deleting the repo", () => {
   const repo = S.createRepo("me/workflow-remove", "/tmp/workflow-remove");
+  const issue = S.createIssue(repo.id, "pull", "reviewed change", "", "author");
+  const review = S.createReview(
+    issue.id,
+    "reviewer",
+    "REQUEST_CHANGES",
+    "fix this",
+  );
+  S.createReviewResponse(issue.id, review.id, null, "executor", "fixed");
   const workflow = S.createWorkflow({
     name: "repo-remove-workflow",
     description: "",
@@ -52,6 +60,23 @@ test("deleteRepo removes Workflow runs before deleting the repo", () => {
 
   expect(S.deleteRepo("me", "workflow-remove")).toBe(true);
   expect(S.getRepo("me", "workflow-remove")).toBeNull();
+});
+
+test("deletePull removes review responses before their parent review", () => {
+  const repo = S.createRepo("me/pull-remove", "/tmp/pull-remove");
+  const issue = S.createIssue(repo.id, "pull", "reviewed change", "", "author");
+  S.createPull(issue.id, "feature", "main", null);
+  const review = S.createReview(
+    issue.id,
+    "reviewer",
+    "REQUEST_CHANGES",
+    "fix this",
+  );
+  S.createReviewResponse(issue.id, review.id, null, "executor", "fixed");
+
+  expect(() => S.deletePull(issue.id, repo.id, issue.number)).not.toThrow();
+  expect(S.getPull(issue.id)).toBeNull();
+  expect(S.listReviewResponses(issue.id)).toEqual([]);
 });
 
 test("updateRepo renames full_name and keeps name/owner in sync (#485)", () => {

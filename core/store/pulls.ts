@@ -213,6 +213,7 @@ export function deletePull(
     // These tables reference issues without ON DELETE CASCADE. Remove only rows owned by this PR;
     // session records, worktrees, and repository-level events remain untouched.
     for (const table of [
+      "review_responses",
       "review_comments",
       "reviews",
       "comments",

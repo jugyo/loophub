@@ -931,6 +931,22 @@ export const MIGRATIONS: Migration[] = [
     "severity",
     "TEXT NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning'))",
   ),
+  sql(
+    "060-review-responses",
+    `
+    CREATE TABLE IF NOT EXISTS review_responses (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id          INTEGER NOT NULL REFERENCES issues(id),
+      review_id         INTEGER NOT NULL REFERENCES reviews(id),
+      review_comment_id INTEGER REFERENCES review_comments(id),
+      author            TEXT NOT NULL,
+      body              TEXT NOT NULL,
+      created_at        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_review_responses_issue_review
+      ON review_responses(issue_id, review_id, created_at, id);
+  `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

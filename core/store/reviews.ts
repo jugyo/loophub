@@ -24,6 +24,16 @@ export interface ReviewCommentRow {
   created_at: string;
 }
 
+export interface ReviewResponseRow {
+  id: number;
+  issue_id: number;
+  review_id: number;
+  review_comment_id: number | null;
+  author: string;
+  body: string;
+  created_at: string;
+}
+
 export interface ReviewAcResultRow {
   id: number;
   review_id: number;
@@ -232,6 +242,50 @@ export function listReviewComments(issueId: number): ReviewCommentRow[] {
       `SELECT * FROM review_comments WHERE issue_id = ? ORDER BY created_at ASC`,
     )
     .all(issueId) as ReviewCommentRow[];
+}
+
+export function createReviewResponse(
+  issueId: number,
+  reviewId: number,
+  reviewCommentId: number | null,
+  author: string,
+  body: string,
+): ReviewResponseRow {
+  return db
+    .query(
+      `INSERT INTO review_responses
+         (issue_id, review_id, review_comment_id, author, body, created_at)
+       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
+    )
+    .get(
+      issueId,
+      reviewId,
+      reviewCommentId,
+      author,
+      body,
+      now(),
+    ) as ReviewResponseRow;
+}
+
+export function listReviewResponses(
+  issueId: number,
+  reviewId?: number,
+): ReviewResponseRow[] {
+  return (
+    reviewId === undefined
+      ? db
+          .query(
+            `SELECT * FROM review_responses
+           WHERE issue_id = ? ORDER BY created_at ASC, id ASC`,
+          )
+          .all(issueId)
+      : db
+          .query(
+            `SELECT * FROM review_responses
+           WHERE issue_id = ? AND review_id = ? ORDER BY created_at ASC, id ASC`,
+          )
+          .all(issueId, reviewId)
+  ) as ReviewResponseRow[];
 }
 
 // ---- review AC results (per-criterion grade。review に束ねる子ファクト) ----

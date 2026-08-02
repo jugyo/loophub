@@ -193,7 +193,8 @@ contract を検証する。
 
 ### 3.2 Execute agent（ドメインを知る pull 型開発者）
 
-1. `lh issue view` / `lh pr view` で issue・PR（rework 時は対応すべき review）を自分で読む。
+1. `lh issue view` / `lh pr view` で issue・PR を読み、rework 時は
+   `lh pr review view <pr> --review <id> --json` で対象 review と全 review comments を読む。
 2. 関連コードを見て最小の実装計画を session 内に持つ（独立 artifact として提出しない）。
 3. 実装し、repo 標準の test / lint / typecheck を green にする。
 4. 結果を **ドメイン状態** に書く: commits、`lh pr update` による PR body、`lh attachment add`、
@@ -201,13 +202,14 @@ contract を検証する。
 5. ターン完了を `lh workflow turn done`（payload なし）で宣言する。**commit 前に宣言しても run は
    進まない**（親が HEAD 前進を観測しないため）。
 
-human follow-up が source の修正を要求する場合、Execute は対象を読んだ後、編集前に短い着手返信を
-投稿する。PR comment には top-level の `lh pr comment` で対象 `comment #<id>`、認識したこと、対応する
-意思を明記する。diff feedback には対象 thread の `lh pr feedback reply` で対象 `comment #<id>`、
-認識したこと、対応する意思を明記する。review rework には top-level の `lh pr comment` で対象
-`review #<id>`、対応するすべての `review comment #<id>`、finding を認識したことと対応する意思を
-明記する。質問、確認、PR metadata の更新のみなど source の修正を伴わない follow-up では、この着手返信を
-必須としない。
+human follow-up が source の修正を要求する場合、Execute は対象を読んだ後、PR comment には編集前に
+top-level の `lh pr comment` で対象 `comment #<id>`、認識したこと、対応する意思を明記する。diff feedback
+には編集前に対象 thread の `lh pr feedback reply` で対象 `comment #<id>`、認識したこと、対応する意思を
+明記する。review rework は、注入された `review #<id>`、その review と `review comment`、対応 commit、
+`workflow_run.turn_done` event から対応関係を追跡する。文章での応答が必要なら
+`lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>` で対象に紐づけ、
+top-level の `lh pr comment` は使わない。質問、確認、PR metadata の更新のみなど source の修正を伴わない
+follow-up では、編集前の着手返信を必須としない。
 
 `orchestrator:` 注入や launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
 continuing instruction など）は、自然に Issue / PR への追加要望と読めるならそのように扱い、同じ

@@ -558,7 +558,7 @@ test("Execute treats additional work notes as Issue/PR requests and completes vi
   expect(execute).toContain(
     "lh workflow turn done --repo '<repo>' --run <run>",
   );
-  expect(execute).toContain("review response");
+  expect(execute).not.toContain("free-form extension of the issue");
   expect(execute).toContain("Question-only or blocked on a human decision");
   expect(execute).toContain("Confirmation or no domain change required");
   expect(execute).toContain("Ambiguous but in scope");
@@ -574,6 +574,7 @@ test("Execute treats additional work notes as Issue/PR requests and completes vi
   expect(execute.split("\n").length).toBeLessThanOrEqual(74);
 
   const executeJa = workflowContractText("execute", "ja");
+  expect(executeJa).not.toContain("Issue の自由な拡張");
   expect(executeJa).toContain("Rework（`orchestrator: address review #<id>`）");
   expect(executeJa).toContain(
     "Diff feedback（`orchestrator: address diff feedback thread #<t> comment #<c>`）",
@@ -589,7 +590,7 @@ test("Execute treats additional work notes as Issue/PR requests and completes vi
   expect(executeJa.split("\n").length).toBeLessThanOrEqual(75);
 });
 
-test("Execute acknowledges implementation follow-ups before editing in both languages", () => {
+test("Execute acknowledges conversational follow-ups and tracks review rework", () => {
   const execute = workflowContractText("execute");
   const executeJa = workflowContractText("execute", "ja");
   const normalizedExecute = execute.replace(/\s+/gu, " ");
@@ -601,15 +602,23 @@ test("Execute acknowledges implementation follow-ups before editing in both lang
       "lh pr feedback reply <t> --pr <pr> --body <text>",
     );
     expect(contract).toContain("review #<id>");
-    expect(contract).toContain("review comment #<id>");
     expect(contract).toContain("comment #<c>");
   }
 
   expect(execute).toContain("before editing");
-  expect(execute).toContain("acknowledges the findings");
   expect(execute).toContain("states that you will address");
   expect(normalizedExecute).toContain(
-    "before editing post a brief top-level `lh pr comment <pr> --body <text>` acknowledgement that identifies `review #<id>`",
+    "The review pointer, resulting commit, and workflow turn record preserve the association",
+  );
+  expect(normalizedExecute).toContain(
+    "lh pr review view <pr> --review <id> --json",
+  );
+  expect(normalizedExecute).toContain(
+    "lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>",
+  );
+  expect(normalizedExecute).toContain("do not use a top-level `lh pr comment`");
+  expect(normalizedExecute).not.toContain(
+    "top-level `lh pr comment <pr> --body <text>` acknowledgement that identifies `review #<id>`",
   );
   expect(normalizedExecute).toContain(
     "first post a brief reply in its thread before editing",
@@ -617,17 +626,28 @@ test("Execute acknowledges implementation follow-ups before editing in both lang
   expect(normalizedExecute).toContain(
     "before editing post a brief top-level `lh pr comment <pr> --body <text>` acknowledgement that identifies `comment #<c>`",
   );
-  expect(execute.match(/\bbrief\b/gu)).toHaveLength(3);
+  expect(execute.match(/\bbrief\b/gu)).toHaveLength(2);
   expect(execute).toContain(
     "Acknowledgement before editing is not required when no source change is needed",
   );
   expect(executeJa).toContain("編集前に");
-  expect(executeJa).toContain("finding を\n  認識したことと対応する意思");
   expect(normalizedExecuteJa).toContain(
-    "編集前に `lh pr comment <pr> --body <text>` で短い top-level の着手返信",
+    "review pointer、対応 commit、workflow の turn 記録が対応関係を保持します",
+  );
+  expect(normalizedExecuteJa).toContain(
+    "lh pr review view <pr> --review <id> --json",
+  );
+  expect(normalizedExecuteJa).toContain(
+    "lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>",
+  );
+  expect(normalizedExecuteJa).toContain(
+    "top-level の `lh pr comment` は使いません",
+  );
+  expect(normalizedExecuteJa).not.toContain(
+    "top-level の着手返信を 投稿します。返信には `review #<id>`",
   );
   expect(normalizedExecuteJa).toContain("編集前にまずその thread へ短く返信");
-  expect(executeJa.match(/短い|短く/gu)).toHaveLength(3);
+  expect(executeJa.match(/短い|短く/gu)).toHaveLength(2);
   expect(executeJa).toContain(
     "source の修正が不要なら編集前の着手返信は\n  必須ではありません",
   );
@@ -701,13 +721,19 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   );
   expect(design).toContain("issue body への追記は必須ではない");
   expect(design).toContain("human follow-up が source の修正を要求する場合");
-  expect(design).toContain("編集前に短い着手返信");
   expect(design).toContain("対象 `comment #<id>`");
   expect(design).toContain("`review #<id>`");
-  expect(design).toContain("対応するすべての `review comment #<id>`");
+  expect(design).toContain("review rework は、注入された `review #<id>`");
   expect(design).toContain(
-    "source の修正を伴わない follow-up では、この着手返信を",
+    "`lh pr review view <pr> --review <id> --json` で対象 review と全 review comments を読む",
   );
+  expect(design).toContain("対応 commit、");
+  expect(design).toContain("`workflow_run.turn_done` event");
+  expect(design).toContain(
+    "`lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>`",
+  );
+  expect(design).toContain("top-level の `lh pr comment` は使わない");
+  expect(design).toContain("編集前の着手返信を必須としない");
 
   for (const event of [
     "workflow_run.turn_done",
