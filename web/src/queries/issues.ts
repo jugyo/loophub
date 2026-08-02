@@ -9,13 +9,16 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import {
+  addAcceptanceCriterion,
   createIssue,
   getIssue,
+  listAcceptanceCriteria,
   listIssueComments,
   listIssues,
   listLabels,
   patchIssue,
   postIssueComment,
+  setAcceptanceCriterionEnabled,
 } from "@/api/client";
 import { queryKeys } from "./keys";
 
@@ -82,6 +85,60 @@ export function useIssue(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: queryKeys.issue(full(owner, repo), number),
     queryFn: () => getIssue(owner, repo, number),
+  });
+}
+
+export function useAcceptanceCriteria(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return useQuery({
+    queryKey: [
+      ...queryKeys.issue(full(owner, repo), number),
+      "acceptanceCriteria",
+    ],
+    queryFn: () => listAcceptanceCriteria(owner, repo, number),
+  });
+}
+
+function useInvalidateAcceptanceCriteria(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({
+      queryKey: queryKeys.issue(full(owner, repo), number),
+    });
+    qc.invalidateQueries({ queryKey: queryKeys.issues(full(owner, repo)) });
+  };
+}
+
+export function useAddAcceptanceCriterion(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const invalidate = useInvalidateAcceptanceCriteria(owner, repo, number);
+  return useMutation({
+    mutationFn: (text: string) =>
+      addAcceptanceCriterion(owner, repo, number, text),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetAcceptanceCriterionEnabled(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const invalidate = useInvalidateAcceptanceCriteria(owner, repo, number);
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
+      setAcceptanceCriterionEnabled(owner, repo, number, id, enabled),
+    onSuccess: invalidate,
   });
 }
 

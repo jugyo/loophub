@@ -1,5 +1,5 @@
 {
-  "protocolVersion": "2026-07-11",
+  "protocolVersion": "2026-08-02",
   "serverInfo": {
     "name": "loophub",
     "version": "0.0.0"
@@ -177,6 +177,19 @@
         "required": [
           "name"
         ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "worker/status",
+      "description": "Report whether the resident worker is present, fresh, and workflow-protocol compatible with this Web server.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
         "additionalProperties": false
       },
       "result": {
@@ -1154,6 +1167,95 @@
         "required": [
           "repo",
           "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/ac/list",
+      "description": "List all acceptance criteria for an issue, including disabled criteria.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "issues/ac/add",
+      "description": "Add an acceptance criterion to an issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/ac/setEnabled",
+      "description": "Enable or disable an issue's acceptance criterion.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "criterion_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "criterion_id",
+          "enabled"
         ],
         "additionalProperties": false
       },

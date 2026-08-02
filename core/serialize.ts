@@ -379,9 +379,8 @@ export interface AcceptanceCriterionWire {
   text: string;
 }
 
-// The authoring shape returned by the CLI `lh issue ac` commands, which must show disabled criteria
-// (so an operator can re-enable them) — hence the extra `enabled`. CLI-only; the Web surface is
-// read-only and consumes AcceptanceCriterionWire.
+// The authoring shape returned by the `lh issue ac` commands and the Web management RPC, which must
+// show disabled criteria (so an operator can re-enable them) — hence the extra `enabled`.
 export interface AcceptanceCriterionDetailWire extends AcceptanceCriterionWire {
   enabled: boolean;
 }

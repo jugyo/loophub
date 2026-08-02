@@ -7,7 +7,7 @@ import * as svc from "../../core/service.ts";
 import { THEME_IDS } from "../../core/theme.ts";
 import { webRuntimeConfig } from "./runtime-config.ts";
 
-export const PROTOCOL_VERSION = "2026-07-11";
+export const PROTOCOL_VERSION = "2026-08-02";
 export const SERVER_INFO = { name: "loophub", version: "0.0.0" } as const;
 
 // ---- reusable schema fragments ----
@@ -586,6 +586,38 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.issues.get(p.repo, p.number),
+  },
+  "issues/ac/list": {
+    description:
+      "List all acceptance criteria for an issue, including disabled criteria.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyArray,
+    handler: (p) => svc.issues.acList(p.repo, p.number),
+  },
+  "issues/ac/add": {
+    description: "Add an acceptance criterion to an issue.",
+    params: params({ repo, number: positiveInt, text: strNonEmpty }, [
+      "repo",
+      "number",
+      "text",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.issues.acAdd(p.repo, p.number, p.text),
+  },
+  "issues/ac/setEnabled": {
+    description: "Enable or disable an issue's acceptance criterion.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        criterion_id: positiveInt,
+        enabled: { type: "boolean" },
+      },
+      ["repo", "number", "criterion_id", "enabled"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.issues.acSetEnabled(p.repo, p.criterion_id, p.enabled, p.number),
   },
   "issues/create": {
     description: "Open a new issue.",

@@ -455,9 +455,9 @@ export const issues = {
     return S.issueLabels(row.id).map(labelJSON);
   },
 
-  // Structured acceptance criteria authoring (#1894), CLI-only (the Web surface is read-only). The
-  // list returns disabled criteria too — `acListJSON` carries `enabled` so an operator can see and
-  // re-enable them. There is deliberately no delete: an unwanted criterion is disabled.
+  // Structured acceptance criteria authoring (#1894). The list returns disabled criteria too —
+  // `acListJSON` carries `enabled` so CLI and Web operators can see and re-enable them. There is
+  // deliberately no delete: an unwanted criterion is disabled.
   acList(name: string, number: number) {
     const r = repoOr404(name);
     const row = issueOr404(r, number);

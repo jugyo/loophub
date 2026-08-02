@@ -4,6 +4,7 @@ import {
   createRepo,
   createWorkflow,
   deleteWorkflow,
+  getWebConfig,
   getWorkflowContracts,
   increaseWorkflowRunCostLimit,
   listIssues,
@@ -118,6 +119,18 @@ describe("rpc", () => {
 });
 
 describe("typed methods translate to contract params", () => {
+  it("initializes with the current protocol version", async () => {
+    const fetchMock = mockRpc({ webConfig: { debug: false } });
+    await getWebConfig();
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "initialize",
+      params: {
+        protocolVersion: "2026-08-02",
+        clientInfo: { name: "loophub-web" },
+      },
+    });
+  });
+
   it("listRepos maps the REST archived flag to the contract enum", async () => {
     const fetchMock = mockRpc([]);
     await listRepos("all");

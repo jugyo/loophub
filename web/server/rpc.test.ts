@@ -88,6 +88,54 @@ test("a known method routes to the service and returns a result", async () => {
   expect(got.result.title).toBe("hello");
 });
 
+test("acceptance criteria authoring routes through issue domain procedures", async () => {
+  const added: any = await call("issues/ac/add", {
+    repo: "me/proj",
+    number: 1,
+    text: "  remains stable  ",
+  });
+  expect(added.result).toMatchObject({
+    number: 1,
+    text: "remains stable",
+    enabled: true,
+  });
+
+  const disabled: any = await call("issues/ac/setEnabled", {
+    repo: "me/proj",
+    number: 1,
+    criterion_id: added.result.id,
+    enabled: false,
+  });
+  expect(disabled.result).toMatchObject({
+    id: added.result.id,
+    number: 1,
+    enabled: false,
+  });
+  const issue: any = await call("issues/get", {
+    repo: "me/proj",
+    number: 1,
+  });
+  expect(issue.result.acceptance_criteria).toEqual([]);
+
+  const all: any = await call("issues/ac/list", {
+    repo: "me/proj",
+    number: 1,
+  });
+  expect(all.result).toEqual([disabled.result]);
+
+  const restored: any = await call("issues/ac/setEnabled", {
+    repo: "me/proj",
+    number: 1,
+    criterion_id: added.result.id,
+    enabled: true,
+  });
+  expect(restored.result).toMatchObject({
+    id: added.result.id,
+    number: 1,
+    enabled: true,
+  });
+});
+
 test("worker status is exposed and an unconfirmed worker blocks only workflow launch", async () => {
   db.run("DELETE FROM worker_runtime");
   const before = {

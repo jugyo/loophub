@@ -7,6 +7,7 @@
 
 import { getSessionId } from "@/lib/session";
 import type {
+  AcceptanceCriterionDetail,
   AgentCostSummary,
   AgentSession,
   CodingAgent,
@@ -127,7 +128,7 @@ export async function rpc<T>(
 
 export function getWebConfig() {
   return rpc<InitializeResult>("initialize", {
-    protocolVersion: "2026-07-11",
+    protocolVersion: "2026-08-02",
     clientInfo: { name: "loophub-web" },
   }).then((result) => result.webConfig);
 }
@@ -586,6 +587,45 @@ export function listLabels(owner: string, repo: string) {
 
 export function getIssue(owner: string, repo: string, number: number) {
   return rpc<Issue>("issues/get", { repo: full(owner, repo), number });
+}
+
+export function listAcceptanceCriteria(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return rpc<AcceptanceCriterionDetail[]>("issues/ac/list", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+export function addAcceptanceCriterion(
+  owner: string,
+  repo: string,
+  number: number,
+  text: string,
+) {
+  return rpc<AcceptanceCriterionDetail>("issues/ac/add", {
+    repo: full(owner, repo),
+    number,
+    text,
+  });
+}
+
+export function setAcceptanceCriterionEnabled(
+  owner: string,
+  repo: string,
+  number: number,
+  criterionId: number,
+  enabled: boolean,
+) {
+  return rpc<AcceptanceCriterionDetail>("issues/ac/setEnabled", {
+    repo: full(owner, repo),
+    number,
+    criterion_id: criterionId,
+    enabled,
+  });
 }
 
 export function createIssue(

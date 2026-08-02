@@ -10,6 +10,7 @@ import type {
 } from "../../../core/git.ts";
 import type { MergeMode } from "../../../core/merge-mode.ts";
 import type {
+  AcceptanceCriterionDetailWire,
   AcceptanceCriterionWire,
   AgentCostSummaryWire,
   AgentSessionWire,
@@ -245,6 +246,9 @@ export type Issue = IssueWire;
 
 /** A structured acceptance criterion (#1894) carried on issue detail; the Verify rubric source. */
 export type AcceptanceCriterion = AcceptanceCriterionWire;
+
+/** An acceptance criterion in the authoring surface, including disabled criteria. */
+export type AcceptanceCriterionDetail = AcceptanceCriterionDetailWire;
 
 /** A global workflow definition (#997): Execute/Verify prompt bundle. */
 export type Workflow = WorkflowWire;
