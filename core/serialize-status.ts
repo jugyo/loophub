@@ -382,14 +382,22 @@ export async function pullJSON(
 ): Promise<PullWire> {
   const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
-  const [mergeFields, commits] = await Promise.all([
-    pullMergeFields(repo, row.id),
-    opts.withCommits
-      ? status.headSha && status.baseSha
-        ? commitLog(repo.local_path, p.base_ref, p.head_ref)
-        : []
-      : undefined,
-  ]);
+  const mergeFields = await pullMergeFields(repo, row.id);
+  const githubBaseSha =
+    opts.withCommits && mergeFields.github_pull
+      ? await revParse(repo.local_path, `refs/remotes/origin/${p.base_ref}`)
+      : null;
+  const commits = opts.withCommits
+    ? status.headSha && status.baseSha
+      ? await commitLog(
+          repo.local_path,
+          p.base_ref,
+          p.head_ref,
+          100,
+          githubBaseSha ? [githubBaseSha] : [],
+        )
+      : []
+    : undefined;
   const pushedShas =
     commits !== undefined &&
     status.headSha &&

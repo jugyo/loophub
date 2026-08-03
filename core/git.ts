@@ -539,24 +539,30 @@ export interface CommitInfo {
   subject: string;
 }
 
-// Commits on head not reachable from base (base..head), newest first. Bounded by `limit`
-// so a long-lived branch can't return an unbounded log into the debug view. Fields are
-// separated by US (0x1f) and records by RS (0x1e) so subjects with tabs/newlines stay intact.
+// Commits on head not reachable from base (base..head), newest first. Additional bases let
+// callers exclude commits reachable from another view of the same base branch, such as a
+// remote-tracking ref. Bounded by `limit` so a long-lived branch can't return an unbounded log into
+// the debug view. Fields are separated by US (0x1f) and records by RS (0x1e) so subjects with
+// tabs/newlines stay intact.
 export async function commitLog(
   repoPath: string,
   base: string,
   head: string,
   limit = 100,
+  additionalBases: string[] = [],
 ): Promise<CommitInfo[]> {
   const r = await git(repoPath, [
     "log",
     `--max-count=${limit}`,
     "--format=%H%x1f%an%x1f%cI%x1f%s%x1e",
-    `${base}..${head}`,
+    head,
+    "--not",
+    base,
+    ...additionalBases,
   ]);
   if (r.code !== 0) {
     throw new Error(
-      `git log failed for ${base}..${head}: ${r.stderr.trim() || "unknown error"}`,
+      `git log failed for ${[base, ...additionalBases].join(", ")}..${head}: ${r.stderr.trim() || "unknown error"}`,
     );
   }
   return r.stdout

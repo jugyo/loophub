@@ -114,6 +114,47 @@ test("recordGithubPull links a GitHub PR and pull detail exposes it (#406)", asy
   expect(after2.github_pull.number).toBe(43);
 });
 
+test("linked GitHub PR commits exclude the remote base history", async () => {
+  const number = await openPull();
+  const featureSha = git(["rev-parse", "feature"]).stdout.trim();
+
+  try {
+    git(["checkout", "-q", "-B", "github-base", "main"]);
+    writeFileSync(join(repoPath, "remote-base.txt"), "remote base\n");
+    git(["add", "-A"]);
+    git(["commit", "-qm", "remote base work"]);
+    const remoteBaseSha = git(["rev-parse", "HEAD"]).stdout.trim();
+    git(["update-ref", "refs/remotes/origin/main", remoteBaseSha]);
+
+    git(["checkout", "-q", "feature"]);
+    git(["merge", "--no-edit", "origin/main"]);
+    const mergeSha = git(["rev-parse", "HEAD"]).stdout.trim();
+    git(["checkout", "-q", "main"]);
+
+    const localOnly = (await svc.pulls.get("me/proj", number)) as any;
+    const localOnlyShas = localOnly.commits.map((commit: any) => commit.sha);
+    expect(localOnlyShas).toHaveLength(3);
+    expect(localOnlyShas).toEqual(
+      expect.arrayContaining([mergeSha, remoteBaseSha, featureSha]),
+    );
+
+    svc.pulls.recordGithubPull("me/proj", number, {
+      github_number: 44,
+      url: "https://github.com/me/proj/pull/44",
+      branch: "feature/remote-base",
+    });
+    const linked = (await svc.pulls.get("me/proj", number)) as any;
+    expect(linked.commits.map((commit: any) => commit.sha)).toEqual([
+      mergeSha,
+      featureSha,
+    ]);
+  } finally {
+    git(["checkout", "-q", "main"]);
+    git(["update-ref", "refs/remotes/origin/main", "main"]);
+    git(["branch", "-D", "github-base"]);
+  }
+});
+
 test("recordGithubPull validates the URL and PR number (#406)", async () => {
   const number = await openPull();
   expect(() =>
