@@ -140,8 +140,8 @@ describe("useLoopHubEvents", () => {
     });
   });
 
-  it("uses the visibility-specific cadence and reschedules on visibility changes", async () => {
-    let visibilityState: DocumentVisibilityState = "visible";
+  it("only polls while the tab is visible and resumes immediately", async () => {
+    let visibilityState: DocumentVisibilityState = "hidden";
     vi.spyOn(document, "visibilityState", "get").mockImplementation(
       () => visibilityState,
     );
@@ -151,21 +151,57 @@ describe("useLoopHubEvents", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     visibilityState = "hidden";
     document.dispatchEvent(new Event("visibilitychange"));
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1);
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
     visibilityState = "visible";
     document.dispatchEvent(new Event("visibilitychange"));
-    await vi.advanceTimersByTimeAsync(1499);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(1);
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not start a rollback probe when a poll finishes in a hidden tab", async () => {
+    warmCursor(1);
+    let visibilityState: DocumentVisibilityState = "visible";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(
+      () => visibilityState,
+    );
+    let resolvePoll: (response: Response) => void = () => {};
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePoll = resolve;
+          }),
+      )
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    visibilityState = "hidden";
+    document.dispatchEvent(new Event("visibilitychange"));
+    resolvePoll(jsonResponse([]));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(rpcParams(fetchMock.mock.calls[1])).toEqual({
+      since: 1,
+      limit: 100,
+    });
   });
 
   it("continues polling after an RPC error", async () => {

@@ -9,7 +9,6 @@ import { queryKeys, queryKeysForEvent } from "@/lib/event-keys";
 import { getLastEventId, rememberEventId, setLastEventId } from "@/lib/session";
 
 const VISIBLE_POLL_MS = 1500;
-const HIDDEN_POLL_MS = 5000;
 const POLL_LIMIT = 100;
 const ROLLBACK_PROBE_MS = 30_000;
 
@@ -90,15 +89,13 @@ export function useLoopHubEvents(): void {
   useEffect(() => {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let pollInFlight = false;
     let cursor = getLastEventId();
     let rollbackProbeCursor: number | null = null;
     let rollbackProbeAt = 0;
 
-    const nextDelay = () =>
-      document.visibilityState === "hidden" ? HIDDEN_POLL_MS : VISIBLE_POLL_MS;
-
-    const schedule = (delay = nextDelay()) => {
-      if (stopped) return;
+    const schedule = (delay = VISIBLE_POLL_MS) => {
+      if (stopped || document.visibilityState !== "visible") return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
@@ -107,6 +104,10 @@ export function useLoopHubEvents(): void {
     };
 
     const poll = async () => {
+      if (stopped || pollInFlight || document.visibilityState !== "visible") {
+        return;
+      }
+      pollInFlight = true;
       try {
         if (cursor === 0) {
           // No stored cursor means this client has never seen an event, not that it is behind by
@@ -126,7 +127,7 @@ export function useLoopHubEvents(): void {
           return;
         }
         const events = await listEvents({ since: cursor, limit: POLL_LIMIT });
-        if (stopped) return;
+        if (stopped || document.visibilityState !== "visible") return;
         if (events.length === 0) {
           const now = Date.now();
           if (
@@ -147,15 +148,22 @@ export function useLoopHubEvents(): void {
         if (!stopped && events.length < POLL_LIMIT) schedule();
       } catch {
         if (!stopped) schedule();
+      } finally {
+        pollInFlight = false;
       }
     };
 
     const onVisibilityChange = () => {
-      schedule();
+      if (document.visibilityState !== "visible") {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        return;
+      }
+      void poll();
     };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
-    void poll();
+    if (document.visibilityState === "visible") void poll();
 
     return () => {
       stopped = true;
