@@ -365,6 +365,22 @@ describe("PullDetail", () => {
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
+  it("links the PR header to the comments section", async () => {
+    const { container } = renderDetail({
+      "pulls/get": () => ({ ...pull, comments: 3 }),
+    });
+
+    const commentsLink = await screen.findByRole("link", {
+      name: "Comments (3)",
+    });
+    expect(commentsLink.getAttribute("href")).toBe("#comments");
+    act(() => commentsLink.focus());
+    expect(document.activeElement).toBe(commentsLink);
+    expect(
+      container.querySelector('[data-debug-component="PullCommentList"]')?.id,
+    ).toBe("comments");
+  });
+
   // #2129: a human post reads as @human whatever actor name it was stored under; agent posts keep
   // their own author.
   it("shows a human PR comment as @human and leaves an agent comment alone", async () => {

@@ -369,30 +369,38 @@ function PullHeader({
         ))}
       </div>
 
-      <div className="text-sm text-muted-foreground">
-        {isWorkflowAuthor ? null : <>@{pull.user.login} · </>}opened{" "}
-        {relativeTime(pull.created_at)} · wants to merge{" "}
-        <span className="inline-flex items-center gap-1 align-middle">
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">
-            {pull.head.ref}
-          </code>
-          <CopyButton
-            value={pull.head.ref}
-            label={`Copy branch name: ${pull.head.ref}`}
-            className="size-6"
-          />
-        </span>{" "}
-        →{" "}
-        <span className="inline-flex items-center gap-1 align-middle">
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">
-            {pull.base.ref}
-          </code>
-          <CopyButton
-            value={pull.base.ref}
-            label={`Copy branch name: ${pull.base.ref}`}
-            className="size-6"
-          />
-        </span>
+      <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+        <div>
+          {isWorkflowAuthor ? null : <>@{pull.user.login} · </>}opened{" "}
+          {relativeTime(pull.created_at)} · wants to merge{" "}
+          <span className="inline-flex items-center gap-1 align-middle">
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">
+              {pull.head.ref}
+            </code>
+            <CopyButton
+              value={pull.head.ref}
+              label={`Copy branch name: ${pull.head.ref}`}
+              className="size-6"
+            />
+          </span>{" "}
+          →{" "}
+          <span className="inline-flex items-center gap-1 align-middle">
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">
+              {pull.base.ref}
+            </code>
+            <CopyButton
+              value={pull.base.ref}
+              label={`Copy branch name: ${pull.base.ref}`}
+              className="size-6"
+            />
+          </span>
+        </div>
+        <a
+          href="#comments"
+          className="shrink-0 underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          Comments ({pull.comments})
+        </a>
       </div>
 
       {linked ? (
@@ -803,6 +811,7 @@ function CommentList({
 
   return (
     <section
+      id="comments"
       data-debug-component="PullCommentList"
       className="flex flex-col gap-3 pb-6"
     >
