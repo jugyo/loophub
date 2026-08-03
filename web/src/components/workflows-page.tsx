@@ -1,22 +1,21 @@
 // Settings > Workflows screen (/settings/workflows, #1006). Lists the instance's workflows and
-// lets you create, edit, and delete them. A workflow is a global prompt bundle for the fixed
+// lets you create, edit, and archive them. A workflow is a global prompt bundle for the fixed
 // Execute/Verify development loop (workflow design: workflow definitions); the two step prompts
 // are the only user-configurable part. Same workflows/* RPCs the CLI uses; this is the
 // management UI. Start-workflow and run status are intentionally out of scope here.
 
-import { useNavigate } from "@tanstack/react-router";
 import { Check, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
 import type { Workflow, WorkflowContracts } from "@/api/types";
-import { SettingsHeader } from "@/components/settings-header";
+import { SettingsLayout } from "@/components/settings-header";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
 import { cn } from "@/lib/utils";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 import {
-  useDeleteWorkflow,
+  useArchiveWorkflow,
   useUpdateWorkflow,
   useWorkflowContracts,
   useWorkflows,
@@ -71,38 +70,15 @@ function trapDialogFocus(
 }
 
 export function WorkflowsPage() {
-  const navigate = useNavigate();
   const { data: workflows, isLoading, isError } = useWorkflows();
 
   return (
-    <div data-debug-component="WorkflowsPage" className="mx-auto max-w-content">
-      <SettingsHeader
-        activeTab="workflows"
-        onTabChange={(tab) => {
-          if (tab === "agent") void navigate({ to: "/settings" });
-        }}
-        panelIds={{ workflows: "settings-workflow-management-panel" }}
-      />
-
-      <div
-        id="settings-workflow-management-panel"
-        role="tabpanel"
-        aria-labelledby="settings-workflows-tab"
-        className="mt-6"
-      >
+    <div data-debug-component="WorkflowsPage">
+      <SettingsLayout section="workflows">
         <WorkflowContractLanguageSettings />
 
         <section className="mt-8">
-          <h2 className="text-2xl font-semibold">Workflows</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Workflows are global prompt bundles for the fixed Execute/Verify
-            development loop. Each step's prompt is the only configurable part;
-            the step contracts are fixed.
-          </p>
-
-          <div className="mt-4">
-            <NewWorkflowButton />
-          </div>
+          <NewWorkflowButton />
 
           <div className="mt-6 flex flex-col gap-3">
             {isLoading ? (
@@ -120,7 +96,7 @@ export function WorkflowsPage() {
             )}
           </div>
         </section>
-      </div>
+      </SettingsLayout>
     </div>
   );
 }
@@ -213,12 +189,12 @@ function WorkflowContractLanguageSettings() {
 
 function WorkflowCard({ workflow }: { workflow: Workflow }) {
   const [editing, setEditing] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const del = useDeleteWorkflow();
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const archive = useArchiveWorkflow();
 
   return (
     <div data-debug-component="WorkflowCard" className="rounded-md border p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-medium">{workflow.name}</h2>
           {workflow.description ? (
@@ -238,9 +214,9 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => setConfirmingDelete(true)}
+            onClick={() => setConfirmingArchive(true)}
           >
-            Delete
+            Archive
           </Button>
         </div>
       </div>
@@ -258,27 +234,24 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
         </WorkflowDialog>
       ) : null}
 
-      {confirmingDelete ? (
+      {confirmingArchive ? (
         <ConfirmDialog
-          title={`Delete "${workflow.name}"?`}
-          body="This removes the workflow. This cannot be undone."
-          confirmLabel="Delete"
-          pending={del.isPending}
-          // A delete refused because an active workflow run still references the workflow comes back as
-          // a 409; its message ("workflow is referenced by an active workflow run") is surfaced here so
-          // the refusal is visible instead of a silent no-op.
-          error={del.error ? errorMessage(del.error) : null}
+          title={`Archive "${workflow.name}"?`}
+          body="This removes the workflow from workflow lists and start options. Existing workflow runs are preserved."
+          confirmLabel="Archive"
+          pending={archive.isPending}
+          error={archive.error ? errorMessage(archive.error) : null}
           onConfirm={async () => {
             try {
-              await del.mutateAsync(workflow.name);
+              await archive.mutateAsync(workflow.name);
             } catch {
-              return; // surfaced via del.error above
+              return; // surfaced via archive.error above
             }
-            setConfirmingDelete(false);
+            setConfirmingArchive(false);
           }}
           onCancel={() => {
-            del.reset();
-            setConfirmingDelete(false);
+            archive.reset();
+            setConfirmingArchive(false);
           }}
         />
       ) : null}

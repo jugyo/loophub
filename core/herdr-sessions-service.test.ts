@@ -86,7 +86,8 @@ test("terminal.sessions reports running repos independently from visible agent g
   const sessionC = herdrSessionName(agentListFailure);
 
   // Fake herdr replaying real CLI shapes: `herdr session list --json` prints the session
-  // list; `herdr --session <name> agent list` ($2 = name) prints that session's agents.
+  // list; `herdr --session <name> pane list` ($2 = name) prints that session's panes, which is
+  // where LoopHub reads its agents from (only the pane listing carries each pane's label).
   const sessionList = JSON.stringify({
     sessions: [
       { default: true, name: "default", running: true },
@@ -742,7 +743,7 @@ test("terminal.cleanupClosedPullDevAgents continues after invalid workspace ids 
       "#!/bin/sh",
       `echo "$@" >> ${CALLS_FILE}`,
       `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
-      `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agents}'; exit 0; fi`,
       `if [ "$5" = "wFail" ]; then exit 1; fi`,
       "exit 0",
       "",
@@ -898,7 +899,7 @@ test("terminal.sendAgentInput delivers to the verified pane and reports the fail
     join(FAKE_BIN, "herdr"),
     [
       "#!/bin/sh",
-      `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agents}'; exit 0; fi`,
       `if [ "$4" = "send-text" ]; then`,
       `  if [ "$LH_TEST_SEND_INPUT_FAIL" = "text" ]; then exit 3; fi`,
       `  printf '%s' "$6" > ${pendingFile}; exit 0`,
@@ -919,11 +920,12 @@ test("terminal.sendAgentInput delivers to the verified pane and reports the fail
       paneId,
       text,
     });
+  const pasted = (text: string) => `\u001b[200~${text}\u001b[201~`;
   try {
     await expect(send("続けて")).resolves.toEqual({ ok: true });
     expect(readFileSync(pendingFile, "utf8")).toBe("");
     expect(readFileSync(deliveredFile).toString()).toBe(
-      "\u001b[200~続けて\u001b[201~\0",
+      `${pasted("続けて")}\0`,
     );
 
     process.env.LH_TEST_SEND_INPUT_FAIL = "text";
@@ -936,11 +938,9 @@ test("terminal.sendAgentInput delivers to the verified pane and reports the fail
     await expect(send("再送")).rejects.toThrowError(
       "The input was written, but Herdr could not submit it; check the pane before retrying",
     );
-    expect(readFileSync(pendingFile, "utf8")).toBe(
-      "\u001b[200~再送\u001b[201~",
-    );
+    expect(readFileSync(pendingFile, "utf8")).toBe(pasted("再送"));
     expect(readFileSync(deliveredFile).toString()).toBe(
-      "\u001b[200~続けて\u001b[201~\0",
+      `${pasted("続けて")}\0`,
     );
   } finally {
     delete process.env.LH_TEST_SEND_INPUT_FAIL;
@@ -1097,7 +1097,7 @@ test("herdr.tree builds the workspace/tab/agent hierarchy, matching an agent's c
       `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
       `if [ "$3" = "workspace" ]; then printf '%s' '${workspaceList}'; exit 0; fi`,
       `if [ "$3" = "tab" ]; then printf '%s' '${tabList}'; exit 0; fi`,
-      `if [ "$3" = "agent" ]; then printf '%s' '${agentList}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agentList}'; exit 0; fi`,
       "exit 1",
       "",
     ].join("\n"),

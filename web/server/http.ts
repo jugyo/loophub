@@ -23,9 +23,11 @@ import {
 } from "../../core/attachments.ts";
 import { isServiceError } from "../../core/errors.ts";
 import { stringifyJsonWithinLimit } from "./bounded-json.ts";
+import { log } from "./logger.ts";
 import { isAllowedOrigin, isLoopbackHost } from "./net.ts";
 import {
   dispatchRaw,
+  type RpcCallOutcome,
   type RpcResponse,
   requestTooLarge,
   responseTooLarge,
@@ -37,6 +39,7 @@ const DIST_DIR =
   join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 export const MAX_RPC_REQUEST_BYTES = 1024 * 1024;
 export const MAX_RPC_RESPONSE_BYTES = 10 * 1024 * 1024;
+type RpcLogger = (message: string) => void;
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -88,6 +91,22 @@ function readBinaryBody(
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
+}
+
+function logRpcCalls(
+  logger: RpcLogger | undefined,
+  calls: RpcCallOutcome[],
+  forceError = false,
+): void {
+  if (!logger) return;
+  for (const call of calls) {
+    const outcome = forceError ? "error" : call.outcome;
+    const batch =
+      call.batchIndex === undefined ? "" : ` batch_index=${call.batchIndex}`;
+    logger(
+      `rpc method=${JSON.stringify(call.method)} outcome=${outcome}${batch}`,
+    );
+  }
 }
 
 function isJsonRequest(req: IncomingMessage): boolean {
@@ -225,14 +244,20 @@ function handleAttachmentGet(res: ServerResponse, url: URL): void {
 async function handleRpc(
   req: IncomingMessage,
   res: ServerResponse,
+  rpcLogger?: RpcLogger,
 ): Promise<void> {
   const body = await readBinaryBody(req, MAX_RPC_REQUEST_BYTES);
   if (body.tooLarge) {
     sendJson(res, 413, requestTooLarge(MAX_RPC_REQUEST_BYTES));
     return;
   }
-  const response = await dispatchRaw(body.data.toString("utf8"));
+  const calls: RpcCallOutcome[] = [];
+  const response = await dispatchRaw(
+    body.data.toString("utf8"),
+    rpcLogger ? (call) => calls.push(call) : undefined,
+  );
   if (response === null) {
+    logRpcCalls(rpcLogger, calls);
     res.writeHead(204).end(); // all notifications -> no content
     return;
   }
@@ -240,6 +265,9 @@ async function handleRpc(
   if (serialized === null) {
     const id = Array.isArray(response) ? null : (response as RpcResponse).id;
     serialized = JSON.stringify(responseTooLarge(id));
+    logRpcCalls(rpcLogger, calls, true);
+  } else {
+    logRpcCalls(rpcLogger, calls);
   }
   res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
   res.end(serialized);
@@ -290,6 +318,7 @@ export function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
   serveStatic: StaticHandler,
+  rpcLogger?: RpcLogger,
 ): void {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname === "/rpc" && req.method === "POST") {
@@ -304,7 +333,7 @@ export function handleRequest(
       sendJson(res, 403, { error: "Forbidden" });
       return;
     }
-    handleRpc(req, res).catch(() => {
+    handleRpc(req, res, rpcLogger).catch(() => {
       if (!res.headersSent)
         res.writeHead(500, {
           "content-type": "application/json; charset=utf-8",
@@ -344,6 +373,13 @@ export function handleRequest(
 
 export function createLhWebServer(
   serveStatic: StaticHandler = handleStatic,
+  options: {
+    debug?: boolean;
+    logger?: RpcLogger;
+  } = {},
 ): Server {
-  return createServer((req, res) => handleRequest(req, res, serveStatic));
+  const rpcLogger = options.debug ? (options.logger ?? log.info) : undefined;
+  return createServer((req, res) =>
+    handleRequest(req, res, serveStatic, rpcLogger),
+  );
 }

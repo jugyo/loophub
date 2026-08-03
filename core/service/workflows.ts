@@ -114,6 +114,16 @@ export const workflows = {
     });
   },
 
+  archive(name: string, sessionId?: string | null) {
+    const existing = workflowOr404(name);
+    const archived = S.archiveWorkflow(existing.id);
+    S.emitEvent(null, "workflow.archived", actorFor(sessionId), {
+      id: existing.id,
+      name: existing.name,
+    });
+    return workflowJSON(archived!);
+  },
+
   delete(name: string, sessionId?: string | null) {
     const existing = workflowOr404(name);
     if (S.countActiveWorkflowRunsForWorkflow(existing.id) > 0)

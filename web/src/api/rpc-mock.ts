@@ -21,7 +21,62 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
         status: 200,
         headers: { "content-type": "application/json" },
       });
-    const handler = handlers[method];
+    const pageDataHandler =
+      method === "pageData/issueList" && handlers["issues/list"]
+        ? async (pageParams: any) => ({
+            issues: await handlers["issues/list"](pageParams),
+            repo: handlers["repos/get"]
+              ? await handlers["repos/get"](pageParams)
+              : { default_branch: "main" },
+            workspaces: handlers["workspaces/list"]
+              ? await handlers["workspaces/list"](pageParams)
+              : [],
+            unmerged_workspaces:
+              pageParams.includeUnmergedWorkspaces &&
+              handlers["workspaces/listUnmerged"]
+                ? await handlers["workspaces/listUnmerged"](pageParams)
+                : [],
+            labels:
+              pageParams.includeLabels && handlers["labels/list"]
+                ? await handlers["labels/list"](pageParams)
+                : [],
+          })
+        : method === "pageData/issueDetail" && handlers["issues/get"]
+          ? async (pageParams: any) => {
+              const issue: any = await handlers["issues/get"](pageParams);
+              const comments = handlers["comments/list"]
+                ? await handlers["comments/list"](pageParams)
+                : [];
+              return {
+                issue: { ...issue, comment_list: comments },
+                comments,
+                acceptance_criteria: handlers["issues/ac/list"]
+                  ? await handlers["issues/ac/list"](pageParams)
+                  : (issue.acceptance_criteria ?? []),
+              };
+            }
+          : method === "pageData/pullDetail" && handlers["pulls/get"]
+            ? async (pageParams: any) => {
+                const pull: any = await handlers["pulls/get"](pageParams);
+                const comments = handlers["comments/list"]
+                  ? await handlers["comments/list"](pageParams)
+                  : [];
+                return {
+                  pull: { ...pull, comment_list: comments },
+                  comments,
+                  files: handlers["pulls/files"]
+                    ? await handlers["pulls/files"](pageParams)
+                    : [],
+                  reviews: handlers["reviews/list"]
+                    ? await handlers["reviews/list"](pageParams)
+                    : [],
+                  line_comments: handlers["reviews/listComments"]
+                    ? await handlers["reviews/listComments"](pageParams)
+                    : [],
+                };
+              }
+            : undefined;
+    const handler = handlers[method] ?? pageDataHandler;
     if (!handler) return send({ jsonrpc: "2.0", id: 1, result: {} });
     try {
       const result = await handler(params);

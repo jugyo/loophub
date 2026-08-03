@@ -43,11 +43,13 @@ export async function sweepHerdrSessions(): Promise<HerdrSessionsWire> {
     matched.map(async ({ repo, sessionName }) => {
       let agentsOut: string;
       try {
-        // No `--json` here: `herdr agent list` rejects the flag and already prints JSON.
+        // `pane list`, not `agent list`: only the pane listing carries each pane's free-form
+        // label, which is how LoopHub identifies an agent (see herdrAgentRecords). No `--json`
+        // here — herdr rejects the flag and already prints JSON.
         agentsOut = await runHerdrCapture([
           "--session",
           sessionName,
-          "agent",
+          "pane",
           "list",
         ]);
       } catch {
@@ -297,7 +299,7 @@ export async function cleanupClosedPullDevAgentsImpl(): Promise<{
       agentsOut = await runHerdrCapture([
         "--session",
         sessionName,
-        "agent",
+        "pane",
         "list",
       ]);
     } catch {

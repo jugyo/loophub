@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import type * as SqliteNS from "node:sqlite";
 import { dbPath } from "./config.ts";
 import { runMigrations } from "./migrations.ts";
+import { measureSlowOperation } from "./slow-operation.ts";
 
 // node:sqlite is an experimental builtin (Node 22.x, behind --experimental-sqlite).
 // Load it through createRequire so bundler-based transformers (Vite/vitest) don't try
@@ -125,24 +126,47 @@ export class Db {
   }
 
   exec(sql: string): void {
-    withWriteRetry(() => this.#raw.exec(sql));
+    measureSlowOperation(
+      "sql",
+      () => `sql=${JSON.stringify(sql)}`,
+      () => withWriteRetry(() => this.#raw.exec(sql)),
+    );
   }
 
   query(sql: string): BunStyleQuery {
     const stmt = this.#prepare(sql);
     return {
       get: (...params: Param[]) =>
-        stmt.get(...(normalize(params) as never[])) ?? null,
-      all: (...params: Param[]) => stmt.all(...(normalize(params) as never[])),
+        measureSlowOperation(
+          "sql",
+          () => `sql=${JSON.stringify(sql)}`,
+          () => stmt.get(...(normalize(params) as never[])) ?? null,
+        ),
+      all: (...params: Param[]) =>
+        measureSlowOperation(
+          "sql",
+          () => `sql=${JSON.stringify(sql)}`,
+          () => stmt.all(...(normalize(params) as never[])),
+        ),
       run: (...params: Param[]) => {
-        withWriteRetry(() => stmt.run(...(normalize(params) as never[])));
+        measureSlowOperation(
+          "sql",
+          () => `sql=${JSON.stringify(sql)}`,
+          () =>
+            withWriteRetry(() => stmt.run(...(normalize(params) as never[]))),
+        );
       },
     };
   }
 
   run(sql: string, params: Param[] = []): void {
-    withWriteRetry(() =>
-      this.#prepare(sql).run(...(normalize(params) as never[])),
+    measureSlowOperation(
+      "sql",
+      () => `sql=${JSON.stringify(sql)}`,
+      () =>
+        withWriteRetry(() =>
+          this.#prepare(sql).run(...(normalize(params) as never[])),
+        ),
     );
   }
 
@@ -526,12 +550,15 @@ CREATE TABLE IF NOT EXISTS session_usage (
 
 -- Short-lived observation samples for token-rate display. session_usage stores only cumulative
 -- per-session/model totals, so it cannot reconstruct historical tokens/sec after the fact; rates
--- are estimated from samples recorded at usage-sync time.
+-- are estimated from samples recorded at usage-sync time. token_delta excludes cache reads;
+-- cache_read_delta records that throughput separately.
 CREATE TABLE IF NOT EXISTS session_usage_samples (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id   TEXT NOT NULL REFERENCES agent_sessions(id),
   total_tokens INTEGER NOT NULL,
   token_delta  INTEGER NOT NULL,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_delta  INTEGER NOT NULL DEFAULT 0,
   observed_at  TEXT NOT NULL
 );
 
@@ -923,6 +950,7 @@ CREATE TABLE IF NOT EXISTS workflows (
   description     TEXT NOT NULL DEFAULT '',
   execute_prompt  TEXT NOT NULL DEFAULT '',
   verify_prompt   TEXT NOT NULL DEFAULT '',
+  archived_at     TEXT,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );

@@ -75,7 +75,9 @@ export function listAllSessionUsage(): SessionUsageRow[] {
     .all() as SessionUsageRow[];
 }
 
-export function totalTokensForSession(sessionId: string): number | null {
+export function tokenTotalsForSession(
+  sessionId: string,
+): { totalTokens: number; cacheReadTokens: number } | null {
   const row = db
     .query(
       `SELECT
@@ -95,52 +97,74 @@ export function totalTokensForSession(sessionId: string): number | null {
     row_count: number;
   };
   if (row.row_count === 0) return null;
-  return totalTokens({
+  const usage = {
     input_tokens: row.input_tokens ?? 0,
     cache_creation_input_tokens: row.cache_creation_input_tokens ?? 0,
     cache_read_input_tokens: row.cache_read_input_tokens ?? 0,
     output_tokens: row.output_tokens ?? 0,
-  });
-}
-
-function latestSessionUsageSampleTotal(sessionId: string): number | null {
-  const row = db
-    .query(
-      `SELECT total_tokens
-       FROM session_usage_samples
-       WHERE session_id = ?
-       ORDER BY observed_at DESC, id DESC
-       LIMIT 1`,
-    )
-    .get(sessionId) as { total_tokens: number } | null;
-  return row?.total_tokens ?? null;
+  };
+  return {
+    totalTokens: totalTokens(usage),
+    cacheReadTokens: usage.cache_read_input_tokens,
+  };
 }
 
 export function recordSessionUsageSample(input: {
   sessionId: string;
   totalTokens: number;
+  cacheReadTokens: number;
   observedAt?: string;
-  /** Override auto delta (used by Grok turn-rate reconstruction). */
+  /** Override auto non-cache delta (used by Grok turn-rate reconstruction). */
   tokenDelta?: number;
+  /** Override auto cache-read delta (used by Grok turn-rate reconstruction). */
+  cacheReadDelta?: number;
 }): void {
   db.transaction(() => {
     const observedAt = input.observedAt ?? now();
-    const previous =
-      input.tokenDelta == null
-        ? latestSessionUsageSampleTotal(input.sessionId)
-        : null;
-    const rawDelta = previous == null ? 0 : input.totalTokens - previous;
+    const previous = db
+      .query(
+        `SELECT total_tokens, cache_read_tokens
+         FROM session_usage_samples
+         WHERE session_id = ?
+         ORDER BY observed_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(input.sessionId) as {
+      total_tokens: number;
+      cache_read_tokens: number;
+    } | null;
+    const rawDelta =
+      previous == null
+        ? 0
+        : input.totalTokens -
+          input.cacheReadTokens -
+          (previous.total_tokens - previous.cache_read_tokens);
     const tokenDelta =
       input.tokenDelta != null
         ? Math.max(0, input.tokenDelta)
         : rawDelta > 0
           ? rawDelta
           : 0;
+    const rawCacheReadDelta =
+      previous == null ? 0 : input.cacheReadTokens - previous.cache_read_tokens;
+    const cacheReadDelta =
+      input.cacheReadDelta != null
+        ? Math.max(0, input.cacheReadDelta)
+        : rawCacheReadDelta > 0
+          ? rawCacheReadDelta
+          : 0;
     db.run(
       `INSERT INTO session_usage_samples
-         (session_id, total_tokens, token_delta, observed_at)
-       VALUES (?, ?, ?, ?)`,
-      [input.sessionId, input.totalTokens, tokenDelta, observedAt],
+         (session_id, total_tokens, token_delta, cache_read_tokens, cache_read_delta, observed_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        input.sessionId,
+        input.totalTokens,
+        tokenDelta,
+        input.cacheReadTokens,
+        cacheReadDelta,
+        observedAt,
+      ],
     );
   });
 }
@@ -188,7 +212,8 @@ export function listRecentInProgressSessionUsageSamples(
 ): SessionUsageSample[] {
   return db
     .query(
-      `SELECT sus.session_id, sus.total_tokens, sus.token_delta, sus.observed_at
+      `SELECT sus.session_id, sus.total_tokens, sus.token_delta,
+              sus.cache_read_tokens, sus.cache_read_delta, sus.observed_at
        FROM session_usage_samples sus
        WHERE sus.observed_at >= ?
          AND EXISTS (

@@ -28,7 +28,11 @@ export function useRepos() {
   });
 }
 
-/** Archived repos for the /archived route. */
+/**
+ * Archived repos for the /archived route. This intentionally remains under the repos prefix:
+ * repo archive/unarchive changes membership, while favorite and rename change row data or order,
+ * so the archived and active lists share the same repo.* invalidation set.
+ */
 export function useArchivedRepos() {
   return useQuery({
     queryKey: [...queryKeys.repos(), "archived"],
@@ -103,8 +107,8 @@ export function useRenameRepo(owner: string, repo: string) {
 /**
  * Change the repo's base branch (default_branch) (#1115). Invalidates the repo so
  * everything reading it re-fetches — including the issue list, whose branch grouping
- * is computed from `default_branch` (issue-list.tsx). Also invalidates the topbar repo
- * list, which carries the field.
+ * is computed from `default_branch`. Also invalidates the topbar repo list, which
+ * carries the field.
  */
 export function useSetRepoDefaultBranch(owner: string, repo: string) {
   const qc = useQueryClient();
@@ -114,6 +118,7 @@ export function useSetRepoDefaultBranch(owner: string, repo: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: queryKeys.repos() });
+      qc.invalidateQueries({ queryKey: queryKeys.issues(full(owner, repo)) });
     },
   });
 }
@@ -121,7 +126,7 @@ export function useSetRepoDefaultBranch(owner: string, repo: string) {
 /** Resolved merge-mode view for the repo settings toggle (#406). */
 export function useRepoMergeMode(owner: string, repo: string) {
   return useQuery({
-    queryKey: [...queryKeys.repo(full(owner, repo)), "merge-mode"],
+    queryKey: queryKeys.repoMergeMode(full(owner, repo)),
     queryFn: () => getRepoMergeMode(owner, repo),
   });
 }
@@ -139,7 +144,7 @@ export function useSetRepoMergeMode(owner: string, repo: string) {
       setRepoMergeMode(owner, repo, mode),
     onSuccess: () => {
       qc.invalidateQueries({
-        queryKey: [...queryKeys.repo(full(owner, repo)), "merge-mode"],
+        queryKey: queryKeys.repoMergeMode(full(owner, repo)),
       });
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: ["pull"] });
@@ -155,7 +160,7 @@ export function useRepoAgentConfig(
   enabled = true,
 ) {
   return useQuery({
-    queryKey: [...queryKeys.repo(full(owner, repo)), "agent-config"],
+    queryKey: queryKeys.repoAgentConfig(full(owner, repo)),
     queryFn: () => getRepoAgentConfig(owner, repo),
     enabled: enabled && Boolean(owner && repo),
   });
@@ -177,7 +182,7 @@ export function useSetRepoAgentConfig(owner: string, repo: string) {
     }) => setRepoAgentConfig(owner, repo, input),
     onSuccess: () => {
       qc.invalidateQueries({
-        queryKey: [...queryKeys.repo(full(owner, repo)), "agent-config"],
+        queryKey: queryKeys.repoAgentConfig(full(owner, repo)),
       });
     },
   });

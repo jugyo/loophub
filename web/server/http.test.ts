@@ -22,6 +22,7 @@ let S: typeof import("../../core/store.ts");
 let MAX_RPC_REQUEST_BYTES: number;
 let MAX_RPC_RESPONSE_BYTES: number;
 let ERROR_CODES: typeof import("./rpc.ts").ERROR_CODES;
+let createLhWebServer: typeof import("./http.ts").createLhWebServer;
 
 function git(args: string[]) {
   spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
@@ -84,6 +85,7 @@ async function postChunkedRpc(
 
 beforeAll(async () => {
   const http = await import("./http.ts");
+  createLhWebServer = http.createLhWebServer;
   MAX_RPC_REQUEST_BYTES = http.MAX_RPC_REQUEST_BYTES;
   MAX_RPC_RESPONSE_BYTES = http.MAX_RPC_RESPONSE_BYTES;
   ({ ERROR_CODES } = await import("./rpc.ts"));
@@ -118,6 +120,126 @@ test("POST /rpc routes a method and returns its result", async () => {
 
   const created = await rpc("issues/create", { repo: "me/proj", title: "hi" });
   expect(created.body.result.number).toBe(1);
+});
+
+test("POST /rpc logs each outcome only when debug logging is enabled", async () => {
+  const debugLogs: string[] = [];
+  const debugServer = createLhWebServer(undefined, {
+    debug: true,
+    logger: (message) => debugLogs.push(message),
+  });
+  await new Promise<void>((resolve) => debugServer.listen(0, resolve));
+  const debugBase = `http://localhost:${(debugServer.address() as AddressInfo).port}`;
+
+  const normalLogs: string[] = [];
+  const normalServer = createLhWebServer(undefined, {
+    debug: false,
+    logger: (message) => normalLogs.push(message),
+  });
+  await new Promise<void>((resolve) => normalServer.listen(0, resolve));
+  const normalBase = `http://localhost:${(normalServer.address() as AddressInfo).port}`;
+
+  try {
+    const payload = [
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { clientInfo: { secret: "sensitive-param" } },
+      },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "initialize",
+        params: {},
+      },
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "missing/method",
+        params: { secret: "another-sensitive-param" },
+      },
+    ];
+    const init = { jsonrpc: "2.0", id: 4, method: "initialize", params: {} };
+
+    await fetch(`${debugBase}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await fetch(`${normalBase}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(init),
+    });
+
+    expect(debugLogs).toHaveLength(3);
+    expect(debugLogs).toEqual(
+      expect.arrayContaining([
+        'rpc method="initialize" outcome=success batch_index=0',
+        'rpc method="initialize" outcome=success batch_index=1',
+        'rpc method="missing/method" outcome=error batch_index=2',
+      ]),
+    );
+    expect(debugLogs.join(" ")).not.toContain("sensitive-param");
+    expect(debugLogs.join(" ")).not.toContain("serverInfo");
+    expect(normalLogs).toEqual([]);
+  } finally {
+    await Promise.all(
+      [debugServer, normalServer].map(
+        (activeServer) =>
+          new Promise<void>((resolve) => activeServer.close(() => resolve())),
+      ),
+    );
+  }
+});
+
+test("POST /rpc logs inherited object names as unknown methods", async () => {
+  const debugLogs: string[] = [];
+  const debugServer = createLhWebServer(undefined, {
+    debug: true,
+    logger: (message) => debugLogs.push(message),
+  });
+  await new Promise<void>((resolve) => debugServer.listen(0, resolve));
+  const debugBase = `http://localhost:${(debugServer.address() as AddressInfo).port}`;
+  const post = async (payload: unknown) => {
+    const res = await fetch(`${debugBase}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return { status: res.status, body: (await res.json()) as any };
+  };
+
+  try {
+    const unknown = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "__proto__",
+      params: {},
+    };
+    const single = await post(unknown);
+    const batch = await post([
+      { jsonrpc: "2.0", id: 2, method: "initialize", params: {} },
+      { ...unknown, id: 3 },
+    ]);
+
+    expect(single.status).toBe(200);
+    expect(single.body.error.code).toBe(ERROR_CODES.METHOD_NOT_FOUND);
+    expect(batch.status).toBe(200);
+    expect(batch.body[0].result.serverInfo.name).toBe("loophub");
+    expect(batch.body[1].error.code).toBe(ERROR_CODES.METHOD_NOT_FOUND);
+    expect(debugLogs).toHaveLength(3);
+    expect(debugLogs).toEqual(
+      expect.arrayContaining([
+        'rpc method="__proto__" outcome=error',
+        'rpc method="initialize" outcome=success batch_index=0',
+        'rpc method="__proto__" outcome=error batch_index=1',
+      ]),
+    );
+  } finally {
+    await new Promise<void>((resolve) => debugServer.close(() => resolve()));
+  }
 });
 
 test("POST /rpc with invalid JSON returns a -32700 error", async () => {
@@ -176,21 +298,39 @@ test("POST /rpc replaces an oversized serialized response with an error", async 
     "x".repeat(MAX_RPC_RESPONSE_BYTES),
     "me",
   );
-  const res = await rpc(
-    "issues/get",
-    { repo: "me/proj", number: issue.number },
-    77,
-  );
-
-  expect(res.status).toBe(200);
-  expect(res.body).toEqual({
-    jsonrpc: "2.0",
-    id: 77,
-    error: {
-      code: ERROR_CODES.RESPONSE_TOO_LARGE,
-      message: "Response too large",
-    },
+  const debugLogs: string[] = [];
+  const debugServer = createLhWebServer(undefined, {
+    debug: true,
+    logger: (message) => debugLogs.push(message),
   });
+  await new Promise<void>((resolve) => debugServer.listen(0, resolve));
+  const debugBase = `http://localhost:${(debugServer.address() as AddressInfo).port}`;
+
+  try {
+    const res = await fetch(`${debugBase}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 77,
+        method: "issues/get",
+        params: { repo: "me/proj", number: issue.number },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: 77,
+      error: {
+        code: ERROR_CODES.RESPONSE_TOO_LARGE,
+        message: "Response too large",
+      },
+    });
+    expect(debugLogs).toEqual(['rpc method="issues/get" outcome=error']);
+  } finally {
+    await new Promise<void>((resolve) => debugServer.close(() => resolve()));
+  }
 });
 
 test("POST /rpc rejects non-JSON content types", async () => {

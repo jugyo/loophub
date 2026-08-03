@@ -361,6 +361,7 @@ test("sessions.costSummary returns minimal per-agent period costs", () => {
       day: null,
       tokens_per_5m_history: Array(24).fill(0),
       tokens_per_second: null,
+      cache_read_tokens_per_second: null,
     },
     { agent: "codex", month: 11, week: 8, day: 6 },
     { agent: "grok", month: 0, week: 0, day: 0 },
@@ -462,6 +463,7 @@ test("sessions.costSummary counts legacy build sessions as Claude Code", () => {
       day: 2,
       tokens_per_5m_history: Array(24).fill(0),
       tokens_per_second: null,
+      cache_read_tokens_per_second: null,
     },
     { agent: "codex", month: 0, week: 0, day: 0 },
     { agent: "grok", month: 0, week: 0, day: 0 },
@@ -531,7 +533,7 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   expect(
     D.db
       .query(
-        `SELECT session_id, total_tokens, token_delta
+        `SELECT session_id, total_tokens, token_delta, cache_read_tokens, cache_read_delta
          FROM session_usage_samples
          WHERE session_id = ?`,
       )
@@ -541,6 +543,8 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
       session_id: sessionId,
       total_tokens: 430,
       token_delta: 0,
+      cache_read_tokens: 300,
+      cache_read_delta: 0,
     },
   ]);
 
@@ -586,7 +590,7 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
       assistantLine("msg_2", "claude-sonnet-4-6-20260601", {
         input_tokens: 7,
         cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0,
+        cache_read_input_tokens: 30,
         output_tokens: 3,
       }),
   );
@@ -600,17 +604,37 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   expect(
     D.db
       .query(
-        `SELECT total_tokens, token_delta
+        `SELECT total_tokens, token_delta, cache_read_tokens, cache_read_delta
          FROM session_usage_samples
          WHERE session_id = ?
          ORDER BY id`,
       )
       .all(sessionId),
   ).toMatchObject([
-    { total_tokens: 430, token_delta: 0 },
-    { total_tokens: 430, token_delta: 0 },
-    { total_tokens: 430, token_delta: 0 },
-    { total_tokens: 440, token_delta: 10 },
+    {
+      total_tokens: 430,
+      token_delta: 0,
+      cache_read_tokens: 300,
+      cache_read_delta: 0,
+    },
+    {
+      total_tokens: 430,
+      token_delta: 0,
+      cache_read_tokens: 300,
+      cache_read_delta: 0,
+    },
+    {
+      total_tokens: 430,
+      token_delta: 0,
+      cache_read_tokens: 300,
+      cache_read_delta: 0,
+    },
+    {
+      total_tokens: 470,
+      token_delta: 10,
+      cache_read_tokens: 330,
+      cache_read_delta: 30,
+    },
   ]);
 
   writeFileSync(
@@ -764,16 +788,20 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
   );
   D.db.run(
     `INSERT INTO session_usage_samples
-       (session_id, total_tokens, token_delta, observed_at)
-     VALUES (?, ?, ?, ?), (?, ?, ?, ?)`,
+       (session_id, total_tokens, token_delta, cache_read_tokens, cache_read_delta, observed_at)
+     VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)`,
     [
       sessionId,
       100,
       0,
+      60,
+      0,
       "2026-07-10T00:00:30Z",
       sessionId,
-      250,
+      550,
       150,
+      360,
+      300,
       "2026-07-10T00:01:00Z",
     ],
   );
@@ -782,6 +810,7 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
     new Date("2026-07-10T00:01:00Z"),
   )[0];
   expect(activeSummary.tokens_per_second).toBe(5);
+  expect(activeSummary.cache_read_tokens_per_second).toBe(10);
   expect(activeSummary.tokens_per_5m_history?.at(-1)).toBe(1500);
 
   await svc.reviews.create("me/proj", opened.number, {
@@ -799,6 +828,7 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
     svc.sessions.costSummary(new Date("2026-07-10T00:01:00Z"))[0],
   ).toMatchObject({
     tokens_per_second: null,
+    cache_read_tokens_per_second: null,
   });
 });
 

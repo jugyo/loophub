@@ -5,6 +5,7 @@
 // (with HMR) by embedding Vite in middleware mode — no separate dev server. Resident
 // maintenance loops run in lh-worker.
 
+import { configureSlowOperationLogging } from "../../core/slow-operation.ts";
 import { LH_WEB_HELP, type LhWebArgs, parseLhWebArgs } from "./args.ts";
 import { createViteDev, type ViteDev } from "./dev.ts";
 import { createLhWebServer } from "./http.ts";
@@ -28,15 +29,19 @@ const { port } = args;
 setWebRuntimeConfig({
   debug: args.debug,
 });
+configureSlowOperationLogging(args.debug ? log.info : undefined);
 
 // Embed Vite so this single process serves the SPA with HMR alongside /rpc.
 // `vite` is assigned before listen(), so by the time requests arrive it is always set; the
 // guard only covers the brief async startup window.
 let vite: ViteDev | undefined;
-const server = createLhWebServer((req, res, url) => {
-  if (vite) vite.serveStatic(req, res, url);
-  else res.writeHead(503).end("lh-web is starting\n");
-});
+const server = createLhWebServer(
+  (req, res, url) => {
+    if (vite) vite.serveStatic(req, res, url);
+    else res.writeHead(503).end("lh-web is starting\n");
+  },
+  { debug: args.debug },
+);
 
 // Bind to loopback by default: the embedded Vite server transforms and serves web/ source, so
 // it must not be reachable off-host. Override with LOOPHUB_HOST (e.g. 0.0.0.0) only when LAN

@@ -178,14 +178,14 @@ LoopHub は**自分のマシンで自分だけが使うローカルツール**�
 
 ```sh
 npm run serve                   # lh-web + lh-worker をまとめて起動（開発時はこれ）
+npm run serve:debug             # コンポーネントデバッグ UI を有効にして両プロセスを起動
 npm run lh-web                  # http://localhost:8730 — API + UI + HMR を 1 プロセスで
 npm run lh-worker               # events を tail してリポジトリの自動化を実行
 ```
 
 出力には `[web]` / `[worker]` のプレフィックスが付き、`serve` のどちらか一方が終了すると、
 もう一方も停止して `serve` 全体が終了する。`Ctrl-C` でも両方を停止できる。
-既存の `npm run up` は互換用に残しており、`npm run up -- --port 8731` のような引数も両プロセスへ
-転送する。
+`serve:debug` も同じ 2 プロセスを起動し、`lh-web` にだけ `--debug` を渡す。
 
 ### CLI
 

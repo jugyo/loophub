@@ -22,7 +22,10 @@ export const comments = {
   list(name: string, number: number, actor?: string) {
     const r = repoOr404(name);
     const row = issueOr404(r, number);
-    return S.listComments(row.id).map((comment) => commentWire(comment, actor));
+    const reactions = S.commentReactionsByIssue(row.id);
+    return S.listComments(row.id).map((comment) =>
+      commentJSON(comment, reactions.get(comment.id) ?? [], actor),
+    );
   },
 
   create(

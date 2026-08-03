@@ -22,6 +22,8 @@ export function useNotifications(
   });
 }
 
+// Keep list and unread count under one prefix: notification.created changes both, and
+// notification.updated covers individual/read-all transitions that also change both views.
 export function useUnreadNotificationCount() {
   return useQuery({
     queryKey: [...queryKeys.notifications(), "unread-count"],

@@ -47,6 +47,13 @@ beforeEach(() => {
   vi.useFakeTimers();
 });
 
+// A client with no stored cursor spends its first call learning the newest event id, so tests
+// about steady-state polling start from a cursor as a live client would. `warmCursor` keeps that
+// setup next to the mocked responses it has to agree with.
+function warmCursor(id: number): void {
+  localStorage.setItem("lh_last_event_id", String(id));
+}
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -55,6 +62,84 @@ afterEach(() => {
 });
 
 describe("useLoopHubEvents", () => {
+  it("does not poll again when its host component rerenders", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient();
+
+    const rendered = render(<HookHarness />, { wrapper: wrapper(client) });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    rendered.rerender(<HookHarness />);
+    rendered.rerender(<HookHarness />);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("invalidates a shared key once for a whole batch of events", async () => {
+    warmCursor(1);
+    const batch = Array.from({ length: 20 }, (_, i) => ev(i + 1));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(batch))
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    render(<HookHarness />, { wrapper: wrapper(client) });
+    await vi.waitFor(() => expect(invalidate).toHaveBeenCalled());
+
+    // All 20 events are repo-scoped, so each one maps to ["repo", "me/proj"]. Invalidating per
+    // event would cancel and restart the in-flight refetch of every query under that prefix.
+    const repoKey = JSON.stringify(["repo", "me/proj"]);
+    const repoCalls = invalidate.mock.calls.filter(
+      ([filters]) => JSON.stringify(filters?.queryKey) === repoKey,
+    );
+    expect(repoCalls).toHaveLength(1);
+  });
+
+  it("skips the history instead of replaying it when there is no stored cursor", async () => {
+    localStorage.removeItem("lh_last_event_id");
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([ev(5000)]))
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    render(<HookHarness />, { wrapper: wrapper(client) });
+
+    // Asking for the newest id costs one call; replaying from 0 would page through every event
+    // ever recorded, invalidating the same keys once per page.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(rpcParams(fetchMock.mock.calls[0])).toEqual({
+      since: 0,
+      order: "desc",
+      limit: 1,
+    });
+    await vi.waitFor(() =>
+      expect(localStorage.getItem("lh_last_event_id")).toBe("5000"),
+    );
+    expect(invalidate).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1500);
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
+    expect(rpcParams(fetchMock.mock.calls[1])).toEqual({
+      since: 5000,
+      limit: 100,
+    });
+  });
+
   it("uses the visibility-specific cadence and reschedules on visibility changes", async () => {
     let visibilityState: DocumentVisibilityState = "visible";
     vi.spyOn(document, "visibilityState", "get").mockImplementation(
@@ -84,6 +169,7 @@ describe("useLoopHubEvents", () => {
   });
 
   it("continues polling after an RPC error", async () => {
+    warmCursor(1);
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockRejectedValueOnce(new Error("temporary RPC failure"))
@@ -97,7 +183,7 @@ describe("useLoopHubEvents", () => {
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(rpcParams(fetchMock.mock.calls[1])).toEqual({
-      since: 0,
+      since: 1,
       limit: 100,
     });
     await vi.waitFor(() =>
@@ -106,6 +192,7 @@ describe("useLoopHubEvents", () => {
   });
 
   it("immediately pages through a backlog that fills the polling limit", async () => {
+    warmCursor(1);
     const firstPage = Array.from({ length: 100 }, (_, i) => ev(i + 1));
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -118,7 +205,7 @@ describe("useLoopHubEvents", () => {
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(rpcParams(fetchMock.mock.calls[0])).toEqual({
-      since: 0,
+      since: 1,
       limit: 100,
     });
     expect(rpcParams(fetchMock.mock.calls[1])).toEqual({
@@ -131,6 +218,7 @@ describe("useLoopHubEvents", () => {
   });
 
   it("polls events/list in each mounted tab", async () => {
+    warmCursor(1);
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockImplementation(() => Promise.resolve(jsonResponse([ev(7)])));
@@ -151,7 +239,7 @@ describe("useLoopHubEvents", () => {
       expect.objectContaining({ method: "POST" }),
     );
     for (const call of fetchMock.mock.calls) {
-      expect(rpcParams(call)).toEqual({ since: 0, limit: 100 });
+      expect(rpcParams(call)).toEqual({ since: 1, limit: 100 });
     }
 
     await vi.waitFor(() => {
@@ -166,7 +254,27 @@ describe("useLoopHubEvents", () => {
     for (const rendered of renders) rendered.unmount();
   });
 
+  it("invalidates git-derived workspace queries after a pull merge event", async () => {
+    warmCursor(1);
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([ev(7, "pull_request.merged")]))
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    render(<HookHarness />, { wrapper: wrapper(client) });
+
+    await vi.waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["workspaces", "me/proj"],
+      }),
+    );
+  });
+
   it("continues polling after an empty response using the saved cursor", async () => {
+    warmCursor(1);
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse([ev(7)]))
@@ -203,6 +311,7 @@ describe("useLoopHubEvents", () => {
   });
 
   it("keeps each mounted tab's cursor independent from localStorage writes", async () => {
+    warmCursor(1);
     const clients = [new QueryClient(), new QueryClient()];
     const invalidates = clients.map((client) =>
       vi.spyOn(client, "invalidateQueries"),
@@ -212,7 +321,9 @@ describe("useLoopHubEvents", () => {
       const call = fetchMock.mock.calls.length;
       if (call === 1) return Promise.resolve(jsonResponse([ev(7)]));
       if (call === 2) return Promise.resolve(jsonResponse([]));
-      if (params.since === 0) return Promise.resolve(jsonResponse([ev(7)]));
+      if (params.order === "desc")
+        return Promise.resolve(jsonResponse([ev(7)]));
+      if (params.since === 1) return Promise.resolve(jsonResponse([ev(7)]));
       return Promise.resolve(jsonResponse([]));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -241,7 +352,7 @@ describe("useLoopHubEvents", () => {
     expect(fetchMock.mock.calls.slice(2).map(rpcParams)).toEqual(
       expect.arrayContaining([
         { since: 7, limit: 100 },
-        { since: 0, limit: 100 },
+        { since: 1, limit: 100 },
       ]),
     );
 
@@ -272,7 +383,17 @@ describe("useLoopHubEvents", () => {
       order: "desc",
       limit: 1,
     });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["settings"] });
+    for (const queryKey of [
+      ["repo-merge-mode"],
+      ["issue-comments"],
+      ["pull-debug"],
+      ["pull-files"],
+      ["pull-reviews"],
+      ["pull-review-comments"],
+      ["github-pr-status"],
+    ]) {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey });
+    }
   });
 
   it("does not schedule another poll after unmount", async () => {

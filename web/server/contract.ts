@@ -7,7 +7,7 @@ import * as svc from "../../core/service.ts";
 import { THEME_IDS } from "../../core/theme.ts";
 import { webRuntimeConfig } from "./runtime-config.ts";
 
-export const PROTOCOL_VERSION = "2026-07-11";
+export const PROTOCOL_VERSION = "2026-08-02";
 export const SERVER_INFO = { name: "loophub", version: "0.0.0" } as const;
 
 // ---- reusable schema fragments ----
@@ -323,6 +323,12 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "workflows/archive": {
+    description: "Archive a global workflow definition.",
+    params: params({ name: strNonEmpty, session_id: sid }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.workflows.archive(p.name, p.session_id),
+  },
   "workflows/delete": {
     description:
       "Delete a global workflow definition unless a running run references it.",
@@ -521,6 +527,36 @@ export const methods: Record<string, MethodDef> = {
         sort: p.sort,
       }),
   },
+  "pageData/issueList": {
+    description:
+      "Get the issue list and its repository, workspace, and optional filter data in one request.",
+    params: params(
+      {
+        repo,
+        state: str,
+        labels: stringArray,
+        workspace: str,
+        lookahead: { type: "boolean" },
+        page: positiveInt,
+        perPage: positiveInt,
+        includeLabels: { type: "boolean" },
+        includeUnmergedWorkspaces: { type: "boolean" },
+      },
+      ["repo"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.pageData.issueList(p.repo, {
+        state: p.state,
+        labels: p.labels,
+        workspace: p.workspace,
+        lookahead: p.lookahead,
+        page: p.page,
+        perPage: p.perPage,
+        includeLabels: p.includeLabels,
+        includeUnmergedWorkspaces: p.includeUnmergedWorkspaces,
+      }),
+  },
   "search/query": {
     description: "Search issues and pull requests in a repository.",
     params: params({ repo, query: strNonEmpty }, ["repo", "query"]),
@@ -533,11 +569,32 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.workspaces.list(p.repo),
   },
+  "workspaces/listUnmerged": {
+    description:
+      "List active workspaces with commits not merged into the default branch.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.workspaces.listUnmerged(p.repo),
+  },
   "workspaces/listArchived": {
     description: "List archived workspaces in a repository.",
     params: params({ repo }, ["repo"]),
     result: anyArray,
     handler: (p) => svc.workspaces.listArchived(p.repo),
+  },
+  "workspaces/listForSettings": {
+    description:
+      "List registered workspaces for repository settings, excluding the default branch.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.workspaces.listForSettings(p.repo),
+  },
+  "workspaces/listArchivedForSettings": {
+    description:
+      "List archived workspaces for repository settings, excluding the default branch.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.workspaces.listArchivedForSettings(p.repo),
   },
   "workspaces/create": {
     description: "Create and register a workspace branch.",
@@ -572,6 +629,44 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.issues.get(p.repo, p.number),
+  },
+  "pageData/issueDetail": {
+    description: "Get all initial data for one issue-detail screen.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pageData.issueDetail(p.repo, p.number, "me"),
+  },
+  "issues/ac/list": {
+    description:
+      "List all acceptance criteria for an issue, including disabled criteria.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyArray,
+    handler: (p) => svc.issues.acList(p.repo, p.number),
+  },
+  "issues/ac/add": {
+    description: "Add an acceptance criterion to an issue.",
+    params: params({ repo, number: positiveInt, text: strNonEmpty }, [
+      "repo",
+      "number",
+      "text",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.issues.acAdd(p.repo, p.number, p.text),
+  },
+  "issues/ac/setEnabled": {
+    description: "Enable or disable an issue's acceptance criterion.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        criterion_id: positiveInt,
+        enabled: { type: "boolean" },
+      },
+      ["repo", "number", "criterion_id", "enabled"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.issues.acSetEnabled(p.repo, p.criterion_id, p.enabled, p.number),
   },
   "issues/create": {
     description: "Open a new issue.",
@@ -731,6 +826,12 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.pulls.get(p.repo, p.number),
+  },
+  "pageData/pullDetail": {
+    description: "Get all initial data for one pull-request detail screen.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pageData.pullDetail(p.repo, p.number, "me"),
   },
   "pulls/update": {
     description: "Edit a pull request's title/body/state.",

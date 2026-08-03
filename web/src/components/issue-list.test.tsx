@@ -16,7 +16,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
+import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, LinkedPull } from "@/api/types";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -245,9 +245,8 @@ describe("IssueList", () => {
 
     expect(await screen.findByText("No issues.")).toBeTruthy();
     await waitFor(() =>
-      expect(rpcCall("issues/list")?.params).toMatchObject({
+      expect(rpcCall("pageData/issueList")?.params).toMatchObject({
         repo: "me/proj",
-        kind: "issue",
         state: "all",
         labels: ["bug", "ui"],
         perPage: 21,
@@ -478,181 +477,6 @@ describe("IssueList", () => {
     expect(screen.queryByText("workspace:null")).toBeNull();
   });
 
-  it("shows the live PR agent input through the IssueList at the repo top", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "lh-me-proj",
-              agents: [{ id: "w1:p2", name: "dev #10", status: "working" }],
-              pull_workspaces: [
-                { pull: 10, pane_id: "w1:p2", status: "working" },
-              ],
-            },
-          ],
-        }),
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    expect(
-      await screen.findByRole("textbox", {
-        name: "Message agent for PR #10",
-      }),
-    ).toBeTruthy();
-  });
-
-  it("sends the linked PR agent payload and clears the input on success", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "lh-me-proj",
-              agents: [{ id: "w1:p2", name: "dev #10", status: "working" }],
-              pull_workspaces: [
-                { pull: 10, pane_id: "w1:p2", status: "working" },
-              ],
-            },
-          ],
-        }),
-        "terminal/sendAgentInput": () => ({ ok: true }),
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    const input = (await screen.findByRole("textbox", {
-      name: "Message agent for PR #10",
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Please check the logs" } });
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Send message to agent for PR #10",
-      }),
-    );
-
-    await waitFor(() =>
-      expect(rpcCall("terminal/sendAgentInput")?.params).toEqual({
-        repo: "me/proj",
-        pull: 10,
-        paneId: "w1:p2",
-        text: "Please check the logs",
-      }),
-    );
-    await waitFor(() => expect(input.value).toBe(""));
-    expect(screen.getByRole("status").textContent).toContain("Sent");
-  });
-
-  it("blocks blank input and a second send while the first is pending", async () => {
-    let resolveSend: (value: { ok: true }) => void = () => {};
-    const pendingSend = new Promise<{ ok: true }>((resolve) => {
-      resolveSend = resolve;
-    });
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "lh-me-proj",
-              agents: [{ id: "w1:p2", name: "dev #10", status: "working" }],
-              pull_workspaces: [
-                { pull: 10, pane_id: "w1:p2", status: "working" },
-              ],
-            },
-          ],
-        }),
-        "terminal/sendAgentInput": () => pendingSend,
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    const input = (await screen.findByRole("textbox", {
-      name: "Message agent for PR #10",
-    })) as HTMLInputElement;
-    const send = screen.getByRole("button", {
-      name: "Send message to agent for PR #10",
-    }) as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
-    fireEvent.change(input, { target: { value: "   " } });
-    expect(send.disabled).toBe(true);
-
-    fireEvent.change(input, { target: { value: "One request" } });
-    fireEvent.click(send);
-    await waitFor(() => expect(send.disabled).toBe(true));
-    fireEvent.click(send);
-    expect(rpcCalls("terminal/sendAgentInput")).toHaveLength(1);
-
-    await act(async () => resolveSend({ ok: true }));
-  });
-
-  it("keeps the linked PR input and shows the reason when sending fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "lh-me-proj",
-              agents: [{ id: "w1:p2", name: "dev #10", status: "idle" }],
-              pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "idle" }],
-            },
-          ],
-        }),
-        "terminal/sendAgentInput": () => {
-          throw new RpcFault(409, "The Herdr session is no longer available");
-        },
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    const input = (await screen.findByRole("textbox", {
-      name: "Message agent for PR #10",
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Retry this" } });
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Send message to agent for PR #10",
-      }),
-    );
-
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "The Herdr session is no longer available",
-    );
-    expect(input.value).toBe("Retry this");
-  });
-
-  it("does not show an agent input when the linked PR has no live Herdr pane", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({ repos: [] }),
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    expect(
-      screen.queryByRole("textbox", { name: "Message agent for PR #10" }),
-    ).toBeNull();
-  });
-
   it("groups issues by base branch with the default branch first", async () => {
     vi.stubGlobal(
       "fetch",
@@ -776,7 +600,9 @@ describe("IssueList", () => {
       screen.getByRole("button", { name: "Workspace filter" }).textContent,
     ).toContain("feature/a");
     expect(
-      screen.getByRole("button", { name: /new issue/i }).textContent,
+      screen
+        .getByRole("button", { name: /new issue/i })
+        .closest('[data-debug-component="CreateIssueButton"]')?.textContent,
     ).toContain("in feature/a");
     // The state tab and row label chip both keep the active workspace filter.
     expect(
@@ -829,6 +655,80 @@ describe("IssueList", () => {
     expect(
       await screen.findByRole("dialog", { name: "New workspace" }),
     ).toBeTruthy();
+  });
+
+  it("shows unmerged workspaces above the issue list on the repo top", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [],
+        "workspaces/listUnmerged": () => [
+          {
+            branch: "workspace/one",
+            created_at: "2026-01-01T00:00:00Z",
+            archived_at: null,
+            branch_exists: true,
+          },
+          {
+            branch: "workspace/two",
+            created_at: "2026-01-02T00:00:00Z",
+            archived_at: null,
+            branch_exists: true,
+          },
+        ],
+        "issues/list": () => [issue({ title: "Listed issue" })],
+      }),
+    );
+
+    const { router } = renderIssueList(
+      <IssueList
+        owner="me"
+        repo="proj"
+        showWorkspaceFilter
+        labelsParam="bug"
+        stateParam="all"
+      />,
+      "/r/me/proj?labels=bug&state=all",
+    );
+
+    const firstWorkspace = await screen.findByRole("link", {
+      name: "workspace/one",
+    });
+    expect(screen.getByRole("link", { name: "workspace/two" })).toBeTruthy();
+    expect(screen.getByText("Unmerged workspaces:")).toBeTruthy();
+    const auxiliary = firstWorkspace.closest(
+      '[data-debug-component="UnmergedWorkspaces"]',
+    );
+    const issueList = screen.getByText("Listed issue").closest("ul");
+    expect(
+      auxiliary?.compareDocumentPosition(issueList as Node) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    fireEvent.click(firstWorkspace);
+    await waitFor(() =>
+      expect(
+        router.state.location.pathname + router.state.location.searchStr,
+      ).toBe("/r/me/proj?labels=bug&state=all&workspace=workspace%2Fone"),
+    );
+  });
+
+  it("omits the unmerged workspace auxiliary when core returns none", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [],
+        "workspaces/listUnmerged": () => [],
+        "issues/list": () => [issue({ title: "Listed issue" })],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" showWorkspaceFilter />);
+
+    expect(await screen.findByText("Listed issue")).toBeTruthy();
+    expect(screen.queryByText("Unmerged workspaces:")).toBeNull();
   });
 
   it("treats unassigned issues as members of the default workspace", async () => {
@@ -1061,9 +961,8 @@ describe("IssueList", () => {
     expect(await screen.findByText("Issue 40")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
     await waitFor(() =>
-      expect(rpcCalls("issues/list").at(-1)?.params).toMatchObject({
+      expect(rpcCalls("pageData/issueList").at(-1)?.params).toMatchObject({
         repo: "me/proj",
-        kind: "issue",
         state: "all",
         labels: ["bug"],
         perPage: 21,
@@ -1107,7 +1006,7 @@ describe("IssueList", () => {
     expect(await screen.findByText("Issue 22")).toBeTruthy();
     expect(screen.getAllByText("Issue 21")).toHaveLength(1);
     await waitFor(() =>
-      expect(rpcCalls("issues/list").at(-1)?.params).toMatchObject({
+      expect(rpcCalls("pageData/issueList").at(-1)?.params).toMatchObject({
         repo: "me/proj",
         workspace: "feature/a",
         lookahead: true,

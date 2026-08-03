@@ -26,6 +26,7 @@ import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
+import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { Markdown } from "@/components/markdown";
 import { PullCommitsSection } from "@/components/pull-commits-section";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
@@ -59,6 +60,7 @@ import {
   usePostPullComment,
   usePull,
   usePullComments,
+  usePullDetailPage,
   usePullFiles,
   usePullReviews,
   usePushGithubPull,
@@ -66,6 +68,7 @@ import {
   useSetPullState,
 } from "@/queries/pulls";
 import { useSettings } from "@/queries/settings";
+import { useHerdrSessions } from "@/queries/terminal";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 import { githubPrExportPrompt } from "../../../core/workflow/github-pr-export-prompt.ts";
 
@@ -82,11 +85,14 @@ export function PullDetail({
   repo: string;
   number: number;
 }) {
-  const pullQuery = usePull(owner, repo, number);
-  const filesQuery = usePullFiles(owner, repo, number);
-  const reviewsQuery = usePullReviews(owner, repo, number);
-  const lineCommentsQuery = usePullComments(owner, repo, number);
-  const commentsQuery = useIssueComments(owner, repo, number);
+  const pageQuery = usePullDetailPage(owner, repo, number);
+  const pullQuery = usePull(owner, repo, number, false);
+  const filesQuery = usePullFiles(owner, repo, number, false);
+  const reviewsQuery = usePullReviews(owner, repo, number, false);
+  const lineCommentsQuery = usePullComments(owner, repo, number, false);
+  const commentsQuery = useIssueComments(owner, repo, number, false);
+  const { data: herdrSessions, isError: herdrSessionsError } =
+    useHerdrSessions();
   const titleRef = useRef<HTMLDivElement>(null);
   // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
   // otherwise, and the sidebar section is hidden anyway when github_pull is absent (#850).
@@ -97,25 +103,32 @@ export function PullDetail({
     !!pullQuery.data?.github_pull,
   );
 
-  if (pullQuery.isLoading) {
+  if (pageQuery.isLoading) {
     return (
       <div className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" /> Loading…
       </div>
     );
   }
-  if (pullQuery.isError || !pullQuery.data) {
+  if (pageQuery.isError || !pullQuery.data) {
     return (
       <div className="mx-auto max-w-content rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
         Failed to load PR #{number}.
-        {pullQuery.error instanceof Error
-          ? ` ${pullQuery.error.message}`
+        {pageQuery.error instanceof Error
+          ? ` ${pageQuery.error.message}`
           : null}
       </div>
     );
   }
 
   const pull = pullQuery.data;
+  const herdrSessionsUnavailable =
+    herdrSessionsError || herdrSessions === undefined;
+  const agentWorking = isPullHerdrWorking(
+    herdrSessionsUnavailable ? undefined : herdrSessions,
+    `${owner}/${repo}`,
+    pull.number,
+  );
   // The sidebar column is now always reserved (#456): WorkDuration always renders (with an "N/A"
   // fallback), so there is no longer a PR that leaves the aside empty. Other sidebar sections
   // (Herdr, workflow run, GitHub PR status) hide themselves individually when empty.
@@ -156,6 +169,8 @@ export function PullDetail({
               repo={repo}
               pull={pull}
               titleRef={titleRef}
+              agentWorking={agentWorking}
+              agentStateUnavailable={herdrSessionsUnavailable}
             />
 
             <PullCommitsSection
@@ -165,8 +180,8 @@ export function PullDetail({
               commits={pull.commits}
               reviews={reviewsQuery.data}
               lineComments={lineCommentsQuery.data}
-              isReviewsLoading={reviewsQuery.isLoading}
-              isReviewsError={reviewsQuery.isError}
+              isReviewsLoading={false}
+              isReviewsError={false}
               showGithubPushState={!!pull.github_pull}
             />
             <FilesChanged
@@ -175,8 +190,8 @@ export function PullDetail({
               number={number}
               files={filesQuery.data}
               lineComments={lineCommentsQuery.data}
-              isLoading={filesQuery.isLoading}
-              isError={filesQuery.isError}
+              isLoading={false}
+              isError={false}
             />
 
             <CommentList
@@ -184,8 +199,8 @@ export function PullDetail({
               repo={repo}
               number={number}
               comments={commentsQuery.data}
-              isLoading={commentsQuery.isLoading}
-              isError={commentsQuery.isError}
+              isLoading={false}
+              isError={false}
             />
           </div>
         </div>
@@ -275,11 +290,15 @@ function PullHeader({
   repo,
   pull,
   titleRef,
+  agentWorking,
+  agentStateUnavailable,
 }: {
   owner: string;
   repo: string;
   pull: PullRequest;
   titleRef: RefObject<HTMLDivElement | null>;
+  agentWorking: boolean;
+  agentStateUnavailable: boolean;
 }) {
   const navigate = useNavigate();
   const merge = useMergePull(owner, repo, pull.number);
@@ -305,12 +324,21 @@ function PullHeader({
   // must stay disabled the same way a conflict does.
   const hasNoCommits = pull.mergeable_state === "no_commits";
   const canMerge =
-    canAct && pull.review_state === "PASSED" && !hasConflict && !hasNoCommits;
+    canAct &&
+    pull.review_state === "PASSED" &&
+    !hasConflict &&
+    !hasNoCommits &&
+    !agentWorking &&
+    !agentStateUnavailable;
   const mergeBlockedReason = hasConflict
     ? "Cannot merge: this PR has conflicts with the base branch."
     : hasNoCommits
       ? "Cannot merge: this PR has no commits."
-      : undefined;
+      : agentWorking
+        ? "Cannot merge while an agent is working on this PR."
+        : agentStateUnavailable
+          ? "Cannot merge until agent status is available."
+          : undefined;
 
   return (
     <div data-debug-component="PullHeader" className="flex flex-col gap-3">

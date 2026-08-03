@@ -7,11 +7,13 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronDown,
   Loader2,
+  MoreHorizontal,
   Paperclip,
+  Plus,
   Square,
   Workflow,
 } from "lucide-react";
-import { type RefObject, useRef, useState } from "react";
+import { type FormEvent, type RefObject, useRef, useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
 import {
@@ -39,9 +41,13 @@ import { relativeTime } from "@/lib/time";
 import { useAttachmentUpload } from "@/lib/use-attachment-upload";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import {
+  useAcceptanceCriteria,
+  useAddAcceptanceCriterion,
   useIssue,
   useIssueComments,
+  useIssueDetailPage,
   usePostComment,
+  useSetAcceptanceCriterionEnabled,
   useSetIssueState,
 } from "@/queries/issues";
 import { useWorkerLaunchGate } from "@/queries/worker-status";
@@ -56,23 +62,24 @@ export function IssueDetail({
   repo: string;
   number: number;
 }) {
-  const issueQuery = useIssue(owner, repo, number);
-  const commentsQuery = useIssueComments(owner, repo, number);
+  const pageQuery = useIssueDetailPage(owner, repo, number);
+  const issueQuery = useIssue(owner, repo, number, false);
+  const commentsQuery = useIssueComments(owner, repo, number, false);
   const titleRef = useRef<HTMLDivElement>(null);
 
-  if (issueQuery.isLoading) {
+  if (pageQuery.isLoading) {
     return (
       <div className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" /> Loading…
       </div>
     );
   }
-  if (issueQuery.isError || !issueQuery.data) {
+  if (pageQuery.isError || !issueQuery.data) {
     return (
       <div className="mx-auto max-w-content rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
         Failed to load issue #{number}.
-        {issueQuery.error instanceof Error
-          ? ` ${issueQuery.error.message}`
+        {pageQuery.error instanceof Error
+          ? ` ${pageQuery.error.message}`
           : null}
       </div>
     );
@@ -112,8 +119,8 @@ export function IssueDetail({
             owner={owner}
             repo={repo}
             comments={commentsQuery.data}
-            isLoading={commentsQuery.isLoading}
-            isError={commentsQuery.isError}
+            isLoading={false}
+            isError={false}
           />
 
           <CommentForm owner={owner} repo={repo} number={number} />
@@ -171,7 +178,12 @@ function IssueHeader({
         ) : (
           <p className="p-4 text-sm text-muted-foreground">No description.</p>
         )}
-        <AcceptanceCriteria issue={issue} />
+        <AcceptanceCriteria
+          key={`${owner}/${repo}#${issue.number}`}
+          owner={owner}
+          repo={repo}
+          issue={issue}
+        />
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">
@@ -285,38 +297,205 @@ function StartWorkflowControls({
   );
 }
 
-// Structured acceptance criteria (#1894) as a read-only checklist (#1897). This is the rubric
-// Verify grades the PR against; the grades themselves live on the review and are shown by the
-// workflow run section, not here. Kept inside the issue-body box, divided from the body, because
-// the criteria are part of what the issue asks for — not a related entity like the linked PR.
-// Authoring stays with the CLI (`lh issue ac`), so this offers no add / remove / reorder / enable
-// control — the boxes are indicators, not inputs. Renders nothing on an issue with no structured
-// criteria (Verify falls back to a holistic review there).
-function AcceptanceCriteria({ issue }: { issue: Issue }) {
-  const criteria = issue.acceptance_criteria ?? [];
-  if (criteria.length === 0) return null;
+// The ordinary issue response remains the enabled-only Verify rubric. The authoring query adds
+// disabled criteria for this management surface, preserving stable ids and issue-local numbers.
+function AcceptanceCriteria({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  const criteriaQuery = useAcceptanceCriteria(owner, repo, issue.number, false);
+  const add = useAddAcceptanceCriterion(owner, repo, issue.number);
+  const setEnabled = useSetAcceptanceCriterionEnabled(
+    owner,
+    repo,
+    issue.number,
+  );
+  const [draft, setDraft] = useState("");
+  const [showDisabled, setShowDisabled] = useState(false);
+  const criteria = criteriaQuery.data ?? [];
+  const managementReady = criteriaQuery.data !== undefined;
+  const enabled = criteria.filter((criterion) => criterion.enabled);
+  const disabled = criteria.filter((criterion) => !criterion.enabled);
+  const error = add.error ?? setEnabled.error;
+
+  async function onAdd(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text || !managementReady) return;
+    setEnabled.reset();
+    try {
+      await add.mutateAsync(text);
+      setDraft("");
+    } catch {
+      // The mutation error is rendered below through the existing RPC error path.
+    }
+  }
+
   return (
     <div
       data-debug-component="IssueAcceptanceCriteria"
-      className="flex flex-col gap-2 border-t p-4"
+      className="flex flex-col gap-3 border-t p-4"
     >
-      <h2 className="text-sm font-medium text-muted-foreground">
-        Acceptance criteria
-      </h2>
-      <ul className="flex flex-col gap-2 text-sm">
-        {criteria.map((criterion) => (
-          <li key={criterion.id} className="flex items-start gap-2">
-            <Square
-              aria-hidden
-              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-            />
-            <span className="min-w-0 break-words">{criterion.text}</span>
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">
-              AC {criterion.number}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Acceptance criteria
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Disabled criteria are kept for review history and can be restored.
+          </p>
+        </div>
+        {managementReady && disabled.length > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-expanded={showDisabled}
+            onClick={() => setShowDisabled((shown) => !shown)}
+          >
+            {showDisabled ? "Hide" : "Show"} disabled ({disabled.length})
+          </Button>
+        ) : null}
+      </div>
+
+      {criteriaQuery.data === undefined ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading acceptance
+          criteria…
+        </p>
+      ) : enabled.length > 0 ? (
+        <ul className="flex flex-col gap-2 text-sm">
+          {enabled.map((criterion) => (
+            <li key={criterion.id} className="flex items-start gap-2">
+              <Square
+                aria-hidden
+                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+              />
+              <span className="min-w-0 flex-1 break-words">
+                {criterion.text}
+              </span>
+              <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                AC {criterion.number}
+              </span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="-my-1 size-7 shrink-0"
+                    aria-label={`Actions for AC ${criterion.number}`}
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    disabled={setEnabled.isPending}
+                    onSelect={() => {
+                      add.reset();
+                      setEnabled.reset();
+                      setEnabled.mutate({ id: criterion.id, enabled: false });
+                    }}
+                  >
+                    Disable criterion
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No active acceptance criteria.
+        </p>
+      )}
+
+      {managementReady && showDisabled ? (
+        <div className="rounded-md border border-dashed p-3">
+          <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+            Disabled criteria
+          </h3>
+          <ul className="flex flex-col gap-2 text-sm">
+            {disabled.map((criterion) => (
+              <li
+                key={criterion.id}
+                className="flex items-start gap-2 text-muted-foreground"
+              >
+                <span className="min-w-0 flex-1 break-words line-through">
+                  {criterion.text}
+                </span>
+                <span className="shrink-0 font-mono text-xs">
+                  AC {criterion.number}
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="-my-1 size-7 shrink-0"
+                      aria-label={`Actions for AC ${criterion.number}`}
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      disabled={setEnabled.isPending}
+                      onSelect={() => {
+                        add.reset();
+                        setEnabled.reset();
+                        setEnabled.mutate({ id: criterion.id, enabled: true });
+                      }}
+                    >
+                      Restore criterion
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <form className="flex items-center gap-2" onSubmit={onAdd}>
+        <label htmlFor="new-acceptance-criterion" className="sr-only">
+          New acceptance criterion
+        </label>
+        <input
+          id="new-acceptance-criterion"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Add an acceptance criterion"
+          className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!managementReady || !draft.trim() || add.isPending}
+        >
+          {add.isPending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Plus className="size-4" />
+          )}
+          Add
+        </Button>
+      </form>
+
+      {error ? (
+        <p className="text-sm text-destructive">
+          {error instanceof Error
+            ? error.message
+            : "Failed to update acceptance criteria."}
+        </p>
+      ) : null}
     </div>
   );
 }

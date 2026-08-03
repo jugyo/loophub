@@ -16,9 +16,10 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as attachments from "@/api/attachments";
-import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
+import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 import { WebConfigProvider } from "@/lib/web-config";
@@ -93,6 +94,11 @@ function mockFetch(
       started_at: "2026-08-02T00:00:00Z",
       heartbeat_at: "2026-08-02T00:00:01Z",
     }),
+    "issues/ac/list": () =>
+      (getIssue().acceptance_criteria ?? []).map((criterion) => ({
+        ...criterion,
+        enabled: true,
+      })),
     ...extraHandlers,
     "issues/get": getIssue,
     "comments/list": () => comments,
@@ -124,14 +130,20 @@ function renderDetail(
     defaultOptions: { queries: { retry: false } },
   });
   const rootRoute = createRootRoute({ component: Outlet });
+  let setIssueNumber = (_number: number) => {};
+  function DetailRoute() {
+    const [number, setNumber] = useState(12);
+    setIssueNumber = setNumber;
+    return (
+      <WebConfigProvider config={{ debug: false }}>
+        <IssueDetail owner="me" repo="proj" number={number} />
+      </WebConfigProvider>
+    );
+  }
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/",
-    component: () => (
-      <WebConfigProvider config={{ debug: false }}>
-        <IssueDetail owner="me" repo="proj" number={12} />
-      </WebConfigProvider>
-    ),
+    component: DetailRoute,
   });
   // The linked-PR link targets the pulls route; register it for the router.
   const pullsRoute = createRoute({
@@ -163,7 +175,11 @@ function renderDetail(
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  return { ...rendered, router };
+  return {
+    ...rendered,
+    router,
+    switchIssue: (number: number) => setIssueNumber(number),
+  };
 }
 
 describe("IssueDetail", () => {
@@ -622,33 +638,39 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: /Focus terminal/ })).toBeNull();
   });
 
-  // Structured AC (#1897): a read-only checklist, divided from the body inside the same box and
-  // above the issue actions. Authoring stays in the CLI, so it must not grow an add / remove /
-  // reorder control.
-  it("shows structured acceptance criteria as a read-only checklist under the body", async () => {
+  it("shows active acceptance criteria with stable numbers and authoring controls", async () => {
     const withCriteria: Issue = {
       ...issue,
       acceptance_criteria: [
-        { id: 11, number: 1, ordinal: 1, text: "AC is shown read-only" },
+        { id: 11, number: 1, ordinal: 1, text: "AC is editable" },
         { id: 12, number: 2, ordinal: 2, text: "grades join to the AC text" },
       ],
     };
     renderDetail(() => withCriteria);
 
+    await screen.findByText("AC is editable");
     const block = (await screen.findByText("Acceptance criteria")).closest(
       "[data-debug-component='IssueAcceptanceCriteria']",
     ) as HTMLElement;
     const items = within(block).getAllByRole("listitem");
     expect(items.map((li) => li.textContent)).toEqual([
-      "AC is shown read-onlyAC 1",
+      "AC is editableAC 1",
       "grades join to the AC textAC 2",
     ]);
-    expect(within(block).queryByRole("button")).toBeNull();
-    expect(within(block).queryByRole("checkbox")).toBeNull();
-    expect(within(block).queryByRole("textbox")).toBeNull();
     expect(
-      within(block).queryByText("Read-only — edit these with lh issue ac."),
-    ).toBeNull();
+      within(block).getByRole("button", { name: "Actions for AC 1" }),
+    ).toBeTruthy();
+    expect(
+      within(block).getByRole("button", { name: "Actions for AC 2" }),
+    ).toBeTruthy();
+    expect(
+      within(block).getByRole("textbox", { name: "New acceptance criterion" }),
+    ).toBeTruthy();
+    expect(
+      (within(block).getByRole("button", { name: "Add" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(within(block).queryByRole("checkbox")).toBeNull();
     // Same box as the issue body, and ahead of the Close action.
     const box = block.parentElement as HTMLElement;
     expect(box.textContent).toContain("Render title, body, labels.");
@@ -659,11 +681,289 @@ describe("IssueDetail", () => {
     ).toBeTruthy();
   });
 
-  it("renders no acceptance criteria block when the issue has none", async () => {
+  it("renders acceptance criteria authoring when the issue has none", async () => {
     renderDetail();
 
     expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
-    expect(screen.queryByText("Acceptance criteria")).toBeNull();
+    expect(screen.getByText("Acceptance criteria")).toBeTruthy();
+    expect(
+      await screen.findByText("No active acceptance criteria."),
+    ).toBeTruthy();
+  });
+
+  it("resets acceptance criteria authoring state when the issue changes", async () => {
+    let currentIssue = issue;
+    const { switchIssue } = renderDetail(() => currentIssue, {
+      "issues/ac/list": (params) =>
+        params.number === 12
+          ? [
+              {
+                id: 41,
+                number: 3,
+                ordinal: 1,
+                text: "Disabled on issue 12",
+                enabled: false,
+              },
+            ]
+          : [],
+      "issues/ac/add": (params) => ({
+        id: 42,
+        number: 1,
+        ordinal: 1,
+        text: params.text,
+        enabled: true,
+      }),
+    });
+
+    await screen.findByText("No active acceptance criteria.");
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "New acceptance criterion" }),
+      { target: { value: "Draft for issue 12" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show disabled (1)" }));
+    expect(screen.getByText("Disabled on issue 12")).toBeTruthy();
+
+    currentIssue = {
+      ...issue,
+      number: 13,
+      title: "Issue 13",
+      linked_pull_request: null,
+    };
+    act(() => switchIssue(13));
+
+    await screen.findByText("Issue 13");
+    const input = screen.getByRole("textbox", {
+      name: "New acceptance criterion",
+    }) as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(screen.queryByText("Disabled on issue 12")).toBeNull();
+
+    fireEvent.change(input, { target: { value: "Criterion for issue 13" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await waitFor(() =>
+      expect(rpcCall("issues/ac/add")?.params).toMatchObject({
+        number: 13,
+        text: "Criterion for issue 13",
+      }),
+    );
+  });
+
+  it("keeps the detail loading while the complete criteria list is loading", async () => {
+    renderDetail(undefined, {
+      "issues/ac/list": () => new Promise(() => {}),
+    });
+
+    expect(await screen.findByText("Loading…")).toBeTruthy();
+    expect(
+      screen.queryByRole("textbox", { name: "New acceptance criterion" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /Actions for AC/ })).toBeNull();
+  });
+
+  it("shows a page error when the complete criteria list fails", async () => {
+    renderDetail(
+      () => ({
+        ...issue,
+        acceptance_criteria: [
+          { id: 41, number: 1, ordinal: 1, text: "Enabled-only fallback" },
+        ],
+      }),
+      {
+        "issues/ac/list": () => {
+          throw new RpcFault(503, "Complete criteria are unavailable");
+        },
+      },
+    );
+
+    expect(
+      await screen.findByText(/Complete criteria are unavailable/),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("textbox", { name: "New acceptance criterion" }),
+    ).toBeNull();
+    expect(screen.queryByText("Enabled-only fallback")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Actions for AC/ })).toBeNull();
+  });
+
+  it("adds a non-blank acceptance criterion and refreshes issue data", async () => {
+    renderDetail(undefined, {
+      "issues/ac/add": (params) => ({
+        id: 21,
+        number: 1,
+        ordinal: 1,
+        text: params.text,
+        enabled: true,
+      }),
+    });
+
+    const input = (await screen.findByRole("textbox", {
+      name: "New acceptance criterion",
+    })) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "  New behavior  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(rpcCall("issues/ac/add")?.params).toMatchObject({
+        repo: "me/proj",
+        number: 12,
+        text: "New behavior",
+      }),
+    );
+    await waitFor(() => expect(input.value).toBe(""));
+  });
+
+  it("keeps an acceptance criterion draft and shows RPC failures", async () => {
+    renderDetail(undefined, {
+      "issues/ac/add": () => {
+        throw new RpcFault(422, "Criterion could not be added");
+      },
+    });
+
+    const input = (await screen.findByRole("textbox", {
+      name: "New acceptance criterion",
+    })) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Keep this draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(
+      await screen.findByText("Criterion could not be added"),
+    ).toBeTruthy();
+    expect(input.value).toBe("Keep this draft");
+  });
+
+  it("shows only the latest acceptance criteria mutation error", async () => {
+    let addAttempt = 0;
+    renderDetail(undefined, {
+      "issues/ac/list": () => [
+        {
+          id: 61,
+          number: 5,
+          ordinal: 1,
+          text: "Restore candidate",
+          enabled: false,
+        },
+      ],
+      "issues/ac/add": () => {
+        addAttempt += 1;
+        throw new RpcFault(422, `Add failure ${addAttempt}`);
+      },
+      "issues/ac/setEnabled": () => {
+        throw new RpcFault(500, "Restore failure");
+      },
+    });
+
+    const input = (await screen.findByRole("textbox", {
+      name: "New acceptance criterion",
+    })) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "First attempt" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByText("Add failure 1")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show disabled (1)" }));
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Actions for AC 5" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Restore criterion" }),
+    );
+    expect(await screen.findByText("Restore failure")).toBeTruthy();
+    expect(screen.queryByText("Add failure 1")).toBeNull();
+
+    fireEvent.change(input, { target: { value: "Second attempt" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByText("Add failure 2")).toBeTruthy();
+    expect(screen.queryByText("Restore failure")).toBeNull();
+  });
+
+  it("disables from the action menu and restores a disabled criterion", async () => {
+    const criteria = [
+      { id: 31, number: 4, ordinal: 1, text: "Stable history", enabled: true },
+      {
+        id: 32,
+        number: 7,
+        ordinal: 2,
+        text: "Previously disabled",
+        enabled: false,
+      },
+    ];
+    renderDetail(undefined, {
+      "issues/ac/list": () => criteria,
+      "issues/ac/setEnabled": (params) => ({
+        ...criteria.find((criterion) => criterion.id === params.criterion_id),
+        enabled: params.enabled,
+      }),
+    });
+
+    await screen.findByText("Stable history");
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Actions for AC 4" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Disable criterion" }),
+    );
+    await waitFor(() =>
+      expect(rpcCall("issues/ac/setEnabled")?.params).toMatchObject({
+        number: 12,
+        criterion_id: 31,
+        enabled: false,
+      }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show disabled (1)" }));
+    expect(screen.getByText("Previously disabled")).toBeTruthy();
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Actions for AC 7" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Restore criterion" }),
+    );
+    await waitFor(() => {
+      const calls = (
+        fetch as unknown as ReturnType<typeof vi.fn>
+      ).mock.calls.map((call) =>
+        JSON.parse(String((call[1] as RequestInit).body)),
+      );
+      expect(
+        calls.some(
+          (call) =>
+            call.method === "issues/ac/setEnabled" &&
+            call.params.criterion_id === 32 &&
+            call.params.enabled === true,
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("shows a disable RPC failure in the acceptance criteria section", async () => {
+    renderDetail(
+      () => ({
+        ...issue,
+        acceptance_criteria: [
+          { id: 51, number: 3, ordinal: 1, text: "Cannot disable" },
+        ],
+      }),
+      {
+        "issues/ac/setEnabled": () => {
+          throw new RpcFault(500, "Disable request failed");
+        },
+      },
+    );
+
+    await screen.findByText("Cannot disable");
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Actions for AC 3" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Disable criterion" }),
+    );
+
+    expect(await screen.findByText("Disable request failed")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("posts a comment and clears the textarea on success", async () => {

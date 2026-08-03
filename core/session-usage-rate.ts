@@ -2,7 +2,14 @@ export interface SessionUsageSample {
   session_id: string;
   total_tokens: number;
   token_delta: number;
+  cache_read_tokens?: number;
+  cache_read_delta?: number;
   observed_at: string;
+}
+
+export interface TokenRates {
+  tokensPerSecond: number | null;
+  cacheReadTokensPerSecond: number | null;
 }
 
 export interface TokenRateOptions {
@@ -37,9 +44,17 @@ export function calculateTokensPerSecond(
   samples: SessionUsageSample[],
   opts: TokenRateOptions = {},
 ): number | null {
+  return calculateTokenRates(samples, opts).tokensPerSecond;
+}
+
+export function calculateTokenRates(
+  samples: SessionUsageSample[],
+  opts: TokenRateOptions = {},
+): TokenRates {
   const now = opts.now ?? new Date();
   const nowMs = now.getTime();
-  if (!Number.isFinite(nowMs)) return null;
+  if (!Number.isFinite(nowMs))
+    return { tokensPerSecond: null, cacheReadTokensPerSecond: null };
   const windowMs = (opts.windowSeconds ?? DEFAULT_WINDOW_SECONDS) * 1000;
   const maxAgeMs =
     (opts.maxSampleAgeSeconds ?? DEFAULT_MAX_SAMPLE_AGE_SECONDS) * 1000;
@@ -61,6 +76,7 @@ export function calculateTokensPerSecond(
   }
 
   let tokensPerSecond = 0;
+  let cacheReadTokensPerSecond = 0;
   let sessionsWithRate = 0;
   for (const rows of bySession.values()) {
     rows.sort((a, b) => a.observedMs - b.observedMs);
@@ -72,22 +88,30 @@ export function calculateTokensPerSecond(
     const sessionDelta = rows
       .slice(1)
       .reduce((sum, row) => sum + Math.max(0, row.token_delta), 0);
+    const cacheReadDelta = rows
+      .slice(1)
+      .reduce((sum, row) => sum + Math.max(0, row.cache_read_delta ?? 0), 0);
     tokensPerSecond += sessionDelta / sessionElapsed;
+    cacheReadTokensPerSecond += cacheReadDelta / sessionElapsed;
     sessionsWithRate += 1;
   }
 
-  if (sessionsWithRate === 0) return null;
-  return tokensPerSecond;
+  if (sessionsWithRate === 0)
+    return { tokensPerSecond: null, cacheReadTokensPerSecond: null };
+  return { tokensPerSecond, cacheReadTokensPerSecond };
 }
 
 export interface GrokTurnRateTurn {
   totalTokens: number;
+  cacheReadTokens?: number;
   apiDurationMs: number | null;
 }
 
 export interface PlannedUsageSample {
   totalTokens: number;
   tokenDelta: number;
+  cacheReadTokens: number;
+  cacheReadDelta: number;
   observedAt: string;
 }
 
@@ -129,6 +153,8 @@ export function newGrokWorkDurationMs(
 export function planGrokTurnRateSamples(input: {
   previousTotal: number;
   newTotal: number;
+  previousCacheRead?: number;
+  newCacheRead?: number;
   turns: ReadonlyArray<GrokTurnRateTurn>;
   now?: Date;
   /** Keep the pair inside liveTokensPerSecond's default 60s window. */
@@ -153,10 +179,20 @@ export function planGrokTurnRateSamples(input: {
     Math.max(durationSec ?? 1, 1e-3),
     Math.max(maxSpanSeconds, 1e-3),
   );
+  const cacheReadDelta = Math.max(
+    0,
+    Math.max(0, input.newCacheRead ?? 0) -
+      Math.max(0, input.previousCacheRead ?? 0),
+  );
+  const scaledCacheReadDelta =
+    durationSec != null && durationSec > 0
+      ? cacheReadDelta * (spanSec / durationSec)
+      : cacheReadDelta;
+  const regularDelta = Math.max(0, delta - cacheReadDelta);
   const scaledDelta =
     durationSec != null && durationSec > 0
-      ? delta * (spanSec / durationSec)
-      : delta;
+      ? regularDelta * (spanSec / durationSec)
+      : regularDelta;
 
   const anchorAt = new Date(nowMs - spanSec * 1000).toISOString();
   const endAt = now.toISOString();
@@ -164,11 +200,15 @@ export function planGrokTurnRateSamples(input: {
     {
       totalTokens: previousTotal,
       tokenDelta: 0,
+      cacheReadTokens: Math.max(0, input.previousCacheRead ?? 0),
+      cacheReadDelta: 0,
       observedAt: anchorAt,
     },
     {
       totalTokens: newTotal,
       tokenDelta: scaledDelta,
+      cacheReadTokens: Math.max(0, input.newCacheRead ?? 0),
+      cacheReadDelta: scaledCacheReadDelta,
       observedAt: endAt,
     },
   ];

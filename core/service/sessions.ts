@@ -35,7 +35,7 @@ import {
   type UsageEntry,
 } from "../session-usage.ts";
 import {
-  calculateTokensPerSecond,
+  calculateTokenRates,
   planGrokTurnRateSamples,
   totalTokens,
 } from "../session-usage-rate.ts";
@@ -190,27 +190,37 @@ function secondsAgo(now: Date, seconds: number): string {
 interface UsageSamplePlan {
   samples: {
     totalTokens: number;
+    cacheReadTokens: number;
     tokenDelta?: number;
+    cacheReadDelta?: number;
     observedAt: string;
   }[];
   pruneBefore: string;
 }
 
-function usageTotal(usage: ReadonlyArray<ModelUsage | S.SessionUsageRow>) {
+function usageTotals(
+  usage: ReadonlyArray<ModelUsage | S.SessionUsageRow>,
+): { totalTokens: number; cacheReadTokens: number } | null {
   if (usage.length === 0) return null;
-  return usage.reduce((sum, row) => sum + totalTokens(row), 0);
+  return {
+    totalTokens: usage.reduce((sum, row) => sum + totalTokens(row), 0),
+    cacheReadTokens: usage.reduce(
+      (sum, row) => sum + row.cache_read_input_tokens,
+      0,
+    ),
+  };
 }
 
 function planUsageSample(
   usage: ReadonlyArray<ModelUsage | S.SessionUsageRow>,
   now = new Date(),
 ): UsageSamplePlan | null {
-  const total = usageTotal(usage);
-  if (total == null) return null;
+  const totals = usageTotals(usage);
+  if (totals == null) return null;
   return {
     samples: [
       {
-        totalTokens: total,
+        ...totals,
         observedAt: now.toISOString(),
       },
     ],
@@ -221,18 +231,21 @@ function planUsageSample(
 // Grok has no mid-turn billed usage events. Precompute the sample pair before the DB phase so the
 // transaction only persists it alongside the rewritten usage.
 function planGrokUsageRateSamples(
-  previousTotal: number | null,
+  previousTotals: ReturnType<typeof S.tokenTotalsForSession>,
   usage: ModelUsage[],
   turns: GrokTurnUsage[],
   now = new Date(),
 ): UsageSamplePlan | null {
-  const newTotal = usageTotal(usage);
-  if (newTotal == null) return null;
+  const newTotals = usageTotals(usage);
+  if (newTotals == null) return null;
   const samples = planGrokTurnRateSamples({
-    previousTotal: previousTotal ?? 0,
-    newTotal,
+    previousTotal: previousTotals?.totalTokens ?? 0,
+    newTotal: newTotals.totalTokens,
+    previousCacheRead: previousTotals?.cacheReadTokens ?? 0,
+    newCacheRead: newTotals.cacheReadTokens,
     turns: turns.map((turn) => ({
       totalTokens: turn.totalTokens,
+      cacheReadTokens: turn.usage.cache_read_input_tokens,
       apiDurationMs: turn.apiDurationMs,
     })),
     now,
@@ -252,8 +265,10 @@ function saveUsageSamples(
       S.recordSessionUsageSample({
         sessionId,
         totalTokens: sample.totalTokens,
+        cacheReadTokens: sample.cacheReadTokens,
         observedAt: sample.observedAt,
         tokenDelta: sample.tokenDelta,
+        cacheReadDelta: sample.cacheReadDelta,
       });
     }
     S.pruneSessionUsageSamples(plan.pruneBefore);
@@ -267,8 +282,8 @@ const RATE_HISTORY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
 // The live aggregate tokens/sec used by the topbar's current five-minute bucket: in-progress dev and
 // workflow-step sessions over the trailing 60s. The persisted history and current bucket share this
 // definition.
-function liveTokensPerSecond(now: Date): number | null {
-  return calculateTokensPerSecond(
+function liveTokenRates(now: Date) {
+  return calculateTokenRates(
     S.listRecentInProgressSessionUsageSamples(secondsAgo(now, 60)),
     { now },
   );
@@ -564,7 +579,7 @@ export const sessions = {
 
   costSummary(now = new Date()): AgentCostSummaryWire[] {
     const starts = periodStarts(now);
-    const rate = liveTokensPerSecond(now);
+    const rates = liveTokenRates(now);
     const byAgent = new Map<CodingAgent, AgentCostSummaryWire>();
     for (const agent of CODING_AGENTS) {
       byAgent.set(agent, { agent, month: 0, week: 0, day: 0 });
@@ -582,10 +597,11 @@ export const sessions = {
     }
 
     const out = CODING_AGENTS.map((agent) => byAgent.get(agent)!);
-    out[0].tokens_per_second = rate;
+    out[0].tokens_per_second = rates.tokensPerSecond;
+    out[0].cache_read_tokens_per_second = rates.cacheReadTokensPerSecond;
     out[0].tokens_per_5m_history = tokensPerFiveMinuteHistory(
       S.listSessionRateHistory(secondsAgo(now, 3 * 60 * 60)),
-      { now, liveTokensPerSecond: rate },
+      { now, liveTokensPerSecond: rates.tokensPerSecond },
     );
     return out;
   },
@@ -596,7 +612,7 @@ export const sessions = {
   // rate so the table isn't padded with placeholder rows. Returns the recorded rate, or null when
   // nothing was written.
   recordLiveRateSample(now = new Date()): number | null {
-    const rate = liveTokensPerSecond(now);
+    const rate = liveTokenRates(now).tokensPerSecond;
     if (rate == null) return null;
     db.transaction(() => {
       S.recordSessionRateHistory({
@@ -819,13 +835,19 @@ export const sessions = {
         const fresh = sessions.flatMap((x) => x.entries);
         const turns = sessions.flatMap((x) => x.turns);
         const aggregated = aggregateUsage(fresh);
-        const previousTotal = S.totalTokensForSession(row.id);
         const stored = S.listSessionUsage(row.id);
+        const previousTotals = S.tokenTotalsForSession(row.id);
         const topLevelUnchanged =
           !input.full && modelUsageEqualsStored(aggregated, stored);
         const samplePlan = topLevelUnchanged
           ? planUsageSample(stored)
-          : planGrokUsageRateSamples(previousTotal, aggregated, turns);
+          : planGrokUsageRateSamples(previousTotals, aggregated, turns);
+        const usageCosts = topLevelUnchanged
+          ? []
+          : aggregated.map((usage) => ({
+              model: usage.model,
+              costUsd: calculateCostUsd(usage.model, usage),
+            }));
         return db.transaction(() => {
           if (!modelUsageEqualsStored(stored, S.listSessionUsage(row.id))) {
             throw new Error("Session usage changed during sync");
@@ -851,6 +873,9 @@ export const sessions = {
           clearOtherGrokUsageForPull(target.pullIssueId, target.ownerSessionId);
           for (const usage of aggregated) {
             S.upsertSessionUsage(row.id, usage);
+          }
+          for (const usage of usageCosts) {
+            S.rewriteSessionUsageCost(row.id, usage.model, usage.costUsd);
           }
           saveUsageSamples(row.id, samplePlan);
 

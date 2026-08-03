@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  archiveWorkflow,
   createRepo,
   createWorkflow,
   deleteWorkflow,
+  getIssueDetailPage,
+  getIssueListPage,
+  getPullDetailPage,
+  getWebConfig,
   getWorkflowContracts,
   increaseWorkflowRunCostLimit,
   listIssues,
@@ -118,6 +123,18 @@ describe("rpc", () => {
 });
 
 describe("typed methods translate to contract params", () => {
+  it("initializes with the current protocol version", async () => {
+    const fetchMock = mockRpc({ webConfig: { debug: false } });
+    await getWebConfig();
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "initialize",
+      params: {
+        protocolVersion: "2026-08-02",
+        clientInfo: { name: "loophub-web" },
+      },
+    });
+  });
+
   it("listRepos maps the REST archived flag to the contract enum", async () => {
     const fetchMock = mockRpc([]);
     await listRepos("all");
@@ -198,6 +215,13 @@ describe("typed methods translate to contract params", () => {
     });
 
     fetchMock = mockRpc({ ok: true });
+    await archiveWorkflow("standard", "session-1");
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "workflows/archive",
+      params: { name: "standard", session_id: "session-1" },
+    });
+
+    fetchMock = mockRpc({ ok: true });
     await deleteWorkflow("standard", "session-1");
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "workflows/delete",
@@ -218,6 +242,44 @@ describe("typed methods translate to contract params", () => {
       state: "open",
       labels: ["bug", "ui"],
       perPage: 20,
+    });
+  });
+
+  it("page data helpers request each screen's initial result set", async () => {
+    let fetchMock = mockRpc({});
+    await getIssueListPage(
+      "me",
+      "proj",
+      "state=all&labels=bug,ui&workspace=feature/a&page=2&per_page=21&lookahead=true",
+      { includeLabels: true, includeUnmergedWorkspaces: true },
+    );
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "pageData/issueList",
+      params: {
+        repo: "me/proj",
+        state: "all",
+        labels: ["bug", "ui"],
+        workspace: "feature/a",
+        page: 2,
+        perPage: 21,
+        lookahead: true,
+        includeLabels: true,
+        includeUnmergedWorkspaces: true,
+      },
+    });
+
+    fetchMock = mockRpc({});
+    await getIssueDetailPage("me", "proj", 12);
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "pageData/issueDetail",
+      params: { repo: "me/proj", number: 12 },
+    });
+
+    fetchMock = mockRpc({});
+    await getPullDetailPage("me", "proj", 13);
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "pageData/pullDetail",
+      params: { repo: "me/proj", number: 13 },
     });
   });
 

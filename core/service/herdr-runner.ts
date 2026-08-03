@@ -8,10 +8,16 @@ const HERDR_SERVER_READY = "herdr server running;";
 
 export class HerdrExitError extends ServiceError {
   readonly exitStatus: number;
+  // Herdr's own stderr, captured only when the caller asked for it (captureStderr). Herdr reports
+  // its failures there as a JSON `error.code`, which the launch sequence needs in order to tell a
+  // pane that is merely not ready yet (`agent_pane_busy`) from a real failure. It can embed the
+  // repo's absolute local_path, so it stays server-side: never put it in a message a client sees.
+  readonly stderr: string;
 
-  constructor(exitStatus: number) {
+  constructor(exitStatus: number, stderr = "") {
     super(500, `Herdr exited with status ${exitStatus}`);
     this.exitStatus = exitStatus;
+    this.stderr = stderr;
   }
 }
 
@@ -34,7 +40,11 @@ export function runHerdr(
   command: string,
   args: string[],
   cwd: string,
-  opts: { captureStdout?: boolean; timeoutMs?: number } = {},
+  opts: {
+    captureStdout?: boolean;
+    captureStderr?: boolean;
+    timeoutMs?: number;
+  } = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     // stdio defaults to all "ignore": the client never sees stdout/stderr (see the comment
@@ -44,7 +54,11 @@ export function runHerdr(
     // drains it (and handles its `error` event below, so a stream error can't crash lh-web).
     const child = spawn(command, args, {
       cwd,
-      stdio: ["ignore", opts.captureStdout ? "pipe" : "ignore", "ignore"],
+      stdio: [
+        "ignore",
+        opts.captureStdout ? "pipe" : "ignore",
+        opts.captureStderr ? "pipe" : "ignore",
+      ],
     });
     // Settle-once guard: the success path settles on `close` (all output drained), but the
     // timeout path settles immediately — `close` waits for the stdout pipe to shut, and a
@@ -84,6 +98,16 @@ export function runHerdr(
       // Losing the output stream only means the tab id can't be read; the `close` handler
       // still decides success/failure, so just stop the error from being unhandled.
     });
+    // Same drain-always discipline as stdout: a piped stream nobody reads would fill the OS
+    // buffer and hang the child. Kept server-side (see HerdrExitError.stderr).
+    let stderr = "";
+    child.stderr?.on("data", (chunk: Buffer) => {
+      if (stderr.length >= HERDR_CAPTURE_MAX_BYTES) return;
+      stderr += chunk.toString("utf8");
+    });
+    child.stderr?.on("error", () => {
+      // Losing stderr only costs the error code hint; `close` still decides success/failure.
+    });
     child.on("error", (err) => {
       const code = (err as NodeJS.ErrnoException).code;
       settle(() =>
@@ -112,7 +136,7 @@ export function runHerdr(
               `Herdr process was terminated by signal ${signal}`,
             ),
           );
-        else if (status !== null) reject(new HerdrExitError(status));
+        else if (status !== null) reject(new HerdrExitError(status, stderr));
         else reject(new ServiceError(500, "Herdr exited without a status"));
       });
     });

@@ -132,11 +132,12 @@ export const pulls = {
     );
   },
 
-  get(name: string, number: number) {
+  get(name: string, number: number, opts: { withComments?: boolean } = {}) {
     const r = repoOr404(name);
     return pullJSON(r, issueOr404(r, number, "pull"), {
       withCommits: true,
       withRelatedSessions: true,
+      withComments: opts.withComments !== false,
     });
   },
 

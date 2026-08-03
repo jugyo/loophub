@@ -131,6 +131,25 @@ afterAll(() => {
   rmSync(REPO_PATH, { recursive: true, force: true });
 });
 
+test.each([
+  [
+    "id",
+    (workflow: { id: number; name: string }) => ({ workflowId: workflow.id }),
+  ],
+  [
+    "name",
+    (workflow: { id: number; name: string }) => ({ workflow: workflow.name }),
+  ],
+])("start rejects an archived workflow selected by %s", async (_label, input) => {
+  const repo = S.createRepo(`me/archived-workflow-${_label}`, REPO_PATH);
+  const workflow = svc.workflows.create({ name: `archived-${_label}` });
+  svc.workflows.archive(workflow.name);
+
+  await expect(
+    svc.workflowRuns.start(repo.full_name, { issue: 1, ...input(workflow) }),
+  ).rejects.toMatchObject({ status: 404, message: "Workflow not found" });
+});
+
 test("start prepares a run and hands the parent pointers, not synthesized inputs", async () => {
   const repo = S.createRepo("me/workflow-run", REPO_PATH);
   const issue = S.createIssue(

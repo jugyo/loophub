@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import type { HerdrAgent, HerdrSessions, WorkflowRunState } from "@/api/types";
+import { AgentBotIcon } from "@/components/agent-bot-icon";
+import { latestWorkflowStepAgent } from "@/components/herdr-badge";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { useHoverPopover } from "@/lib/use-hover-popover";
@@ -39,33 +41,6 @@ type WorkflowTrackerState = {
 };
 
 type WorkflowStage = (typeof STAGES)[number];
-
-function latestWorkflowStepAgent(
-  sessions: HerdrSessions | undefined,
-  repo: string | undefined,
-  runId: number,
-  step: "execute" | "verify",
-): HerdrAgent | undefined {
-  if (!repo) return undefined;
-  const agents =
-    sessions?.repos?.find((candidate) => candidate.repo === repo)?.agents ?? [];
-  let latest: HerdrAgent | undefined;
-  let latestSequence = -1;
-  for (const agent of agents) {
-    if (
-      !agent.focusable ||
-      agent.workflow?.kind !== "step" ||
-      agent.workflow.runId !== runId ||
-      agent.workflow.step !== step ||
-      agent.workflow.sequence < latestSequence
-    ) {
-      continue;
-    }
-    latest = agent;
-    latestSequence = agent.workflow.sequence;
-  }
-  return latest;
-}
 
 function workflowParentAgent(
   sessions: HerdrSessions | undefined,
@@ -405,11 +380,7 @@ export function WorkflowStepTracker({
   showWorkflowNode?: boolean;
   /** `sm` for the compact PR-row tracker, `md` for the detail Workflow run section. */
   size?: "sm" | "md";
-  /**
-   * When the linked agent is actively working, gently glow the current stage pill so the
-   * run reads as live at a glance. Defaults to `false`, so callers that omit it keep the
-   * previous static rendering.
-   */
+  /** Whether any agent linked to the PR is working. Suppresses merge-ready Done styling. */
   working?: boolean;
   /**
    * The run is held on its cost limit and the caller renders its own "over budget" marker. Such a
@@ -462,21 +433,23 @@ export function WorkflowStepTracker({
         // A PR-level conflict wins the terminal pill regardless of the run's step: an un-mergeable
         // PR is the most actionable state to surface, so "Done" becomes "Conflict!" (#1659).
         const isDoneConflict = stage.key === "done" && state.merge_conflict;
-        const isDoneVerified = stage.key === "done" && verified;
+        const isDoneVerified = stage.key === "done" && verified && !working;
         const isStaleVerify = stage.key === "verify" && isCurrent && stale;
         const stageStatus = isDoneConflict
           ? "Conflict"
           : isStaleVerify
             ? "Reverify required"
-            : isDoneVerified
-              ? "Reached"
-              : isCurrent
-                ? needsHuman
-                  ? "Needs human"
-                  : "Current"
-                : isPast
-                  ? "Completed"
-                  : "Upcoming";
+            : stage.key === "done" && verified && working
+              ? "Agent working"
+              : isDoneVerified
+                ? "Reached"
+                : isCurrent
+                  ? needsHuman
+                    ? "Needs human"
+                    : "Current"
+                  : isPast
+                    ? "Completed"
+                    : "Upcoming";
         const agent =
           stage.key === "done"
             ? undefined
@@ -486,6 +459,7 @@ export function WorkflowStepTracker({
                 state.id,
                 stage.key,
               );
+        const stageWorking = agent?.status === "working";
         return (
           <Fragment key={stage.key}>
             {index > 0 ? (
@@ -506,7 +480,7 @@ export function WorkflowStepTracker({
               stageStatus={stageStatus}
               ariaCurrent={isCurrent ? "step" : undefined}
               repo={repoFullName}
-              agent={agent}
+              agent={agent?.focusable ? agent : undefined}
               herdrUnavailable={herdrUnavailable && stage.key !== "done"}
               onInteract={onStageInteract}
               className={cn(
@@ -523,13 +497,17 @@ export function WorkflowStepTracker({
                         : isPast
                           ? "border-border bg-muted text-foreground"
                           : "border-border text-muted-foreground",
-                // Done is a terminal, not an active step — never glow it, even while working.
-                isCurrent &&
-                  working &&
-                  stage.key !== "done" &&
+                stageWorking &&
                   "animate-[workflow-stage-glow_2.4s_ease-in-out_infinite]",
               )}
             >
+              {stageWorking ? (
+                <AgentBotIcon
+                  working
+                  label={`${stage.label} agent working`}
+                  className="-my-1 size-4"
+                />
+              ) : null}
               {isDoneConflict ? (
                 <TriangleAlert className="size-3" aria-hidden="true" />
               ) : isDoneVerified ? (

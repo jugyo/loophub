@@ -17,7 +17,7 @@ import {
   labelJSON,
   relatedSessionsJSON,
 } from "../serialize.ts";
-import { issueDetailJSON, issueListItemJSON } from "../serialize-status.ts";
+import { issueDetailJSON, issueListItemsJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import {
   actorFor,
@@ -198,10 +198,8 @@ export const issues = {
     const page = opts.page && opts.page >= 1 ? opts.page : 1;
     let rows = S.listIssues(r.id, kind, state, opts.sort ?? "created");
     if (labelsFilter.length) {
-      rows = rows.filter((row) => {
-        const names = S.issueLabels(row.id).map((l) => l.name);
-        return labelsFilter.every((l) => names.includes(l));
-      });
+      const matchingIssueIds = S.issueIdsWithLabels(r.id, labelsFilter);
+      rows = rows.filter((row) => matchingIssueIds.has(row.id));
     }
     if (opts.workspace) {
       rows = rows.filter((row) => {
@@ -225,7 +223,13 @@ export const issues = {
             (page - 1) * (perPage - 1) + perPage,
           )
         : paginate(rows, perPage, page);
-    return Promise.all(pageRows.map((row) => issueListItemJSON(row, r)));
+    const issueIds = pageRows.map((row) => row.id);
+    return issueListItemsJSON(pageRows, r, {
+      labelsByIssue: S.labelsByIssue(issueIds),
+      commentCountsByIssue: S.commentCountsByIssue(issueIds),
+      linkedPullsByIssue: S.linkedPullsByIssue(issueIds),
+      herdrPanesByIssue: S.issueHerdrPanesByIssue(r.id, issueIds),
+    });
   },
 
   // Issue detail. Unlike the list/summary `issueJSON` (where `comments` is just a count),
@@ -233,13 +237,20 @@ export const issues = {
   // an implementation agent reading an issue via `lh issue view --json` gets the design context
   // people leave in comments, not only the body (#231). The summary path stays a count to keep
   // the issue list cheap.
-  async get(name: string, number: number) {
+  async get(
+    name: string,
+    number: number,
+    opts: { withComments?: boolean; withAcceptanceCriteria?: boolean } = {},
+  ) {
     const r = repoOr404(name);
     const row = issueOr404(r, number);
     const out = await issueDetailJSON(row, r);
-    out.comment_list = S.listComments(row.id).map((comment) =>
-      commentJSON(comment, S.listCommentReactions(comment.id)),
-    );
+    if (opts.withComments !== false) {
+      const reactions = S.commentReactionsByIssue(row.id);
+      out.comment_list = S.listComments(row.id).map((comment) =>
+        commentJSON(comment, reactions.get(comment.id) ?? []),
+      );
+    }
     // Detail-only (#298): the issue's related sessions, newest first.
     out.related_sessions = relatedSessionsJSON(row);
     // Detail-only (#614): the GitHub issue this one was imported from, or null. Mirrors how PR detail
@@ -248,9 +259,11 @@ export const issues = {
     out.herdr_pane = herdrPaneJSON(S.getIssueHerdrPane(row.id));
     // Structured acceptance criteria (#1894), enabled only — the rubric a later Verify slice grades.
     // Detail-only, like comment_list. Omitted from the cheap list/summary serializer.
-    out.acceptance_criteria = S.listAcceptanceCriteria(row.id)
-      .filter((c) => c.enabled === 1)
-      .map(acceptanceCriterionJSON);
+    if (opts.withAcceptanceCriteria !== false) {
+      out.acceptance_criteria = S.listAcceptanceCriteria(row.id)
+        .filter((c) => c.enabled === 1)
+        .map(acceptanceCriterionJSON);
+    }
     return out;
   },
 
@@ -471,9 +484,9 @@ export const issues = {
     });
   },
 
-  // Structured acceptance criteria authoring (#1894), CLI-only (the Web surface is read-only). The
-  // list returns disabled criteria too — `acListJSON` carries `enabled` so an operator can see and
-  // re-enable them. There is deliberately no delete: an unwanted criterion is disabled.
+  // Structured acceptance criteria authoring (#1894). The list returns disabled criteria too —
+  // `acListJSON` carries `enabled` so CLI and Web operators can see and re-enable them. There is
+  // deliberately no delete: an unwanted criterion is disabled.
   acList(name: string, number: number) {
     const r = repoOr404(name);
     const row = issueOr404(r, number);

@@ -1,5 +1,6 @@
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
+import { git } from "../git.ts";
 import {
   repoJSON,
   type WorkspaceResolutionWire,
@@ -19,6 +20,25 @@ function workspaceOr404(repoId: number, branch: string): S.Workspace {
   const workspace = S.getWorkspace(repoId, branch);
   if (!workspace) throw new ServiceError(404, "Not Found");
   return workspace;
+}
+
+async function hasUnmergedCommits(
+  repoPath: string,
+  defaultBranch: string,
+  workspaceBranch: string,
+): Promise<boolean> {
+  const result = await git(repoPath, [
+    "rev-list",
+    "--count",
+    `refs/heads/${defaultBranch}..refs/heads/${workspaceBranch}`,
+  ]);
+  if (result.code !== 0) {
+    throw new ServiceError(
+      500,
+      `failed to compare workspace branch "${workspaceBranch}" with default branch "${defaultBranch}": ${result.stderr.trim() || result.stdout.trim() || "git rev-list failed"}`,
+    );
+  }
+  return Number(result.stdout.trim()) > 0;
 }
 
 function setArchived(
@@ -42,6 +62,28 @@ function setArchived(
   });
   // The branch existence check shells out to git, so it stays outside the transaction.
   return workspaceJSON(workspace, localBranchExists(r.local_path, branch));
+}
+
+function listWorkspaceRows(
+  repo: string,
+  archived: boolean,
+  excludeDefaultBranch: boolean,
+) {
+  const r = repoOr404(repo);
+  const workspaces = archived
+    ? S.listArchivedWorkspaces(r.id)
+    : S.listWorkspaces(r.id);
+  return workspaces
+    .filter(
+      (workspace) =>
+        !excludeDefaultBranch || workspace.branch !== r.default_branch,
+    )
+    .map((workspace) =>
+      workspaceJSON(
+        workspace,
+        localBranchExists(r.local_path, workspace.branch),
+      ),
+    );
 }
 
 export const workspaces = {
@@ -102,23 +144,36 @@ export const workspaces = {
   },
 
   list(repo: string) {
+    return listWorkspaceRows(repo, false, false);
+  },
+
+  async listUnmerged(repo: string) {
     const r = repoOr404(repo);
-    return S.listWorkspaces(r.id).map((workspace) =>
-      workspaceJSON(
-        workspace,
+    const candidates = S.listWorkspaces(r.id).filter(
+      (workspace) =>
+        workspace.branch !== r.default_branch &&
         localBranchExists(r.local_path, workspace.branch),
+    );
+    const unmerged = await Promise.all(
+      candidates.map((workspace) =>
+        hasUnmergedCommits(r.local_path, r.default_branch, workspace.branch),
       ),
     );
+    return candidates
+      .filter((_workspace, index) => unmerged[index])
+      .map((workspace) => workspaceJSON(workspace, true));
   },
 
   listArchived(repo: string) {
-    const r = repoOr404(repo);
-    return S.listArchivedWorkspaces(r.id).map((workspace) =>
-      workspaceJSON(
-        workspace,
-        localBranchExists(r.local_path, workspace.branch),
-      ),
-    );
+    return listWorkspaceRows(repo, true, false);
+  },
+
+  listForSettings(repo: string) {
+    return listWorkspaceRows(repo, false, true);
+  },
+
+  listArchivedForSettings(repo: string) {
+    return listWorkspaceRows(repo, true, true);
   },
 
   archive(repo: string, branch: string, sessionId?: string | null) {

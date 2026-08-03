@@ -260,6 +260,8 @@ export interface AgentCostSummaryWire {
   // Current aggregate token throughput for in-progress development sessions. Null means there is no
   // recent, calculable sample; zero is a measured rate.
   tokens_per_second?: number | null;
+  // Current cache-read throughput over the same sessions and observation window as TPS.
+  cache_read_tokens_per_second?: number | null;
 }
 
 export interface RelatedSessionWire extends AgentSessionWire {
@@ -379,9 +381,8 @@ export interface AcceptanceCriterionWire {
   text: string;
 }
 
-// The authoring shape returned by the CLI `lh issue ac` commands, which must show disabled criteria
-// (so an operator can re-enable them) — hence the extra `enabled`. CLI-only; the Web surface is
-// read-only and consumes AcceptanceCriterionWire.
+// The authoring shape returned by the `lh issue ac` commands and the Web management RPC, which must
+// show disabled criteria (so an operator can re-enable them) — hence the extra `enabled`.
 export interface AcceptanceCriterionDetailWire extends AcceptanceCriterionWire {
   enabled: boolean;
 }
@@ -1290,7 +1291,11 @@ function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
   };
 }
 
-export function issueJSON(row: S.IssueRow, repo?: S.Repo): IssueWire {
+export function issueJSON(
+  row: S.IssueRow,
+  repo?: S.Repo,
+  selected?: { labels: S.LabelRow[]; comments: number },
+): IssueWire {
   const out: IssueWire = {
     number: row.number,
     state: row.state,
@@ -1298,8 +1303,8 @@ export function issueJSON(row: S.IssueRow, repo?: S.Repo): IssueWire {
     body: row.body,
     target_branch: row.target_branch ?? null,
     user: { login: row.author },
-    labels: S.issueLabels(row.id).map(labelJSON),
-    comments: S.countComments(row.id),
+    labels: (selected?.labels ?? S.issueLabels(row.id)).map(labelJSON),
+    comments: selected?.comments ?? S.countComments(row.id),
     created_at: row.created_at,
     updated_at: row.updated_at,
     has_open_pull_request: false,
@@ -1364,6 +1369,7 @@ export interface WorkflowWire {
   description: string;
   execute_prompt: string;
   verify_prompt: string;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1375,6 +1381,7 @@ export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
     description: row.description,
     execute_prompt: row.execute_prompt,
     verify_prompt: row.verify_prompt,
+    archived_at: row.archived_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -2152,6 +2159,42 @@ export interface PullWire {
   related_sessions?: RelatedSessionWire[];
   related_sessions_usage?: RelatedSessionsUsageWire;
   work_duration?: PullWorkDuration;
+}
+
+/** Data selected together for the repository issue-list screen. */
+export interface IssueListPageWire {
+  issues: IssueWire[];
+  repo: RepoWire;
+  workspaces: WorkspaceWire[];
+  unmerged_workspaces: WorkspaceWire[];
+  labels: LabelWire[];
+}
+
+/** Data selected together for the issue-detail screen. */
+export interface IssueDetailPageWire {
+  issue: IssueWire;
+  comments: CommentWire[];
+  acceptance_criteria: AcceptanceCriterionDetailWire[];
+}
+
+/** A changed file with its unified-diff patch. */
+export interface PullFileWire {
+  filename: string;
+  previousFilename?: string;
+  headFilename?: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch: string;
+}
+
+/** Data selected together for the pull-request detail screen. */
+export interface PullDetailPageWire {
+  pull: PullWire;
+  files: PullFileWire[];
+  reviews: ReviewWire[];
+  line_comments: ReviewCommentWire[];
+  comments: CommentWire[];
 }
 
 export interface PullCommitWire {

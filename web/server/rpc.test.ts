@@ -88,6 +88,80 @@ test("a known method routes to the service and returns a result", async () => {
   expect(got.result.title).toBe("hello");
 });
 
+test("acceptance criteria authoring routes through issue domain procedures", async () => {
+  const added: any = await call("issues/ac/add", {
+    repo: "me/proj",
+    number: 1,
+    text: "  remains stable  ",
+  });
+  expect(added.result).toMatchObject({
+    number: 1,
+    text: "remains stable",
+    enabled: true,
+  });
+
+  const disabled: any = await call("issues/ac/setEnabled", {
+    repo: "me/proj",
+    number: 1,
+    criterion_id: added.result.id,
+    enabled: false,
+  });
+  expect(disabled.result).toMatchObject({
+    id: added.result.id,
+    number: 1,
+    enabled: false,
+  });
+  const issue: any = await call("issues/get", {
+    repo: "me/proj",
+    number: 1,
+  });
+  expect(issue.result.acceptance_criteria).toEqual([]);
+
+  const all: any = await call("issues/ac/list", {
+    repo: "me/proj",
+    number: 1,
+  });
+  expect(all.result).toEqual([disabled.result]);
+
+  const restored: any = await call("issues/ac/setEnabled", {
+    repo: "me/proj",
+    number: 1,
+    criterion_id: added.result.id,
+    enabled: true,
+  });
+  expect(restored.result).toMatchObject({
+    id: added.result.id,
+    number: 1,
+    enabled: true,
+  });
+});
+
+test("page data routes return complete initial screen result sets", async () => {
+  const issueList: any = await call("pageData/issueList", {
+    repo: "me/proj",
+    state: "open",
+    page: 1,
+    perPage: 21,
+    lookahead: true,
+    includeLabels: true,
+    includeUnmergedWorkspaces: true,
+  });
+  expect(issueList.result).toMatchObject({
+    repo: { full_name: "me/proj" },
+    workspaces: expect.any(Array),
+    unmerged_workspaces: expect.any(Array),
+    labels: expect.any(Array),
+  });
+  expect(issueList.result.issues[0].number).toBe(1);
+
+  const issueDetail: any = await call("pageData/issueDetail", {
+    repo: "me/proj",
+    number: 1,
+  });
+  expect(issueDetail.result.issue.title).toBe("hello");
+  expect(issueDetail.result.acceptance_criteria).toHaveLength(1);
+});
+
 test("worker status is exposed and an unconfirmed worker blocks only workflow launch", async () => {
   db.run("DELETE FROM worker_runtime");
   const before = {
@@ -185,6 +259,32 @@ test("workspaces/list routes to the workspace service", async () => {
       branch_exists: true,
     }),
   ]);
+});
+
+test("workspace settings lists route to settings-specific service methods", async () => {
+  const listForSettings = vi
+    .spyOn(svc.workspaces, "listForSettings")
+    .mockReturnValue([]);
+  const listArchivedForSettings = vi
+    .spyOn(svc.workspaces, "listArchivedForSettings")
+    .mockReturnValue([]);
+
+  try {
+    const active: any = await call("workspaces/listForSettings", {
+      repo: "me/proj",
+    });
+    const archived: any = await call("workspaces/listArchivedForSettings", {
+      repo: "me/proj",
+    });
+
+    expect(active.result).toEqual([]);
+    expect(archived.result).toEqual([]);
+    expect(listForSettings).toHaveBeenCalledWith("me/proj");
+    expect(listArchivedForSettings).toHaveBeenCalledWith("me/proj");
+  } finally {
+    listForSettings.mockRestore();
+    listArchivedForSettings.mockRestore();
+  }
 });
 
 test("workspaces/create routes to the workspace service", async () => {
@@ -688,6 +788,14 @@ test("workflow CRUD is exposed through JSON-RPC", async () => {
   expect(updated.result.name).toBe("standard-v2");
   expect(updated.result.verify_prompt).toBe("Verify independently");
   expect(updated.result.execute_prompt).toBe("Implement");
+
+  const archived: any = await call("workflows/archive", {
+    name: "standard-v2",
+  });
+  expect(archived.result.archived_at).toBeTruthy();
+
+  const active: any = await call("workflows/list", {});
+  expect(active.result.map((w: any) => w.name)).not.toContain("standard-v2");
 
   const deleted: any = await call("workflows/delete", {
     name: "standard-v2",

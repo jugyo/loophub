@@ -7,6 +7,7 @@
 
 import { getSessionId } from "@/lib/session";
 import type {
+  AcceptanceCriterionDetail,
   AgentCostSummary,
   AgentSession,
   CodingAgent,
@@ -23,9 +24,12 @@ import type {
   HerdrSessions,
   Issue,
   IssueComment,
+  IssueDetailPage,
+  IssueListPage,
   Label,
   LoopEvent,
   Notification,
+  PullDetailPage,
   PullDiff,
   PullFile,
   PullLineComment,
@@ -127,7 +131,7 @@ export async function rpc<T>(
 
 export function getWebConfig() {
   return rpc<InitializeResult>("initialize", {
-    protocolVersion: "2026-07-11",
+    protocolVersion: "2026-08-02",
     clientInfo: { name: "loophub-web" },
   }).then((result) => result.webConfig);
 }
@@ -332,6 +336,16 @@ export function deleteWorkflow(
   });
 }
 
+export function archiveWorkflow(
+  name: string,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Workflow>("workflows/archive", {
+    name,
+    session_id: sessionId,
+  });
+}
+
 // Workflow run display state for issue / PR detail (#1008). Returns null when the issue / PR has no run.
 export function getWorkflowRunStateForIssue(repo: string, number: number) {
   return rpc<WorkflowRunState | null>("workflowRuns/stateForIssue", {
@@ -517,6 +531,33 @@ export function listIssues(owner: string, repo: string, query = "") {
   );
 }
 
+export function getIssueListPage(
+  owner: string,
+  repo: string,
+  query = "",
+  options: {
+    includeLabels?: boolean;
+    includeUnmergedWorkspaces?: boolean;
+  } = {},
+) {
+  const sp = new URLSearchParams(query);
+  const labels = sp.get("labels");
+  return rpc<IssueListPage>(
+    "pageData/issueList",
+    clean({
+      repo: full(owner, repo),
+      state: sp.get("state") ?? undefined,
+      labels: labels ? labels.split(",").filter(Boolean) : undefined,
+      workspace: sp.get("workspace") ?? undefined,
+      lookahead: sp.get("lookahead") === "true" || undefined,
+      perPage: sp.get("per_page") ? Number(sp.get("per_page")) : undefined,
+      page: sp.get("page") ? Number(sp.get("page")) : undefined,
+      includeLabels: options.includeLabels || undefined,
+      includeUnmergedWorkspaces: options.includeUnmergedWorkspaces || undefined,
+    }),
+  );
+}
+
 export function searchIssuesAndPulls(
   owner: string,
   repo: string,
@@ -532,8 +573,26 @@ export function listWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/list", { repo: full(owner, repo) });
 }
 
+export function listUnmergedWorkspaces(owner: string, repo: string) {
+  return rpc<Workspace[]>("workspaces/listUnmerged", {
+    repo: full(owner, repo),
+  });
+}
+
 export function listArchivedWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/listArchived", {
+    repo: full(owner, repo),
+  });
+}
+
+export function listSettingsWorkspaces(owner: string, repo: string) {
+  return rpc<Workspace[]>("workspaces/listForSettings", {
+    repo: full(owner, repo),
+  });
+}
+
+export function listArchivedSettingsWorkspaces(owner: string, repo: string) {
+  return rpc<Workspace[]>("workspaces/listArchivedForSettings", {
     repo: full(owner, repo),
   });
 }
@@ -574,6 +633,56 @@ export function listLabels(owner: string, repo: string) {
 
 export function getIssue(owner: string, repo: string, number: number) {
   return rpc<Issue>("issues/get", { repo: full(owner, repo), number });
+}
+
+export function getIssueDetailPage(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return rpc<IssueDetailPage>("pageData/issueDetail", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+export function listAcceptanceCriteria(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return rpc<AcceptanceCriterionDetail[]>("issues/ac/list", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+export function addAcceptanceCriterion(
+  owner: string,
+  repo: string,
+  number: number,
+  text: string,
+) {
+  return rpc<AcceptanceCriterionDetail>("issues/ac/add", {
+    repo: full(owner, repo),
+    number,
+    text,
+  });
+}
+
+export function setAcceptanceCriterionEnabled(
+  owner: string,
+  repo: string,
+  number: number,
+  criterionId: number,
+  enabled: boolean,
+) {
+  return rpc<AcceptanceCriterionDetail>("issues/ac/setEnabled", {
+    repo: full(owner, repo),
+    number,
+    criterion_id: criterionId,
+    enabled,
+  });
 }
 
 export function createIssue(
@@ -681,6 +790,13 @@ export function listPulls(owner: string, repo: string, query = "") {
 
 export function getPull(owner: string, repo: string, number: number) {
   return rpc<PullRequest>("pulls/get", { repo: full(owner, repo), number });
+}
+
+export function getPullDetailPage(owner: string, repo: string, number: number) {
+  return rpc<PullDetailPage>("pageData/pullDetail", {
+    repo: full(owner, repo),
+    number,
+  });
 }
 
 export function patchPull(

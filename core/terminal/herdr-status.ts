@@ -71,34 +71,101 @@ function runningSessionNames(sessions: unknown[]): string[] {
 }
 
 /**
- * Agents from `herdr --session <name> agent list` output. The command prints JSON
- * without any flag (`--json` is not accepted): `{ result: { agents: [...] } }`.
+ * The agent-bearing records LoopHub reads out of a herdr listing, normalized across the two shapes
+ * herdr reports them in.
+ *
+ * `herdr pane list` (`result.panes`) is the source since herdr 0.7.5: it is the only listing that
+ * carries a pane's free-form `label`, which is the string LoopHub identifies an agent by (workflow
+ * agent names, the sidebar). `agent list` reports a strict slug `name` instead, and only for agents
+ * registered through `agent start` — panes running an agent LoopHub did not register (or that a
+ * pre-0.7.5 launch labelled) have no `name` there at all.
+ *
+ * A pane only counts as an agent when herdr says one is running in it (`agent`), so a plain shell
+ * sitting in a PR worktree is not mistaken for a working agent. `result.agents` stays accepted so a
+ * capture taken from an older herdr still parses.
  */
-export function parseHerdrAgentList(stdout: string): HerdrAgent[] {
-  const parsed = tryParse(stdout);
-  const agents = (parsed as { result?: { agents?: unknown } })?.result?.agents;
-  if (!Array.isArray(agents)) return [];
-  const out: HerdrAgent[] = [];
-  for (const a of agents) {
-    if (typeof a !== "object" || a === null) continue;
-    const rec = a as {
+interface HerdrAgentRecord {
+  // Null when herdr reports no label/name for the pane. Kept rather than dropped: the PR/issue
+  // badges only need "an agent is running in this worktree", which an unlabelled pane still is.
+  // Readers that display or parse the name filter these out themselves.
+  name: string | null;
+  status: string;
+  paneId: string | null;
+  workspaceId: string | null;
+  tabId: string | null;
+  cwd: string | null;
+}
+
+export function herdrAgentRecords(stdout: string): HerdrAgentRecord[] {
+  const parsed = tryParse(stdout) as {
+    result?: { panes?: unknown; agents?: unknown };
+  };
+  const panes = parsed?.result?.panes;
+  const rows = Array.isArray(panes) ? panes : parsed?.result?.agents;
+  if (!Array.isArray(rows)) return [];
+  const out: HerdrAgentRecord[] = [];
+  for (const row of rows) {
+    if (typeof row !== "object" || row === null) continue;
+    const rec = row as {
+      agent?: unknown;
+      label?: unknown;
       name?: unknown;
       agent_status?: unknown;
       pane_id?: unknown;
+      workspace_id?: unknown;
+      tab_id?: unknown;
+      foreground_cwd?: unknown;
+      cwd?: unknown;
     };
-    if (typeof rec.name !== "string" || rec.name === "") continue;
+    if (Array.isArray(panes) && typeof rec.agent !== "string") continue;
+    const name =
+      typeof rec.label === "string" && rec.label !== ""
+        ? rec.label
+        : typeof rec.name === "string" && rec.name !== ""
+          ? rec.name
+          : null;
     out.push({
-      // The positional fallback stays unique within one parse; NO_PANE_ID_PREFIX's control
-      // byte keeps it out of the pane_id namespace, so a real pane_id can never collide with it.
-      id:
+      name,
+      status: typeof rec.agent_status === "string" ? rec.agent_status : "",
+      paneId:
         typeof rec.pane_id === "string" && rec.pane_id !== ""
           ? rec.pane_id
-          : `${NO_PANE_ID_PREFIX}${out.length}`,
-      name: rec.name,
-      status: typeof rec.agent_status === "string" ? rec.agent_status : "",
+          : null,
+      workspaceId:
+        typeof rec.workspace_id === "string" ? rec.workspace_id : null,
+      tabId: typeof rec.tab_id === "string" ? rec.tab_id : null,
+      cwd:
+        typeof rec.foreground_cwd === "string" && rec.foreground_cwd !== ""
+          ? rec.foreground_cwd
+          : typeof rec.cwd === "string" && rec.cwd !== ""
+            ? rec.cwd
+            : null,
     });
   }
   return out;
+}
+
+/**
+ * Agents from `herdr --session <name> pane list` output. The command prints JSON
+ * without any flag (`--json` is not accepted): `{ result: { panes: [...] } }`.
+ */
+export function parseHerdrAgentList(stdout: string): HerdrAgent[] {
+  return namedHerdrAgentRecords(stdout).map((rec, index) => ({
+    // The positional fallback stays unique within one parse; NO_PANE_ID_PREFIX's control
+    // byte keeps it out of the pane_id namespace, so a real pane_id can never collide with it.
+    id: rec.paneId ?? `${NO_PANE_ID_PREFIX}${index}`,
+    name: rec.name,
+    status: rec.status,
+  }));
+}
+
+// The records that carry a display name, for the readers that show or parse one.
+function namedHerdrAgentRecords(
+  stdout: string,
+): (HerdrAgentRecord & { name: string })[] {
+  return herdrAgentRecords(stdout).filter(
+    (rec): rec is HerdrAgentRecord & { name: string } => rec.name !== null,
+  );
 }
 
 /**
@@ -132,33 +199,12 @@ export function herdrPullWorkspacesFromAgentList(
   worktreeRoot: string,
   fullName: string,
 ): HerdrPullWorkspace[] {
-  const parsed = tryParse(stdout);
-  const agents = (parsed as { result?: { agents?: unknown } })?.result?.agents;
-  if (!Array.isArray(agents)) return [];
   const byPull = new Map<number, HerdrPullWorkspace>();
-  for (const a of agents) {
-    if (typeof a !== "object" || a === null) continue;
-    const rec = a as {
-      pane_id?: unknown;
-      foreground_cwd?: unknown;
-      cwd?: unknown;
-      agent_status?: unknown;
-    };
-    if (typeof rec.pane_id !== "string" || rec.pane_id === "") continue;
-    const cwd =
-      typeof rec.foreground_cwd === "string" && rec.foreground_cwd !== ""
-        ? rec.foreground_cwd
-        : typeof rec.cwd === "string" && rec.cwd !== ""
-          ? rec.cwd
-          : null;
-    if (cwd === null) continue;
-    const pull = pullNumberFromWorktreePath(worktreeRoot, fullName, cwd);
+  for (const rec of herdrAgentRecords(stdout)) {
+    if (rec.paneId === null || rec.cwd === null) continue;
+    const pull = pullNumberFromWorktreePath(worktreeRoot, fullName, rec.cwd);
     if (pull === null || byPull.has(pull)) continue;
-    byPull.set(pull, {
-      pull,
-      pane_id: rec.pane_id,
-      status: typeof rec.agent_status === "string" ? rec.agent_status : "",
-    });
+    byPull.set(pull, { pull, pane_id: rec.paneId, status: rec.status });
   }
   return [...byPull.values()];
 }
@@ -328,45 +374,17 @@ export function parseHerdrAgentPlacements(
   worktreeRoot: string,
   fullName: string,
 ): HerdrAgentPlacement[] {
-  const parsed = tryParse(stdout);
-  const agents = (parsed as { result?: { agents?: unknown } })?.result?.agents;
-  if (!Array.isArray(agents)) return [];
-  const out: HerdrAgentPlacement[] = [];
-  for (const a of agents) {
-    if (typeof a !== "object" || a === null) continue;
-    const rec = a as {
-      name?: unknown;
-      agent_status?: unknown;
-      pane_id?: unknown;
-      workspace_id?: unknown;
-      tab_id?: unknown;
-      foreground_cwd?: unknown;
-      cwd?: unknown;
-    };
-    if (typeof rec.name !== "string" || rec.name === "") continue;
-    const cwd =
-      typeof rec.foreground_cwd === "string" && rec.foreground_cwd !== ""
-        ? rec.foreground_cwd
-        : typeof rec.cwd === "string" && rec.cwd !== ""
-          ? rec.cwd
-          : null;
-    out.push({
-      id:
-        typeof rec.pane_id === "string" && rec.pane_id !== ""
-          ? rec.pane_id
-          : `${NO_PANE_ID_PREFIX}${out.length}`,
-      name: rec.name,
-      status: typeof rec.agent_status === "string" ? rec.agent_status : "",
-      workspaceId:
-        typeof rec.workspace_id === "string" ? rec.workspace_id : null,
-      tabId: typeof rec.tab_id === "string" ? rec.tab_id : null,
-      pull:
-        cwd !== null
-          ? pullNumberFromWorktreePath(worktreeRoot, fullName, cwd)
-          : null,
-    });
-  }
-  return out;
+  return namedHerdrAgentRecords(stdout).map((rec, index) => ({
+    id: rec.paneId ?? `${NO_PANE_ID_PREFIX}${index}`,
+    name: rec.name,
+    status: rec.status,
+    workspaceId: rec.workspaceId,
+    tabId: rec.tabId,
+    pull:
+      rec.cwd !== null
+        ? pullNumberFromWorktreePath(worktreeRoot, fullName, rec.cwd)
+        : null,
+  }));
 }
 
 /**

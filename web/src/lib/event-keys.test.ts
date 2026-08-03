@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LoopEvent } from "@/api/types";
 import { eventSubjects } from "../../../core/event-subjects.ts";
-import { queryKeysForEvent } from "./event-keys";
+import { queryKeys, queryKeysForEvent } from "./event-keys";
 
 // Events reach the web already normalized, so the fixture derives its subjects the same way
 // formatEvent does rather than hand-writing one that could disagree with the server.
@@ -52,6 +52,7 @@ describe("queryKeysForEvent", () => {
     );
     expect(keys).toContainEqual(["pulls", "me/proj"]);
     expect(keys).toContainEqual(["pull", "me/proj", 13]);
+    expect(keys).toContainEqual(["workspaces", "me/proj"]);
   });
 
   it("maps a global terminal.sessions_updated event to the terminal sessions query (#1665)", () => {
@@ -75,24 +76,187 @@ describe("queryKeysForEvent", () => {
       ev({
         type: "pull_request.updated",
         repo: "me/proj",
-        payload: { number: 13 },
+        payload: { number: 13, sha: "abc123" },
       }),
     );
     expect(keys).toContainEqual(["issues", "me/proj"]);
     expect(keys).toContainEqual(["issue", "me/proj"]);
+    expect(keys).toContainEqual(["workspaces", "me/proj"]);
   });
 
   it("falls back to broad issue keys for a repo-less pull_request event (#324)", () => {
     const keys = queryKeysForEvent(
-      ev({ type: "pull_request.updated", repo: undefined, payload: {} }),
+      ev({
+        type: "pull_request.updated",
+        repo: undefined,
+        payload: { sha: "abc123" },
+      }),
     );
     expect(keys).toContainEqual(["issues"]);
     expect(keys).toContainEqual(["issue"]);
+    expect(keys).toContainEqual(["workspaces"]);
   });
 
   it("maps agent_session events to agent-sessions", () => {
     const keys = queryKeysForEvent(ev({ type: "agent_session.registered" }));
     expect(keys).toContainEqual(["agent-sessions"]);
+  });
+
+  it("leaves the repo agent config alone on ordinary repo-scoped events", () => {
+    const keys = queryKeysForEvent(
+      ev({ type: "issue.updated", repo: "me/proj", payload: { number: 12 } }),
+    );
+    expect(keys).toContainEqual(["repo", "me/proj"]);
+    expect(keys).not.toContainEqual(["repo-agent-config", "me/proj"]);
+  });
+
+  it("keeps low-frequency query keys outside their broad detail prefixes", () => {
+    expect(queryKeys.repoMergeMode("me/proj")[0]).not.toBe("repo");
+    expect(queryKeys.issueComments("me/proj", 12)[0]).not.toBe("issue");
+    expect(queryKeys.pullDebug("me/proj", 13)[0]).not.toBe("pull");
+    expect(queryKeys.pullFiles("me/proj", 13)[0]).not.toBe("pull");
+    expect(queryKeys.pullReviews("me/proj", 13)[0]).not.toBe("pull");
+    expect(queryKeys.pullReviewComments("me/proj", 13)[0]).not.toBe("pull");
+    expect(queryKeys.githubPrStatus("me/proj", 13)[0]).not.toBe("pull");
+  });
+
+  it("refreshes merge mode only for its config event", () => {
+    const ordinary = queryKeysForEvent(
+      ev({ type: "issue.updated", repo: "me/proj", payload: { number: 12 } }),
+    );
+    expect(ordinary).not.toContainEqual(["repo-merge-mode", "me/proj"]);
+
+    const changed = queryKeysForEvent(
+      ev({ type: "repo.merge_mode_changed", repo: "me/proj" }),
+    );
+    expect(changed).toContainEqual(["repo-merge-mode", "me/proj"]);
+  });
+
+  it("refreshes pull files only when the git graph changes", () => {
+    const metadataUpdated = queryKeysForEvent(
+      ev({
+        type: "pull_request.updated",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(metadataUpdated).not.toContainEqual(["pull-files", "me/proj", 13]);
+
+    const headUpdated = queryKeysForEvent(
+      ev({
+        type: "pull_request.updated",
+        repo: "me/proj",
+        payload: { number: 13, sha: "abc123" },
+      }),
+    );
+    expect(headUpdated).toContainEqual(["pull-files", "me/proj", 13]);
+
+    const merged = queryKeysForEvent(
+      ev({
+        type: "pull_request.merged",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(merged).toContainEqual(["pull-files", "me/proj", 13]);
+  });
+
+  it("routes comment and review events to their independent queries", () => {
+    const issueCommented = queryKeysForEvent(
+      ev({
+        type: "issue.commented",
+        repo: "me/proj",
+        payload: { number: 12 },
+      }),
+    );
+    expect(issueCommented).toContainEqual(["issue-comments", "me/proj", 12]);
+
+    const pullCommented = queryKeysForEvent(
+      ev({
+        type: "pull_request.commented",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(pullCommented).toContainEqual(["issue-comments", "me/proj", 13]);
+    expect(pullCommented).not.toContainEqual(["pull-reviews", "me/proj", 13]);
+
+    const reviewed = queryKeysForEvent(
+      ev({
+        type: "pull_request.review_submitted",
+        repo: "me/proj",
+        payload: { number: 13, comments: 1 },
+      }),
+    );
+    expect(reviewed).toContainEqual(["pull-reviews", "me/proj", 13]);
+    expect(reviewed).toContainEqual(["pull-review-comments", "me/proj", 13]);
+
+    const reviewedWithoutComments = queryKeysForEvent(
+      ev({
+        type: "pull_request.review_submitted",
+        repo: "me/proj",
+        payload: { number: 13, comments: 0 },
+      }),
+    );
+    expect(reviewedWithoutComments).toContainEqual([
+      "pull-reviews",
+      "me/proj",
+      13,
+    ]);
+    expect(reviewedWithoutComments).not.toContainEqual([
+      "pull-review-comments",
+      "me/proj",
+      13,
+    ]);
+  });
+
+  it("refreshes GitHub status only for GitHub-side status events", () => {
+    const local = queryKeysForEvent(
+      ev({
+        type: "pull_request.review_submitted",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(local).not.toContainEqual(["github-pr-status", "me/proj", 13]);
+
+    const github = queryKeysForEvent(
+      ev({
+        type: "pull_request.github_feedback",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(github).toContainEqual(["github-pr-status", "me/proj", 13]);
+  });
+
+  it("refreshes pull debug for dump-changing events without using the pull prefix", () => {
+    const commented = queryKeysForEvent(
+      ev({
+        type: "pull_request.commented",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(commented).toContainEqual(["pull-debug", "me/proj", 13]);
+
+    const linkedIssueUpdated = queryKeysForEvent(
+      ev({ type: "issue.updated", repo: "me/proj", payload: { number: 12 } }),
+    );
+    expect(linkedIssueUpdated).toContainEqual(["pull-debug", "me/proj"]);
+  });
+
+  it("maps repo.agent_config_changed to the repo agent config", () => {
+    const keys = queryKeysForEvent(
+      ev({ type: "repo.agent_config_changed", repo: "me/proj" }),
+    );
+    expect(keys).toContainEqual(["repo-agent-config", "me/proj"]);
+    expect(keys).not.toContainEqual(["pull-debug", "me/proj"]);
+  });
+
+  it("leaves the cost summary alone on agent_session events", () => {
+    const keys = queryKeysForEvent(ev({ type: "agent_session.updated" }));
+    expect(keys).not.toContainEqual(["agent-cost-summary"]);
   });
 
   it("falls back to broad keys when repo is absent", () => {
@@ -146,6 +310,17 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["workflows"]);
   });
 
+  it("maps workflow archive events to the global workflows list", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "workflow.archived",
+        repo: undefined,
+        payload: { id: 3, name: "standard" },
+      }),
+    );
+    expect(keys).toContainEqual(["workflows"]);
+  });
+
   it("does not treat repo workflow execution events as workflow definition changes", () => {
     const keys = queryKeysForEvent(
       ev({
@@ -190,7 +365,7 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["pull", "me/proj", 7]);
   });
 
-  it("maps repo.* events to the app-shell repos list (#485)", () => {
+  it("maps repo.* events to repo metadata consumers", () => {
     const keys = queryKeysForEvent(
       ev({
         type: "repo.archived",
@@ -199,6 +374,8 @@ describe("queryKeysForEvent", () => {
       }),
     );
     expect(keys).toContainEqual(["repos"]);
+    expect(keys).toContainEqual(["repo", "me/proj"]);
+    expect(keys).toContainEqual(["issues", "me/proj"]);
   });
 
   it("invalidates the old name's keys for repo.renamed via payload.from (#485)", () => {

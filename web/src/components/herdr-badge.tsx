@@ -2,10 +2,37 @@
 // surfaces reuse this so they agree on which pane/status belongs to a PR without shelling out per row.
 
 import type {
+  HerdrAgent,
   HerdrPullWorkspace,
   HerdrRepoSessions,
   HerdrSessions,
 } from "@/api/types";
+
+export function latestWorkflowStepAgent(
+  data: HerdrSessions | undefined,
+  repo: string | undefined,
+  runId: number,
+  step: "execute" | "verify",
+): HerdrAgent | undefined {
+  if (!repo) return undefined;
+  const agents =
+    data?.repos?.find((candidate) => candidate.repo === repo)?.agents ?? [];
+  let latest: HerdrAgent | undefined;
+  let latestSequence = -1;
+  for (const agent of agents) {
+    if (
+      agent.workflow?.kind !== "step" ||
+      agent.workflow.runId !== runId ||
+      agent.workflow.step !== step ||
+      agent.workflow.sequence < latestSequence
+    ) {
+      continue;
+    }
+    latest = agent;
+    latestSequence = agent.workflow.sequence;
+  }
+  return latest;
+}
 
 /**
  * The herdr session group and agent pane running `owner/repo`'s PR `#pull`, or null when

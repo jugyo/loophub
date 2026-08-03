@@ -23,13 +23,18 @@ export interface WorkflowRow {
   description: string;
   execute_prompt: string;
   verify_prompt: string;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export function listWorkflows(): WorkflowRow[] {
   return db
-    .query(`SELECT * FROM workflows ORDER BY name COLLATE NOCASE, id`)
+    .query(
+      `SELECT * FROM workflows
+       WHERE archived_at IS NULL
+       ORDER BY name COLLATE NOCASE, id`,
+    )
     .all() as WorkflowRow[];
 }
 
@@ -93,6 +98,16 @@ export function updateWorkflow(
 
 export function deleteWorkflow(id: number): void {
   db.run(`DELETE FROM workflows WHERE id = ?`, [id]);
+}
+
+export function archiveWorkflow(id: number): WorkflowRow | null {
+  const t = now();
+  db.run(`UPDATE workflows SET archived_at = ?, updated_at = ? WHERE id = ?`, [
+    t,
+    t,
+    id,
+  ]);
+  return getWorkflowById(id);
 }
 
 // Active means `running` only (#1307) — a run waiting for a human keeps status `running`, so it

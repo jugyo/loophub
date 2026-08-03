@@ -65,7 +65,7 @@ export const herdr = {
       [workspacesOut, tabsOut, agentsOut] = await Promise.all([
         runHerdrCapture(["--session", sessionName, "workspace", "list"]),
         runHerdrCapture(["--session", sessionName, "tab", "list"]),
-        runHerdrCapture(["--session", sessionName, "agent", "list"]),
+        runHerdrCapture(["--session", sessionName, "pane", "list"]),
       ]);
     } catch {
       // The session was confirmed running above, but died or errored on one of the follow-up
@@ -138,7 +138,7 @@ export const herdr = {
       agentsOut = await runHerdrCapture([
         "--session",
         sessionName,
-        "agent",
+        "pane",
         "list",
       ]);
     } catch {

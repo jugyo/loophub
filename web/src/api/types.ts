@@ -4,12 +4,10 @@
 // HerdrPullWorkspace/HerdrIssueWorkspace likewise derive from core/terminal/herdr-status.ts,
 // whose interfaces the terminal/sessions RPC returns as-is. The remaining shapes with no core
 // counterpart (Terminal/Stats/dashboard) stay hand-written below.
-import type {
-  DiffFile,
-  FileAtRef as FileAtRefWire,
-} from "../../../core/git.ts";
+import type { FileAtRef as FileAtRefWire } from "../../../core/git.ts";
 import type { MergeMode } from "../../../core/merge-mode.ts";
 import type {
+  AcceptanceCriterionDetailWire,
   AcceptanceCriterionWire,
   AgentCostSummaryWire,
   AgentSessionWire,
@@ -26,13 +24,17 @@ import type {
   HerdrRepoSessionsWire,
   HerdrSessionAgentWire,
   HerdrSessionsWire,
+  IssueDetailPageWire,
+  IssueListPageWire,
   IssueListPullSummaryWire,
   IssueWire,
   LabelWire,
   LinkedIssueWire,
   LoopEventWire,
   NotificationWire,
+  PullDetailPageWire,
   PullDiffWire,
+  PullFileWire,
   PullSummaryWire,
   PullWire,
   RelatedSessionsUsageByKindWire,
@@ -117,7 +119,7 @@ export type WorkflowStepStatus = WorkflowStepStatusWire;
 export type PullLineComment = ReviewCommentWire;
 
 /** A changed file with its unified-diff patch (GET .../pulls/{number}/files). */
-export type PullFile = DiffFile;
+export type PullFile = PullFileWire;
 export type PullDiff = PullDiffWire;
 export type DiffFeedbackList = DiffFeedbackListWire;
 export type DiffFeedbackThread = DiffFeedbackThreadWire;
@@ -248,6 +250,9 @@ export type Issue = IssueWire;
 /** A structured acceptance criterion (#1894) carried on issue detail; the Verify rubric source. */
 export type AcceptanceCriterion = AcceptanceCriterionWire;
 
+/** An acceptance criterion in the authoring surface, including disabled criteria. */
+export type AcceptanceCriterionDetail = AcceptanceCriterionDetailWire;
+
 /** A global workflow definition (#997): Execute/Verify prompt bundle. */
 export type Workflow = WorkflowWire;
 export type WorkflowContracts = WorkflowContractsWire;
@@ -261,6 +266,9 @@ export type WorkflowRunReviewSummary = WorkflowRunReviewSummaryWire;
 export type ReviewAcResult = ReviewAcResultWire;
 
 export type PullRequest = PullWire;
+export type IssueListPage = IssueListPageWire;
+export type IssueDetailPage = IssueDetailPageWire;
+export type PullDetailPage = PullDetailPageWire;
 
 /** A session related to a PR or issue (#298), including its persisted runtime identity. */
 export type RelatedSession = RelatedSessionWire;

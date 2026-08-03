@@ -1,5 +1,5 @@
 {
-  "protocolVersion": "2026-07-11",
+  "protocolVersion": "2026-08-02",
   "serverInfo": {
     "name": "loophub",
     "version": "0.0.0"
@@ -177,6 +177,19 @@
         "required": [
           "name"
         ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "worker/status",
+      "description": "Report whether the resident worker is present, fresh, and workflow-protocol compatible with this Web server.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
         "additionalProperties": false
       },
       "result": {
@@ -582,6 +595,30 @@
       }
     },
     {
+      "name": "workflows/archive",
+      "description": "Archive a global workflow definition.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "workflows/delete",
       "description": "Delete a global workflow definition unless a running run references it.",
       "params": {
@@ -607,7 +644,7 @@
     },
     {
       "name": "workflowRuns/stateForIssue",
-      "description": "Display state of the latest Workflow run linked to an issue (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+      "description": "Display state of the latest Workflow run linked to an issue, including canonical pre-merge Done and conflict state, or null when none.",
       "params": {
         "type": "object",
         "properties": {
@@ -632,7 +669,7 @@
     },
     {
       "name": "workflowRuns/stateForPull",
-      "description": "Display state of the latest Workflow run linked to a PR (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+      "description": "Display state of the latest Workflow run linked to a PR, including canonical pre-merge Done and conflict state, or null when none.",
       "params": {
         "type": "object",
         "properties": {
@@ -985,6 +1022,55 @@
       }
     },
     {
+      "name": "pageData/issueList",
+      "description": "Get the issue list and its repository, workspace, and optional filter data in one request.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "lookahead": {
+            "type": "boolean"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "includeLabels": {
+            "type": "boolean"
+          },
+          "includeUnmergedWorkspaces": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "search/query",
       "description": "Search issues and pull requests in a repository.",
       "params": {
@@ -1030,8 +1116,68 @@
       }
     },
     {
+      "name": "workspaces/listUnmerged",
+      "description": "List active workspaces with commits not merged into the default branch.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
       "name": "workspaces/listArchived",
       "description": "List archived workspaces in a repository.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "workspaces/listForSettings",
+      "description": "List registered workspaces for repository settings, excluding the default branch.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "workspaces/listArchivedForSettings",
+      "description": "List archived workspaces for repository settings, excluding the default branch.",
       "params": {
         "type": "object",
         "properties": {
@@ -1154,6 +1300,120 @@
         "required": [
           "repo",
           "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pageData/issueDetail",
+      "description": "Get all initial data for one issue-detail screen.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/ac/list",
+      "description": "List all acceptance criteria for an issue, including disabled criteria.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "issues/ac/add",
+      "description": "Add an acceptance criterion to an issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/ac/setEnabled",
+      "description": "Enable or disable an issue's acceptance criterion.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "criterion_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "criterion_id",
+          "enabled"
         ],
         "additionalProperties": false
       },
@@ -1482,6 +1742,31 @@
     {
       "name": "pulls/get",
       "description": "Get one pull request by number.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pageData/pullDetail",
+      "description": "Get all initial data for one pull-request detail screen.",
       "params": {
         "type": "object",
         "properties": {

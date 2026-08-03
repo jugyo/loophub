@@ -811,8 +811,16 @@ test("recordSessionUsageSample decides the automatic delta inside its transactio
     return originalQuery(sql);
   }) as typeof D.db.query;
   try {
-    S.recordSessionUsageSample({ sessionId, totalTokens: 100 });
-    S.recordSessionUsageSample({ sessionId, totalTokens: 125 });
+    S.recordSessionUsageSample({
+      sessionId,
+      totalTokens: 100,
+      cacheReadTokens: 0,
+    });
+    S.recordSessionUsageSample({
+      sessionId,
+      totalTokens: 125,
+      cacheReadTokens: 0,
+    });
   } finally {
     D.db.query = originalQuery;
   }

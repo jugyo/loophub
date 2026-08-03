@@ -511,42 +511,15 @@ describe("PullDetail", () => {
     });
   });
 
-  it("removes a failed PR comment while the initial comment list is pending", async () => {
+  it("keeps the detail loading while the initial comment list is pending", async () => {
     const commentsPending = new Promise<never>(() => {});
     const listComments = vi.fn(() => commentsPending);
-    let rejectCreate!: (error: RpcFault) => void;
-    const createPending = new Promise<never>((_resolve, reject) => {
-      rejectCreate = reject;
-    });
-    const { container } = renderDetail({
+    renderDetail({
       "comments/list": listComments,
-      "pullComments/create": () => createPending,
     });
 
-    const composer = await screen.findByLabelText("Add a PR comment");
-    fireEvent.change(composer, {
-      target: { value: "Remove this failed PR comment." },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-
-    await waitFor(() => {
-      expect(
-        container.querySelectorAll('[data-debug-component="PullComment"]'),
-      ).toHaveLength(1);
-      expect(screen.getByText("Remove this failed PR comment.")).toBeTruthy();
-    });
-
-    rejectCreate(new RpcFault(500, "write failed"));
-    await waitFor(() => {
-      expect(
-        container.querySelectorAll('[data-debug-component="PullComment"]'),
-      ).toHaveLength(0);
-      expect((composer as HTMLTextAreaElement).value).toBe(
-        "Remove this failed PR comment.",
-      );
-      expect(screen.getByText("Failed to post comment.")).toBeTruthy();
-      expect(listComments).toHaveBeenCalledTimes(2);
-    });
+    expect(await screen.findByText("Loading…")).toBeTruthy();
+    expect(screen.queryByLabelText("Add a PR comment")).toBeNull();
   });
 
   it("renders PR comments in response order before the comment form", async () => {
@@ -972,6 +945,69 @@ describe("PullDetail", () => {
       expect(call).toBeTruthy();
       expect(call!.params.merge_method).toBe("squash");
     });
+  });
+
+  it("disables Merge while an agent linked to the PR is working", async () => {
+    renderDetail({
+      "terminal/sessions": () => ({
+        repos: [
+          {
+            repo: "me/proj",
+            session_name: "me-proj",
+            agents: [
+              {
+                id: "w1:p1",
+                name: "executor #7-1",
+                status: "working",
+                pull: 30,
+                pull_closed: false,
+                focusable: true,
+              },
+            ],
+            pull_workspaces: [],
+            issue_workspaces: [],
+          },
+        ],
+      }),
+    });
+
+    const button = await screen.findByRole("button", { name: /^Merge$/i });
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(button.getAttribute("title")).toMatch(/agent is working/i);
+    fireEvent.click(button);
+    expect(rpcCall("pulls/merge")).toBeFalsy();
+  });
+
+  it("keeps Merge disabled while agent status is loading", async () => {
+    renderDetail({
+      "terminal/sessions": () => new Promise(() => {}),
+    });
+
+    const button = await screen.findByRole("button", { name: /^Merge$/i });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toMatch(/agent status is available/i);
+    fireEvent.click(button);
+    expect(rpcCall("pulls/merge")).toBeFalsy();
+  });
+
+  it("keeps Merge disabled when agent status cannot be loaded", async () => {
+    renderDetail({
+      "terminal/sessions": () => {
+        throw new RpcFault(500, "agent status unavailable");
+      },
+    });
+
+    const button = await screen.findByRole("button", { name: /^Merge$/i });
+    await waitFor(() => {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(button.getAttribute("title")).toMatch(
+        /agent status is available/i,
+      );
+    });
+    fireEvent.click(button);
+    expect(rpcCall("pulls/merge")).toBeFalsy();
   });
 
   it("shows a fixed-duration loading state on Merge and re-enables it once loading and the mutation both settle (#560)", async () => {
@@ -1550,6 +1586,7 @@ describe("PullDetail", () => {
                 status: "working",
                 pull: 30,
                 pull_closed: false,
+                focusable: true,
               },
             ],
             pull_workspaces: [{ pull: 30, pane_id: "%3", status: "working" }],
@@ -1781,6 +1818,13 @@ describe("PullDetail", () => {
                 status: "working",
                 pull: 30,
                 pull_closed: false,
+                focusable: true,
+                workflow: {
+                  kind: "step",
+                  runId: 12,
+                  step: currentStep,
+                  sequence: 1,
+                },
               },
             ],
             pull_workspaces: [{ pull: 30, pane_id: "%3", status: "working" }],

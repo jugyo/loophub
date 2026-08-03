@@ -33,6 +33,7 @@ function workflow(overrides: Partial<Workflow> = {}): Workflow {
     description: "The default loop",
     execute_prompt: "execute here",
     verify_prompt: "verify here",
+    archived_at: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -93,19 +94,21 @@ afterEach(() => {
 });
 
 describe("WorkflowsPage", () => {
-  it("shows the shared tab navigation and returns to Agent settings", async () => {
+  it("shows the settings sidebar and returns to Agent settings", async () => {
     const { router } = renderPage({});
 
-    const tablist = await screen.findByRole("tablist", {
-      name: "Settings categories",
+    const navigation = await screen.findByRole("navigation", {
+      name: "Settings",
     });
-    expect(
-      within(tablist)
-        .getByRole("tab", { name: "Workflows" })
-        .getAttribute("aria-selected"),
-    ).toBe("true");
+    const workflowsLink = within(navigation).getByRole("link", {
+      name: "Workflows",
+    });
+    const agentLink = within(navigation).getByRole("link", { name: "Agent" });
+    expect(workflowsLink.getAttribute("aria-current")).toBe("page");
+    expect(agentLink.getAttribute("aria-current")).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
 
-    fireEvent.click(within(tablist).getByRole("tab", { name: "Agent" }));
+    fireEvent.click(agentLink);
 
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/settings"),
@@ -113,18 +116,17 @@ describe("WorkflowsPage", () => {
     expect(screen.getByTestId("settings-page")).toBeTruthy();
   });
 
-  it("shows the shared settings header above the workflow management content", async () => {
+  it("shows the shared settings layout above the workflow management content", async () => {
     renderPage({});
 
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+      await screen.findByRole("heading", { name: "Settings" }),
     ).toBeTruthy();
-    expect(
-      screen.getByText("Instance-level settings for this LoopHub server."),
-    ).toBeTruthy();
+    expect(screen.getByText("Instance-level settings")).toBeTruthy();
     expect(
       screen.getByRole("heading", { level: 2, name: "Workflows" }),
     ).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Workflows" })).toBeTruthy();
     expect(await screen.findByText("No workflows yet.")).toBeTruthy();
   });
 
@@ -471,28 +473,55 @@ describe("WorkflowsPage", () => {
     ).toBeTruthy();
   });
 
-  it("surfaces the 409 refusal when deleting a workflow used by an active run", async () => {
+  it("archives a workflow and removes it from the active list", async () => {
+    let workflows = [workflow()];
     renderPage(
       {
-        "workflows/delete": () => {
-          throw new RpcFault(
-            409,
-            "workflow is referenced by an active workflow run",
-          );
+        "workflows/list": () => workflows,
+        "workflows/archive": () => {
+          workflows = [];
+          return workflow({ archived_at: "2026-08-02T00:00:00Z" });
+        },
+      },
+      workflows,
+    );
+    await screen.findByText("standard");
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: 'Archive "standard"?',
+    });
+    expect(
+      within(dialog).getByText(/Existing workflow runs are preserved/),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    expect(await screen.findByText("No workflows yet.")).toBeTruthy();
+    expect(rpcCall("workflows/archive")?.params).toMatchObject({
+      name: "standard",
+    });
+  });
+
+  it("surfaces an RPC error when archiving a workflow", async () => {
+    renderPage(
+      {
+        "workflows/archive": () => {
+          throw new RpcFault(500, "workflow archive failed");
         },
       },
       [workflow()],
     );
     await screen.findByText("standard");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
     await waitFor(() =>
-      expect(
-        within(dialog).getByText(
-          /workflow is referenced by an active workflow run/,
-        ),
-      ).toBeTruthy(),
+      expect(within(dialog).getByText(/workflow archive failed/)).toBeTruthy(),
     );
+    expect(
+      within(dialog).getByRole("button", { name: "Archive" }),
+    ).toBeTruthy();
+    expect(screen.getByText("standard")).toBeTruthy();
   });
 });

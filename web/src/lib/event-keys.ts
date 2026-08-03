@@ -20,14 +20,32 @@ import { eventPayloadRecord } from "../../../core/event-subjects.ts";
 export const queryKeys = {
   repos: () => ["repos"] as const,
   repo: (full: string) => ["repo", full] as const,
+  repoMergeMode: (full: string) => ["repo-merge-mode", full] as const,
   labels: (full: string) => ["labels", full] as const,
   issues: (full: string) => ["issues", full] as const,
   issue: (full: string, number: number) => ["issue", full, number] as const,
+  issueComments: (full: string, number: number) =>
+    ["issue-comments", full, number] as const,
   workspaces: (full: string) => ["workspaces", full] as const,
   pulls: (full: string) => ["pulls", full] as const,
   pull: (full: string, number: number) => ["pull", full, number] as const,
+  pullDebug: (full: string, number: number) =>
+    ["pull-debug", full, number] as const,
+  pullFiles: (full: string, number: number) =>
+    ["pull-files", full, number] as const,
+  pullReviews: (full: string, number: number) =>
+    ["pull-reviews", full, number] as const,
+  pullReviewComments: (full: string, number: number) =>
+    ["pull-review-comments", full, number] as const,
+  githubPrStatus: (full: string, number: number) =>
+    ["github-pr-status", full, number] as const,
   notifications: () => ["notifications"] as const,
   agentSessions: () => ["agent-sessions"] as const,
+  // Keep the 60s cost poll outside the agent-session event invalidation prefix.
+  agentCostSummary: () => ["agent-cost-summary"] as const,
+  // Top-level rather than a child of repo(full): every repo-scoped event invalidates that prefix,
+  // but the coding-agent override only changes through repo.agent_config_changed.
+  repoAgentConfig: (full: string) => ["repo-agent-config", full] as const,
   terminalSessions: () => ["terminal", "sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
@@ -64,6 +82,7 @@ function identifiedSubject(
 export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   const keys: unknown[][] = [];
   const { type, repo } = event;
+  const payload = eventPayloadRecord(event.payload);
   const issueNumber = numberedSubject(event, "issue");
   const pullNumber = numberedSubject(event, "pull");
   const workflowRunId = identifiedSubject(event, "workflow_run");
@@ -77,13 +96,24 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push([...queryKeys.labels(repo)]);
       if (issueNumber !== null) {
         keys.push([...queryKeys.issue(repo, issueNumber)]);
+        if (type === "issue.commented") {
+          keys.push([...queryKeys.issueComments(repo, issueNumber)]);
+        }
       } else {
         keys.push(["issue", repo]);
       }
+      // A PR debug dump embeds its linked Issue row and matching issue.* event history. The event
+      // does not carry the linked PR number, so invalidate the repo prefix; only a mounted debug
+      // query refetches.
+      keys.push(["pull-debug", repo]);
     } else {
       keys.push(["issues"]);
       keys.push(["labels"]);
       keys.push(["issue"]);
+      keys.push(["pull-debug"]);
+      if (type === "issue.commented") {
+        keys.push(["issue-comments"]);
+      }
     }
     keys.push([...queryKeys.dashboard()]); // cross-repo top page
   } else if (type.startsWith("workspace.")) {
@@ -95,16 +125,67 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["issues"]);
     }
   } else if (type.startsWith("pull_request.") || type === "dev.cost_stopped") {
+    const gitGraphChanged =
+      type === "pull_request.merged" ||
+      (type === "pull_request.updated" &&
+        typeof payload?.sha === "string" &&
+        payload.sha.length > 0);
     if (repo) {
       keys.push([...queryKeys.pulls(repo)]);
       if (pullNumber !== null) {
         keys.push([...queryKeys.pull(repo, pullNumber)]);
+        // The debug dump includes the PR row, git facts, reviews, comments, and its event history,
+        // so every PR-scoped event changes at least the event-history portion while it is open.
+        keys.push([...queryKeys.pullDebug(repo, pullNumber)]);
+        if (gitGraphChanged) {
+          keys.push([...queryKeys.pullFiles(repo, pullNumber)]);
+        }
+        if (type === "pull_request.commented") {
+          keys.push([...queryKeys.issueComments(repo, pullNumber)]);
+        }
+        if (type === "pull_request.review_submitted") {
+          keys.push([...queryKeys.pullReviews(repo, pullNumber)]);
+          if (typeof payload?.comments === "number" && payload.comments > 0) {
+            keys.push([...queryKeys.pullReviewComments(repo, pullNumber)]);
+          }
+        }
+        if (
+          type === "pull_request.github_pr_recorded" ||
+          type === "pull_request.github_pr_pushed" ||
+          type === "pull_request.github_feedback" ||
+          type === "pull_request.github_merged"
+        ) {
+          keys.push([...queryKeys.githubPrStatus(repo, pullNumber)]);
+        }
       } else {
         keys.push(["pull", repo]);
+      }
+      if (gitGraphChanged) {
+        keys.push([...queryKeys.workspaces(repo)]);
       }
     } else {
       keys.push(["pulls"]);
       keys.push(["pull"]);
+      keys.push(["pull-debug"]);
+      if (gitGraphChanged) keys.push(["workspaces"]);
+      if (gitGraphChanged) keys.push(["pull-files"]);
+      if (type === "pull_request.commented") {
+        keys.push(["issue-comments"]);
+      }
+      if (type === "pull_request.review_submitted") {
+        keys.push(["pull-reviews"]);
+        if (typeof payload?.comments === "number" && payload.comments > 0) {
+          keys.push(["pull-review-comments"]);
+        }
+      }
+      if (
+        type === "pull_request.github_pr_recorded" ||
+        type === "pull_request.github_pr_pushed" ||
+        type === "pull_request.github_feedback" ||
+        type === "pull_request.github_merged"
+      ) {
+        keys.push(["github-pr-status"]);
+      }
     }
     // Issue rows embed their linked PR's live status (mergeable/conflict, working,
     // review state, diff totals) via issueListItemJSON, so a PR change must also
@@ -125,13 +206,13 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // A handoff (#352) is filed against a PR and/or a generic issue. Those links are UI metadata,
     // not domain event subjects. Its section is a sub-key of the pull (and, for an issue-only
     // handoff, the issue) key, so narrow the metadata and invalidate those prefixes.
-    const payload = eventPayloadRecord(event.payload);
     const handoffPullNumber = payload?.pr_number ?? payload?.number;
     const handoffIssueNumber = payload?.issue_number;
     if (repo) {
       keys.push([...queryKeys.pulls(repo)]);
       if (typeof handoffPullNumber === "number") {
         keys.push([...queryKeys.pull(repo, handoffPullNumber)]);
+        keys.push([...queryKeys.pullDebug(repo, handoffPullNumber)]);
       }
       if (typeof handoffIssueNumber === "number") {
         keys.push([...queryKeys.issue(repo, handoffIssueNumber)]);
@@ -145,9 +226,10 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   } else if (
     type === "workflow.created" ||
     type === "workflow.updated" ||
+    type === "workflow.archived" ||
     type === "workflow.deleted"
   ) {
-    // workflow CRUD (#1006) is global (not repo-scoped) and alters the workflow list for every
+    // Workflow definition changes (#1006) are global (not repo-scoped) and alter the workflow list for every
     // connected client, not just the tab that made the change (whose mutation hook already
     // invalidates onSuccess). Match only definition CRUD events: repo workflow execution events use
     // the existing workflow.run_* namespace and must not invalidate this unrelated global list.
@@ -156,7 +238,6 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     type.startsWith("workflow_run.") ||
     type.startsWith("workflow_step.")
   ) {
-    const payload = eventPayloadRecord(event.payload);
     // A Workflow run's step / status / rework count is shown on issue and PR detail (#1008). These
     // lifecycle events (workflow_run.started/updated/turn_done, workflow_step.launched) name the
     // run's issue and PR as well as the run itself, so refresh both detail views' run-state query.
@@ -167,6 +248,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       }
       if (pullNumber !== null) {
         keys.push([...queryKeys.workflowRunForPull(repo, pullNumber)]);
+        keys.push([...queryKeys.pullDebug(repo, pullNumber)]);
       }
       if (workflowRunId !== null) {
         keys.push([...queryKeys.workflowRunHistory(repo, workflowRunId)]);
@@ -204,24 +286,41 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     keys.push(["settings"]);
     keys.push(["terminal", "config"]);
   } else if (type.startsWith("repo.")) {
-    // Repo metadata changes (archived/favorited/renamed/merge_mode, #485) alter the app-shell
-    // list for every connected client, not just the tab that performed the mutation (whose
-    // hook already invalidates onSuccess). repo.renamed additionally strands the old name's
-    // repo-scoped caches — the event's `repo` field carries the NEW full_name — so invalidate
-    // the old-name prefixes via payload.from; a client sitting on the old URL refetches and
-    // surfaces the 404 instead of showing stale data under a dead route.
+    // Repo metadata changes alter both the app-shell list and repo-scoped views. Issue-list page
+    // data includes default_branch for grouping, so refresh it for other connected tabs too.
+    // repo.renamed additionally strands the old name's repo-scoped caches — the event's `repo`
+    // field carries the NEW full_name — so invalidate the old-name prefixes via payload.from.
     keys.push([...queryKeys.repos()]);
     // Dashboard rows embed the repo's full_name and /r/<full_name> links, so any repo
     // metadata change (rename especially) must refresh the cross-repo top page too.
     keys.push([...queryKeys.dashboard()]);
-    // The old name is metadata, not a subject, so it stays a narrowed payload read.
-    const from = eventPayloadRecord(event.payload)?.from;
+    if (repo) keys.push([...queryKeys.issues(repo)]);
+    if (type === "repo.agent_config_changed" && repo) {
+      keys.push([...queryKeys.repoAgentConfig(repo)]);
+    }
+    if (type === "repo.merge_mode_changed" && repo) {
+      keys.push([...queryKeys.repoMergeMode(repo)]);
+    }
+    if (repo && type !== "repo.agent_config_changed") {
+      // repoJSON is part of every PR debug dump, so repo metadata events change all open debug
+      // queries for that repository even though the regular pull detail is unaffected. Agent
+      // config is stored separately and is not part of repoJSON or the PR-scoped event history.
+      keys.push(["pull-debug", repo]);
+    }
+    const from = payload?.from;
     if (typeof from === "string" && from) {
       keys.push([...queryKeys.repo(from)]);
       keys.push(["issues", from]);
       keys.push(["issue", from]);
       keys.push(["pulls", from]);
       keys.push(["pull", from]);
+      keys.push(["repo-merge-mode", from]);
+      keys.push(["issue-comments", from]);
+      keys.push(["pull-debug", from]);
+      keys.push(["pull-files", from]);
+      keys.push(["pull-reviews", from]);
+      keys.push(["pull-review-comments", from]);
+      keys.push(["github-pr-status", from]);
       keys.push([...queryKeys.events(), from]);
     }
   } else if (type.startsWith("terminal.")) {
@@ -235,13 +334,22 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // Some agent_session events target a specific PR or issue (for example linked/usage_updated);
     // those links are UI metadata whose related_sessions list and usage summary live in that
     // detail's query too.
-    const payload = eventPayloadRecord(event.payload);
     if (repo) {
-      if (typeof payload?.pr === "number")
-        keys.push([...queryKeys.pull(repo, payload.pr)]);
-      if (typeof payload?.issue === "number")
-        keys.push([...queryKeys.issue(repo, payload.issue)]);
+      const prNumber = payload?.pr;
+      const issueNumber = payload?.issue;
+      if (typeof prNumber === "number") {
+        keys.push([...queryKeys.pull(repo, prNumber)]);
+        keys.push([...queryKeys.pullDebug(repo, prNumber)]);
+      }
+      if (typeof issueNumber === "number")
+        keys.push([...queryKeys.issue(repo, issueNumber)]);
     }
+  }
+
+  if (type === "dev.cost_stopped" && repo && pullNumber !== null) {
+    // This PR-scoped event is part of the debug dump's event history but does not use the
+    // pull_request.* namespace.
+    keys.push([...queryKeys.pullDebug(repo, pullNumber)]);
   }
 
   // Repo-level metadata (assignment / status counts) and the activity feed can

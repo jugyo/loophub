@@ -11,7 +11,7 @@ export function useAgentSessions() {
 
 export function useAgentCostSummary() {
   return useQuery({
-    queryKey: [...queryKeys.agentSessions(), "cost-summary"],
+    queryKey: queryKeys.agentCostSummary(),
     queryFn: getAgentCostSummary,
     refetchInterval: 60_000,
   });

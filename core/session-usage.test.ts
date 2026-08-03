@@ -15,6 +15,7 @@ import {
   priceForModel,
 } from "./session-usage.ts";
 import {
+  calculateTokenRates,
   calculateTokensPerSecond,
   newGrokWorkDurationMs,
   planGrokTurnRateSamples,
@@ -81,6 +82,36 @@ test("calculateTokensPerSecond uses recent token deltas over elapsed seconds", (
       { now },
     ),
   ).toBe(5);
+});
+
+test("calculateTokenRates separates cache reads from regular throughput", () => {
+  const now = new Date("2026-07-10T00:01:00Z");
+  expect(
+    calculateTokenRates(
+      [
+        {
+          session_id: "s1",
+          total_tokens: 100,
+          token_delta: 0,
+          cache_read_tokens: 60,
+          cache_read_delta: 0,
+          observed_at: "2026-07-10T00:00:30Z",
+        },
+        {
+          session_id: "s1",
+          total_tokens: 550,
+          token_delta: 150,
+          cache_read_tokens: 360,
+          cache_read_delta: 300,
+          observed_at: "2026-07-10T00:01:00Z",
+        },
+      ],
+      { now },
+    ),
+  ).toEqual({
+    tokensPerSecond: 5,
+    cacheReadTokensPerSecond: 10,
+  });
 });
 
 test("calculateTokensPerSecond returns null with insufficient samples", () => {
@@ -1111,11 +1142,15 @@ test("planGrokTurnRateSamples reconstructs turn tokens/apiDurationMs as a live T
     {
       totalTokens: 0,
       tokenDelta: 0,
+      cacheReadTokens: 0,
+      cacheReadDelta: 0,
       observedAt: "2026-07-10T00:00:50.000Z",
     },
     {
       totalTokens: 1500,
       tokenDelta: 1500,
+      cacheReadTokens: 0,
+      cacheReadDelta: 0,
       observedAt: "2026-07-10T00:01:00.000Z",
     },
   ]);
@@ -1130,6 +1165,35 @@ test("planGrokTurnRateSamples reconstructs turn tokens/apiDurationMs as a live T
       { now },
     ),
   ).toBe(150);
+
+  const split = planGrokTurnRateSamples({
+    previousTotal: 0,
+    newTotal: 1500,
+    previousCacheRead: 0,
+    newCacheRead: 1000,
+    turns: [
+      {
+        totalTokens: 1500,
+        cacheReadTokens: 1000,
+        apiDurationMs: 10_000,
+      },
+    ],
+    now,
+  });
+  expect(split?.[1]).toMatchObject({ tokenDelta: 500, cacheReadDelta: 1000 });
+  expect(
+    calculateTokenRates(
+      split!.map((sample) => ({
+        session_id: "s1",
+        total_tokens: sample.totalTokens,
+        token_delta: sample.tokenDelta,
+        cache_read_tokens: sample.cacheReadTokens,
+        cache_read_delta: sample.cacheReadDelta,
+        observed_at: sample.observedAt,
+      })),
+      { now },
+    ),
+  ).toEqual({ tokensPerSecond: 50, cacheReadTokensPerSecond: 100 });
 
   // Long turn: span capped to 55s, delta scaled so rate ≈ tokens/duration.
   const long = planGrokTurnRateSamples({

@@ -72,6 +72,7 @@ export function AppStatusbar() {
   ];
   const tokensPer5Minutes = tokenRateHistory(costSummary);
   const tokensPerSecond = currentTokenRate(costSummary);
+  const cacheReadTokensPerSecond = currentCacheReadTokenRate(costSummary);
 
   return (
     <footer
@@ -82,6 +83,7 @@ export function AppStatusbar() {
       <dl className="ml-auto flex items-center justify-end gap-3 text-right text-[11px] leading-none">
         <TokenRateStatus
           tokensPerSecond={tokensPerSecond}
+          cacheReadTokensPerSecond={cacheReadTokensPerSecond}
           values={tokensPer5Minutes}
         />
         {items.map((item) => (
@@ -93,6 +95,17 @@ export function AppStatusbar() {
       </dl>
     </footer>
   );
+}
+
+function currentCacheReadTokenRate(
+  summary: Array<{ cache_read_tokens_per_second?: number | null }> | undefined,
+): number | null {
+  const rate = summary?.find(
+    (row) => "cache_read_tokens_per_second" in row,
+  )?.cache_read_tokens_per_second;
+  return typeof rate === "number" && Number.isFinite(rate) && rate >= 0
+    ? rate
+    : null;
 }
 
 function currentTokenRate(
@@ -122,19 +135,25 @@ function tokenRateHistory(
 
 function TokenRateStatus({
   tokensPerSecond,
+  cacheReadTokensPerSecond,
   values,
 }: {
   tokensPerSecond: number | null;
+  cacheReadTokensPerSecond: number | null;
   values: number[] | null;
 }) {
   const formatted =
     tokensPerSecond == null ? "n/a" : formatTokenCountShort(tokensPerSecond);
+  const cacheFormatted =
+    cacheReadTokensPerSecond == null
+      ? "n/a"
+      : formatTokenCountShort(cacheReadTokensPerSecond);
   return (
     <div
       className="flex items-center gap-1"
       title={
-        tokensPerSecond == null
-          ? "TPS unavailable"
+        tokensPerSecond == null && cacheReadTokensPerSecond == null
+          ? "Token throughput unavailable"
           : "Aggregate token throughput"
       }
     >
@@ -145,6 +164,16 @@ function TokenRateStatus({
       >
         <span className="font-mono font-medium text-foreground">
           {formatted}
+        </span>
+        <span className="text-muted-foreground" aria-hidden="true">
+          /
+        </span>
+        <span className="text-muted-foreground">cache</span>
+        <span
+          className="font-mono font-medium text-foreground"
+          aria-label={`Cache TPS: ${cacheFormatted} tokens per second`}
+        >
+          {cacheFormatted}
         </span>
         {values && <TokenHistoryBars values={values} />}
       </dd>

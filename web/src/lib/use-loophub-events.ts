@@ -13,15 +13,25 @@ const HIDDEN_POLL_MS = 5000;
 const POLL_LIMIT = 100;
 const ROLLBACK_PROBE_MS = 30_000;
 
-function applyLoopHubEvent(
-  event: LoopEvent,
+// One poll can carry up to POLL_LIMIT events, and most of them invalidate the same repo-scoped
+// prefixes. invalidateQueries cancels an in-flight refetch and starts a new one, so invalidating
+// per event turned a batch of N events into N RPC calls for a single query. Collect the batch's
+// distinct keys first and invalidate each once.
+function applyLoopHubEvents(
+  events: readonly LoopEvent[],
   queryClient: ReturnType<typeof useQueryClient>,
 ): void {
-  if (!event || typeof event.id !== "number") {
-    return;
+  const queryKeys = new Map<string, readonly unknown[]>();
+  for (const event of events) {
+    if (!event || typeof event.id !== "number") {
+      continue;
+    }
+    rememberEventId(event.id);
+    for (const queryKey of queryKeysForEvent(event)) {
+      queryKeys.set(JSON.stringify(queryKey), queryKey);
+    }
   }
-  rememberEventId(event.id);
-  for (const queryKey of queryKeysForEvent(event)) {
+  for (const queryKey of queryKeys.values()) {
     void queryClient.invalidateQueries({ queryKey });
   }
 }
@@ -32,11 +42,20 @@ function invalidateReconnectQueries(
   const queryKeyPrefixes: readonly (readonly unknown[])[] = [
     queryKeys.repos(),
     ["repo"],
+    ["repo-merge-mode"],
+    ["repo-agent-config"],
     ["issues"],
     ["issue"],
+    ["issue-comments"],
     ["pulls"],
     ["pull"],
+    ["pull-debug"],
+    ["pull-files"],
+    ["pull-reviews"],
+    ["pull-review-comments"],
+    ["github-pr-status"],
     queryKeys.agentSessions(),
+    queryKeys.agentCostSummary(),
     queryKeys.terminalSessions(),
     queryKeys.events(),
     queryKeys.dashboard(),
@@ -89,6 +108,23 @@ export function useLoopHubEvents(): void {
 
     const poll = async () => {
       try {
+        if (cursor === 0) {
+          // No stored cursor means this client has never seen an event, not that it is behind by
+          // the whole history. Replaying from id 0 pages through every event ever recorded — on a
+          // long-lived instance that is thousands of back-to-back polls, each invalidating the
+          // same keys again. The mounted queries already fetched current state, so start at the
+          // newest id and only follow what happens from here.
+          const newest = await listEvents({
+            since: 0,
+            order: "desc",
+            limit: 1,
+          });
+          if (stopped) return;
+          cursor = newest[0]?.id ?? 0;
+          setLastEventId(cursor);
+          schedule();
+          return;
+        }
         const events = await listEvents({ since: cursor, limit: POLL_LIMIT });
         if (stopped) return;
         if (events.length === 0) {
@@ -102,8 +138,8 @@ export function useLoopHubEvents(): void {
             cursor = await resetCursorIfServerRolledBack(cursor, queryClient);
           }
         } else {
+          applyLoopHubEvents(events, queryClient);
           for (const event of events) {
-            applyLoopHubEvent(event, queryClient);
             cursor = Math.max(cursor, event.id);
           }
           if (events.length >= POLL_LIMIT) schedule(0);

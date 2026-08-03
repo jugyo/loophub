@@ -44,9 +44,8 @@ const settingsData = vi.hoisted(() => ({
 vi.mock("@/queries/settings", () => ({
   useSettings: () => ({ data: settingsData.value }),
 }));
-const { focusHerdrAgent, sendHerdrAgentInput } = vi.hoisted(() => ({
+const { focusHerdrAgent } = vi.hoisted(() => ({
   focusHerdrAgent: vi.fn(),
-  sendHerdrAgentInput: vi.fn(),
 }));
 const focusHerdrState = vi.hoisted(() => ({ isPending: false }));
 const { showError } = vi.hoisted(() => ({ showError: vi.fn() }));
@@ -58,10 +57,6 @@ vi.mock("@/queries/terminal", () => ({
   useFocusHerdrAgent: () => ({
     mutate: focusHerdrAgent,
     isPending: focusHerdrState.isPending,
-  }),
-  useSendHerdrAgentInput: () => ({
-    mutate: sendHerdrAgentInput,
-    isPending: false,
   }),
 }));
 vi.mock("@/components/toast", () => ({
@@ -76,7 +71,6 @@ afterEach(() => {
   vi.useRealTimers();
   launchTerminal.mockClear();
   focusHerdrAgent.mockClear();
-  sendHerdrAgentInput.mockClear();
   showError.mockClear();
   focusHerdrState.isPending = false;
   settingsData.value = {
@@ -342,8 +336,7 @@ describe("IssueRow", () => {
     expect(title.getAttribute("href")).toBe("/r/me/proj/issues/1");
     const pill = screen.getByRole("link", { name: "PR #10" });
     expect(pill.getAttribute("href")).toBe("/r/me/proj/pulls/10");
-    // A dirty worktree with no live agent is idle → plain "open" word (#1125).
-    expect(screen.getByText("open")).toBeTruthy();
+    expect(screen.queryByText("open")).toBeNull();
   });
 
   it("stacks one sub-row per linked PR when there are several", async () => {
@@ -361,9 +354,8 @@ describe("IssueRow", () => {
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "PR #9" })).toBeTruthy();
-    // #10 is idle (dirty, no live agent) → "open"; #9 is merged.
-    expect(screen.getByText("open")).toBeTruthy();
-    expect(screen.getByText("merged")).toBeTruthy();
+    expect(screen.queryByText("open")).toBeNull();
+    expect(screen.queryByText("merged")).toBeNull();
   });
 
   it("dims inactive linked PRs but keeps active linked PRs opaque", async () => {
@@ -390,7 +382,7 @@ describe("IssueRow", () => {
     expect(inactiveContent?.className).toContain("opacity-45");
   });
 
-  it("shows a check icon on a passed linked PR", async () => {
+  it("omits review status words from linked PR rows", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
@@ -402,23 +394,8 @@ describe("IssueRow", () => {
         })}
       />,
     );
-    expect(await screen.findByText("passed")).toBeTruthy();
-    expect(screen.getByLabelText("passed")).toBeTruthy();
-  });
-
-  it("shows no check icon on a non-passed linked PR", async () => {
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({
-          linked_pull_requests: [
-            makePull({ number: 10, review_state: "CHANGES_REQUESTED" }),
-          ],
-        })}
-      />,
-    );
-    expect(await screen.findByText("changes")).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(screen.queryByText("passed")).toBeNull();
     expect(screen.queryByLabelText("passed")).toBeNull();
   });
 
@@ -447,16 +424,14 @@ describe("IssueRow", () => {
     expect(await screen.findByText("closed")).toBeTruthy();
   });
 
-  // The whole-row hover background is removed; keyboard focus keeps its row
-  // highlight and focus ring so the row stays reachable and visible.
-  it("carries no whole-row hover background but keeps the focus highlight and ring", async () => {
+  it("carries no whole-row hover or custom keyboard focus styles", async () => {
     renderInRouter(
       <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
     );
     const row = await screen.findByLabelText("Issue #7: Example issue");
     expect(row.className).not.toContain("hover:bg-");
-    expect(row.className).toContain("focus:bg-accent");
-    expect(row.className).toContain("focus:ring-ring");
+    expect(row.className).not.toContain("focus:bg-accent");
+    expect(row.className).not.toContain("focus:ring-ring");
   });
 });
 
@@ -935,387 +910,6 @@ describe("IssueRow linked PR popover trigger (#1289)", () => {
   });
 });
 
-// #265: the linked-PR sub-row paints two independent colour axes — the `PR #n`
-// pill carries the PR lifecycle (open=primary / merged=purple / closed=grey) and
-// the status word its state-specific signal (conflict/changes=red, passed=
-// green, the rest muted). These assert the actually-rendered DOM classes.
-describe("LinkedPullSubRow two-axis colours (#265)", () => {
-  async function renderPull(overrides: Partial<LinkedPull>) {
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ linked_pull_requests: [makePull(overrides)] })}
-      />,
-    );
-    return await screen.findByRole("link", { name: "PR #10" });
-  }
-
-  it("labels an idle open PR (no live agent) with its lifecycle state, dimmed (#1125)", async () => {
-    // A dirty/undecided PR with no live agent is idle: it reads its plain "open"
-    // lifecycle word (muted, not indigo) and dims the bot icon to the inactive
-    // tone instead of pulsing "working".
-    await renderPull({ mergeable_state: "blocked", working: true });
-    const word = screen.getByText("open");
-    expect(word.className).not.toContain("text-indigo-600");
-    const bot = screen
-      .getByLabelText("Linked PR #10: A PR")
-      .querySelector("svg");
-    expect(bot?.parentElement?.className).toContain("opacity-45");
-    expect(bot?.parentElement?.className).not.toContain(
-      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
-    );
-  });
-
-  it("paints a conflict word red", async () => {
-    await renderPull({ mergeable_state: "conflict" });
-    expect(screen.getByText("conflict").className).toContain(
-      "text-destructive",
-    );
-  });
-
-  it("keeps the bot working effect while an agent resolves a conflict", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
-        },
-      ],
-    };
-    await renderPull({ mergeable_state: "conflict" });
-
-    expect(screen.getByText("conflict")).toBeTruthy();
-    const bot = screen
-      .getByLabelText("Linked PR #10: A PR")
-      .querySelector("svg");
-    expect(bot?.parentElement?.className).toContain(
-      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
-    );
-  });
-
-  it("does not show the working effect on a merged PR with a stale agent signal", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
-        },
-      ],
-    };
-    await renderPull({ state: "closed", merged: true });
-
-    expect(screen.getByText("merged")).toBeTruthy();
-    const bot = screen
-      .getByLabelText("Linked PR #10: A PR")
-      .querySelector("svg");
-    expect(bot?.parentElement?.className).not.toContain(
-      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
-    );
-  });
-
-  it("paints a changes word red", async () => {
-    await renderPull({ review_state: "CHANGES_REQUESTED" });
-    expect(screen.getByText("changes").className).toContain("text-destructive");
-  });
-
-  it("paints a passed word green", async () => {
-    await renderPull({
-      review_state: "PASSED",
-      mergeable_state: "clean",
-    });
-    expect(screen.getByText("passed").className).toContain("text-green-600");
-  });
-
-  it("keeps review results and omits working while Herdr reports the PR working", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
-        },
-      ],
-    };
-    await renderPull({
-      review_state: "CHANGES_REQUESTED",
-      mergeable_state: "clean",
-    });
-    expect(screen.getByText("changes")).toBeTruthy();
-    expect(screen.queryByText("working")).toBeNull();
-  });
-
-  it("uses agent status when multiple agents target the PR", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [
-            {
-              id: "agent-1",
-              name: "blocked-agent",
-              status: "blocked",
-              pull: 10,
-            },
-            {
-              id: "agent-2",
-              name: "working-agent",
-              status: "working",
-              pull: 10,
-            },
-          ],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "blocked" }],
-        },
-      ],
-    };
-    await renderPull({
-      review_state: "CHANGES_REQUESTED",
-      mergeable_state: "clean",
-    });
-    expect(screen.getByText("changes")).toBeTruthy();
-    expect(screen.queryByText("working")).toBeNull();
-  });
-
-  it("does not suppress review results for a blocked herdr agent", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "blocked" }],
-        },
-      ],
-    };
-    await renderPull({
-      review_state: "PASSED",
-      mergeable_state: "clean",
-    });
-    expect(screen.getByText("passed")).toBeTruthy();
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    fireEvent.mouseEnter(screen.getByRole("link", { name: "PR #10" }));
-    act(() => {
-      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
-    });
-    expect(screen.getByText("Herdr").nextSibling?.textContent).toBe("blocked");
-    expect(
-      screen
-        .getByLabelText("Linked PR #10: A PR")
-        .querySelector(".bg-destructive"),
-    ).toBeTruthy();
-  });
-
-  it("keeps re-review and working words muted", async () => {
-    await renderPull({ review_state: "STALE" });
-    expect(screen.getByText("re-review").className).toContain(
-      "text-muted-foreground",
-    );
-  });
-
-  it("colours a merged word violet", async () => {
-    await renderPull({ merged: true, state: "closed" });
-    expect(screen.getByText("merged").className).toContain("text-violet-500");
-  });
-});
-
-// #1061: Herdr focus moved from an always-visible badge into the linked-PR
-// hover popover. #1493: the single popover button became the per-pane terminal
-// icon in the shared Agents list, so the popover only offers an "Open in Herdr"
-// action when a live pane resolves to this PR.
-describe("linked PR Herdr popover action (#1061)", () => {
-  // The popover now opens after a standard hover delay, so advance fake timers
-  // past it before asserting the popover contents.
-  function openPopover() {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    fireEvent.mouseEnter(screen.getByRole("link", { name: "PR #10" }));
-    act(() => {
-      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
-    });
-  }
-
-  // A live pane resolving to PR #10, plus its derived workspace entry — the
-  // realistic pairing (pull_workspaces is derived from the same agent list).
-  function herdrWithPullAgent(
-    agent: Partial<HerdrSessions["repos"][number]["agents"][number]> = {},
-    repo = "me/proj",
-  ): HerdrSessions {
-    return {
-      repos: [
-        {
-          repo,
-          session_name: "me-proj-abc",
-          agents: [
-            {
-              id: "w1:p2",
-              name: "dev #10",
-              status: "working",
-              pull: 10,
-              pull_closed: false,
-              focusable: true,
-              ...agent,
-            },
-          ],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
-          issue_workspaces: [],
-        },
-      ],
-    };
-  }
-
-  it("does not render Open in Herdr until the linked PR link is hovered", async () => {
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
-      />,
-    );
-    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
-  });
-
-  it("shows no badge when no PR is linked, even if herdr sessions are running elsewhere", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
-        },
-      ],
-    };
-    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />);
-    expect(await screen.findByText("Example issue")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
-  });
-
-  it("shows an enabled Open in Herdr action when a live pane resolves to the PR", async () => {
-    herdrSessionsData.value = herdrWithPullAgent();
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
-      />,
-    );
-    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    openPopover();
-    expect(
-      screen.getByRole("button", { name: "Open in Herdr" }).closest(".pt-1"),
-    ).toBeTruthy();
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Open in Herdr",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false);
-  });
-
-  it("renders the popover with an opaque theme background", async () => {
-    herdrSessionsData.value = herdrWithPullAgent();
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
-      />,
-    );
-    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    openPopover();
-
-    const popover = screen
-      .getByRole("button", { name: "Open in Herdr" })
-      .closest(".pt-1")?.firstElementChild;
-    expect(popover?.className).toContain("bg-background");
-    expect(popover?.className).toContain("text-foreground");
-  });
-
-  it("uses the Herdr working signal only for the activity effect", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
-        },
-      ],
-    };
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
-      />,
-    );
-    expect(await screen.findByText("open")).toBeTruthy();
-    expect(screen.queryByText("working")).toBeNull();
-    openPopover();
-    expect(screen.queryByText("working")).toBeNull();
-    const bot = screen
-      .getByLabelText("Linked PR #10: A PR")
-      .querySelector("svg");
-    expect(bot?.parentElement?.className).toContain("dark:bg-sky-950");
-    expect(bot?.parentElement?.className).toContain(
-      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
-    );
-  });
-
-  it("offers no Open in Herdr action for a pane running a different PR", async () => {
-    herdrSessionsData.value = herdrWithPullAgent({ pull: 99, name: "dev #99" });
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
-      />,
-    );
-    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    openPopover();
-    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
-  });
-
-  it("offers no Open in Herdr action for a pane running in a different repo", async () => {
-    herdrSessionsData.value = herdrWithPullAgent({}, "me/other");
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
-      />,
-    );
-    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    openPopover();
-    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
-  });
-
-  it("focuses the agent's pane from the popover Agents list", async () => {
-    herdrSessionsData.value = herdrWithPullAgent();
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
-      />,
-    );
-    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    openPopover();
-    fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
-    expect(focusHerdrAgent).toHaveBeenCalledWith(
-      { repo: "me/proj", paneId: "w1:p2" },
-      expect.objectContaining({ onError: expect.any(Function) }),
-    );
-  });
-});
-
 // #783: agent cost (short token count + cost) on the linked-PR sub-row. Rendered by
 // `LinkedPullSubRow`, the single component shared by the home dashboard, the repo dashboard, and the
 // dedicated issue-list screen — so this covers the display requirement identically for all three.
@@ -1508,10 +1102,10 @@ describe("cost-stopped badge on the linked-PR sub-row (#863)", () => {
   });
 });
 
-// #842: the linked-PR sub-row shows the agent runtime/model as compact metadata between the
-// status word and usage/cost. IssueRow is shared by home, repo dashboard, and the dedicated list.
+// #842: the linked-PR sub-row shows the agent runtime/model as compact metadata before usage/cost.
+// IssueRow is shared by home, repo dashboard, and the dedicated list.
 describe("linked PR agent metadata (#842)", () => {
-  it("separates linked PR sub-row elements with middle dots", async () => {
+  it("separates metadata and usage values with middle dots", async () => {
     herdrSessionsData.value = {
       repos: [
         {
@@ -1552,8 +1146,9 @@ describe("linked PR agent metadata (#842)", () => {
 
     const metadata = await screen.findByText("Claude Code · opus");
     expect(metadata.className).toContain("truncate");
-    const rowText = metadata.closest("div")?.textContent ?? "";
-    expect(rowText).toBe("Claude Code · opus·PR #10GH #99open12.3k · $5");
+    expect(screen.getByTitle("12.3k · $5").textContent).toBe("12.3k · $5");
+    const row = screen.getByLabelText("Linked PR #10: A PR");
+    expect(row.textContent).toBe("PR #10GH #99Claude Code · opus12.3k · $5");
   });
 
   it("shows only the known half and stays quiet when both are unknown", async () => {
