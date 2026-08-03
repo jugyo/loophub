@@ -120,9 +120,7 @@ export function WorkflowRunStatusSection({
       data-debug-component="WorkflowRunStatusSection"
       className="flex flex-col gap-3"
     >
-      <h2 className="text-sm font-medium text-muted-foreground">
-        Workflow run
-      </h2>
+      <h2 className="text-lg font-semibold">Workflow</h2>
       <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-4">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           {!overBudget ? (

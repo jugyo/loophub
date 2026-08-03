@@ -131,7 +131,7 @@ export function PullDetail({
   );
   // The sidebar column is now always reserved (#456): WorkDuration always renders (with an "N/A"
   // fallback), so there is no longer a PR that leaves the aside empty. Other sidebar sections
-  // (Herdr, workflow run, GitHub PR status) hide themselves individually when empty.
+  // (workflow, Herdr, GitHub PR status) hide themselves individually when empty.
 
   return (
     // The whole PR detail is a two-column layout (#346): the main column (header, commit/review
@@ -209,8 +209,8 @@ export function PullDetail({
           data-debug-component="PullSidebar"
           className="flex w-full shrink-0 flex-col gap-6 lg:w-80"
         >
-          <PullHerdrSection owner={owner} repo={repo} pull={number} />
           <WorkflowRunSection owner={owner} repo={repo} number={number} />
+          <PullHerdrSection owner={owner} repo={repo} pull={number} />
           <WorktreeSection value={pull.worktree_path} />
           {/* GitHub PR status (#850): only for a PR with a linked GitHub PR. Fetched on demand;
             loading/error live in the section. */}
@@ -222,7 +222,7 @@ export function PullDetail({
             />
           ) : null}
           {/* Work duration sits at the bottom of the sidebar (#627): a low-priority historical
-            summary that ranks below the live Agents and Workflow run state above. */}
+            summary that ranks below the live Workflow and Agents state above. */}
           <WorkDuration workDuration={pull.work_duration} />
         </aside>
       </div>
@@ -248,9 +248,7 @@ function WorkflowRunSection({
         data-debug-component="WorkflowRunSection"
         className="flex flex-col gap-3"
       >
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Workflow run
-        </h2>
+        <h2 className="text-lg font-semibold">Workflow</h2>
         <div className="flex items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading Workflow run…
         </div>
@@ -263,9 +261,7 @@ function WorkflowRunSection({
         data-debug-component="WorkflowRunSection"
         className="flex flex-col gap-3"
       >
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Workflow run
-        </h2>
+        <h2 className="text-lg font-semibold">Workflow</h2>
         <div
           role="alert"
           className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"

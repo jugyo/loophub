@@ -149,7 +149,8 @@ describe("WorkflowRunStatusSection", () => {
         })}
       />,
     );
-    expect(await screen.findByText("Workflow run")).toBeTruthy();
+    const heading = await screen.findByRole("heading", { name: "Workflow" });
+    expect(heading.className).toBe("text-lg font-semibold");
     expect(screen.getByText("Running")).toBeTruthy();
     expect(screen.getByText("standard")).toBeTruthy();
     expect(screen.getByText("· rework ×2/8")).toBeTruthy();

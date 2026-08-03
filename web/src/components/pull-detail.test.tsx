@@ -1632,8 +1632,28 @@ describe("PullDetail", () => {
     expect(rpcCall("handoffs/list")).toBeUndefined();
   });
 
-  it("shows Workflow run state once in the sidebar with history access", async () => {
+  it("shows Workflow above Agents in the sidebar with history access", async () => {
     renderDetail({
+      "terminal/sessions": () => ({
+        repos: [
+          {
+            repo: "me/proj",
+            session_name: "lh-me-proj",
+            agents: [
+              {
+                id: "%3",
+                name: "dev #30",
+                status: "working",
+                pull: 30,
+                pull_closed: false,
+                focusable: true,
+              },
+            ],
+            pull_workspaces: [{ pull: 30, pane_id: "%3", status: "working" }],
+            issue_workspaces: [],
+          },
+        ],
+      }),
       "workflowRuns/stateForPull": () => ({
         id: 12,
         workflow_id: 3,
@@ -1652,9 +1672,13 @@ describe("PullDetail", () => {
     });
 
     await screen.findByText("Implementation loop");
-    const headings = screen.getAllByText("Workflow run");
-    expect(headings).toHaveLength(1);
-    expect(headings[0].closest("aside")).toBeTruthy();
+    const workflowHeading = screen.getByRole("heading", { name: "Workflow" });
+    const agentsHeading = screen.getByRole("heading", { name: "Agents" });
+    expect(workflowHeading.closest("aside")).toBeTruthy();
+    expect(
+      workflowHeading.compareDocumentPosition(agentsHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByText("Implementation loop")).toBeTruthy();
     expect(screen.getByText("run 12")).toBeTruthy();
     expect(screen.getByText("Verify")).toBeTruthy();
@@ -1893,7 +1917,9 @@ describe("PullDetail", () => {
   it("hides Workflow run when none is linked", async () => {
     renderDetail({ "workflowRuns/stateForPull": () => null });
     await screen.findByText("ui2: PR detail");
-    await waitFor(() => expect(screen.queryByText("Workflow run")).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Workflow" })).toBeNull(),
+    );
   });
 
   it("keeps PR detail visible and reports a Workflow run fetch failure", async () => {
