@@ -152,25 +152,33 @@ test("pull detail returns an empty commit list before the head branch exists", a
   expect(detail.commits).toEqual([]);
 });
 
-test("delete removes the PR without changing its git branches", async () => {
+test("archive hides the PR from lists while preserving its data and git branch", async () => {
   const pull = await svc.pulls.create("me/proj", {
-    title: "delete me",
+    title: "archive me",
     head: "feature",
     base: "main",
   });
   const headBefore = git(["rev-parse", "feature"]);
 
-  expect(await svc.pulls.delete("me/proj", pull.number)).toEqual({ ok: true });
-  expect(() => svc.pulls.get("me/proj", pull.number)).toThrow(/not found/i);
+  expect(await svc.pulls.archive("me/proj", pull.number)).toEqual({ ok: true });
+  expect(
+    (await svc.pulls.get("me/proj", pull.number)).archived_at,
+  ).toBeTruthy();
   expect(
     (await svc.pulls.list("me/proj")).some((p) => p.number === pull.number),
   ).toBe(false);
   expect(git(["rev-parse", "feature"])).toBe(headBefore);
+
+  expect(svc.pulls.unarchive("me/proj", pull.number)).toEqual({ ok: true });
+  expect((await svc.pulls.get("me/proj", pull.number)).archived_at).toBeNull();
+  expect(
+    (await svc.pulls.list("me/proj")).some((p) => p.number === pull.number),
+  ).toBe(true);
 });
 
-test("delete removes an imported GitHub issue link before the PR row", async () => {
+test("archive preserves an imported GitHub issue link", async () => {
   const pull = await svc.pulls.create("me/proj", {
-    title: "delete imported link",
+    title: "archive imported link",
     head: "feature",
     base: "main",
   });
@@ -183,7 +191,37 @@ test("delete removes an imported GitHub issue link before the PR row", async () 
     url: "https://github.com/octocat/hello-world/issues/1",
   });
 
-  expect(svc.pulls.delete("me/proj", pull.number)).toEqual({ ok: true });
+  expect(svc.pulls.archive("me/proj", pull.number)).toEqual({ ok: true });
+  expect(S.getGithubIssue(issue.id)?.url).toBe(
+    "https://github.com/octocat/hello-world/issues/1",
+  );
+});
+
+test("unarchive refuses a second open pull linked to the same issue", async () => {
+  const issue = svc.issues.create("me/proj", { title: "one active pull" });
+  const archived = await svc.pulls.create("me/proj", {
+    title: "archived attempt",
+    head: "archived-attempt",
+    base: "main",
+    issue: issue.number,
+  });
+  svc.pulls.archive("me/proj", archived.number);
+  const active = await svc.pulls.create("me/proj", {
+    title: "active attempt",
+    head: "active-attempt",
+    base: "main",
+    issue: issue.number,
+  });
+
+  expect(() => svc.pulls.unarchive("me/proj", archived.number)).toThrow(
+    `issue #${issue.number} already has an open pull request`,
+  );
+  expect(
+    (await svc.pulls.get("me/proj", archived.number)).archived_at,
+  ).toBeTruthy();
+  const listed = (await svc.pulls.list("me/proj")).map((pull) => pull.number);
+  expect(listed).toContain(active.number);
+  expect(listed).not.toContain(archived.number);
 });
 
 test("pull detail surfaces a git log failure", async () => {

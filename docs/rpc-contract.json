@@ -1856,8 +1856,37 @@
       }
     },
     {
-      "name": "pulls/delete",
-      "description": "Delete a pull request and its PR-scoped metadata.",
+      "name": "pulls/archive",
+      "description": "Archive a pull request while preserving its history.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/unarchive",
+      "description": "Restore an archived pull request to active result sets.",
       "params": {
         "type": "object",
         "properties": {

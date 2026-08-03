@@ -349,7 +349,7 @@ function PullHeader({
           owner={owner}
           repo={repo}
           number={pull.number}
-          onDeleted={() =>
+          onArchived={() =>
             navigate({ to: "/r/$owner/$repo", params: { owner, repo } })
           }
         />

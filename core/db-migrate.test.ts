@@ -133,6 +133,7 @@ test("pulls.session_id is dropped after migration", () => {
   expect(cols).not.toContain("draft");
   expect(cols).toContain("base_sha");
   expect(cols).toContain("head_pending_creation");
+  expect(cols).toContain("archived_at");
   expect(S.getPull(10)?.base_sha).toBeNull();
   expect(S.getPull(10)?.head_pending_creation).toBe(0);
 });

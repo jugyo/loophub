@@ -151,6 +151,10 @@ export function searchIssuesAndPulls(
        FROM issue_search_grams search
        JOIN issues i ON i.id = search.issue_id
        WHERE search.gram IN (${placeholders}) AND i.repo_id = ?
+         AND (i.kind != 'pull' OR NOT EXISTS (
+           SELECT 1 FROM pulls p
+           WHERE p.issue_id = i.id AND p.archived_at IS NOT NULL
+         ))
        GROUP BY i.id
        HAVING COUNT(DISTINCT search.gram) = ?
           AND (instr(lower(i.title), ?) > 0 OR instr(lower(i.body), ?) > 0)`,

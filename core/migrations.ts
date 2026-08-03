@@ -1083,6 +1083,7 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  addColumn("066-pulls-archived-at", "pulls", "archived_at", "TEXT"),
 ];
 
 const LEDGER_SCHEMA = `

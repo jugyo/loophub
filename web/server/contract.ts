@@ -861,14 +861,23 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
-  "pulls/delete": {
-    description: "Delete a pull request and its PR-scoped metadata.",
+  "pulls/archive": {
+    description: "Archive a pull request while preserving its history.",
     params: params({ repo, number: positiveInt, session_id: sid }, [
       "repo",
       "number",
     ]),
     result: anyObject,
-    handler: (p) => svc.pulls.delete(p.repo, p.number, p.session_id),
+    handler: (p) => svc.pulls.archive(p.repo, p.number, p.session_id),
+  },
+  "pulls/unarchive": {
+    description: "Restore an archived pull request to active result sets.",
+    params: params({ repo, number: positiveInt, session_id: sid }, [
+      "repo",
+      "number",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.pulls.unarchive(p.repo, p.number, p.session_id),
   },
   "pulls/files": {
     description: "List a pull request's changed files (diff).",

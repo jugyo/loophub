@@ -225,6 +225,7 @@ export function listRecentInProgressSessionUsageSamples(
              AND i.kind = 'pull'
              AND i.state = 'open'
              AND p.merged = 0
+             AND p.archived_at IS NULL
              AND NOT EXISTS (
                SELECT 1
                FROM events e

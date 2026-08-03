@@ -66,13 +66,22 @@ function resolveLinkedIssueId(
   if (!row) throw new ServiceError(422, `issue #${linkedNumber} not found`);
   if (row.kind !== "issue")
     throw new ServiceError(422, `#${linkedNumber} is not an issue`);
-  if (S.openPullLinkedToIssue(row.id)) {
+  assertNoOtherOpenPull(row.id, row.number);
+  return row.id;
+}
+
+function assertNoOtherOpenPull(
+  linkedIssueId: number,
+  linkedIssueNumber: number,
+  pullIssueId?: number,
+): void {
+  const existing = S.openPullLinkedToIssue(linkedIssueId);
+  if (existing && existing.id !== pullIssueId) {
     throw new ServiceError(
       422,
-      `issue #${linkedNumber} already has an open pull request`,
+      `issue #${linkedIssueNumber} already has an open pull request`,
     );
   }
-  return row.id;
 }
 
 export const pulls = {
@@ -244,13 +253,28 @@ export const pulls = {
     return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
 
-  delete(name: string, number: number, sessionId?: string | null) {
+  archive(name: string, number: number, sessionId?: string | null) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
     const actor = actorFor(sessionId);
-    S.deletePull(row.id, r.id, row.number);
-    S.emitEvent(r.id, "pull_request.deleted", actor, { number });
+    S.archivePull(row.id);
+    S.emitEvent(r.id, "pull_request.archived", actor, { number });
+    return { ok: true } as const;
+  },
+
+  unarchive(name: string, number: number, sessionId?: string | null) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const pull = S.getPull(row.id)!;
+    if (row.state === "open" && !pull.merged && pull.linked_issue_id != null) {
+      const linkedIssue = S.getIssueById(pull.linked_issue_id)!;
+      assertNoOtherOpenPull(linkedIssue.id, linkedIssue.number, row.id);
+    }
+    const actor = actorFor(sessionId);
+    S.unarchivePull(row.id);
+    S.emitEvent(r.id, "pull_request.unarchived", actor, { number });
     return { ok: true } as const;
   },
 

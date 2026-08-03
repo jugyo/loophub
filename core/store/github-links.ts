@@ -102,7 +102,8 @@ export function activeWorkflowGithubPullLinks(): WorkflowGithubPullSyncRow[] {
            AND candidate.status = 'running'
          ORDER BY candidate.id DESC LIMIT 1
        )
-       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND r.archived = 0
+       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
+         AND p.archived_at IS NULL AND r.archived = 0
          AND wr.parent_session_id IS NOT NULL
        ORDER BY i.repo_id, i.number`,
     )
@@ -177,7 +178,7 @@ export function unmergedGithubPullLinks(): GithubPullSyncRow[] {
        JOIN pulls p ON p.issue_id = gp.issue_id
        JOIN repos r ON r.id = i.repo_id
        WHERE gp.github_merged = 0 AND i.kind = 'pull' AND i.state = 'open'
-         AND p.merged = 0 AND r.archived = 0`,
+         AND p.merged = 0 AND p.archived_at IS NULL AND r.archived = 0`,
     )
     .all() as GithubPullSyncRow[];
 }

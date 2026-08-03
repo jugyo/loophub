@@ -18,6 +18,7 @@ export interface PullRow {
   linked_issue_id: number | null;
   changes_addressed_at: string | null;
   changes_addressed_by: string | null;
+  archived_at: string | null;
 }
 
 export type LinkedPullIssueRow = IssueRow & {
@@ -51,7 +52,7 @@ export function listPulls(
   state: string,
   merged?: "only" | "exclude" | null,
 ): IssueRow[] {
-  const conds = ["i.repo_id = ?", "i.kind = 'pull'"];
+  const conds = ["i.repo_id = ?", "i.kind = 'pull'", "p.archived_at IS NULL"];
   const params: unknown[] = [repoId];
   if (state !== "all") {
     conds.push("i.state = ?");
@@ -121,7 +122,8 @@ export function openPullLinkedToIssue(
       `SELECT i.*, p.merged
          FROM pulls p
          JOIN issues i ON i.id = p.issue_id
-         WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
+         WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND i.state = 'open'
+           AND p.merged = 0 AND p.archived_at IS NULL
          ORDER BY i.created_at ASC, i.number ASC
          LIMIT 1`,
     )
@@ -136,7 +138,7 @@ export function linkedPullForIssue(
       `SELECT i.*, p.merged, p.merged_at
          FROM pulls p
          JOIN issues i ON i.id = p.issue_id
-         WHERE p.linked_issue_id = ? AND i.kind = 'pull'
+         WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND p.archived_at IS NULL
          ORDER BY CASE WHEN i.state = 'open' AND p.merged = 0 THEN 0 ELSE 1 END,
                   COALESCE(p.merged_at, i.updated_at) DESC
          LIMIT 1`,
@@ -170,7 +172,7 @@ export function linkedPullsForIssue(
       `SELECT i.*, p.merged, p.merged_at
        FROM pulls p
        JOIN issues i ON i.id = p.issue_id
-       WHERE p.linked_issue_id = ? AND i.kind = 'pull'
+       WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND p.archived_at IS NULL
        ORDER BY CASE WHEN i.state = 'open' AND p.merged = 0 THEN 0 ELSE 1 END,
                 COALESCE(p.merged_at, i.updated_at) DESC
        LIMIT ?`,
@@ -195,6 +197,7 @@ export function linkedPullsByIssue(
          FROM pulls p
          JOIN issues i ON i.id = p.issue_id
          WHERE p.linked_issue_id IN (${placeholders}) AND i.kind = 'pull'
+           AND p.archived_at IS NULL
        )
        WHERE linked_rank <= ?
        ORDER BY linked_issue_id, linked_rank`,
@@ -212,9 +215,8 @@ export function linkedPullsByIssue(
   return byIssue;
 }
 
-// Full linked-PR fan-out for issue detail. Unlike linkedPullsForIssue, this is
-// intentionally uncapped: the detail page is the place where the complete issue
-// history should be visible.
+// Full active linked-PR fan-out for issue detail. Unlike linkedPullsForIssue, this is
+// intentionally uncapped: the detail page is the place where active attempt history is visible.
 export function allLinkedPullsForIssue(
   linkedIssueId: number,
 ): LinkedPullIssueRow[] {
@@ -223,9 +225,25 @@ export function allLinkedPullsForIssue(
       `SELECT i.*, p.merged, p.merged_at
        FROM pulls p
        JOIN issues i ON i.id = p.issue_id
-       WHERE p.linked_issue_id = ? AND i.kind = 'pull'
+       WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND p.archived_at IS NULL
        ORDER BY CASE WHEN i.state = 'open' AND p.merged = 0 THEN 0 ELSE 1 END,
                 COALESCE(p.merged_at, i.updated_at) DESC`,
+    )
+    .all(linkedIssueId) as LinkedPullIssueRow[];
+}
+
+// Archived PRs stay linked to their issue but are selected separately so callers cannot
+// accidentally mix them back into the normal issue and dashboard result sets.
+export function archivedLinkedPullsForIssue(
+  linkedIssueId: number,
+): LinkedPullIssueRow[] {
+  return db
+    .query(
+      `SELECT i.*, p.merged, p.merged_at
+       FROM pulls p
+       JOIN issues i ON i.id = p.issue_id
+       WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND p.archived_at IS NOT NULL
+       ORDER BY p.archived_at DESC, i.number DESC`,
     )
     .all(linkedIssueId) as LinkedPullIssueRow[];
 }
@@ -236,44 +254,15 @@ export function getPull(issueId: number): PullRow | null {
     .get(issueId) as PullRow | null;
 }
 
-/** Delete a PR and its PR-scoped metadata without touching any git worktree or ref. */
-export function deletePull(
-  issueId: number,
-  repoId: number,
-  number: number,
-): void {
-  db.run("BEGIN IMMEDIATE");
-  try {
-    // These tables reference issues without ON DELETE CASCADE. Remove only rows owned by this PR;
-    // session records, worktrees, and repository-level events remain untouched.
-    for (const table of [
-      "review_responses",
-      "review_comments",
-      "reviews",
-      "comments",
-      "issue_labels",
-      "session_links",
-      "github_pull_feedback",
-      "github_pull_status",
-      "github_pulls",
-      "github_issues",
-      "issue_search_grams",
-    ]) {
-      db.run(`DELETE FROM ${table} WHERE issue_id = ?`, [issueId]);
-    }
-    db.run("DELETE FROM handoffs WHERE pr_id = ?", [issueId]);
-    db.run("DELETE FROM retros WHERE pr_id = ?", [issueId]);
-    db.run(
-      "DELETE FROM pull_conflict_states WHERE repo_id = ? AND pull_number = ?",
-      [repoId, number],
-    );
-    db.run("DELETE FROM pulls WHERE issue_id = ?", [issueId]);
-    db.run("DELETE FROM issues WHERE id = ?", [issueId]);
-    db.run("COMMIT");
-  } catch (error) {
-    db.run("ROLLBACK");
-    throw error;
-  }
+export function archivePull(issueId: number): void {
+  db.run("UPDATE pulls SET archived_at = ? WHERE issue_id = ?", [
+    now(),
+    issueId,
+  ]);
+}
+
+export function unarchivePull(issueId: number): void {
+  db.run("UPDATE pulls SET archived_at = NULL WHERE issue_id = ?", [issueId]);
 }
 
 export function setHeadSha(issueId: number, sha: string | null) {
@@ -295,7 +284,8 @@ export function listOpenPullsForRepo(repoId: number): OpenPullSummaryRow[] {
       `SELECT p.issue_id, i.number, i.title, p.head_ref, p.base_ref
        FROM pulls p
        JOIN issues i ON i.id = p.issue_id
-       WHERE i.repo_id = ? AND i.kind = 'pull' AND i.state = 'open' AND p.merged = 0`,
+       WHERE i.repo_id = ? AND i.kind = 'pull' AND i.state = 'open'
+         AND p.merged = 0 AND p.archived_at IS NULL`,
     )
     .all(repoId) as OpenPullSummaryRow[];
 }
@@ -310,7 +300,8 @@ export function openPulls(): OpenPullSweepRow[] {
        FROM issues i
        JOIN pulls p ON p.issue_id = i.id
        JOIN repos r ON r.id = i.repo_id
-       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND r.archived = 0`,
+       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
+         AND p.archived_at IS NULL AND r.archived = 0`,
     )
     .all() as OpenPullSweepRow[];
 }

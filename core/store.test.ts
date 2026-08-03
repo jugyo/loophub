@@ -62,7 +62,7 @@ test("deleteRepo removes Workflow runs and review responses before deleting the 
   expect(S.getRepo("me", "workflow-remove")).toBeNull();
 });
 
-test("deletePull removes review responses before their parent review", () => {
+test("archivePull preserves the PR and its review history", () => {
   const repo = S.createRepo("me/pull-remove", "/tmp/pull-remove");
   const issue = S.createIssue(repo.id, "pull", "reviewed change", "", "author");
   S.createPull(issue.id, "feature", "main", null);
@@ -74,9 +74,12 @@ test("deletePull removes review responses before their parent review", () => {
   );
   S.createReviewResponse(issue.id, review.id, null, "executor", "fixed");
 
-  expect(() => S.deletePull(issue.id, repo.id, issue.number)).not.toThrow();
-  expect(S.getPull(issue.id)).toBeNull();
-  expect(S.listReviewResponses(issue.id)).toEqual([]);
+  expect(() => S.archivePull(issue.id)).not.toThrow();
+  expect(S.getPull(issue.id)?.archived_at).toBeTruthy();
+  expect(S.listReviewResponses(issue.id)).toHaveLength(1);
+  S.unarchivePull(issue.id);
+  expect(S.getPull(issue.id)?.archived_at).toBeNull();
+  expect(S.listReviewResponses(issue.id)).toHaveLength(1);
 });
 
 test("updateRepo renames full_name and keeps name/owner in sync (#485)", () => {

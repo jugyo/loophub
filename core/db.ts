@@ -214,7 +214,8 @@ CREATE TABLE IF NOT EXISTS pulls (
   merged          INTEGER NOT NULL DEFAULT 0,
   merged_at       TEXT,
   merge_commit_sha TEXT,
-  merge_method    TEXT
+  merge_method    TEXT,
+  archived_at     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS comments (

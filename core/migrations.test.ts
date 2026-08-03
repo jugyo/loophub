@@ -133,6 +133,11 @@ test("the one-time data migrations converged instead of running on every boot", 
     D.db.query("SELECT closed_at FROM issues WHERE id = 10").get(),
   ).toEqual({ closed_at: "t1" });
   expect(
+    D.db.query("SELECT archived_at FROM pulls WHERE issue_id = 10").get(),
+  ).toEqual({
+    archived_at: null,
+  });
+  expect(
     D.db
       .query("SELECT last_id FROM notification_cursors WHERE scope = 'events'")
       .get(),

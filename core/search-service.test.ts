@@ -96,6 +96,27 @@ test("search index follows title/body updates and deletes", () => {
   expect(svc.search.query("me/search-sync", "searchable")).toEqual([]);
 });
 
+test("search excludes archived pull requests while retaining their index", () => {
+  const repo = S.createRepo("me/search-archive", "/tmp/search-archive");
+  const pull = S.createIssue(
+    repo.id,
+    "pull",
+    "Archived searchable attempt",
+    "",
+    "me",
+  );
+  S.createPull(pull.id, "archive", "main", null);
+
+  expect(svc.search.query("me/search-archive", "searchable")).toHaveLength(1);
+  S.archivePull(pull.id);
+  expect(svc.search.query("me/search-archive", "searchable")).toEqual([]);
+  expect(
+    D.db
+      .query("SELECT 1 FROM issue_search_grams WHERE issue_id = ? LIMIT 1")
+      .get(pull.id),
+  ).toBeTruthy();
+});
+
 test("search ranks whole-word and boundary matches above buried substrings", () => {
   const repo = S.createRepo("me/search-rank", "/tmp/search-rank");
   // Same field (title); only match kind differs. "crit" is buried in "hypocrite",

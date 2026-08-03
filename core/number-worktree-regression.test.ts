@@ -29,7 +29,7 @@ afterAll(() => {
   rmSync(REPO_PATH, { recursive: true, force: true });
 });
 
-test("deleted PR numbers and their stale worktrees are not reused by a later attempt", async () => {
+test("archived PR numbers and their worktrees are not reused by a later attempt", async () => {
   const repo = S.createRepo("me/proj", REPO_PATH);
   const baseSha = (await git(REPO_PATH, ["rev-parse", "main"])).stdout.trim();
   const firstIssue = S.createIssue(repo.id, "issue", "first", "", "me");
@@ -62,15 +62,15 @@ test("deleted PR numbers and their stale worktrees are not reused by a later att
   await git(stalePath, ["add", "-A"]);
   await git(stalePath, ["commit", "-qm", "stale attempt"]);
 
-  expect(svc.pulls.delete(repo.full_name, firstPr.number)).toEqual({
+  expect(svc.pulls.archive(repo.full_name, firstPr.number)).toEqual({
     ok: true,
   });
-  expect(S.getIssue(repo.id, firstPr.number)).toBeNull();
+  expect(S.getIssue(repo.id, firstPr.number)).not.toBeNull();
   expect(
     S.listEvents(0, repo.id, 100).some((event) => {
       const payload = JSON.parse(event.payload) as { number?: number };
       return (
-        event.type === "pull_request.deleted" &&
+        event.type === "pull_request.archived" &&
         payload.number === firstPr.number
       );
     }),

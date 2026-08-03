@@ -819,13 +819,26 @@ export function patchPull(
   );
 }
 
-export function deletePull(
+export function archivePull(
   owner: string,
   repo: string,
   number: number,
   sessionId: string = getSessionId(),
 ) {
-  return rpc<{ ok: true }>("pulls/delete", {
+  return rpc<{ ok: true }>("pulls/archive", {
+    repo: full(owner, repo),
+    number,
+    session_id: sessionId,
+  });
+}
+
+export function unarchivePull(
+  owner: string,
+  repo: string,
+  number: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ ok: true }>("pulls/unarchive", {
     repo: full(owner, repo),
     number,
     session_id: sessionId,

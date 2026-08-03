@@ -372,6 +372,8 @@ export interface IssueWire {
   linked_pull_requests?: PullSummaryWire[];
   linked_pull_request?: PullSummaryWire | null;
   linked_pull_requests_truncated?: boolean;
+  archived_pull_requests?: PullSummaryWire[];
+  archived_pull_requests_truncated?: boolean;
   has_open_pull_request: boolean;
   github_issue?: GithubIssueWire | null;
   // Structured acceptance criteria (enabled only), display order (#1894). Detail response only.
@@ -2111,6 +2113,7 @@ export interface PullWire {
   review_gate: ReviewGateWire;
   changes_addressed_at: string | null;
   changes_addressed_by: string | null;
+  archived_at: string | null;
   labels: LabelWire[];
   comments: number;
   // Full PR comments are included on detail responses so an Execute child can read a human comment

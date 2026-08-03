@@ -10,8 +10,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import {
+  archivePull,
   createDiffFeedback,
-  deletePull,
   getGithubPrStatus,
   getPull,
   getPullDebug,
@@ -32,6 +32,7 @@ import {
   reactToPullComment,
   replyDiffFeedback,
   setDiffFeedbackResolved,
+  unarchivePull,
 } from "@/api/client";
 import type {
   DiffFeedbackList,
@@ -678,10 +679,18 @@ export function useSetPullState(owner: string, repo: string, number: number) {
   });
 }
 
-export function useDeletePull(owner: string, repo: string, number: number) {
+export function useArchivePull(owner: string, repo: string, number: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => deletePull(owner, repo, number),
+    mutationFn: () => archivePull(owner, repo, number),
+    onSuccess: () => invalidatePull(qc, owner, repo, number),
+  });
+}
+
+export function useUnarchivePull(owner: string, repo: string, number: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => unarchivePull(owner, repo, number),
     onSuccess: () => invalidatePull(qc, owner, repo, number),
   });
 }

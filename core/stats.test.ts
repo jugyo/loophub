@@ -35,6 +35,30 @@ beforeAll(async () => {
   S.createPull(closedPr.id, "b3", "main", null);
   S.updateIssue(closedPr.id, { state: "closed" });
 
+  const archivedOpenPr = S.createIssue(a.id, "pull", "archived open", "", "t");
+  S.createPull(archivedOpenPr.id, "b4", "main", null);
+  S.archivePull(archivedOpenPr.id);
+  const archivedMergedPr = S.createIssue(
+    a.id,
+    "pull",
+    "archived merged",
+    "",
+    "t",
+  );
+  S.createPull(archivedMergedPr.id, "b5", "main", null);
+  S.setMerged(archivedMergedPr.id, "feedface", "squash");
+  S.archivePull(archivedMergedPr.id);
+  const archivedClosedPr = S.createIssue(
+    a.id,
+    "pull",
+    "archived closed",
+    "",
+    "t",
+  );
+  S.createPull(archivedClosedPr.id, "b6", "main", null);
+  S.updateIssue(archivedClosedPr.id, { state: "closed" });
+  S.archivePull(archivedClosedPr.id);
+
   // me/beta: stays empty — all counts must read 0, not be missing.
   void b;
 });
@@ -44,14 +68,15 @@ afterAll(() => {
 });
 
 describe("stats.get", () => {
-  test("counts issues and PRs per repo, separating merged from closed", () => {
+  test("counts active PRs per repo, separating merged from closed", () => {
     const { repos } = svc.stats.get();
     expect(repos.map((r) => r.full_name)).toEqual(["me/alpha", "me/beta"]);
 
     const alpha = repos[0];
     expect(alpha.issues).toEqual({ open: 2, closed: 1 });
     // The merged PR's issues row is also state='closed'; it must count as merged
-    // only, so closed captures closed-without-merge alone.
+    // only, so closed captures closed-without-merge alone. Archived PRs in all
+    // three states are excluded from these active-result counts.
     expect(alpha.pulls).toEqual({ open: 1, merged: 1, closed: 1 });
 
     const beta = repos[1];
@@ -64,8 +89,8 @@ describe("stats.get", () => {
     const byName = new Map(tables.map((t) => [t.name, t.rows]));
 
     expect(byName.get("repos")).toBe(2);
-    expect(byName.get("issues")).toBe(6); // 3 issues + 3 pulls
-    expect(byName.get("pulls")).toBe(3);
+    expect(byName.get("issues")).toBe(9); // 3 issues + 6 pulls
+    expect(byName.get("pulls")).toBe(6);
     // Every user table from the schema appears, even empty ones; internal
     // sqlite_* tables do not.
     expect(byName.get("comments")).toBe(0);

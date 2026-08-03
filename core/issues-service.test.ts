@@ -90,6 +90,33 @@ test("issues.get reports an open linked pull request", async () => {
   expect(detail.has_open_pull_request).toBe(true);
 });
 
+test("issues.get separates archived pull requests from active attempts", async () => {
+  const issue = svc.issues.create("me/proj", { title: "archived attempt" });
+  git(["branch", "feature/archived-attempt"]);
+  const pull = await svc.pulls.create("me/proj", {
+    title: "archived attempt",
+    head: "feature/archived-attempt",
+    issue: issue.number,
+  });
+
+  svc.pulls.archive("me/proj", pull.number);
+  const detail = await svc.issues.get("me/proj", issue.number);
+
+  expect(detail.linked_pull_requests).toEqual([]);
+  expect(detail.archived_pull_requests?.map((item) => item.number)).toEqual([
+    pull.number,
+  ]);
+  expect(detail.has_open_pull_request).toBe(false);
+
+  svc.pulls.unarchive("me/proj", pull.number);
+  const restored = await svc.issues.get("me/proj", issue.number);
+  expect(restored.linked_pull_requests?.map((item) => item.number)).toEqual([
+    pull.number,
+  ]);
+  expect(restored.archived_pull_requests).toEqual([]);
+  expect(restored.has_open_pull_request).toBe(true);
+});
+
 test("issues.list keeps batched related data associated with each issue", async () => {
   const first = svc.issues.create("me/proj", { title: "batched first" });
   const second = svc.issues.create("me/proj", { title: "batched second" });

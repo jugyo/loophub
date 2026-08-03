@@ -596,6 +596,101 @@ describe("IssueDetail", () => {
     expect(screen.queryByText(/Discard/)).toBeNull();
   });
 
+  it("opens the archived pull request history in a dialog", async () => {
+    renderDetail(() => ({
+      ...issue,
+      archived_pull_requests: [
+        {
+          ...issue.linked_pull_request!,
+          number: 28,
+          title: "archived attempt",
+          state: "closed",
+        },
+      ],
+    }));
+
+    const trigger = await screen.findByRole("button", {
+      name: "Archived pull requests (1)",
+    });
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Archived pull requests",
+    });
+    expect(within(dialog).getByText("PR #28")).toBeTruthy();
+    expect(within(dialog).getByText("archived attempt")).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Close archived pull requests",
+      }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("unarchives a pull request from the archived history dialog", async () => {
+    renderDetail(
+      () => ({
+        ...issue,
+        archived_pull_requests: [
+          {
+            ...issue.linked_pull_request!,
+            number: 28,
+            title: "archived attempt",
+            state: "closed",
+          },
+        ],
+      }),
+      { "pulls/unarchive": () => ({ ok: true }) },
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Archived pull requests (1)",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Unarchive" }));
+
+    await waitFor(() => expect(rpcCall("pulls/unarchive")).toBeTruthy());
+    expect(rpcCall("pulls/unarchive")!.params).toMatchObject({
+      repo: "me/proj",
+      number: 28,
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("keeps an archived pull visible when unarchive is rejected", async () => {
+    renderDetail(
+      () => ({
+        ...issue,
+        archived_pull_requests: [
+          {
+            ...issue.linked_pull_request!,
+            number: 28,
+            title: "archived attempt",
+            state: "open",
+          },
+        ],
+      }),
+      {
+        "pulls/unarchive": () => {
+          throw new RpcFault(422, "Issue already has an open pull request");
+        },
+      },
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Archived pull requests (1)",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Unarchive" }));
+
+    expect(
+      await screen.findByText("Issue already has an open pull request"),
+    ).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
   // #2263: a running agent's usage counter ticks every few seconds. Its event now invalidates only
   // the PR's usage query, so the row has to take its tokens/cost from there — the issue payload it
   // rides on is rebuilt from live git and is no longer refetched for a usage tick.
