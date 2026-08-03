@@ -23,6 +23,11 @@ export const queryKeys = {
   workspaces: (full: string) => ["workspaces", full] as const,
   pulls: (full: string) => ["pulls", full] as const,
   pull: (full: string, number: number) => ["pull", full, number] as const,
+  // Top-level rather than a child of pull(full, n): the PR detail is serialized from live git,
+  // while these totals come from the DB alone — so the high-frequency usage tick refreshes the
+  // numbers without dragging the git-backed payload along (#2263).
+  pullUsage: (full: string, number: number) =>
+    ["pull-usage", full, number] as const,
   pullDebug: (full: string, number: number) =>
     ["pull-debug", full, number] as const,
   pullFiles: (full: string, number: number) =>
@@ -267,6 +272,9 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // repo.renamed additionally strands the old name's repo-scoped caches — the event's `repo`
     // field carries the NEW full_name — so invalidate the old-name prefixes via payload.from.
     keys.push([...queryKeys.repos()]);
+    // The repo's own detail (repos/get) and the resolved merge mode under the same prefix change
+    // here and nowhere else, so this is the only branch that invalidates them (#2263).
+    if (repo) keys.push([...queryKeys.repo(repo)]);
     // Dashboard rows embed the repo's full_name and /r/<full_name> links, so any repo
     // metadata change (rename especially) must refresh the cross-repo top page too.
     keys.push([...queryKeys.dashboard()]);
@@ -312,11 +320,18 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     if (repo) {
       const prNumber = payload?.pr;
       const issueNumber = payload?.issue;
+      // #2263: a running agent's usage counter is the app's highest-frequency event, and the only
+      // thing it changes on those details is the tokens/cost pair — which now has its own git-free
+      // query. Refetching a git-backed detail every few seconds for two numbers is not worth it.
+      const usageOnly = type === "agent_session.usage_updated";
       if (typeof prNumber === "number") {
-        keys.push([...queryKeys.pull(repo, prNumber)]);
+        if (usageOnly) keys.push([...queryKeys.pullUsage(repo, prNumber)]);
+        else keys.push([...queryKeys.pull(repo, prNumber)]);
+        // The debug dump embeds the PR's sessions and their usage, and only exists while a human
+        // holds the modal open, so it keeps following every agent_session event.
         keys.push([...queryKeys.pullDebug(repo, prNumber)]);
       }
-      if (typeof issueNumber === "number")
+      if (typeof issueNumber === "number" && !usageOnly)
         keys.push([...queryKeys.issue(repo, issueNumber)]);
     }
   }
@@ -327,10 +342,10 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     keys.push([...queryKeys.pullDebug(repo, number)]);
   }
 
-  // Repo-level metadata (assignment / status counts) and the activity feed can
-  // shift on any event for the repo.
+  // The activity feed can shift on any event for the repo. The repo itself (repos/get) is
+  // deliberately not here: repoJSON carries no counts and no usage, so it only changes on repo.*
+  // events, which invalidate it in their own branch above (#2263).
   if (repo) {
-    keys.push([...queryKeys.repo(repo)]);
     keys.push([...queryKeys.events(), repo]);
   }
 

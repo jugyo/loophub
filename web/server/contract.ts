@@ -827,6 +827,12 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pulls.get(p.repo, p.number),
   },
+  "pulls/usage": {
+    description: "Get a pull request's agent usage totals (tokens/cost).",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.usage(p.repo, p.number),
+  },
   "pageData/pullDetail": {
     description: "Get all initial data for one pull-request detail screen.",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),

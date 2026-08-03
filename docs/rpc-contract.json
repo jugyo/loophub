@@ -1765,6 +1765,31 @@
       }
     },
     {
+      "name": "pulls/usage",
+      "description": "Get a pull request's agent usage totals (tokens/cost).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "pageData/pullDetail",
       "description": "Get all initial data for one pull-request detail screen.",
       "params": {

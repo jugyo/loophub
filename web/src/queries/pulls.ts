@@ -18,6 +18,7 @@ import {
   getPullDetailPage,
   getPullDiff,
   getPullFileAtRef,
+  getPullUsage,
   listDiffFeedback,
   listPullComments,
   listPullCommitFiles,
@@ -75,6 +76,18 @@ export function usePullDetailPage(owner: string, repo: string, number: number) {
       qc.setQueryData(queryKeys.issueComments(repoFull, number), data.comments);
       return data;
     },
+  });
+}
+
+/**
+ * A PR's agent-cost totals alone (#2263). Split off `usePull` so the usage counter — which ticks
+ * every few seconds while an agent runs — refreshes on a query the server answers from the DB,
+ * leaving the git-backed PR/issue detail to the events that actually change it.
+ */
+export function usePullUsage(owner: string, repo: string, number: number) {
+  return useQuery({
+    queryKey: queryKeys.pullUsage(full(owner, repo), number),
+    queryFn: () => getPullUsage(owner, repo, number),
   });
 }
 

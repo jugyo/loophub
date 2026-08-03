@@ -14,7 +14,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { type FormEvent, type RefObject, useRef, useState } from "react";
-import type { Issue, IssueComment } from "@/api/types";
+import type { Issue, IssueComment, LinkedPull } from "@/api/types";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
 import {
   DetailHeaderTitle,
@@ -50,6 +50,7 @@ import {
   useSetAcceptanceCriterionEnabled,
   useSetIssueState,
 } from "@/queries/issues";
+import { usePullUsage } from "@/queries/pulls";
 import { useWorkerLaunchGate } from "@/queries/worker-status";
 import { useWorkflows } from "@/queries/workflows";
 
@@ -531,12 +532,11 @@ function LinkedPullSummary({
         {pulls.length > 1 ? "Linked pull requests" : "Linked pull request"}
       </h2>
       {pulls.map((pull) => (
-        <LinkedPullSummaryRow
+        <LinkedPullSummaryRowWithUsage
           key={pull.number}
           owner={owner}
           repo={repo}
           pull={pull}
-          showTitle
         />
       ))}
       {issue.linked_pull_requests_truncated ? (
@@ -546,6 +546,30 @@ function LinkedPullSummary({
         </p>
       ) : null}
     </section>
+  );
+}
+
+// The row's tokens/cost come from the PR's own usage query (#2263) rather than this page's issue
+// payload: a running agent updates them every few seconds, and rebuilding the issue's git-backed
+// payload that often costs far more than the two numbers are worth. The values serialized with the
+// issue stay on screen until the first usage response lands.
+function LinkedPullSummaryRowWithUsage({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: LinkedPull;
+}) {
+  const { data: usage } = usePullUsage(owner, repo, pull.number);
+  return (
+    <LinkedPullSummaryRow
+      owner={owner}
+      repo={repo}
+      pull={usage ? { ...pull, ...usage } : pull}
+      showTitle
+    />
   );
 }
 

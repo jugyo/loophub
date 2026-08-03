@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { traceGitCommands } from "../git-trace-test-helper.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-pull-commits-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -327,4 +328,43 @@ exec "${realGit}" "$@"
   } finally {
     process.env.PATH = originalPath;
   }
+});
+
+// #2263: the usage totals used to be readable only through the PR / issue detail payloads, whose
+// serializers run a git status fan-out. A running agent updates them every few seconds, so the
+// slice is served on its own — and the point of the split is that this path never spawns git.
+test("usage returns the PR's agent-cost totals without touching git", async () => {
+  const pull = await svc.pulls.create("me/proj", {
+    title: "usage totals",
+    head: "feature",
+    base: "main",
+  });
+  const issue = S.getIssue(S.getRepo("me", "proj")!.id, pull.number)!;
+
+  // No linked session with usage yet: the fields are omitted rather than reported as zero.
+  expect(await svc.pulls.usage("me/proj", pull.number)).toEqual({
+    number: pull.number,
+  });
+
+  const session = "77777777-0000-4000-8000-000000000001";
+  S.registerAgentSession(session, "lh-build", "ext-usage");
+  S.linkSession(session, issue.id);
+  S.upsertSessionUsage(session, {
+    model: "claude-sonnet-5",
+    input_tokens: 10,
+    cache_creation_input_tokens: 1,
+    cache_read_input_tokens: 2,
+    output_tokens: 3,
+    cost_usd: 0.5,
+  });
+
+  const traced = await traceGitCommands(async () =>
+    svc.pulls.usage("me/proj", pull.number),
+  );
+  expect(traced.result).toEqual({
+    number: pull.number,
+    total_tokens: 16,
+    cost_usd: 0.5,
+  });
+  expect(traced.commands).toEqual([]);
 });

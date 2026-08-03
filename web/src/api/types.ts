@@ -34,6 +34,7 @@ import type {
   PullDiffWire,
   PullFileWire,
   PullSummaryWire,
+  PullUsageWire,
   PullWire,
   RelatedSessionsUsageByKindWire,
   RelatedSessionsUsageWire,
@@ -267,6 +268,9 @@ export type PullRequest = PullWire;
 export type IssueListPage = IssueListPageWire;
 export type IssueDetailPage = IssueDetailPageWire;
 export type PullDetailPage = PullDetailPageWire;
+
+/** A PR's agent-cost totals on their own, served without touching git (#2263). */
+export type PullUsage = PullUsageWire;
 
 /** A session related to a PR or issue (#298), including its persisted runtime identity. */
 export type RelatedSession = RelatedSessionWire;
