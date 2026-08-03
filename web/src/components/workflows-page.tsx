@@ -102,17 +102,54 @@ export function WorkflowsPage() {
   );
 }
 
+export function RepoWorkflowsSection({
+  owner,
+  repo,
+}: {
+  owner: string;
+  repo: string;
+}) {
+  const fullName = `${owner}/${repo}`;
+  const {
+    data: workflows,
+    isLoading,
+    isError,
+  } = useWorkflows({
+    repo: fullName,
+  });
+  return (
+    <section className="mt-6">
+      <NewWorkflowButton repo={fullName} />
+      <div className="mt-6 flex flex-col gap-3">
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : isError ? (
+          <p className="text-sm text-destructive">Failed to load workflows.</p>
+        ) : !workflows || workflows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No repository workflows yet.
+          </p>
+        ) : (
+          workflows.map((workflow) => (
+            <WorkflowCard key={workflow.id} workflow={workflow} />
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 // New workflow is AI-driven, mirroring New issue (#1889): instead of prefilling a create form, it
 // launches a herdr agent seeded with the workflow-create instructions, and that agent runs
-// `lh workflow create`. A workflow is global, so this launch carries no repo — the terminal service
-// pins it to the LoopHub-home cwd.
+// `lh workflow create`. Global settings omit repo; repository settings pass one into the prompt so
+// the generated command includes the explicit scope. The terminal service uses LoopHub home as cwd.
 function launchSuffix(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID().slice(0, 8)
     : Math.random().toString(36).slice(2, 10);
 }
 
-function NewWorkflowButton() {
+function NewWorkflowButton({ repo }: { repo?: string }) {
   const { launchTerminal } = useTerminalLauncher();
   const { data: settings } = useSettings();
 
@@ -124,7 +161,11 @@ function NewWorkflowButton() {
         launchTerminal({
           workflow: "workflow-create",
           label: `New workflow - ${launchSuffix()}`,
-          prompt: workflowCreatePrompt(settings?.workflowContractLanguage),
+          repo,
+          prompt: workflowCreatePrompt(
+            settings?.workflowContractLanguage,
+            repo,
+          ),
         })
       }
     >
@@ -244,7 +285,7 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
           error={archive.error ? errorMessage(archive.error) : null}
           onConfirm={async () => {
             try {
-              await archive.mutateAsync(workflow.name);
+              await archive.mutateAsync(workflow.id);
             } catch {
               return; // surfaced via archive.error above
             }
@@ -366,7 +407,7 @@ function WorkflowForm({
     try {
       const { name: nextName, ...rest } = fields;
       await update.mutateAsync({
-        name: workflow.name,
+        id: workflow.id,
         // new_name renames; unchanged name is a harmless no-op patch.
         patch: { ...rest, new_name: nextName },
       });

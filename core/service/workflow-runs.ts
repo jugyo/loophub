@@ -261,7 +261,10 @@ export type WorkflowNextResult = WorkflowNextAction & {
   event: LoopEvent | null;
 };
 
-function workflowByInput(input: { workflow?: string; workflowId?: number }) {
+function workflowByInput(
+  input: { workflow?: string; workflowId?: number },
+  repo: S.Repo,
+) {
   if (input.workflow && input.workflowId !== undefined) {
     throw new ServiceError(
       422,
@@ -272,12 +275,19 @@ function workflowByInput(input: { workflow?: string; workflowId?: number }) {
     const workflow = S.getWorkflowById(input.workflowId);
     if (!workflow || workflow.archived_at)
       throw new ServiceError(404, "Workflow not found");
+    if (workflow.repo_id !== null && workflow.repo_id !== repo.id)
+      throw new ServiceError(
+        422,
+        "Workflow is not available for this repository",
+      );
     return workflow;
   }
   if (input.workflow) {
-    const workflow = S.getWorkflowByName(input.workflow.trim());
-    if (!workflow || workflow.archived_at)
-      throw new ServiceError(404, "Workflow not found");
+    const name = input.workflow.trim();
+    const workflow = S.listWorkflows({ applicableToRepoId: repo.id }).find(
+      (candidate) => candidate.name === name,
+    );
+    if (!workflow) throw new ServiceError(404, "Workflow not found");
     return workflow;
   }
   throw new ServiceError(422, "--workflow or --workflow-id is required");
@@ -1130,7 +1140,7 @@ export const workflowRuns = {
   ): Promise<WorkflowRunStartResult> {
     const r = repoOr404(name);
     ensureWritable(r);
-    const workflow = workflowByInput(input);
+    const workflow = workflowByInput(input, r);
     const issue = issueOr404(r, input.issue, "issue");
     const runtime: CodingAgent = input.runtime ?? "claude-code";
     const contractLanguage = workflowContractLanguage();

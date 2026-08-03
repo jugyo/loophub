@@ -1385,7 +1385,14 @@ export function webConfigJSON(debug: boolean): WebConfigWire {
   return { debug };
 }
 
-// A workflow definition (#997): a global prompt bundle for the fixed
+export type WorkflowScopeWire =
+  | { kind: "global" }
+  | {
+      kind: "repository";
+      repo: { id: number; owner: string; name: string };
+    };
+
+// A workflow definition (#997): a global or repository-scoped prompt bundle for the fixed
 // Execute/Verify workflow. Prompt strings are plain markdown and may be empty.
 export interface WorkflowWire {
   id: number;
@@ -1396,6 +1403,7 @@ export interface WorkflowWire {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  scope: WorkflowScopeWire;
 }
 
 export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
@@ -1408,6 +1416,17 @@ export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
     archived_at: row.archived_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    scope:
+      row.repo_id === null
+        ? { kind: "global" }
+        : {
+            kind: "repository",
+            repo: {
+              id: row.repo_id,
+              owner: row.repo_owner!,
+              name: row.repo_name!,
+            },
+          },
   };
 }
 

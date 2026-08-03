@@ -277,16 +277,21 @@ export const methods: Record<string, MethodDef> = {
   },
   "workflows/list": {
     description:
-      "List global workflow definitions (Execute/Verify prompt bundles).",
-    params: EMPTY_PARAMS,
+      "List workflow definitions in one management scope or applicable to one repository.",
+    params: params({ repo, applicable_to_repo: repo }),
     result: anyArray,
-    handler: () => svc.workflows.list(),
+    handler: (p) =>
+      svc.workflows.list({
+        scope: p.repo ? { repo: p.repo } : undefined,
+        applicableTo: p.applicable_to_repo,
+      }),
   },
   "workflows/create": {
-    description: "Create a global workflow definition.",
-    params: params({ name: strNonEmpty, ...workflowFields, session_id: sid }, [
-      "name",
-    ]),
+    description: "Create a global or repository-scoped workflow definition.",
+    params: params(
+      { name: strNonEmpty, repo, ...workflowFields, session_id: sid },
+      ["name"],
+    ),
     result: anyObject,
     handler: (p) =>
       svc.workflows.create(
@@ -295,25 +300,26 @@ export const methods: Record<string, MethodDef> = {
           description: p.description,
           execute_prompt: p.execute_prompt,
           verify_prompt: p.verify_prompt,
+          repo: p.repo,
         },
         p.session_id,
       ),
   },
   "workflows/update": {
-    description: "Update a global workflow definition.",
+    description: "Update a workflow definition by id.",
     params: params(
       {
-        name: strNonEmpty,
+        id: positiveInt,
         new_name: strNonEmpty,
         ...workflowFields,
         session_id: sid,
       },
-      ["name"],
+      ["id"],
     ),
     result: anyObject,
     handler: (p) =>
-      svc.workflows.update(
-        p.name,
+      svc.workflows.updateById(
+        p.id,
         {
           name: p.new_name,
           description: p.description,
@@ -324,17 +330,17 @@ export const methods: Record<string, MethodDef> = {
       ),
   },
   "workflows/archive": {
-    description: "Archive a global workflow definition.",
-    params: params({ name: strNonEmpty, session_id: sid }, ["name"]),
+    description: "Archive a workflow definition by id.",
+    params: params({ id: positiveInt, session_id: sid }, ["id"]),
     result: anyObject,
-    handler: (p) => svc.workflows.archive(p.name, p.session_id),
+    handler: (p) => svc.workflows.archiveById(p.id, p.session_id),
   },
   "workflows/delete": {
     description:
-      "Delete a global workflow definition unless a running run references it.",
-    params: params({ name: strNonEmpty, session_id: sid }, ["name"]),
+      "Delete a workflow definition by id unless a running run references it.",
+    params: params({ id: positiveInt, session_id: sid }, ["id"]),
     result: anyObject,
-    handler: (p) => svc.workflows.delete(p.name, p.session_id),
+    handler: (p) => svc.workflows.deleteById(p.id, p.session_id),
   },
   "workflowRuns/stateForIssue": {
     description:

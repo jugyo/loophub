@@ -14,12 +14,14 @@ import {
   GitPullRequestArrow,
   Settings2,
   SquareKanban,
+  Workflow,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CodingAgent, MergeMode, Workspace } from "@/api/types";
 import { NewWorkspaceButton } from "@/components/new-workspace-button";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
+import { RepoWorkflowsSection } from "@/components/workflows-page";
 import {
   CODING_AGENT_LABELS,
   EFFORT_SUGGESTIONS,
@@ -54,6 +56,7 @@ const REPO_SETTINGS_SECTIONS = [
   "pull-requests",
   "coding-agent",
   "workspaces",
+  "workflows",
   "archive",
 ] as const;
 
@@ -64,6 +67,7 @@ type RepoSettingsPath =
   | "/r/$owner/$repo/settings/pull-requests"
   | "/r/$owner/$repo/settings/coding-agent"
   | "/r/$owner/$repo/settings/workspaces"
+  | "/r/$owner/$repo/settings/workflows"
   | "/r/$owner/$repo/settings/archive";
 
 const SETTINGS_NAV_ITEMS: Array<{
@@ -100,6 +104,13 @@ const SETTINGS_NAV_ITEMS: Array<{
     description: "Registered integration branches.",
     icon: SquareKanban,
     path: "/r/$owner/$repo/settings/workspaces",
+  },
+  {
+    id: "workflows",
+    label: "Workflows",
+    description: "Repository-specific workflow definitions.",
+    icon: Workflow,
+    path: "/r/$owner/$repo/settings/workflows",
   },
   {
     id: "archive",
@@ -184,6 +195,9 @@ export function RepoSettingsPage({
         ) : null}
         {section === "workspaces" ? (
           <WorkspacesSection owner={owner} repo={repo} />
+        ) : null}
+        {section === "workflows" ? (
+          <RepoWorkflowsSection owner={owner} repo={repo} />
         ) : null}
         {section === "archive" ? (
           <ArchiveSection

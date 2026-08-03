@@ -235,7 +235,9 @@ function StartWorkflowControls({
 }) {
   const { launchTerminal } = useTerminalLauncher();
   const navigate = useNavigate();
-  const { data: workflows, isLoading } = useWorkflows();
+  const { data: workflows, isLoading } = useWorkflows({
+    applicableToRepo: `${owner}/${repo}`,
+  });
   const { canStartWorkflow, showRemediation } = useWorkerLaunchGate();
   const [isLaunching, startLaunching] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -279,9 +281,16 @@ function StartWorkflowControls({
                 start(wf.id);
               }}
             >
-              <span className="w-full min-w-0 font-medium leading-tight">
-                {wf.name}
-              </span>
+              <div className="flex w-full min-w-0 items-baseline gap-2">
+                <span className="min-w-0 font-medium leading-tight">
+                  {wf.name}
+                </span>
+                {wf.scope.kind === "repository" ? (
+                  <span className="shrink-0 text-xs leading-tight text-muted-foreground">
+                    {wf.scope.repo.owner}/{wf.scope.repo.name}
+                  </span>
+                ) : null}
+              </div>
               {wf.description ? (
                 <span className="line-clamp-3 w-full min-w-0 break-words text-xs leading-relaxed text-muted-foreground">
                   {wf.description}

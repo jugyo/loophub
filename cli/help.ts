@@ -262,6 +262,7 @@ export const commandHelp: readonly CommandHelp[] = [
   { path: ["workflow", "view"], description: "Show a workflow." },
   { path: ["workflow", "create"], description: "Create a workflow." },
   { path: ["workflow", "update"], description: "Update a workflow." },
+  { path: ["workflow", "archive"], description: "Archive a workflow." },
   { path: ["workflow", "delete"], description: "Delete a workflow." },
   { path: ["workflow", "start"], description: "Start a workflow run." },
   { path: ["workflow", "launch-step"], description: "Launch a workflow step." },

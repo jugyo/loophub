@@ -851,12 +851,12 @@ CREATE TABLE IF NOT EXISTS pull_conflict_states (
   PRIMARY KEY (repo_id, pull_number)
 );
 
--- workflow definitions (#997). Global, user-editable prompt bundles for the fixed
--- Execute/Verify workflow. Step prompts are plain markdown text; empty strings are
--- valid and mean "use only the built-in step contract".
+-- workflow definitions (#997). User-editable prompt bundles for the fixed Execute/Verify
+-- workflow. A NULL repo_id is global; otherwise the definition is available only to that repo.
 CREATE TABLE IF NOT EXISTS workflows (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  name            TEXT NOT NULL UNIQUE,
+  repo_id         INTEGER REFERENCES repos(id),
+  name            TEXT NOT NULL,
   description     TEXT NOT NULL DEFAULT '',
   execute_prompt  TEXT NOT NULL DEFAULT '',
   verify_prompt   TEXT NOT NULL DEFAULT '',

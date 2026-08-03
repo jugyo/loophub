@@ -1084,6 +1084,69 @@ export const MIGRATIONS: Migration[] = [
     },
   },
   addColumn("066-pulls-archived-at", "pulls", "archived_at", "TEXT"),
+  {
+    id: "067-repository-scoped-workflows",
+    run(db) {
+      if (!columnExists(db, "workflows", "repo_id")) {
+        const previousSequence = db
+          .query(`SELECT seq FROM sqlite_sequence WHERE name = ?`)
+          .get("workflows") as { seq: number } | null;
+        db.exec(`
+          CREATE TEMP TABLE workflow_run_refs AS
+            SELECT id, workflow_id FROM workflow_runs WHERE workflow_id IS NOT NULL;
+          CREATE TABLE workflows_scoped (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            repo_id         INTEGER REFERENCES repos(id),
+            name            TEXT NOT NULL,
+            description     TEXT NOT NULL DEFAULT '',
+            execute_prompt  TEXT NOT NULL DEFAULT '',
+            verify_prompt   TEXT NOT NULL DEFAULT '',
+            archived_at     TEXT,
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL
+          );
+          INSERT INTO workflows_scoped
+            (id, name, description, execute_prompt, verify_prompt, archived_at, created_at, updated_at)
+          SELECT id, name, description, execute_prompt, verify_prompt, archived_at, created_at, updated_at
+          FROM workflows;
+          DROP TABLE workflows;
+          ALTER TABLE workflows_scoped RENAME TO workflows;
+          UPDATE workflow_runs
+          SET workflow_id = (
+            SELECT workflow_id FROM workflow_run_refs WHERE workflow_run_refs.id = workflow_runs.id
+          )
+          WHERE id IN (SELECT id FROM workflow_run_refs);
+          DROP TABLE workflow_run_refs;
+        `);
+        const currentSequence = db
+          .query(`SELECT seq FROM sqlite_sequence WHERE name = ?`)
+          .get("workflows") as { seq: number } | null;
+        if (previousSequence && !currentSequence) {
+          db.run(`INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)`, [
+            "workflows",
+            previousSequence.seq,
+          ]);
+        } else if (
+          previousSequence &&
+          currentSequence &&
+          currentSequence.seq < previousSequence.seq
+        ) {
+          db.run(`UPDATE sqlite_sequence SET seq = ? WHERE name = ?`, [
+            previousSequence.seq,
+            "workflows",
+          ]);
+        }
+      }
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_workflows_global_name
+          ON workflows(name) WHERE repo_id IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_workflows_repo_name
+          ON workflows(repo_id, name) WHERE repo_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_workflows_repo_active
+          ON workflows(repo_id, archived_at, name COLLATE NOCASE, id);
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

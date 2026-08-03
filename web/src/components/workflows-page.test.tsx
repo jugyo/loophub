@@ -36,6 +36,7 @@ function workflow(overrides: Partial<Workflow> = {}): Workflow {
     archived_at: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+    scope: { kind: "global" },
     ...overrides,
   };
 }
@@ -499,7 +500,7 @@ describe("WorkflowsPage", () => {
 
     expect(await screen.findByText("No workflows yet.")).toBeTruthy();
     expect(rpcCall("workflows/archive")?.params).toMatchObject({
-      name: "standard",
+      id: 1,
     });
   });
 

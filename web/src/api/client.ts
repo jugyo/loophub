@@ -282,6 +282,7 @@ export function setRepoAgentConfig(
 
 export interface WorkflowInput {
   name: string;
+  repo?: string;
   description?: string;
   execute_prompt?: string;
   verify_prompt?: string;
@@ -291,8 +292,10 @@ type WorkflowUpdatePatch = Omit<Partial<WorkflowInput>, "name"> & {
   new_name?: string;
 };
 
-export function listWorkflows() {
-  return rpc<Workflow[]>("workflows/list", {});
+export function listWorkflows(
+  input: { repo?: string; applicable_to_repo?: string } = {},
+) {
+  return rpc<Workflow[]>("workflows/list", clean(input));
 }
 
 export function getWorkerStatus() {
@@ -314,35 +317,32 @@ export function createWorkflow(
 }
 
 export function updateWorkflow(
-  name: string,
+  id: number,
   patch: WorkflowUpdatePatch,
   sessionId: string = getSessionId(),
 ) {
   const { name: _ignoredName, ...wirePatch } = patch as Partial<WorkflowInput> &
     WorkflowUpdatePatch;
   return rpc<Workflow>("workflows/update", {
-    name,
+    id,
     ...clean({ ...wirePatch }),
     session_id: sessionId,
   });
 }
 
-export function deleteWorkflow(
-  name: string,
-  sessionId: string = getSessionId(),
-) {
+export function deleteWorkflow(id: number, sessionId: string = getSessionId()) {
   return rpc<{ ok: true }>("workflows/delete", {
-    name,
+    id,
     session_id: sessionId,
   });
 }
 
 export function archiveWorkflow(
-  name: string,
+  id: number,
   sessionId: string = getSessionId(),
 ) {
   return rpc<Workflow>("workflows/archive", {
-    name,
+    id,
     session_id: sessionId,
   });
 }

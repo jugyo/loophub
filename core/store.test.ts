@@ -31,7 +31,7 @@ test("createRepo normalizes slashless names to me/<name> (RETURNING row)", () =>
   expect(S.getRepo("me", "proj")?.id).toBe(repo.id);
 });
 
-test("deleteRepo removes Workflow runs and review responses before deleting the repo", () => {
+test("deleteRepo removes repository workflows, runs, and review responses before the repo", () => {
   const repo = S.createRepo("me/workflow-remove", "/tmp/workflow-remove");
   const issue = S.createIssue(repo.id, "pull", "reviewed change", "", "author");
   const review = S.createReview(
@@ -41,14 +41,21 @@ test("deleteRepo removes Workflow runs and review responses before deleting the 
     "fix this",
   );
   S.createReviewResponse(issue.id, review.id, null, "executor", "fixed");
-  const workflow = S.createWorkflow({
+  const globalWorkflow = S.createWorkflow({
+    name: "repo-remove-workflow",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const scopedWorkflow = S.createWorkflow({
+    repoId: repo.id,
     name: "repo-remove-workflow",
     description: "",
     executePrompt: "",
     verifyPrompt: "",
   });
   S.createWorkflowRun({
-    workflowId: workflow.id,
+    workflowId: scopedWorkflow.id,
     repoId: repo.id,
     issueNumber: 1,
     prNumber: 2,
@@ -60,6 +67,8 @@ test("deleteRepo removes Workflow runs and review responses before deleting the 
 
   expect(S.deleteRepo("me", "workflow-remove")).toBe(true);
   expect(S.getRepo("me", "workflow-remove")).toBeNull();
+  expect(S.getWorkflowById(scopedWorkflow.id)).toBeNull();
+  expect(S.getWorkflowById(globalWorkflow.id)?.id).toBe(globalWorkflow.id);
 });
 
 test("archivePull preserves the PR and its review history", () => {

@@ -494,7 +494,9 @@ describe("IssueRow workflow budget (#1828)", () => {
 describe("IssueRow Start workflow button (#1622)", () => {
   it("disables launch and shows remediation for an incompatible worker", async () => {
     renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />, {
-      "workflows/list": () => [{ id: 7, name: "Dev loop" }],
+      "workflows/list": () => [
+        { id: 7, name: "Dev loop", scope: { kind: "global" } },
+      ],
       "worker/status": () => ({
         status: "incompatible",
         required_protocol_version: 1,
@@ -579,7 +581,12 @@ describe("IssueRow Start workflow button (#1622)", () => {
   it("launches the chosen workflow when the issue has no linked PR", async () => {
     renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />, {
       "workflows/list": () => [
-        { id: 7, name: "Dev loop", description: "Build then review" },
+        {
+          id: 7,
+          name: "Dev loop",
+          description: "Build then review",
+          scope: { kind: "global" },
+        },
       ],
     });
     const button = await screen.findByRole("button", {

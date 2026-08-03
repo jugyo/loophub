@@ -2,6 +2,7 @@ import { db, now } from "../db.ts";
 import type { WorkflowContractLanguage } from "../workflow/contracts.ts";
 
 export interface WorkflowInput {
+  repoId?: number | null;
   name: string;
   description: string;
   executePrompt: string;
@@ -10,6 +11,9 @@ export interface WorkflowInput {
 
 export interface WorkflowRow {
   id: number;
+  repo_id: number | null;
+  repo_owner: string | null;
+  repo_name: string | null;
   name: string;
   description: string;
   execute_prompt: string;
@@ -19,44 +23,80 @@ export interface WorkflowRow {
   updated_at: string;
 }
 
-export function listWorkflows(): WorkflowRow[] {
+const WORKFLOW_SELECT = `SELECT workflows.*,
+  repos.owner AS repo_owner, repos.name AS repo_name
+  FROM workflows LEFT JOIN repos ON repos.id = workflows.repo_id`;
+
+export function listWorkflows(
+  input: { repoId?: number | null; applicableToRepoId?: number } = {},
+): WorkflowRow[] {
+  const scope =
+    input.applicableToRepoId !== undefined
+      ? `(workflows.repo_id = ? OR (
+          workflows.repo_id IS NULL AND NOT EXISTS (
+            SELECT 1 FROM workflows AS repository_workflow
+            WHERE repository_workflow.repo_id = ?
+              AND repository_workflow.archived_at IS NULL
+              AND repository_workflow.name = workflows.name
+          )
+        ))`
+      : input.repoId === undefined
+        ? `workflows.repo_id IS NULL`
+        : input.repoId === null
+          ? `workflows.repo_id IS NULL`
+          : `workflows.repo_id = ?`;
+  const params =
+    input.applicableToRepoId !== undefined
+      ? [input.applicableToRepoId, input.applicableToRepoId]
+      : input.repoId == null
+        ? []
+        : [input.repoId];
   return db
     .query(
-      `SELECT * FROM workflows
-       WHERE archived_at IS NULL
-       ORDER BY name COLLATE NOCASE, id`,
+      `${WORKFLOW_SELECT}
+       WHERE workflows.archived_at IS NULL AND ${scope}
+       ORDER BY workflows.name COLLATE NOCASE,
+         CASE WHEN workflows.repo_id IS NULL THEN 0 ELSE 1 END,
+         workflows.id`,
     )
-    .all() as WorkflowRow[];
+    .all(...params) as WorkflowRow[];
 }
 
-export function getWorkflowByName(name: string): WorkflowRow | null {
+export function getWorkflowByName(
+  name: string,
+  repoId: number | null = null,
+): WorkflowRow | null {
   return db
-    .query(`SELECT * FROM workflows WHERE name = ?`)
-    .get(name) as WorkflowRow | null;
+    .query(
+      `${WORKFLOW_SELECT} WHERE workflows.name = ? AND workflows.repo_id IS ?`,
+    )
+    .get(name, repoId) as WorkflowRow | null;
 }
 
 export function getWorkflowById(id: number): WorkflowRow | null {
   return db
-    .query(`SELECT * FROM workflows WHERE id = ?`)
+    .query(`${WORKFLOW_SELECT} WHERE workflows.id = ?`)
     .get(id) as WorkflowRow | null;
 }
 
 export function createWorkflow(input: WorkflowInput): WorkflowRow {
   const t = now();
-  return db
+  const row = db
     .query(
       `INSERT INTO workflows
-        (name, description, execute_prompt, verify_prompt, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
+        (repo_id, name, description, execute_prompt, verify_prompt, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
+      input.repoId ?? null,
       input.name,
       input.description,
       input.executePrompt,
       input.verifyPrompt,
       t,
       t,
-    ) as WorkflowRow;
+    ) as Omit<WorkflowRow, "repo_owner" | "repo_name">;
+  return getWorkflowById(row.id)!;
 }
 
 export function updateWorkflow(

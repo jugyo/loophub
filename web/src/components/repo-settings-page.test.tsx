@@ -103,6 +103,24 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
     "repos/get": () => repo(initialArchived),
     "repos/mergeMode": () => mergeMode(null),
     "repos/agentConfig": () => agentConfig(),
+    "settings/get": () => ({ workflowContractLanguage: "en" }),
+    "workflows/list": () => [
+      {
+        id: 44,
+        name: "Repo loop",
+        description: "Only for this repository",
+        execute_prompt: "",
+        verify_prompt: "",
+        archived_at: null,
+        created_at: "2026-08-03T00:00:00Z",
+        updated_at: "2026-08-03T00:00:00Z",
+        scope: {
+          kind: "repository",
+          repo: { id: 1, owner: "me", name: "proj" },
+        },
+      },
+    ],
+    "terminal/launch": () => ({ ok: true }),
     "repos/setArchived": (p) => {
       if (patchFails) throw new RpcFault(500, "boom");
       return repo(p.archived);
@@ -190,6 +208,11 @@ function renderSettings(
     path: "/r/$owner/$repo/settings/workspaces",
     component: () => <SettingsRouteComponent section="workspaces" />,
   });
+  const workflowsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/settings/workflows",
+    component: () => <SettingsRouteComponent section="workflows" />,
+  });
   const archiveRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo/settings/archive",
@@ -220,6 +243,7 @@ function renderSettings(
       pullRequestsRoute,
       codingAgentRoute,
       workspacesRoute,
+      workflowsRoute,
       archiveRoute,
     ]),
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
@@ -249,6 +273,9 @@ describe("RepoSettingsPage", () => {
       screen.getByRole("link", { name: "Workspaces" }).getAttribute("href"),
     ).toBe("/r/me/proj/settings/workspaces");
     expect(
+      screen.getByRole("link", { name: "Workflows" }).getAttribute("href"),
+    ).toBe("/r/me/proj/settings/workflows");
+    expect(
       screen.getByRole("link", { name: "Archive" }).getAttribute("href"),
     ).toBe("/r/me/proj/settings/archive");
 
@@ -275,6 +302,29 @@ describe("RepoSettingsPage", () => {
         .getAttribute("aria-current"),
     ).toBeNull();
     expect(screen.queryByRole("heading", { name: "Rename" })).toBeNull();
+  });
+
+  it("lists repository-scoped workflows in repository settings", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/workflows");
+
+    expect(
+      await screen.findByRole("heading", { name: "Workflows" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Repo loop")).toBeTruthy();
+    expect(rpcCall("workflows/list")?.params).toMatchObject({
+      repo: "me/proj",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "New workflow" }));
+    await waitFor(() =>
+      expect(rpcCall("terminal/launch")?.params).toMatchObject({
+        repo: "me/proj",
+        workflow: "workflow-create",
+      }),
+    );
+    expect(
+      (rpcCall("terminal/launch")?.params as { prompt: string }).prompt,
+    ).toContain("--repo me/proj");
   });
 
   it("restores a directly addressed settings section", async () => {

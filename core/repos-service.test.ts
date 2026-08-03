@@ -58,6 +58,23 @@ test("create emits repo.created so other web sessions refresh repo lists", async
   });
 });
 
+test("remove deletes repository workflows while preserving global workflows", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/remove-scoped-workflow",
+  });
+  const global = svc.workflows.create({ name: "remove-scoped-workflow" });
+  const scoped = svc.workflows.create({
+    name: "remove-scoped-workflow",
+    repo: repo.full_name,
+  });
+
+  expect(() => svc.repos.remove(repo.full_name)).not.toThrow();
+  expect(S.getRepoById(repo.id)).toBeNull();
+  expect(S.getWorkflowById(scoped.id)).toBeNull();
+  expect(S.getWorkflowById(global.id)?.id).toBe(global.id);
+});
+
 test("setFavorite rejects a non-boolean favorite value (#457)", async () => {
   await svc.repos.create({ path: initGitRepo(), name: "me/fav-svc-bad" });
   expect(() =>
