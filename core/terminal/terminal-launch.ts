@@ -486,13 +486,10 @@ export function herdrWorkspaceFocusArgv(
   ];
 }
 
-// Switches herdr's focus to a tab (workspace + tab, in one call) by tab id — brings a newly
-// launched agent's pane to the front when it started in its own tab rather than a fresh workspace
-// (#625). A newly created New Issue workspace uses herdrWorkspaceFocusArgv, while a reused New
-// Issue/worktree workspace's freshly added tab — and the plain repo-root tab fallback — are selected
-// this way instead: their workspace already existed and isn't this launch's to (re)focus wholesale,
-// so only the new tab is brought forward. Both were created with `--no-focus` so creation itself
-// wouldn't yank focus mid-launch.
+// Switches herdr's focus to a tab (workspace + tab, in one call) by tab id (#625). A newly created
+// New Issue workspace uses herdrWorkspaceFocusArgv, while a reused New Issue workspace's freshly
+// added tab — or its plain repo-root tab fallback — is selected this way instead. Both were created
+// with `--no-focus` so creation itself wouldn't yank focus mid-launch.
 export function herdrTabFocusArgv(
   repo: TerminalLaunchRepo,
   tabId: string,
@@ -921,8 +918,7 @@ export interface HerdrWorktreeWorkspace {
   // workspace instead of wherever herdr's focus happens to be (#873).
   workspaceId: string;
   // True when this acquisition opened the workspace for the first time (rather than reusing an
-  // already-open one), so the caller owns it: it is the cleanup target on a failed launch, and the
-  // one to bring forward on success.
+  // already-open one), so the caller owns it and can clean it up after a failed launch.
   createdWorkspace: boolean;
   // The empty tab a first-time `worktree open` seeds the workspace with. The launch creates its own
   // tab (a seeded tab cannot carry the launch's `--env`, since `worktree open` takes no `--env`), so
