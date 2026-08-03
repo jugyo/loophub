@@ -926,7 +926,8 @@ describe("agent cost display (#783)", () => {
         })}
       />,
     );
-    expect(await screen.findByTitle("12.3k · $5")).toBeTruthy();
+    expect(await screen.findByText("12.3k")).toBeTruthy();
+    expect(screen.getByText("$5")).toBeTruthy();
   });
 
   it("omits cost when the PR's usage has an unknown cost", async () => {
@@ -954,7 +955,9 @@ describe("agent cost display (#783)", () => {
       />,
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    expect(screen.queryByText(/\d+(?:\.\d+)?[kMB]? · \$/)).toBeNull();
+    const row = screen.getByLabelText("Linked PR #10: A PR");
+    expect(row.querySelector("[data-linked-pull-cost]")).toBeNull();
+    expect(row.textContent).not.toContain("$");
   });
 
   it("rounds cost to whole dollars", async () => {
@@ -969,7 +972,8 @@ describe("agent cost display (#783)", () => {
         })}
       />,
     );
-    expect(await screen.findByTitle("1k · $10")).toBeTruthy();
+    expect(await screen.findByText("1k")).toBeTruthy();
+    expect(screen.getByText("$10")).toBeTruthy();
   });
 
   it("uses the existing over-budget state to highlight only the cost", async () => {
@@ -1138,6 +1142,8 @@ describe("linked PR agent metadata (#842)", () => {
               },
               total_tokens: 12345,
               cost_usd: 4.5,
+              workflow_rework_count: 2,
+              total_comments: 3,
             }),
           ],
         })}
@@ -1146,9 +1152,10 @@ describe("linked PR agent metadata (#842)", () => {
 
     const metadata = await screen.findByText("Claude Code · opus");
     expect(metadata.className).toContain("truncate");
-    expect(screen.getByTitle("12.3k · $5").textContent).toBe("12.3k · $5");
+    // #2245: every metadata item is told apart by the same dot — including the rework count and
+    // the comment count, which used to sit against their neighbours with no separator.
     const row = screen.getByLabelText("Linked PR #10: A PR");
-    expect(row.textContent).toBe("PR #10GH #99Claude Code · opus12.3k · $5");
+    expect(row.textContent).toBe("PR #10GH #99Claude Code · opus·2·12.3k·$5·3");
   });
 
   it("shows only the known half and stays quiet when both are unknown", async () => {

@@ -291,6 +291,15 @@ export interface PullSummaryWire {
   cost_stopped: boolean;
 }
 
+// #2263: the agent-cost slice of a PR on its own. `agent_session.usage_updated` is the app's
+// highest-frequency event, and the payloads carrying these two fields (issue detail / PR detail)
+// are built from live git — so the slice gets its own query key and RPC, and the git-backed
+// payloads are left to the events that actually change them.
+export type PullUsageWire = Pick<
+  PullSummaryWire,
+  "number" | "total_tokens" | "cost_usd"
+>;
+
 // Extra fields present only on the issue-list linked-PR sub-row (issueListItemJSON's
 // linkedPullDetail), which runs the git status fan-out; the issue-detail summary
 // (pullSummary) does not, so those rows stay the plain PullSummaryWire.
@@ -1288,6 +1297,19 @@ function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
     github_pull: githubPullJSON(S.getGithubPull(pr.id)),
     // #863: whether this PR was force-stopped for exceeding its cost limit.
     cost_stopped: S.hasAnyCostStopEvent(repo.id, pr.number),
+  };
+}
+
+// #2263: the same tokens/cost pullSummary carries, served on its own so a usage tick refreshes the
+// numbers without rebuilding a git-backed payload around them. Omitted rather than zeroed when no
+// linked session has usage yet, matching the summary fields it stands in for.
+export function pullUsageJSON(row: S.IssueRow): PullUsageWire {
+  const totals = S.sessionUsageTotalsForIssue(row.id);
+  return {
+    number: row.number,
+    ...(totals
+      ? { total_tokens: totals.total_tokens, cost_usd: totals.cost_usd }
+      : {}),
   };
 }
 

@@ -35,6 +35,7 @@ import {
   agentSessionJSON,
   githubPrStatusJSON,
   githubPullJSON,
+  pullUsageJSON,
   repoJSON,
 } from "../serialize.ts";
 import { pullJSON } from "../serialize-status.ts";
@@ -139,6 +140,13 @@ export const pulls = {
       withRelatedSessions: true,
       withComments: opts.withComments !== false,
     });
+  },
+
+  // #2263: the PR's agent-cost totals alone. Unlike `get`, this path reads only the DB, so the
+  // usage counter can tick every few seconds without paying for the PR's git status fan-out.
+  usage(name: string, number: number) {
+    const r = repoOr404(name);
+    return pullUsageJSON(issueOr404(r, number, "pull"));
   },
 
   async create(

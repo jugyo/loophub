@@ -35,6 +35,7 @@ import type {
   PullLineComment,
   PullRequest,
   PullReview,
+  PullUsage,
   Repo,
   RepoAgentConfig,
   RepoMergeMode,
@@ -790,6 +791,12 @@ export function listPulls(owner: string, repo: string, query = "") {
 
 export function getPull(owner: string, repo: string, number: number) {
   return rpc<PullRequest>("pulls/get", { repo: full(owner, repo), number });
+}
+
+// #2263: the PR's agent-cost totals alone, on their own query key — the usage counter ticks far
+// more often than the git-backed PR/issue detail payloads that used to carry them.
+export function getPullUsage(owner: string, repo: string, number: number) {
+  return rpc<PullUsage>("pulls/usage", { repo: full(owner, repo), number });
 }
 
 export function getPullDetailPage(owner: string, repo: string, number: number) {

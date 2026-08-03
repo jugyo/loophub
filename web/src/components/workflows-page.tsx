@@ -12,6 +12,7 @@ import { SettingsLayout } from "@/components/settings-header";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 import {
@@ -269,6 +270,7 @@ function WorkflowDialog({
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
@@ -281,9 +283,7 @@ function WorkflowDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-6"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      {...backdropDismiss}
     >
       <div
         ref={dialogRef}
@@ -574,6 +574,7 @@ function SystemPromptDialog({
 }) {
   const title = `${contractLabel} system prompt`;
   const dialogRef = useRef<HTMLDivElement>(null);
+  const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
@@ -586,7 +587,7 @@ function SystemPromptDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"
-      onClick={onClose}
+      {...backdropDismiss}
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === "Escape") onClose();
@@ -655,6 +656,10 @@ function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const backdropDismiss = useBackdropDismiss(() => {
+    if (!pending) onCancel();
+  });
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       // Ignore Escape while a request is in flight, so all dismissal paths honor the same pending
@@ -668,9 +673,7 @@ function ConfirmDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
-      onClick={() => {
-        if (!pending) onCancel();
-      }}
+      {...backdropDismiss}
     >
       <div
         data-debug-component="ConfirmDialog"

@@ -18,6 +18,7 @@ import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
@@ -101,6 +102,7 @@ export function Lightbox({
   // focus on it — without this, Tab moves focus past the (non-portaled) overlay into the
   // underlying page, after which this dialog's own Escape handler stops receiving keydowns.
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -165,12 +167,14 @@ export function Lightbox({
       aria-label={ariaLabel}
       tabIndex={-1}
       className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black/80 p-4 outline-none"
-      onClick={() => {
+      {...backdropDismiss}
+      onClick={(event) => {
         if (suppressNextClickRef.current) {
           suppressNextClickRef.current = false;
+          backdropDismiss.onClick(event);
           return;
         }
-        onClose();
+        backdropDismiss.onClick(event);
       }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {

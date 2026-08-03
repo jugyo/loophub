@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { useCreateWorkspace } from "@/queries/workspaces";
 
 export function NewWorkspaceButton({
@@ -24,6 +25,8 @@ export function NewWorkspaceButton({
     setBranch("");
     create.reset();
   }
+
+  const backdropDismiss = useBackdropDismiss(close);
 
   useEffect(() => {
     if (!open) return;
@@ -63,7 +66,7 @@ export function NewWorkspaceButton({
           createPortal(
             <div
               className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12vh]"
-              onClick={close}
+              {...backdropDismiss}
             >
               <form
                 data-debug-component="NewWorkspaceDialog"

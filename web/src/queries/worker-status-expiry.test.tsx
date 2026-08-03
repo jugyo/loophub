@@ -3,6 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { WorkerCompatibility } from "@/api/types";
+import { WorkerCompatibilityWarning } from "@/components/worker-compatibility-warning";
 
 const api = vi.hoisted(() => ({ getWorkerStatus: vi.fn() }));
 
@@ -80,4 +81,56 @@ it("does not retry a failed status request", async () => {
 
   expect(api.getWorkerStatus).toHaveBeenCalledTimes(1);
   expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("does not flash a warning while a compatible status response is delayed", async () => {
+  let resolveStatus: (status: WorkerCompatibility) => void = () => {};
+  api.getWorkerStatus.mockReturnValue(
+    new Promise<WorkerCompatibility>((resolve) => {
+      resolveStatus = resolve;
+    }),
+  );
+
+  render(
+    <>
+      <Harness />
+      <WorkerCompatibilityWarning />
+    </>,
+    {
+      wrapper: wrapper(new QueryClient()),
+    },
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("button").textContent).toBe("loading");
+
+  await act(async () => resolveStatus(compatible));
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("button").textContent).toBe("compatible");
+});
+
+it("shows the warning after a delayed incompatible status is confirmed", async () => {
+  let resolveStatus: (status: WorkerCompatibility) => void = () => {};
+  api.getWorkerStatus.mockReturnValue(
+    new Promise<WorkerCompatibility>((resolve) => {
+      resolveStatus = resolve;
+    }),
+  );
+
+  render(<WorkerCompatibilityWarning />, {
+    wrapper: wrapper(new QueryClient()),
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+
+  await act(async () =>
+    resolveStatus({
+      ...compatible,
+      status: "incompatible",
+      observed_protocol_version: 2,
+    }),
+  );
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(screen.getByRole("alert").textContent).toContain(
+    "incompatible workflow protocol",
+  );
 });

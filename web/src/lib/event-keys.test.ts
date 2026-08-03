@@ -106,7 +106,6 @@ describe("queryKeysForEvent", () => {
     const keys = queryKeysForEvent(
       ev({ type: "issue.updated", repo: "me/proj", payload: { number: 12 } }),
     );
-    expect(keys).toContainEqual(["repo", "me/proj"]);
     expect(keys).not.toContainEqual(["repo-agent-config", "me/proj"]);
   });
 
@@ -267,10 +266,36 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["issue"]);
   });
 
-  it("includes a repo key for any repo-scoped event", () => {
-    const keys = queryKeysForEvent(
+  // #2263: repoJSON carries no counts and no usage, so nothing under the repo prefix (the repo
+  // detail, the resolved merge mode) can change on an issue / PR / session event. Invalidating it
+  // for every repo-scoped event refetched the repo on each tick of a running agent's usage counter.
+  it("leaves the repo key alone for events that are not repo.* (#2263)", () => {
+    for (const event of [
       ev({ type: "issue.closed", repo: "me/proj", payload: { number: 1 } }),
+      ev({
+        type: "pull_request.updated",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+      ev({
+        type: "agent_session.usage_updated",
+        repo: "me/proj",
+        payload: { session_id: "s", pr: 7 },
+      }),
+    ]) {
+      expect(queryKeysForEvent(event)).not.toContainEqual(["repo", "me/proj"]);
+    }
+  });
+
+  it("invalidates the repo key on repo.* events, which is where it changes (#2263)", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "repo.merge_mode_changed",
+        repo: "me/proj",
+        payload: { full_name: "me/proj", merge_mode: "github_pr" },
+      }),
     );
+    // The resolved merge mode lives under this prefix, so the settings toggle must refetch it.
     expect(keys).toContainEqual(["repo", "me/proj"]);
   });
 
@@ -353,16 +378,35 @@ describe("queryKeysForEvent", () => {
     expect(issueKeys).toContainEqual(["issue", "me/proj", 4]);
   });
 
-  it("routes agent_session.usage_updated to linked target detail queries", () => {
+  // #2263: usage ticks are the app's highest-frequency event. The only thing they change on the
+  // PR / issue details is the tokens/cost pair, which now has its own DB-only query — so they must
+  // not drag along the details, whose serializers read live git.
+  it("routes agent_session.usage_updated to the git-free usage query only (#2263)", () => {
     const keys = queryKeysForEvent(
       ev({
         type: "agent_session.usage_updated",
         repo: "me/proj",
-        payload: { session_id: "s", pr: 7 },
+        payload: { session_id: "s", pr: 7, issue: 4 },
       }),
     );
     expect(keys).toContainEqual(["agent-sessions"]);
+    expect(keys).toContainEqual(["pull-usage", "me/proj", 7]);
+    expect(keys).not.toContainEqual(["pull", "me/proj", 7]);
+    expect(keys).not.toContainEqual(["issue", "me/proj", 4]);
+  });
+
+  // The other agent_session events change the details themselves (their related_sessions list), so
+  // they keep invalidating them.
+  it("keeps routing other agent_session events to the target detail (#2263)", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "agent_session.linked",
+        repo: "me/proj",
+        payload: { session_id: "s", pr: 7 },
+      }),
+    );
     expect(keys).toContainEqual(["pull", "me/proj", 7]);
+    expect(keys).not.toContainEqual(["pull-usage", "me/proj", 7]);
   });
 
   it("maps repo.* events to repo metadata consumers", () => {
@@ -394,7 +438,7 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["events", "me/proj"]);
     // Dashboard rows embed full_name + links, so the top page must refresh too.
     expect(keys).toContainEqual(["dashboard"]);
-    // The new name's repo key comes from the generic repo tail.
+    // The new name's repo key comes from the repo.* branch itself (#2263).
     expect(keys).toContainEqual(["repo", "acme/renamed"]);
   });
 

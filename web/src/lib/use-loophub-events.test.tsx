@@ -96,13 +96,13 @@ describe("useLoopHubEvents", () => {
     render(<HookHarness />, { wrapper: wrapper(client) });
     await vi.waitFor(() => expect(invalidate).toHaveBeenCalled());
 
-    // All 20 events are repo-scoped, so each one maps to ["repo", "me/proj"]. Invalidating per
-    // event would cancel and restart the in-flight refetch of every query under that prefix.
-    const repoKey = JSON.stringify(["repo", "me/proj"]);
-    const repoCalls = invalidate.mock.calls.filter(
-      ([filters]) => JSON.stringify(filters?.queryKey) === repoKey,
+    // All 20 events are repo-scoped, so each one maps to the repo's activity feed key. Invalidating
+    // per event would cancel and restart the in-flight refetch of every query under that prefix.
+    const feedKey = JSON.stringify(["events", "me/proj"]);
+    const feedCalls = invalidate.mock.calls.filter(
+      ([filters]) => JSON.stringify(filters?.queryKey) === feedKey,
     );
-    expect(repoCalls).toHaveLength(1);
+    expect(feedCalls).toHaveLength(1);
   });
 
   it("skips the history instead of replaying it when there is no stored cursor", async () => {

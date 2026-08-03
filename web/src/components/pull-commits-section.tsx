@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { usePullCommitFiles } from "@/queries/pulls";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 
@@ -283,6 +284,7 @@ function ReviewDetailsDialog({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
     const returnFocus = document.activeElement;
@@ -295,9 +297,7 @@ function ReviewDetailsDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      {...backdropDismiss}
     >
       <div
         ref={dialogRef}
@@ -514,6 +514,7 @@ function CommitDiffDialog({
 }) {
   const filesQuery = usePullCommitFiles(owner, repo, number, commit.sha);
   const shortSha = commit.sha.slice(0, 7);
+  const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -526,9 +527,7 @@ function CommitDiffDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      {...backdropDismiss}
     >
       <div
         data-debug-component="CommitDiffDialog"

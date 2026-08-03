@@ -12,9 +12,9 @@ vi.mock("@/queries/worker-status", () => ({
     data: workerState.status,
     isError: workerState.isError,
     showRemediation:
-      workerState.status === undefined ||
       workerState.isError ||
-      workerState.status.status !== "compatible",
+      (workerState.status !== undefined &&
+        workerState.status.status !== "compatible"),
   }),
 }));
 
@@ -58,12 +58,10 @@ it("treats a refetch error as unavailable even with cached compatible data", () 
   expect(alert.textContent).not.toContain("incompatible workflow protocol");
 });
 
-it("shows actionable remediation before the first status response", () => {
+it("stays hidden before the first status response", () => {
   render(<WorkerCompatibilityWarning />);
 
-  expect(screen.getByRole("alert").textContent).toContain(
-    "Worker compatibility is not confirmed",
-  );
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 it.each([

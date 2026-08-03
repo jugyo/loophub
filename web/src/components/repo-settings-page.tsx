@@ -25,6 +25,7 @@ import {
   EFFORT_SUGGESTIONS,
   MODEL_SUGGESTIONS,
 } from "@/lib/agent-models";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
 import {
   useRenameRepo,
@@ -420,6 +421,8 @@ function ArchivedWorkspacesDialog({
   onUnarchive: (workspace: Workspace) => void;
   onCancel: () => void;
 }) {
+  const backdropDismiss = useBackdropDismiss(onCancel);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onCancel();
@@ -431,7 +434,7 @@ function ArchivedWorkspacesDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
-      onClick={onCancel}
+      {...backdropDismiss}
     >
       <div
         data-debug-component="ArchivedWorkspacesDialog"
@@ -534,6 +537,8 @@ function ArchiveWorkspaceDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const backdropDismiss = useBackdropDismiss(onCancel);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onCancel();
@@ -545,7 +550,7 @@ function ArchiveWorkspaceDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
-      onClick={onCancel}
+      {...backdropDismiss}
     >
       <div
         data-debug-component="ArchiveWorkspaceDialog"
@@ -1072,6 +1077,8 @@ function ConfirmArchiveDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const backdropDismiss = useBackdropDismiss(onCancel);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onCancel();
@@ -1085,7 +1092,7 @@ function ConfirmArchiveDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
-      onClick={onCancel}
+      {...backdropDismiss}
     >
       <div
         data-debug-component="ConfirmArchiveDialog"

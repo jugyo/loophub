@@ -40,6 +40,11 @@ export const DEFAULT_ISSUE_FILTERS: IssueListFilters = {
 export const ISSUE_LIST_PAGE_SIZE = 20;
 const ISSUE_LIST_FETCH_SIZE = ISSUE_LIST_PAGE_SIZE + 1;
 
+const acceptanceCriteriaKey = (repoFull: string, number: number) => [
+  ...queryKeys.issue(repoFull, number),
+  "acceptanceCriteria",
+];
+
 function hasMoreIssuePages(
   pages: Awaited<ReturnType<typeof getIssueListPage>>[],
 ) {
@@ -116,11 +121,13 @@ export function useIssueDetailPage(
     queryKey: [...queryKeys.issue(full(owner, repo), number), "pageData"],
     queryFn: async () => {
       const data = await getIssueDetailPage(owner, repo, number);
-      const issueKey = queryKeys.issue(full(owner, repo), number);
-      qc.setQueryData(issueKey, data.issue);
-      qc.setQueryData([...issueKey, "comments"], data.comments);
+      const repoFull = full(owner, repo);
+      // Seed through the same key factories the per-section hooks read, so the
+      // disabled hooks in IssueDetail resolve against this one fetch.
+      qc.setQueryData(queryKeys.issue(repoFull, number), data.issue);
+      qc.setQueryData(queryKeys.issueComments(repoFull, number), data.comments);
       qc.setQueryData(
-        [...issueKey, "acceptanceCriteria"],
+        acceptanceCriteriaKey(repoFull, number),
         data.acceptance_criteria,
       );
       return data;
@@ -135,10 +142,7 @@ export function useAcceptanceCriteria(
   enabled = true,
 ) {
   return useQuery({
-    queryKey: [
-      ...queryKeys.issue(full(owner, repo), number),
-      "acceptanceCriteria",
-    ],
+    queryKey: acceptanceCriteriaKey(full(owner, repo), number),
     queryFn: () => listAcceptanceCriteria(owner, repo, number),
     enabled,
   });

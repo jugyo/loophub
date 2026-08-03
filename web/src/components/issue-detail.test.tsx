@@ -94,6 +94,9 @@ function mockFetch(
       started_at: "2026-08-02T00:00:00Z",
       heartbeat_at: "2026-08-02T00:00:01Z",
     }),
+    // #2263: the linked-PR rows read their tokens/cost from this git-free query rather than the
+    // issue payload. Answering it by default keeps every other test on the issue's own numbers.
+    "pulls/usage": (p: any) => ({ number: p.number }),
     "issues/ac/list": () =>
       (getIssue().acceptance_criteria ?? []).map((criterion) => ({
         ...criterion,
@@ -178,6 +181,7 @@ function renderDetail(
   return {
     ...rendered,
     router,
+    queryClient,
     switchIssue: (number: number) => setIssueNumber(number),
   };
 }
@@ -590,6 +594,37 @@ describe("IssueDetail", () => {
         .getAttribute("href"),
     ).toBe("/r/me/proj/pulls/31");
     expect(screen.queryByText(/Discard/)).toBeNull();
+  });
+
+  // #2263: a running agent's usage counter ticks every few seconds. Its event now invalidates only
+  // the PR's usage query, so the row has to take its tokens/cost from there — the issue payload it
+  // rides on is rebuilt from live git and is no longer refetched for a usage tick.
+  it("shows the linked PR's tokens/cost from the usage query (#2263)", async () => {
+    let usage: Record<string, unknown> = {
+      number: 30,
+      total_tokens: 12_000,
+      cost_usd: 3.4,
+    };
+    const { queryClient } = renderDetail(() => issue, {
+      "pulls/usage": () => usage,
+    });
+
+    const row = await screen.findByLabelText(
+      "Linked PR #30: ui2: issue detail PR",
+    );
+    await waitFor(() => expect(within(row).getByText("12k")).toBeTruthy());
+    expect(within(row).getByText("$3")).toBeTruthy();
+
+    // What a usage_updated event does now: refresh that key alone.
+    usage = { number: 30, total_tokens: 34_000, cost_usd: 9.6 };
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["pull-usage", "me/proj", 30],
+      });
+    });
+
+    await waitFor(() => expect(within(row).getByText("34k")).toBeTruthy());
+    expect(within(row).getByText("$10")).toBeTruthy();
   });
 
   it("explains when old linked PR rows are omitted by the detail limit", async () => {
