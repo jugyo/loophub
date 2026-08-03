@@ -63,10 +63,22 @@ export interface RuntimeArgsInput {
   prompt: string;
 }
 
-// Build the argv (without the runtime binary) for one launch. The per-runtime ordering is preserved
-// exactly as the previous hand-written builders produced it, so every existing launch path emits
-// byte-identical argv.
-export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
+// The positional prompt a launch delivers, resolved per runtime: codex/grok take no system-prompt
+// flag, so the rendered contract is folded in here; claude delivers it out of band via
+// --append-system-prompt-file and its positional is the user prompt alone.
+export function runtimePrompt(input: RuntimeArgsInput): string {
+  return input.runtime === "claude-code"
+    ? input.prompt
+    : foldPrompt(input.systemPrompt, input.prompt);
+}
+
+// Build the flag argv (without the runtime binary and without the trailing positional prompt) for
+// one launch. Split out from buildRuntimeArgs because herdr 0.7.5's `agent start` refuses any
+// argument containing a newline (`invalid_agent_argument`: "agent arguments cannot be encoded
+// safely for the target shell"), and a rendered contract or user prompt is always multi-line. The
+// flags are newline-free, so a herdr launch starts the runtime with these and then delivers
+// runtimePrompt() into the running agent's input instead.
+export function buildRuntimeFlags(input: RuntimeArgsInput): string[] {
   const { runtime } = input;
   if (runtime === "codex") {
     const args = runtimeApprovalArgs(runtime);
@@ -75,13 +87,11 @@ export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
       const e = display(input.effort).trim();
       if (e) args.push("-c", `model_reasoning_effort=${e}`);
     }
-    args.push(foldPrompt(input.systemPrompt, input.prompt));
     return args;
   }
   if (runtime === "grok") {
     const args = runtimeApprovalArgs(runtime);
     args.push(...modelFlag(input.model));
-    args.push(foldPrompt(input.systemPrompt, input.prompt));
     return args;
   }
   // claude-code
@@ -103,6 +113,12 @@ export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
   if (input.systemPromptFile) {
     args.push("--append-system-prompt-file", input.systemPromptFile);
   }
-  args.push(input.prompt);
   return args;
+}
+
+// Build the full argv (without the runtime binary) for one launch: the flags above followed by the
+// trailing positional prompt. The per-runtime ordering is preserved exactly as the previous
+// hand-written builders produced it, so every existing launch path emits byte-identical argv.
+export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
+  return [...buildRuntimeFlags(input), runtimePrompt(input)];
 }

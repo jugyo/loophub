@@ -81,26 +81,24 @@ let db: typeof import("./db.ts").db;
 let repoPath: string;
 let otherRepoPath: string;
 
-const TAB_JSON =
-  '{"id":"cli:tab:create","result":{"tab":{"tab_id":"w1:t9","workspace_id":"w1"},"type":"tab_created"}}';
-const TAB_JSON_WITH_ROOT_PANE =
-  '{"id":"cli:tab:create","result":{"root_pane":{"pane_id":"w4:p9"},"tab":{"tab_id":"w4:t9","workspace_id":"w4"},"type":"tab_created"}}';
-
 // `herdr workspace create` seeds the new workspace with one tab and one empty pane, reported in
 // the same shape `herdr tab create` uses, plus the new workspace itself.
 const WORKSPACE_JSON =
   '{"id":"cli:workspace:create","result":{"tab":{"tab_id":"w4:t1","workspace_id":"w4"},"type":"workspace_created","workspace":{"workspace_id":"w4"}}}';
 const WORKSPACE_JSON_WITH_ROOT_PANE =
   '{"id":"cli:workspace:create","result":{"root_pane":{"pane_id":"w4:p1"},"tab":{"tab_id":"w4:t1","workspace_id":"w4"},"type":"workspace_created","workspace":{"workspace_id":"w4"}}}';
+// The launch's own tab, created inside the resolved workspace. Since herdr 0.7.5 the agent runs in
+// a pane that already exists, and only a pane-creating call can carry the launch's `--env`, so this
+// is the step that produces the agent's pane in every flow.
+const LAUNCH_TAB_JSON =
+  '{"id":"cli:tab:create","result":{"root_pane":{"pane_id":"w4:p2"},"tab":{"tab_id":"w4:t2","workspace_id":"w4"},"type":"tab_created"}}';
 const WORKSPACE_LIST_EMPTY =
   '{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[]}}';
 const WORKSPACE_LIST_NEW_ISSUE =
   '{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[{"label":"New Issue","number":4,"workspace_id":"w4"}]}}';
 
-// tabId and workspaceId are parsed independently from the same response — these fixtures cover
-// the two ways they can disagree (one field present, the other missing/malformed).
-const WORKSPACE_JSON_NO_TAB_ID =
-  '{"id":"cli:workspace:create","result":{"tab":{},"type":"workspace_created","workspace":{"workspace_id":"w4"}}}';
+// The seeded tab id and the workspace id are parsed independently from the same response — these
+// fixtures cover the ways they can disagree (one field present, the other missing/malformed).
 // `.result.workspace.workspace_id` is missing, but parseHerdrWorkspaceId falls back to
 // `.result.tab.workspace_id`, which is still present — workspaceId still resolves.
 const WORKSPACE_JSON_NO_PRIMARY_WORKSPACE_ID =
@@ -392,9 +390,13 @@ describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
     db.run("DELETE FROM worker_runtime");
     herdr.script.push(
       exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE), // workspace create
+      exitWith(0, LAUNCH_TAB_JSON), // the launch's own tab (carries --env)
+      exitWith(0), // pane rename
       exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'), // agent start
+      exitWith(0), // prompt paste
+      exitWith(0), // prompt submit
+      exitWith(0), // seeded tab close
       exitWith(0), // workspace focus
-      exitWith(0), // seed pane close
     );
 
     const result = await svc.terminal.launch({
@@ -406,14 +408,24 @@ describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
     // No workspace list/probe: workflow-create goes straight to a fresh workspace.
     expect(herdr.calls[0]).toContain("workspace");
     expect(herdr.calls[0]).toContain("create");
-    const agentStart = herdr.calls[1];
-    expect(agentStart).toContain("start");
-    expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w4:t1");
+    const tabCreate = herdr.calls[1];
+    expect(tabCreate).toEqual(
+      expect.arrayContaining(["tab", "create", "--workspace", "w4"]),
+    );
     // The agent runs from LoopHub home (the isolated LOOPHUB_HOME), not a repo checkout.
-    expect(agentStart[agentStart.indexOf("--cwd") + 1]).toBe(HOME);
-    // The launched inner command is the coding agent seeded with the workflow-create prompt.
-    expect(agentStart[agentStart.length - 1]).toContain(
-      "claude '--permission-mode' 'auto' 'Create a workflow, then stop.'",
+    expect(tabCreate[tabCreate.indexOf("--cwd") + 1]).toBe(HOME);
+    const agentStart = herdr.calls[3];
+    expect(agentStart).toContain("start");
+    expect(agentStart[agentStart.indexOf("--pane") + 1]).toBe("w4:p2");
+    expect(agentStart[agentStart.indexOf("--kind") + 1]).toBe("claude");
+    expect(agentStart.slice(agentStart.indexOf("--") + 1)).toEqual([
+      "--permission-mode",
+      "auto",
+    ]);
+    // The workflow-create instructions are delivered into the agent, not put on its command line.
+    expect(herdr.calls[4]).toContain("send-text");
+    expect(herdr.calls[4][herdr.calls[4].length - 1]).toContain(
+      "Create a workflow, then stop.",
     );
     expect(result).toMatchObject({ backend: "herdr" });
   });
@@ -436,7 +448,10 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       exitWith(0, '{"sessions":[]}'),
       startHerdrServer,
       exitWith(0, WORKSPACE_JSON),
-      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'),
+      exitWith(0, LAUNCH_TAB_JSON),
+      exitWith(0),
+      exitWith(0),
+      exitWith(0),
       exitWith(0),
     );
 
@@ -460,7 +475,12 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       expect.arrayContaining(["workspace", "create", "--label", "New Issue"]),
     );
     expect(herdr.calls[4]).toEqual(
-      expect.arrayContaining(["agent", "start", "--tab", "w4:t1"]),
+      expect.arrayContaining(["tab", "create", "--workspace", "w4"]),
+    );
+    // `lh issue new` is not a runtime binary, so it is typed into the pane rather than started
+    // through `agent start --kind`.
+    expect(herdr.calls[6]).toEqual(
+      expect.arrayContaining(["pane", "send-text", "w4:p2"]),
     );
     expect(startedHerdrServer?.stdout.listenerCount("data")).toBe(1);
     expect(startedHerdrServer?.stderr.listenerCount("data")).toBe(1);
@@ -474,12 +494,11 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON),
-      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON),
+      ...Array.from({ length: 4 }, () => exitWith(0)),
       exitWith(0, WORKSPACE_LIST_NEW_ISSUE),
-      exitWith(0, TAB_JSON.replaceAll("w1", "w4")),
-      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p3"}}}'),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON.replaceAll("t2", "t3")),
+      ...Array.from({ length: 3 }, () => exitWith(0)),
     );
 
     await svc.terminal.launch({
@@ -501,10 +520,13 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     expect(herdr.calls[1]).toEqual(
       expect.arrayContaining(["workspace", "create", "--label", "New Issue"]),
     );
-    expect(herdr.calls[5]).toEqual(
+    // The reused workspace gets the launch's own tab; no second workspace is created.
+    expect(herdr.calls[8]).toEqual(
       expect.arrayContaining(["tab", "create", "--workspace", "w4"]),
     );
-    expect(herdr.calls[6][herdr.calls[6].indexOf("--tab") + 1]).toBe("w4:t9");
+    expect(herdr.calls[10]).toEqual(
+      expect.arrayContaining(["pane", "send-text", "w4:p2"]),
+    );
   });
 
   test("serializes simultaneous New Issue launches into one dedicated workspace", async () => {
@@ -544,19 +566,15 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
         return;
       }
       if (call.includes("tab") && call.includes("create")) {
-        exitWith(0, TAB_JSON.replaceAll("w1", "w4"))(child);
-        return;
-      }
-      if (call.includes("agent") && call.includes("start")) {
         exitWith(
           0,
-          `{"result":{"agent":{"pane_id":"w4:p${responseIndex}"}}}`,
+          LAUNCH_TAB_JSON.replaceAll("w4:p2", `w4:p${responseIndex}`),
         )(child);
         return;
       }
       exitWith(0)(child);
     };
-    herdr.script.push(...Array.from({ length: 10 }, () => respondByCommand));
+    herdr.script.push(...Array.from({ length: 20 }, () => respondByCommand));
 
     await Promise.all([
       svc.terminal.launch({
@@ -579,14 +597,15 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     expect(herdr.calls.filter((call) => call.includes("server"))).toHaveLength(
       1,
     );
-    const starts = herdr.calls.filter(
-      (call) => call.includes("agent") && call.includes("start"),
+    // Each launch creates its own tab in the shared workspace and types its command into that
+    // tab's pane.
+    const tabs = herdr.calls.filter(
+      (call) => call.includes("tab") && call.includes("create"),
     );
-    expect(starts).toHaveLength(2);
-    expect(starts.map((call) => call[call.indexOf("--tab") + 1])).toEqual([
-      "w4:t1",
-      "w4:t9",
-    ]);
+    expect(tabs).toHaveLength(2);
+    expect(tabs.every((call) => call.includes("--workspace"))).toBe(true);
+    const sends = herdr.calls.filter((call) => call.includes("send-text"));
+    expect(sends).toHaveLength(2);
     const registered = S.listIssueHerdrPanes(repo.id).filter(
       (pane) => !existingPaneIds.has(pane.id),
     );
@@ -669,9 +688,10 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
   test("keeps the dedicated workspace and surfaces the existing error when a reused-tab launch fails", async () => {
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_NEW_ISSUE),
-      exitWith(0, TAB_JSON.replaceAll("w1", "w4")),
-      exitWith(3),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON),
+      exitWith(0), // pane rename
+      exitWith(3), // send-text fails
+      exitWith(0), // tab close
     );
 
     const err = await svc.terminal
@@ -686,14 +706,15 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
           error as { message: string; data?: { command?: string } },
       );
 
-    expect(err?.message).toBe("Herdr exited with status 3");
-    expect(err?.data?.command).toContain("agent start");
+    expect(err?.message).toBe("Herdr could not start the agent");
+    expect(err?.data?.command).toContain("tab create");
     expect(err?.data?.command).toContain("lh issue new --repo");
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
-    expect(herdr.calls[3]).toEqual(
-      expect.arrayContaining(["tab", "close", "w4:t9"]),
+    // Only the tab this launch added is dropped; the shared New Issue workspace stays.
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
+    expect(herdr.calls[4]).toEqual(
+      expect.arrayContaining(["tab", "close", "w4:t2"]),
     );
-    expect(herdr.calls[3]).not.toContain("workspace");
+    expect(herdr.calls[4]).not.toContain("workspace");
   });
 
   test("separates New Issue workspaces for different repositories", async () => {
@@ -708,16 +729,16 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
         exitWith(0, WORKSPACE_JSON)(child);
         return;
       }
-      if (call.includes("agent") && call.includes("start")) {
+      if (call.includes("tab") && call.includes("create")) {
         exitWith(
           0,
-          `{"result":{"agent":{"pane_id":"w4:p${responseIndex}"}}}`,
+          LAUNCH_TAB_JSON.replaceAll("w4:p2", `w4:p${responseIndex}`),
         )(child);
         return;
       }
       exitWith(0)(child);
     };
-    herdr.script.push(...Array.from({ length: 8 }, () => respondByCommand));
+    herdr.script.push(...Array.from({ length: 20 }, () => respondByCommand));
 
     await Promise.all([
       svc.terminal.launch({
@@ -745,8 +766,8 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON),
-      exitWith(0),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON),
+      ...Array.from({ length: 4 }, () => exitWith(0)),
     );
 
     const result = await svc.terminal.launch({
@@ -760,9 +781,10 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     expect(herdr.calls[1]).toContain("workspace");
     expect(herdr.calls[1]).toContain("create");
     expect(herdr.calls[1]).not.toContain("tab");
-    const agentStart = herdr.calls[2];
-    expect(agentStart).toContain("start");
-    expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w4:t1");
+    const tabCreate = herdr.calls[2];
+    expect(tabCreate).toEqual(
+      expect.arrayContaining(["tab", "create", "--workspace", "w4"]),
+    );
     expect(result).toMatchObject({ backend: "herdr" });
   });
 
@@ -774,8 +796,10 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON),
+      exitWith(0, LAUNCH_TAB_JSON),
+      exitWith(0), // pane rename
       async (child) => {
-        const command = herdr.calls[2].join(" ");
+        const command = herdr.calls[4].join(" ");
         launchId = command.match(
           /LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH='([^']+)'/u,
         )?.[1] as string;
@@ -796,10 +820,6 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
           repo: repo.full_name,
           issueNumber: issue.number,
         });
-        child.stdout.emit(
-          "data",
-          Buffer.from('{"result":{"agent":{"pane_id":"w4:p9"}}}'),
-        );
         child.emit("close", 0, null);
       },
       exitWith(
@@ -825,7 +845,7 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       );
       expect(
         herdr.calls.some(
-          (call) => call.includes("close") && call.includes("w4:p9"),
+          (call) => call.includes("close") && call.includes("w4:p2"),
         ),
       ).toBe(true);
     } finally {
@@ -841,8 +861,10 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON),
+      exitWith(0, LAUNCH_TAB_JSON),
+      exitWith(0), // pane rename
       async (child) => {
-        const command = herdr.calls[2].join(" ");
+        const command = herdr.calls[4].join(" ");
         launchId = command.match(
           /LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH='([^']+)'/u,
         )?.[1] as string;
@@ -895,7 +917,7 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
         label: "New issue",
       });
 
-      await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
+      await vi.waitFor(() => expect(herdr.calls).toHaveLength(8));
       expect(killSpy).not.toHaveBeenCalled();
       expect(S.getHerdrPaneByLaunch(repo.id, launchId)?.closed_at).toBeNull();
       expect(
@@ -912,8 +934,8 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON),
-      exitWith(0),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON),
+      ...Array.from({ length: 4 }, () => exitWith(0)),
     );
 
     await svc.terminal.launch({
@@ -925,7 +947,7 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       effort: "high",
     });
 
-    expect(herdr.calls[2]).toEqual(
+    expect(herdr.calls[4]).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
           "lh issue new --repo 'me/proj' --codex --model 'gpt-5.6-sol' --effort 'high'",
@@ -938,8 +960,8 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON),
-      exitWith(0),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON),
+      ...Array.from({ length: 4 }, () => exitWith(0)),
     );
 
     await svc.terminal.launch({
@@ -949,7 +971,7 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       targetBranch: "workspace/alpha",
     });
 
-    expect(herdr.calls[2]).toEqual(
+    expect(herdr.calls[4]).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
           "lh issue new --repo 'me/proj' --target-branch 'workspace/alpha'",
@@ -964,8 +986,8 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON),
-      exitWith(0),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON),
+      ...Array.from({ length: 4 }, () => exitWith(0)),
     );
 
     await svc.terminal.launch({
@@ -974,20 +996,22 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       label: "New issue",
     });
 
-    // Fire-and-forget: wait for the queued focus spawn to happen.
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
-    const focus = herdr.calls[3];
+    // Fire-and-forget: wait for the queued seed-tab close and focus spawns to happen.
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(7));
+    const focus = herdr.calls[6];
     expect(focus).toContain("workspace");
     expect(focus).toContain("focus");
     expect(focus).toContain("w4");
   });
 
-  test("keeps the shared workspace and closes only its seeded tab when the first agent fails", async () => {
+  test("keeps the shared workspace and closes only its own tab when the first agent fails", async () => {
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON),
-      exitWith(3),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON),
+      exitWith(0), // pane rename
+      exitWith(3), // send-text fails
+      exitWith(0), // tab close
     );
 
     const err = await svc.terminal
@@ -997,23 +1021,25 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
         (e: unknown) => e as { message: string },
       );
 
-    expect(err?.message).toBe("Herdr exited with status 3");
+    expect(err?.message).toBe("Herdr could not start the agent");
     // Fire-and-forget cleanup: the shared workspace persists for the next New Issue launch.
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
-    const cleanup = herdr.calls[3];
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(6));
+    const cleanup = herdr.calls[5];
     expect(cleanup).toContain("tab");
     expect(cleanup).toContain("close");
-    expect(cleanup).toContain("w4:t1");
+    expect(cleanup).toContain("w4:t2");
     expect(cleanup).not.toContain("workspace");
   });
 
-  test("closes only the seeded root pane after the first New Issue agent starts", async () => {
+  // The launch cannot start its agent in the tab a `workspace create` seeds: that tab was created
+  // without the launch's `--env`, and `agent start` carries no environment of its own. So the
+  // launch adds its own tab and the seeded one is dropped once the real one exists.
+  test("closes the workspace's seeded tab after the first New Issue agent starts", async () => {
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE),
-      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'),
-      exitWith(0),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON),
+      ...Array.from({ length: 4 }, () => exitWith(0)),
     );
 
     await svc.terminal.launch({
@@ -1022,24 +1048,20 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       label: "New issue",
     });
 
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
-    const focus = herdr.calls[3];
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(7));
+    const cleanup = herdr.calls[5];
+    expect(cleanup).toEqual(expect.arrayContaining(["tab", "close", "w4:t1"]));
+    expect(cleanup).not.toContain("w4:t2");
+    const focus = herdr.calls[6];
     expect(focus).toContain("workspace");
     expect(focus).toContain("focus");
-    const cleanup = herdr.calls[4];
-    expect(cleanup).toContain("pane");
-    expect(cleanup).toContain("close");
-    expect(cleanup).toContain("w4:p1");
-    expect(cleanup).not.toContain("w4:p2");
   });
 
-  test("closes only the new tab's seeded root pane when reusing the New Issue workspace", async () => {
+  test("touches no existing tab when reusing the New Issue workspace", async () => {
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_NEW_ISSUE),
-      exitWith(0, TAB_JSON_WITH_ROOT_PANE),
-      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p10"}}}'),
-      exitWith(0),
-      exitWith(0),
+      exitWith(0, LAUNCH_TAB_JSON),
+      ...Array.from({ length: 3 }, () => exitWith(0)),
     );
 
     await svc.terminal.launch({
@@ -1049,22 +1071,21 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     });
 
     await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
-    const focus = herdr.calls[3];
-    expect(focus).toContain("tab");
-    expect(focus).toContain("focus");
-    expect(focus).toContain("w4:t9");
-    const cleanup = herdr.calls[4];
-    expect(cleanup).toContain("pane");
-    expect(cleanup).toContain("close");
-    expect(cleanup).toContain("w4:p9");
-    expect(cleanup).not.toContain("w4:p10");
+    // A reused workspace has no seeded tab of this launch's making, so nothing is closed — only
+    // the launch's own new tab is brought forward.
+    expect(herdr.calls.some((call) => call.includes("close"))).toBe(false);
+    const focus = herdr.calls[4];
+    expect(focus).toEqual(expect.arrayContaining(["tab", "focus", "w4:t2"]));
   });
 
-  test("does not wait for New Issue seed pane cleanup to finish", async () => {
+  test("does not wait for New Issue seeded-tab cleanup to finish", async () => {
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE),
-      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'),
+      exitWith(0, LAUNCH_TAB_JSON),
+      exitWith(0),
+      exitWith(0),
+      exitWith(0),
       () => {},
       () => {},
     );
@@ -1077,24 +1098,22 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       }),
     ).resolves.toMatchObject({ backend: "herdr" });
 
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
-    expect(herdr.calls[4]).toEqual(
-      expect.arrayContaining(["pane", "close", "w4:p1"]),
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(7));
+    expect(herdr.calls[5]).toEqual(
+      expect.arrayContaining(["tab", "close", "w4:t1"]),
     );
   });
 
-  // tabId and workspaceId are parsed independently from the same `herdr workspace create`
-  // response, so they are not guaranteed to succeed/fail together.
-  test("closes the orphaned workspace immediately when its seeded tab id fails to parse", async () => {
-    // Workspace create succeeds and yields a workspaceId, but no tabId — the workspace can never
-    // be targeted (no --tab to route into it), so it must be closed right away rather than left
-    // for the (in this case unreachable) failure-only cleanup. Agent start still runs as a
-    // tab-less fallback launch.
+  // The workspace id is what makes a created workspace both targetable and closeable, and it is
+  // parsed independently of the seeded tab id out of the same `herdr workspace create` response.
+  test("falls back to a plain tab when the created workspace has no usable id", async () => {
+    // Without an id the workspace can neither be placed into nor cleaned up, so the launch must
+    // not adopt it: it creates an unscoped tab instead of leaving a second orphan behind.
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
-      exitWith(0, WORKSPACE_JSON_NO_TAB_ID),
-      exitWith(0),
-      exitWith(0),
+      exitWith(0, WORKSPACE_JSON_NO_WORKSPACE_ID_ANYWHERE),
+      exitWith(0, LAUNCH_TAB_JSON),
+      ...Array.from({ length: 4 }, () => exitWith(0)),
     );
 
     await svc.terminal.launch({
@@ -1103,23 +1122,20 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       label: "New issue",
     });
 
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
-    const workspaceClose = herdr.calls[2];
-    expect(workspaceClose).toContain("workspace");
-    expect(workspaceClose).toContain("close");
-    expect(workspaceClose).toContain("w4");
-    const agentStart = herdr.calls[3];
-    expect(agentStart).toContain("start");
-    expect(agentStart).not.toContain("--tab");
+    const tabCreate = herdr.calls[2];
+    expect(tabCreate).toEqual(expect.arrayContaining(["tab", "create"]));
+    expect(tabCreate).not.toContain("--workspace");
   });
 
   test("still preserves the shared workspace when its id is recovered from the seeded tab", async () => {
     // `.result.workspace.workspace_id` is missing, but `.result.tab.workspace_id` carries the
-    // same id — parseHerdrWorkspaceId falls back to it for focus, while failed New Issue launch
-    // cleanup still targets only this launch's tab because the dedicated workspace is shared.
+    // same id — parseHerdrWorkspaceId falls back to it for placement and focus, while failed New
+    // Issue launch cleanup still targets only this launch's tab because the workspace is shared.
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON_NO_PRIMARY_WORKSPACE_ID),
+      exitWith(0, LAUNCH_TAB_JSON),
+      exitWith(0),
       exitWith(3),
       exitWith(0),
     );
@@ -1131,35 +1147,15 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
         (e: unknown) => e as { message: string },
       );
 
-    expect(err?.message).toBe("Herdr exited with status 3");
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
-    const cleanup = herdr.calls[3];
+    expect(err?.message).toBe("Herdr could not start the agent");
+    expect(herdr.calls[2]).toEqual(
+      expect.arrayContaining(["tab", "create", "--workspace", "w4"]),
+    );
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(6));
+    const cleanup = herdr.calls[5];
     expect(cleanup).toContain("tab");
     expect(cleanup).toContain("close");
-    expect(cleanup).toContain("w4:t1");
+    expect(cleanup).toContain("w4:t2");
     expect(cleanup).not.toContain("workspace");
-  });
-
-  test("falls back to a best-effort tab close when no workspace id is recoverable from either field", async () => {
-    herdr.script.push(
-      exitWith(0, WORKSPACE_LIST_EMPTY),
-      exitWith(0, WORKSPACE_JSON_NO_WORKSPACE_ID_ANYWHERE),
-      exitWith(3),
-      exitWith(0),
-    );
-
-    const err = await svc.terminal
-      .launch({ repo: "me/proj", workflow: "issue-create", label: "New issue" })
-      .then(
-        () => null,
-        (e: unknown) => e as { message: string },
-      );
-
-    expect(err?.message).toBe("Herdr exited with status 3");
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
-    const cleanup = herdr.calls[3];
-    expect(cleanup).toContain("tab");
-    expect(cleanup).toContain("close");
-    expect(cleanup).toContain("w4:t1");
   });
 });

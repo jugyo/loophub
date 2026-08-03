@@ -86,7 +86,8 @@ test("terminal.sessions reports running repos independently from visible agent g
   const sessionC = herdrSessionName(agentListFailure);
 
   // Fake herdr replaying real CLI shapes: `herdr session list --json` prints the session
-  // list; `herdr --session <name> agent list` ($2 = name) prints that session's agents.
+  // list; `herdr --session <name> pane list` ($2 = name) prints that session's panes, which is
+  // where LoopHub reads its agents from (only the pane listing carries each pane's label).
   const sessionList = JSON.stringify({
     sessions: [
       { default: true, name: "default", running: true },
@@ -742,7 +743,7 @@ test("terminal.cleanupClosedPullDevAgents continues after invalid workspace ids 
       "#!/bin/sh",
       `echo "$@" >> ${CALLS_FILE}`,
       `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
-      `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agents}'; exit 0; fi`,
       `if [ "$5" = "wFail" ]; then exit 1; fi`,
       "exit 0",
       "",
@@ -898,7 +899,7 @@ test("terminal.sendAgentInput delivers to the verified pane and reports the fail
     join(FAKE_BIN, "herdr"),
     [
       "#!/bin/sh",
-      `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agents}'; exit 0; fi`,
       `if [ "$4" = "send-text" ]; then`,
       `  if [ "$LH_TEST_SEND_INPUT_FAIL" = "text" ]; then exit 3; fi`,
       `  printf '%s' "$6" > ${pendingFile}; exit 0`,
@@ -1091,7 +1092,7 @@ test("herdr.tree builds the workspace/tab/agent hierarchy, matching an agent's c
       `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
       `if [ "$3" = "workspace" ]; then printf '%s' '${workspaceList}'; exit 0; fi`,
       `if [ "$3" = "tab" ]; then printf '%s' '${tabList}'; exit 0; fi`,
-      `if [ "$3" = "agent" ]; then printf '%s' '${agentList}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agentList}'; exit 0; fi`,
       "exit 1",
       "",
     ].join("\n"),

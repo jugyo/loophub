@@ -2,12 +2,16 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
-import { buildRuntimeArgs } from "../../core/runtime-args.ts";
+import {
+  buildRuntimeArgs,
+  buildRuntimeFlags,
+  runtimePrompt,
+} from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
 import { isClaudeSessionId } from "../../core/session-runtime.ts";
 import {
+  executeHerdrLaunchPlan,
   HERDR_ID,
-  parseHerdrAgentPaneId,
 } from "../../core/terminal/terminal-launch.ts";
 import {
   layoutWorkflowTab,
@@ -168,14 +172,14 @@ function requestedSessionId(): string | undefined {
 // Claude Code takes --session-id and --append-system-prompt-file; Codex and Grok have neither, so the
 // rendered contract is folded into their positional prompt (read from the file only for those
 // runtimes) and correlation happens only through the LOOPHUB_SESSION_ID env prefix.
-function parentAgentArgs(input: {
+function parentRuntimeInput(input: {
   runtime: CodingAgent;
   sessionId: string;
   systemPromptPath: string;
   userPrompt: string;
   model: string;
-}): string[] {
-  return buildRuntimeArgs({
+}) {
+  return {
     runtime: input.runtime,
     model: input.model,
     sessionId: input.sessionId,
@@ -185,7 +189,29 @@ function parentAgentArgs(input: {
         ? undefined
         : readFileSync(input.systemPromptPath, "utf8"),
     prompt: input.userPrompt,
-  });
+  };
+}
+
+function parentAgentArgs(input: {
+  runtime: CodingAgent;
+  sessionId: string;
+  systemPromptPath: string;
+  userPrompt: string;
+  model: string;
+}): string[] {
+  return buildRuntimeArgs(parentRuntimeInput(input));
+}
+
+// The parent agent's own pane, which a child step splits so Execute/Verify land beside it in the
+// same tab. herdr exports it into every pane it starts; `lh workflow launch-step` runs inside the
+// parent agent's pane, so it inherits the value without being told.
+function inheritedHerdrPaneId(): string | null {
+  if (flags["pane-id"] !== undefined) {
+    if (!HERDR_ID.test(flags["pane-id"])) fail("--pane-id is invalid");
+    return flags["pane-id"];
+  }
+  const value = process.env.HERDR_PANE_ID;
+  return value && HERDR_ID.test(value) ? value : null;
 }
 
 function inheritedHerdrTabId(): string | null {
@@ -247,7 +273,7 @@ async function launchParentHerdr(input: {
   const agentArgs = parentAgentArgs(input);
   const command = formatSpawnCommand(agentArgs, { bin });
   const commandWithEnv = `LOOPHUB_SESSION_ID=${shQuote(input.sessionId)} ${command}`;
-  const agentName = workflowParentHerdrAgentName(input.runId);
+  const label = workflowParentHerdrAgentName(input.runId);
   // Open (or reuse) the target PR worktree's own herdr workspace and start the parent there via the
   // shared launchAgentInWorktreeHerdr helper (#873) — without it herdr split whichever pane was
   // focused, so the Workflow parent could land in an unrelated PR's workspace.
@@ -256,8 +282,14 @@ async function launchParentHerdr(input: {
     launched = await launchAgentInWorktreeHerdr({
       repo: input.repo,
       worktree: input.worktree,
+      program: {
+        bin,
+        args: buildRuntimeFlags(parentRuntimeInput(input)),
+        prompt: runtimePrompt(parentRuntimeInput(input)),
+      },
+      env: { LOOPHUB_SESSION_ID: input.sessionId },
       command: commandWithEnv,
-      label: agentName,
+      label,
     });
   } catch (e) {
     if (e instanceof HerdrLaunchError) fail(e.message);
@@ -405,6 +437,7 @@ async function launchStep(): Promise<void> {
     fail("--json is not supported for workflow launch-step");
   }
   const tabId = inheritedHerdrTabId();
+  const paneId = inheritedHerdrPaneId();
   const actorSessionId = await writeSession();
   const result = await runOp(() =>
     s.workflowRuns.launchStep(
@@ -417,6 +450,7 @@ async function launchStep(): Promise<void> {
         // The step inherits the parent run's model; only forward an explicit --model override.
         model: explicitModelFlag(),
         tabId,
+        paneId,
       },
       actorSessionId,
     ),
@@ -463,27 +497,38 @@ async function launchStep(): Promise<void> {
         actorSessionId,
       ),
     );
-  const launched = spawnSync(result.herdr.argv[0], result.herdr.argv.slice(1), {
-    encoding: "utf8",
-    stdio: ["inherit", "pipe", "inherit"],
+  const outcome = await executeHerdrLaunchPlan(result.herdr, async (argv) => {
+    const proc = spawnSync(argv[0], argv.slice(1), {
+      encoding: "utf8",
+      stdio: ["inherit", "pipe", "pipe"],
+      timeout: 30_000,
+    });
+    return {
+      stdout: proc.stdout ?? "",
+      stderr: proc.error ? proc.error.message : (proc.stderr ?? ""),
+      ok: !proc.error && proc.signal == null && (proc.status ?? 0) === 0,
+    };
   });
-  const launchStdout = launched.stdout ?? "";
-  if (launchStdout) process.stdout.write(launchStdout);
-  if (launched.error) fail(`failed to launch herdr: ${launched.error.message}`);
-  if (launched.signal) {
-    fail(`herdr terminated by signal ${launched.signal}`);
+  if (outcome.stdout) process.stdout.write(outcome.stdout);
+  if (!outcome.ok) {
+    fail(
+      `herdr failed to ${
+        outcome.failed === "pane"
+          ? "create the step's pane"
+          : outcome.failed === "prompt"
+            ? "deliver the step agent's prompt"
+            : "start the step agent"
+      }: ${outcome.stderr.trim()}`,
+    );
   }
-  if (launched.status == null || launched.status !== 0) {
-    fail(`herdr exited with status ${launched.status}`);
-  }
-  const paneId = parseHerdrAgentPaneId(launchStdout);
-  if (!paneId) {
+  const childPaneId = outcome.paneId;
+  if (!childPaneId) {
     fail("herdr agent start returned no valid pane_id");
   }
   // The child process is live once agent start succeeds, so persist that truth before ancillary
   // layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
   // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
-  await confirm(paneId);
+  await confirm(childPaneId);
   if (tabId) {
     try {
       layoutWorkflowTab({

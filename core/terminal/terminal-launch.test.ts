@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { updateConfig } from "../config.ts";
 import {
-  acquireHerdrWorktreeTab,
+  acquireHerdrWorktreeWorkspace,
   buildHerdrLaunchPlan,
   buildWorkflowStepHerdrLaunchPlan,
   commandForHerdrLaunch,
+  executeHerdrLaunchPlan,
+  HERDR_PANE_PLACEHOLDER,
   type HerdrCmdRunner,
   herdrAgentFocusArgv,
   herdrPaneCloseArgv,
@@ -259,102 +261,293 @@ describe("herdr terminal launch", () => {
     );
   });
 
-  test("builds Herdr agent start argv without shell interpolation", () => {
+  test("builds a pane-first Herdr agent start plan (herdr 0.7.5)", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
     const plan = buildHerdrLaunchPlan({
-      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command:
-        "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
+      repo,
+      command: "claude --model sonnet",
+      program: { bin: "claude", args: ["--model", "sonnet"] },
+      env: { LOOPHUB_SESSION_ID: "s-1" },
       label: "dev #444",
-      tabId: "w1:t2",
+      workspaceId: "w1",
     });
+    // The pane is created first; its environment rides on the creating call because `agent start`
+    // execs the runtime binary directly and carries none of its own.
+    expect(plan.paneArgv).toEqual([
+      "herdr",
+      "--session",
+      plan.sessionName,
+      "tab",
+      "create",
+      "--workspace",
+      "w1",
+      "--cwd",
+      "/repo/main",
+      "--env",
+      "LOOPHUB_SESSION_ID=s-1",
+      "--no-focus",
+    ]);
+    // The agent starts in that pane, with its argv passed through rather than a shell string.
     expect(plan.argv).toEqual([
       "herdr",
       "--session",
       plan.sessionName,
       "agent",
       "start",
-      "dev #444",
-      "--cwd",
-      "/repo/main",
-      "--tab",
-      "w1:t2",
-      "--no-focus",
+      plan.agentName,
+      "--kind",
+      "claude",
+      "--pane",
+      HERDR_PANE_PLACEHOLDER,
+      "--timeout",
+      "120000",
       "--",
-      "zsh",
-      "-lc",
-      "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
+      "--model",
+      "sonnet",
+    ]);
+    expect(plan.argv).not.toContain("zsh");
+    // The human-readable label is applied separately: 0.7.5 splits the free-form label from the
+    // strict agent name, and the label is the string LoopHub reads back.
+    expect(plan.label).toBe("dev #444");
+    expect(plan.renameArgv).toEqual([
+      "herdr",
+      "--session",
+      plan.sessionName,
+      "pane",
+      "rename",
+      HERDR_PANE_PLACEHOLDER,
+      "dev #444",
     ]);
   });
 
-  test("cwd overrides repo.local_path for --cwd without changing the session name (#584)", () => {
+  test("agent names satisfy herdr 0.7.5's slug rules and stay unique per placement", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const plan = (label: string, workspaceId: string) =>
+      buildHerdrLaunchPlan({
+        repo,
+        command: "claude",
+        program: { bin: "claude", args: [] },
+        label,
+        workspaceId,
+      });
+    const valid = /^[a-z][a-z0-9_-]{0,31}$/;
+    // herdr rejects anything else with invalid_agent_name: uppercase, spaces, `#`, non-ASCII.
+    expect(plan("orchestrator #578", "w1").agentName).toMatch(valid);
+    expect(plan("New issue - 84394ec6", "w1").agentName).toMatch(valid);
+    expect(plan("日本語のタイトル", "w1").agentName).toMatch(valid);
+    expect(plan("x".repeat(200), "w1").agentName).toMatch(valid);
+    // And rejects a name already taken in the session, so two launches of the same label must not
+    // collide.
+    expect(plan("orchestrator #578", "w1").agentName).not.toBe(
+      plan("orchestrator #578", "w2").agentName,
+    );
+    // Same placement, same label: stable, so a reproduce hint matches what actually ran.
+    expect(plan("orchestrator #578", "w1").agentName).toBe(
+      plan("orchestrator #578", "w1").agentName,
+    );
+  });
+
+  // herdr 0.7.5's `agent start` answers invalid_agent_argument ("agent arguments cannot be encoded
+  // safely for the target shell") for any argument containing a newline, and every LoopHub prompt is
+  // multi-line. So no argv token may contain one — the prompt is delivered separately.
+  test("keeps the multi-line prompt out of agent start and delivers it afterwards", () => {
+    const plan = buildHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      command: "claude",
+      program: {
+        bin: "claude",
+        args: ["--model", "sonnet"],
+        prompt: "line one\nline two 'quoted'",
+      },
+      label: "dev #1",
+    });
+    for (const token of [...plan.argv, ...plan.paneArgv, ...plan.renameArgv]) {
+      expect(token).not.toContain("\n");
+    }
+    expect(plan.argv).not.toContain("line one\nline two 'quoted'");
+    // Pasted as a literal argv positional, then submitted as a key press.
+    expect(plan.promptArgv).toHaveLength(2);
+    expect(plan.promptArgv[0].slice(3, 6)).toEqual([
+      "pane",
+      "send-text",
+      HERDR_PANE_PLACEHOLDER,
+    ]);
+    expect(plan.promptArgv[0][6]).toContain("line one\nline two 'quoted'");
+    expect(plan.promptArgv[1].slice(3)).toEqual([
+      "pane",
+      "send-keys",
+      HERDR_PANE_PLACEHOLDER,
+      "Enter",
+    ]);
+  });
+
+  test("a Workflow step delivers its rendered contract as a prompt, not as argv", () => {
+    const plan = buildWorkflowStepHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      runId: 12,
+      step: "execute",
+      sequence: 1,
+      runtime: "codex",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      worktree: "/repo/worktrees/pr-7",
+      systemPromptPath: "/tmp/run/execute-contract.md",
+      systemPrompt: "# Execute contract\nstep: execute\n",
+      userPrompt: "## Inputs\n- task.md\n",
+      splitPaneId: "w1:p2",
+      model: "gpt-5.5",
+    });
+    for (const token of plan.argv) expect(token).not.toContain("\n");
+    // codex has no system-prompt flag, so the folded contract is what gets delivered.
+    expect(plan.promptArgv[0][6]).toContain("# Execute contract");
+    expect(plan.promptArgv[0][6]).toContain("## Inputs");
+  });
+
+  test("a launch with no runtime binary types its command into the pane instead", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const plan = buildHerdrLaunchPlan({
+      repo,
+      command: "lh issue new --repo 'jugyo/loophub'",
+      label: "New issue",
+    });
+    // `lh issue new` is not a runtime binary `agent start --kind` could exec.
+    expect(plan.argv).toEqual([
+      "herdr",
+      "--session",
+      plan.sessionName,
+      "pane",
+      "send-text",
+      HERDR_PANE_PLACEHOLDER,
+      "lh issue new --repo 'jugyo/loophub'\n",
+    ]);
+  });
+
+  test("cwd overrides repo.local_path without changing the session name (#584)", () => {
     const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
     const plan = buildHerdrLaunchPlan({
       repo,
       command: "claude '--session-id' 'x'",
+      program: { bin: "claude", args: ["--session-id", "x"] },
       label: "#12 dev",
       cwd: "/repo/worktrees/pr-12",
     });
     expect(plan.sessionName).toBe(herdrSessionName(repo));
     expect(plan.cwd).toBe("/repo/worktrees/pr-12");
-    expect(plan.argv[plan.argv.indexOf("--cwd") + 1]).toBe(
+    // With no workspace to scope it to, the pane comes from a plain tab at the launch cwd.
+    expect(plan.paneArgv[plan.paneArgv.indexOf("--cwd") + 1]).toBe(
       "/repo/worktrees/pr-12",
     );
+    expect(plan.paneArgv).not.toContain("--workspace");
   });
 
-  test("omits --tab when tab creation did not yield an id (fallback to split)", () => {
-    for (const tabId of [undefined, null]) {
-      const plan = buildHerdrLaunchPlan({
-        repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-        command:
-          "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
-        label: "dev #444",
-        tabId,
-      });
-      expect(plan.argv).not.toContain("--tab");
-    }
-  });
-
-  // #873: no tab id but a known worktree workspace — place via --workspace so the agent stays in
-  // that workspace instead of splitting whatever pane is currently focused (an unrelated PR's).
-  test("falls back to --workspace when tabId is null but a workspace id is given", () => {
+  // #873: a known worktree workspace places the launch's tab there instead of wherever herdr's
+  // focus happens to be (an unrelated PR's pane).
+  test("creates the launch tab inside the given workspace", () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command:
-        "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
+      command: "claude",
+      program: { bin: "claude", args: [] },
       label: "dev #444",
-      tabId: null,
       workspaceId: "w9",
       cwd: "/repo/worktrees/pr-42",
     });
-    expect(plan.argv).not.toContain("--tab");
-    expect(plan.argv).toContain("--workspace");
-    expect(plan.argv[plan.argv.indexOf("--workspace") + 1]).toBe("w9");
+    expect(plan.paneArgv).toContain("--workspace");
+    expect(plan.paneArgv[plan.paneArgv.indexOf("--workspace") + 1]).toBe("w9");
   });
 
-  // A usable tab id wins: --tab is exact placement, so a workspace id is redundant and omitted.
-  test("prefers --tab over --workspace when both are available", () => {
+  test("a split placement wins over a workspace: the child lands in its parent's tab", () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command:
-        "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
-      label: "dev #444",
-      tabId: "w9:t2",
+      command: "claude",
+      program: { bin: "claude", args: [] },
+      label: "executor #1-1",
+      splitPaneId: "w9:p2",
+      split: "down",
       workspaceId: "w9",
     });
-    expect(plan.argv).toContain("--tab");
-    expect(plan.argv).not.toContain("--workspace");
+    expect(plan.paneArgv).toContain("split");
+    expect(plan.paneArgv).toContain("w9:p2");
+    expect(plan.paneArgv[plan.paneArgv.indexOf("--direction") + 1]).toBe(
+      "down",
+    );
+    expect(plan.paneArgv).not.toContain("create");
   });
 
-  test("can focus an explicitly user-facing agent as part of its start", () => {
+  test("executeHerdrLaunchPlan runs pane, rename, then agent start with the real pane id", async () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh workflow start 'jugyo/loophub/444'",
-      label: "workflow parent",
-      tabId: "w9:t2",
-      focus: true,
+      command: "claude",
+      program: { bin: "claude", args: [] },
+      label: "dev #1",
     });
-    expect(plan.argv).toContain("--focus");
-    expect(plan.argv).not.toContain("--no-focus");
+    const calls: string[][] = [];
+    const outcome = await executeHerdrLaunchPlan(
+      plan,
+      async (argv) => {
+        calls.push(argv);
+        return {
+          stdout: argv.includes("create")
+            ? '{"result":{"root_pane":{"pane_id":"w1:p5"},"tab":{"tab_id":"w1:t5"}}}'
+            : '{"result":{"agent":{"pane_id":"w1:p5"}}}',
+          stderr: "",
+          ok: true,
+        };
+      },
+      async () => {},
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      paneId: "w1:p5",
+      tabId: "w1:t5",
+    });
+    expect(calls.map((argv) => argv.slice(3, 5))).toEqual([
+      ["tab", "create"],
+      ["pane", "rename"],
+      ["agent", "start"],
+    ]);
+    // No placeholder survives into an executed call.
+    expect(calls.flat()).not.toContain(HERDR_PANE_PLACEHOLDER);
+    expect(calls[2]).toContain("w1:p5");
+  });
+
+  // herdr answers agent_pane_busy until the new pane's shell reaches its prompt. That is a startup
+  // ordering race with a definite end, so it is waited out rather than failing the launch.
+  test("executeHerdrLaunchPlan waits out agent_pane_busy but fails on any other error", async () => {
+    const plan = buildHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      command: "claude",
+      program: { bin: "claude", args: [] },
+      label: "dev #1",
+    });
+    const runner = (starts: { ok: boolean; stderr: string }[]) => {
+      let start = 0;
+      return async (argv: string[]) => {
+        if (!argv.includes("start"))
+          return {
+            stdout: '{"result":{"root_pane":{"pane_id":"w1:p5"}}}',
+            stderr: "",
+            ok: true,
+          };
+        const next = starts[Math.min(start++, starts.length - 1)];
+        return { stdout: "", ...next };
+      };
+    };
+    const busy = { ok: false, stderr: '{"error":{"code":"agent_pane_busy"}}' };
+    expect(
+      await executeHerdrLaunchPlan(
+        plan,
+        runner([busy, busy, { ok: true, stderr: "" }]),
+        async () => {},
+      ),
+    ).toMatchObject({ ok: true, paneId: "w1:p5" });
+    expect(
+      await executeHerdrLaunchPlan(
+        plan,
+        runner([
+          { ok: false, stderr: '{"error":{"code":"agent_name_taken"}}' },
+        ]),
+        async () => {},
+      ),
+    ).toMatchObject({ ok: false, failed: "agent", paneId: "w1:p5" });
   });
 
   test("builds Workflow step Herdr split launch argv and ambient env", () => {
@@ -369,16 +562,25 @@ describe("herdr terminal launch", () => {
       systemPromptPath: "/tmp/run/execute-contract.md",
       systemPrompt: "# Execute contract\nstep: execute\n",
       userPrompt: "## Inputs\n- /tmp/run/execute/input/task.md - Task\n",
-      tabId: "w1:t2",
+      splitPaneId: "w1:p2",
       model: "sonnet",
     });
 
     expect(plan.cwd).toBe("/repo/worktrees/pr-7");
-    expect(plan.argv).toContain("--split");
-    expect(plan.argv[plan.argv.indexOf("--split") + 1]).toBe("down");
-    expect(plan.argv).toContain("--tab");
-    expect(plan.argv).toContain("--no-focus");
-    expect(plan.argv).not.toContain("--focus");
+    // The child pane is a split of the run's parent pane, so it lands in the run's own tab.
+    expect(plan.paneArgv).toContain("split");
+    expect(plan.paneArgv).toContain("w1:p2");
+    expect(plan.paneArgv[plan.paneArgv.indexOf("--direction") + 1]).toBe(
+      "down",
+    );
+    expect(plan.paneArgv[plan.paneArgv.indexOf("--cwd") + 1]).toBe(
+      "/repo/worktrees/pr-7",
+    );
+    // The ambient LOOPHUB_* env is set on that pane, not folded into a shell command line.
+    expect(plan.paneArgv).toContain(
+      "LOOPHUB_SESSION_ID=11111111-1111-4111-8111-111111111111",
+    );
+    expect(plan.paneArgv).toContain("LOOPHUB_WORKFLOW_RUN=12");
     expect(plan.command).toContain(
       "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
     );
@@ -409,7 +611,7 @@ describe("herdr terminal launch", () => {
       systemPromptPath: "/tmp/run/execute-contract.md",
       systemPrompt: "# Execute contract\nstep: execute\n",
       userPrompt: "## Inputs\n- task.md\n",
-      tabId: "w1:t2",
+      splitPaneId: "w1:p2",
       model: "gpt-5.5",
     });
 
@@ -464,7 +666,7 @@ describe("herdr terminal launch", () => {
       systemPromptPath: "/tmp/run/execute-contract.md",
       systemPrompt: "# Execute contract\nstep: execute\n",
       userPrompt: "## Inputs\n- task.md\n",
-      tabId: "w1:t2",
+      splitPaneId: "w1:p2",
       model: "grok-code-fast-1",
     });
 
@@ -774,7 +976,7 @@ describe("herdr terminal launch", () => {
         "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
       label: longTitle,
     });
-    const agentName = plan.argv[5];
+    const agentName = plan.label;
     expect(agentName.length).toBeLessThanOrEqual(80);
     expect(agentName.endsWith("…")).toBe(true);
     expect(agentName).not.toMatch(/\s{2,}/);
@@ -785,7 +987,7 @@ describe("herdr terminal launch", () => {
         "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
       label: "Issue #444 -\n  line two",
     });
-    expect(multiline.argv[5]).toBe("Issue #444 - line two");
+    expect(multiline.label).toBe("Issue #444 - line two");
   });
 
   test("truncates long agent names on code points, not UTF-16 code units", () => {
@@ -798,7 +1000,7 @@ describe("herdr terminal launch", () => {
         "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
       label,
     });
-    const agentName = plan.argv[5];
+    const agentName = plan.label;
     expect(agentName).toBe(`${"a".repeat(79)}…`);
     expect(agentName).not.toMatch(
       /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/,
@@ -817,10 +1019,10 @@ describe("herdr terminal launch", () => {
     // The ESC control byte itself is replaced with a space (so it can no longer start an escape
     // sequence, and doesn't glue the surrounding text together); the now-inert printable
     // remainder ("[31m", "[0m") is left as plain text.
-    expect(plan.argv[5]).toBe(
+    expect(plan.label).toBe(
       "Issue #444 - evil [31mtitle [0m with hidden marks",
     );
-    expect(plan.argv[5]).not.toMatch(/\x1b/);
+    expect(plan.label).not.toMatch(/\x1b/);
   });
 
   test("turns a bare newline/tab between words into a space instead of deleting it", () => {
@@ -830,7 +1032,7 @@ describe("herdr terminal launch", () => {
         "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
       label: "line1\nline2\tline3",
     });
-    expect(plan.argv[5]).toBe("line1 line2 line3");
+    expect(plan.label).toBe("line1 line2 line3");
   });
 
   test("does not leave a double space when an unsafe char sits between two whitespace runs", () => {
@@ -840,7 +1042,7 @@ describe("herdr terminal launch", () => {
         "lh workflow start 'jugyo/loophub/444' --workflow default --herdr",
       label: "a \x01 b",
     });
-    expect(plan.argv[5]).toBe("a b");
+    expect(plan.label).toBe("a b");
   });
 
   // #551: herdr launches (issue-dev/resume/github-pr-export) open the PR's real worktree via
@@ -916,7 +1118,7 @@ describe("herdr terminal launch", () => {
 // #674: Workflow / herdr launchers reuse this same open+tab-create dance so they land in
 // the worktree's own herdr workspace instead of splitting the focused pane. The orchestration is
 // spawn-agnostic via an injected runner, so these exercise it with a scripted fake.
-describe("acquireHerdrWorktreeTab", () => {
+describe("acquireHerdrWorktreeWorkspace", () => {
   const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
   const worktree = "/wt/pr-42";
 
@@ -942,61 +1144,52 @@ describe("acquireHerdrWorktreeTab", () => {
           '{"result":{"already_open":false,"workspace":{"workspace_id":"wB"},"tab":{"tab_id":"wB:t1"},"root_pane":{"pane_id":"wB:p1"}}}',
       },
     ]);
-    const acquired = await acquireHerdrWorktreeTab(repo, worktree, run);
+    const acquired = await acquireHerdrWorktreeWorkspace(repo, worktree, run);
     expect(acquired).toEqual({
-      tabId: "wB:t1",
-      rootPaneId: "wB:p1",
       workspaceId: "wB",
-      targetWorkspaceId: "wB",
       createdWorkspace: true,
+      // The seeded tab carries none of the launch's `--env`, so the launch makes its own and this
+      // one is dropped afterwards.
+      seedTabId: "wB:t1",
     });
-    // Only the open call — a first-time open's seed tab is usable as-is, no follow-up tab create.
+    // Only the open call: the launch's own tab is created later, as part of its plan.
     expect(calls).toEqual([herdrWorktreeOpenArgv(repo, worktree)]);
   });
 
-  test("a reused workspace opens a fresh tab inside it (open + tab create)", async () => {
+  test("a reused workspace is returned without being touched", async () => {
     const { run, calls } = scriptedRunner([
       {
         stdout:
           '{"result":{"already_open":true,"workspace":{"workspace_id":"w7"}}}',
       },
-      {
-        stdout:
-          '{"result":{"tab":{"tab_id":"w7:t3"},"root_pane":{"pane_id":"w7:p3"}}}',
-      },
     ]);
-    const acquired = await acquireHerdrWorktreeTab(repo, worktree, run);
+    const acquired = await acquireHerdrWorktreeWorkspace(repo, worktree, run);
     expect(acquired).toEqual({
-      tabId: "w7:t3",
-      rootPaneId: "w7:p3",
-      // A reused workspace predates this call, so it is not ours to close on failure.
-      workspaceId: null,
-      // …but it is still the placement target for the `--workspace` fallback (#873).
-      targetWorkspaceId: "w7",
+      workspaceId: "w7",
+      // A reused workspace predates this call, so it is not ours to close on failure — and its
+      // existing tabs are not ours to drop either.
       createdWorkspace: false,
+      seedTabId: null,
     });
-    expect(calls).toEqual([
-      herdrWorktreeOpenArgv(repo, worktree),
-      herdrTabCreateInWorkspaceArgv(repo, "w7", worktree),
-    ]);
+    expect(calls).toEqual([herdrWorktreeOpenArgv(repo, worktree)]);
   });
 
   test("a failed worktree open returns null without a follow-up call", async () => {
     const { run, calls } = scriptedRunner([{ ok: false }]);
-    expect(await acquireHerdrWorktreeTab(repo, worktree, run)).toBeNull();
+    expect(await acquireHerdrWorktreeWorkspace(repo, worktree, run)).toBeNull();
     expect(calls).toEqual([herdrWorktreeOpenArgv(repo, worktree)]);
   });
 
   test("unparseable open output returns null (caller falls back to a plain tab)", async () => {
     const { run } = scriptedRunner([{ stdout: "not json" }]);
-    expect(await acquireHerdrWorktreeTab(repo, worktree, run)).toBeNull();
+    expect(await acquireHerdrWorktreeWorkspace(repo, worktree, run)).toBeNull();
   });
 
   test("a reused workspace with no usable workspace id returns null", async () => {
     const { run, calls } = scriptedRunner([
       { stdout: '{"result":{"already_open":true}}' },
     ]);
-    expect(await acquireHerdrWorktreeTab(repo, worktree, run)).toBeNull();
+    expect(await acquireHerdrWorktreeWorkspace(repo, worktree, run)).toBeNull();
     // No tab-create attempt when there is no workspace to scope it to.
     expect(calls).toEqual([herdrWorktreeOpenArgv(repo, worktree)]);
   });

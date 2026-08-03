@@ -174,11 +174,19 @@ export type WorkflowLaunchStepResult = {
   pointers: WorkflowInputPointer[];
   head_sha?: string;
   base_sha?: string;
+  // The ordered herdr calls that place and start the child agent. Structural (not a reference to
+  // HerdrLaunchPlan) because it crosses the JSON-RPC boundary to `lh workflow launch-step`, which
+  // hands it straight to executeHerdrLaunchPlan.
   herdr: {
     sessionName: string;
+    agentName: string;
+    label: string;
     command: string;
     cwd: string;
+    paneArgv: string[];
+    renameArgv: string[];
     argv: string[];
+    promptArgv: string[][];
   };
 };
 
@@ -1642,6 +1650,8 @@ export const workflowRuns = {
       review?: number;
       model?: string | null;
       tabId?: string | null;
+      // The parent agent's pane, split so the child lands beside it in the run's tab.
+      paneId?: string | null;
     },
     sessionId: string | null | undefined,
   ): Promise<WorkflowLaunchStepResult> {
@@ -1732,18 +1742,21 @@ export const workflowRuns = {
       systemPromptPath,
       systemPrompt: composed.systemPrompt,
       userPrompt: composed.userPrompt,
-      tabId: input.tabId,
+      splitPaneId: input.paneId,
       model,
     });
     // Keep confirmation's validation at the persistence boundary, but also validate the generated
     // plan before the CLI can spawn it. A future naming/normalization change must fail before it can
     // leave a live child whose session metadata was never recorded.
-    validateWorkflowStepAgentName(herdr.agentName, run.id, step);
+    // The label, not the herdr agent name: `agent_name` is the identity LoopHub records and later
+    // parses back (parseWorkflowHerdrAgentName), and since herdr 0.7.5 the herdr-side name is an
+    // opaque slug while the label carries the "executor #<run>-<n>" wording.
+    validateWorkflowStepAgentName(herdr.label, run.id, step);
 
     return {
       run: runJSON(run),
       step,
-      agent_name: herdr.agentName,
+      agent_name: herdr.label,
       runtime,
       session_id: childSessionId,
       worktree,
