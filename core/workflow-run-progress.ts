@@ -1,5 +1,5 @@
 import { ServiceError } from "./errors.ts";
-import { git, mergePreview } from "./git.ts";
+import { git, hasEffectiveDiff, mergePreview } from "./git.ts";
 import {
   evaluateWorkflowSteps,
   type WorkflowLatestReviewState,
@@ -15,6 +15,7 @@ export type WorkflowRunProgress = {
   currentHead: string | null;
   headAheadOfBase: boolean;
   headAheadOfLatestReview: boolean;
+  hasEffectiveDiff: boolean;
   mergeConflict: boolean;
   steps: WorkflowStepStatuses;
 };
@@ -65,6 +66,15 @@ async function conflictsWithBase(
   return (await mergePreview(worktree, baseBranch, head)).conflict;
 }
 
+async function hasEffectiveDiffFromBase(
+  worktree: string,
+  baseBranch: string,
+  head: string | null,
+): Promise<boolean> {
+  if (!head) return false;
+  return hasEffectiveDiff(worktree, baseBranch, head);
+}
+
 export async function isHeadAheadOfReview(
   worktree: string,
   review: WorkflowLatestReviewState | null,
@@ -91,16 +101,22 @@ export async function workflowRunProgress(input: {
   latestReview: WorkflowLatestReviewState | null;
 }): Promise<WorkflowRunProgress> {
   const currentHead = await worktreeHeadOptional(input.worktree);
-  const [headAheadOfBase, headAheadOfLatestReview, mergeConflict] =
-    await Promise.all([
-      isHeadAheadOfBase(input.worktree, input.baseBranch, currentHead),
-      isHeadAheadOfReview(input.worktree, input.latestReview, currentHead),
-      conflictsWithBase(input.worktree, input.baseBranch, currentHead),
-    ]);
+  const [
+    headAheadOfBase,
+    headAheadOfLatestReview,
+    effectiveDiff,
+    mergeConflict,
+  ] = await Promise.all([
+    isHeadAheadOfBase(input.worktree, input.baseBranch, currentHead),
+    isHeadAheadOfReview(input.worktree, input.latestReview, currentHead),
+    hasEffectiveDiffFromBase(input.worktree, input.baseBranch, currentHead),
+    conflictsWithBase(input.worktree, input.baseBranch, currentHead),
+  ]);
   return {
     currentHead,
     headAheadOfBase,
     headAheadOfLatestReview,
+    hasEffectiveDiff: effectiveDiff,
     mergeConflict,
     steps: evaluateWorkflowSteps({
       currentHead,

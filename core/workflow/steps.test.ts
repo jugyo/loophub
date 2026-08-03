@@ -116,58 +116,53 @@ test("null current head keeps head-dependent steps incomplete", () => {
   expect(status.verify.latest_review?.fresh).toBe(false);
 });
 
-test("Done is a fresh pass on the current HEAD of an open mergeable PR", () => {
+test("Done is a clean open PR", () => {
   expect(
     workflowDone({
-      currentHead: HEAD,
-      latestReview: { id: 1, event: "pass", headSha: HEAD },
+      mergeableState: "clean",
       prClosed: false,
       prMerged: false,
-      mergeConflict: false,
     }),
   ).toBe(true);
 });
 
 test.each([
   {
-    name: "stale pass",
-    latestReview: { id: 1, event: "pass" as const, headSha: OLD },
+    name: "no effective diff",
+    mergeableState: "no_commits" as const,
     prClosed: false,
     prMerged: false,
-    mergeConflict: false,
   },
   {
-    name: "request changes",
-    latestReview: {
-      id: 1,
-      event: "request_changes" as const,
-      headSha: HEAD,
-    },
+    name: "blocked review gate",
+    mergeableState: "blocked" as const,
     prClosed: false,
     prMerged: false,
-    mergeConflict: false,
+  },
+  {
+    name: "unknown state",
+    mergeableState: "unknown" as const,
+    prClosed: false,
+    prMerged: false,
   },
   {
     name: "merge conflict",
-    latestReview: { id: 1, event: "pass" as const, headSha: HEAD },
+    mergeableState: "conflict" as const,
     prClosed: false,
     prMerged: false,
-    mergeConflict: true,
   },
   {
     name: "closed PR",
-    latestReview: { id: 1, event: "pass" as const, headSha: HEAD },
+    mergeableState: "clean" as const,
     prClosed: true,
     prMerged: false,
-    mergeConflict: false,
   },
   {
     name: "merged PR",
-    latestReview: { id: 1, event: "pass" as const, headSha: HEAD },
+    mergeableState: "clean" as const,
     prClosed: true,
     prMerged: true,
-    mergeConflict: false,
   },
 ])("Done is false for $name", (input) => {
-  expect(workflowDone({ currentHead: HEAD, ...input })).toBe(false);
+  expect(workflowDone(input)).toBe(false);
 });

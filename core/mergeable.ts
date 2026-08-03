@@ -15,10 +15,13 @@ export interface MergeableSignals {
   hasEffectiveDiff: boolean;
   /** Merging head into base conflicts. */
   conflict: boolean;
-  /** The PR has a substantive review (reviews are gathered). */
-  reviewed: boolean;
-  /** The latest substantive review passes (no unresolved REQUEST_CHANGES, not stale). */
-  reviewPassed: boolean;
+  /** Canonical PR-wide review gate for the current head. */
+  reviewGate: {
+    /** The PR has a substantive review (reviews are gathered). */
+    reviewed: boolean;
+    /** The latest substantive review passes (no unresolved REQUEST_CHANGES, not stale). */
+    passed: boolean;
+  };
 }
 
 export interface MergeableDecision {
@@ -29,8 +32,8 @@ export interface MergeableDecision {
 /**
  * Decide whether a PR is mergeable from its raw signals (#427, flattened in
  * #1934). A PR is `mergeable: true` (state `clean`) only when it has commits,
- * merges cleanly, has a review gathered (`reviewed`), and that review passes
- * (`reviewPassed` — no unresolved REQUEST_CHANGES, no stale pass). A PR with no
+ * merges cleanly, has a review gathered (`reviewGate.reviewed`), and that review
+ * passes (`reviewGate.passed` — no unresolved REQUEST_CHANGES, no stale pass). A PR with no
  * reviews yet stays `blocked` rather than falling to `clean` just because nothing
  * requested changes. A diff-free PR is `no_commits`, a conflicting one
  * `conflict`, and any remaining not-yet-passed PR is `blocked`. `no_commits` is
@@ -41,7 +44,7 @@ export function resolveMergeable(signals: MergeableSignals): MergeableDecision {
     return { mergeable: false, mergeable_state: "no_commits" };
   if (signals.conflict)
     return { mergeable: false, mergeable_state: "conflict" };
-  if (!signals.reviewed || !signals.reviewPassed)
+  if (!signals.reviewGate.reviewed || !signals.reviewGate.passed)
     return { mergeable: false, mergeable_state: "blocked" };
   return { mergeable: true, mergeable_state: "clean" };
 }

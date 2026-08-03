@@ -18,7 +18,8 @@ import {
 } from "../dev-lock.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
-import { mergePreview, revParse } from "../git.ts";
+import { hasEffectiveDiff, mergePreview, revParse } from "../git.ts";
+import { type MergeableState, resolveMergeable } from "../mergeable.ts";
 import {
   effectiveRepoAgentConfigFor,
   type WorkflowOutOfBandReviewWire,
@@ -871,6 +872,21 @@ function stepActorAllowed(
   }
 }
 
+function workflowMergeableState(input: {
+  prIssueId: number;
+  currentHead: string | null;
+  hasEffectiveDiff: boolean;
+  mergeConflict: boolean;
+}): MergeableState {
+  if (!input.currentHead) return "unknown";
+  const reviewGate = S.computeReviewGate(input.prIssueId, input.currentHead);
+  return resolveMergeable({
+    hasEffectiveDiff: input.hasEffectiveDiff,
+    conflict: input.mergeConflict,
+    reviewGate,
+  }).mergeable_state;
+}
+
 // Resolve a run's (worktree, base ref, latest review) and observe its progress. The git-touching
 // observation lives in core/workflow-run-progress.ts; this adapter only supplies the store-derived
 // inputs (review resolution stays here — see resolveReworkReview / latestWorkflowRunReview).
@@ -933,6 +949,12 @@ async function observeWorkflowRunStatus(
     currentHead: progress.currentHead,
     projection,
   });
+  const mergeableState = workflowMergeableState({
+    prIssueId: prIssue.id,
+    currentHead: progress.currentHead,
+    hasEffectiveDiff: progress.hasEffectiveDiff,
+    mergeConflict: progress.mergeConflict,
+  });
   const costIncrementUsd = run.cost_increment_usd ?? devCostLimitUsd();
   return {
     run: run.id,
@@ -952,11 +974,9 @@ async function observeWorkflowRunStatus(
     head_ahead_of_latest_review: progress.headAheadOfLatestReview,
     merge_conflict: progress.mergeConflict,
     done: workflowDone({
-      currentHead: progress.currentHead,
-      latestReview: reviewObservation(latestReview),
+      mergeableState,
       prClosed: prIssue.state === "closed",
       prMerged: pull.merged === 1,
-      mergeConflict: progress.mergeConflict,
     }),
     pr_merged: pull.merged === 1,
     pr_closed: prIssue.state === "closed",
@@ -1001,10 +1021,15 @@ async function workflowRunState(
   const observedReview = reviewObservation(review);
   const liveHead = pull ? await revParse(repo.local_path, pull.head_ref) : null;
   const currentHead = liveHead ?? pull?.head_sha ?? null;
-  const mergeConflict =
+  const [mergeConflict, effectiveDiff] =
     pull && liveHead
-      ? (await mergePreview(repo.local_path, pull.base_ref, liveHead)).conflict
-      : false;
+      ? await Promise.all([
+          mergePreview(repo.local_path, pull.base_ref, liveHead).then(
+            (preview) => preview.conflict,
+          ),
+          hasEffectiveDiff(repo.local_path, pull.base_ref, liveHead),
+        ])
+      : [false, false];
   const reviewFresh = Boolean(
     observedReview?.headSha &&
       currentHead &&
@@ -1016,6 +1041,15 @@ async function workflowRunState(
       : observedReview?.event === "pass"
         ? "stale"
         : "unverified";
+  const mergeableState =
+    prIssue && pull
+      ? workflowMergeableState({
+          prIssueId: prIssue.id,
+          currentHead,
+          hasEffectiveDiff: effectiveDiff,
+          mergeConflict,
+        })
+      : "unknown";
   const { incrementUsd, limitUsd } = workflowRunCostBudget(run);
   const verifyLaunch = projection.latestVerifyLaunch;
   const verifyHeadSha =
@@ -1048,11 +1082,9 @@ async function workflowRunState(
         ? verifyHeadSha
         : null,
     done: workflowDone({
-      currentHead,
-      latestReview: observedReview,
+      mergeableState,
       prClosed: prIssue?.state === "closed",
       prMerged: pull?.merged === 1,
-      mergeConflict,
     }),
     mergeConflict,
   });

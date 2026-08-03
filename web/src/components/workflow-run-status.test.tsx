@@ -189,7 +189,7 @@ describe("WorkflowRunStatusSection", () => {
         })}
       />,
     );
-    expect(await screen.findByText("Verified")).toBeTruthy();
+    expect(await screen.findByText("Ready to merge")).toBeTruthy();
     expect(
       screen.getByText("Verify passed for the current HEAD."),
     ).toBeTruthy();
@@ -209,13 +209,31 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.getByText("Reverify required")).toBeTruthy();
   });
 
-  it("shows merge-ready Done only after agent status is available", async () => {
+  it("does not present merge-ready Done as a workflow Verify pass", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          current_step: "verify",
+          verification_status: "unverified",
+          done: true,
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("Ready to merge")).toBeTruthy();
+    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.queryByText(/Verify passed/)).toBeNull();
+  });
+
+  it("shows merge-ready Done when agent status is unavailable", async () => {
     const verifiedState = state({
       current_step: "verify",
       verification_status: "verified",
       done: true,
     });
-    const { rerender } = renderInRouter(
+    renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
@@ -223,21 +241,9 @@ describe("WorkflowRunStatusSection", () => {
       />,
     );
 
-    const unavailableDone = await screen.findByText("Done");
-    expect(unavailableDone.className).not.toContain("text-green");
-    expect(unavailableDone.querySelector("svg")).toBeNull();
-
-    mocks.herdrSessions = { repos: [] };
-    rerender(
-      <WorkflowRunStatusSection
-        owner="me"
-        repo="loophub"
-        state={verifiedState}
-      />,
-    );
-    const availableDone = await screen.findByText("Done");
-    expect(availableDone.className).toContain("text-green");
-    expect(availableDone.querySelector("svg")).toBeTruthy();
+    const done = await screen.findByText("Done");
+    expect(done.className).toContain("text-green");
+    expect(done.querySelector("svg")).toBeTruthy();
   });
 
   it("surfaces the wait reason, review summary, and issue link while waiting for a human", async () => {

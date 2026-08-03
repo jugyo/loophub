@@ -26,7 +26,6 @@ import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
-import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { Markdown } from "@/components/markdown";
 import { PullCommitsSection } from "@/components/pull-commits-section";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
@@ -69,7 +68,6 @@ import {
   useSetPullState,
 } from "@/queries/pulls";
 import { useSettings } from "@/queries/settings";
-import { useHerdrSessions } from "@/queries/terminal";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 import { githubPrExportPrompt } from "../../../core/workflow/github-pr-export-prompt.ts";
 
@@ -92,8 +90,6 @@ export function PullDetail({
   const reviewsQuery = usePullReviews(owner, repo, number, false);
   const lineCommentsQuery = usePullComments(owner, repo, number, false);
   const commentsQuery = useIssueComments(owner, repo, number, false);
-  const { data: herdrSessions, isError: herdrSessionsError } =
-    useHerdrSessions();
   const titleRef = useRef<HTMLDivElement>(null);
   // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
   // otherwise, and the sidebar section is hidden anyway when github_pull is absent (#850).
@@ -123,13 +119,6 @@ export function PullDetail({
   }
 
   const pull = pullQuery.data;
-  const herdrSessionsUnavailable =
-    herdrSessionsError || herdrSessions === undefined;
-  const agentWorking = isPullHerdrWorking(
-    herdrSessionsUnavailable ? undefined : herdrSessions,
-    `${owner}/${repo}`,
-    pull.number,
-  );
   // The sidebar column is now always reserved (#456): WorkDuration always renders (with an "N/A"
   // fallback), so there is no longer a PR that leaves the aside empty. Other sidebar sections
   // (workflow, Herdr, GitHub PR status) hide themselves individually when empty.
@@ -170,8 +159,6 @@ export function PullDetail({
               repo={repo}
               pull={pull}
               titleRef={titleRef}
-              agentWorking={agentWorking}
-              agentStateUnavailable={herdrSessionsUnavailable}
             />
 
             <PullCommitsSection
@@ -286,15 +273,11 @@ function PullHeader({
   repo,
   pull,
   titleRef,
-  agentWorking,
-  agentStateUnavailable,
 }: {
   owner: string;
   repo: string;
   pull: PullRequest;
   titleRef: RefObject<HTMLDivElement | null>;
-  agentWorking: boolean;
-  agentStateUnavailable: boolean;
 }) {
   const navigate = useNavigate();
   const merge = useMergePull(owner, repo, pull.number);
@@ -318,28 +301,15 @@ function PullHeader({
     canAct &&
     !!pull.github_pull?.github_merged &&
     !!pull.github_pull.github_merged_at;
-  // A conflicting PR (mergeable_state === "conflict", i.e. mergeable === false) can never merge
-  // server-side, so the Merge control must stay disabled even when PASSED.
-  const hasConflict = pull.mergeable_state === "conflict";
-  // A PR with no commits has nothing to merge server-side either (#691), so the Merge control
-  // must stay disabled the same way a conflict does.
-  const hasNoCommits = pull.mergeable_state === "no_commits";
-  const canMerge =
-    canAct &&
-    pull.review_state === "PASSED" &&
-    !hasConflict &&
-    !hasNoCommits &&
-    !agentWorking &&
-    !agentStateUnavailable;
-  const mergeBlockedReason = hasConflict
-    ? "Cannot merge: this PR has conflicts with the base branch."
-    : hasNoCommits
-      ? "Cannot merge: this PR has no commits."
-      : agentWorking
-        ? "Cannot merge while an agent is working on this PR."
-        : agentStateUnavailable
-          ? "Cannot merge until agent status is available."
-          : undefined;
+  // `clean` is the canonical merge-ready state: it already requires a commit, a passing current
+  // review, and a conflict-free merge. Agent activity is operational status, not a merge gate.
+  const canMerge = canAct && pull.mergeable_state === "clean";
+  const mergeBlockedReason =
+    pull.mergeable_state === "conflict"
+      ? "Cannot merge: this PR has conflicts with the base branch."
+      : pull.mergeable_state === "no_commits"
+        ? "Cannot merge: this PR has no commits."
+        : undefined;
 
   return (
     <div data-debug-component="PullHeader" className="flex flex-col gap-3">

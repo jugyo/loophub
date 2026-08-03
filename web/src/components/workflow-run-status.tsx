@@ -17,7 +17,6 @@ import { Link } from "@tanstack/react-router";
 import { History } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { WorkflowRunState } from "@/api/types";
-import { isPullHerdrWorking } from "@/components/herdr-badge";
 import {
   type AcknowledgedCostHold,
   WorkflowBudgetControl,
@@ -73,8 +72,6 @@ export function WorkflowRunStatusSection({
   const { data: herdrSessions, isError: herdrSessionsError } = useHerdrSessions(
     { enabled: false },
   );
-  const herdrSessionsUnavailable =
-    herdrSessionsError || herdrSessions === undefined;
   useEffect(() => {
     if (
       state?.needs_human_reason === null ||
@@ -97,7 +94,7 @@ export function WorkflowRunStatusSection({
   const status = needsHuman(displayState)
     ? { label: "Needs human", tone: "cost-stopped" as const }
     : state.done
-      ? { label: "Verified", tone: "review-passed" as const }
+      ? { label: "Ready to merge", tone: "review-passed" as const }
       : state.status === "running" && state.verification_status === "stale"
         ? { label: "Reverify required", tone: "review-changes" as const }
         : (STATUS_META[state.status] ?? {
@@ -109,10 +106,7 @@ export function WorkflowRunStatusSection({
     state.status === "running" &&
     state.needs_human_reason === null &&
     state.verification_status === "stale";
-  const isVerified = state.done;
-  const working =
-    herdrSessionsUnavailable ||
-    isPullHerdrWorking(herdrSessions, `${owner}/${repo}`, state.pr_number);
+  const isVerified = state.verification_status === "verified";
   const overBudget = state.cost_limit_increase_available;
 
   return (
@@ -144,7 +138,6 @@ export function WorkflowRunStatusSection({
           herdrSessions={herdrSessionsError ? undefined : herdrSessions}
           herdrUnavailable={herdrSessionsError}
           size="md"
-          working={working}
           overBudget={overBudget}
         />
 

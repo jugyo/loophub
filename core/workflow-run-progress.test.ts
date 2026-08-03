@@ -70,6 +70,7 @@ test("workflowRunProgress: head equal to base is not ahead and Execute is incomp
   });
   expect(progress.currentHead).toBe(gitAt(["rev-parse", "HEAD"]));
   expect(progress.headAheadOfBase).toBe(false);
+  expect(progress.hasEffectiveDiff).toBe(false);
   expect(progress.steps.execute.complete).toBe(false);
   expect(progress.steps.execute.missing).toContain("head equals base");
 });
@@ -84,6 +85,7 @@ test("workflowRunProgress: head ahead of base completes Execute; a review pinned
     latestReview: null,
   });
   expect(unverified.headAheadOfBase).toBe(true);
+  expect(unverified.hasEffectiveDiff).toBe(true);
   expect(unverified.steps.execute.complete).toBe(true);
   expect(unverified.steps.verify.complete).toBe(false);
 
@@ -99,6 +101,23 @@ test("workflowRunProgress: head ahead of base completes Execute; a review pinned
     fresh: true,
   });
 
+  gitAt(["checkout", "-q", "main"]);
+});
+
+test("workflowRunProgress: commits with no effective diff stay distinguishable from merge-ready work", async () => {
+  gitAt(["checkout", "-q", "-b", "empty-diff"]);
+  commit("empty-diff.txt", "temporary\n");
+  gitAt(["rm", "empty-diff.txt"]);
+  gitAt(["commit", "-q", "-m", "remove empty-diff.txt"]);
+
+  const progress = await workflowRunProgress({
+    worktree: REPO,
+    baseBranch: "main",
+    latestReview: null,
+  });
+
+  expect(progress.headAheadOfBase).toBe(true);
+  expect(progress.hasEffectiveDiff).toBe(false);
   gitAt(["checkout", "-q", "main"]);
 });
 

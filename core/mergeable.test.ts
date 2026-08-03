@@ -8,8 +8,7 @@ describe("resolveMergeable", () => {
       resolveMergeable({
         hasEffectiveDiff: false,
         conflict: false,
-        reviewed: true,
-        reviewPassed: true,
+        reviewGate: { reviewed: true, passed: true },
       }),
     ).toEqual({ mergeable: false, mergeable_state: "no_commits" });
   });
@@ -19,8 +18,7 @@ describe("resolveMergeable", () => {
       resolveMergeable({
         hasEffectiveDiff: false,
         conflict: true,
-        reviewed: false,
-        reviewPassed: false,
+        reviewGate: { reviewed: false, passed: false },
       }),
     ).toEqual({ mergeable: false, mergeable_state: "no_commits" });
   });
@@ -30,8 +28,7 @@ describe("resolveMergeable", () => {
       resolveMergeable({
         hasEffectiveDiff: true,
         conflict: true,
-        reviewed: true,
-        reviewPassed: true,
+        reviewGate: { reviewed: true, passed: true },
       }),
     ).toEqual({ mergeable: false, mergeable_state: "conflict" });
   });
@@ -43,8 +40,7 @@ describe("resolveMergeable", () => {
       resolveMergeable({
         hasEffectiveDiff: true,
         conflict: false,
-        reviewed: false,
-        reviewPassed: false,
+        reviewGate: { reviewed: false, passed: false },
       }),
     ).toEqual({ mergeable: false, mergeable_state: "blocked" });
   });
@@ -54,8 +50,7 @@ describe("resolveMergeable", () => {
       resolveMergeable({
         hasEffectiveDiff: true,
         conflict: false,
-        reviewed: true,
-        reviewPassed: false,
+        reviewGate: { reviewed: true, passed: false },
       }),
     ).toEqual({ mergeable: false, mergeable_state: "blocked" });
   });
@@ -65,8 +60,7 @@ describe("resolveMergeable", () => {
       resolveMergeable({
         hasEffectiveDiff: true,
         conflict: false,
-        reviewed: true,
-        reviewPassed: true,
+        reviewGate: { reviewed: true, passed: true },
       }),
     ).toEqual({ mergeable: true, mergeable_state: "clean" });
   });

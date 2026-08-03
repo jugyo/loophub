@@ -988,7 +988,7 @@ describe("PullDetail", () => {
     });
   });
 
-  it("disables Merge while an agent linked to the PR is working", async () => {
+  it("allows Merge while an agent linked to the PR is working", async () => {
     renderDetail({
       "terminal/sessions": () => ({
         repos: [
@@ -1014,26 +1014,22 @@ describe("PullDetail", () => {
 
     const button = await screen.findByRole("button", { name: /^Merge$/i });
     await waitFor(() =>
-      expect((button as HTMLButtonElement).disabled).toBe(true),
+      expect((button as HTMLButtonElement).disabled).toBe(false),
     );
-    expect(button.getAttribute("title")).toMatch(/agent is working/i);
-    fireEvent.click(button);
-    expect(rpcCall("pulls/merge")).toBeFalsy();
+    expect(button.getAttribute("title")).toBeNull();
   });
 
-  it("keeps Merge disabled while agent status is loading", async () => {
+  it("allows Merge while agent status is loading", async () => {
     renderDetail({
       "terminal/sessions": () => new Promise(() => {}),
     });
 
     const button = await screen.findByRole("button", { name: /^Merge$/i });
-    expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(button.getAttribute("title")).toMatch(/agent status is available/i);
-    fireEvent.click(button);
-    expect(rpcCall("pulls/merge")).toBeFalsy();
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect(button.getAttribute("title")).toBeNull();
   });
 
-  it("keeps Merge disabled when agent status cannot be loaded", async () => {
+  it("allows Merge when agent status cannot be loaded", async () => {
     renderDetail({
       "terminal/sessions": () => {
         throw new RpcFault(500, "agent status unavailable");
@@ -1042,13 +1038,9 @@ describe("PullDetail", () => {
 
     const button = await screen.findByRole("button", { name: /^Merge$/i });
     await waitFor(() => {
-      expect((button as HTMLButtonElement).disabled).toBe(true);
-      expect(button.getAttribute("title")).toMatch(
-        /agent status is available/i,
-      );
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+      expect(button.getAttribute("title")).toBeNull();
     });
-    fireEvent.click(button);
-    expect(rpcCall("pulls/merge")).toBeFalsy();
   });
 
   it("shows a fixed-duration loading state on Merge and re-enables it once loading and the mutation both settle (#560)", async () => {
@@ -1933,7 +1925,7 @@ describe("PullDetail", () => {
     });
 
     await screen.findByText("Implementation loop");
-    expect(screen.getByText("Verified")).toBeTruthy();
+    expect(screen.getByText("Ready to merge")).toBeTruthy();
     expect(
       screen.getByText("Verify passed for the current HEAD."),
     ).toBeTruthy();

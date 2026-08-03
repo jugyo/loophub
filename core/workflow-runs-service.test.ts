@@ -1631,6 +1631,22 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     fresh: true,
     headSha: headA,
   });
+  expect(status.done).toBe(true);
+
+  // Done follows the PR-wide gate, not only this run's Verify result. A later human review blocks
+  // merge readiness even though the run-owned Verify observation remains fresh and complete.
+  S.createReview(
+    prIssueId,
+    "human-reviewer",
+    "REQUEST_CHANGES",
+    "The PR-wide gate is blocked.",
+    headA,
+  );
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.steps.verify.complete).toBe(true);
+  expect(status.done).toBe(false);
 
   // Multiple unprocessed events from this run's verifier may be queued. The older event still
   // belongs to the workflow even though its review is no longer latest, so it must reconcile the
@@ -3328,7 +3344,10 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   const repo = S.createRepo("me/workflow-state", REPO_PATH);
   const issue = S.createIssue(repo.id, "issue", "Show run state", "body", "me");
   const prIssue = S.createIssue(repo.id, "pull", "PR for state", "body", "me");
-  const reviewedHead = "0".repeat(40);
+  git(["checkout", "-q", "main"]);
+  git(["checkout", "-q", "-b", "state-head"]);
+  const reviewedHead = commit(REPO_PATH, "state.txt", "reviewed\n");
+  git(["checkout", "-q", "main"]);
   S.createPull(prIssue.id, "state-head", "main", reviewedHead, issue.id);
   const workflow = S.createWorkflow({
     name: "state-wf",
@@ -3401,6 +3420,19 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   expect(byPull?.id).toBe(run.id);
   expect(byPull?.needs_human_reason).toBeNull();
 
+  S.createReview(
+    prIssue.id,
+    "human-reviewer",
+    "PASS",
+    "The pull request is ready to merge.",
+    reviewedHead,
+  );
+  const humanApproved = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: prIssue.number,
+  });
+  expect(humanApproved?.verification_status).toBe("unverified");
+  expect(humanApproved?.done).toBe(true);
+
   createWorkflowReview({
     prIssueId: prIssue.id,
     runId: run.id,
@@ -3415,7 +3447,22 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   expect(verified?.verification_status).toBe("verified");
   expect(verified?.done).toBe(true);
   expect(verified?.merge_conflict).toBe(false);
-  S.setHeadSha(prIssue.id, "1".repeat(40));
+  S.createReview(
+    prIssue.id,
+    "human-reviewer",
+    "REQUEST_CHANGES",
+    "The PR-wide gate is blocked.",
+    reviewedHead,
+  );
+  const blocked = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: prIssue.number,
+  });
+  expect(blocked?.verification_status).toBe("verified");
+  expect(blocked?.done).toBe(false);
+  git(["checkout", "-q", "state-head"]);
+  const advancedHead = commit(REPO_PATH, "state-next.txt", "changed\n");
+  git(["checkout", "-q", "main"]);
+  S.setHeadSha(prIssue.id, advancedHead);
   const stale = await svc.workflowRuns.stateForPull(repo.full_name, {
     pull: prIssue.number,
   });

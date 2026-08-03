@@ -24,7 +24,6 @@ export async function currentMergeableState(
   return resolveMergeable({
     hasEffectiveDiff: effectiveDiff,
     conflict: preview.conflict,
-    reviewed: reviewGate.reviewed,
-    reviewPassed: reviewGate.passed,
+    reviewGate,
   }).mergeable_state;
 }

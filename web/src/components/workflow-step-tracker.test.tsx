@@ -439,7 +439,7 @@ describe("WorkflowStepTracker", () => {
     );
   });
 
-  it("lights Done green when Verify passes (terminal)", () => {
+  it("lights Done green when the pull request is ready to merge", () => {
     render(
       <WorkflowStepTracker
         state={state({
@@ -452,6 +452,26 @@ describe("WorkflowStepTracker", () => {
     const done = screen.getByText("Done");
     expect(done.getAttribute("aria-current")).toBe("step");
     expect(done.className).toContain("text-green");
+  });
+
+  it("describes merge-ready Done without claiming that workflow Verify passed", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({
+          current_step: "verify",
+          verification_status: "unverified",
+          done: true,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Done").className).toContain("text-green");
+    expect(
+      screen.getByLabelText(
+        "The pull request is ready to merge — the run reached Done",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText(/Verify passed/)).toBeNull();
   });
 
   it("shows a checkmark before Done only once it is reached", () => {
@@ -712,16 +732,18 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByRole("img", { name: "Execute agent" })).toBeTruthy();
   });
 
-  it("does not render merge-ready Done styling while any PR agent is working", () => {
+  it("keeps merge-ready Done styling while a PR agent is working", () => {
     render(
       <WorkflowStepTracker
+        owner="me"
+        repo="proj"
         state={state({ verification_status: "verified", done: true })}
-        working
+        herdrSessions={herdrSessions}
       />,
     );
     const done = screen.getByText("Done");
-    expect(done.className).not.toContain("text-green");
-    expect(done.querySelector("svg")).toBeNull();
+    expect(done.className).toContain("text-green");
+    expect(done.querySelector("svg")).toBeTruthy();
   });
 
   it("uses larger pills at size md", () => {

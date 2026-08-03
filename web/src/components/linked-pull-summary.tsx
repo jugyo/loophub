@@ -2,10 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { MessageSquare, RefreshCw, TriangleAlert } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
-import {
-  findPullHerdrWorkspace,
-  isPullHerdrWorking,
-} from "@/components/herdr-badge";
+import { findPullHerdrWorkspace } from "@/components/herdr-badge";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useToast } from "@/components/toast";
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
@@ -338,7 +335,6 @@ function WorkflowMiniProgress({
   herdrUnavailable,
   onStageInteract,
   showWorkflowNode = false,
-  working,
 }: {
   owner: string;
   repo: string;
@@ -347,8 +343,6 @@ function WorkflowMiniProgress({
   herdrUnavailable?: boolean;
   onStageInteract?: () => void;
   showWorkflowNode?: boolean;
-  /** Whether the linked agent is actively working (glow the current stage pill). */
-  working: boolean;
 }) {
   const { data: state } = useWorkflowRunForPull(owner, repo, pull.number);
   const [acknowledgedCostHold, setAcknowledgedCostHold] =
@@ -382,7 +376,6 @@ function WorkflowMiniProgress({
         onStageInteract={onStageInteract}
         showWorkflowNode={showWorkflowNode}
         size="sm"
-        working={working}
         // The badge below already marks the hold, so the tracker drops its "needs human" (#1932).
         overBudget={state.cost_limit_increase_available}
       />
@@ -483,19 +476,12 @@ export function LinkedPullSummaryRow({
   const popover = useHoverPopover();
   const { data: herdrSessions, isError: herdrSessionsError } =
     useHerdrSessions();
-  const herdrSessionsUnavailable =
-    herdrSessionsError || herdrSessions === undefined;
   const repoFullName = `${owner}/${repo}`;
   const workspace = findPullHerdrWorkspace(
     herdrSessions,
     repoFullName,
     pull.number,
   )?.workspace;
-  const agentWorking = isPullHerdrWorking(
-    herdrSessions,
-    repoFullName,
-    pull.number,
-  );
   const operationalStatus =
     linkedPullStatus(pull) ?? linkedPullStateBadge(pull);
   const status = operationalStatus;
@@ -575,7 +561,6 @@ export function LinkedPullSummaryRow({
           herdrUnavailable={herdrSessionsError}
           onStageInteract={popover.close}
           showWorkflowNode
-          working={agentWorking || herdrSessionsUnavailable}
         />
         {/* Keep the GitHub link on the row's right side without making it the rightmost item; the
             existing agent and usage metadata continues to close the row. */}

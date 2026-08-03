@@ -29,7 +29,7 @@ const STAGES = [
 
 type WorkflowTrackerState = {
   activeIndex: number;
-  verified: boolean;
+  done: boolean;
   stale: boolean;
   needsHuman: boolean;
 };
@@ -56,20 +56,20 @@ export function workflowTrackerState(
   const needsHuman =
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked";
-  const verified = state.done;
+  const done = state.done;
   const stale =
     state.status === "running" &&
     state.needs_human_reason === null &&
     state.verification_status === "stale";
   // Canonical Done advances the tracker to index 2; otherwise it sits on the run's current step.
   const stepIndex = state.current_step === "verify" ? 1 : 0;
-  const activeIndex = verified ? 2 : stepIndex;
-  return { activeIndex, verified, stale, needsHuman };
+  const activeIndex = done ? 2 : stepIndex;
+  return { activeIndex, done, stale, needsHuman };
 }
 
 function workflowTrackerTitle(
   state: WorkflowRunState,
-  { verified, stale, needsHuman }: WorkflowTrackerState,
+  { done, stale, needsHuman }: WorkflowTrackerState,
 ): string {
   if (state.merge_conflict) {
     return "Merge conflict — resolve it before this PR can merge";
@@ -77,8 +77,8 @@ function workflowTrackerTitle(
   if (needsHuman) {
     return "Workflow run is waiting for a human instruction";
   }
-  if (verified) {
-    return "Verify passed for the current HEAD — the run reached Done";
+  if (done) {
+    return "The pull request is ready to merge — the run reached Done";
   }
   if (stale) {
     return "HEAD changed after Verify passed — a fresh Verify is required";
@@ -358,7 +358,6 @@ export function WorkflowStepTracker({
   onStageInteract,
   showWorkflowNode = false,
   size = "sm",
-  working = false,
   overBudget = false,
 }: {
   owner?: string;
@@ -374,8 +373,6 @@ export function WorkflowStepTracker({
   showWorkflowNode?: boolean;
   /** `sm` for the compact PR-row tracker, `md` for the detail Workflow run section. */
   size?: "sm" | "md";
-  /** Whether any agent linked to the PR is working. Suppresses merge-ready Done styling. */
-  working?: boolean;
   /**
    * The run is held on its cost limit and the caller renders its own "over budget" marker. Such a
    * run is always needs-human, so the trailing "needs human" marker would repeat the same warning
@@ -385,7 +382,7 @@ export function WorkflowStepTracker({
   overBudget?: boolean;
 }) {
   const tracker = workflowTrackerState(state);
-  const { activeIndex, verified, stale, needsHuman } = tracker;
+  const { activeIndex, done, stale, needsHuman } = tracker;
   const pillSize =
     size === "md" ? "px-2.5 py-1 text-xs" : "px-2 py-0.5 text-[11px]";
   const connectorSize = size === "md" ? "w-4" : "w-2.5";
@@ -427,23 +424,21 @@ export function WorkflowStepTracker({
         // A PR-level conflict wins the terminal pill regardless of the run's step: an un-mergeable
         // PR is the most actionable state to surface, so "Done" becomes "Conflict!" (#1659).
         const isDoneConflict = stage.key === "done" && state.merge_conflict;
-        const isDoneVerified = stage.key === "done" && verified && !working;
+        const isDoneReached = stage.key === "done" && done;
         const isStaleVerify = stage.key === "verify" && isCurrent && stale;
         const stageStatus = isDoneConflict
           ? "Conflict"
           : isStaleVerify
             ? "Reverify required"
-            : stage.key === "done" && verified && working
-              ? "Agent working"
-              : isDoneVerified
-                ? "Reached"
-                : isCurrent
-                  ? needsHuman
-                    ? "Needs human"
-                    : "Current"
-                  : isPast
-                    ? "Completed"
-                    : "Upcoming";
+            : isDoneReached
+              ? "Reached"
+              : isCurrent
+                ? needsHuman
+                  ? "Needs human"
+                  : "Current"
+                : isPast
+                  ? "Completed"
+                  : "Upcoming";
         const agent =
           stage.key === "done"
             ? undefined
@@ -484,7 +479,7 @@ export function WorkflowStepTracker({
                   ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-400"
                   : isStaleVerify
                     ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                    : isDoneVerified
+                    : isDoneReached
                       ? "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-400"
                       : isCurrent
                         ? "border-primary-border bg-primary-subtle text-link"
@@ -504,7 +499,7 @@ export function WorkflowStepTracker({
               ) : null}
               {isDoneConflict ? (
                 <TriangleAlert className="size-3" aria-hidden="true" />
-              ) : isDoneVerified ? (
+              ) : isDoneReached ? (
                 <Check className="size-3" aria-hidden="true" />
               ) : null}
               {isDoneConflict ? "Conflict!" : stage.label}

@@ -1,3 +1,4 @@
+import type { MergeableState } from "../mergeable.ts";
 import type { WorkflowStep } from "./compose.ts";
 
 /**
@@ -55,29 +56,21 @@ function reviewIsFresh(
 }
 
 export type WorkflowDoneInput = {
-  currentHead: string | null;
-  latestReview: WorkflowLatestReviewState | null;
+  mergeableState: MergeableState;
   prClosed: boolean;
   prMerged: boolean;
-  mergeConflict: boolean;
 };
 
 /**
  * Whether the Workflow has reached its pre-merge Done state.
  *
- * Done is an observable PR/review fact, not a run lifecycle or agent state: an
- * open PR is Done only while its current HEAD has a fresh passing review and
- * can still be merged without a conflict. Closing or merging the PR moves the
- * run into its separate terminal lifecycle instead.
+ * Done is the canonical PR merge-ready fact, not a run lifecycle or agent
+ * state. The caller resolves `mergeableState` from the PR-wide review gate and
+ * git state shared with Merge controls and notifications. Closing or merging
+ * the PR moves the run into its separate terminal lifecycle instead.
  */
 export function workflowDone(input: WorkflowDoneInput): boolean {
-  return (
-    !input.prClosed &&
-    !input.prMerged &&
-    !input.mergeConflict &&
-    input.latestReview?.event === "pass" &&
-    reviewIsFresh(input.latestReview, input.currentHead)
-  );
+  return !input.prClosed && !input.prMerged && input.mergeableState === "clean";
 }
 
 /**

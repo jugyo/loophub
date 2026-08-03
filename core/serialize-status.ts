@@ -143,8 +143,7 @@ async function pullStatusFields(
     ({ mergeable, mergeable_state } = resolveMergeable({
       hasEffectiveDiff: status.hasEffectiveDiff,
       conflict: status.conflict,
-      reviewed: reviewStatus.gate.reviewed,
-      reviewPassed: reviewStatus.gate.passed,
+      reviewGate: reviewStatus.gate,
     }));
   }
   // "working" badge: real uncommitted changes in this PR's worktree. Guarded so the

@@ -531,7 +531,7 @@ describe("LinkedPullSummaryRow workflow agent activity", () => {
     }
   });
 
-  it("keeps Done neutral while a PR agent is working", async () => {
+  it("keeps Done merge-ready while a PR agent is working", async () => {
     herdrSessionsData.value = herdrWorkingOnPull("execute");
     renderRowWithRun(
       makeWorkflowRunState({
@@ -542,8 +542,8 @@ describe("LinkedPullSummaryRow workflow agent activity", () => {
       }),
     );
     await screen.findByRole("link", { name: "PR #10" });
-    expect(screen.getByText("Done").className).not.toContain("text-green");
-    expect(screen.getByText("Done").querySelector("svg")).toBeNull();
+    expect(screen.getByText("Done").className).toContain("text-green");
+    expect(screen.getByText("Done").querySelector("svg")).toBeTruthy();
   });
 
   it("shows no bot when no workflow run is linked", async () => {
