@@ -90,6 +90,45 @@ test("issues.get reports an open linked pull request", async () => {
   expect(detail.has_open_pull_request).toBe(true);
 });
 
+test("issues.list keeps batched related data associated with each issue", async () => {
+  const first = svc.issues.create("me/proj", { title: "batched first" });
+  const second = svc.issues.create("me/proj", { title: "batched second" });
+  const repo = S.getRepo("me", "proj")!;
+  const firstRow = S.getIssue(repo.id, first.number)!;
+  const secondRow = S.getIssue(repo.id, second.number)!;
+  S.addLabels(repo.id, firstRow.id, ["batch-first"]);
+  S.addLabels(repo.id, secondRow.id, ["batch-second"]);
+  svc.comments.create("me/proj", first.number, "first comment", "sess-a");
+  svc.comments.create("me/proj", second.number, "second comment", "sess-b");
+  svc.comments.create("me/proj", second.number, "another comment", "sess-c");
+  git(["branch", "feature/batched-first"]);
+  const pull = await svc.pulls.create("me/proj", {
+    title: "batched first pull",
+    head: "feature/batched-first",
+    issue: first.number,
+  });
+
+  const list = (await svc.issues.list("me/proj", {
+    kind: "issue",
+    state: "open",
+  })) as any[];
+  const firstItem = list.find((item) => item.number === first.number);
+  const secondItem = list.find((item) => item.number === second.number);
+
+  expect(firstItem.labels.map((label: any) => label.name)).toEqual([
+    "batch-first",
+  ]);
+  expect(firstItem.comments).toBe(1);
+  expect(
+    firstItem.linked_pull_requests.map((item: any) => item.number),
+  ).toEqual([pull.number]);
+  expect(secondItem.labels.map((label: any) => label.name)).toEqual([
+    "batch-second",
+  ]);
+  expect(secondItem.comments).toBe(2);
+  expect(secondItem.linked_pull_requests).toEqual([]);
+});
+
 test("issues.list carries the linked PR's workflow rework count (#2147)", async () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");

@@ -15,6 +15,7 @@ import {
   getGithubPrStatus,
   getPull,
   getPullDebug,
+  getPullDetailPage,
   getPullDiff,
   getPullFileAtRef,
   listDiffFeedback,
@@ -42,10 +43,36 @@ import { queryKeys } from "./keys";
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
 
 /** Single PR (detail), including linked_issue and review_state. */
-export function usePull(owner: string, repo: string, number: number) {
+export function usePull(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.pull(full(owner, repo), number),
     queryFn: () => getPull(owner, repo, number),
+    enabled,
+  });
+}
+
+export function usePullDetailPage(owner: string, repo: string, number: number) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: [...queryKeys.pull(full(owner, repo), number), "pageData"],
+    queryFn: async () => {
+      const data = await getPullDetailPage(owner, repo, number);
+      const pullKey = queryKeys.pull(full(owner, repo), number);
+      qc.setQueryData(pullKey, data.pull);
+      qc.setQueryData([...pullKey, "files"], data.files);
+      qc.setQueryData([...pullKey, "reviews"], data.reviews);
+      qc.setQueryData([...pullKey, "comments"], data.line_comments);
+      qc.setQueryData(
+        [...queryKeys.issue(full(owner, repo), number), "comments"],
+        data.comments,
+      );
+      return data;
+    },
   });
 }
 
@@ -69,10 +96,16 @@ export function usePullDebug(
 }
 
 /** Changed files + diffs for a PR. */
-export function usePullFiles(owner: string, repo: string, number: number) {
+export function usePullFiles(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.pullFiles(full(owner, repo), number),
     queryFn: () => listPullFiles(owner, repo, number),
+    enabled,
   });
 }
 
@@ -399,18 +432,30 @@ export function usePullFileAtRef(
 }
 
 /** Submitted reviews for a PR. */
-export function usePullReviews(owner: string, repo: string, number: number) {
+export function usePullReviews(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.pullReviews(full(owner, repo), number),
     queryFn: () => listPullReviews(owner, repo, number),
+    enabled,
   });
 }
 
 /** Line comments for a PR, grouped by path at the call site. */
-export function usePullComments(owner: string, repo: string, number: number) {
+export function usePullComments(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.pullReviewComments(full(owner, repo), number),
     queryFn: () => listPullComments(owner, repo, number),
+    enabled,
   });
 }
 
@@ -522,7 +567,13 @@ export function useReactToPullComment(
     onError: (_error, _input, context) => {
       if (context) qc.setQueryData(commentsKey, context.previous ?? []);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: commentsKey }),
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: commentsKey }),
+        qc.invalidateQueries({
+          queryKey: [...queryKeys.pull(full(owner, repo), number), "pageData"],
+        }),
+      ]),
   });
 }
 

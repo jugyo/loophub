@@ -12,9 +12,10 @@ import {
   addAcceptanceCriterion,
   createIssue,
   getIssue,
+  getIssueDetailPage,
+  getIssueListPage,
   listAcceptanceCriteria,
   listIssueComments,
-  listIssues,
   listLabels,
   patchIssue,
   postIssueComment,
@@ -39,19 +40,30 @@ export const DEFAULT_ISSUE_FILTERS: IssueListFilters = {
 export const ISSUE_LIST_PAGE_SIZE = 20;
 const ISSUE_LIST_FETCH_SIZE = ISSUE_LIST_PAGE_SIZE + 1;
 
-function hasMoreIssuePages(pages: Awaited<ReturnType<typeof listIssues>>[]) {
-  const lastPage = pages.at(-1) ?? [];
+function hasMoreIssuePages(
+  pages: Awaited<ReturnType<typeof getIssueListPage>>[],
+) {
+  const lastPage = pages.at(-1)?.issues ?? [];
   return lastPage.length > ISSUE_LIST_PAGE_SIZE;
 }
 
 /** Issue list with v1-parity state + labels filters (PRs excluded). */
-export function useIssuesList(
+export function useIssueListPage(
   owner: string,
   repo: string,
   filters: IssueListFilters,
+  options: {
+    includeLabels?: boolean;
+    includeUnmergedWorkspaces?: boolean;
+  } = {},
 ) {
   return useInfiniteQuery({
-    queryKey: [...queryKeys.issues(full(owner, repo)), "list", filters],
+    queryKey: [
+      ...queryKeys.issues(full(owner, repo)),
+      "listPage",
+      filters,
+      options,
+    ],
     initialPageParam: 1,
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({
@@ -64,7 +76,7 @@ export function useIssuesList(
       const labels = filters.labels.trim();
       if (labels) params.set("labels", labels);
       if (filters.workspace) params.set("workspace", filters.workspace);
-      return listIssues(owner, repo, params.toString());
+      return getIssueListPage(owner, repo, params.toString(), options);
     },
     getNextPageParam: (_lastPage, allPages) =>
       hasMoreIssuePages(allPages) ? allPages.length + 1 : undefined,
@@ -81,10 +93,38 @@ export function useLabelsList(owner: string, repo: string, enabled = true) {
 }
 
 /** Single issue (detail), including linked_pull_request. */
-export function useIssue(owner: string, repo: string, number: number) {
+export function useIssue(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.issue(full(owner, repo), number),
     queryFn: () => getIssue(owner, repo, number),
+    enabled,
+  });
+}
+
+export function useIssueDetailPage(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: [...queryKeys.issue(full(owner, repo), number), "pageData"],
+    queryFn: async () => {
+      const data = await getIssueDetailPage(owner, repo, number);
+      const issueKey = queryKeys.issue(full(owner, repo), number);
+      qc.setQueryData(issueKey, data.issue);
+      qc.setQueryData([...issueKey, "comments"], data.comments);
+      qc.setQueryData(
+        [...issueKey, "acceptanceCriteria"],
+        data.acceptance_criteria,
+      );
+      return data;
+    },
   });
 }
 
@@ -92,6 +132,7 @@ export function useAcceptanceCriteria(
   owner: string,
   repo: string,
   number: number,
+  enabled = true,
 ) {
   return useQuery({
     queryKey: [
@@ -99,6 +140,7 @@ export function useAcceptanceCriteria(
       "acceptanceCriteria",
     ],
     queryFn: () => listAcceptanceCriteria(owner, repo, number),
+    enabled,
   });
 }
 
@@ -143,10 +185,16 @@ export function useSetAcceptanceCriterionEnabled(
 }
 
 /** Comments for an issue, oldest first (server order). */
-export function useIssueComments(owner: string, repo: string, number: number) {
+export function useIssueComments(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.issueComments(full(owner, repo), number),
     queryFn: () => listIssueComments(owner, repo, number),
+    enabled,
   });
 }
 

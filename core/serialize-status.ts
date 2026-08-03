@@ -229,6 +229,45 @@ export async function issueListItemJSON(
   return out;
 }
 
+export interface IssueListSelection {
+  labelsByIssue: Map<number, S.LabelRow[]>;
+  commentCountsByIssue: Map<number, number>;
+  linkedPullsByIssue: Map<number, S.LinkedPullIssueRow[]>;
+  herdrPanesByIssue: Map<number, S.IssueHerdrPane>;
+}
+
+export async function issueListItemsJSON(
+  rows: S.IssueRow[],
+  repo: S.Repo,
+  selected: IssueListSelection,
+): Promise<IssueWire[]> {
+  const linkedPulls = rows.flatMap(
+    (row) => selected.linkedPullsByIssue.get(row.id) ?? [],
+  );
+  const linkedDetails = await Promise.all(
+    linkedPulls.map(
+      async (pull) => [pull.id, await linkedPullDetail(repo, pull)] as const,
+    ),
+  );
+  const detailByPull = new Map(linkedDetails);
+  return rows.map((row) => {
+    const out = issueJSON(row, undefined, {
+      labels: selected.labelsByIssue.get(row.id) ?? [],
+      comments: selected.commentCountsByIssue.get(row.id) ?? 0,
+    });
+    out.herdr_pane = herdrPaneJSON(
+      selected.herdrPanesByIssue.get(row.id) ?? null,
+    );
+    const pulls = (selected.linkedPullsByIssue.get(row.id) ?? [])
+      .map((pull) => detailByPull.get(pull.id))
+      .filter((pull): pull is IssueListPullSummaryWire => pull !== undefined);
+    out.linked_pull_requests = pulls;
+    out.linked_pull_request = pulls[0] ?? null;
+    out.has_open_pull_request = pulls.some((pull) => pull.state === "open");
+    return out;
+  });
+}
+
 async function linkedPullDetail(
   repo: S.Repo,
   pr: S.LinkedPullIssueRow,
@@ -327,7 +366,11 @@ export async function issueDetailJSON(
 export async function pullJSON(
   repo: S.Repo,
   row: S.IssueRow,
-  opts: { withCommits?: boolean; withRelatedSessions?: boolean } = {},
+  opts: {
+    withCommits?: boolean;
+    withRelatedSessions?: boolean;
+    withComments?: boolean;
+  } = {},
 ): Promise<PullWire> {
   const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
@@ -358,6 +401,9 @@ export async function pullJSON(
           pushed_to_github: pushedShas.has(commit.sha.toLowerCase()),
         }))
       : commits;
+  const commentReactions = opts.withComments
+    ? S.commentReactionsByIssue(row.id)
+    : undefined;
 
   return {
     number: row.number,
@@ -382,10 +428,10 @@ export async function pullJSON(
     changes_addressed_by: p.changes_addressed_by ?? null,
     labels: S.issueLabels(row.id).map(labelJSON),
     comments: S.countComments(row.id),
-    ...(opts.withCommits
+    ...(opts.withComments
       ? {
           comment_list: S.listComments(row.id).map((comment) =>
-            commentJSON(comment, S.listCommentReactions(comment.id)),
+            commentJSON(comment, commentReactions?.get(comment.id) ?? []),
           ),
         }
       : {}),

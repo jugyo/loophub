@@ -168,6 +168,38 @@ export function listIssueHerdrPanes(repoId: number): IssueHerdrPane[] {
   return listHerdrPanesByOrigin(repoId, "issue-create");
 }
 
+export function issueHerdrPanesByIssue(
+  repoId: number,
+  issueIds: number[],
+): Map<number, IssueHerdrPane> {
+  if (issueIds.length === 0) return new Map();
+  const placeholders = issueIds.map(() => "?").join(", ");
+  const rows = db
+    .query(
+      `SELECT p.*, CAST(r.resource_key AS INTEGER) AS issue_id
+       FROM herdr_panes p
+       JOIN herdr_pane_resources r ON r.pane_id = p.id
+       WHERE p.repo_id = ?
+         AND r.resource_kind = 'issue'
+         AND r.relationship = ?
+         AND p.closed_at IS NULL
+         AND CAST(r.resource_key AS INTEGER) IN (${placeholders})
+       ORDER BY p.created_at, p.id`,
+    )
+    .all(
+      repoId,
+      ISSUE_FILED_FROM_RELATIONSHIP,
+      ...issueIds,
+    ) as (IssueHerdrPane & {
+    issue_id: number;
+  })[];
+  const byIssue = new Map<number, IssueHerdrPane>();
+  for (const row of rows) {
+    if (!byIssue.has(row.issue_id)) byIssue.set(row.issue_id, row);
+  }
+  return byIssue;
+}
+
 export function getIssue(repoId: number, number: number): IssueRow | null {
   return db
     .query(`SELECT * FROM issues WHERE repo_id = ? AND number = ?`)

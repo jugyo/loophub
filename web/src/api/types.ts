@@ -4,10 +4,7 @@
 // HerdrPullWorkspace/HerdrIssueWorkspace likewise derive from core/terminal/herdr-status.ts,
 // whose interfaces the terminal/sessions RPC returns as-is. The remaining shapes with no core
 // counterpart (Terminal/Stats/dashboard/events) stay hand-written below.
-import type {
-  DiffFile,
-  FileAtRef as FileAtRefWire,
-} from "../../../core/git.ts";
+import type { FileAtRef as FileAtRefWire } from "../../../core/git.ts";
 import type { MergeMode } from "../../../core/merge-mode.ts";
 import type {
   AcceptanceCriterionDetailWire,
@@ -26,12 +23,16 @@ import type {
   HerdrRepoSessionsWire,
   HerdrSessionAgentWire,
   HerdrSessionsWire,
+  IssueDetailPageWire,
+  IssueListPageWire,
   IssueListPullSummaryWire,
   IssueWire,
   LabelWire,
   LinkedIssueWire,
   NotificationWire,
+  PullDetailPageWire,
   PullDiffWire,
+  PullFileWire,
   PullSummaryWire,
   PullWire,
   RelatedSessionsUsageByKindWire,
@@ -116,7 +117,7 @@ export type WorkflowStepStatus = WorkflowStepStatusWire;
 export type PullLineComment = ReviewCommentWire;
 
 /** A changed file with its unified-diff patch (GET .../pulls/{number}/files). */
-export type PullFile = DiffFile;
+export type PullFile = PullFileWire;
 export type PullDiff = PullDiffWire;
 export type DiffFeedbackList = DiffFeedbackListWire;
 export type DiffFeedbackThread = DiffFeedbackThreadWire;
@@ -263,6 +264,9 @@ export type WorkflowRunReviewSummary = WorkflowRunReviewSummaryWire;
 export type ReviewAcResult = ReviewAcResultWire;
 
 export type PullRequest = PullWire;
+export type IssueListPage = IssueListPageWire;
+export type IssueDetailPage = IssueDetailPageWire;
+export type PullDetailPage = PullDetailPageWire;
 
 /** A session related to a PR or issue (#298), including its persisted runtime identity. */
 export type RelatedSession = RelatedSessionWire;

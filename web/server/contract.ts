@@ -527,6 +527,36 @@ export const methods: Record<string, MethodDef> = {
         sort: p.sort,
       }),
   },
+  "pageData/issueList": {
+    description:
+      "Get the issue list and its repository, workspace, and optional filter data in one request.",
+    params: params(
+      {
+        repo,
+        state: str,
+        labels: stringArray,
+        workspace: str,
+        lookahead: { type: "boolean" },
+        page: positiveInt,
+        perPage: positiveInt,
+        includeLabels: { type: "boolean" },
+        includeUnmergedWorkspaces: { type: "boolean" },
+      },
+      ["repo"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.pageData.issueList(p.repo, {
+        state: p.state,
+        labels: p.labels,
+        workspace: p.workspace,
+        lookahead: p.lookahead,
+        page: p.page,
+        perPage: p.perPage,
+        includeLabels: p.includeLabels,
+        includeUnmergedWorkspaces: p.includeUnmergedWorkspaces,
+      }),
+  },
   "search/query": {
     description: "Search issues and pull requests in a repository.",
     params: params({ repo, query: strNonEmpty }, ["repo", "query"]),
@@ -599,6 +629,12 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.issues.get(p.repo, p.number),
+  },
+  "pageData/issueDetail": {
+    description: "Get all initial data for one issue-detail screen.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pageData.issueDetail(p.repo, p.number, "me"),
   },
   "issues/ac/list": {
     description:
@@ -790,6 +826,12 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.pulls.get(p.repo, p.number),
+  },
+  "pageData/pullDetail": {
+    description: "Get all initial data for one pull-request detail screen.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pageData.pullDetail(p.repo, p.number, "me"),
   },
   "pulls/update": {
     description: "Edit a pull request's title/body/state.",

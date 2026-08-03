@@ -345,7 +345,7 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["pull", "me/proj", 7]);
   });
 
-  it("maps repo.* events to the app-shell repos list (#485)", () => {
+  it("maps repo.* events to repo metadata consumers", () => {
     const keys = queryKeysForEvent(
       ev({
         type: "repo.archived",
@@ -354,6 +354,8 @@ describe("queryKeysForEvent", () => {
       }),
     );
     expect(keys).toContainEqual(["repos"]);
+    expect(keys).toContainEqual(["repo", "me/proj"]);
+    expect(keys).toContainEqual(["issues", "me/proj"]);
   });
 
   it("invalidates the old name's keys for repo.renamed via payload.from (#485)", () => {

@@ -107,8 +107,8 @@ export function useRenameRepo(owner: string, repo: string) {
 /**
  * Change the repo's base branch (default_branch) (#1115). Invalidates the repo so
  * everything reading it re-fetches — including the issue list, whose branch grouping
- * is computed from `default_branch` (issue-list.tsx). Also invalidates the topbar repo
- * list, which carries the field.
+ * is computed from `default_branch`. Also invalidates the topbar repo list, which
+ * carries the field.
  */
 export function useSetRepoDefaultBranch(owner: string, repo: string) {
   const qc = useQueryClient();
@@ -118,6 +118,7 @@ export function useSetRepoDefaultBranch(owner: string, repo: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: queryKeys.repos() });
+      qc.invalidateQueries({ queryKey: queryKeys.issues(full(owner, repo)) });
     },
   });
 }

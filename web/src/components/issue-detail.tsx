@@ -45,6 +45,7 @@ import {
   useAddAcceptanceCriterion,
   useIssue,
   useIssueComments,
+  useIssueDetailPage,
   usePostComment,
   useSetAcceptanceCriterionEnabled,
   useSetIssueState,
@@ -61,23 +62,24 @@ export function IssueDetail({
   repo: string;
   number: number;
 }) {
-  const issueQuery = useIssue(owner, repo, number);
-  const commentsQuery = useIssueComments(owner, repo, number);
+  const pageQuery = useIssueDetailPage(owner, repo, number);
+  const issueQuery = useIssue(owner, repo, number, false);
+  const commentsQuery = useIssueComments(owner, repo, number, false);
   const titleRef = useRef<HTMLDivElement>(null);
 
-  if (issueQuery.isLoading) {
+  if (pageQuery.isLoading) {
     return (
       <div className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" /> Loading…
       </div>
     );
   }
-  if (issueQuery.isError || !issueQuery.data) {
+  if (pageQuery.isError || !issueQuery.data) {
     return (
       <div className="mx-auto max-w-content rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
         Failed to load issue #{number}.
-        {issueQuery.error instanceof Error
-          ? ` ${issueQuery.error.message}`
+        {pageQuery.error instanceof Error
+          ? ` ${pageQuery.error.message}`
           : null}
       </div>
     );
@@ -117,8 +119,8 @@ export function IssueDetail({
             owner={owner}
             repo={repo}
             comments={commentsQuery.data}
-            isLoading={commentsQuery.isLoading}
-            isError={commentsQuery.isError}
+            isLoading={false}
+            isError={false}
           />
 
           <CommentForm owner={owner} repo={repo} number={number} />
@@ -306,7 +308,7 @@ function AcceptanceCriteria({
   repo: string;
   issue: Issue;
 }) {
-  const criteriaQuery = useAcceptanceCriteria(owner, repo, issue.number);
+  const criteriaQuery = useAcceptanceCriteria(owner, repo, issue.number, false);
   const add = useAddAcceptanceCriterion(owner, repo, issue.number);
   const setEnabled = useSetAcceptanceCriterionEnabled(
     owner,
@@ -315,14 +317,11 @@ function AcceptanceCriteria({
   );
   const [draft, setDraft] = useState("");
   const [showDisabled, setShowDisabled] = useState(false);
-  const criteria = criteriaQuery.data;
-  const managementReady =
-    criteria !== undefined &&
-    !criteriaQuery.isFetching &&
-    !criteriaQuery.isError;
-  const enabled = criteria?.filter((criterion) => criterion.enabled) ?? [];
-  const disabled = criteria?.filter((criterion) => !criterion.enabled) ?? [];
-  const error = add.error ?? setEnabled.error ?? criteriaQuery.error;
+  const criteria = criteriaQuery.data ?? [];
+  const managementReady = criteriaQuery.data !== undefined;
+  const enabled = criteria.filter((criterion) => criterion.enabled);
+  const disabled = criteria.filter((criterion) => !criterion.enabled);
+  const error = add.error ?? setEnabled.error;
 
   async function onAdd(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -364,12 +363,12 @@ function AcceptanceCriteria({
         ) : null}
       </div>
 
-      {criteriaQuery.isFetching ? (
+      {criteriaQuery.data === undefined ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading acceptance
           criteria…
         </p>
-      ) : criteriaQuery.isError ? null : enabled.length > 0 ? (
+      ) : enabled.length > 0 ? (
         <ul className="flex flex-col gap-2 text-sm">
           {enabled.map((criterion) => (
             <li key={criterion.id} className="flex items-start gap-2">

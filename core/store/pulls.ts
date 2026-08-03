@@ -178,6 +178,40 @@ export function linkedPullsForIssue(
     .all(linkedIssueId, MAX_LINKED_PULLS) as LinkedPullIssueRow[];
 }
 
+export function linkedPullsByIssue(
+  linkedIssueIds: number[],
+): Map<number, LinkedPullIssueRow[]> {
+  if (linkedIssueIds.length === 0) return new Map();
+  const placeholders = linkedIssueIds.map(() => "?").join(", ");
+  const rows = db
+    .query(
+      `SELECT * FROM (
+         SELECT i.*, p.merged, p.merged_at, p.linked_issue_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY p.linked_issue_id
+                  ORDER BY CASE WHEN i.state = 'open' AND p.merged = 0 THEN 0 ELSE 1 END,
+                           COALESCE(p.merged_at, i.updated_at) DESC
+                ) AS linked_rank
+         FROM pulls p
+         JOIN issues i ON i.id = p.issue_id
+         WHERE p.linked_issue_id IN (${placeholders}) AND i.kind = 'pull'
+       )
+       WHERE linked_rank <= ?
+       ORDER BY linked_issue_id, linked_rank`,
+    )
+    .all(...linkedIssueIds, MAX_LINKED_PULLS) as (LinkedPullIssueRow & {
+    linked_issue_id: number;
+    linked_rank: number;
+  })[];
+  const byIssue = new Map<number, LinkedPullIssueRow[]>();
+  for (const row of rows) {
+    const pulls = byIssue.get(row.linked_issue_id) ?? [];
+    pulls.push(row);
+    byIssue.set(row.linked_issue_id, pulls);
+  }
+  return byIssue;
+}
+
 // Full linked-PR fan-out for issue detail. Unlike linkedPullsForIssue, this is
 // intentionally uncapped: the detail page is the place where the complete issue
 // history should be visible.

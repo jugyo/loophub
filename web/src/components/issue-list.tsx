@@ -32,11 +32,8 @@ import {
   DEFAULT_ISSUE_FILTERS,
   ISSUE_LIST_PAGE_SIZE,
   type IssueListFilters,
-  useIssuesList,
-  useLabelsList,
+  useIssueListPage,
 } from "@/queries/issues";
-import { useRepo } from "@/queries/repos";
-import { useUnmergedWorkspaces, useWorkspaces } from "@/queries/workspaces";
 
 const STATE_TABS: {
   value: IssueListFilters["state"];
@@ -163,30 +160,22 @@ export function IssueList({
     [state, labels, showWorkspaceFilter, workspaceParam],
   );
   const [draftLabels, setDraftLabels] = useState(labelsParam ?? "");
-  const query = useIssuesList(owner, repo, filters);
-  const labelsQuery = useLabelsList(owner, repo, labelFilterMode === "select");
-  const repoQuery = useRepo(owner, repo);
-  const workspacesQuery = useWorkspaces(owner, repo);
-  const unmergedWorkspacesQuery = useUnmergedWorkspaces(
-    owner,
-    repo,
-    showWorkspaceFilter,
-  );
+  const query = useIssueListPage(owner, repo, filters, {
+    includeLabels: labelFilterMode === "select",
+    includeUnmergedWorkspaces: showWorkspaceFilter,
+  });
   const navigate = useNavigate();
   const allVisibleIssues = useMemo(() => {
     const pages = query.data?.pages ?? [];
-    return pages.flatMap((page) => page.slice(0, ISSUE_LIST_PAGE_SIZE));
+    return pages.flatMap((page) => page.issues.slice(0, ISSUE_LIST_PAGE_SIZE));
   }, [query.data]);
-  const defaultBranch = repoQuery.data?.default_branch ?? "main";
-  const workspaces = Array.isArray(workspacesQuery.data)
-    ? workspacesQuery.data
-    : [];
+  const pageData = query.data?.pages[0];
+  const defaultBranch = pageData?.repo.default_branch ?? "main";
+  const workspaces = pageData?.workspaces ?? [];
   const activeWorkspaces = workspaces.filter(
     (workspace) => workspace.archived_at === null,
   );
-  const unmergedWorkspaces = Array.isArray(unmergedWorkspacesQuery.data)
-    ? unmergedWorkspacesQuery.data
-    : [];
+  const unmergedWorkspaces = pageData?.unmerged_workspaces ?? [];
   const visibleIssues = allVisibleIssues;
   const issueSections = useMemo(
     () => composeIssueSections(visibleIssues, defaultBranch, workspaces),
@@ -250,7 +239,7 @@ export function IssueList({
     }
   }
 
-  const labelOptions = labelsQuery.data ?? [];
+  const labelOptions = pageData?.labels ?? [];
 
   return (
     <div
@@ -269,7 +258,7 @@ export function IssueList({
                 variant="secondary"
                 aria-label="Workspace filter"
                 className="h-9 min-w-40 justify-between gap-2 border bg-background px-3 font-normal shadow-sm"
-                disabled={workspacesQuery.isLoading || repoQuery.isLoading}
+                disabled={query.isLoading}
               >
                 <span className="truncate">
                   {workspaceParam ?? "All workspaces"}
@@ -283,7 +272,7 @@ export function IssueList({
             <DropdownMenuContent align="start" className="min-w-56">
               <DropdownMenuLabel>Filter by workspace</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {workspacesQuery.isError || repoQuery.isError ? (
+              {query.isError ? (
                 <DropdownMenuItem disabled>
                   Failed to load workspaces
                 </DropdownMenuItem>
@@ -368,7 +357,7 @@ export function IssueList({
                   variant="secondary"
                   aria-label="Label filter"
                   className="h-9 min-w-36 justify-between gap-2 border bg-background px-3 font-normal shadow-sm"
-                  disabled={labelsQuery.isLoading}
+                  disabled={query.isLoading}
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <Tag
@@ -407,7 +396,7 @@ export function IssueList({
                   ) : null}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {labelsQuery.isError ? (
+                {query.isError ? (
                   <DropdownMenuItem disabled>
                     Failed to load labels
                   </DropdownMenuItem>
@@ -505,29 +494,14 @@ export function IssueList({
         </div>
       ) : null}
 
-      {query.isLoading ||
-      repoQuery.isLoading ||
-      workspacesQuery.isLoading ||
-      (showWorkspaceFilter && unmergedWorkspacesQuery.isLoading) ? (
+      {query.isLoading ? (
         <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading…
         </div>
-      ) : query.isError ||
-        repoQuery.isError ||
-        workspacesQuery.isError ||
-        (showWorkspaceFilter && unmergedWorkspacesQuery.isError) ? (
+      ) : query.isError ? (
         <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
           Failed to load.
           {query.error instanceof Error ? ` ${query.error.message}` : null}
-          {repoQuery.error instanceof Error
-            ? ` ${repoQuery.error.message}`
-            : null}
-          {workspacesQuery.error instanceof Error
-            ? ` ${workspacesQuery.error.message}`
-            : null}
-          {unmergedWorkspacesQuery.error instanceof Error
-            ? ` ${unmergedWorkspacesQuery.error.message}`
-            : null}
         </div>
       ) : visibleIssues.length === 0 ? (
         <div className="flex flex-col gap-3">
@@ -618,7 +592,7 @@ export function IssueList({
 function IssueListLoadMore({
   query,
 }: {
-  query: ReturnType<typeof useIssuesList>;
+  query: ReturnType<typeof useIssueListPage>;
 }) {
   if (!query.hasNextPage) return null;
   return (

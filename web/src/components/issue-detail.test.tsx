@@ -748,26 +748,19 @@ describe("IssueDetail", () => {
     );
   });
 
-  it("disables authoring while the complete criteria list is loading", async () => {
+  it("keeps the detail loading while the complete criteria list is loading", async () => {
     renderDetail(undefined, {
       "issues/ac/list": () => new Promise(() => {}),
     });
 
+    expect(await screen.findByText("Loading…")).toBeTruthy();
     expect(
-      await screen.findByText("Loading acceptance criteria…"),
-    ).toBeTruthy();
-    const input = screen.getByRole("textbox", {
-      name: "New acceptance criterion",
-    }) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Do not submit yet" } });
-    expect(
-      (screen.getByRole("button", { name: "Add" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+      screen.queryByRole("textbox", { name: "New acceptance criterion" }),
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: /Actions for AC/ })).toBeNull();
   });
 
-  it("shows a list RPC error without reconstructing authoring data", async () => {
+  it("shows a page error when the complete criteria list fails", async () => {
     renderDetail(
       () => ({
         ...issue,
@@ -783,16 +776,11 @@ describe("IssueDetail", () => {
     );
 
     expect(
-      await screen.findByText("Complete criteria are unavailable"),
+      await screen.findByText(/Complete criteria are unavailable/),
     ).toBeTruthy();
-    const input = screen.getByRole("textbox", {
-      name: "New acceptance criterion",
-    }) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Do not submit on error" } });
     expect(
-      (screen.getByRole("button", { name: "Add" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+      screen.queryByRole("textbox", { name: "New acceptance criterion" }),
+    ).toBeNull();
     expect(screen.queryByText("Enabled-only fallback")).toBeNull();
     expect(screen.queryByRole("button", { name: /Actions for AC/ })).toBeNull();
   });

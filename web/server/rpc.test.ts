@@ -136,6 +136,32 @@ test("acceptance criteria authoring routes through issue domain procedures", asy
   });
 });
 
+test("page data routes return complete initial screen result sets", async () => {
+  const issueList: any = await call("pageData/issueList", {
+    repo: "me/proj",
+    state: "open",
+    page: 1,
+    perPage: 21,
+    lookahead: true,
+    includeLabels: true,
+    includeUnmergedWorkspaces: true,
+  });
+  expect(issueList.result).toMatchObject({
+    repo: { full_name: "me/proj" },
+    workspaces: expect.any(Array),
+    unmerged_workspaces: expect.any(Array),
+    labels: expect.any(Array),
+  });
+  expect(issueList.result.issues[0].number).toBe(1);
+
+  const issueDetail: any = await call("pageData/issueDetail", {
+    repo: "me/proj",
+    number: 1,
+  });
+  expect(issueDetail.result.issue.title).toBe("hello");
+  expect(issueDetail.result.acceptance_criteria).toHaveLength(1);
+});
+
 test("worker status is exposed and an unconfirmed worker blocks only workflow launch", async () => {
   db.run("DELETE FROM worker_runtime");
   const before = {

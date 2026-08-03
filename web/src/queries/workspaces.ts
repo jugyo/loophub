@@ -64,10 +64,14 @@ export function useCreateWorkspace(owner: string, repo: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (branch: string) => createWorkspace(owner, repo, branch),
-    onSuccess: () =>
+    onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces(full(owner, repo)),
-      }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.issues(full(owner, repo)),
+      });
+    },
   });
 }
 
@@ -76,9 +80,13 @@ export function useSetWorkspaceArchived(owner: string, repo: string) {
   return useMutation({
     mutationFn: ({ branch, archived }: { branch: string; archived: boolean }) =>
       setWorkspaceArchived(owner, repo, branch, archived),
-    onSuccess: () =>
+    onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces(full(owner, repo)),
-      }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.issues(full(owner, repo)),
+      });
+    },
   });
 }

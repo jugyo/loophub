@@ -245,9 +245,8 @@ describe("IssueList", () => {
 
     expect(await screen.findByText("No issues.")).toBeTruthy();
     await waitFor(() =>
-      expect(rpcCall("issues/list")?.params).toMatchObject({
+      expect(rpcCall("pageData/issueList")?.params).toMatchObject({
         repo: "me/proj",
-        kind: "issue",
         state: "all",
         labels: ["bug", "ui"],
         perPage: 21,
@@ -1135,9 +1134,8 @@ describe("IssueList", () => {
     expect(await screen.findByText("Issue 40")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
     await waitFor(() =>
-      expect(rpcCalls("issues/list").at(-1)?.params).toMatchObject({
+      expect(rpcCalls("pageData/issueList").at(-1)?.params).toMatchObject({
         repo: "me/proj",
-        kind: "issue",
         state: "all",
         labels: ["bug"],
         perPage: 21,
@@ -1181,7 +1179,7 @@ describe("IssueList", () => {
     expect(await screen.findByText("Issue 22")).toBeTruthy();
     expect(screen.getAllByText("Issue 21")).toHaveLength(1);
     await waitFor(() =>
-      expect(rpcCalls("issues/list").at(-1)?.params).toMatchObject({
+      expect(rpcCalls("pageData/issueList").at(-1)?.params).toMatchObject({
         repo: "me/proj",
         workspace: "feature/a",
         lookahead: true,

@@ -60,6 +60,7 @@ import {
   usePostPullComment,
   usePull,
   usePullComments,
+  usePullDetailPage,
   usePullFiles,
   usePullReviews,
   usePushGithubPull,
@@ -84,11 +85,12 @@ export function PullDetail({
   repo: string;
   number: number;
 }) {
-  const pullQuery = usePull(owner, repo, number);
-  const filesQuery = usePullFiles(owner, repo, number);
-  const reviewsQuery = usePullReviews(owner, repo, number);
-  const lineCommentsQuery = usePullComments(owner, repo, number);
-  const commentsQuery = useIssueComments(owner, repo, number);
+  const pageQuery = usePullDetailPage(owner, repo, number);
+  const pullQuery = usePull(owner, repo, number, false);
+  const filesQuery = usePullFiles(owner, repo, number, false);
+  const reviewsQuery = usePullReviews(owner, repo, number, false);
+  const lineCommentsQuery = usePullComments(owner, repo, number, false);
+  const commentsQuery = useIssueComments(owner, repo, number, false);
   const { data: herdrSessions, isError: herdrSessionsError } =
     useHerdrSessions();
   const titleRef = useRef<HTMLDivElement>(null);
@@ -101,19 +103,19 @@ export function PullDetail({
     !!pullQuery.data?.github_pull,
   );
 
-  if (pullQuery.isLoading) {
+  if (pageQuery.isLoading) {
     return (
       <div className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" /> Loading…
       </div>
     );
   }
-  if (pullQuery.isError || !pullQuery.data) {
+  if (pageQuery.isError || !pullQuery.data) {
     return (
       <div className="mx-auto max-w-content rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
         Failed to load PR #{number}.
-        {pullQuery.error instanceof Error
-          ? ` ${pullQuery.error.message}`
+        {pageQuery.error instanceof Error
+          ? ` ${pageQuery.error.message}`
           : null}
       </div>
     );
@@ -178,8 +180,8 @@ export function PullDetail({
               commits={pull.commits}
               reviews={reviewsQuery.data}
               lineComments={lineCommentsQuery.data}
-              isReviewsLoading={reviewsQuery.isLoading}
-              isReviewsError={reviewsQuery.isError}
+              isReviewsLoading={false}
+              isReviewsError={false}
               showGithubPushState={!!pull.github_pull}
             />
             <FilesChanged
@@ -188,8 +190,8 @@ export function PullDetail({
               number={number}
               files={filesQuery.data}
               lineComments={lineCommentsQuery.data}
-              isLoading={filesQuery.isLoading}
-              isError={filesQuery.isError}
+              isLoading={false}
+              isError={false}
             />
 
             <CommentList
@@ -197,8 +199,8 @@ export function PullDetail({
               repo={repo}
               number={number}
               comments={commentsQuery.data}
-              isLoading={commentsQuery.isLoading}
-              isError={commentsQuery.isError}
+              isLoading={false}
+              isError={false}
             />
           </div>
         </div>

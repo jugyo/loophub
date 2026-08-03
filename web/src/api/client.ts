@@ -24,9 +24,12 @@ import type {
   HerdrSessions,
   Issue,
   IssueComment,
+  IssueDetailPage,
+  IssueListPage,
   Label,
   LoopEvent,
   Notification,
+  PullDetailPage,
   PullDiff,
   PullFile,
   PullLineComment,
@@ -528,6 +531,33 @@ export function listIssues(owner: string, repo: string, query = "") {
   );
 }
 
+export function getIssueListPage(
+  owner: string,
+  repo: string,
+  query = "",
+  options: {
+    includeLabels?: boolean;
+    includeUnmergedWorkspaces?: boolean;
+  } = {},
+) {
+  const sp = new URLSearchParams(query);
+  const labels = sp.get("labels");
+  return rpc<IssueListPage>(
+    "pageData/issueList",
+    clean({
+      repo: full(owner, repo),
+      state: sp.get("state") ?? undefined,
+      labels: labels ? labels.split(",").filter(Boolean) : undefined,
+      workspace: sp.get("workspace") ?? undefined,
+      lookahead: sp.get("lookahead") === "true" || undefined,
+      perPage: sp.get("per_page") ? Number(sp.get("per_page")) : undefined,
+      page: sp.get("page") ? Number(sp.get("page")) : undefined,
+      includeLabels: options.includeLabels || undefined,
+      includeUnmergedWorkspaces: options.includeUnmergedWorkspaces || undefined,
+    }),
+  );
+}
+
 export function searchIssuesAndPulls(
   owner: string,
   repo: string,
@@ -603,6 +633,17 @@ export function listLabels(owner: string, repo: string) {
 
 export function getIssue(owner: string, repo: string, number: number) {
   return rpc<Issue>("issues/get", { repo: full(owner, repo), number });
+}
+
+export function getIssueDetailPage(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return rpc<IssueDetailPage>("pageData/issueDetail", {
+    repo: full(owner, repo),
+    number,
+  });
 }
 
 export function listAcceptanceCriteria(
@@ -749,6 +790,13 @@ export function listPulls(owner: string, repo: string, query = "") {
 
 export function getPull(owner: string, repo: string, number: number) {
   return rpc<PullRequest>("pulls/get", { repo: full(owner, repo), number });
+}
+
+export function getPullDetailPage(owner: string, repo: string, number: number) {
+  return rpc<PullDetailPage>("pageData/pullDetail", {
+    repo: full(owner, repo),
+    number,
+  });
 }
 
 export function patchPull(

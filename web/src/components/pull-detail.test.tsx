@@ -511,42 +511,15 @@ describe("PullDetail", () => {
     });
   });
 
-  it("removes a failed PR comment while the initial comment list is pending", async () => {
+  it("keeps the detail loading while the initial comment list is pending", async () => {
     const commentsPending = new Promise<never>(() => {});
     const listComments = vi.fn(() => commentsPending);
-    let rejectCreate!: (error: RpcFault) => void;
-    const createPending = new Promise<never>((_resolve, reject) => {
-      rejectCreate = reject;
-    });
-    const { container } = renderDetail({
+    renderDetail({
       "comments/list": listComments,
-      "pullComments/create": () => createPending,
     });
 
-    const composer = await screen.findByLabelText("Add a PR comment");
-    fireEvent.change(composer, {
-      target: { value: "Remove this failed PR comment." },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-
-    await waitFor(() => {
-      expect(
-        container.querySelectorAll('[data-debug-component="PullComment"]'),
-      ).toHaveLength(1);
-      expect(screen.getByText("Remove this failed PR comment.")).toBeTruthy();
-    });
-
-    rejectCreate(new RpcFault(500, "write failed"));
-    await waitFor(() => {
-      expect(
-        container.querySelectorAll('[data-debug-component="PullComment"]'),
-      ).toHaveLength(0);
-      expect((composer as HTMLTextAreaElement).value).toBe(
-        "Remove this failed PR comment.",
-      );
-      expect(screen.getByText("Failed to post comment.")).toBeTruthy();
-      expect(listComments).toHaveBeenCalledTimes(2);
-    });
+    expect(await screen.findByText("Loading…")).toBeTruthy();
+    expect(screen.queryByLabelText("Add a PR comment")).toBeNull();
   });
 
   it("renders PR comments in response order before the comment form", async () => {

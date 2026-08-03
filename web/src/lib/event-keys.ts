@@ -262,16 +262,15 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     keys.push(["settings"]);
     keys.push(["terminal", "config"]);
   } else if (type.startsWith("repo.")) {
-    // Repo metadata changes (archived/favorited/renamed/merge_mode, #485) alter the app-shell
-    // list for every connected client, not just the tab that performed the mutation (whose
-    // hook already invalidates onSuccess). repo.renamed additionally strands the old name's
-    // repo-scoped caches — the event's `repo` field carries the NEW full_name — so invalidate
-    // the old-name prefixes via payload.from; a client sitting on the old URL refetches and
-    // surfaces the 404 instead of showing stale data under a dead route.
+    // Repo metadata changes alter both the app-shell list and repo-scoped views. Issue-list page
+    // data includes default_branch for grouping, so refresh it for other connected tabs too.
+    // repo.renamed additionally strands the old name's repo-scoped caches — the event's `repo`
+    // field carries the NEW full_name — so invalidate the old-name prefixes via payload.from.
     keys.push([...queryKeys.repos()]);
     // Dashboard rows embed the repo's full_name and /r/<full_name> links, so any repo
     // metadata change (rename especially) must refresh the cross-repo top page too.
     keys.push([...queryKeys.dashboard()]);
+    if (repo) keys.push([...queryKeys.issues(repo)]);
     if (type === "repo.agent_config_changed" && repo) {
       keys.push([...queryKeys.repoAgentConfig(repo)]);
     }

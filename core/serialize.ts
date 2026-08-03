@@ -1291,7 +1291,11 @@ function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
   };
 }
 
-export function issueJSON(row: S.IssueRow, repo?: S.Repo): IssueWire {
+export function issueJSON(
+  row: S.IssueRow,
+  repo?: S.Repo,
+  selected?: { labels: S.LabelRow[]; comments: number },
+): IssueWire {
   const out: IssueWire = {
     number: row.number,
     state: row.state,
@@ -1299,8 +1303,8 @@ export function issueJSON(row: S.IssueRow, repo?: S.Repo): IssueWire {
     body: row.body,
     target_branch: row.target_branch ?? null,
     user: { login: row.author },
-    labels: S.issueLabels(row.id).map(labelJSON),
-    comments: S.countComments(row.id),
+    labels: (selected?.labels ?? S.issueLabels(row.id)).map(labelJSON),
+    comments: selected?.comments ?? S.countComments(row.id),
     created_at: row.created_at,
     updated_at: row.updated_at,
     has_open_pull_request: false,
@@ -2109,6 +2113,42 @@ export interface PullWire {
   related_sessions?: RelatedSessionWire[];
   related_sessions_usage?: RelatedSessionsUsageWire;
   work_duration?: PullWorkDuration;
+}
+
+/** Data selected together for the repository issue-list screen. */
+export interface IssueListPageWire {
+  issues: IssueWire[];
+  repo: RepoWire;
+  workspaces: WorkspaceWire[];
+  unmerged_workspaces: WorkspaceWire[];
+  labels: LabelWire[];
+}
+
+/** Data selected together for the issue-detail screen. */
+export interface IssueDetailPageWire {
+  issue: IssueWire;
+  comments: CommentWire[];
+  acceptance_criteria: AcceptanceCriterionDetailWire[];
+}
+
+/** A changed file with its unified-diff patch. */
+export interface PullFileWire {
+  filename: string;
+  previousFilename?: string;
+  headFilename?: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch: string;
+}
+
+/** Data selected together for the pull-request detail screen. */
+export interface PullDetailPageWire {
+  pull: PullWire;
+  files: PullFileWire[];
+  reviews: ReviewWire[];
+  line_comments: ReviewCommentWire[];
+  comments: CommentWire[];
 }
 
 export interface PullCommitWire {

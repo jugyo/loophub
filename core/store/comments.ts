@@ -56,6 +56,20 @@ export function countComments(issueId: number): number {
   ).c;
 }
 
+export function commentCountsByIssue(issueIds: number[]): Map<number, number> {
+  if (issueIds.length === 0) return new Map();
+  const placeholders = issueIds.map(() => "?").join(", ");
+  const rows = db
+    .query(
+      `SELECT issue_id, COUNT(*) AS count
+       FROM comments
+       WHERE issue_id IN (${placeholders})
+       GROUP BY issue_id`,
+    )
+    .all(...issueIds) as { issue_id: number; count: number }[];
+  return new Map(rows.map((row) => [row.issue_id, row.count]));
+}
+
 export function listCommentReactions(commentId: number): CommentReactionRow[] {
   return db
     .query(
@@ -63,6 +77,27 @@ export function listCommentReactions(commentId: number): CommentReactionRow[] {
        WHERE comment_id = ? ORDER BY created_at ASC, id ASC`,
     )
     .all(commentId) as CommentReactionRow[];
+}
+
+export function commentReactionsByIssue(
+  issueId: number,
+): Map<number, CommentReactionRow[]> {
+  const rows = db
+    .query(
+      `SELECT cr.*
+       FROM comment_reactions cr
+       JOIN comments c ON c.id = cr.comment_id
+       WHERE c.issue_id = ?
+       ORDER BY cr.created_at ASC, cr.id ASC`,
+    )
+    .all(issueId) as CommentReactionRow[];
+  const byComment = new Map<number, CommentReactionRow[]>();
+  for (const row of rows) {
+    const reactions = byComment.get(row.comment_id) ?? [];
+    reactions.push(row);
+    byComment.set(row.comment_id, reactions);
+  }
+  return byComment;
 }
 
 export function setCommentReaction(
