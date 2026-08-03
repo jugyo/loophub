@@ -973,7 +973,10 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
   ]);
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
-  const runtime = fakeRuntime({ worktreeOpenJson: FRESH_OPEN_JSON });
+  const runtime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
+    worktreeOpenJson: FRESH_OPEN_JSON,
+  });
   try {
     const started = run(
       [
@@ -988,14 +991,15 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_FOCUSED_STATE: runtime.focusedStatePath,
         HERDR_LOG: runtime.log,
       },
     );
 
     expect(started.exitCode, started.stderr).toBe(0);
     const log = readFileSync(runtime.log, "utf8");
-    // Same worktree open→agent-start placement a normal `lh build --herdr` performs: the worktree's
-    // own workspace is opened first, then the parent starts in that workspace's fresh tab (#873).
+    // The worktree's own workspace is opened first, then the Workflow parent starts in that
+    // workspace's fresh tab (#873).
     expect(log).toMatch(
       /--session me-workflow-start-[a-f0-9]{8} worktree open --cwd .+ --path .+/,
     );
@@ -1011,14 +1015,16 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     );
     // The label LoopHub identifies the pane by is written separately from the herdr agent name.
     expect(log).toMatch(/pane rename w1:p2 orchestrator #\d+/);
-    // The empty tab the worktree open seeded is dropped, and the workspace is brought forward.
+    // The empty tab the worktree open seeded is dropped without changing the current focus.
     expect(log).toMatch(/tab close w1:t1/);
-    expect(log).toMatch(/workspace focus w1/);
+    expect(log).not.toContain("workspace focus");
+    expect(log).not.toContain("tab focus");
     expect(log).toContain("--kind claude");
     expect(log).toContain("--permission-mode auto");
     // The multi-line prompt cannot ride on the agent start command line, so it is pasted in after.
     expect(log).toMatch(/pane send-text w1:p2 /);
     expect(log).toMatch(/pane send-keys w1:p2 Enter/);
+    expectUnrelatedHerdrFocus(runtime);
     expect(started.stderr).toContain("Attach with: herdr --session");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
@@ -1045,6 +1051,7 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
   const runtime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
     worktreeOpenJson: REUSE_OPEN_JSON,
     tabCreateJson: REUSE_TAB_JSON,
   });
@@ -1062,6 +1069,7 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_FOCUSED_STATE: runtime.focusedStatePath,
         HERDR_LOG: runtime.log,
       },
     );
@@ -1073,15 +1081,16 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
     expect(log).toMatch(/tab create --workspace w1 /);
     expect(log).toMatch(/agent start .+ --pane w1:p2 /);
     expect(log.indexOf("tab create")).toBeLessThan(log.indexOf("agent start"));
-    // A reused workspace is not this launch's to refocus wholesale; only its new tab comes forward.
+    // Reusing a workspace does not change the current workspace, tab, or pane focus.
     expect(log).not.toContain("workspace focus");
-    expect(log).toMatch(/tab focus w1:t2/);
+    expect(log).not.toContain("tab focus");
+    expectUnrelatedHerdrFocus(runtime);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
 });
 
-test("workflow start --herdr focuses the reused workspace when its new tab id is unavailable", () => {
+test("workflow start --herdr launches when the reused workspace's new tab id is unavailable", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1121,10 +1130,59 @@ test("workflow start --herdr focuses the reused workspace when its new tab id is
     expect(started.exitCode, started.stderr).toBe(0);
     const log = readFileSync(runtime.log, "utf8");
     expect(log).toMatch(/tab create --workspace w1 /);
-    // The pane is what the agent needs; a tab id that failed to parse only costs the focus switch.
+    // The pane is what the agent needs; a tab id is not required to complete the launch.
     expect(log).toMatch(/agent start .+ --pane w1:p2 /);
     expect(log).not.toContain("tab focus");
     expect(log).not.toContain("workspace focus");
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --herdr preserves focus when worktree placement falls back to a repo-root tab", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Fallback tab parent session",
+    "--body",
+    "Do it",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
+    // An unparseable successful response makes placement fall back to an unscoped tab.
+    worktreeOpenJson: "",
+  });
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_FOCUSED_STATE: runtime.focusedStatePath,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    expect(log).toMatch(/tab create /);
+    expect(log).not.toContain("tab create --workspace");
+    expect(log).not.toContain("workspace focus");
+    expect(log).not.toContain("tab focus");
+    expectUnrelatedHerdrFocus(runtime);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

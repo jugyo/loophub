@@ -8,9 +8,7 @@ import {
   type HerdrLaunchRunner,
   herdrCommandLine,
   herdrTabCloseArgv,
-  herdrTabFocusArgv,
   herdrWorkspaceCloseArgv,
-  herdrWorkspaceFocusArgv,
   type TerminalLaunchRepo,
 } from "../core/terminal/terminal-launch.ts";
 
@@ -56,7 +54,7 @@ export async function launchAgentInWorktreeHerdr(input: {
   label: string;
 }): Promise<HerdrLaunchResult> {
   const { repo, worktree, label } = input;
-  // Best-effort herdr runner for the ancillary workspace calls (open, focus, close). spawnSync suits
+  // Best-effort herdr runner for the ancillary workspace calls (open and close). spawnSync suits
   // this short-lived CLI process (unlike lh-web, whose single server process spawns herdr async);
   // it never throws — a failed call resolves ok:false so the caller simply degrades.
   const runHerdrCmd: HerdrCmdRunner = async (argv, opts) => {
@@ -120,18 +118,12 @@ export async function launchAgentInWorktreeHerdr(input: {
     );
   }
 
-  // Creation stays --no-focus so an incomplete launch never becomes visible; bring the finished one
-  // forward now. A workspace this launch opened is selected wholesale (#556); a reused workspace's
-  // freshly added tab is selected by tab id so a workspace that isn't ours isn't refocused (#625).
-  // Fire-and-forget: the agent is already running, so a focus failure must not fail the launch.
+  // The open seeded a newly created workspace with an empty tab that the launch could not use
+  // (`worktree open` takes no `--env`), so drop it once the real tab exists. Creation and launch
+  // stay `--no-focus`: background workflow launches must preserve the operator's current focus.
   if (acquired?.createdWorkspace) {
-    // The open seeded the workspace with an empty tab that the launch could not use (`worktree
-    // open` takes no `--env`), so it is dropped once the real tab exists.
     if (acquired.seedTabId)
       await runHerdrCmd(herdrTabCloseArgv(repo, acquired.seedTabId));
-    await runHerdrCmd(herdrWorkspaceFocusArgv(repo, acquired.workspaceId));
-  } else if (outcome.tabId) {
-    await runHerdrCmd(herdrTabFocusArgv(repo, outcome.tabId));
   }
   return {
     sessionName: plan.sessionName,

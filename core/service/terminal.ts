@@ -379,8 +379,9 @@ async function launchWorkflowCreateHerdr(
       session: plan.sessionName,
     });
   }
-  // Bring the new agent's workspace to the front, then drop the empty tab the workspace was seeded
-  // with (the launch could not use it — a seeded tab carries none of the launch's own `--env`).
+  // Drop the empty tab the workspace was seeded with (the launch could not use it — a seeded tab
+  // carries none of the launch's own `--env`). Creation and launch stay `--no-focus` so this
+  // background agent does not interrupt the operator's current workspace, tab, or pane.
   if (workspaceId) {
     if (seedTabId) {
       const seedClose = herdrTabCloseArgv(repo, seedTabId);
@@ -388,11 +389,6 @@ async function launchWorkflowCreateHerdr(
         () => {},
       );
     }
-    const focus = herdrWorkspaceFocusArgv(repo, workspaceId);
-    runHerdrLaunch(focus[0], focus.slice(1), repo.local_path).catch(() => {});
-  } else if (outcome.tabId) {
-    const focus = herdrTabFocusArgv(repo, outcome.tabId);
-    runHerdrLaunch(focus[0], focus.slice(1), repo.local_path).catch(() => {});
   }
   return {
     backend: "herdr" as const,
@@ -564,7 +560,8 @@ export const terminal = {
     let placementWorkspaceId: string | null = null;
     // The workspace this launch *owns*: the issue-create `workspace create`, or a first-time
     // `worktree open` (#551). It is the cleanup target if the launch fails (herdr refuses to close
-    // a workspace's last tab, so the whole workspace goes) and the one to bring forward on success.
+    // a workspace's last tab, so the whole workspace goes). New Issue also brings it forward on
+    // success; other workflows leave focus unchanged.
     // Null when an already-open workspace was merely reused — that one predates this launch.
     let workspaceId: string | null = null;
     // The empty tab such a fresh workspace was seeded with, closed once the launch's own tab exists.
@@ -777,31 +774,23 @@ export const terminal = {
         },
       );
     }
-    // Switch herdr's focus so the new agent's pane comes to the front now that it's running — the
-    // create/open/tab-create calls above all used `--no-focus` so creation itself wouldn't yank
-    // focus mid-launch, which otherwise leaves the just-launched terminal invisible until the user
-    // switches to it by hand. Two selection modes:
-    //   - A *fresh* workspace (createdWorkspace: New Issue's `workspace create`, or a worktree-backed
-    //     launch's first-time `worktree open` #551) is selected by workspace id (#556) — the agent's
-    //     tab is the only one that matters in it.
-    //   - Every other launch — a *reused* workspace's freshly added tab, or the plain repo-root tab
-    //     fallback — is selected by tab id (#625). `tab focus` switches workspace + tab in one call,
-    //     so the new tab/pane is brought forward without re-selecting a workspace that already
-    //     existed and isn't this launch's to refocus wholesale.
-    // Fire-and-forget: the agent is already running, so a failure to switch focus must not fail the
-    // launch.
+    // A newly created workspace is seeded with an empty tab that cannot carry the launch's `--env`;
+    // drop it once the real tab exists. Only New Issue brings its completed agent forward (#556,
+    // #625). Every other launch keeps the create/open/tab-create `--no-focus` behavior so the
+    // operator's current workspace, tab, and pane remain selected. Focus remains fire-and-forget:
+    // the agent is already running, so a focus failure must not fail a New Issue launch.
     if (createdWorkspace && workspaceId) {
-      // The workspace was seeded with an empty tab the launch could not use (a seeded tab carries
-      // none of the launch's own `--env`), so it is dropped now that the real tab exists.
       if (seedTabId) {
         const seedClose = herdrTabCloseArgv(repo, seedTabId);
         runHerdrLaunch(seedClose[0], seedClose.slice(1), r.local_path).catch(
           () => {},
         );
       }
-      const focus = herdrWorkspaceFocusArgv(repo, workspaceId);
-      runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
-    } else if (outcome.tabId) {
+      if (isNewIssue) {
+        const focus = herdrWorkspaceFocusArgv(repo, workspaceId);
+        runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
+      }
+    } else if (isNewIssue && outcome.tabId) {
       const focus = herdrTabFocusArgv(repo, outcome.tabId);
       runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
     }

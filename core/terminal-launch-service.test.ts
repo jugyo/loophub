@@ -35,6 +35,11 @@ let startedHerdrServer: FakeChild | null = null;
 
 const herdr = vi.hoisted(() => ({
   calls: [] as string[][],
+  focus: {
+    workspaceId: "w9",
+    tabId: "w9:t8",
+    paneId: "w9:p7",
+  },
   // One scripted behavior per expected herdr spawn, consumed in order.
   script: [] as Array<(child: ScriptedChild) => void>,
 }));
@@ -68,8 +73,27 @@ vi.mock("node:child_process", async (importOriginal) => {
     spawn: (command: string, args: string[], opts: object) => {
       if (command === "lh")
         return scripted(lhDev.calls, lhDev.script, command, args);
-      if (command === "herdr")
+      if (command === "herdr") {
+        const explicitFocus = args.some(
+          (arg, index) =>
+            arg === "focus" &&
+            ["workspace", "tab", "agent", "pane"].includes(
+              args[index - 1] ?? "",
+            ),
+        );
+        const implicitFocus =
+          !args.includes("--no-focus") &&
+          (args.includes("create") ||
+            (args.includes("worktree") && args.includes("open")));
+        if (explicitFocus || implicitFocus) {
+          herdr.focus = {
+            workspaceId: "changed",
+            tabId: "changed",
+            paneId: "changed",
+          };
+        }
         return scripted(herdr.calls, herdr.script, command, args);
+      }
       return actual.spawn(command, args, opts as never);
     },
   };
@@ -96,6 +120,10 @@ const WORKSPACE_LIST_EMPTY =
   '{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[]}}';
 const WORKSPACE_LIST_NEW_ISSUE =
   '{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[{"label":"New Issue","number":4,"workspace_id":"w4"}]}}';
+const WORKTREE_OPEN_FRESH_JSON =
+  '{"result":{"already_open":false,"workspace":{"workspace_id":"w4"},"tab":{"tab_id":"w4:t1"},"root_pane":{"pane_id":"w4:p1"}}}';
+const WORKTREE_OPEN_REUSED_JSON =
+  '{"result":{"already_open":true,"workspace":{"workspace_id":"w4"}}}';
 
 // The seeded tab id and the workspace id are parsed independently from the same response — these
 // fixtures cover the ways they can disagree (one field present, the other missing/malformed).
@@ -174,6 +202,11 @@ beforeEach(() => {
   startedHerdrServer = null;
   herdr.calls.length = 0;
   herdr.script.length = 0;
+  herdr.focus = {
+    workspaceId: "w9",
+    tabId: "w9:t8",
+    paneId: "w9:p7",
+  };
   lhDev.calls.length = 0;
   lhDev.script.length = 0;
   const timestamp = new Date().toISOString();
@@ -396,7 +429,6 @@ describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
       exitWith(0), // prompt paste
       exitWith(0), // prompt submit
       exitWith(0), // seeded tab close
-      exitWith(0), // workspace focus
     );
 
     const result = await svc.terminal.launch({
@@ -427,6 +459,17 @@ describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
     expect(herdr.calls[4][herdr.calls[4].length - 1]).toContain(
       "Create a workflow, then stop.",
     );
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(7));
+    expect(
+      herdr.calls.some(
+        (call) => call.includes("focus") && call.includes("workspace"),
+      ),
+    ).toBe(false);
+    expect(
+      herdr.calls.some(
+        (call) => call.includes("focus") && call.includes("tab"),
+      ),
+    ).toBe(false);
     expect(result).toMatchObject({ backend: "herdr" });
   });
 
@@ -437,6 +480,76 @@ describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
         label: "New workflow",
       }),
     ).rejects.toThrow(/prompt is required/u);
+  });
+});
+
+describe("terminal.launch github-pr-export focus preservation", () => {
+  function createPull(): number {
+    const repo = S.getRepo("me", "proj");
+    if (!repo) throw new Error("repo missing");
+    const pull = S.createIssue(repo.id, "pull", "Export to GitHub", "", "me");
+    S.createPull(pull.id, `loophub/pr-${pull.number}`, "main", null);
+    return pull.number;
+  }
+
+  test.each([
+    ["fresh workspace", 0, WORKTREE_OPEN_FRESH_JSON, true, true],
+    ["reused workspace", 0, WORKTREE_OPEN_REUSED_JSON, true, false],
+    ["repo-root fallback tab", 1, undefined, false, false],
+  ] as const)("preserves the existing focus through a %s launch", async (_placement, openStatus, openStdout, scopedTab, closesSeedTab) => {
+    const pullNumber = createPull();
+    const focusBefore = { ...herdr.focus };
+    herdr.script.push(
+      exitWith(openStatus, openStdout), // worktree open
+      exitWith(0, LAUNCH_TAB_JSON), // launch tab
+      exitWith(0), // pane rename
+      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'),
+      exitWith(0), // prompt paste
+      exitWith(0), // prompt submit
+    );
+    if (closesSeedTab) herdr.script.push(exitWith(0));
+
+    await expect(
+      svc.terminal.launch({
+        repo: "me/proj",
+        workflow: "github-pr-export",
+        prNumber: pullNumber,
+        label: "Create PR on GitHub",
+        prompt: "Create the pull request.",
+      }),
+    ).resolves.toMatchObject({ backend: "herdr" });
+
+    const worktreeOpen = herdr.calls[0];
+    expect(worktreeOpen).toEqual(
+      expect.arrayContaining(["worktree", "open", "--no-focus"]),
+    );
+    const tabCreate = herdr.calls[1];
+    expect(tabCreate).toEqual(
+      expect.arrayContaining(["tab", "create", "--no-focus"]),
+    );
+    if (scopedTab) {
+      expect(tabCreate).toEqual(expect.arrayContaining(["--workspace", "w4"]));
+    } else {
+      expect(tabCreate).not.toContain("--workspace");
+    }
+    if (closesSeedTab) {
+      await vi.waitFor(() => expect(herdr.calls).toHaveLength(7));
+      expect(herdr.calls[6]).toEqual(
+        expect.arrayContaining(["tab", "close", "w4:t1"]),
+      );
+    }
+    expect(
+      herdr.calls.some((call) =>
+        call.some(
+          (arg, index) =>
+            arg === "focus" &&
+            ["workspace", "tab", "agent", "pane"].includes(
+              call[index - 1] ?? "",
+            ),
+        ),
+      ),
+    ).toBe(false);
+    expect(herdr.focus).toEqual(focusBefore);
   });
 });
 
