@@ -147,7 +147,7 @@ const herdrSessions: HerdrSessions = {
 };
 
 describe("WorkflowStepTracker", () => {
-  it("connects the optional workflow icon to Execute and opens parent details", () => {
+  it("connects the optional parent bot to Execute and opens parent details", () => {
     vi.useFakeTimers();
     render(
       <WorkflowStepTracker
@@ -160,6 +160,9 @@ describe("WorkflowStepTracker", () => {
     );
 
     const workflow = screen.getByRole("button", { name: "Workflow" });
+    const parentBot = workflow.querySelector("[data-agent-bot-icon]");
+    expect(parentBot).toBeTruthy();
+    expect(parentBot?.className).toContain("linked-pull-pulse");
     expect(workflow.tagName).toBe("BUTTON");
     const node = workflow.parentElement!;
     const connector = node.nextElementSibling;
@@ -184,6 +187,69 @@ describe("WorkflowStepTracker", () => {
       { repo: "me/proj", paneId: "w1:p0" },
       expect.anything(),
     );
+  });
+
+  it("keeps the parent bot static when the parent agent is not working", () => {
+    const sessions: HerdrSessions = {
+      ...herdrSessions,
+      repos: herdrSessions.repos.map((repo) => ({
+        ...repo,
+        agents: repo.agents.map((agent) =>
+          agent.workflow?.kind === "parent" && agent.workflow.runId === 1
+            ? { ...agent, status: "done" }
+            : agent,
+        ),
+      })),
+    };
+    render(
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state()}
+        herdrSessions={sessions}
+        showWorkflowNode
+      />,
+    );
+
+    const parentBot = screen
+      .getByRole("button", { name: "Workflow" })
+      .querySelector("[data-agent-bot-icon]");
+    expect(parentBot).toBeTruthy();
+    expect(parentBot?.className).not.toContain("linked-pull-pulse");
+  });
+
+  it("animates a working parent bot without offering a non-focusable pane action", () => {
+    const sessions: HerdrSessions = {
+      ...herdrSessions,
+      repos: herdrSessions.repos.map((repo) => ({
+        ...repo,
+        agents: repo.agents.map((agent) =>
+          agent.workflow?.kind === "parent" && agent.workflow.runId === 1
+            ? { ...agent, focusable: false }
+            : agent,
+        ),
+      })),
+    };
+    render(
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state()}
+        herdrSessions={sessions}
+        showWorkflowNode
+      />,
+    );
+
+    const workflow = screen.getByRole("button", { name: "Workflow" });
+    expect(
+      workflow.querySelector("[data-agent-bot-icon]")?.className,
+    ).toContain("linked-pull-pulse");
+    fireEvent.focus(workflow);
+    const dialog = screen.getByRole("dialog", { name: "Workflow details" });
+    expect(dialog.textContent).toContain("working");
+    expect(
+      within(dialog).queryByRole("button", { name: "Open in Herdr" }),
+    ).toBeNull();
   });
 
   it("keeps shared tracker surfaces unchanged unless the workflow node is requested", () => {
@@ -551,7 +617,7 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Needs human")).toBeTruthy();
   });
 
-  it("glows and shows a bot only on stages whose latest agent is working", () => {
+  it("always shows step bots and only animates stages whose latest agent is working", () => {
     render(
       <WorkflowStepTracker
         owner="me"
@@ -583,6 +649,12 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Verify").className).not.toContain(
       "workflow-stage-glow",
     );
+    expect(
+      screen.getByRole("img", { name: "Execute agent" }).className,
+    ).not.toContain("linked-pull-pulse");
+    expect(
+      screen.getByRole("img", { name: "Verify agent" }).className,
+    ).not.toContain("linked-pull-pulse");
   });
 
   it("ignores an older working attempt when the latest step agent has stopped", () => {
@@ -637,9 +709,7 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Execute").className).not.toContain(
       "workflow-stage-glow",
     );
-    expect(
-      screen.queryByRole("img", { name: "Execute agent working" }),
-    ).toBeNull();
+    expect(screen.getByRole("img", { name: "Execute agent" })).toBeTruthy();
   });
 
   it("does not render merge-ready Done styling while any PR agent is working", () => {

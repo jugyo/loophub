@@ -515,7 +515,7 @@ describe("LinkedPullSummaryRow workflow agent activity", () => {
     ).toContain("workflow-stage-glow");
   });
 
-  it("does not show a row-level bot for a working non-workflow agent", async () => {
+  it("keeps workflow bots static for a working non-workflow agent", async () => {
     herdrSessionsData.value = herdrWorkingOnPull();
     renderRowWithRun(
       makeWorkflowRunState({
@@ -524,7 +524,11 @@ describe("LinkedPullSummaryRow workflow agent activity", () => {
       }),
     );
     await screen.findByRole("link", { name: "PR #10" });
-    expect(document.querySelector("[data-agent-bot-icon]")).toBeNull();
+    const bots = document.querySelectorAll("[data-agent-bot-icon]");
+    expect(bots).toHaveLength(3);
+    for (const bot of bots) {
+      expect(bot.className).not.toContain("linked-pull-pulse");
+    }
   });
 
   it("keeps Done neutral while a PR agent is working", async () => {

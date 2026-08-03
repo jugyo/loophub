@@ -1,6 +1,6 @@
 // Shared Execute → Verify → Done step tracker for a workflow run. Rendered both compact in a PR list
 // row (LinkedPullSummaryRow) and larger in the issue / PR detail Workflow run section
-// (workflow-run-status.tsx). An optional workflow root icon connects to the stage pills; hovering it
+// (workflow-run-status.tsx). An optional parent-agent bot connects to the stage pills; hovering it
 // exposes the parent/orchestrator pane action. The current stage is colored, the rest are grey, and
 // traversed connectors fill in to convey progression.
 //
@@ -10,13 +10,7 @@
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker unless the caller
 // already says why with its own "over budget" marker (#1932).
 
-import {
-  Check,
-  Loader2,
-  Terminal,
-  TriangleAlert,
-  Workflow,
-} from "lucide-react";
+import { Check, Loader2, Terminal, TriangleAlert } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import type { HerdrAgent, HerdrSessions, WorkflowRunState } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
@@ -52,9 +46,7 @@ function workflowParentAgent(
     sessions?.repos?.find((candidate) => candidate.repo === repo)?.agents ?? [];
   return agents.find(
     (agent) =>
-      agent.focusable &&
-      agent.workflow?.kind === "parent" &&
-      agent.workflow.runId === runId,
+      agent.workflow?.kind === "parent" && agent.workflow.runId === runId,
   );
 }
 
@@ -193,13 +185,15 @@ function WorkflowNode({
         aria-expanded={popover.open}
         aria-controls={popover.open ? dialogId : undefined}
         className={cn(
-          "flex items-center justify-center rounded-full border border-border bg-muted text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          "flex items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           size === "md" ? "size-6" : "size-[18px]",
         )}
       >
-        <Workflow
-          className={size === "md" ? "size-3.5" : "size-2.5"}
-          aria-hidden="true"
+        <AgentBotIcon
+          working={agent?.status === "working"}
+          className={cn(
+            size === "md" ? "size-6 [&>svg]:size-3.5" : "size-[18px]",
+          )}
         />
       </button>
       {popover.open ? (
@@ -228,7 +222,7 @@ function WorkflowNode({
                 Herdr pane data is unavailable.
               </p>
             ) : null}
-            {repo && agent ? (
+            {repo && agent?.focusable ? (
               <div className="mt-2 flex justify-end border-t pt-2">
                 <OpenInHerdrButton repo={repo} agent={agent} />
               </div>
@@ -501,10 +495,10 @@ export function WorkflowStepTracker({
                   "animate-[workflow-stage-glow_2.4s_ease-in-out_infinite]",
               )}
             >
-              {stageWorking ? (
+              {stage.key !== "done" ? (
                 <AgentBotIcon
-                  working
-                  label={`${stage.label} agent working`}
+                  working={stageWorking}
+                  label={`${stage.label} agent${stageWorking ? " working" : ""}`}
                   className="-my-1 size-4"
                 />
               ) : null}
