@@ -2,7 +2,9 @@
 // Web/CLI-to-worker coordination contract changes incompatibly.
 export const WORKFLOW_WORKER_PROTOCOL_VERSION = 1;
 export const WORKER_HEARTBEAT_INTERVAL_MS = 5_000;
-export const WORKER_HEARTBEAT_STALE_AFTER_MS = 15_000;
+// Leave enough headroom for synchronous local maintenance queries without turning this
+// development-time compatibility check into a separate thread or process.
+export const WORKER_HEARTBEAT_STALE_AFTER_MS = 60_000;
 
 export interface WorkerRuntimeRecord {
   protocol_version: number;

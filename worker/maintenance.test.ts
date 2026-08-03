@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { git, revParse } from "../core/git.ts";
+import { WORKER_HEARTBEAT_STALE_AFTER_MS } from "../core/worker-protocol.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-worker-maintenance-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -128,18 +129,32 @@ test("maintenance summary reports disabled loops as off", () => {
   });
 });
 
-test("worker heartbeat immediately upserts one runtime generation and refreshes it", async () => {
+test("worker heartbeat refreshes while running and expires after stop", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-02T00:00:00Z"));
-  const stop = M.startWorkerHeartbeat(5_000, "2026-08-01T23:59:59Z");
+  const startedAt = "2026-08-01T23:59:59Z";
+  const stop = M.startWorkerHeartbeat(5_000, startedAt);
   try {
     expect(S.getWorkerRuntime()).toMatchObject({
       protocol_version: 1,
-      started_at: "2026-08-01T23:59:59Z",
+      started_at: startedAt,
       heartbeat_at: "2026-08-02T00:00:00.000Z",
     });
     await vi.advanceTimersByTimeAsync(5_000);
     expect(S.getWorkerRuntime()?.heartbeat_at).toBe("2026-08-02T00:00:05.000Z");
+    expect(svc.workerRuntime.status().status).toBe("compatible");
+
+    stop();
+    const stoppedHeartbeat = S.getWorkerRuntime()?.heartbeat_at;
+    await vi.advanceTimersByTimeAsync(WORKER_HEARTBEAT_STALE_AFTER_MS);
+    expect(S.getWorkerRuntime()?.heartbeat_at).toBe(stoppedHeartbeat);
+    expect(
+      svc.workerRuntime.status(
+        Date.parse(stoppedHeartbeat ?? "") +
+          WORKER_HEARTBEAT_STALE_AFTER_MS +
+          1,
+      ).status,
+    ).toBe("stale");
   } finally {
     stop();
     vi.useRealTimers();

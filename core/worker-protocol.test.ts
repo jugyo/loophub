@@ -16,8 +16,15 @@ describe("workerCompatibility", () => {
   test("reports a fresh current-protocol worker as compatible", () => {
     expect(workerCompatibility(freshRuntime, NOW)).toMatchObject({
       status: "compatible",
-      stale_at: "2026-08-02T00:00:24.000Z",
+      stale_at: "2026-08-02T00:01:09.000Z",
     });
+  });
+
+  test("tolerates a delayed heartbeat beyond the previous stale window", () => {
+    expect(
+      workerCompatibility(freshRuntime, Date.parse("2026-08-02T00:00:26Z"))
+        .status,
+    ).toBe("compatible");
   });
 
   test.each([
