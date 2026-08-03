@@ -114,9 +114,10 @@ come from live git or worktree state (`pullJSON`, `issueListItemJSON`, `issueDet
 
 ```sh
 npm install
-npm test                 # fast tests (excludes real-git integration tests)
+npm test                 # fast tests, including the Web SPA (excludes real-git integration tests)
+npm run test:web         # Web SPA tests only
 npm run test:integration # real-git repository/worktree integration tests
-npm run test:full        # full root test suite
+npm run test:full        # all tests (root fast + integration and Web SPA)
 npm run test:watch       # watch fast tests
 npm run typecheck        # tsc --noEmit (uses the local typescript; avoids npx)
 npm run lint             # biome check (lint + format check; no writes)

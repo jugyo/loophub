@@ -29,9 +29,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
     "format": "biome format --write",
-    "test": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run",
+    "test": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run && npm run test:web",
+    "test:web": "npm --prefix web test",
     "test:integration": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run --config vitest.integration.config.ts",
-    "test:full": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run --config vitest.full.config.ts",
+    "test:full": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run --config vitest.full.config.ts && npm run test:web",
     "test:watch": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest"
   },
   "devDependencies": {

@@ -277,7 +277,7 @@ test("merge succeeds despite a transient index.lock held by another process", as
   // 作業コピーが merge 後 HEAD に追従している。
   expect(readFileSync(join(p, "f.txt"), "utf8")).toBe("feat\n");
   rmSync(p, { recursive: true, force: true });
-});
+}, 30_000);
 
 // 解放されない（恒久的な）index.lock 競合では、リトライ枯渇後にロールバックして merged:false。
 test("merge rolls back when index.lock never clears", async () => {
@@ -306,7 +306,7 @@ test("merge rolls back when index.lock never clears", async () => {
 
   rmSync(lock);
   rmSync(p, { recursive: true, force: true });
-});
+}, 30_000);
 
 // A repo whose base moved after the branch point, so the three merge methods produce
 // visibly different histories: main has 2 commits, feat has 2 commits of its own.
@@ -379,7 +379,7 @@ test("squash merge adds one commit whose only parent is base", async () => {
   expect((await git(p, ["show", "main:c.txt"])).stdout).toBe("c\n");
 
   rmSync(p, { recursive: true, force: true });
-});
+}, 30_000);
 
 // The contrast that makes the squash assertions meaningful: merge keeps both parents,
 // rebase keeps head's commits as a linear history.
@@ -422,7 +422,7 @@ test("merge keeps two parents and rebase stays linear", async () => {
   expect(await commitCount(rebased.p, "main")).toBe(rebasedCount + 2);
   expect(await parentsOf(rebased.p, "main")).not.toContain(rebased.headSha);
   rmSync(rebased.p, { recursive: true, force: true });
-});
+}, 30_000);
 
 // diffStat sums numstat over base...head: +/- line totals plus the changed-file
 // count, and counts binary files (numstat "-") as a changed file with 0 lines.

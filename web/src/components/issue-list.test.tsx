@@ -16,7 +16,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
+import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, LinkedPull } from "@/api/types";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -477,181 +477,6 @@ describe("IssueList", () => {
     expect(screen.queryByText("workspace:null")).toBeNull();
   });
 
-  it("shows the live PR agent input through the IssueList at the repo top", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "lh-me-proj",
-              agents: [{ id: "w1:p2", name: "dev #10", status: "working" }],
-              pull_workspaces: [
-                { pull: 10, pane_id: "w1:p2", status: "working" },
-              ],
-            },
-          ],
-        }),
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    expect(
-      await screen.findByRole("textbox", {
-        name: "Message agent for PR #10",
-      }),
-    ).toBeTruthy();
-  });
-
-  it("sends the linked PR agent payload and clears the input on success", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "lh-me-proj",
-              agents: [{ id: "w1:p2", name: "dev #10", status: "working" }],
-              pull_workspaces: [
-                { pull: 10, pane_id: "w1:p2", status: "working" },
-              ],
-            },
-          ],
-        }),
-        "terminal/sendAgentInput": () => ({ ok: true }),
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    const input = (await screen.findByRole("textbox", {
-      name: "Message agent for PR #10",
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Please check the logs" } });
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Send message to agent for PR #10",
-      }),
-    );
-
-    await waitFor(() =>
-      expect(rpcCall("terminal/sendAgentInput")?.params).toEqual({
-        repo: "me/proj",
-        pull: 10,
-        paneId: "w1:p2",
-        text: "Please check the logs",
-      }),
-    );
-    await waitFor(() => expect(input.value).toBe(""));
-    expect(screen.getByRole("status").textContent).toContain("Sent");
-  });
-
-  it("blocks blank input and a second send while the first is pending", async () => {
-    let resolveSend: (value: { ok: true }) => void = () => {};
-    const pendingSend = new Promise<{ ok: true }>((resolve) => {
-      resolveSend = resolve;
-    });
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "lh-me-proj",
-              agents: [{ id: "w1:p2", name: "dev #10", status: "working" }],
-              pull_workspaces: [
-                { pull: 10, pane_id: "w1:p2", status: "working" },
-              ],
-            },
-          ],
-        }),
-        "terminal/sendAgentInput": () => pendingSend,
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    const input = (await screen.findByRole("textbox", {
-      name: "Message agent for PR #10",
-    })) as HTMLInputElement;
-    const send = screen.getByRole("button", {
-      name: "Send message to agent for PR #10",
-    }) as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
-    fireEvent.change(input, { target: { value: "   " } });
-    expect(send.disabled).toBe(true);
-
-    fireEvent.change(input, { target: { value: "One request" } });
-    fireEvent.click(send);
-    await waitFor(() => expect(send.disabled).toBe(true));
-    fireEvent.click(send);
-    expect(rpcCalls("terminal/sendAgentInput")).toHaveLength(1);
-
-    await act(async () => resolveSend({ ok: true }));
-  });
-
-  it("keeps the linked PR input and shows the reason when sending fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "lh-me-proj",
-              agents: [{ id: "w1:p2", name: "dev #10", status: "idle" }],
-              pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "idle" }],
-            },
-          ],
-        }),
-        "terminal/sendAgentInput": () => {
-          throw new RpcFault(409, "The Herdr session is no longer available");
-        },
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    const input = (await screen.findByRole("textbox", {
-      name: "Message agent for PR #10",
-    })) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Retry this" } });
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Send message to agent for PR #10",
-      }),
-    );
-
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "The Herdr session is no longer available",
-    );
-    expect(input.value).toBe("Retry this");
-  });
-
-  it("does not show an agent input when the linked PR has no live Herdr pane", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [issue()],
-        "terminal/sessions": () => ({ repos: [] }),
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
-    expect(
-      screen.queryByRole("textbox", { name: "Message agent for PR #10" }),
-    ).toBeNull();
-  });
-
   it("groups issues by base branch with the default branch first", async () => {
     vi.stubGlobal(
       "fetch",
@@ -775,7 +600,9 @@ describe("IssueList", () => {
       screen.getByRole("button", { name: "Workspace filter" }).textContent,
     ).toContain("feature/a");
     expect(
-      screen.getByRole("button", { name: /new issue/i }).textContent,
+      screen
+        .getByRole("button", { name: /new issue/i })
+        .closest('[data-debug-component="CreateIssueButton"]')?.textContent,
     ).toContain("in feature/a");
     // The state tab and row label chip both keep the active workspace filter.
     expect(

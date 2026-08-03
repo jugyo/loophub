@@ -920,10 +920,13 @@ test("terminal.sendAgentInput delivers to the verified pane and reports the fail
       paneId,
       text,
     });
+  const pasted = (text: string) => `\u001b[200~${text}\u001b[201~`;
   try {
     await expect(send("続けて")).resolves.toEqual({ ok: true });
     expect(readFileSync(pendingFile, "utf8")).toBe("");
-    expect(readFileSync(deliveredFile).toString()).toBe("続けて\0");
+    expect(readFileSync(deliveredFile).toString()).toBe(
+      `${pasted("続けて")}\0`,
+    );
 
     process.env.LH_TEST_SEND_INPUT_FAIL = "text";
     await expect(send("再送")).rejects.toThrowError(
@@ -935,8 +938,10 @@ test("terminal.sendAgentInput delivers to the verified pane and reports the fail
     await expect(send("再送")).rejects.toThrowError(
       "The input was written, but Herdr could not submit it; check the pane before retrying",
     );
-    expect(readFileSync(pendingFile, "utf8")).toBe("再送");
-    expect(readFileSync(deliveredFile).toString()).toBe("続けて\0");
+    expect(readFileSync(pendingFile, "utf8")).toBe(pasted("再送"));
+    expect(readFileSync(deliveredFile).toString()).toBe(
+      `${pasted("続けて")}\0`,
+    );
   } finally {
     delete process.env.LH_TEST_SEND_INPUT_FAIL;
     process.env.PATH = ORIGINAL_PATH;
