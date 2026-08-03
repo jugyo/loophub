@@ -194,7 +194,7 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
 
   return (
     <div data-debug-component="WorkflowCard" className="rounded-md border p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-medium">{workflow.name}</h2>
           {workflow.description ? (
