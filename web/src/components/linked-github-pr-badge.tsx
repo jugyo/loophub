@@ -1,8 +1,8 @@
-// Small `GH #N` pill shown next to a linked PR's `PR #N` pill once that PR has been exported to
+// Small `GH #N` pill shown on the right side of a linked PR row once that PR has been exported to
 // GitHub (#629) — renders null until then, so it never implies an export that hasn't happened.
 // A merged GitHub PR reads `GH #N merged` in the shared `merged` tone (#2041).
 // Shared by the issue-list linked-PR sub-row (dashboard-rows.tsx) and the issue-detail linked-PR
-// row (issue-detail.tsx) so both render an identical badge. Styled like the neighbouring `PR #N`
+// row (issue-detail.tsx) so both render an identical badge. Styled like the row's `PR #N`
 // pill (badgeVariants), not the PR-detail sidebar's GitHub PR section heading link; opens the
 // GitHub PR in a new tab.
 
