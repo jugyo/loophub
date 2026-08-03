@@ -31,7 +31,7 @@ test("createRepo normalizes slashless names to me/<name> (RETURNING row)", () =>
   expect(S.getRepo("me", "proj")?.id).toBe(repo.id);
 });
 
-test("deleteRepo removes Workflow runs and review responses before deleting the repo", () => {
+test("deleteRepo removes repository workflows, runs, and review responses before the repo", () => {
   const repo = S.createRepo("me/workflow-remove", "/tmp/workflow-remove");
   const issue = S.createIssue(repo.id, "pull", "reviewed change", "", "author");
   const review = S.createReview(
@@ -41,14 +41,21 @@ test("deleteRepo removes Workflow runs and review responses before deleting the 
     "fix this",
   );
   S.createReviewResponse(issue.id, review.id, null, "executor", "fixed");
-  const workflow = S.createWorkflow({
+  const globalWorkflow = S.createWorkflow({
+    name: "repo-remove-workflow",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const scopedWorkflow = S.createWorkflow({
+    repoId: repo.id,
     name: "repo-remove-workflow",
     description: "",
     executePrompt: "",
     verifyPrompt: "",
   });
   S.createWorkflowRun({
-    workflowId: workflow.id,
+    workflowId: scopedWorkflow.id,
     repoId: repo.id,
     issueNumber: 1,
     prNumber: 2,
@@ -60,9 +67,11 @@ test("deleteRepo removes Workflow runs and review responses before deleting the 
 
   expect(S.deleteRepo("me", "workflow-remove")).toBe(true);
   expect(S.getRepo("me", "workflow-remove")).toBeNull();
+  expect(S.getWorkflowById(scopedWorkflow.id)).toBeNull();
+  expect(S.getWorkflowById(globalWorkflow.id)?.id).toBe(globalWorkflow.id);
 });
 
-test("deletePull removes review responses before their parent review", () => {
+test("archivePull preserves the PR and its review history", () => {
   const repo = S.createRepo("me/pull-remove", "/tmp/pull-remove");
   const issue = S.createIssue(repo.id, "pull", "reviewed change", "", "author");
   S.createPull(issue.id, "feature", "main", null);
@@ -74,9 +83,12 @@ test("deletePull removes review responses before their parent review", () => {
   );
   S.createReviewResponse(issue.id, review.id, null, "executor", "fixed");
 
-  expect(() => S.deletePull(issue.id, repo.id, issue.number)).not.toThrow();
-  expect(S.getPull(issue.id)).toBeNull();
-  expect(S.listReviewResponses(issue.id)).toEqual([]);
+  expect(() => S.archivePull(issue.id)).not.toThrow();
+  expect(S.getPull(issue.id)?.archived_at).toBeTruthy();
+  expect(S.listReviewResponses(issue.id)).toHaveLength(1);
+  S.unarchivePull(issue.id);
+  expect(S.getPull(issue.id)?.archived_at).toBeNull();
+  expect(S.listReviewResponses(issue.id)).toHaveLength(1);
 });
 
 test("updateRepo renames full_name and keeps name/owner in sync (#485)", () => {

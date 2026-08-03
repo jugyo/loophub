@@ -94,6 +94,17 @@ describe("logHumanAction", () => {
     expect(out.mock.calls[1][0]).toMatch(/method=rebase$/);
   });
 
+  it("logs completion from a detected GitHub merge", () => {
+    const out = stdout();
+    A.logHumanAction("pulls/markGithubMerged", {
+      repo: "o/r",
+      number: 34,
+    });
+    expect(out.mock.calls[0][0]).toMatch(
+      /INFO human action: mark github-merged pr repo=o\/r pr=#34$/,
+    );
+  });
+
   it("does not log non-whitelisted methods (queries, sweeps)", () => {
     const out = stdout();
     A.logHumanAction("terminal/sessions", {});

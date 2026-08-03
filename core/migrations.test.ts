@@ -133,6 +133,11 @@ test("the one-time data migrations converged instead of running on every boot", 
     D.db.query("SELECT closed_at FROM issues WHERE id = 10").get(),
   ).toEqual({ closed_at: "t1" });
   expect(
+    D.db.query("SELECT archived_at FROM pulls WHERE issue_id = 10").get(),
+  ).toEqual({
+    archived_at: null,
+  });
+  expect(
     D.db
       .query("SELECT last_id FROM notification_cursors WHERE scope = 'events'")
       .get(),
@@ -271,6 +276,65 @@ test("readiness confirmation backfill treats same-timestamp receipts as ambiguou
     { id: 901, parent_ready_confirmed: 0 },
     { id: 902, parent_ready_confirmed: 1 },
   ]);
+});
+
+test("repository workflow migration preserves ids, run references, and sequence", () => {
+  const path = join(HOME, "workflow-scope.db");
+  const db = new DatabaseSync(path);
+  db.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE repos (id INTEGER PRIMARY KEY);
+    CREATE TABLE workflows (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL DEFAULT '',
+      execute_prompt TEXT NOT NULL DEFAULT '',
+      verify_prompt TEXT NOT NULL DEFAULT '',
+      archived_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE workflow_runs (
+      id INTEGER PRIMARY KEY,
+      workflow_id INTEGER REFERENCES workflows(id) ON DELETE SET NULL
+    );
+    INSERT INTO repos (id) VALUES (1);
+    INSERT INTO workflows
+      (id, name, description, execute_prompt, verify_prompt, created_at, updated_at)
+    VALUES
+      (7, 'Standard', '', '', '', 't1', 't1'),
+      (9, 'Deleted', '', '', '', 't1', 't1');
+    DELETE FROM workflows WHERE id = 9;
+    INSERT INTO workflow_runs (id, workflow_id) VALUES (11, 7);
+  `);
+
+  const migration = M.MIGRATIONS.find(
+    (migration) => migration.id === "067-repository-scoped-workflows",
+  )!;
+  migration.run({
+    exec: db.exec.bind(db),
+    query: db.prepare.bind(db),
+    run: (sql: string, params: unknown[] = []) =>
+      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+  } as unknown as Parameters<typeof migration.run>[0]);
+
+  expect(db.prepare(`SELECT id, repo_id, name FROM workflows`).get()).toEqual({
+    id: 7,
+    repo_id: null,
+    name: "Standard",
+  });
+  expect(
+    db.prepare(`SELECT workflow_id FROM workflow_runs WHERE id = 11`).get(),
+  ).toEqual({ workflow_id: 7 });
+  const inserted = db
+    .prepare(
+      `INSERT INTO workflows
+        (name, description, execute_prompt, verify_prompt, created_at, updated_at)
+       VALUES ('Next', '', '', '', 't2', 't2') RETURNING id`,
+    )
+    .get();
+  expect(inserted).toEqual({ id: 10 });
+  db.close();
 });
 
 // Columns whose migrated shape legitimately differs from the fresh schema. SQLite cannot add a

@@ -12,8 +12,15 @@ import {
   Plus,
   Square,
   Workflow,
+  X,
 } from "lucide-react";
-import { type FormEvent, type RefObject, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Issue, IssueComment, LinkedPull } from "@/api/types";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
 import {
@@ -39,6 +46,7 @@ import { issueBadges, issueCanStartWork, stateBadge } from "@/lib/badges";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useAttachmentUpload } from "@/lib/use-attachment-upload";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import {
   useAcceptanceCriteria,
@@ -50,7 +58,7 @@ import {
   useSetAcceptanceCriterionEnabled,
   useSetIssueState,
 } from "@/queries/issues";
-import { usePullUsage } from "@/queries/pulls";
+import { usePullUsage, useUnarchivePull } from "@/queries/pulls";
 import { useWorkerLaunchGate } from "@/queries/worker-status";
 import { useWorkflows } from "@/queries/workflows";
 
@@ -227,7 +235,9 @@ function StartWorkflowControls({
 }) {
   const { launchTerminal } = useTerminalLauncher();
   const navigate = useNavigate();
-  const { data: workflows, isLoading } = useWorkflows();
+  const { data: workflows, isLoading } = useWorkflows({
+    applicableToRepo: `${owner}/${repo}`,
+  });
   const { canStartWorkflow, showRemediation } = useWorkerLaunchGate();
   const [isLaunching, startLaunching] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -271,9 +281,16 @@ function StartWorkflowControls({
                 start(wf.id);
               }}
             >
-              <span className="w-full min-w-0 font-medium leading-tight">
-                {wf.name}
-              </span>
+              <div className="flex w-full min-w-0 items-baseline gap-2">
+                <span className="min-w-0 font-medium leading-tight">
+                  {wf.name}
+                </span>
+                {wf.scope.kind === "repository" ? (
+                  <span className="shrink-0 text-xs leading-tight text-muted-foreground">
+                    {wf.scope.repo.owner}/{wf.scope.repo.name}
+                  </span>
+                ) : null}
+              </div>
               {wf.description ? (
                 <span className="line-clamp-3 w-full min-w-0 break-words text-xs leading-relaxed text-muted-foreground">
                   {wf.description}
@@ -519,18 +536,31 @@ function LinkedPullSummary({
   repo: string;
   issue: Issue;
 }) {
+  const [archivesOpen, setArchivesOpen] = useState(false);
   const pulls =
     issue.linked_pull_requests ??
     (issue.linked_pull_request ? [issue.linked_pull_request] : []);
-  if (pulls.length === 0) return null;
+  const archivedPulls = issue.archived_pull_requests ?? [];
+  if (pulls.length === 0 && archivedPulls.length === 0) return null;
   return (
     <section
       data-debug-component="LinkedPullSummary"
       className="flex flex-col gap-2"
     >
-      <h2 className="text-sm font-medium text-muted-foreground">
-        {pulls.length > 1 ? "Linked pull requests" : "Linked pull request"}
-      </h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          {pulls.length > 1 ? "Linked pull requests" : "Linked pull request"}
+        </h2>
+        {archivedPulls.length > 0 ? (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            onClick={() => setArchivesOpen(true)}
+          >
+            Archived pull requests ({archivedPulls.length})
+          </button>
+        ) : null}
+      </div>
       {pulls.map((pull) => (
         <LinkedPullSummaryRowWithUsage
           key={pull.number}
@@ -545,7 +575,134 @@ function LinkedPullSummary({
           page responsive.
         </p>
       ) : null}
+      {archivesOpen ? (
+        <ArchivedPullsDialog
+          owner={owner}
+          repo={repo}
+          pulls={archivedPulls}
+          truncated={issue.archived_pull_requests_truncated ?? false}
+          onClose={() => setArchivesOpen(false)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function ArchivedPullsDialog({
+  owner,
+  repo,
+  pulls,
+  truncated,
+  onClose,
+}: {
+  owner: string;
+  repo: string;
+  pulls: NonNullable<Issue["archived_pull_requests"]>;
+  truncated: boolean;
+  onClose: () => void;
+}) {
+  const backdropDismiss = useBackdropDismiss(onClose);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12vh]"
+      {...backdropDismiss}
+    >
+      <div
+        data-debug-component="ArchivedPullsDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Archived pull requests"
+        className="flex w-full max-w-lg flex-col rounded-lg border bg-background p-5 shadow-lg"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">Archived pull requests</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Previous attempts remain available with their complete history.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close archived pull requests"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            onClick={onClose}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="mt-4 flex flex-col gap-2">
+          {pulls.map((pull) => (
+            <ArchivedPullRow
+              key={pull.number}
+              owner={owner}
+              repo={repo}
+              pull={pull}
+              onUnarchived={pulls.length === 1 ? onClose : undefined}
+            />
+          ))}
+        </div>
+        {truncated ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Showing the {pulls.length} most recently archived pull requests.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ArchivedPullRow({
+  owner,
+  repo,
+  pull,
+  onUnarchived,
+}: {
+  owner: string;
+  repo: string;
+  pull: NonNullable<Issue["archived_pull_requests"]>[number];
+  onUnarchived?: () => void;
+}) {
+  const unarchive = useUnarchivePull(owner, repo, pull.number);
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <LinkedPullSummaryRow
+            owner={owner}
+            repo={repo}
+            pull={pull}
+            showTitle
+          />
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={unarchive.isPending}
+          onClick={() =>
+            unarchive.mutate(undefined, { onSuccess: onUnarchived })
+          }
+        >
+          {unarchive.isPending ? "Unarchiving…" : "Unarchive"}
+        </Button>
+      </div>
+      {unarchive.error ? (
+        <p className="text-xs text-destructive">
+          {unarchive.error instanceof Error
+            ? unarchive.error.message
+            : "Unarchive failed"}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

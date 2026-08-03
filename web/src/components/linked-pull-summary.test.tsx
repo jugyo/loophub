@@ -432,6 +432,39 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
   });
 });
 
+describe("LinkedPullSummaryRow GitHub link", () => {
+  const githubPull = {
+    number: 99,
+    url: "https://github.com/me/proj/pull/99",
+    branch: null,
+    created_by: null,
+    created_at: "2026-01-01T00:00:00Z",
+    github_merged: false,
+    github_merged_at: null,
+    pushed_sha: null,
+  };
+
+  it("places the GitHub link in the right-side group before metadata", async () => {
+    renderRowWithRun(null, { github_pull: githubPull });
+
+    const githubLink = await screen.findByTitle("GitHub PR #99");
+    const right = githubLink.closest("[data-linked-pull-right]");
+    expect(right?.firstElementChild).toBe(githubLink);
+    expect(right?.lastElementChild?.textContent).toBe("Agent");
+  });
+
+  it("does not add a placeholder when no GitHub PR is linked", async () => {
+    renderRowWithRun(null);
+
+    const pullLink = await screen.findByRole("link", { name: "PR #10" });
+    const right = pullLink
+      .closest("[data-linked-pull-content]")
+      ?.querySelector("[data-linked-pull-right]");
+    expect(right?.children).toHaveLength(1);
+    expect(screen.queryByTitle(/GitHub PR/)).toBeNull();
+  });
+});
+
 describe("LinkedPullSummaryRow workflow agent activity", () => {
   function herdrWorkingOnPull(step?: "execute" | "verify"): HerdrSessions {
     return {

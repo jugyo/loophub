@@ -56,6 +56,7 @@ import { useIssueComments } from "@/queries/issues";
 import {
   useDiffFeedback,
   useGithubPrStatus,
+  useMarkGithubMerged,
   useMergePull,
   usePostPullComment,
   usePull,
@@ -298,6 +299,7 @@ function PullHeader({
 }) {
   const navigate = useNavigate();
   const merge = useMergePull(owner, repo, pull.number);
+  const markGithubMerged = useMarkGithubMerged(owner, repo, pull.number);
   const setState = useSetPullState(owner, repo, pull.number);
   const { showError } = useToast();
   usePageTitle([`${owner}/${repo}`, `PR #${pull.number}`, pull.title]);
@@ -313,6 +315,10 @@ function PullHeader({
   const isWorkflowAuthor = /^Workflow #\d+\b/.test(pull.user.login);
 
   const canAct = pull.state === "open" && !pull.merged;
+  const canMarkGithubMerged =
+    canAct &&
+    !!pull.github_pull?.github_merged &&
+    !!pull.github_pull.github_merged_at;
   // A conflicting PR (mergeable_state === "conflict", i.e. mergeable === false) can never merge
   // server-side, so the Merge control must stay disabled even when PASSED.
   const hasConflict = pull.mergeable_state === "conflict";
@@ -349,7 +355,7 @@ function PullHeader({
           owner={owner}
           repo={repo}
           number={pull.number}
-          onDeleted={() =>
+          onArchived={() =>
             navigate({ to: "/r/$owner/$repo", params: { owner, repo } })
           }
         />
@@ -428,6 +434,22 @@ function PullHeader({
               <Loader2 className="size-4 animate-spin" />
             ) : null}
             {pull.state === "open" ? "Close" : "Reopen"}
+          </Button>
+        ) : null}
+        {canMarkGithubMerged ? (
+          <Button
+            disabled={markGithubMerged.isPending}
+            onClick={() =>
+              markGithubMerged.mutate(undefined, {
+                onError: (e) =>
+                  showError(errorMessage(e, "Mark as merged failed")),
+              })
+            }
+          >
+            {markGithubMerged.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : null}
+            Mark as merged
           </Button>
         ) : null}
         {/* #406: the repo's effective merge mode picks exactly one write action — the internal Merge

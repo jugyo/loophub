@@ -74,9 +74,19 @@ beforeAll(async () => {
       added_at TEXT NOT NULL,
       PRIMARY KEY (group_id, issue_id)
     );
+    CREATE TABLE workflows (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL DEFAULT '',
+      execute_prompt TEXT NOT NULL DEFAULT '',
+      verify_prompt TEXT NOT NULL DEFAULT '',
+      archived_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
     CREATE TABLE workflow_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      workflow_id INTEGER,
+      workflow_id INTEGER REFERENCES workflows(id) ON DELETE SET NULL,
       repo_id INTEGER NOT NULL REFERENCES repos(id),
       issue_number INTEGER NOT NULL,
       pr_number INTEGER NOT NULL,
@@ -110,10 +120,16 @@ beforeAll(async () => {
       VALUES (20, 1, 'obsolete', 't1', 't1');
     INSERT INTO issue_group_members (group_id, issue_id, position, added_at)
       VALUES (20, 10, 0, 't1');
+    INSERT INTO workflows
+      (id, name, description, execute_prompt, verify_prompt, created_at, updated_at)
+      VALUES
+        (7, 'Standard', '', '', '', 't1', 't1'),
+        (9, 'Deleted', '', '', '', 't1', 't1');
+    DELETE FROM workflows WHERE id = 9;
     INSERT INTO workflow_runs
       (id, workflow_id, repo_id, issue_number, pr_number, status, current_step,
        parent_session_id, created_at, updated_at)
-      VALUES (30, NULL, 1, 6, 7, 'running', 'execute', NULL, 't1', 't1');
+      VALUES (30, 7, 1, 6, 7, 'running', 'execute', NULL, 't1', 't1');
   `);
   seed.close();
 
@@ -133,6 +149,7 @@ test("pulls.session_id is dropped after migration", () => {
   expect(cols).not.toContain("draft");
   expect(cols).toContain("base_sha");
   expect(cols).toContain("head_pending_creation");
+  expect(cols).toContain("archived_at");
   expect(S.getPull(10)?.base_sha).toBeNull();
   expect(S.getPull(10)?.head_pending_creation).toBe(0);
 });
@@ -158,6 +175,22 @@ test("workflow runs gain active child, watcher cursor, and cost limit columns", 
   expect(S.getWorkflowRun(30)?.event_cursor).toBe(0);
   expect(cols).toContain("cost_increment_usd");
   expect(cols).toContain("cost_limit_usd");
+});
+
+test("legacy workflows gain repository scope without reusing deleted ids", () => {
+  expect(S.getWorkflowById(7)).toMatchObject({
+    id: 7,
+    repo_id: null,
+    name: "Standard",
+  });
+  expect(S.getWorkflowRun(30)?.workflow_id).toBe(7);
+  const created = S.createWorkflow({
+    name: "Next",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  expect(created.id).toBe(10);
 });
 
 test("workflow runs gain durable event-effect receipts", () => {

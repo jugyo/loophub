@@ -150,6 +150,46 @@ test.each([
   ).rejects.toMatchObject({ status: 404, message: "Workflow not found" });
 });
 
+test("start rejects a workflow id scoped to another repository", async () => {
+  const source = S.createRepo("me/scoped-workflow-source", REPO_PATH);
+  const target = S.createRepo("me/scoped-workflow-target", REPO_PATH);
+  const workflow = svc.workflows.create({
+    name: "repository-only",
+    repo: source.full_name,
+  });
+
+  await expect(
+    svc.workflowRuns.start(target.full_name, {
+      issue: 1,
+      workflowId: workflow.id,
+    }),
+  ).rejects.toMatchObject({
+    status: 422,
+    message: "Workflow is not available for this repository",
+  });
+});
+
+test("start by name uses the repository workflow over a same-name global workflow", async () => {
+  const { repo } = freshRepo("me/overridden-workflow");
+  svc.workflows.create({ name: "overridden" });
+  const scoped = svc.workflows.create({
+    name: "overridden",
+    repo: repo.full_name,
+  });
+  const issue = S.createIssue(repo.id, "issue", "Override workflow", "", "me");
+
+  const result = await svc.workflowRuns.start(
+    repo.full_name,
+    {
+      issue: issue.number,
+      workflow: "overridden",
+    },
+    "22222222-2222-4222-8222-222222222222",
+  );
+
+  expect(result.run.workflow_id).toBe(scoped.id);
+}, 20_000);
+
 test("start prepares a run and hands the parent pointers, not synthesized inputs", async () => {
   const repo = S.createRepo("me/workflow-run", REPO_PATH);
   const issue = S.createIssue(

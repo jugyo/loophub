@@ -11,6 +11,7 @@ import {
   repoSettingsCodingAgentRoute,
   repoSettingsPullRequestsRoute,
   repoSettingsRoute,
+  repoSettingsWorkflowsRoute,
   repoSettingsWorkspacesRoute,
 } from "./routes/repo-settings";
 import { rootRoute } from "./routes/root";
@@ -31,6 +32,7 @@ const routeTree = rootRoute.addChildren([
   repoSettingsPullRequestsRoute,
   repoSettingsCodingAgentRoute,
   repoSettingsWorkspacesRoute,
+  repoSettingsWorkflowsRoute,
   repoSettingsArchiveRoute,
   issueDetailRoute,
   pullDetailRoute,

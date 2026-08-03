@@ -38,7 +38,10 @@ export const closeLinkedIssueAfterMerge: SyncSubscriber<"pull.closed"> = (
   fact,
   context,
 ) => {
-  if (fact.reason.kind !== "merged" || fact.linkedIssueId == null)
+  if (
+    (fact.reason.kind !== "merged" && fact.reason.kind !== "github_merged") ||
+    fact.linkedIssueId == null
+  )
     return undefined;
 
   const issue = S.getIssueById(fact.linkedIssueId);

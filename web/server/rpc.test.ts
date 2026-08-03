@@ -776,12 +776,43 @@ test("workflow CRUD is exposed through JSON-RPC", async () => {
   const listed: any = await call("workflows/list", {});
   expect(listed.result.map((w: any) => w.name)).toContain("standard");
 
+  const scoped: any = await call("workflows/create", {
+    name: "standard",
+    repo: "me/proj",
+    description: "Repository-specific",
+  });
+  expect(scoped.result.scope).toMatchObject({
+    kind: "repository",
+    repo: { owner: "me", name: "proj" },
+  });
+  const applicable: any = await call("workflows/list", {
+    applicable_to_repo: "me/proj",
+  });
+  expect(
+    applicable.result
+      .filter((w: any) => w.name === "standard")
+      .map((w: any) => w.id),
+  ).toEqual([scoped.result.id]);
+  expect(
+    applicable.result.filter((w: any) => w.scope.kind === "repository"),
+  ).toEqual([scoped.result]);
+
+  await call("workflows/archive", { id: scoped.result.id });
+  const fallback: any = await call("workflows/list", {
+    applicable_to_repo: "me/proj",
+  });
+  expect(
+    fallback.result
+      .filter((w: any) => w.name === "standard")
+      .map((w: any) => w.id),
+  ).toEqual([created.result.id]);
+
   const contracts: any = await call("workflows/contracts", {});
   expect(contracts.result.execute).toContain("# Execute step contract");
   expect(contracts.result.verify).toContain("# Verify step contract");
 
   const updated: any = await call("workflows/update", {
-    name: "standard",
+    id: created.result.id,
     new_name: "standard-v2",
     verify_prompt: "Verify independently",
   });
@@ -790,7 +821,7 @@ test("workflow CRUD is exposed through JSON-RPC", async () => {
   expect(updated.result.execute_prompt).toBe("Implement");
 
   const archived: any = await call("workflows/archive", {
-    name: "standard-v2",
+    id: created.result.id,
   });
   expect(archived.result.archived_at).toBeTruthy();
 
@@ -798,7 +829,7 @@ test("workflow CRUD is exposed through JSON-RPC", async () => {
   expect(active.result.map((w: any) => w.name)).not.toContain("standard-v2");
 
   const deleted: any = await call("workflows/delete", {
-    name: "standard-v2",
+    id: created.result.id,
   });
   expect(deleted.result).toEqual({ ok: true });
 });

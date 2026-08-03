@@ -372,6 +372,8 @@ export interface IssueWire {
   linked_pull_requests?: PullSummaryWire[];
   linked_pull_request?: PullSummaryWire | null;
   linked_pull_requests_truncated?: boolean;
+  archived_pull_requests?: PullSummaryWire[];
+  archived_pull_requests_truncated?: boolean;
   has_open_pull_request: boolean;
   github_issue?: GithubIssueWire | null;
   // Structured acceptance criteria (enabled only), display order (#1894). Detail response only.
@@ -1383,7 +1385,14 @@ export function webConfigJSON(debug: boolean): WebConfigWire {
   return { debug };
 }
 
-// A workflow definition (#997): a global prompt bundle for the fixed
+export type WorkflowScopeWire =
+  | { kind: "global" }
+  | {
+      kind: "repository";
+      repo: { id: number; owner: string; name: string };
+    };
+
+// A workflow definition (#997): a global or repository-scoped prompt bundle for the fixed
 // Execute/Verify workflow. Prompt strings are plain markdown and may be empty.
 export interface WorkflowWire {
   id: number;
@@ -1394,6 +1403,7 @@ export interface WorkflowWire {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  scope: WorkflowScopeWire;
 }
 
 export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
@@ -1406,6 +1416,17 @@ export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
     archived_at: row.archived_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    scope:
+      row.repo_id === null
+        ? { kind: "global" }
+        : {
+            kind: "repository",
+            repo: {
+              id: row.repo_id,
+              owner: row.repo_owner!,
+              name: row.repo_name!,
+            },
+          },
   };
 }
 
@@ -2157,6 +2178,7 @@ export interface PullWire {
   review_gate: ReviewGateWire;
   changes_addressed_at: string | null;
   changes_addressed_by: string | null;
+  archived_at: string | null;
   labels: LabelWire[];
   comments: number;
   // Full PR comments are included on detail responses so an Execute child can read a human comment

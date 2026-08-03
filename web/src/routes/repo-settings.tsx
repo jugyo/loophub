@@ -39,6 +39,12 @@ export const repoSettingsWorkspacesRoute = createRoute({
   component: () => <RepoSettingsRoutePage section="workspaces" />,
 });
 
+export const repoSettingsWorkflowsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/r/$owner/$repo/settings/workflows",
+  component: () => <RepoSettingsRoutePage section="workflows" />,
+});
+
 export const repoSettingsArchiveRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/r/$owner/$repo/settings/archive",

@@ -347,8 +347,9 @@ export async function issueDetailJSON(
   const out = issueJSON(row, row.kind === "pull" ? repo : undefined);
   if (row.kind !== "pull") {
     const linked = S.allLinkedPullsForIssue(row.id);
-    // Detail shows every historical linked PR, so each row needs the same status fields.
-    // List/dashboard paths remain capped separately.
+    const archived = S.archivedLinkedPullsForIssue(row.id);
+    // Detail shows every active linked PR, so each row needs the same status fields.
+    // Archived history is selected separately below; list/dashboard paths remain capped.
     const pulls = await Promise.all(
       linked
         .slice(0, S.MAX_ISSUE_DETAIL_PULLS)
@@ -359,6 +360,13 @@ export async function issueDetailJSON(
     out.has_open_pull_request = pulls.some((pull) => pull.state === "open");
     out.linked_pull_requests_truncated =
       linked.length > S.MAX_ISSUE_DETAIL_PULLS;
+    out.archived_pull_requests = await Promise.all(
+      archived
+        .slice(0, S.MAX_ISSUE_DETAIL_PULLS)
+        .map((pr) => linkedPullDetail(repo, pr)),
+    );
+    out.archived_pull_requests_truncated =
+      archived.length > S.MAX_ISSUE_DETAIL_PULLS;
   }
   return out;
 }
@@ -374,14 +382,22 @@ export async function pullJSON(
 ): Promise<PullWire> {
   const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
-  const [mergeFields, commits] = await Promise.all([
-    pullMergeFields(repo, row.id),
-    opts.withCommits
-      ? status.headSha && status.baseSha
-        ? commitLog(repo.local_path, p.base_ref, p.head_ref)
-        : []
-      : undefined,
-  ]);
+  const mergeFields = await pullMergeFields(repo, row.id);
+  const githubBaseSha =
+    opts.withCommits && mergeFields.github_pull
+      ? await revParse(repo.local_path, `refs/remotes/origin/${p.base_ref}`)
+      : null;
+  const commits = opts.withCommits
+    ? status.headSha && status.baseSha
+      ? await commitLog(
+          repo.local_path,
+          p.base_ref,
+          p.head_ref,
+          100,
+          githubBaseSha ? [githubBaseSha] : [],
+        )
+      : []
+    : undefined;
   const pushedShas =
     commits !== undefined &&
     status.headSha &&
@@ -426,6 +442,7 @@ export async function pullJSON(
     review_gate: status.review_gate,
     changes_addressed_at: p.changes_addressed_at ?? null,
     changes_addressed_by: p.changes_addressed_by ?? null,
+    archived_at: p.archived_at ?? null,
     labels: S.issueLabels(row.id).map(labelJSON),
     comments: S.countComments(row.id),
     ...(opts.withComments

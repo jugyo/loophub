@@ -200,14 +200,14 @@ describe("typed methods translate to contract params", () => {
 
     fetchMock = mockRpc({ ok: true });
     await updateWorkflow(
-      "standard",
+      7,
       { new_name: "standard-v2", verify_prompt: "verify" },
       "session-1",
     );
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "workflows/update",
       params: {
-        name: "standard",
+        id: 7,
         new_name: "standard-v2",
         verify_prompt: "verify",
         session_id: "session-1",
@@ -215,17 +215,17 @@ describe("typed methods translate to contract params", () => {
     });
 
     fetchMock = mockRpc({ ok: true });
-    await archiveWorkflow("standard", "session-1");
+    await archiveWorkflow(7, "session-1");
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "workflows/archive",
-      params: { name: "standard", session_id: "session-1" },
+      params: { id: 7, session_id: "session-1" },
     });
 
     fetchMock = mockRpc({ ok: true });
-    await deleteWorkflow("standard", "session-1");
+    await deleteWorkflow(7, "session-1");
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "workflows/delete",
-      params: { name: "standard", session_id: "session-1" },
+      params: { id: 7, session_id: "session-1" },
     });
   });
 

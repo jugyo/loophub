@@ -59,6 +59,7 @@ export function listSessionsLinkedToOpenPull(): AgentSessionRow[] {
        JOIN issues i ON i.id = l.issue_id
        JOIN pulls p ON p.issue_id = i.id
        WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
+         AND p.archived_at IS NULL
        ORDER BY s.updated_at DESC`,
     )
     .all() as AgentSessionRow[];

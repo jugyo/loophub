@@ -75,13 +75,22 @@ function resolveLinkedIssueId(
   if (!row) throw new ServiceError(422, `issue #${linkedNumber} not found`);
   if (row.kind !== "issue")
     throw new ServiceError(422, `#${linkedNumber} is not an issue`);
-  if (S.openPullLinkedToIssue(row.id)) {
+  assertNoOtherOpenPull(row.id, row.number);
+  return row.id;
+}
+
+function assertNoOtherOpenPull(
+  linkedIssueId: number,
+  linkedIssueNumber: number,
+  pullIssueId?: number,
+): void {
+  const existing = S.openPullLinkedToIssue(linkedIssueId);
+  if (existing && existing.id !== pullIssueId) {
     throw new ServiceError(
       422,
-      `issue #${linkedNumber} already has an open pull request`,
+      `issue #${linkedIssueNumber} already has an open pull request`,
     );
   }
-  return row.id;
 }
 
 export const pulls = {
@@ -281,14 +290,31 @@ export const pulls = {
     return pullJSON(r, updated);
   },
 
-  delete(name: string, number: number, sessionId?: string | null) {
+  archive(name: string, number: number, sessionId?: string | null) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
     const actor = actorFor(sessionId);
     db.transaction(() => {
-      S.deletePull(row.id, r.id, row.number);
-      S.emitEvent(r.id, "pull_request.deleted", actor, { number });
+      S.archivePull(row.id);
+      S.emitEvent(r.id, "pull_request.archived", actor, { number });
+    });
+    return { ok: true } as const;
+  },
+
+  unarchive(name: string, number: number, sessionId?: string | null) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const pull = S.getPull(row.id)!;
+    if (row.state === "open" && !pull.merged && pull.linked_issue_id != null) {
+      const linkedIssue = S.getIssueById(pull.linked_issue_id)!;
+      assertNoOtherOpenPull(linkedIssue.id, linkedIssue.number, row.id);
+    }
+    const actor = actorFor(sessionId);
+    db.transaction(() => {
+      S.unarchivePull(row.id);
+      S.emitEvent(r.id, "pull_request.unarchived", actor, { number });
     });
     return { ok: true } as const;
   },
@@ -714,6 +740,40 @@ export const pulls = {
       });
     });
     return { merged: true, sha: res.sha };
+  },
+
+  markGithubMerged(name: string, number: number, sessionId?: string | null) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const pull = S.getPull(row.id)!;
+    if (pull.merged)
+      throw new ServiceError(405, "Pull Request is already merged");
+    if (row.state !== "open")
+      throw new ServiceError(405, "Pull Request is not open");
+    const githubPull = S.getGithubPull(row.id);
+    if (!githubPull?.github_merged || !githubPull.github_merged_at) {
+      throw new ServiceError(405, "GitHub merge has not been detected");
+    }
+
+    const actor = actorFor(sessionId);
+    db.transaction(() => {
+      S.setMergedFromGithub(row.id, githubPull.github_merged_at!);
+      publish({
+        type: "pull.closed",
+        repoId: r.id,
+        actor,
+        pullId: row.id,
+        pullNumber: row.number,
+        linkedIssueId: pull.linked_issue_id,
+        reason: {
+          kind: "github_merged",
+          githubNumber: githubPull.number,
+          mergedAt: githubPull.github_merged_at!,
+        },
+      });
+    });
+    return { merged: true, merged_at: githubPull.github_merged_at };
   },
 
   // #850: the GitHub-side status (draft / review / checks / comment counts / merged) of a PR's linked

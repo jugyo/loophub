@@ -56,6 +56,62 @@ test("name validation rejects blank, long, and duplicate names with 422", () => 
   expectServiceStatus(() => svc.workflows.create({ name: "standard" }), 422);
 });
 
+test("repository workflows override same-name global workflows when selecting applicable workflows", () => {
+  const repoA = S.createRepo("me/workflows-a", HOME);
+  const repoB = S.createRepo("me/workflows-b", HOME);
+  const repoC = S.createRepo("me/workflows-c", HOME);
+  const global = svc.workflows.create({ name: "scoped" });
+  const scopedA = svc.workflows.create({
+    name: "scoped",
+    repo: repoA.full_name,
+  });
+  const scopedB = svc.workflows.create({
+    name: "scoped",
+    repo: repoB.full_name,
+  });
+
+  expect(global.scope).toEqual({ kind: "global" });
+  expect(scopedA.scope).toEqual({
+    kind: "repository",
+    repo: { id: repoA.id, owner: "me", name: "workflows-a" },
+  });
+  expectServiceStatus(
+    () => svc.workflows.create({ name: "scoped", repo: repoA.full_name }),
+    422,
+  );
+  expect(
+    svc.workflows
+      .list({ applicableTo: repoA.full_name })
+      .filter((workflow) => workflow.name === "scoped")
+      .map((workflow) => workflow.id),
+  ).toEqual([scopedA.id]);
+  expect(
+    svc.workflows
+      .list({ applicableTo: repoB.full_name })
+      .filter((workflow) => workflow.name === "scoped")
+      .map((workflow) => workflow.id),
+  ).toEqual([scopedB.id]);
+  expect(
+    svc.workflows
+      .list({ applicableTo: repoC.full_name })
+      .filter((workflow) => workflow.name === "scoped")
+      .map((workflow) => workflow.id),
+  ).toEqual([global.id]);
+  expect(
+    svc.workflows
+      .list({ scope: { repo: repoB.full_name } })
+      .map((workflow) => workflow.id),
+  ).toEqual([scopedB.id]);
+
+  svc.workflows.archiveById(scopedA.id);
+  expect(
+    svc.workflows
+      .list({ applicableTo: repoA.full_name })
+      .filter((workflow) => workflow.name === "scoped")
+      .map((workflow) => workflow.id),
+  ).toEqual([global.id]);
+});
+
 test("update patches fields and can rename uniquely", () => {
   svc.workflows.create({ name: "other" });
   const updated = svc.workflows.update("standard", {

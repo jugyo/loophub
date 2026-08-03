@@ -71,9 +71,9 @@ export function repoCounts(): RepoCounts[] {
       `SELECT r.full_name AS full_name,
          SUM(CASE WHEN i.kind = 'issue' AND i.state = 'open' THEN 1 ELSE 0 END) AS issues_open,
          SUM(CASE WHEN i.kind = 'issue' AND i.state = 'closed' THEN 1 ELSE 0 END) AS issues_closed,
-         SUM(CASE WHEN i.kind = 'pull' AND i.state = 'open' AND COALESCE(p.merged, 0) = 0 THEN 1 ELSE 0 END) AS pulls_open,
-         SUM(CASE WHEN i.kind = 'pull' AND p.merged = 1 THEN 1 ELSE 0 END) AS pulls_merged,
-         SUM(CASE WHEN i.kind = 'pull' AND i.state = 'closed' AND COALESCE(p.merged, 0) = 0 THEN 1 ELSE 0 END) AS pulls_closed
+         SUM(CASE WHEN i.kind = 'pull' AND p.archived_at IS NULL AND i.state = 'open' AND COALESCE(p.merged, 0) = 0 THEN 1 ELSE 0 END) AS pulls_open,
+         SUM(CASE WHEN i.kind = 'pull' AND p.archived_at IS NULL AND p.merged = 1 THEN 1 ELSE 0 END) AS pulls_merged,
+         SUM(CASE WHEN i.kind = 'pull' AND p.archived_at IS NULL AND i.state = 'closed' AND COALESCE(p.merged, 0) = 0 THEN 1 ELSE 0 END) AS pulls_closed
        FROM repos r
        LEFT JOIN issues i ON i.repo_id = r.id
        LEFT JOIN pulls p ON p.issue_id = i.id

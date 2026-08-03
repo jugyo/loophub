@@ -146,7 +146,7 @@ function CommentCount({ count }: { count: number }) {
   );
 }
 
-// #2245: the row's right edge is one dot-separated list — the agent, the rework count, each run
+// #2245: the row's metadata is one dot-separated list — the agent, the rework count, each run
 // total, and how much has been said on the PR. Which items are present is decided here and nowhere
 // else: an item that decided its own absence would leave the list holding a separator for it, which
 // is how the rework count came to sit against its neighbours with no dot between them. A zero
@@ -184,7 +184,7 @@ function RowMetadata({
       : null,
   ].filter((item): item is MetadataItem => item !== null);
   return (
-    <div className="ml-auto flex shrink-0 items-center gap-1">
+    <div className="flex shrink-0 items-center gap-1">
       {items.map(({ key, node }, index) => (
         <Fragment key={key}>
           {index > 0 ? (
@@ -548,7 +548,6 @@ export function LinkedPullSummaryRow({
         >
           PR #{pull.number}
         </Link>
-        <LinkedGithubPrBadge github_pull={pull.github_pull} />
         {showTitle ? (
           <Link
             to="/r/$owner/$repo/pulls/$number"
@@ -578,14 +577,19 @@ export function LinkedPullSummaryRow({
           showWorkflowNode
           working={agentWorking || herdrSessionsUnavailable}
         />
-        {/* The row's right edge: the rework count sits directly left of the cost metrics, so the
-            two run totals a human scans for read as one group, with how much has been said on the
-            PR closing the row (#2152). */}
-        <RowMetadata
-          pull={pull}
-          runtimeMetadata={runtimeMetadata}
-          overBudget={costStopped !== null}
-        />
+        {/* Keep the GitHub link on the row's right side without making it the rightmost item; the
+            existing agent and usage metadata continues to close the row. */}
+        <div
+          data-linked-pull-right
+          className="ml-auto flex shrink-0 items-center gap-2"
+        >
+          <LinkedGithubPrBadge github_pull={pull.github_pull} />
+          <RowMetadata
+            pull={pull}
+            runtimeMetadata={runtimeMetadata}
+            overBudget={costStopped !== null}
+          />
+        </div>
       </div>
       {popover.open ? (
         <PullPopover

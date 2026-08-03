@@ -2045,7 +2045,56 @@ describe("PullDetail — GitHub export action (#406)", () => {
     ).toBeNull();
   });
 
-  it("keeps Close and omits Mark as merged after GitHub merge detection", async () => {
+  it.each([
+    "github_pr",
+    "merge",
+  ] as const)("offers Mark as merged after GitHub merge detection in %s mode and invokes the dedicated action", async (mergeMode) => {
+    renderDetailWithPull(
+      {
+        merge_mode: mergeMode,
+        github_pull: {
+          ...linkedGithubPull(null),
+          github_merged: true,
+          github_merged_at: "2026-07-15T00:00:00Z",
+        },
+      },
+      {
+        "pulls/markGithubMerged": () => ({
+          merged: true,
+          merged_at: "2026-07-15T00:00:00Z",
+        }),
+      },
+    );
+
+    expect(
+      await screen.findByRole("button", { name: /^Close$/i }),
+    ).toBeTruthy();
+    const button = screen.getByRole("button", { name: /Mark as merged/i });
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(rpcCall("pulls/markGithubMerged")?.params).toMatchObject({
+        repo: "me/proj",
+        number: 30,
+      });
+    });
+    expect(rpcCall("pulls/merge")).toBeUndefined();
+  });
+
+  it.each([
+    ["merge not detected", { github_pull: linkedGithubPull(null) }],
+    [
+      "missing the detected merge time",
+      {
+        github_pull: {
+          ...linkedGithubPull(null),
+          github_merged: true,
+          github_merged_at: null,
+        },
+      },
+    ],
+    ["closed", { state: "closed" as const }],
+    ["already merged", { state: "closed" as const, merged: true }],
+  ])("omits Mark as merged when the PR is %s", async (_label, override) => {
     renderDetailWithPull({
       merge_mode: "github_pr",
       github_pull: {
@@ -2053,11 +2102,10 @@ describe("PullDetail — GitHub export action (#406)", () => {
         github_merged: true,
         github_merged_at: "2026-07-15T00:00:00Z",
       },
+      ...override,
     });
 
-    expect(
-      await screen.findByRole("button", { name: /^Close$/i }),
-    ).toBeTruthy();
+    await screen.findByText("ui2: PR detail");
     expect(
       screen.queryByRole("button", { name: /Mark as merged/i }),
     ).toBeNull();

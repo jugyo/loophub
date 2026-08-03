@@ -596,6 +596,101 @@ describe("IssueDetail", () => {
     expect(screen.queryByText(/Discard/)).toBeNull();
   });
 
+  it("opens the archived pull request history in a dialog", async () => {
+    renderDetail(() => ({
+      ...issue,
+      archived_pull_requests: [
+        {
+          ...issue.linked_pull_request!,
+          number: 28,
+          title: "archived attempt",
+          state: "closed",
+        },
+      ],
+    }));
+
+    const trigger = await screen.findByRole("button", {
+      name: "Archived pull requests (1)",
+    });
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Archived pull requests",
+    });
+    expect(within(dialog).getByText("PR #28")).toBeTruthy();
+    expect(within(dialog).getByText("archived attempt")).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Close archived pull requests",
+      }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("unarchives a pull request from the archived history dialog", async () => {
+    renderDetail(
+      () => ({
+        ...issue,
+        archived_pull_requests: [
+          {
+            ...issue.linked_pull_request!,
+            number: 28,
+            title: "archived attempt",
+            state: "closed",
+          },
+        ],
+      }),
+      { "pulls/unarchive": () => ({ ok: true }) },
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Archived pull requests (1)",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Unarchive" }));
+
+    await waitFor(() => expect(rpcCall("pulls/unarchive")).toBeTruthy());
+    expect(rpcCall("pulls/unarchive")!.params).toMatchObject({
+      repo: "me/proj",
+      number: 28,
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("keeps an archived pull visible when unarchive is rejected", async () => {
+    renderDetail(
+      () => ({
+        ...issue,
+        archived_pull_requests: [
+          {
+            ...issue.linked_pull_request!,
+            number: 28,
+            title: "archived attempt",
+            state: "open",
+          },
+        ],
+      }),
+      {
+        "pulls/unarchive": () => {
+          throw new RpcFault(422, "Issue already has an open pull request");
+        },
+      },
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Archived pull requests (1)",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Unarchive" }));
+
+    expect(
+      await screen.findByText("Issue already has an open pull request"),
+    ).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
   // #2263: a running agent's usage counter ticks every few seconds. Its event now invalidates only
   // the PR's usage query, so the row has to take its tokens/cost from there — the issue payload it
   // rides on is rebuilt from live git and is no longer refetched for a usage tick.
@@ -1113,7 +1208,9 @@ describe("IssueDetail", () => {
       linked_pull_request: null,
     };
     renderDetail(() => closedNoPr, {
-      "workflows/list": () => [{ id: 9, name: "Standard" }],
+      "workflows/list": () => [
+        { id: 9, name: "Standard", scope: { kind: "global" } },
+      ],
     });
 
     expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
@@ -1143,9 +1240,23 @@ describe("IssueDetail", () => {
           id: 9,
           name: "Standard",
           description: "Implement the issue, then verify the result.",
+          scope: { kind: "global" },
         },
-        { id: 10, name: "No description", description: null },
-        { id: 11, name: "Detailed workflow", description: longDescription },
+        {
+          id: 10,
+          name: "No description",
+          description: null,
+          scope: {
+            kind: "repository",
+            repo: { id: 1, owner: "me", name: "proj" },
+          },
+        },
+        {
+          id: 11,
+          name: "Detailed workflow",
+          description: longDescription,
+          scope: { kind: "global" },
+        },
       ],
     });
 
@@ -1171,9 +1282,10 @@ describe("IssueDetail", () => {
     ).toBeTruthy();
 
     const noDescription = screen.getByRole("menuitem", {
-      name: "No description",
+      name: /No description/,
     });
-    expect(noDescription.textContent).toBe("No description");
+    expect(noDescription.textContent).toBe("No descriptionme/proj");
+    expect(within(noDescription).getByText("me/proj")).toBeTruthy();
 
     const detailed = screen.getByRole("menuitem", {
       name: `Detailed workflow ${longDescription}`,
@@ -1190,6 +1302,44 @@ describe("IssueDetail", () => {
       workflow: "workflow-run",
       issueNumber: 12,
       workflowId: 9,
+    });
+  });
+
+  it("shows the repository workflow that overrides a same-name global workflow", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr, {
+      "workflows/list": () => [
+        {
+          id: 21,
+          name: "Standard",
+          description: "Repository loop",
+          scope: {
+            kind: "repository",
+            repo: { id: 1, owner: "me", name: "proj" },
+          },
+        },
+      ],
+    });
+
+    const button = await screen.findByRole("button", {
+      name: "Start workflow",
+    });
+    fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
+    const choices = await screen.findAllByRole("menuitem", {
+      name: /Standard/,
+    });
+    expect(choices).toHaveLength(1);
+    const repoLabel = within(choices[0]).getByText("me/proj");
+    const nameLabel = within(choices[0]).getByText("Standard");
+    expect(repoLabel.parentElement).toBe(nameLabel.parentElement);
+    expect(repoLabel.parentElement?.className).toContain("flex");
+    fireEvent.click(choices[0]);
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ workflowId: 21 }),
+    );
+    expect(rpcCall("workflows/list")?.params).toMatchObject({
+      applicable_to_repo: "me/proj",
     });
   });
 });

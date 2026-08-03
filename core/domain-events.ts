@@ -23,7 +23,8 @@ export type DomainFact =
       reason:
         | { kind: "manual" }
         | { kind: "linked_issue_closed"; issueNumber: number }
-        | { kind: "merged"; sha: string; method: PullMergeMethod };
+        | { kind: "merged"; sha: string; method: PullMergeMethod }
+        | { kind: "github_merged"; githubNumber: number; mergedAt: string };
     };
 
 export type DomainFactOf<T extends DomainFact["type"]> = Extract<
@@ -99,6 +100,16 @@ const persistedEventMappings = {
           payload: {
             number: fact.pullNumber,
             sha: fact.reason.sha,
+            source_payload_version: SOURCE_PAYLOAD_VERSION,
+          },
+        };
+      case "github_merged":
+        return {
+          type: "pull_request.merged",
+          payload: {
+            number: fact.pullNumber,
+            github_number: fact.reason.githubNumber,
+            github_merged_at: fact.reason.mergedAt,
             source_payload_version: SOURCE_PAYLOAD_VERSION,
           },
         };

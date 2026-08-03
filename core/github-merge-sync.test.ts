@@ -140,7 +140,7 @@ test("a detected GitHub merge creates one close-required notification without ch
   expect(matching).toEqual([
     expect.objectContaining({
       kind: "human_attention",
-      body: `GitHub reports me/proj PR #${number} as merged. Close the LoopHub PR manually to close it in LoopHub.`,
+      body: `GitHub reports me/proj PR #${number} as merged. Open this PR and select Mark as merged to complete it locally.`,
       resource: {
         kind: "pull",
         number,

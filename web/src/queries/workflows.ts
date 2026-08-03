@@ -15,11 +15,21 @@ import {
 import type { WorkflowContractLanguage } from "@/api/types";
 import { queryKeys } from "./keys";
 
-/** All workflows. */
-export function useWorkflows() {
+/** Global workflows, one repository's workflows, or workflows applicable to a repository. */
+export function useWorkflows(
+  input: { repo?: string; applicableToRepo?: string } = {},
+) {
   return useQuery({
-    queryKey: queryKeys.workflows(),
-    queryFn: listWorkflows,
+    queryKey: [
+      ...queryKeys.workflows(),
+      input.repo ?? "global",
+      input.applicableToRepo,
+    ],
+    queryFn: () =>
+      listWorkflows({
+        repo: input.repo,
+        applicable_to_repo: input.applicableToRepo,
+      }),
   });
 }
 
@@ -49,9 +59,9 @@ export function useUpdateWorkflow() {
   const invalidate = useInvalidateWorkflows();
   return useMutation({
     mutationFn: (vars: {
-      name: string;
+      id: number;
       patch: Omit<Partial<WorkflowInput>, "name"> & { new_name?: string };
-    }) => updateWorkflow(vars.name, vars.patch),
+    }) => updateWorkflow(vars.id, vars.patch),
     onSuccess: () => invalidate(),
   });
 }
@@ -59,7 +69,7 @@ export function useUpdateWorkflow() {
 export function useArchiveWorkflow() {
   const invalidate = useInvalidateWorkflows();
   return useMutation({
-    mutationFn: (name: string) => archiveWorkflow(name),
+    mutationFn: (id: number) => archiveWorkflow(id),
     onSuccess: () => invalidate(),
   });
 }

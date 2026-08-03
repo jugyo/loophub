@@ -13,27 +13,27 @@ import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
-import { useDeletePull, usePullDebug } from "@/queries/pulls";
+import { useArchivePull, usePullDebug } from "@/queries/pulls";
 
 export function PullDebugMenu({
   owner,
   repo,
   number,
-  onDeleted = () => {},
+  onArchived = () => {},
 }: {
   owner: string;
   repo: string;
   number: number;
-  onDeleted?: () => void;
+  onArchived?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const deletePull = useDeletePull(owner, repo, number);
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const archivePull = useArchivePull(owner, repo, number);
   const { showError } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
-  const deleteDialogBackdropDismiss = useBackdropDismiss(() => {
-    if (!deletePull.isPending) setConfirmingDelete(false);
+  const archiveDialogBackdropDismiss = useBackdropDismiss(() => {
+    if (!archivePull.isPending) setConfirmingArchive(false);
   });
 
   // Close the menu on outside click or Escape (native dropdown dismissal). The modal manages
@@ -94,57 +94,57 @@ export function PullDebugMenu({
             className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-accent hover:text-accent-foreground"
             onClick={() => {
               setMenuOpen(false);
-              setConfirmingDelete(true);
+              setConfirmingArchive(true);
             }}
           >
-            Delete
+            Archive
           </button>
         </div>
       ) : null}
 
-      {confirmingDelete ? (
+      {confirmingArchive ? (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12vh]"
-          {...deleteDialogBackdropDismiss}
+          {...archiveDialogBackdropDismiss}
         >
           <div
             role="dialog"
             aria-modal="true"
-            aria-label={`Delete PR #${number}?`}
+            aria-label={`Archive PR #${number}?`}
             className="w-full max-w-md rounded-lg border bg-background p-5 shadow-lg"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold">Delete PR #{number}?</h2>
+            <h2 className="text-lg font-semibold">Archive PR #{number}?</h2>
             <p className="mt-3 text-sm text-muted-foreground">
-              This removes the PR and its metadata. The related worktree will
-              not be changed.
+              This hides the PR from active lists while preserving its history
+              and link to the issue.
             </p>
-            {deletePull.error ? (
+            {archivePull.error ? (
               <p className="mt-3 text-sm text-destructive">
-                {deletePull.error instanceof Error
-                  ? deletePull.error.message
-                  : "Delete failed"}
+                {archivePull.error instanceof Error
+                  ? archivePull.error.message
+                  : "Archive failed"}
               </p>
             ) : null}
             <div className="mt-5 flex justify-end gap-2">
               <Button
                 variant="secondary"
-                disabled={deletePull.isPending}
-                onClick={() => setConfirmingDelete(false)}
+                disabled={archivePull.isPending}
+                onClick={() => setConfirmingArchive(false)}
               >
                 Cancel
               </Button>
               <Button
-                disabled={deletePull.isPending}
+                disabled={archivePull.isPending}
                 onClick={() =>
-                  deletePull.mutate(undefined, {
-                    onSuccess: onDeleted,
+                  archivePull.mutate(undefined, {
+                    onSuccess: onArchived,
                     onError: (error) =>
-                      showError(errorMessage(error, "Delete failed")),
+                      showError(errorMessage(error, "Archive failed")),
                   })
                 }
               >
-                {deletePull.isPending ? "Deleting…" : "Delete"}
+                {archivePull.isPending ? "Archiving…" : "Archive"}
               </Button>
             </div>
           </div>

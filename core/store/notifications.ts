@@ -177,6 +177,7 @@ export interface NotificationSourceCursors {
 export interface MergeReadyStateRow {
   state: MergeableState;
   transition_count: number;
+  updated_at: string;
 }
 
 export function recordMergeReadyState(
@@ -202,7 +203,7 @@ export function recordMergeReadyState(
   ).run(repoId, pullNumber, state, state, updatedAt);
   return db
     .query(
-      `SELECT state, transition_count
+      `SELECT state, transition_count, updated_at
        FROM notification_merge_ready_states
        WHERE repo_id = ? AND pull_number = ?`,
     )

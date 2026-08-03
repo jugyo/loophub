@@ -26,7 +26,7 @@ function renderMenu() {
     "fetch",
     mockRpcFetch({
       "pulls/debug": () => debugDump,
-      "pulls/delete": () => ({ ok: true }),
+      "pulls/archive": () => ({ ok: true }),
     }),
   );
   const queryClient = new QueryClient({
@@ -82,8 +82,8 @@ describe("PullDebugMenu", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("confirms deletion and calls the PR delete RPC", async () => {
-    const onDeleted = vi.fn();
+  it("confirms archiving and calls the PR archive RPC", async () => {
+    const onArchived = vi.fn();
     render(
       <QueryClientProvider
         client={
@@ -94,21 +94,23 @@ describe("PullDebugMenu", () => {
           owner="me"
           repo="proj"
           number={30}
-          onDeleted={onDeleted}
+          onArchived={onArchived}
         />
       </QueryClientProvider>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /PR actions/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /^Delete$/i }));
-    expect(screen.getByRole("dialog", { name: /Delete PR #30/i })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Archive$/i }));
+    expect(
+      screen.getByRole("dialog", { name: /Archive PR #30/i }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Archive$/i }));
 
-    await waitFor(() => expect(rpcCall("pulls/delete")).toBeTruthy());
-    expect(rpcCall("pulls/delete")!.params).toMatchObject({
+    await waitFor(() => expect(rpcCall("pulls/archive")).toBeTruthy());
+    expect(rpcCall("pulls/archive")!.params).toMatchObject({
       repo: "me/proj",
       number: 30,
     });
-    expect(onDeleted).toHaveBeenCalledOnce();
+    expect(onArchived).toHaveBeenCalledOnce();
   });
 });

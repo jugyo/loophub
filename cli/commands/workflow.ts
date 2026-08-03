@@ -961,14 +961,18 @@ async function costHold(): Promise<void> {
 export async function run(): Promise<void> {
   const s = await svc();
   if (sub === "list") {
-    const workflows = await runOp(() => s.workflows.list());
+    const workflows = await runOp(() =>
+      s.workflows.list(
+        flags.repo ? { scope: { repo: flags.repo } } : { scope: "global" },
+      ),
+    );
     out(workflows);
     if (!flags.json) {
       for (const w of workflows)
         console.log(`#${w.id}\t${w.name}\t${w.description}`);
     }
   } else if (sub === "view") {
-    const workflow = await runOp(() => s.workflows.get(nameArg()));
+    const workflow = await runOp(() => s.workflows.get(nameArg(), flags.repo));
     out(workflow);
     if (!flags.json) printWorkflow(workflow);
   } else if (sub === "create") {
@@ -978,6 +982,7 @@ export async function run(): Promise<void> {
         {
           name: nameArg(),
           description: flags.description,
+          repo: flags.repo,
           ...promptPatch,
         },
         await writeSession(),
@@ -1000,17 +1005,36 @@ export async function run(): Promise<void> {
     )
       fail("at least one workflow field must be provided");
     const workflow = await runOp(async () =>
-      s.workflows.update(nameArg(), patch, await writeSession()),
+      workflowIdFlag() !== undefined
+        ? s.workflows.updateById(workflowIdFlag()!, patch, await writeSession())
+        : s.workflows.update(
+            nameArg(),
+            patch,
+            await writeSession(),
+            flags.repo,
+          ),
     );
     if (flags.json) out(workflow);
     else console.log(`updated workflow "${workflow.name}"`);
   } else if (sub === "delete") {
-    const name = nameArg();
+    const id = workflowIdFlag();
+    const name = id === undefined ? nameArg() : undefined;
     const result = await runOp(async () =>
-      s.workflows.delete(name, await writeSession()),
+      id !== undefined
+        ? s.workflows.deleteById(id, await writeSession())
+        : s.workflows.delete(name!, await writeSession(), flags.repo),
     );
     if (flags.json) out(result);
-    else console.log(`deleted workflow "${name}"`);
+    else console.log(`deleted workflow ${name ? `"${name}"` : `#${id}`}`);
+  } else if (sub === "archive") {
+    const id = workflowIdFlag();
+    const workflow = await runOp(async () =>
+      id !== undefined
+        ? s.workflows.archiveById(id, await writeSession())
+        : s.workflows.archive(nameArg(), await writeSession(), flags.repo),
+    );
+    if (flags.json) out(workflow);
+    else console.log(`archived workflow "${workflow.name}"`);
   } else if (sub === "start") {
     await startWorkflow();
   } else if (sub === "launch-step") {
