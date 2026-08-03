@@ -49,15 +49,35 @@ function renderSection(fetchImpl: typeof fetch) {
         owner="me"
         repo="loophub"
         state={RUN}
-        showHistory
+        showDetail
       />
     </QueryClientProvider>,
   );
 }
 
-describe("Workflow run history dialog", () => {
-  it("fetches on open and shows metadata and separate rework step events", async () => {
+describe("Workflow run detail dialog", () => {
+  it("fetches on open and shows agent costs, metadata, and history", async () => {
     const fetchMock = mockRpcFetch({
+      "workflowRuns/agentCosts": () => [
+        {
+          session_id: "parent-session",
+          role: "parent",
+          sequence: null,
+          name: "orchestrator #7",
+          runtime: "codex",
+          cost_usd: 1.25,
+          cost_status: "known",
+        },
+        {
+          session_id: "execute-session",
+          role: "execute",
+          sequence: 1,
+          name: "executor #7-1",
+          runtime: "codex",
+          cost_usd: null,
+          cost_status: "pending",
+        },
+      ],
       "workflowRuns/history": () => [
         {
           id: 1,
@@ -99,10 +119,10 @@ describe("Workflow run history dialog", () => {
     renderSection(fetchMock);
 
     expect(fetchMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "View history" }));
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Workflow run 7 history",
+      name: "Workflow run 7 detail",
     });
     expect(within(dialog).getByText("standard · run 7")).toBeTruthy();
     expect(within(dialog).getByText("Current step")).toBeTruthy();
@@ -110,6 +130,11 @@ describe("Workflow run history dialog", () => {
     expect(within(dialog).getByText("1/8")).toBeTruthy();
     expect(within(dialog).getByText("Started")).toBeTruthy();
     expect(within(dialog).getByText("Updated")).toBeTruthy();
+    expect(await within(dialog).findByText("orchestrator #7")).toBeTruthy();
+    expect(within(dialog).getByText("$1.25")).toBeTruthy();
+    expect(within(dialog).getByText("executor #7-1")).toBeTruthy();
+    expect(within(dialog).getByText("Execute 1")).toBeTruthy();
+    expect(within(dialog).getByText("Pending")).toBeTruthy();
     expect(
       await within(dialog).findAllByText("Execute step started"),
     ).toHaveLength(2);
@@ -137,6 +162,10 @@ describe("Workflow run history dialog", () => {
       repo: "me/loophub",
       run: 7,
     });
+    expect(rpcCall("workflowRuns/agentCosts")?.params).toMatchObject({
+      repo: "me/loophub",
+      run: 7,
+    });
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -149,10 +178,11 @@ describe("Workflow run history dialog", () => {
     });
     renderSection(
       mockRpcFetch({
+        "workflowRuns/agentCosts": () => [],
         "workflowRuns/history": () => pending,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "View history" }));
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
     expect(
       await screen.findByText(/Loading Workflow run history/),
     ).toBeTruthy();
@@ -164,7 +194,7 @@ describe("Workflow run history dialog", () => {
     expect(screen.getByText(/database unavailable/)).toBeTruthy();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Close Workflow run history" }),
+      screen.getByRole("button", { name: "Close Workflow run detail" }),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -172,6 +202,7 @@ describe("Workflow run history dialog", () => {
   it("ranks entries by significance: notable stands out, routine plays down", async () => {
     renderSection(
       mockRpcFetch({
+        "workflowRuns/agentCosts": () => [],
         "workflowRuns/history": () => [
           {
             id: 1,
@@ -210,7 +241,7 @@ describe("Workflow run history dialog", () => {
         ],
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "View history" }));
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
 
     const escalated = (
       await screen.findByText("Human guidance requested")
@@ -251,10 +282,11 @@ describe("Workflow run history dialog", () => {
   it("shows an empty state when the run has no persisted lifecycle events", async () => {
     renderSection(
       mockRpcFetch({
+        "workflowRuns/agentCosts": () => [],
         "workflowRuns/history": () => [],
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "View history" }));
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
     expect(
       await screen.findByText(
         "No lifecycle events have been recorded for this run.",

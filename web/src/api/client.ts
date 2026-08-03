@@ -47,6 +47,7 @@ import type {
   WorkerCompatibility,
   Workflow,
   WorkflowContracts,
+  WorkflowRunAgentCost,
   WorkflowRunHistoryEvent,
   WorkflowRunState,
   Workspace,
@@ -365,6 +366,11 @@ export function getWorkflowRunStateForPull(repo: string, number: number) {
 /** Persisted lifecycle events for one Workflow run, fetched only when its history dialog opens. */
 export function getWorkflowRunHistory(repo: string, run: number) {
   return rpc<WorkflowRunHistoryEvent[]>("workflowRuns/history", { repo, run });
+}
+
+/** Persisted Workflow participants and their current per-session costs. */
+export function getWorkflowRunAgentCosts(repo: string, run: number) {
+  return rpc<WorkflowRunAgentCost[]>("workflowRuns/agentCosts", { repo, run });
 }
 
 /** Raise a cost-held run's budget by its persisted increment (#1828). */

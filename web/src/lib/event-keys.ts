@@ -62,6 +62,8 @@ export const queryKeys = {
     ["workflow-run", "pull", full, number] as const,
   workflowRunHistory: (full: string, run: number) =>
     ["workflow-run", "history", full, run] as const,
+  workflowRunAgentCosts: (full: string, run: number) =>
+    ["workflow-run", "agent-costs", full, run] as const,
 };
 
 function numberedSubject(
@@ -349,6 +351,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // those links are UI metadata whose related_sessions list and usage summary live in that
     // detail's query too.
     if (repo) {
+      keys.push(["workflow-run", "agent-costs", repo]);
       const prNumber = payload?.pr;
       const issueNumber = payload?.issue;
       // #2263: a running agent's usage counter is the app's highest-frequency event, and the only

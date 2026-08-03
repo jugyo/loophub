@@ -478,6 +478,29 @@ test("workflowRuns/history exposes only the requested run's lifecycle events", a
   });
 });
 
+test("workflowRuns/agentCosts exposes the requested run's persisted participants", async () => {
+  const agentCosts = vi.spyOn(svc.workflowRuns, "agentCosts").mockReturnValue([
+    {
+      session_id: "55555555-5555-4555-8555-555555555555",
+      role: "parent",
+      sequence: null,
+      name: "orchestrator #9",
+      runtime: "codex",
+      cost_usd: 2.5,
+      cost_status: "known",
+    },
+  ]);
+
+  const response: any = await call("workflowRuns/agentCosts", {
+    repo: "me/proj",
+    run: 9,
+  });
+  expect(response.result).toEqual([
+    expect.objectContaining({ role: "parent", cost_usd: 2.5 }),
+  ]);
+  expect(agentCosts).toHaveBeenCalledWith("me/proj", { run: 9 });
+});
+
 test("workflowRuns/increaseCostLimit raises a cost-held run from a Web session", async () => {
   const increase = vi
     .spyOn(svc.workflowRuns, "increaseCostLimitForHuman")

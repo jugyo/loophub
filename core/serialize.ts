@@ -1646,6 +1646,20 @@ export interface WorkflowRunHistoryEventWire {
   created_at: string;
 }
 
+export type WorkflowRunAgentRoleWire = "parent" | "execute" | "verify";
+
+// One persisted agent session that participated in a Workflow run. Cost status distinguishes a
+// session that has not been observed yet from one whose recorded model has no known price.
+export interface WorkflowRunAgentCostWire {
+  session_id: string;
+  role: WorkflowRunAgentRoleWire;
+  sequence: number | null;
+  name: string | null;
+  runtime: string | null;
+  cost_usd: number | null;
+  cost_status: "known" | "unknown" | "pending";
+}
+
 function workflowStepLabel(value: unknown): string | null {
   if (typeof value !== "string" || value.length === 0) return null;
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;

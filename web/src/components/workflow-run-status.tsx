@@ -25,7 +25,7 @@ import {
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { WorkflowRunHistoryDialog } from "@/components/workflow-run-history-dialog";
+import { WorkflowRunDetailDialog } from "@/components/workflow-run-history-dialog";
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
 import { useHerdrSessions } from "@/queries/terminal";
 
@@ -58,18 +58,18 @@ export function WorkflowRunStatusSection({
   owner,
   repo,
   state,
-  showHistory = false,
+  showDetail = false,
 }: {
   owner: string;
   repo: string;
   state: WorkflowRunState | null | undefined;
-  showHistory?: boolean;
+  showDetail?: boolean;
 }) {
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [acknowledgedCostHold, setAcknowledgedCostHold] =
     useState<AcknowledgedCostHold | null>(null);
-  // Pull detail already loads this shared query for its Agents section. Observe that cache
-  // without starting a second, otherwise-unrelated request when this section is rendered alone.
+  // Pull detail already loads this shared query for merge safety. Observe that cache without
+  // starting a second, otherwise-unrelated request when this section is rendered alone.
   const { data: herdrSessions, isError: herdrSessionsError } = useHerdrSessions(
     { enabled: false },
   );
@@ -178,25 +178,25 @@ export function WorkflowRunStatusSection({
           <NeedsHumanNotice owner={owner} repo={repo} state={displayState} />
         ) : null}
 
-        {showHistory ? (
+        {showDetail ? (
           <div>
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              onClick={() => setHistoryOpen(true)}
+              onClick={() => setDetailOpen(true)}
             >
-              <History className="size-3.5" /> View history
+              <History className="size-3.5" /> Detail
             </Button>
           </div>
         ) : null}
       </div>
-      {historyOpen ? (
-        <WorkflowRunHistoryDialog
+      {detailOpen ? (
+        <WorkflowRunDetailDialog
           owner={owner}
           repo={repo}
           state={state}
-          onClose={() => setHistoryOpen(false)}
+          onClose={() => setDetailOpen(false)}
         />
       ) : null}
     </section>

@@ -23,6 +23,7 @@ import {
   effectiveRepoAgentConfigFor,
   type WorkflowOutOfBandReviewWire,
   type WorkflowPendingEffectReceiptWire,
+  type WorkflowRunAgentCostWire,
   type WorkflowRunHistoryEventWire,
   type WorkflowRunReviewSummaryWire,
   type WorkflowRunStateWire,
@@ -217,6 +218,63 @@ function workflowRunCost(run: S.WorkflowRunRow) {
     ...workflowRunCostBudget(run),
     summary: S.sessionUsageCostSummaryForSessions(sessionIds),
   };
+}
+
+function workflowRunAgentCosts(
+  run: S.WorkflowRunRow,
+): WorkflowRunAgentCostWire[] {
+  const candidates: Array<{
+    sessionId: string;
+    role: WorkflowRunAgentCostWire["role"];
+    sequence: number | null;
+  }> = [
+    ...(run.parent_session_id
+      ? [
+          {
+            sessionId: run.parent_session_id,
+            role: "parent" as const,
+            sequence: null,
+          },
+        ]
+      : []),
+    ...workflowStepSessionIds(run.step_sessions_json, "execute").map(
+      (sessionId, index) => ({
+        sessionId,
+        role: "execute" as const,
+        sequence: index + 1,
+      }),
+    ),
+    ...workflowStepSessionIds(run.step_sessions_json, "verify").map(
+      (sessionId, index) => ({
+        sessionId,
+        role: "verify" as const,
+        sequence: index + 1,
+      }),
+    ),
+  ];
+  const seen = new Set<string>();
+  return candidates.flatMap(({ sessionId, role, sequence }) => {
+    if (seen.has(sessionId)) return [];
+    seen.add(sessionId);
+    const session = S.getAgentSession(sessionId);
+    const summary = S.sessionUsageCostSummaryForSessions([sessionId]);
+    const costStatus = summary.unobserved_session_ids.length
+      ? "pending"
+      : summary.unknown_cost_session_ids.length
+        ? "unknown"
+        : "known";
+    return [
+      {
+        session_id: sessionId,
+        role,
+        sequence,
+        name: session?.name ?? null,
+        runtime: session?.runtime ?? null,
+        cost_usd: summary.cost_usd,
+        cost_status: costStatus,
+      },
+    ];
+  });
 }
 
 export type WorkflowConfirmStepLaunchResult = {
@@ -2398,5 +2456,20 @@ export const workflowRuns = {
         reviewId === null ? null : (reviewVerdicts.get(reviewId) ?? null),
       );
     });
+  },
+
+  // Persisted participants and their current usage costs for the Workflow detail dialog. The run
+  // row owns membership; PR-related sessions and live terminal panes can include unrelated work.
+  agentCosts(
+    name: string,
+    input: { run: number },
+    _sessionId?: string | null,
+  ): WorkflowRunAgentCostWire[] {
+    const r = repoOr404(name);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    return workflowRunAgentCosts(run);
   },
 };

@@ -59,6 +59,7 @@ import type {
   WorkerCompatibilityWire,
   WorkflowContractLanguageWire,
   WorkflowContractsWire,
+  WorkflowRunAgentCostWire,
   WorkflowRunHistoryEventWire,
   WorkflowRunReviewSummaryWire,
   WorkflowRunStateWire,
@@ -261,6 +262,7 @@ export type WorkerCompatibility = WorkerCompatibilityWire;
 
 /** Display state of a Workflow run linked to an issue / PR (#1008). */
 export type WorkflowRunState = WorkflowRunStateWire;
+export type WorkflowRunAgentCost = WorkflowRunAgentCostWire;
 export type WorkflowRunHistoryEvent = WorkflowRunHistoryEventWire;
 export type WorkflowRunReviewSummary = WorkflowRunReviewSummaryWire;
 /** One per-criterion rubric grade attached to a review (#1895). */

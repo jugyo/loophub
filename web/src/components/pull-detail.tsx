@@ -34,7 +34,6 @@ import {
   DiffFeedbackHistory,
   DiffFileDialog,
 } from "@/components/pull-diff-dialog";
-import { PullHerdrSection } from "@/components/pull-herdr-section";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
@@ -211,7 +210,6 @@ export function PullDetail({
           className="flex w-full shrink-0 flex-col gap-6 lg:w-80"
         >
           <WorkflowRunSection owner={owner} repo={repo} number={number} />
-          <PullHerdrSection owner={owner} repo={repo} pull={number} />
           <WorktreeSection value={pull.worktree_path} />
           {/* GitHub PR status (#850): only for a PR with a linked GitHub PR. Fetched on demand;
             loading/error live in the section. */}
@@ -223,7 +221,7 @@ export function PullDetail({
             />
           ) : null}
           {/* Work duration sits at the bottom of the sidebar (#627): a low-priority historical
-            summary that ranks below the live Workflow and Agents state above. */}
+            summary that ranks below the live Workflow state above. */}
           <WorkDuration workDuration={pull.work_duration} />
         </aside>
       </div>
@@ -277,7 +275,7 @@ function WorkflowRunSection({
       owner={owner}
       repo={repo}
       state={query.data}
-      showHistory
+      showDetail
     />
   );
 }

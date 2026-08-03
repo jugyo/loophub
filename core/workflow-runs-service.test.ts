@@ -3710,6 +3710,107 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
   expect(history[0].input).toBeNull();
 });
 
+test("agentCosts returns only the persisted participants with per-session cost state", () => {
+  const repo = S.createRepo("me/workflow-agent-costs", REPO_PATH);
+  const workflow = S.createWorkflow({
+    name: "agent-costs-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "11111111-0000-4000-8000-000000000001";
+  const execute = "11111111-0000-4000-8000-000000000002";
+  const verify = "11111111-0000-4000-8000-000000000003";
+  const unrelated = "11111111-0000-4000-8000-000000000004";
+  S.registerAgentSession(
+    parent,
+    "lh-workflow",
+    parent,
+    "orchestrator #1",
+    "codex",
+  );
+  S.registerAgentSession(
+    execute,
+    "workflow-step",
+    execute,
+    "executor #1-1",
+    "codex",
+  );
+  S.registerAgentSession(
+    verify,
+    "workflow-step",
+    verify,
+    "verifier #1-2",
+    "codex",
+  );
+  S.registerAgentSession(
+    unrelated,
+    "workflow-step",
+    unrelated,
+    "other agent",
+    "codex",
+  );
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 10,
+    prNumber: 20,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId: parent,
+  });
+  S.appendWorkflowRunStepSession(run.id, "execute", execute);
+  S.appendWorkflowRunStepSession(run.id, "verify", verify);
+  S.upsertSessionUsage(parent, {
+    model: "priced",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 1.25,
+  });
+  S.upsertSessionUsage(execute, {
+    model: "unpriced",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: null,
+  });
+
+  expect(svc.workflowRuns.agentCosts(repo.full_name, { run: run.id })).toEqual([
+    {
+      session_id: parent,
+      role: "parent",
+      sequence: null,
+      name: "orchestrator #1",
+      runtime: "codex",
+      cost_usd: 1.25,
+      cost_status: "known",
+    },
+    {
+      session_id: execute,
+      role: "execute",
+      sequence: 1,
+      name: "executor #1-1",
+      runtime: "codex",
+      cost_usd: null,
+      cost_status: "unknown",
+    },
+    {
+      session_id: verify,
+      role: "verify",
+      sequence: 1,
+      name: "verifier #1-2",
+      runtime: "codex",
+      cost_usd: null,
+      cost_status: "pending",
+    },
+  ]);
+});
+
 test("history ranks lifecycle events by what a human judges the run by (#1867)", () => {
   const repo = S.createRepo("me/workflow-routine", REPO_PATH);
   const workflow = S.createWorkflow({

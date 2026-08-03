@@ -1587,8 +1587,7 @@ describe("PullDetail", () => {
     expect(screen.queryByRole("button", { name: /^Resume$/ })).toBeNull();
   });
 
-  // The sidebar Agents section lists every Herdr pane whose cwd resolves to this PR.
-  it("shows the sidebar Agents section when a herdr session runs this PR", async () => {
+  it("does not show a sidebar Agents section when a herdr session runs this PR", async () => {
     renderDetail({
       "terminal/sessions": () => ({
         repos: [
@@ -1612,17 +1611,9 @@ describe("PullDetail", () => {
       }),
     });
 
-    expect(await screen.findByRole("heading", { name: "Agents" })).toBeTruthy();
-    expect(screen.getByText("dev #30")).toBeTruthy();
-  });
-
-  it("hides the sidebar Agents section when no herdr session runs this PR", async () => {
-    renderDetail({
-      "terminal/sessions": () => ({ repos: [] }),
-    });
-
     await screen.findByRole("button", { name: /^Merge$/i });
     expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
+    expect(screen.queryByText("dev #30")).toBeNull();
   });
 
   it("removes Sessions and Handoffs from the sidebar and does not fetch Handoffs", async () => {
@@ -1648,7 +1639,7 @@ describe("PullDetail", () => {
     expect(rpcCall("handoffs/list")).toBeUndefined();
   });
 
-  it("shows Workflow above Agents in the sidebar with history access", async () => {
+  it("shows Workflow in the sidebar with Detail access", async () => {
     renderDetail({
       "terminal/sessions": () => ({
         repos: [
@@ -1689,18 +1680,14 @@ describe("PullDetail", () => {
 
     await screen.findByText("Implementation loop");
     const workflowHeading = screen.getByRole("heading", { name: "Workflow" });
-    const agentsHeading = screen.getByRole("heading", { name: "Agents" });
     expect(workflowHeading.closest("aside")).toBeTruthy();
-    expect(
-      workflowHeading.compareDocumentPosition(agentsHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
     expect(screen.getByText("Implementation loop")).toBeTruthy();
     expect(screen.getByText("run 12")).toBeTruthy();
     expect(screen.getByText("Verify")).toBeTruthy();
     expect(screen.getByText("· rework ×2/8")).toBeTruthy();
     expect(screen.getByText("Needs human")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "View history" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Detail" })).toBeTruthy();
   });
 
   it("increases an over-budget Workflow run from the PR page", async () => {
@@ -1926,7 +1913,7 @@ describe("PullDetail", () => {
       screen.getByText("Verify passed for the current HEAD."),
     ).toBeTruthy();
     expect(screen.getByText("Verify")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "View history" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Detail" })).toBeTruthy();
     expect(screen.queryByText(/continuing/i)).toBeNull();
   });
 

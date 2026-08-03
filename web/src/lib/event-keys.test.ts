@@ -403,6 +403,7 @@ describe("queryKeysForEvent", () => {
       }),
     );
     expect(keys).toContainEqual(["agent-sessions"]);
+    expect(keys).toContainEqual(["workflow-run", "agent-costs", "me/proj"]);
     expect(keys).toContainEqual(["pull-usage", "me/proj", 7]);
     expect(keys).not.toContainEqual(["pull", "me/proj", 7]);
     expect(keys).not.toContainEqual(["issue", "me/proj", 4]);

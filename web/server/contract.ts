@@ -364,6 +364,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.workflowRuns.history(p.repo, { run: p.run }),
   },
+  "workflowRuns/agentCosts": {
+    description:
+      "List the persisted agent sessions that participated in one Workflow run and each session's current cost.",
+    params: params({ repo, run: positiveInt }, ["repo", "run"]),
+    result: anyArray,
+    handler: (p) => svc.workflowRuns.agentCosts(p.repo, { run: p.run }),
+  },
   "workflowRuns/increaseCostLimit": {
     description:
       "Increase a cost-held Workflow run's limit by its persisted fixed increment. The emitted event is the human continuation decision the parent resumes from (#1828).",

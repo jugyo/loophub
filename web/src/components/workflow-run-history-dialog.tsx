@@ -1,10 +1,18 @@
 import { ChevronRight, Loader2, X } from "lucide-react";
 import { useEffect } from "react";
-import type { WorkflowRunHistoryEvent, WorkflowRunState } from "@/api/types";
+import type {
+  WorkflowRunAgentCost,
+  WorkflowRunHistoryEvent,
+  WorkflowRunState,
+} from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatCost } from "@/lib/session-usage";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
-import { useWorkflowRunHistory } from "@/queries/workflow-runs";
+import {
+  useWorkflowRunAgentCosts,
+  useWorkflowRunHistory,
+} from "@/queries/workflow-runs";
 
 const STATUS_LABELS: Record<string, string> = {
   running: "Running",
@@ -39,7 +47,7 @@ function timestamp(value: string): string {
       }).format(date);
 }
 
-export function WorkflowRunHistoryDialog({
+export function WorkflowRunDetailDialog({
   owner,
   repo,
   state,
@@ -51,6 +59,7 @@ export function WorkflowRunHistoryDialog({
   onClose: () => void;
 }) {
   const history = useWorkflowRunHistory(owner, repo, state.id, true);
+  const agents = useWorkflowRunAgentCosts(owner, repo, state.id, true);
   const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
@@ -67,10 +76,10 @@ export function WorkflowRunHistoryDialog({
       {...backdropDismiss}
     >
       <div
-        data-debug-component="WorkflowRunHistoryDialog"
+        data-debug-component="WorkflowRunDetailDialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`Workflow run ${state.id} history`}
+        aria-label={`Workflow run ${state.id} detail`}
         className="flex w-full max-w-4xl flex-col rounded-lg border bg-background shadow-lg"
         onClick={(event) => event.stopPropagation()}
       >
@@ -80,13 +89,13 @@ export function WorkflowRunHistoryDialog({
               {state.workflow_name ?? "Workflow"} · run {state.id}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Lifecycle history for this Workflow run
+              Activity and agent costs for this Workflow run
             </p>
           </div>
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Close Workflow run history"
+            aria-label="Close Workflow run detail"
             onClick={onClose}
           >
             <X className="size-4" />
@@ -125,6 +134,51 @@ export function WorkflowRunHistoryDialog({
               dateTime={state.updated_at}
             />
           </dl>
+
+          <section
+            data-debug-component="WorkflowRunAgentCosts"
+            className="mt-6"
+            aria-labelledby="workflow-run-agent-costs-heading"
+          >
+            <h3
+              id="workflow-run-agent-costs-heading"
+              className="text-sm font-semibold"
+            >
+              Agents
+            </h3>
+            <div className="mt-3">
+              {agents.isLoading ? (
+                <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" /> Loading agent
+                  costs…
+                </div>
+              ) : agents.isError ? (
+                <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+                  Failed to load agent costs.
+                  {agents.error instanceof Error
+                    ? ` ${agents.error.message}`
+                    : null}
+                </div>
+              ) : agents.data?.length ? (
+                <div className="overflow-hidden rounded-md border">
+                  <div className="grid grid-cols-[minmax(0,1fr)_8rem_6rem] gap-3 border-b bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground">
+                    <span>Agent</span>
+                    <span>Role</span>
+                    <span className="text-right">Cost</span>
+                  </div>
+                  <ol className="divide-y">
+                    {agents.data.map((agent) => (
+                      <AgentCostRow key={agent.session_id} agent={agent} />
+                    ))}
+                  </ol>
+                </div>
+              ) : (
+                <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                  No agent sessions have been recorded for this run.
+                </p>
+              )}
+            </div>
+          </section>
 
           <section
             data-debug-component="WorkflowRunHistory"
@@ -166,6 +220,42 @@ export function WorkflowRunHistoryDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+function roleLabel(agent: WorkflowRunAgentCost): string {
+  if (agent.role === "parent") return "Parent";
+  return `${displayName(agent.role)} ${agent.sequence ?? ""}`.trim();
+}
+
+function agentName(agent: WorkflowRunAgentCost): string {
+  return agent.name ?? `${roleLabel(agent)} agent`;
+}
+
+function agentCost(agent: WorkflowRunAgentCost): string {
+  if (agent.cost_status === "pending") return "Pending";
+  if (agent.cost_status === "unknown") return "Unknown";
+  return formatCost(agent.cost_usd);
+}
+
+function AgentCostRow({ agent }: { agent: WorkflowRunAgentCost }) {
+  return (
+    <li className="grid grid-cols-[minmax(0,1fr)_8rem_6rem] items-center gap-3 px-4 py-3 text-sm">
+      <div className="min-w-0">
+        <div className="truncate font-medium" title={agentName(agent)}>
+          {agentName(agent)}
+        </div>
+        {agent.runtime ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {agent.runtime}
+          </div>
+        ) : null}
+      </div>
+      <span className="text-muted-foreground">{roleLabel(agent)}</span>
+      <span className="text-right font-medium tabular-nums">
+        {agentCost(agent)}
+      </span>
+    </li>
   );
 }
 

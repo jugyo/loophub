@@ -5,6 +5,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  getWorkflowRunAgentCosts,
   getWorkflowRunHistory,
   getWorkflowRunStateForPull,
   increaseWorkflowRunCostLimit,
@@ -61,6 +62,21 @@ export function useWorkflowRunHistory(
   return useQuery({
     queryKey: queryKeys.workflowRunHistory(full, run),
     queryFn: () => getWorkflowRunHistory(full, run),
+    enabled,
+  });
+}
+
+/** Persisted participants and costs. Disabled until the Workflow detail dialog is opened. */
+export function useWorkflowRunAgentCosts(
+  owner: string,
+  repo: string,
+  run: number,
+  enabled: boolean,
+) {
+  const full = `${owner}/${repo}`;
+  return useQuery({
+    queryKey: queryKeys.workflowRunAgentCosts(full, run),
+    queryFn: () => getWorkflowRunAgentCosts(full, run),
     enabled,
   });
 }
