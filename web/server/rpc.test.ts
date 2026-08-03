@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
@@ -199,6 +205,36 @@ test("worker status is exposed and an unconfirmed worker blocks only workflow la
 
   const issue: any = await call("issues/get", { repo: "me/proj", number: 1 });
   expect(issue.result.title).toBe("hello");
+});
+
+test("terminal launch diagnostics are written to stderr and the web log", async () => {
+  const diagnostic = "terminal launch diagnostic from service";
+  const launch = vi
+    .spyOn(svc.terminal, "launch")
+    .mockImplementationOnce(async (_input, reportError) => {
+      reportError?.(diagnostic);
+      throw new ServiceError(500, "launch failed");
+    });
+  const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  try {
+    const response: any = await call("terminal/launch", {
+      repo: "me/proj",
+      workflow: "github-pr-export",
+    });
+
+    expect(response.error.data.status).toBe(500);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining(diagnostic));
+    const logDirectory = join(HOME, "logs");
+    const content = readdirSync(logDirectory)
+      .filter((name) => name.startsWith("lh-web.") && name.endsWith(".log"))
+      .map((name) => readFileSync(join(logDirectory, name), "utf8"))
+      .join("\n");
+    expect(content).toContain(diagnostic);
+  } finally {
+    launch.mockRestore();
+    stderr.mockRestore();
+  }
 });
 
 test("search/query routes a repository-scoped query to the search service", async () => {

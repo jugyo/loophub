@@ -16,9 +16,8 @@ let args: LhWebArgs;
 try {
   args = parseLhWebArgs(process.argv.slice(2));
 } catch (error) {
-  process.stderr.write(
-    `${error instanceof Error ? error.message : String(error)}\n\n${LH_WEB_HELP}`,
-  );
+  log.error(error instanceof Error ? error.message : String(error));
+  process.stderr.write(`\n${LH_WEB_HELP}`);
   process.exit(1);
 }
 if (args.help) {
@@ -57,6 +56,20 @@ try {
   log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
   process.exit(1);
 }
+
+server.on("error", (error) => {
+  log.error(
+    `lh-web: server error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+  );
+  const closeVite = vite ? vite.close() : Promise.resolve();
+  void closeVite
+    .catch((closeError) => {
+      log.error(
+        `lh-web: shutdown error: ${closeError instanceof Error ? closeError.message : String(closeError)}`,
+      );
+    })
+    .finally(() => process.exit(1));
+});
 
 server.listen(port, host, () => {
   const shown = host === "127.0.0.1" ? "localhost" : host;

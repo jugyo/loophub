@@ -22,6 +22,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let S: typeof import("../core/store.ts");
 let R: typeof import("./runner.ts");
 let P: typeof import("./diff-feedback-projection.ts");
+let L: typeof import("./logger.ts");
 let svc: typeof import("../core/service.ts");
 
 // Init a git repo whose working tree is the repo's local_path, with a workflow.yml.
@@ -52,6 +53,7 @@ beforeAll(async () => {
   svc = await import("../core/service.ts");
   R = await import("./runner.ts");
   P = await import("./diff-feedback-projection.ts");
+  L = await import("./logger.ts");
 });
 
 afterAll(() => {
@@ -178,7 +180,6 @@ test("diff feedback projection is independent from workflow dispatch", async () 
       expect.stringContaining(
         `diff feedback projection error event_id=${rows[2].id + 1} event_type=pull_request.updated repo=jugyo/feedback-cache pr=${pr.number}`,
       ),
-      expect.any(Error),
     );
   } finally {
     errors.mockRestore();
@@ -261,6 +262,26 @@ test("events without a workflow.yml or unsupported types are no-ops", async () =
     out.mockRestore();
   }
   rmSync(repoPath, { recursive: true, force: true });
+});
+
+test("an invalid workflow is reported to stderr and the worker log", async () => {
+  const repoPath = await makeRepo("on: [this: is: invalid: yaml");
+  const repo = S.createRepo("jugyo/wf-invalid", repoPath);
+  const row = S.emitEvent(repo.id, "issue.opened", "me", { number: 1 });
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  try {
+    await R.dispatchEvent(row);
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining(`workflow: ignoring invalid ${WORKFLOW_PATH}`),
+    );
+    expect(readFileSync(L.workerLogFilePath(), "utf8")).toContain(
+      `workflow: ignoring invalid ${WORKFLOW_PATH}`,
+    );
+  } finally {
+    error.mockRestore();
+    rmSync(repoPath, { recursive: true, force: true });
+  }
 });
 
 test("a failed event dispatch logs its duration and context once", async () => {

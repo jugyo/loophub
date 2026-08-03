@@ -53,7 +53,10 @@ export function parseWorkflow(text: string): Workflow {
 
 // Load + parse the repo's workflow file. Returns null when the file is absent (no workflow)
 // or unparseable (logged, not thrown) — the worker continues either way.
-export function loadWorkflow(repoLocalPath: string): Workflow | null {
+export function loadWorkflow(
+  repoLocalPath: string,
+  logError: (message: string) => void = console.error,
+): Workflow | null {
   let text: string;
   try {
     text = readFileSync(join(repoLocalPath, WORKFLOW_PATH), "utf8");
@@ -64,7 +67,7 @@ export function loadWorkflow(repoLocalPath: string): Workflow | null {
     return parseWorkflow(text);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(
+    logError(
       `workflow: ignoring invalid ${WORKFLOW_PATH} in ${repoLocalPath}: ${msg}`,
     );
     return null;

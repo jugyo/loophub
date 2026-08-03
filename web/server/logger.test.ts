@@ -1,11 +1,12 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-// Isolate the log directory before importing the logger (LOGS_DIR is resolved at import time).
-const dir = mkdtempSync(join(tmpdir(), "lh-web-log-"));
-process.env.LOOPHUB_WEB_LOG_DIR = dir;
+// Isolate LOOPHUB_HOME before importing the logger (its file path is resolved at import time).
+const home = mkdtempSync(join(tmpdir(), "lh-web-log-"));
+const previousHome = process.env.LOOPHUB_HOME;
+process.env.LOOPHUB_HOME = home;
 
 let L: typeof import("./logger.ts");
 beforeAll(async () => {
@@ -13,7 +14,9 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  rmSync(dir, { recursive: true, force: true });
+  if (previousHome === undefined) delete process.env.LOOPHUB_HOME;
+  else process.env.LOOPHUB_HOME = previousHome;
+  rmSync(home, { recursive: true, force: true });
 });
 
 describe("web logger", () => {
@@ -31,7 +34,8 @@ describe("web logger", () => {
     out.mockRestore();
     err.mockRestore();
 
-    const content = readFileSync(join(dir, "lh-web.log"), "utf8");
+    expect(dirname(L.logFilePath())).toBe(join(home, "logs"));
+    const content = readFileSync(L.logFilePath(), "utf8");
     const lines = content.trim().split("\n");
     expect(lines).toHaveLength(3);
     // [ISO-timestamp] LEVEL message
@@ -45,9 +49,7 @@ describe("web logger", () => {
     L.log.error("line1\nfake [2026-01-01T00:00:00.000Z] ERROR forged\r\nx");
     vi.restoreAllMocks();
 
-    const lines = readFileSync(join(dir, "lh-web.log"), "utf8")
-      .trim()
-      .split("\n");
+    const lines = readFileSync(L.logFilePath(), "utf8").trim().split("\n");
     const last = lines[lines.length - 1];
     // The whole message stays on one physical line.
     expect(last).toBe(last.replace(/\n/g, ""));
@@ -60,9 +62,7 @@ describe("web logger", () => {
     L.log.error("a\x1b[31mred\x07\x08b");
     vi.restoreAllMocks();
 
-    const lines = readFileSync(join(dir, "lh-web.log"), "utf8")
-      .trim()
-      .split("\n");
+    const lines = readFileSync(L.logFilePath(), "utf8").trim().split("\n");
     const last = lines[lines.length - 1];
     // No control characters survive in the persisted line.
     expect(

@@ -1,7 +1,7 @@
 // Human-action log for the lh-web backend. A human driving the Web UI fires JSON-RPC methods;
-// this module emits one `log.info` line (stdout + logs/lh-web.log) per action so an operator
-// watching the terminal can see who did what — which workflow was launched, which pane was
-// killed, which PR was merged. Only methods a human triggers that mutate herdr or PR state are
+// this module emits one `log.info` line (stdout + the current hourly lh-web log) per action so an
+// operator watching the terminal can see who did what — which workflow was launched, which pane
+// was killed, which PR was merged. Only methods a human triggers that mutate herdr or PR state are
 // listed here; read-only queries and mechanical/sweep RPCs are intentionally absent so the log
 // stays signal, not noise.
 import { log } from "./logger.ts";

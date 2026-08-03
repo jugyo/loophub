@@ -334,18 +334,19 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
   });
 
   test("logs a bounded stderr tail server-side, but never in the client-facing error (#584 security review)", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
+    const reportError = vi.fn();
     lhDev.script.push(exitWithStderr(1, "error 404: Not Found\n"));
 
     const err = await svc.terminal
-      .launch({
-        repo: "me/proj",
-        workflow: "workflow-run",
-        issueNumber: 1,
-        workflowId: 9,
-      })
+      .launch(
+        {
+          repo: "me/proj",
+          workflow: "workflow-run",
+          issueNumber: 1,
+          workflowId: 9,
+        },
+        reportError,
+      )
       .then(
         () => null,
         (e: unknown) => e as { message: string },
@@ -355,12 +356,10 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
     // absolute paths or a stack trace, so it must never reach the RPC caller.
     expect(err?.message).toBe("lh workflow start exited with status 1");
     expect(
-      consoleError.mock.calls.some((call) =>
+      reportError.mock.calls.some((call) =>
         String(call[0]).includes("error 404: Not Found"),
       ),
     ).toBe(true);
-
-    consoleError.mockRestore();
   });
 
   test("surfaces a signal-killed child distinctly from a plain exit", async () => {
@@ -1229,15 +1228,22 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       ...Array.from({ length: 4 }, () => exitWith(0)),
     );
 
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-create",
-      label: "New issue",
-    });
+    const reportError = vi.fn();
+    await svc.terminal.launch(
+      {
+        repo: "me/proj",
+        workflow: "issue-create",
+        label: "New issue",
+      },
+      reportError,
+    );
 
     const tabCreate = herdr.calls[2];
     expect(tabCreate).toEqual(expect.arrayContaining(["tab", "create"]));
     expect(tabCreate).not.toContain("--workspace");
+    expect(reportError).toHaveBeenCalledWith(
+      expect.stringContaining("no usable workspace id"),
+    );
   });
 
   test("still preserves the shared workspace when its id is recovered from the seeded tab", async () => {

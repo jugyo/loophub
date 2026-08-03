@@ -24,7 +24,7 @@ import {
   type WorkflowStep,
 } from "../core/workflow.ts";
 import { scheduleDiffFeedbackProjection } from "./diff-feedback-projection.ts";
-import { workerLog } from "./logger.ts";
+import { workerErrorDetail, workerLog } from "./logger.ts";
 
 const DEFAULT_POLL_MS = 1000;
 const PAGE = 100;
@@ -164,21 +164,20 @@ async function dispatchEventOperation(
         issueNumber: number,
       });
       if (result.failed > 0) {
-        console.error(
+        workerLog.error(
           `lh-worker: issue close herdr cleanup failed for ${repo.full_name}#${number}`,
         );
       }
     } catch (e) {
-      console.error(
-        `lh-worker: issue close herdr cleanup error (event ${row.id}):`,
-        e,
+      workerLog.error(
+        `lh-worker: issue close herdr cleanup error (event ${row.id}): ${workerErrorDetail(e)}`,
       );
     }
   }
 
   if (!isSupported(row.type)) return;
 
-  const workflow = loadWorkflow(repo.local_path);
+  const workflow = loadWorkflow(repo.local_path, workerLog.error);
   if (!workflow) return;
   const steps = stepsFor(workflow, row.type);
   if (steps.length === 0) return;
@@ -226,7 +225,9 @@ async function dispatchEventOperation(
       result = await runStep(step, repo.local_path, env, logFile);
     } catch (e) {
       // runStep is defensive, but never let one step abort the rest of the event.
-      console.error(`lh-worker: step error (event ${row.id}):`, e);
+      workerLog.error(
+        `lh-worker: step error (event ${row.id}): ${workerErrorDetail(e)}`,
+      );
       result = { exitCode: 1, durationMs: 0 };
     }
     logWorkflowStepCompleted(context, stepIndex, result);
@@ -349,7 +350,9 @@ export function startWorker(
   // Not unref'd: the poll timer is what keeps the standalone lh-worker process alive (unlike
   // lh-web, which is held open by its HTTP server). stop() clears it for embedded/test callers.
   const timer = setInterval(() => {
-    drain().catch((e) => console.error("lh-worker: drain error:", e));
+    drain().catch((e) =>
+      workerLog.error(`lh-worker: drain error: ${workerErrorDetail(e)}`),
+    );
   }, pollMs);
 
   return {

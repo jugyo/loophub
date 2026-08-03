@@ -5,6 +5,7 @@
 // validates incoming params before calling the handler.
 import * as svc from "../../core/service.ts";
 import { THEME_IDS } from "../../core/theme.ts";
+import { log } from "./logger.ts";
 import { webRuntimeConfig } from "./runtime-config.ts";
 
 export const PROTOCOL_VERSION = "2026-08-02";
@@ -419,19 +420,22 @@ export const methods: Record<string, MethodDef> = {
     ),
     result: anyObject,
     handler: (p) =>
-      svc.terminal.launch({
-        repo: p.repo,
-        label: p.label,
-        workflow: p.workflow,
-        issueNumber: p.issueNumber,
-        prNumber: p.prNumber,
-        workflowId: p.workflowId,
-        targetBranch: p.targetBranch,
-        prompt: p.prompt,
-        agent: p.agent,
-        model: p.model,
-        effort: p.effort,
-      }),
+      svc.terminal.launch(
+        {
+          repo: p.repo,
+          label: p.label,
+          workflow: p.workflow,
+          issueNumber: p.issueNumber,
+          prNumber: p.prNumber,
+          workflowId: p.workflowId,
+          targetBranch: p.targetBranch,
+          prompt: p.prompt,
+          agent: p.agent,
+          model: p.model,
+          effort: p.effort,
+        },
+        log.error,
+      ),
   },
 
   "terminal/sessions": {

@@ -143,6 +143,7 @@ function runLhDevLaunch(
   args: string[],
   cwd: string,
   label = "lh workflow start",
+  reportError: (message: string) => void = console.error,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("lh", args, {
@@ -175,7 +176,7 @@ function runLhDevLaunch(
     // Server-side only — never interpolated into a thrown ServiceError (see the const's comment).
     const logStderrTail = () => {
       const tail = Buffer.concat(chunks).toString("utf8").trim();
-      if (tail) console.error(`${label} --herdr failed:\n${tail}`);
+      if (tail) reportError(`${label} --herdr failed:\n${tail}`);
     };
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
@@ -232,6 +233,7 @@ async function launchWorkflowRunHerdr(
   r: S.Repo,
   issueNumber: number,
   workflowId: number,
+  reportError: (message: string) => void,
 ): Promise<TerminalLaunchResultWire> {
   const repo = { full_name: r.full_name, local_path: r.local_path };
   const args = [
@@ -243,7 +245,7 @@ async function launchWorkflowRunHerdr(
     "--herdr",
   ];
   try {
-    await runLhDevLaunch(args, r.local_path, "lh workflow start");
+    await runLhDevLaunch(args, r.local_path, "lh workflow start", reportError);
   } catch (e) {
     if (isServiceError(e))
       throw new ServiceError(e.status, e.message, {
@@ -475,7 +477,10 @@ function acquireHerdrWorktreeWorkspace(
 
 // ===== terminal launch =====
 export const terminal = {
-  async launch(input: TerminalLaunchInput): Promise<TerminalLaunchResultWire> {
+  async launch(
+    input: TerminalLaunchInput,
+    reportError: (message: string) => void = console.error,
+  ): Promise<TerminalLaunchResultWire> {
     // New workflow (Settings > Workflows) is global: `lh workflow create` takes no repo, so this
     // launch has none to pin to. It runs from the LoopHub-home cwd instead and skips all the
     // repo/worktree machinery below (#1889). Worker compatibility deliberately gates only
@@ -506,7 +511,12 @@ export const terminal = {
           `lh-worker is ${compatibility.status}; start or restart it before starting a workflow (required protocol ${compatibility.required_protocol_version}, observed ${observed})`,
         );
       }
-      return launchWorkflowRunHerdr(r, input.issueNumber, input.workflowId);
+      return launchWorkflowRunHerdr(
+        r,
+        input.issueNumber,
+        input.workflowId,
+        reportError,
+      );
     }
 
     const issueCreateLaunchId =
@@ -673,7 +683,7 @@ export const terminal = {
       // failure (no id) — every such launch leaks one empty workspace. Log server-side (never to
       // the client) so a herdr output-format drift is noticed instead of silently leaking them.
       if (createdWorkspace && !workspaceId)
-        console.error(
+        reportError(
           "herdr workspace create succeeded but its output had no usable workspace id; failure cleanup may be unable to remove it",
         );
     } catch (error) {
@@ -761,15 +771,14 @@ export const terminal = {
       closeManagedHerdrPaneIfUnclaimed(r, registeredPane.id).then(
         (cleanup) => {
           if (cleanup === "failed") {
-            console.error(
+            reportError(
               `New Issue pane cleanup failed after late registration for ${r.full_name}`,
             );
           }
         },
         (error) => {
-          console.error(
-            `New Issue pane cleanup error after late registration for ${r.full_name}:`,
-            error,
+          reportError(
+            `New Issue pane cleanup error after late registration for ${r.full_name}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
           );
         },
       );

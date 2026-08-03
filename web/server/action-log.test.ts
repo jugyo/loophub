@@ -11,9 +11,10 @@ import {
   vi,
 } from "vitest";
 
-// Isolate the log directory before importing the logger (LOGS_DIR is resolved at import time).
-const dir = mkdtempSync(join(tmpdir(), "lh-web-action-log-"));
-process.env.LOOPHUB_WEB_LOG_DIR = dir;
+// Isolate LOOPHUB_HOME before importing the logger (its file path is resolved at import time).
+const home = mkdtempSync(join(tmpdir(), "lh-web-action-log-"));
+const previousHome = process.env.LOOPHUB_HOME;
+process.env.LOOPHUB_HOME = home;
 
 let A: typeof import("./action-log.ts");
 beforeAll(async () => {
@@ -25,7 +26,9 @@ afterEach(() => {
 });
 
 afterAll(() => {
-  rmSync(dir, { recursive: true, force: true });
+  if (previousHome === undefined) delete process.env.LOOPHUB_HOME;
+  else process.env.LOOPHUB_HOME = previousHome;
+  rmSync(home, { recursive: true, force: true });
 });
 
 // The action log routes through log.info, which console.log's to stdout.

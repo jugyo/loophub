@@ -1,36 +1,23 @@
 // File logger for the lh-web backend. Unifies the server's diagnostics through a single leveled
-// API: each call writes a timestamped, leveled line to the console AND appends it to a log file
-// under the repository's `logs/` directory (gitignored), so there is a persistent record after
-// the process exits. Console routing follows the level — info -> stdout, warn/error -> stderr —
-// which is why the startup banner (formerly console.error on stderr) now goes to stdout as info.
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+// API: each call writes a timestamped, leveled line to the console AND appends it to a UTC-hour
+// log file under `$LOOPHUB_HOME/logs/`. Files intersecting the previous 24 hours remain available
+// after the process exits. Console routing follows the level — info -> stdout, warn/error ->
+// stderr.
+import { join } from "node:path";
+import { logsDir } from "../../core/config.ts";
+import { createRotatingLogWriter } from "../../core/rotating-log.ts";
 
-// Repository root (web/server/ -> ../.. ). Resolved from this module's location rather than
-// cwd so the log directory is stable regardless of where `lh-web` is launched from.
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-// Default to the repo's gitignored `logs/`; LOOPHUB_WEB_LOG_DIR overrides it (used by tests).
-const LOGS_DIR = process.env.LOOPHUB_WEB_LOG_DIR ?? join(REPO_ROOT, "logs");
-const LOG_FILE = join(LOGS_DIR, "lh-web.log");
+const LOG_FILE = join(logsDir(), "lh-web.log");
 
 export type LogLevel = "info" | "warn" | "error";
 
-// Create logs/ on first write so importing this module never touches the filesystem (keeps
-// tests that import server modules side-effect-free) and the dir is auto-created at startup.
-let dirReady = false;
 let fileDisabled = false;
+const fileLog = createRotatingLogWriter(LOG_FILE);
 
-function appendLine(line: string): void {
+function appendLine(line: string, now: Date): void {
   if (fileDisabled) return;
   try {
-    if (!dirReady) {
-      // Restrict to the owner: the file persists error messages / stack traces that may carry
-      // repo paths or other sensitive context, and lh-web can be launched on shared hosts.
-      mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
-      dirReady = true;
-    }
-    appendFileSync(LOG_FILE, `${line}\n`, { mode: 0o600 });
+    fileLog.append(line, now);
   } catch {
     // A file-logging failure must never crash the server: drop file output, keep the console.
     fileDisabled = true;
@@ -48,11 +35,12 @@ function sanitize(message: string): string {
 }
 
 function write(level: LogLevel, message: string): void {
-  const line = `[${new Date().toISOString()}] ${level.toUpperCase()} ${sanitize(message)}`;
+  const now = new Date();
+  const line = `[${now.toISOString()}] ${level.toUpperCase()} ${sanitize(message)}`;
   // Preserve existing behavior: info -> stdout, warn/error -> stderr.
   if (level === "info") console.log(line);
   else console.error(line);
-  appendLine(line);
+  appendLine(line, now);
 }
 
 export const log = {
@@ -62,4 +50,4 @@ export const log = {
 };
 
 // Exposed for tests / diagnostics.
-export const logFilePath = LOG_FILE;
+export const logFilePath = (now = new Date()) => fileLog.path(now);

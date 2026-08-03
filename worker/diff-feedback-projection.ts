@@ -1,4 +1,5 @@
 import { diffFeedback, repos } from "../core/service.ts";
+import { workerErrorDetail, workerLog } from "./logger.ts";
 
 const FULL_SHA = /^[0-9a-f]{40}$/i;
 
@@ -41,9 +42,8 @@ export async function projectDiffFeedbackEvent(
   try {
     await diffFeedback.precompute(repo.full_name, number);
   } catch (error) {
-    console.error(
-      `lh-worker: diff feedback projection error event_id=${row.id} event_type=${row.type} repo=${repo.full_name} pr=${number}:`,
-      error,
+    workerLog.error(
+      `lh-worker: diff feedback projection error event_id=${row.id} event_type=${row.type} repo=${repo.full_name} pr=${number}: ${workerErrorDetail(error)}`,
     );
   }
 }
