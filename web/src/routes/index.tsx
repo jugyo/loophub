@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { RepoList } from "@/components/repo-list";
 import { Button } from "@/components/ui/button";
 import { usePageTitle } from "@/lib/page-title";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { useCreateRepo, useRepos } from "@/queries/repos";
 import { rootRoute } from "./root";
 
@@ -56,6 +57,7 @@ function AddRepositoryDialog({ onClose }: { onClose: () => void }) {
   const create = useCreateRepo();
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
+  const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -81,7 +83,7 @@ function AddRepositoryDialog({ onClose }: { onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
-      onClick={onClose}
+      {...backdropDismiss}
     >
       <form
         data-debug-component="AddRepositoryDialog"

@@ -10,6 +10,7 @@ import {
 import type { Repo } from "@/api/types";
 import { disabledIconButtonStateClasses } from "@/components/ui/button";
 import { compareSidebarRepos } from "@/lib/repo-sort";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
 import { useRepos, useSetRepoFavorite } from "@/queries/repos";
 
@@ -75,6 +76,8 @@ export function RepoSwitcher({ openRequest = 0 }: { openRequest?: number }) {
     setOpen(false);
   }
 
+  const backdropDismiss = useBackdropDismiss(close);
+
   function go(repo: Repo | undefined) {
     if (!repo) return;
     const { owner, name } = splitRepoName(repo);
@@ -117,9 +120,7 @@ export function RepoSwitcher({ openRequest = 0 }: { openRequest?: number }) {
     <div
       data-debug-component="RepoSwitcher"
       className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 px-4 pt-24"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
+      {...backdropDismiss}
     >
       <div
         ref={dialogRef}

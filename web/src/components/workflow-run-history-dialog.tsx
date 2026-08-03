@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import type { WorkflowRunHistoryEvent, WorkflowRunState } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { useWorkflowRunHistory } from "@/queries/workflow-runs";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -50,6 +51,7 @@ export function WorkflowRunHistoryDialog({
   onClose: () => void;
 }) {
   const history = useWorkflowRunHistory(owner, repo, state.id, true);
+  const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -62,7 +64,7 @@ export function WorkflowRunHistoryDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"
-      onClick={onClose}
+      {...backdropDismiss}
     >
       <div
         data-debug-component="WorkflowRunHistoryDialog"

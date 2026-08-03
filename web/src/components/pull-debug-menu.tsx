@@ -12,6 +12,7 @@ import { DebugDataView } from "@/components/pull-debug-view";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { useDeletePull, usePullDebug } from "@/queries/pulls";
 
 export function PullDebugMenu({
@@ -31,6 +32,9 @@ export function PullDebugMenu({
   const deletePull = useDeletePull(owner, repo, number);
   const { showError } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
+  const deleteDialogBackdropDismiss = useBackdropDismiss(() => {
+    if (!deletePull.isPending) setConfirmingDelete(false);
+  });
 
   // Close the menu on outside click or Escape (native dropdown dismissal). The modal manages
   // its own Escape, so only bind this while the menu (not the modal) is open.
@@ -101,9 +105,7 @@ export function PullDebugMenu({
       {confirmingDelete ? (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12vh]"
-          onClick={() => {
-            if (!deletePull.isPending) setConfirmingDelete(false);
-          }}
+          {...deleteDialogBackdropDismiss}
         >
           <div
             role="dialog"
@@ -173,6 +175,7 @@ function DebugDataModal({
   onClose: () => void;
 }) {
   const query = usePullDebug(owner, repo, number, true);
+  const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -188,7 +191,7 @@ function DebugDataModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"
-      onClick={onClose}
+      {...backdropDismiss}
     >
       <div
         data-debug-component="DebugDataModal"

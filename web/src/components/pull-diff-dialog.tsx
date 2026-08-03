@@ -50,6 +50,7 @@ import {
   singleSelection,
 } from "@/lib/diff-feedback";
 import { errorMessage } from "@/lib/error-message";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
 import {
   useCreateDiffFeedback,
@@ -220,7 +221,7 @@ export function DiffFileDialog({
     startX: number;
     startWidth: number;
   } | null>(null);
-  const mouseDownStartedOnBackdrop = useRef(false);
+  const backdropDismiss = useBackdropDismiss(onClose);
   const copyPath = visibleCopyPath(copyFilename(file));
   const isMarkdown =
     MARKDOWN_FILENAME.test(file.filename) && !isSyntheticRenameFilename(file);
@@ -282,15 +283,7 @@ export function DiffFileDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4"
-      onMouseDown={(event) => {
-        mouseDownStartedOnBackdrop.current =
-          event.target === event.currentTarget;
-      }}
-      onClick={(event) => {
-        const endsOnBackdrop = event.target === event.currentTarget;
-        if (mouseDownStartedOnBackdrop.current && endsOnBackdrop) onClose();
-        mouseDownStartedOnBackdrop.current = false;
-      }}
+      {...backdropDismiss}
     >
       <div
         data-debug-component="DiffFileDialog"

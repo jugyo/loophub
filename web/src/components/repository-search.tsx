@@ -3,6 +3,7 @@ import { CircleDot, GitPullRequest, Loader2, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SearchResult } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { useRepositorySearch } from "@/queries/search";
 
 export function RepositorySearch({
@@ -37,6 +38,8 @@ export function RepositorySearch({
     setIncludePulls(false);
   }
 
+  const backdropDismiss = useBackdropDismiss(close);
+
   function select(result: SearchResult) {
     close();
     navigate({
@@ -65,9 +68,7 @@ export function RepositorySearch({
       {open ? (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 px-4 pt-24"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) close();
-          }}
+          {...backdropDismiss}
         >
           <div
             data-debug-component="RepositorySearchDialog"

@@ -7,6 +7,7 @@
 import { AlertTriangle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 
 export interface HerdrLaunchError {
   reason: string;
@@ -46,6 +47,8 @@ export function HerdrLaunchErrorDialog({
   error: HerdrLaunchError;
   onClose: () => void;
 }) {
+  const backdropDismiss = useBackdropDismiss(onClose);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -57,7 +60,7 @@ export function HerdrLaunchErrorDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+      {...backdropDismiss}
     >
       <div
         data-debug-component="HerdrLaunchErrorDialog"
