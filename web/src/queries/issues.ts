@@ -145,7 +145,7 @@ export function useSetAcceptanceCriterionEnabled(
 /** Comments for an issue, oldest first (server order). */
 export function useIssueComments(owner: string, repo: string, number: number) {
   return useQuery({
-    queryKey: [...queryKeys.issue(full(owner, repo), number), "comments"],
+    queryKey: queryKeys.issueComments(full(owner, repo), number),
     queryFn: () => listIssueComments(owner, repo, number),
   });
 }
@@ -161,6 +161,9 @@ export function usePostComment(owner: string, repo: string, number: number) {
       });
       qc.invalidateQueries({
         queryKey: queryKeys.issues(full(owner, repo)),
+      });
+      qc.invalidateQueries({
+        queryKey: queryKeys.issueComments(full(owner, repo), number),
       });
     },
   });

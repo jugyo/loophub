@@ -14,12 +14,25 @@ import type { LoopEvent } from "@/api/types";
 export const queryKeys = {
   repos: () => ["repos"] as const,
   repo: (full: string) => ["repo", full] as const,
+  repoMergeMode: (full: string) => ["repo-merge-mode", full] as const,
   labels: (full: string) => ["labels", full] as const,
   issues: (full: string) => ["issues", full] as const,
   issue: (full: string, number: number) => ["issue", full, number] as const,
+  issueComments: (full: string, number: number) =>
+    ["issue-comments", full, number] as const,
   workspaces: (full: string) => ["workspaces", full] as const,
   pulls: (full: string) => ["pulls", full] as const,
   pull: (full: string, number: number) => ["pull", full, number] as const,
+  pullDebug: (full: string, number: number) =>
+    ["pull-debug", full, number] as const,
+  pullFiles: (full: string, number: number) =>
+    ["pull-files", full, number] as const,
+  pullReviews: (full: string, number: number) =>
+    ["pull-reviews", full, number] as const,
+  pullReviewComments: (full: string, number: number) =>
+    ["pull-review-comments", full, number] as const,
+  githubPrStatus: (full: string, number: number) =>
+    ["github-pr-status", full, number] as const,
   notifications: () => ["notifications"] as const,
   agentSessions: () => ["agent-sessions"] as const,
   // Keep the 60s cost poll outside the agent-session event invalidation prefix.
@@ -56,13 +69,24 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     if (repo) {
       keys.push([...queryKeys.issues(repo)]);
       keys.push([...queryKeys.labels(repo)]);
+      // A PR debug dump embeds its linked Issue row and matching issue.* event history. The event
+      // does not carry the linked PR number, so invalidate the repo prefix; only a mounted debug
+      // query refetches.
+      keys.push(["pull-debug", repo]);
       if (typeof number === "number") {
         keys.push([...queryKeys.issue(repo, number)]);
+        if (type === "issue.commented") {
+          keys.push([...queryKeys.issueComments(repo, number)]);
+        }
       }
     } else {
       keys.push(["issues"]);
       keys.push(["labels"]);
       keys.push(["issue"]);
+      keys.push(["pull-debug"]);
+      if (type === "issue.commented") {
+        keys.push(["issue-comments"]);
+      }
     }
     keys.push([...queryKeys.dashboard()]); // cross-repo top page
   } else if (type.startsWith("workspace.")) {
@@ -75,11 +99,37 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     }
   } else if (type.startsWith("pull_request.")) {
     const gitGraphChanged =
-      type === "pull_request.updated" || type === "pull_request.merged";
+      type === "pull_request.merged" ||
+      (type === "pull_request.updated" &&
+        typeof payload?.sha === "string" &&
+        payload.sha.length > 0);
     if (repo) {
       keys.push([...queryKeys.pulls(repo)]);
       if (typeof number === "number") {
         keys.push([...queryKeys.pull(repo, number)]);
+        // The debug dump includes the PR row, git facts, reviews, comments, and its event history,
+        // so every PR-scoped event changes at least the event-history portion while it is open.
+        keys.push([...queryKeys.pullDebug(repo, number)]);
+        if (gitGraphChanged) {
+          keys.push([...queryKeys.pullFiles(repo, number)]);
+        }
+        if (type === "pull_request.commented") {
+          keys.push([...queryKeys.issueComments(repo, number)]);
+        }
+        if (type === "pull_request.review_submitted") {
+          keys.push([...queryKeys.pullReviews(repo, number)]);
+          if (typeof payload?.comments === "number" && payload.comments > 0) {
+            keys.push([...queryKeys.pullReviewComments(repo, number)]);
+          }
+        }
+        if (
+          type === "pull_request.github_pr_recorded" ||
+          type === "pull_request.github_pr_pushed" ||
+          type === "pull_request.github_feedback" ||
+          type === "pull_request.github_merged"
+        ) {
+          keys.push([...queryKeys.githubPrStatus(repo, number)]);
+        }
       }
       if (gitGraphChanged) {
         keys.push([...queryKeys.workspaces(repo)]);
@@ -87,7 +137,26 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     } else {
       keys.push(["pulls"]);
       keys.push(["pull"]);
+      keys.push(["pull-debug"]);
       if (gitGraphChanged) keys.push(["workspaces"]);
+      if (gitGraphChanged) keys.push(["pull-files"]);
+      if (type === "pull_request.commented") {
+        keys.push(["issue-comments"]);
+      }
+      if (type === "pull_request.review_submitted") {
+        keys.push(["pull-reviews"]);
+        if (typeof payload?.comments === "number" && payload.comments > 0) {
+          keys.push(["pull-review-comments"]);
+        }
+      }
+      if (
+        type === "pull_request.github_pr_recorded" ||
+        type === "pull_request.github_pr_pushed" ||
+        type === "pull_request.github_feedback" ||
+        type === "pull_request.github_merged"
+      ) {
+        keys.push(["github-pr-status"]);
+      }
     }
     // Issue rows embed their linked PR's live status (mergeable/conflict, working,
     // review state, diff totals) via issueListItemJSON, so a PR change must also
@@ -116,6 +185,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push([...queryKeys.pulls(repo)]);
       if (typeof prNumber === "number") {
         keys.push([...queryKeys.pull(repo, prNumber)]);
+        keys.push([...queryKeys.pullDebug(repo, prNumber)]);
       }
       if (typeof issueNumber === "number") {
         keys.push([...queryKeys.issue(repo, issueNumber)]);
@@ -154,6 +224,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       }
       if (typeof prNumber === "number") {
         keys.push([...queryKeys.workflowRunForPull(repo, prNumber)]);
+        keys.push([...queryKeys.pullDebug(repo, prNumber)]);
       }
       if (typeof runId === "number") {
         keys.push([...queryKeys.workflowRunHistory(repo, runId)]);
@@ -204,6 +275,15 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     if (type === "repo.agent_config_changed" && repo) {
       keys.push([...queryKeys.repoAgentConfig(repo)]);
     }
+    if (type === "repo.merge_mode_changed" && repo) {
+      keys.push([...queryKeys.repoMergeMode(repo)]);
+    }
+    if (repo && type !== "repo.agent_config_changed") {
+      // repoJSON is part of every PR debug dump, so repo metadata events change all open debug
+      // queries for that repository even though the regular pull detail is unaffected. Agent
+      // config is stored separately and is not part of repoJSON or the PR-scoped event history.
+      keys.push(["pull-debug", repo]);
+    }
     const from = payload?.from;
     if (typeof from === "string" && from) {
       keys.push([...queryKeys.repo(from)]);
@@ -211,6 +291,13 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["issue", from]);
       keys.push(["pulls", from]);
       keys.push(["pull", from]);
+      keys.push(["repo-merge-mode", from]);
+      keys.push(["issue-comments", from]);
+      keys.push(["pull-debug", from]);
+      keys.push(["pull-files", from]);
+      keys.push(["pull-reviews", from]);
+      keys.push(["pull-review-comments", from]);
+      keys.push(["github-pr-status", from]);
       keys.push([...queryKeys.events(), from]);
     }
   } else if (type.startsWith("terminal.")) {
@@ -226,11 +313,19 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     if (repo) {
       const prNumber = payload?.pr;
       const issueNumber = payload?.issue;
-      if (typeof prNumber === "number")
+      if (typeof prNumber === "number") {
         keys.push([...queryKeys.pull(repo, prNumber)]);
+        keys.push([...queryKeys.pullDebug(repo, prNumber)]);
+      }
       if (typeof issueNumber === "number")
         keys.push([...queryKeys.issue(repo, issueNumber)]);
     }
+  }
+
+  if (type === "dev.cost_stopped" && repo && typeof number === "number") {
+    // This PR-scoped event is part of the debug dump's event history but does not use the
+    // pull_request.* namespace.
+    keys.push([...queryKeys.pullDebug(repo, number)]);
   }
 
   // Repo-level metadata (assignment / status counts) and the activity feed can

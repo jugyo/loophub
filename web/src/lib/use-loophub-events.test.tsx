@@ -380,7 +380,17 @@ describe("useLoopHubEvents", () => {
       order: "desc",
       limit: 1,
     });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["settings"] });
+    for (const queryKey of [
+      ["repo-merge-mode"],
+      ["issue-comments"],
+      ["pull-debug"],
+      ["pull-files"],
+      ["pull-reviews"],
+      ["pull-review-comments"],
+      ["github-pr-status"],
+    ]) {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey });
+    }
   });
 
   it("does not schedule another poll after unmount", async () => {

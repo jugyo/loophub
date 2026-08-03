@@ -52,7 +52,8 @@ export function usePull(owner: string, repo: string, number: number) {
 /**
  * Read-only debug dump for a PR (#248): raw DB rows + git facts + reviews/comments/notes/events.
  * `enabled` gates the fetch so the (potentially heavy, git-fanning) call only runs when the debug
- * modal is open. Kept off the event invalidation map — it is a manual, on-demand inspection surface.
+ * modal is open. Its independent key is refreshed by events that change the assembled dump without
+ * inheriting unrelated invalidations from the regular pull detail.
  */
 export function usePullDebug(
   owner: string,
@@ -61,7 +62,7 @@ export function usePullDebug(
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: [...queryKeys.pull(full(owner, repo), number), "debug"],
+    queryKey: queryKeys.pullDebug(full(owner, repo), number),
     queryFn: () => getPullDebug(owner, repo, number),
     enabled,
   });
@@ -70,7 +71,7 @@ export function usePullDebug(
 /** Changed files + diffs for a PR. */
 export function usePullFiles(owner: string, repo: string, number: number) {
   return useQuery({
-    queryKey: [...queryKeys.pull(full(owner, repo), number), "files"],
+    queryKey: queryKeys.pullFiles(full(owner, repo), number),
     queryFn: () => listPullFiles(owner, repo, number),
   });
 }
@@ -400,7 +401,7 @@ export function usePullFileAtRef(
 /** Submitted reviews for a PR. */
 export function usePullReviews(owner: string, repo: string, number: number) {
   return useQuery({
-    queryKey: [...queryKeys.pull(full(owner, repo), number), "reviews"],
+    queryKey: queryKeys.pullReviews(full(owner, repo), number),
     queryFn: () => listPullReviews(owner, repo, number),
   });
 }
@@ -408,7 +409,7 @@ export function usePullReviews(owner: string, repo: string, number: number) {
 /** Line comments for a PR, grouped by path at the call site. */
 export function usePullComments(owner: string, repo: string, number: number) {
   return useQuery({
-    queryKey: [...queryKeys.pull(full(owner, repo), number), "comments"],
+    queryKey: queryKeys.pullReviewComments(full(owner, repo), number),
     queryFn: () => listPullComments(owner, repo, number),
   });
 }
@@ -420,10 +421,7 @@ export function usePostPullComment(
   handleError?: (error: unknown, body: string) => void,
 ) {
   const qc = useQueryClient();
-  const commentsKey = [
-    ...queryKeys.issue(full(owner, repo), number),
-    "comments",
-  ];
+  const commentsKey = queryKeys.issueComments(full(owner, repo), number);
   return useMutation({
     mutationFn: (body: string) => postPullComment(owner, repo, number, body),
     onMutate: async (body) => {
@@ -455,6 +453,9 @@ export function usePostPullComment(
         qc.invalidateQueries({
           queryKey: queryKeys.pull(full(owner, repo), number),
         }),
+        qc.invalidateQueries({
+          queryKey: queryKeys.pullDebug(full(owner, repo), number),
+        }),
         qc.invalidateQueries({ queryKey: commentsKey }),
       ]),
   });
@@ -466,10 +467,7 @@ export function useReactToPullComment(
   number: number,
 ) {
   const qc = useQueryClient();
-  const commentsKey = [
-    ...queryKeys.issue(full(owner, repo), number),
-    "comments",
-  ];
+  const commentsKey = queryKeys.issueComments(full(owner, repo), number);
   return useMutation({
     mutationFn: (input: { commentId: number; emoji: string }) =>
       reactToPullComment(owner, repo, number, input.commentId, input.emoji),
@@ -531,7 +529,7 @@ export function useReactToPullComment(
 /**
  * GitHub-side status (#850) of a PR's linked GitHub PR, for the detail sidebar. `enabled` gates the
  * fetch so it only runs once the PR is known to have a linked GitHub PR (no point calling an endpoint
- * that 404s otherwise). Keyed under the pull key so pull_request.* events refetch it via the prefix.
+ * that 404s otherwise). Its independent key is refreshed only by GitHub-link/status events.
  */
 export function useGithubPrStatus(
   owner: string,
@@ -540,7 +538,7 @@ export function useGithubPrStatus(
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: [...queryKeys.pull(full(owner, repo), number), "githubStatus"],
+    queryKey: queryKeys.githubPrStatus(full(owner, repo), number),
     queryFn: () => getGithubPrStatus(owner, repo, number),
     enabled,
   });
@@ -554,6 +552,11 @@ function invalidatePull(
 ) {
   qc.invalidateQueries({ queryKey: queryKeys.pull(full(owner, repo), number) });
   qc.invalidateQueries({ queryKey: queryKeys.pulls(full(owner, repo)) });
+  // Every PR mutation changes the debug dump's row and/or event history. This used to be covered
+  // implicitly while pullDebug was a child of the pull detail key.
+  qc.invalidateQueries({
+    queryKey: queryKeys.pullDebug(full(owner, repo), number),
+  });
   // Issue detail embeds every linked PR's state and comparison metrics.
   qc.invalidateQueries({ queryKey: queryKeys.issues(full(owner, repo)) });
   qc.invalidateQueries({ queryKey: ["issue", full(owner, repo)] });
@@ -567,6 +570,9 @@ export function useMergePull(owner: string, repo: string, number: number) {
       mergePull(owner, repo, number, mergeMethod),
     onSuccess: () => {
       invalidatePull(qc, owner, repo, number);
+      qc.invalidateQueries({
+        queryKey: queryKeys.pullFiles(full(owner, repo), number),
+      });
       qc.invalidateQueries({
         queryKey: queryKeys.workspaces(full(owner, repo)),
       });
@@ -589,6 +595,9 @@ export function usePushGithubPull(owner: string, repo: string, number: number) {
           current ? { ...current, github_pull: githubPull } : current,
       );
       invalidatePull(qc, owner, repo, number);
+      qc.invalidateQueries({
+        queryKey: queryKeys.githubPrStatus(full(owner, repo), number),
+      });
     },
   });
 }

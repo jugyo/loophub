@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LoopEvent } from "@/api/types";
-import { queryKeysForEvent } from "./event-keys";
+import { queryKeys, queryKeysForEvent } from "./event-keys";
 
 function ev(partial: Partial<LoopEvent>): LoopEvent {
   return {
@@ -56,7 +56,7 @@ describe("queryKeysForEvent", () => {
       ev({
         type: "pull_request.updated",
         repo: "me/proj",
-        payload: { number: 13 },
+        payload: { number: 13, sha: "abc123" },
       }),
     );
     expect(keys).toContainEqual(["issues", "me/proj"]);
@@ -66,7 +66,11 @@ describe("queryKeysForEvent", () => {
 
   it("falls back to broad issue keys for a repo-less pull_request event (#324)", () => {
     const keys = queryKeysForEvent(
-      ev({ type: "pull_request.updated", repo: undefined, payload: {} }),
+      ev({
+        type: "pull_request.updated",
+        repo: undefined,
+        payload: { sha: "abc123" },
+      }),
     );
     expect(keys).toContainEqual(["issues"]);
     expect(keys).toContainEqual(["issue"]);
@@ -86,11 +90,148 @@ describe("queryKeysForEvent", () => {
     expect(keys).not.toContainEqual(["repo-agent-config", "me/proj"]);
   });
 
+  it("keeps low-frequency query keys outside their broad detail prefixes", () => {
+    expect(queryKeys.repoMergeMode("me/proj")[0]).not.toBe("repo");
+    expect(queryKeys.issueComments("me/proj", 12)[0]).not.toBe("issue");
+    expect(queryKeys.pullDebug("me/proj", 13)[0]).not.toBe("pull");
+    expect(queryKeys.pullFiles("me/proj", 13)[0]).not.toBe("pull");
+    expect(queryKeys.pullReviews("me/proj", 13)[0]).not.toBe("pull");
+    expect(queryKeys.pullReviewComments("me/proj", 13)[0]).not.toBe("pull");
+    expect(queryKeys.githubPrStatus("me/proj", 13)[0]).not.toBe("pull");
+  });
+
+  it("refreshes merge mode only for its config event", () => {
+    const ordinary = queryKeysForEvent(
+      ev({ type: "issue.updated", repo: "me/proj", payload: { number: 12 } }),
+    );
+    expect(ordinary).not.toContainEqual(["repo-merge-mode", "me/proj"]);
+
+    const changed = queryKeysForEvent(
+      ev({ type: "repo.merge_mode_changed", repo: "me/proj" }),
+    );
+    expect(changed).toContainEqual(["repo-merge-mode", "me/proj"]);
+  });
+
+  it("refreshes pull files only when the git graph changes", () => {
+    const metadataUpdated = queryKeysForEvent(
+      ev({
+        type: "pull_request.updated",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(metadataUpdated).not.toContainEqual(["pull-files", "me/proj", 13]);
+
+    const headUpdated = queryKeysForEvent(
+      ev({
+        type: "pull_request.updated",
+        repo: "me/proj",
+        payload: { number: 13, sha: "abc123" },
+      }),
+    );
+    expect(headUpdated).toContainEqual(["pull-files", "me/proj", 13]);
+
+    const merged = queryKeysForEvent(
+      ev({
+        type: "pull_request.merged",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(merged).toContainEqual(["pull-files", "me/proj", 13]);
+  });
+
+  it("routes comment and review events to their independent queries", () => {
+    const issueCommented = queryKeysForEvent(
+      ev({
+        type: "issue.commented",
+        repo: "me/proj",
+        payload: { number: 12 },
+      }),
+    );
+    expect(issueCommented).toContainEqual(["issue-comments", "me/proj", 12]);
+
+    const pullCommented = queryKeysForEvent(
+      ev({
+        type: "pull_request.commented",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(pullCommented).toContainEqual(["issue-comments", "me/proj", 13]);
+    expect(pullCommented).not.toContainEqual(["pull-reviews", "me/proj", 13]);
+
+    const reviewed = queryKeysForEvent(
+      ev({
+        type: "pull_request.review_submitted",
+        repo: "me/proj",
+        payload: { number: 13, comments: 1 },
+      }),
+    );
+    expect(reviewed).toContainEqual(["pull-reviews", "me/proj", 13]);
+    expect(reviewed).toContainEqual(["pull-review-comments", "me/proj", 13]);
+
+    const reviewedWithoutComments = queryKeysForEvent(
+      ev({
+        type: "pull_request.review_submitted",
+        repo: "me/proj",
+        payload: { number: 13, comments: 0 },
+      }),
+    );
+    expect(reviewedWithoutComments).toContainEqual([
+      "pull-reviews",
+      "me/proj",
+      13,
+    ]);
+    expect(reviewedWithoutComments).not.toContainEqual([
+      "pull-review-comments",
+      "me/proj",
+      13,
+    ]);
+  });
+
+  it("refreshes GitHub status only for GitHub-side status events", () => {
+    const local = queryKeysForEvent(
+      ev({
+        type: "pull_request.review_submitted",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(local).not.toContainEqual(["github-pr-status", "me/proj", 13]);
+
+    const github = queryKeysForEvent(
+      ev({
+        type: "pull_request.github_feedback",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(github).toContainEqual(["github-pr-status", "me/proj", 13]);
+  });
+
+  it("refreshes pull debug for dump-changing events without using the pull prefix", () => {
+    const commented = queryKeysForEvent(
+      ev({
+        type: "pull_request.commented",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(commented).toContainEqual(["pull-debug", "me/proj", 13]);
+
+    const linkedIssueUpdated = queryKeysForEvent(
+      ev({ type: "issue.updated", repo: "me/proj", payload: { number: 12 } }),
+    );
+    expect(linkedIssueUpdated).toContainEqual(["pull-debug", "me/proj"]);
+  });
+
   it("maps repo.agent_config_changed to the repo agent config", () => {
     const keys = queryKeysForEvent(
       ev({ type: "repo.agent_config_changed", repo: "me/proj" }),
     );
     expect(keys).toContainEqual(["repo-agent-config", "me/proj"]);
+    expect(keys).not.toContainEqual(["pull-debug", "me/proj"]);
   });
 
   it("leaves the cost summary alone on agent_session events", () => {

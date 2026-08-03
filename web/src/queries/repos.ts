@@ -28,7 +28,11 @@ export function useRepos() {
   });
 }
 
-/** Archived repos for the /archived route. */
+/**
+ * Archived repos for the /archived route. This intentionally remains under the repos prefix:
+ * repo archive/unarchive changes membership, while favorite and rename change row data or order,
+ * so the archived and active lists share the same repo.* invalidation set.
+ */
 export function useArchivedRepos() {
   return useQuery({
     queryKey: [...queryKeys.repos(), "archived"],
@@ -121,7 +125,7 @@ export function useSetRepoDefaultBranch(owner: string, repo: string) {
 /** Resolved merge-mode view for the repo settings toggle (#406). */
 export function useRepoMergeMode(owner: string, repo: string) {
   return useQuery({
-    queryKey: [...queryKeys.repo(full(owner, repo)), "merge-mode"],
+    queryKey: queryKeys.repoMergeMode(full(owner, repo)),
     queryFn: () => getRepoMergeMode(owner, repo),
   });
 }
@@ -139,7 +143,7 @@ export function useSetRepoMergeMode(owner: string, repo: string) {
       setRepoMergeMode(owner, repo, mode),
     onSuccess: () => {
       qc.invalidateQueries({
-        queryKey: [...queryKeys.repo(full(owner, repo)), "merge-mode"],
+        queryKey: queryKeys.repoMergeMode(full(owner, repo)),
       });
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: ["pull"] });
