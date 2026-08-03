@@ -208,6 +208,16 @@ test("a supported PR comment reaction can be added, changed, and removed", () =>
   expect(svc.comments.list(repoName, prNumber).at(-1)?.reactions).toEqual([
     { emoji: "👀", count: 1, reacted: false },
   ]);
+  const reactionEvents = store
+    .eventsForPull(repoId, prNumber, null)
+    .filter((event) => event.type === "pull_request.comment_reaction_changed");
+  expect(reactionEvents).toHaveLength(4);
+  expect(reactionEvents.map((event) => JSON.parse(event.payload))).toEqual(
+    Array.from({ length: 4 }, () => ({
+      number: prNumber,
+      comment_id: comment.id,
+    })),
+  );
   expect(() =>
     svc.comments.reactForPull(
       repoName,

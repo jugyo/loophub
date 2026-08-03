@@ -145,7 +145,10 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
         if (gitGraphChanged) {
           keys.push([...queryKeys.pullFiles(repo, pullNumber)]);
         }
-        if (type === "pull_request.commented") {
+        if (
+          type === "pull_request.commented" ||
+          type === "pull_request.comment_reaction_changed"
+        ) {
           keys.push([...queryKeys.issueComments(repo, pullNumber)]);
         }
         if (type === "pull_request.review_submitted") {
@@ -174,7 +177,10 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["pull-debug"]);
       if (gitGraphChanged) keys.push(["workspaces"]);
       if (gitGraphChanged) keys.push(["pull-files"]);
-      if (type === "pull_request.commented") {
+      if (
+        type === "pull_request.commented" ||
+        type === "pull_request.comment_reaction_changed"
+      ) {
         keys.push(["issue-comments"]);
       }
       if (type === "pull_request.review_submitted") {

@@ -180,6 +180,19 @@ describe("queryKeysForEvent", () => {
     expect(pullCommented).toContainEqual(["issue-comments", "me/proj", 13]);
     expect(pullCommented).not.toContainEqual(["pull-reviews", "me/proj", 13]);
 
+    const pullCommentReactionChanged = queryKeysForEvent(
+      ev({
+        type: "pull_request.comment_reaction_changed",
+        repo: "me/proj",
+        payload: { number: 13, comment_id: 1058 },
+      }),
+    );
+    expect(pullCommentReactionChanged).toContainEqual([
+      "issue-comments",
+      "me/proj",
+      13,
+    ]);
+
     const reviewed = queryKeysForEvent(
       ev({
         type: "pull_request.review_submitted",

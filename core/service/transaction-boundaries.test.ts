@@ -278,6 +278,29 @@ test("a failed pull_request.commented event leaves no comment", () => {
   expect(S.listComments(pr.id)).toHaveLength(before);
 });
 
+test("a failed comment reaction event leaves the existing reaction unchanged", () => {
+  const comment = svc.comments.createHumanForPull(
+    REPO,
+    prNumber,
+    "Keep the existing reaction",
+  );
+  svc.comments.reactForPull(REPO, prNumber, comment.id, "👀", HUMAN_SESSION);
+
+  expect(() =>
+    whileFailing("pull_request.comment_reaction_changed", () =>
+      svc.comments.reactForPull(
+        REPO,
+        prNumber,
+        comment.id,
+        "🚀",
+        HUMAN_SESSION,
+      ),
+    ),
+  ).toThrowError(/injected event failure/);
+
+  expect(S.listCommentReactions(comment.id)).toMatchObject([{ emoji: "👀" }]);
+});
+
 test("a failed review_submitted event leaves no review or line comments", async () => {
   const pr = S.getIssue(repoId, prNumber)!;
 

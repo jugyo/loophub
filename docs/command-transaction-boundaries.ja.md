@@ -166,7 +166,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `dev.attachSession` | procedure | PR の session link、`pull_request.updated` | — |
 | `comments.create` | procedure | comment、`issue.commented` | — |
 | `comments.createForPull` / `createHumanForPull` | procedure | comment、`pull_request.commented` | — |
-| `comments.reactForPull` / `reactHumanForPull` | procedure | reaction の read-modify-write と応答の read | — |
+| `comments.reactForPull` / `reactHumanForPull` | procedure | reaction の read-modify-write、`pull_request.comment_reaction_changed`、応答の read | — |
 | `reviews.create` | procedure | review、AC grades、line comments、`pull_request.review_submitted` | head SHA の git read |
 | `diffFeedback.create` | procedure | thread、first message、`pull_request.diff_feedback_created` | anchor 解決の git diff read |
 | `diffFeedback.reply` | procedure | reply、`pull_request.diff_feedback_replied` | — |

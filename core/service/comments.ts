@@ -97,6 +97,10 @@ export const comments = {
     // renders it belong to one transaction.
     return db.transaction(() => {
       S.setCommentReaction(comment.id, actor, emoji);
+      S.emitEvent(r.id, "pull_request.comment_reaction_changed", actor, {
+        number: row.number,
+        comment_id: comment.id,
+      });
       return commentWire(comment, actor);
     });
   },
@@ -119,6 +123,10 @@ export const comments = {
     }
     return db.transaction(() => {
       S.setCommentReaction(comment.id, "me", emoji);
+      S.emitEvent(r.id, "pull_request.comment_reaction_changed", "me", {
+        number: row.number,
+        comment_id: comment.id,
+      });
       return commentWire(comment, "me");
     });
   },
