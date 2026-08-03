@@ -1097,6 +1097,16 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "pulls/markGithubMerged": {
+    description:
+      "Mark an open pull request as merged after its linked GitHub merge has been detected.",
+    params: params({ repo, number: positiveInt, session_id: sid }, [
+      "repo",
+      "number",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.pulls.markGithubMerged(p.repo, p.number, p.session_id),
+  },
   "pulls/createGithubPull": {
     description:
       "External agent surface (not used by the SPA). Submit a loophub PR to GitHub as a Draft PR (#411): push the head branch under `branch`, open (or recover) a Draft PR, and record it. Atomic — a retry recovers a created-but-unrecorded PR instead of duplicating. Same core orchestration as `lh pr create-github-pr`.",

@@ -344,16 +344,25 @@ export function setMerged(
   sha: string,
   method: string,
 ): number | null {
-  return finishMerge(issueId, now(), sha, method);
+  const mergedAt = now();
+  return finishMerge(issueId, mergedAt, mergedAt, sha, method);
+}
+
+// Complete a merge that already happened on GitHub without inventing a local merge commit.
+export function setMergedFromGithub(
+  issueId: number,
+  mergedAt: string,
+): number | null {
+  return finishMerge(issueId, mergedAt, now(), null, "github");
 }
 
 function finishMerge(
   issueId: number,
   mergedAt: string,
+  stateChangedAt: string,
   sha: string | null,
   method: string,
 ): number | null {
-  const t = mergedAt;
   const pull = getPull(issueId);
   let closedIssue: number | null = null;
   let shouldCloseLinked = false;
@@ -368,7 +377,7 @@ function finishMerge(
     `UPDATE pulls
      SET merged = 1, merged_at = ?, merge_commit_sha = ?, merge_method = ?
      WHERE issue_id = ?`,
-    [t, sha, method, issueId],
+    [mergedAt, sha, method, issueId],
   );
   // Sets closed_at alongside state (not via updateIssue, which this bypasses) so the "closed_at is
   // stamped whenever state transitions to closed" invariant holds for every close path, even though
@@ -376,12 +385,12 @@ function finishMerge(
   // p.merged_at — always wins first, see serialize.ts).
   db.run(
     `UPDATE issues SET state = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
-    [t, t, issueId],
+    [stateChangedAt, stateChangedAt, issueId],
   );
   if (pull?.linked_issue_id && shouldCloseLinked) {
     db.run(
       `UPDATE issues SET state = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
-      [t, t, pull.linked_issue_id],
+      [stateChangedAt, stateChangedAt, pull.linked_issue_id],
     );
   }
   return closedIssue;

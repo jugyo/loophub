@@ -24,6 +24,7 @@ import {
   listPullCommitFiles,
   listPullFiles,
   listPullReviews,
+  markGithubMerged,
   mergePull,
   patchPull,
   postPullComment,
@@ -644,6 +645,18 @@ export function useMergePull(owner: string, repo: string, number: number) {
         queryKey: queryKeys.workspaces(full(owner, repo)),
       });
     },
+  });
+}
+
+export function useMarkGithubMerged(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => markGithubMerged(owner, repo, number),
+    onSuccess: () => invalidatePull(qc, owner, repo, number),
   });
 }
 

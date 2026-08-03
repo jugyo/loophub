@@ -690,6 +690,40 @@ export const pulls = {
     return { merged: true, sha: res.sha };
   },
 
+  markGithubMerged(name: string, number: number, sessionId?: string | null) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const pull = S.getPull(row.id)!;
+    if (pull.merged)
+      throw new ServiceError(405, "Pull Request is already merged");
+    if (row.state !== "open")
+      throw new ServiceError(405, "Pull Request is not open");
+    const githubPull = S.getGithubPull(row.id);
+    if (!githubPull?.github_merged || !githubPull.github_merged_at) {
+      throw new ServiceError(405, "GitHub merge has not been detected");
+    }
+
+    const actor = actorFor(sessionId);
+    const closedIssue = S.setMergedFromGithub(
+      row.id,
+      githubPull.github_merged_at,
+    );
+    const mergedEvent = S.emitEvent(r.id, "pull_request.merged", actor, {
+      number: row.number,
+      github_number: githubPull.number,
+      github_merged_at: githubPull.github_merged_at,
+    });
+    projectWorkflowRunClosed(r.id, row.number, actor, mergedEvent);
+    if (closedIssue != null) {
+      S.emitEvent(r.id, "issue.closed", actor, {
+        number: closedIssue,
+        closed_by_pull: row.number,
+      });
+    }
+    return { merged: true, merged_at: githubPull.github_merged_at };
+  },
+
   // #850: the GitHub-side status (draft / review / checks / comment counts / merged) of a PR's linked
   // GitHub PR, for the PR-detail right sidebar. Fetched on demand via `gh` and cached in
   // github_pull_status with a short TTL — a cache hit within the TTL skips `gh`. On a `gh` failure a

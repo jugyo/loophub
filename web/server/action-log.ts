@@ -41,6 +41,11 @@ const ACTIONS: Record<string, Formatter> = {
       ["pr", p.number ? `#${p.number}` : undefined],
       ["method", p.merge_method ?? "squash"],
     )}`,
+  "pulls/markGithubMerged": (p) =>
+    `mark github-merged pr ${fields(
+      ["repo", p.repo],
+      ["pr", p.number ? `#${p.number}` : undefined],
+    )}`,
 };
 
 // Emit a one-line stdout log for a human-triggered RPC action. Non-whitelisted methods (queries,

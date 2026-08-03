@@ -32,7 +32,7 @@ function contentForSignal(signal: S.NotificationSignalRow): {
   if (signal.reason === "github_merged") {
     return {
       title: `${signal.repo_full_name} PR #${signal.number} merged on GitHub`,
-      body: `GitHub reports ${signal.repo_full_name} PR #${signal.number} as merged. Close the LoopHub PR manually to close it in LoopHub.`,
+      body: `GitHub reports ${signal.repo_full_name} PR #${signal.number} as merged. Open this PR and select Mark as merged to complete it locally.`,
     };
   }
   if (signal.reason === "workflow_cost_exceeded") {

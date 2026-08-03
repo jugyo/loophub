@@ -1035,6 +1035,19 @@ export function mergePull(
   });
 }
 
+export function markGithubMerged(
+  owner: string,
+  repo: string,
+  number: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ merged: true; merged_at: string }>("pulls/markGithubMerged", {
+    repo: full(owner, repo),
+    number,
+    session_id: sessionId,
+  });
+}
+
 /** GitHub-side status (#850) of a PR's linked GitHub PR. 404s when the PR has no linked GitHub PR. */
 export function getGithubPrStatus(owner: string, repo: string, number: number) {
   return rpc<GithubPrStatus>("pulls/githubStatus", {

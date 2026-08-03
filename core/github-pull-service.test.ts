@@ -10,13 +10,14 @@ process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
+let S: typeof import("./store.ts");
 let repoPath: string;
 
 function git(args: string[]) {
   return spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
-async function openPull(): Promise<number> {
+async function openPull(issue?: number): Promise<number> {
   // A feature branch off main so the PR has a real head/base.
   git(["checkout", "-q", "-B", "feature", "main"]);
   writeFileSync(join(repoPath, "b.txt"), "y\n");
@@ -27,12 +28,14 @@ async function openPull(): Promise<number> {
     title: "feat",
     head: "feature",
     base: "main",
+    issue,
   });
   return pr.number;
 }
 
 beforeAll(async () => {
   svc = await import("./service.ts");
+  S = await import("./store.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-ghpr-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -112,6 +115,100 @@ test("recordGithubPull links a GitHub PR and pull detail exposes it (#406)", asy
   expect(rec2.number).toBe(43);
   const after2 = (await svc.pulls.get("me/proj", number)) as any;
   expect(after2.github_pull.number).toBe(43);
+});
+
+test("markGithubMerged completes the PR and linked issue at the detected time", async () => {
+  const issue = svc.issues.create("me/proj", { title: "linked issue" });
+  const number = await openPull(issue.number);
+  const repo = S.getRepo("me", "proj")!;
+  const row = S.getIssue(repo.id, number)!;
+  S.recordGithubPull({
+    issueId: row.id,
+    number: 88,
+    url: "https://github.com/me/proj/pull/88",
+    branch: "feature",
+    createdBy: "tester",
+  });
+  const mergedAt = "2026-08-03T01:02:03Z";
+  S.setGithubMerged(row.id, mergedAt);
+
+  const transitionStartedAt = Date.now();
+  expect(svc.pulls.markGithubMerged("me/proj", number, "operator")).toEqual({
+    merged: true,
+    merged_at: mergedAt,
+  });
+  const transitionFinishedAt = Date.now();
+
+  expect(S.getPull(row.id)).toMatchObject({
+    merged: 1,
+    merged_at: mergedAt,
+    merge_commit_sha: null,
+    merge_method: "github",
+  });
+  for (const completed of [
+    S.getIssue(repo.id, number)!,
+    S.getIssue(repo.id, issue.number)!,
+  ]) {
+    expect(completed.state).toBe("closed");
+    expect(completed.closed_at).toBe(completed.updated_at);
+    expect(completed.updated_at).not.toBe(mergedAt);
+    expect(Date.parse(completed.updated_at)).toBeGreaterThanOrEqual(
+      Math.floor(transitionStartedAt / 1000) * 1000,
+    );
+    expect(Date.parse(completed.updated_at)).toBeLessThanOrEqual(
+      transitionFinishedAt,
+    );
+  }
+  const mergedEvents = S.listEvents(0, repo.id, 100, undefined, "asc", {
+    types: ["pull_request.merged"],
+  }).filter((event) => JSON.parse(event.payload).number === number);
+  expect(mergedEvents).toHaveLength(1);
+  expect(JSON.parse(mergedEvents[0].payload)).toEqual({
+    number,
+    github_number: 88,
+    github_merged_at: mergedAt,
+  });
+});
+
+test("markGithubMerged rejects PRs without an eligible detected merge", async () => {
+  const noLink = await openPull();
+  expect(() => svc.pulls.markGithubMerged("me/proj", noLink)).toThrow(
+    "GitHub merge has not been detected",
+  );
+
+  const notDetected = await openPull();
+  svc.pulls.recordGithubPull("me/proj", notDetected, {
+    github_number: 89,
+    url: "https://github.com/me/proj/pull/89",
+  });
+  expect(() => svc.pulls.markGithubMerged("me/proj", notDetected)).toThrow(
+    "GitHub merge has not been detected",
+  );
+
+  const closed = await openPull();
+  svc.pulls.recordGithubPull("me/proj", closed, {
+    github_number: 90,
+    url: "https://github.com/me/proj/pull/90",
+  });
+  const repo = S.getRepo("me", "proj")!;
+  const closedRow = S.getIssue(repo.id, closed)!;
+  S.setGithubMerged(closedRow.id, "2026-08-03T02:00:00Z");
+  await svc.pulls.update("me/proj", closed, { state: "closed" });
+  expect(() => svc.pulls.markGithubMerged("me/proj", closed)).toThrow(
+    "Pull Request is not open",
+  );
+
+  const merged = await openPull();
+  svc.pulls.recordGithubPull("me/proj", merged, {
+    github_number: 91,
+    url: "https://github.com/me/proj/pull/91",
+  });
+  const mergedRow = S.getIssue(repo.id, merged)!;
+  S.setGithubMerged(mergedRow.id, "2026-08-03T03:00:00Z");
+  await svc.pulls.markGithubMerged("me/proj", merged);
+  expect(() => svc.pulls.markGithubMerged("me/proj", merged)).toThrow(
+    "Pull Request is already merged",
+  );
 });
 
 test("linked GitHub PR commits exclude the remote base history", async () => {
