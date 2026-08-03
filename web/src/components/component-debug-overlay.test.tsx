@@ -135,12 +135,17 @@ describe("component debug mode", () => {
     const label = await screen.findByText(
       "VeryLongPurposeSpecificComponentName",
     );
+    expect(label.parentElement?.className).toContain("text-[10px]");
+    expect(label.className).toContain("px-[3px]");
+    expect(label.className).toContain("py-[1px]");
     expect(screen.queryByTestId("component-debug-name-tooltip")).toBeNull();
 
     fireEvent.mouseEnter(label);
-    expect(screen.getByTestId("component-debug-name-tooltip").textContent).toBe(
-      "VeryLongPurposeSpecificComponentName",
-    );
+    const tooltip = screen.getByTestId("component-debug-name-tooltip");
+    expect(tooltip.textContent).toBe("VeryLongPurposeSpecificComponentName");
+    expect(tooltip.className).toContain("text-[10px]");
+    expect(tooltip.className).toContain("px-[3px]");
+    expect(tooltip.className).toContain("py-[1px]");
 
     fireEvent.mouseLeave(label);
     expect(screen.queryByTestId("component-debug-name-tooltip")).toBeNull();

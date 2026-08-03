@@ -180,9 +180,9 @@ function DebugBoxOverlay({ name, rect }: { name: string; rect: DOMRect }) {
         height: rect.height,
       }}
     >
-      <div className="pointer-events-auto absolute left-0 top-0 flex max-w-full items-center bg-red-700 text-xs font-medium text-white shadow-sm">
+      <div className="pointer-events-auto absolute left-0 top-0 flex max-w-full items-center bg-red-700 text-[10px] font-medium text-white shadow-sm">
         <span
-          className="relative min-w-0 truncate px-1.5 py-0.5"
+          className="relative min-w-0 truncate px-[3px] py-[1px]"
           onMouseEnter={() => setLabelHovered(true)}
           onMouseLeave={() => setLabelHovered(false)}
         >
@@ -191,7 +191,7 @@ function DebugBoxOverlay({ name, rect }: { name: string; rect: DOMRect }) {
             <span
               role="tooltip"
               data-testid="component-debug-name-tooltip"
-              className="absolute left-0 top-full z-10 mt-0.5 max-w-[min(24rem,80vw)] whitespace-normal break-all rounded bg-red-950 px-1.5 py-0.5 text-xs font-medium text-white shadow-md"
+              className="absolute left-0 top-full z-10 mt-0.5 max-w-[min(24rem,80vw)] whitespace-normal break-all rounded bg-red-950 px-[3px] py-[1px] text-[10px] font-medium text-white shadow-md"
             >
               {name}
             </span>
