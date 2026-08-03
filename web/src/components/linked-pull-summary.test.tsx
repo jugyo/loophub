@@ -534,7 +534,10 @@ describe("LinkedPullSummaryRow workflow rework count (#2147)", () => {
     expect(marker?.textContent).toBe("3");
     // The looping-arrows icon carries the "rework" meaning the wording used to.
     expect(marker?.querySelector("svg")).not.toBeNull();
-    expect(marker?.nextElementSibling?.textContent).toContain("48k");
+    // A separator dot stands between the count and the cost metrics (#2245).
+    const separator = marker?.nextElementSibling;
+    expect(separator?.textContent).toBe("·");
+    expect(separator?.nextElementSibling?.textContent).toContain("48k");
   });
 
   it("shows nothing for a run that has not reworked yet", async () => {

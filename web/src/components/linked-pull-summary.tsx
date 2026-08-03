@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { MessageSquare, RefreshCw, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useState } from "react";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import {
   findPullHerdrWorkspace,
@@ -84,55 +84,42 @@ function formatDurationLargest(seconds?: number): string | null {
   return `${Math.floor(total / unit)}${suffix}`;
 }
 
-function Metrics({
-  pull,
-  overBudget,
-}: {
-  pull: LinkedPull;
-  overBudget: boolean;
-}) {
+type MetadataItem = { key: string; node: ReactNode };
+
+// The run totals a human scans on the row: how many tokens it took, how much it cost, how long it
+// has been going. Each total is its own item, so the row's one separator rule covers them too.
+function metricItems(pull: LinkedPull, overBudget: boolean): MetadataItem[] {
   const cost = formatCostRounded(pull.cost_usd);
   const duration = formatDurationLargest(pull.work_duration_total?.seconds);
-  const parts = [
+  return [
     pull.total_tokens != null
-      ? { kind: "tokens", label: formatTokenCountShort(pull.total_tokens) }
+      ? { key: "tokens", label: formatTokenCountShort(pull.total_tokens) }
       : null,
-    cost ? { kind: "cost", label: cost } : null,
-    duration ? { kind: "duration", label: duration } : null,
-  ].filter((part): part is { kind: string; label: string } => part !== null);
-  if (parts.length === 0) return null;
-  return (
-    <span
-      className="shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground/70 tabular-nums"
-      title={parts.map(({ label }) => label).join(" · ")}
-    >
-      {parts.map(({ kind, label }, index) => (
-        <span key={kind}>
-          {index > 0 ? " · " : null}
-          <span
-            data-linked-pull-cost={kind === "cost" ? "" : undefined}
-            className={cn(
-              kind === "cost" &&
-                (overBudget ? COST_STOPPED_TEXT : "text-muted-foreground/70"),
-            )}
-          >
-            {label}
-          </span>
+    cost ? { key: "cost", label: cost } : null,
+    duration ? { key: "duration", label: duration } : null,
+  ]
+    .filter((part): part is { key: string; label: string } => part !== null)
+    .map(({ key, label }) => ({
+      key,
+      node: (
+        <span
+          data-linked-pull-cost={key === "cost" ? "" : undefined}
+          className={cn(
+            "whitespace-nowrap tabular-nums",
+            key === "cost" && overBudget
+              ? COST_STOPPED_TEXT
+              : "text-muted-foreground/70",
+          )}
+        >
+          {label}
         </span>
-      ))}
-    </span>
-  );
+      ),
+    }));
 }
 
 // #2147: how many Execute -> Verify loops the PR's workflow run has taken. The looping arrows carry
-// the meaning, so the row spends no width on the word "rework" and reads as a count at a glance. A
-// run that has not reworked yet says nothing, so only rows worth noticing carry the marker.
-function WorkflowReworkCount({
-  count,
-}: {
-  count: LinkedPull["workflow_rework_count"];
-}) {
-  if (!count) return null;
+// the meaning, so the row spends no width on the word "rework" and reads as a count at a glance.
+function WorkflowReworkCount({ count }: { count: number }) {
   return (
     <span
       data-linked-pull-rework
@@ -146,10 +133,8 @@ function WorkflowReworkCount({
 }
 
 // #2152: how much has been said on the PR — its comments plus every diff comment, as one number.
-// Icon and count only, and silent at zero like the diff view's own count, so a row with no
-// discussion spends no width on it.
-function CommentCount({ count }: { count: LinkedPull["total_comments"] }) {
-  if (!count) return null;
+// Icon and count only, like the diff view's own count, so it spends no width on a label.
+function CommentCount({ count }: { count: number }) {
   return (
     <span
       aria-label={`${count} ${count === 1 ? "comment" : "comments"}`}
@@ -158,6 +143,59 @@ function CommentCount({ count }: { count: LinkedPull["total_comments"] }) {
       <MessageSquare className="size-3" aria-hidden="true" />
       {count}
     </span>
+  );
+}
+
+// #2245: the row's right edge is one dot-separated list — the agent, the rework count, each run
+// total, and how much has been said on the PR. Which items are present is decided here and nowhere
+// else: an item that decided its own absence would leave the list holding a separator for it, which
+// is how the rework count came to sit against its neighbours with no dot between them. A zero
+// rework count or no comments still says nothing, so a row with neither spends no width on them.
+function RowMetadata({
+  pull,
+  runtimeMetadata,
+  overBudget,
+}: {
+  pull: LinkedPull;
+  runtimeMetadata: string;
+  overBudget: boolean;
+}) {
+  const items = [
+    {
+      key: "agent",
+      node: (
+        <span
+          className="max-w-40 truncate text-muted-foreground"
+          title={runtimeMetadata}
+        >
+          {runtimeMetadata}
+        </span>
+      ),
+    },
+    pull.workflow_rework_count
+      ? {
+          key: "rework",
+          node: <WorkflowReworkCount count={pull.workflow_rework_count} />,
+        }
+      : null,
+    ...metricItems(pull, overBudget),
+    pull.total_comments
+      ? { key: "comments", node: <CommentCount count={pull.total_comments} /> }
+      : null,
+  ].filter((item): item is MetadataItem => item !== null);
+  return (
+    <div className="ml-auto flex shrink-0 items-center gap-1">
+      {items.map(({ key, node }, index) => (
+        <Fragment key={key}>
+          {index > 0 ? (
+            <span aria-hidden="true" className="text-muted-foreground/70">
+              ·
+            </span>
+          ) : null}
+          {node}
+        </Fragment>
+      ))}
+    </div>
   );
 }
 
@@ -543,17 +581,11 @@ export function LinkedPullSummaryRow({
         {/* The row's right edge: the rework count sits directly left of the cost metrics, so the
             two run totals a human scans for read as one group, with how much has been said on the
             PR closing the row (#2152). */}
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          <span
-            className="max-w-40 truncate text-muted-foreground"
-            title={runtimeMetadata}
-          >
-            {runtimeMetadata}
-          </span>
-          <WorkflowReworkCount count={pull.workflow_rework_count} />
-          <Metrics pull={pull} overBudget={costStopped !== null} />
-          <CommentCount count={pull.total_comments} />
-        </div>
+        <RowMetadata
+          pull={pull}
+          runtimeMetadata={runtimeMetadata}
+          overBudget={costStopped !== null}
+        />
       </div>
       {popover.open ? (
         <PullPopover
