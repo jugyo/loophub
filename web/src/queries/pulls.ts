@@ -62,15 +62,17 @@ export function usePullDetailPage(owner: string, repo: string, number: number) {
     queryKey: [...queryKeys.pull(full(owner, repo), number), "pageData"],
     queryFn: async () => {
       const data = await getPullDetailPage(owner, repo, number);
-      const pullKey = queryKeys.pull(full(owner, repo), number);
-      qc.setQueryData(pullKey, data.pull);
-      qc.setQueryData([...pullKey, "files"], data.files);
-      qc.setQueryData([...pullKey, "reviews"], data.reviews);
-      qc.setQueryData([...pullKey, "comments"], data.line_comments);
+      const repoFull = full(owner, repo);
+      // Seed through the same key factories the per-section hooks read, so the
+      // disabled hooks in PullDetail resolve against this one fetch.
+      qc.setQueryData(queryKeys.pull(repoFull, number), data.pull);
+      qc.setQueryData(queryKeys.pullFiles(repoFull, number), data.files);
+      qc.setQueryData(queryKeys.pullReviews(repoFull, number), data.reviews);
       qc.setQueryData(
-        [...queryKeys.issue(full(owner, repo), number), "comments"],
-        data.comments,
+        queryKeys.pullReviewComments(repoFull, number),
+        data.line_comments,
       );
+      qc.setQueryData(queryKeys.issueComments(repoFull, number), data.comments);
       return data;
     },
   });
