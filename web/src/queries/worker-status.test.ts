@@ -26,10 +26,10 @@ describe("workerLaunchGate", () => {
     });
   });
 
-  test("shows remediation while compatibility is not yet confirmed", () => {
+  test("hides remediation while compatibility is not yet confirmed", () => {
     expect(workerLaunchGate(undefined, false)).toEqual({
       canStartWorkflow: false,
-      showRemediation: true,
+      showRemediation: false,
     });
   });
 });

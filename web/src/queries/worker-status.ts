@@ -31,7 +31,7 @@ export function workerLaunchGate(
   return {
     canStartWorkflow: !isError && status?.status === "compatible",
     showRemediation:
-      status === undefined || isError || status.status !== "compatible",
+      isError || (status !== undefined && status.status !== "compatible"),
   };
 }
 
