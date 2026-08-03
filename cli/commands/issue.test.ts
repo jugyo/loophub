@@ -86,6 +86,38 @@ test("lh issue create returns the created issue with --json", () => {
   expect(plain.stdout.trim()).toMatch(/^created #\d+$/);
 });
 
+test("lh issue view exposes display ids for acceptance criteria", () => {
+  const created = lh([
+    "issue",
+    "create",
+    "--repo",
+    "me/proj",
+    "--title",
+    "display ids",
+    "--ac",
+    "first",
+    "--ac",
+    "second",
+    "--json",
+  ]);
+  expect(created.exitCode, created.stderr).toBe(0);
+  const issueNumber = JSON.parse(created.stdout).number;
+
+  const viewed = lh([
+    "issue",
+    "view",
+    String(issueNumber),
+    "--repo",
+    "me/proj",
+    "--json",
+  ]);
+  expect(viewed.exitCode, viewed.stderr).toBe(0);
+  expect(JSON.parse(viewed.stdout).acceptance_criteria).toEqual([
+    { id: `${issueNumber}-1`, number: 1, ordinal: 1, text: "first" },
+    { id: `${issueNumber}-2`, number: 2, ordinal: 2, text: "second" },
+  ]);
+});
+
 test("lh issue comment returns the created comment", () => {
   const number = createIssue("comment target");
 
@@ -198,9 +230,31 @@ test("lh issue ac shows and accepts issue-local references", () => {
     "first",
   ]);
   expect(added.exitCode, added.stderr).toBe(0);
-  expect(added.stdout).toContain("ac-1");
+  expect(added.stdout).toContain(`${number}-1`);
 
   const disabled = lh([
+    "issue",
+    "ac",
+    "disable",
+    `${number}-1`,
+    "--repo",
+    "me/proj",
+  ]);
+  expect(disabled.exitCode, disabled.stderr).toBe(0);
+  expect(disabled.stdout).toContain(`${number}-1`);
+
+  const enabled = lh([
+    "issue",
+    "ac",
+    "enable",
+    `${number}-1`,
+    "--repo",
+    "me/proj",
+  ]);
+  expect(enabled.exitCode, enabled.stderr).toBe(0);
+  expect(enabled.stdout).toContain(`${number}-1`);
+
+  const disabledByShorthand = lh([
     "issue",
     "ac",
     "disable",
@@ -209,8 +263,7 @@ test("lh issue ac shows and accepts issue-local references", () => {
     "--repo",
     "me/proj",
   ]);
-  expect(disabled.exitCode, disabled.stderr).toBe(0);
-  expect(disabled.stdout).toContain("ac-1");
+  expect(disabledByShorthand.exitCode, disabledByShorthand.stderr).toBe(0);
 
   const listed = lh([
     "issue",
@@ -221,5 +274,33 @@ test("lh issue ac shows and accepts issue-local references", () => {
     "me/proj",
   ]);
   expect(listed.exitCode, listed.stderr).toBe(0);
-  expect(listed.stdout).toMatch(/ac-1\t#\d+\t1\tdisabled\tfirst/);
+  expect(listed.stdout).toContain(`${number}-1\t1\tdisabled\tfirst`);
+  expect(listed.stdout).not.toMatch(/\t#\d+\t/);
+
+  const listedJson = lh([
+    "issue",
+    "ac",
+    "list",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--json",
+  ]);
+  expect(listedJson.exitCode, listedJson.stderr).toBe(0);
+  expect(JSON.parse(listedJson.stdout)).toEqual([
+    expect.objectContaining({ id: `${number}-1`, enabled: false }),
+  ]);
+
+  const internalId = lh([
+    "issue",
+    "ac",
+    "disable",
+    "999999",
+    "--repo",
+    "me/proj",
+  ]);
+  expect(internalId.exitCode).not.toBe(0);
+  expect(internalId.stderr).toContain(
+    "acceptance criterion reference must be <issue-number>-<ac-number>",
+  );
 });

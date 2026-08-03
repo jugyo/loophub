@@ -296,21 +296,21 @@ describe("PullCommitsSection", () => {
         submitted_at: "2026-06-18T12:30:00Z",
         ac_results: [
           {
-            criterion_id: 11,
+            criterion_id: "5-1",
             number: 1,
             text: "AC is shown read-only",
             verdict: "pass",
             note: "checklist renders without controls",
           },
           {
-            criterion_id: 12,
+            criterion_id: "5-2",
             number: 2,
             text: "grades join to the AC text",
             verdict: "fail",
             note: "note is missing on one grade",
           },
           {
-            criterion_id: 13,
+            criterion_id: "5-3",
             number: 3,
             text: "no own freshness",
             verdict: "pass",

@@ -1008,9 +1008,15 @@ describe("IssueDetail", () => {
 
   it("disables from the action menu and restores a disabled criterion", async () => {
     const criteria = [
-      { id: 31, number: 4, ordinal: 1, text: "Stable history", enabled: true },
       {
-        id: 32,
+        id: "12-4",
+        number: 4,
+        ordinal: 1,
+        text: "Stable history",
+        enabled: true,
+      },
+      {
+        id: "12-7",
         number: 7,
         ordinal: 2,
         text: "Previously disabled",
@@ -1036,7 +1042,7 @@ describe("IssueDetail", () => {
     await waitFor(() =>
       expect(rpcCall("issues/ac/setEnabled")?.params).toMatchObject({
         number: 12,
-        criterion_id: 31,
+        criterion_id: "12-4",
         enabled: false,
       }),
     );
@@ -1061,7 +1067,7 @@ describe("IssueDetail", () => {
         calls.some(
           (call) =>
             call.method === "issues/ac/setEnabled" &&
-            call.params.criterion_id === 32 &&
+            call.params.criterion_id === "12-7" &&
             call.params.enabled === true,
         ),
       ).toBe(true);
@@ -1073,7 +1079,7 @@ describe("IssueDetail", () => {
       () => ({
         ...issue,
         acceptance_criteria: [
-          { id: 51, number: 3, ordinal: 1, text: "Cannot disable" },
+          { id: "12-3", number: 3, ordinal: 1, text: "Cannot disable" },
         ],
       }),
       {

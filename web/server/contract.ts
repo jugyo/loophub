@@ -669,7 +669,7 @@ export const methods: Record<string, MethodDef> = {
       {
         repo,
         number: positiveInt,
-        criterion_id: positiveInt,
+        criterion_id: strNonEmpty,
         enabled: { type: "boolean" },
       },
       ["repo", "number", "criterion_id", "enabled"],

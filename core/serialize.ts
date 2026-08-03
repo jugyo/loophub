@@ -382,11 +382,11 @@ export interface IssueWire {
   acceptance_criteria?: AcceptanceCriterionWire[];
 }
 
-// The rubric-delivery shape carried on issue view: stable identity (`id`), stable issue-local
-// `number`, mutable display position (`ordinal`), and text. Only enabled criteria reach the wire
-// here, so no `enabled` field is needed.
+// The rubric-delivery shape carried on issue view. `id` is the public, repository-scoped
+// `<issue-number>-<ac-number>` reference accepted by review submission; the database row id stays
+// off the wire. Only enabled criteria reach this shape, so no `enabled` field is needed.
 export interface AcceptanceCriterionWire {
-  id: number;
+  id: string;
   number: number;
   ordinal: number;
   text: string;
@@ -394,8 +394,19 @@ export interface AcceptanceCriterionWire {
 
 // The authoring shape returned by the `lh issue ac` commands and the Web management RPC, which must
 // show disabled criteria (so an operator can re-enable them) — hence the extra `enabled`.
-export interface AcceptanceCriterionDetailWire extends AcceptanceCriterionWire {
+export interface AcceptanceCriterionDetailWire {
+  id: string;
+  number: number;
+  ordinal: number;
+  text: string;
   enabled: boolean;
+}
+
+export function acceptanceCriterionDisplayId(
+  issueNumber: number,
+  criterionNumber: number,
+): string {
+  return `${issueNumber}-${criterionNumber}`;
 }
 
 export type DiffFeedbackFreshness = "current" | "outdated" | "unavailable";
@@ -533,9 +544,10 @@ export function diffFeedbackMessageJSON(
 
 export function acceptanceCriterionJSON(
   row: S.AcceptanceCriterionRow,
+  issueNumber: number,
 ): AcceptanceCriterionWire {
   return {
-    id: row.id,
+    id: acceptanceCriterionDisplayId(issueNumber, row.number),
     number: row.number,
     ordinal: row.ordinal,
     text: row.text,
@@ -544,9 +556,10 @@ export function acceptanceCriterionJSON(
 
 export function acceptanceCriterionDetailJSON(
   row: S.AcceptanceCriterionRow,
+  issueNumber: number,
 ): AcceptanceCriterionDetailWire {
   return {
-    id: row.id,
+    id: acceptanceCriterionDisplayId(issueNumber, row.number),
     number: row.number,
     ordinal: row.ordinal,
     text: row.text,
@@ -1035,7 +1048,7 @@ export function commentJSON(
 // One per-criterion grade attached to a review (#1895), derived from `review_ac_results` joined to
 // `acceptance_criteria` for the rubric text. Empty for a holistic review (no structured grading).
 export interface ReviewAcResultWire {
-  criterion_id: number;
+  criterion_id: string;
   number: number;
   text: string;
   verdict: "pass" | "fail";

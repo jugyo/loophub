@@ -194,6 +194,22 @@ test("lh pr review soft-warns a pass contradicted by a failing grade", () => {
     "warning: event=PASS was submitted with 1 failing acceptance criterion grade(s)",
   );
   expect(review.stdout).toContain("submitted: PASS");
+
+  const internalIdReview = lh([
+    "pr",
+    "review",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--event",
+    "pass",
+    "--ac-results",
+    JSON.stringify([{ criterion_id: 1, verdict: "pass" }]),
+  ]);
+  expect(internalIdReview.exitCode).not.toBe(0);
+  expect(internalIdReview.stderr).toContain(
+    "requires criterion_id as <issue-number>-<ac-number>",
+  );
 });
 
 test("lh pr review view reads comments and review-response stays linked", () => {

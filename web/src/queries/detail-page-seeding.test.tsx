@@ -72,7 +72,7 @@ describe("useIssueDetailPage", () => {
     const page = {
       issue: { number: 5, title: "Aggregate issue" },
       comments: [{ id: 44, body: "first" }],
-      acceptance_criteria: [{ id: 55, number: 1, text: "criterion" }],
+      acceptance_criteria: [{ id: "5-1", number: 1, text: "criterion" }],
     };
     vi.stubGlobal(
       "fetch",

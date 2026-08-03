@@ -2,6 +2,7 @@ import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import { revParse } from "../git.ts";
 import {
+  acceptanceCriterionDisplayId,
   type ReviewAcResultWire,
   type ReviewDetailWire,
   reviewCommentJSON,
@@ -25,8 +26,12 @@ import {
 export function reviewAcResultsJSON(reviewId: number): ReviewAcResultWire[] {
   return S.listReviewAcResults(reviewId).map((r) => {
     const criterion = S.getAcceptanceCriterion(r.criterion_id);
+    const issue = criterion ? S.getIssueById(criterion.issue_id) : null;
     return {
-      criterion_id: r.criterion_id,
+      criterion_id:
+        criterion && issue
+          ? acceptanceCriterionDisplayId(issue.number, criterion.number)
+          : "unknown",
       number: criterion?.number ?? 0,
       text: criterion?.text ?? "",
       verdict: r.verdict === "pass" ? "pass" : "fail",
@@ -42,9 +47,7 @@ export function reviewAcResultsJSON(reviewId: number): ReviewAcResultWire[] {
 // not cover exactly the enabled criteria. `undefined` means no structured grading (holistic).
 function validateAcResults(
   prRow: S.IssueRow,
-  input:
-    | { criterion_id: number | string; verdict: string; note?: string }[]
-    | undefined,
+  input: { criterion_id: string; verdict: string; note?: string }[] | undefined,
 ): { criterionId: number; verdict: string; note: string }[] {
   if (input === undefined) return [];
   if (!Array.isArray(input))
@@ -63,9 +66,7 @@ function validateAcResults(
   const results = input.map((r) => {
     const criterionRef = r?.criterion_id;
     let criterionId: number;
-    if (typeof criterionRef === "number" && Number.isInteger(criterionRef)) {
-      criterionId = criterionRef;
-    } else if (
+    if (
       typeof criterionRef === "string" &&
       /^([1-9]\d*)-([1-9]\d*)$/.test(criterionRef)
     ) {
@@ -96,23 +97,23 @@ function validateAcResults(
     } else {
       throw new ServiceError(
         422,
-        "each ac-result requires criterion_id as a stable integer id or <issue-number>-<ac-number>",
+        "each ac-result requires criterion_id as <issue-number>-<ac-number>",
       );
     }
     if (r.verdict !== "pass" && r.verdict !== "fail")
       throw new ServiceError(
         422,
-        `ac-result verdict must be 'pass' or 'fail' (criterion ${criterionId})`,
+        `ac-result verdict must be 'pass' or 'fail' (criterion ${criterionRef})`,
       );
     if (!enabledIds.has(criterionId))
       throw new ServiceError(
         422,
-        `criterion ${criterionId} is not an enabled acceptance criterion of the linked issue`,
+        `criterion ${criterionRef} is not an enabled acceptance criterion of the linked issue`,
       );
     if (seen.has(criterionId))
       throw new ServiceError(
         422,
-        `duplicate ac-result for criterion ${criterionId}`,
+        `duplicate ac-result for criterion ${criterionRef}`,
       );
     seen.add(criterionId);
     return { criterionId, verdict: r.verdict, note: r.note ?? "" };
@@ -255,7 +256,7 @@ export const reviews = {
       headSha?: string;
       comments?: { path: string; line?: number; side?: string; body: string }[];
       acResults?: {
-        criterion_id: number | string;
+        criterion_id: string;
         verdict: string;
         note?: string;
       }[];

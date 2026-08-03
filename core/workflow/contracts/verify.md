@@ -44,9 +44,9 @@ lh pr review <pr> --repo '<repo>' --commit <head sha> \
   [--comments <json|file>] [--ac-results <json|file>]
 ```
 
-`--ac-results` carries the grades as `[{ "criterion_id": 12, "verdict": "pass"|"fail", "note": "..." }]`,
-inline JSON or a file path, grading each enabled criterion exactly once. Omit it when there is no
-rubric.
+`--ac-results` carries the grades as `[{ "criterion_id": "42-1", "verdict": "pass"|"fail", "note": "..." }]`,
+inline JSON or a file path. Use each criterion's display `id` from the issue response and grade each
+enabled criterion exactly once. Omit it when there is no rubric.
 
 The single verdict (`--event`) remains the truth source for the run transition and the merge gate;
 the rubric does not replace it. Use `pass` only when every criterion passed **and** no free-form

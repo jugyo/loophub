@@ -43,9 +43,9 @@ lh pr review <pr> --repo '<repo>' --commit <head sha> \
   [--comments <json|file>] [--ac-results <json|file>]
 ```
 
-`--ac-results` は grade を `[{ "criterion_id": 12, "verdict": "pass"|"fail", "note": "..." }]` の inline
-JSON か file path で渡します。enabled な criterion をちょうど 1 回ずつ採点します。rubric が無い場合は
-省略します。
+`--ac-results` は grade を `[{ "criterion_id": "42-1", "verdict": "pass"|"fail", "note": "..." }]` の
+inline JSON か file path で渡します。issue response にある各 criterion の表示用 `id` を使い、enabled な
+criterion をちょうど 1 回ずつ採点します。rubric が無い場合は省略します。
 
 単一 verdict（`--event`）は run の遷移と merge gate の真実源のままで、rubric はこれを置き換えません。
 `pass` は全 criterion が pass し、**かつ** blocking な自由記述 finding が無いときだけ使います。全 pass は

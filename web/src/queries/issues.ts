@@ -182,7 +182,7 @@ export function useSetAcceptanceCriterionEnabled(
 ) {
   const invalidate = useInvalidateAcceptanceCriteria(owner, repo, number);
   return useMutation({
-    mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       setAcceptanceCriterionEnabled(owner, repo, number, id, enabled),
     onSuccess: invalidate,
   });

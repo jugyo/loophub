@@ -130,21 +130,30 @@ function linkIssueToCurrentPane(
   });
 }
 
-// Resolve a criterion by its stable id or, with issue context, `ac-<number>`, then enforce both
-// repository and issue scope here rather than relying on each caller to repeat those guards.
+// Resolve a public `<issue-number>-<ac-number>` reference (or the issue-scoped `ac-<number>`
+// shorthand) to its internal row. Repository and issue scope are enforced here for every caller;
+// internal integer ids never enter or leave this service boundary.
 function acceptanceCriterionInRepoOr404(
   repo: S.Repo,
-  criterionRef: number | string,
+  criterionRef: string,
   issueNumber?: number,
 ): S.AcceptanceCriterionRow {
   let criterion: S.AcceptanceCriterionRow | null = null;
-  if (typeof criterionRef === "number" && Number.isInteger(criterionRef)) {
-    criterion = S.getAcceptanceCriterion(criterionRef);
-  } else if (
-    issueNumber != null &&
-    typeof criterionRef === "string" &&
-    /^ac-[1-9]\d*$/.test(criterionRef)
-  ) {
+  if (/^([1-9]\d*)-([1-9]\d*)$/.test(criterionRef)) {
+    const [, referencedIssueNumber, criterionNumber] = criterionRef.match(
+      /^([1-9]\d*)-([1-9]\d*)$/,
+    )!;
+    const referencedIssue = S.getIssue(repo.id, Number(referencedIssueNumber));
+    if (
+      referencedIssue &&
+      (issueNumber == null || referencedIssue.number === issueNumber)
+    ) {
+      criterion = S.getAcceptanceCriterionByNumber(
+        referencedIssue.id,
+        Number(criterionNumber),
+      );
+    }
+  } else if (issueNumber != null && /^ac-[1-9]\d*$/.test(criterionRef)) {
     const issue = issueOr404(repo, issueNumber);
     criterion = S.getAcceptanceCriterionByNumber(
       issue.id,
@@ -153,7 +162,7 @@ function acceptanceCriterionInRepoOr404(
   } else {
     throw new ServiceError(
       422,
-      "acceptance criterion reference must be a stable id or ac-<number> with an issue",
+      "acceptance criterion reference must be <issue-number>-<ac-number> or ac-<number> with an issue",
     );
   }
   const issue = criterion ? S.getIssueById(criterion.issue_id) : null;
@@ -262,7 +271,7 @@ export const issues = {
     if (opts.withAcceptanceCriteria !== false) {
       out.acceptance_criteria = S.listAcceptanceCriteria(row.id)
         .filter((c) => c.enabled === 1)
-        .map(acceptanceCriterionJSON);
+        .map((criterion) => acceptanceCriterionJSON(criterion, row.number));
     }
     return out;
   },
@@ -490,7 +499,9 @@ export const issues = {
   acList(name: string, number: number) {
     const r = repoOr404(name);
     const row = issueOr404(r, number);
-    return S.listAcceptanceCriteria(row.id).map(acceptanceCriterionDetailJSON);
+    return S.listAcceptanceCriteria(row.id).map((criterion) =>
+      acceptanceCriterionDetailJSON(criterion, row.number),
+    );
   },
 
   acAdd(name: string, number: number, text: string) {
@@ -504,13 +515,13 @@ export const issues = {
     return db.transaction(() => {
       const created = S.addAcceptanceCriterion(row.id, trimmed);
       S.touchIssue(row.id);
-      return acceptanceCriterionDetailJSON(created);
+      return acceptanceCriterionDetailJSON(created, row.number);
     });
   },
 
   acSetEnabled(
     name: string,
-    criterionRef: number | string,
+    criterionRef: string,
     enabled: boolean,
     issueNumber?: number,
   ) {
@@ -526,14 +537,14 @@ export const issues = {
       S.touchIssue(criterion.issue_id);
       return acceptanceCriterionDetailJSON(
         S.getAcceptanceCriterion(criterion.id)!,
+        S.getIssueById(criterion.issue_id)!.number,
       );
     });
   },
 
-  // Reorder rewrites `ordinal`; ids stay fixed so future grades stay attached. `orderedIds` must be
-  // a permutation of this issue's criterion ids (all of them, once each) — a partial or unknown id
-  // is a visible error rather than a silent ordinal gap.
-  acReorder(name: string, number: number, orderedRefs: (number | string)[]) {
+  // Reorder rewrites `ordinal`; internal ids stay fixed so future grades stay attached. The public
+  // refs must cover every criterion exactly once — a partial or unknown ref is a visible error.
+  acReorder(name: string, number: number, orderedRefs: string[]) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number);
@@ -550,14 +561,14 @@ export const issues = {
     if (!isPermutation) {
       throw new ServiceError(
         422,
-        "order must list every acceptance criterion id of this issue exactly once",
+        "order must list every acceptance criterion reference of this issue exactly once",
       );
     }
     return db.transaction(() => {
       S.reorderAcceptanceCriteria(row.id, orderedIds);
       S.touchIssue(row.id);
-      return S.listAcceptanceCriteria(row.id).map(
-        acceptanceCriterionDetailJSON,
+      return S.listAcceptanceCriteria(row.id).map((criterion) =>
+        acceptanceCriterionDetailJSON(criterion, row.number),
       );
     });
   },

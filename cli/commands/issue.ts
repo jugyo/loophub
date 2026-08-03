@@ -336,8 +336,8 @@ export async function run(): Promise<void> {
     }
   } else if (sub === "ac") {
     // Structured acceptance criteria authoring (#1894). No delete command — an unwanted criterion is
-    // disabled (its row and future grades survive). add/list/reorder address the issue by number;
-    // disable/enable accept the existing stable id, or `<issue> ac-<number>`.
+    // disabled (its row and future grades survive). Public ids use `<issue>-<ac>`; the issue-scoped
+    // `ac-<number>` shorthand remains accepted by mutation commands.
     const action = rest[0];
     if (action === "list") {
       const number = Number(rest[1]);
@@ -346,7 +346,7 @@ export async function run(): Promise<void> {
       if (!flags.json)
         items.forEach((c: any) => {
           console.log(
-            `ac-${c.number}\t#${c.id}\t${c.ordinal}\t${c.enabled ? "enabled" : "disabled"}\t${c.text}`,
+            `${c.id}\t${c.ordinal}\t${c.enabled ? "enabled" : "disabled"}\t${c.text}`,
           );
         });
     } else if (action === "add") {
@@ -356,19 +356,15 @@ export async function run(): Promise<void> {
       );
       out(c);
       if (!flags.json)
-        console.log(
-          `added acceptance criterion ac-${c.number} (#${c.id}) to issue #${number}`,
-        );
+        console.log(`added acceptance criterion ${c.id} to issue #${number}`);
     } else if (action === "disable" || action === "enable") {
       const hasIssueContext = rest[2] != null;
       const issueNumber = hasIssueContext ? Number(rest[1]) : undefined;
       const rawRef = hasIssueContext ? rest[2] : rest[1];
-      const criterionRef =
-        rawRef != null && /^[1-9]\d*$/.test(rawRef) ? Number(rawRef) : rawRef;
       const c = await runOp(() =>
         s.issues.acSetEnabled(
           repo,
-          criterionRef ?? "",
+          rawRef ?? "",
           action === "enable",
           issueNumber,
         ),
@@ -376,15 +372,14 @@ export async function run(): Promise<void> {
       out(c);
       if (!flags.json)
         console.log(
-          `${action}d acceptance criterion ac-${c.number} (#${c.id}, ${c.enabled ? "enabled" : "disabled"})`,
+          `${action}d acceptance criterion ${c.id} (${c.enabled ? "enabled" : "disabled"})`,
         );
     } else if (action === "reorder") {
       const number = Number(rest[1]);
       const orderedRefs = (flags.order ?? "")
         .split(",")
         .map((x) => x.trim())
-        .filter(Boolean)
-        .map((ref) => (/^[1-9]\d*$/.test(ref) ? Number(ref) : ref));
+        .filter(Boolean);
       const items = await runOp(() =>
         s.issues.acReorder(repo, number, orderedRefs),
       );
@@ -393,7 +388,7 @@ export async function run(): Promise<void> {
         console.log(`reordered acceptance criteria for issue #${number}`);
     } else {
       fail(
-        "usage: lh issue ac add <issue> --text <text> | list <issue> | disable|enable <criterion-id> | disable|enable <issue> ac-<number> | reorder <issue> --order <id|ac-number,...>",
+        "usage: lh issue ac add <issue> --text <text> | list <issue> | disable|enable <issue-ac> | disable|enable <issue> ac-<number> | reorder <issue> --order <issue-ac|ac-number,...>",
       );
     }
   } else usage();

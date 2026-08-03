@@ -675,7 +675,7 @@ export function setAcceptanceCriterionEnabled(
   owner: string,
   repo: string,
   number: number,
-  criterionId: number,
+  criterionId: string,
   enabled: boolean,
 ) {
   return rpc<AcceptanceCriterionDetail>("issues/ac/setEnabled", {

@@ -668,7 +668,8 @@ test("issues.create seeds structured acceptance criteria and issues.get returns 
   }) as any;
 
   const detail = (await svc.issues.get("me/proj", issue.number)) as any;
-  // Blank entries are dropped; the wire carries stable identity and issue-local number.
+  // Blank entries are dropped; the wire carries the public issue-qualified identity and keeps the
+  // internal database id private.
   expect(detail.acceptance_criteria).toHaveLength(2);
   expect(detail.acceptance_criteria.map((c: any) => c.text)).toEqual([
     "first",
@@ -676,7 +677,11 @@ test("issues.create seeds structured acceptance criteria and issues.get returns 
   ]);
   const [c0] = detail.acceptance_criteria;
   expect(Object.keys(c0).sort()).toEqual(["id", "number", "ordinal", "text"]);
-  expect(c0.id).toBeGreaterThan(0);
+  expect(c0.id).toBe(`${issue.number}-1`);
+  const repo = S.getRepo("me", "proj")!;
+  const storedIssue = S.getIssue(repo.id, issue.number)!;
+  const [storedCriterion] = S.listAcceptanceCriteria(storedIssue.id);
+  expect(c0.id).not.toBe(storedCriterion.id);
   expect(detail.acceptance_criteria.map((c: any) => c.number)).toEqual([1, 2]);
 });
 
@@ -709,6 +714,8 @@ test("issues.ac add appends with a fresh id at the end and can be re-enabled (#1
   const b = svc.issues.acAdd("me/proj", issue.number, "  beta  ") as any;
 
   expect(b.text).toBe("beta");
+  expect(a.id).toBe(`${issue.number}-1`);
+  expect(b.id).toBe(`${issue.number}-2`);
   expect(b.id).not.toBe(a.id);
   expect([a.number, b.number]).toEqual([1, 2]);
   expect(b.ordinal).toBeGreaterThan(a.ordinal);
@@ -748,7 +755,7 @@ test("issue-scoped AC references reject malformed and missing numbers", () => {
   }) as any;
   expect(() =>
     svc.issues.acSetEnabled("me/proj", "ac-0", false, issue.number),
-  ).toThrow(/must be a stable id or ac-<number>/);
+  ).toThrow(/must be <issue-number>-<ac-number> or ac-<number>/);
   expect(() =>
     svc.issues.acSetEnabled("me/proj", "ac-2", false, issue.number),
   ).toThrow(/not found/);
@@ -788,17 +795,17 @@ test("issues.acReorder rejects an order that is not a full permutation", () => {
   }) as any;
   const [x] = svc.issues.acList("me/proj", issue.number) as any[];
   expect(() => svc.issues.acReorder("me/proj", issue.number, [x.id])).toThrow(
-    /every acceptance criterion id/,
+    /every acceptance criterion reference/,
   );
 });
 
-test("issues.acSetEnabled 404s for a criterion outside the repo (#1894)", () => {
+test("issues.acSetEnabled rejects an internal integer id (#1894)", () => {
   const other = S.createRepo("me/ac-scope", "/tmp/ac-scope");
   const foreign = S.createIssue(other.id, "issue", "foreign", "", "me") as any;
   const criterion = S.addAcceptanceCriterion(foreign.id, "foreign ac");
-  expect(() => svc.issues.acSetEnabled("me/proj", criterion.id, false)).toThrow(
-    /not found/,
-  );
+  expect(() =>
+    svc.issues.acSetEnabled("me/proj", String(criterion.id), false),
+  ).toThrow(/must be <issue-number>-<ac-number> or ac-<number>/);
 });
 
 test("issues service exposes no acceptance-criterion delete (#1894)", () => {

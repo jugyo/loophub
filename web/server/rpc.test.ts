@@ -101,6 +101,7 @@ test("acceptance criteria authoring routes through issue domain procedures", asy
     text: "  remains stable  ",
   });
   expect(added.result).toMatchObject({
+    id: "1-1",
     number: 1,
     text: "remains stable",
     enabled: true,
@@ -165,7 +166,12 @@ test("page data routes return complete initial screen result sets", async () => 
     number: 1,
   });
   expect(issueDetail.result.issue.title).toBe("hello");
-  expect(issueDetail.result.acceptance_criteria).toHaveLength(1);
+  expect(issueDetail.result.acceptance_criteria).toEqual([
+    expect.objectContaining({ id: "1-1", number: 1 }),
+  ]);
+  expect(issueDetail.result.issue.acceptance_criteria).toEqual([
+    expect.objectContaining({ id: "1-1", number: 1 }),
+  ]);
 });
 
 test("worker status is exposed and an unconfirmed worker blocks only workflow launch", async () => {

@@ -65,11 +65,16 @@ function runScopedReviewEvents() {
 
 // A PR linked to an issue that carries structured acceptance criteria (#1895), so grades submitted
 // on the PR review can be validated against the linked issue's enabled rubric. Returns the PR number
-// and the enabled criterion ids in display order.
+// and both public references and storage ids in display order.
 async function newPullForRubric(
   title: string,
   criteria: string[],
-): Promise<{ prNumber: number; issueNumber: number; acIds: number[] }> {
+): Promise<{
+  prNumber: number;
+  issueNumber: number;
+  acRefs: string[];
+  internalAcIds: number[];
+}> {
   const issue = (await svc.issues.create("me/reviews", {
     title: `issue ${title}`,
     acceptance_criteria: criteria,
@@ -87,10 +92,16 @@ async function newPullForRubric(
     base: "main",
     issue: issue.number,
   });
-  const acIds = (
-    svc.issues.acList("me/reviews", issue.number) as { id: number }[]
-  ).map((c) => c.id);
-  return { prNumber: pull.number, issueNumber: issue.number, acIds };
+  const storedIssue = S.getIssue(repoId, issue.number)!;
+  const storedCriteria = S.listAcceptanceCriteria(storedIssue.id);
+  return {
+    prNumber: pull.number,
+    issueNumber: issue.number,
+    acRefs: storedCriteria.map(
+      (criterion) => `${issue.number}-${criterion.number}`,
+    ),
+    internalAcIds: storedCriteria.map((criterion) => criterion.id),
+  };
 }
 
 beforeAll(async () => {
@@ -357,27 +368,27 @@ test("gate goes blocked on REQUEST_CHANGES and open when a later PASS supersedes
 });
 
 test("--ac-results records a grade per enabled criterion on the review row (#1895)", async () => {
-  const { prNumber, acIds } = await newPullForRubric("grade-ok", [
-    "alpha",
-    "beta",
-  ]);
+  const { prNumber, acRefs, internalAcIds } = await newPullForRubric(
+    "grade-ok",
+    ["alpha", "beta"],
+  );
   const review = await svc.reviews.create("me/reviews", prNumber, {
     event: "REQUEST_CHANGES",
     body: "beta not met",
     acResults: [
-      { criterion_id: acIds[0], verdict: "pass" },
-      { criterion_id: acIds[1], verdict: "fail", note: "missing X" },
+      { criterion_id: acRefs[0], verdict: "pass" },
+      { criterion_id: acRefs[1], verdict: "fail", note: "missing X" },
     ],
   });
   const grades = S.listReviewAcResults(review.id);
   expect(grades.map((g) => [g.criterion_id, g.verdict, g.note])).toEqual([
-    [acIds[0], "pass", ""],
-    [acIds[1], "fail", "missing X"],
+    [internalAcIds[0], "pass", ""],
+    [internalAcIds[1], "fail", "missing X"],
   ]);
 });
 
-test("qualified issue-local AC references resolve without replacing stable ids", async () => {
-  const { prNumber, issueNumber, acIds } = await newPullForRubric(
+test("qualified issue-local AC references resolve to storage ids", async () => {
+  const { prNumber, acRefs, internalAcIds } = await newPullForRubric(
     "grade-qualified",
     ["alpha", "beta"],
   );
@@ -385,13 +396,34 @@ test("qualified issue-local AC references resolve without replacing stable ids",
     event: "PASS",
     body: "all met",
     acResults: [
-      { criterion_id: `${issueNumber}-1`, verdict: "pass" },
-      { criterion_id: `${issueNumber}-2`, verdict: "pass" },
+      { criterion_id: acRefs[0], verdict: "pass" },
+      { criterion_id: acRefs[1], verdict: "pass" },
     ],
   });
   expect(S.listReviewAcResults(review.id).map((r) => r.criterion_id)).toEqual(
-    acIds,
+    internalAcIds,
   );
+  expect(review.ac_results.map((result) => result.criterion_id)).toEqual(
+    acRefs,
+  );
+});
+
+test("internal criterion ids are rejected by the review service boundary", async () => {
+  const { prNumber, internalAcIds } = await newPullForRubric(
+    "grade-internal-id",
+    ["only"],
+  );
+  await expect(
+    svc.reviews.create("me/reviews", prNumber, {
+      acResults: [
+        {
+          // @ts-expect-error Review input can arrive from untyped external JSON.
+          criterion_id: internalAcIds[0],
+          verdict: "pass",
+        },
+      ],
+    }),
+  ).rejects.toThrow(/requires criterion_id as <issue-number>-<ac-number>/);
 });
 
 test("qualified AC references reject a different issue and a missing number", async () => {
@@ -412,7 +444,7 @@ test("qualified AC references reject a different issue and a missing number", as
 });
 
 test("a PASS contradicted by a failing grade is soft-warned, not rejected (#1896)", async () => {
-  const { prNumber, acIds } = await newPullForRubric("grade-contradiction", [
+  const { prNumber, acRefs } = await newPullForRubric("grade-contradiction", [
     "alpha",
     "beta",
   ]);
@@ -420,8 +452,8 @@ test("a PASS contradicted by a failing grade is soft-warned, not rejected (#1896
     event: "PASS",
     body: "lgtm",
     acResults: [
-      { criterion_id: acIds[0], verdict: "pass" },
-      { criterion_id: acIds[1], verdict: "fail", note: "missing X" },
+      { criterion_id: acRefs[0], verdict: "pass" },
+      { criterion_id: acRefs[1], verdict: "fail", note: "missing X" },
     ],
   });
   expect(review.warnings).toEqual([
@@ -436,7 +468,7 @@ test("a PASS contradicted by a failing grade is soft-warned, not rejected (#1896
 });
 
 test("a consistent verdict carries no warning (#1896)", async () => {
-  const { prNumber, acIds } = await newPullForRubric("grade-consistent", [
+  const { prNumber, acRefs } = await newPullForRubric("grade-consistent", [
     "alpha",
     "beta",
   ]);
@@ -444,8 +476,8 @@ test("a consistent verdict carries no warning (#1896)", async () => {
     event: "PASS",
     body: "lgtm",
     acResults: [
-      { criterion_id: acIds[0], verdict: "pass" },
-      { criterion_id: acIds[1], verdict: "pass" },
+      { criterion_id: acRefs[0], verdict: "pass" },
+      { criterion_id: acRefs[1], verdict: "pass" },
     ],
   });
   expect(passed.warnings).toEqual([]);
@@ -453,8 +485,8 @@ test("a consistent verdict carries no warning (#1896)", async () => {
     event: "REQUEST_CHANGES",
     body: "beta not met",
     acResults: [
-      { criterion_id: acIds[0], verdict: "pass" },
-      { criterion_id: acIds[1], verdict: "fail", note: "missing X" },
+      { criterion_id: acRefs[0], verdict: "pass" },
+      { criterion_id: acRefs[1], verdict: "fail", note: "missing X" },
     ],
   });
   expect(changes.warnings).toEqual([]);
@@ -470,50 +502,54 @@ test("omitting --ac-results is the holistic fallback: no grade rows (#1895)", as
 });
 
 test("a criterion outside the linked issue's enabled rubric is rejected, not corrected (#1895)", async () => {
-  const { prNumber, acIds } = await newPullForRubric("grade-foreign", ["one"]);
+  const { prNumber, acRefs } = await newPullForRubric("grade-foreign", ["one"]);
+  const otherIssue = (await svc.issues.create("me/reviews", {
+    title: "other rubric",
+    acceptance_criteria: ["other"],
+  })) as { number: number };
   const before = S.getIssue(repoId, prNumber);
   await expect(
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
       body: "x",
       acResults: [
-        { criterion_id: acIds[0], verdict: "pass" },
-        { criterion_id: acIds[0] + 999, verdict: "pass" },
+        { criterion_id: acRefs[0], verdict: "pass" },
+        { criterion_id: `${otherIssue.number}-1`, verdict: "pass" },
       ],
     }),
-  ).rejects.toThrow(/not an enabled acceptance criterion/);
+  ).rejects.toThrow(/is not the issue linked to this pull request/);
   // The rejected submission wrote nothing — no partial review row survives.
   expect(S.listReviews(before!.id)).toHaveLength(0);
 });
 
 test("a disabled criterion is not gradable; grading only the enabled set succeeds (#1895)", async () => {
-  const { prNumber, acIds } = await newPullForRubric("grade-disabled", [
-    "keep",
-    "drop",
-  ]);
-  S.setAcceptanceCriterionEnabled(acIds[1], false);
+  const { prNumber, acRefs, internalAcIds } = await newPullForRubric(
+    "grade-disabled",
+    ["keep", "drop"],
+  );
+  S.setAcceptanceCriterionEnabled(internalAcIds[1], false);
   await expect(
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
       body: "x",
       acResults: [
-        { criterion_id: acIds[0], verdict: "pass" },
-        { criterion_id: acIds[1], verdict: "pass" },
+        { criterion_id: acRefs[0], verdict: "pass" },
+        { criterion_id: acRefs[1], verdict: "pass" },
       ],
     }),
   ).rejects.toThrow(/not an enabled acceptance criterion/);
   const review = await svc.reviews.create("me/reviews", prNumber, {
     event: "PASS",
     body: "ok",
-    acResults: [{ criterion_id: acIds[0], verdict: "pass" }],
+    acResults: [{ criterion_id: acRefs[0], verdict: "pass" }],
   });
   expect(S.listReviewAcResults(review.id).map((g) => g.criterion_id)).toEqual([
-    acIds[0],
+    internalAcIds[0],
   ]);
 });
 
 test("a partial (undersized) grade set is rejected — every enabled criterion must be graded (#1895)", async () => {
-  const { prNumber, acIds } = await newPullForRubric("grade-partial", [
+  const { prNumber, acRefs } = await newPullForRubric("grade-partial", [
     "a",
     "b",
   ]);
@@ -521,32 +557,32 @@ test("a partial (undersized) grade set is rejected — every enabled criterion m
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
       body: "x",
-      acResults: [{ criterion_id: acIds[0], verdict: "pass" }],
+      acResults: [{ criterion_id: acRefs[0], verdict: "pass" }],
     }),
   ).rejects.toThrow(/grade every enabled acceptance criterion/);
 });
 
 test("a duplicate grade for one criterion is rejected (#1895)", async () => {
-  const { prNumber, acIds } = await newPullForRubric("grade-dup", ["a", "b"]);
+  const { prNumber, acRefs } = await newPullForRubric("grade-dup", ["a", "b"]);
   await expect(
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
       body: "x",
       acResults: [
-        { criterion_id: acIds[0], verdict: "pass" },
-        { criterion_id: acIds[0], verdict: "fail" },
+        { criterion_id: acRefs[0], verdict: "pass" },
+        { criterion_id: acRefs[0], verdict: "fail" },
       ],
     }),
   ).rejects.toThrow(/duplicate ac-result/);
 });
 
 test("an invalid verdict is rejected (#1895)", async () => {
-  const { prNumber, acIds } = await newPullForRubric("grade-verdict", ["a"]);
+  const { prNumber, acRefs } = await newPullForRubric("grade-verdict", ["a"]);
   await expect(
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
       body: "x",
-      acResults: [{ criterion_id: acIds[0], verdict: "maybe" }],
+      acResults: [{ criterion_id: acRefs[0], verdict: "maybe" }],
     }),
   ).rejects.toThrow(/verdict must be 'pass' or 'fail'/);
 });
