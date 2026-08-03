@@ -1,6 +1,8 @@
 import { currentMergeableState } from "./pull-mergeable-state.ts";
 import * as S from "./store.ts";
 
+const MERGE_READY_NOTIFICATION_DELAY_MS = 10_000;
+
 export interface MergeReadyNotificationSweepResult {
   checked: number;
   created: S.NotificationRow[];
@@ -16,6 +18,12 @@ export async function sweepMergeReadyNotifications(): Promise<MergeReadyNotifica
     const state = await currentMergeableState(pull);
     const observed = S.recordMergeReadyState(pull.repo_id, pull.number, state);
     if (observed.state !== "clean") continue;
+    const cleanSince = Date.parse(observed.updated_at);
+    if (
+      !Number.isFinite(cleanSince) ||
+      Date.now() - cleanSince < MERGE_READY_NOTIFICATION_DELAY_MS
+    )
+      continue;
 
     const row = S.createNotification({
       repoId: pull.repo_id,

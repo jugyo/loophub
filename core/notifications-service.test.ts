@@ -10,6 +10,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
+let D: typeof import("./db.ts");
 const repoDirs: string[] = [];
 let primaryRepoPath: string;
 
@@ -30,9 +31,17 @@ function initGitRepo(prefix: string): string {
   return dir;
 }
 
+function ageMergeReadyState(repoId: number, pullNumber: number) {
+  D.db.run(
+    "UPDATE notification_merge_ready_states SET updated_at = ? WHERE repo_id = ? AND pull_number = ?",
+    [new Date(Date.now() - 10_001).toISOString(), repoId, pullNumber],
+  );
+}
+
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
+  D = await import("./db.ts");
   primaryRepoPath = initGitRepo("lh-notifications-repo-");
   await svc.repos.create({ path: primaryRepoPath, name: "me/notify" });
 });
@@ -64,6 +73,17 @@ test("list generates merge-ready and over-budget notifications", async () => {
   });
   S.createReview(attention.id, "reviewer", "REQUEST_CHANGES", "fix this");
 
+  const beforeGrace = await svc.notifications.list({ limit: 20 });
+  expect(beforeGrace).toEqual(
+    expect.not.arrayContaining([
+      expect.objectContaining({
+        kind: "merge_ready",
+        resource: expect.objectContaining({ number: done.number }),
+      }),
+    ]),
+  );
+
+  ageMergeReadyState(repo.id, done.number);
   const notifications = await svc.notifications.list({ limit: 20 });
   expect(notifications).toEqual(
     expect.arrayContaining([
@@ -281,17 +301,29 @@ test("merge-ready notifications follow clean transitions without sweep duplicate
   const clean = S.createIssue(repo.id, "pull", "Clean", "", "me");
   S.createPull(clean.id, "clean", "main", cleanSha, null);
   S.createReview(clean.id, "reviewer", "PASS", "passed", cleanSha);
+  await svc.notifications.sweepMergeReady();
+  let notifications = S.listNotifications({ limit: 100 }).filter(
+    (notification) => notification.repo_id === repo.id,
+  );
+  expect(notifications).toHaveLength(0);
 
   await svc.notifications.sweepMergeReady();
+  notifications = S.listNotifications({ limit: 100 }).filter(
+    (notification) => notification.repo_id === repo.id,
+  );
+  expect(notifications).toHaveLength(0);
+
+  ageMergeReadyState(repo.id, clean.number);
   await svc.notifications.sweepMergeReady();
-  let notifications = (await svc.notifications.list({ limit: 100 })).filter(
-    (n: any) => n.repo.name === "me/notify-transitions",
+  notifications = S.listNotifications({ limit: 100 }).filter(
+    (notification) => notification.repo_id === repo.id,
   );
   expect(notifications).toHaveLength(1);
   expect(notifications[0]).toMatchObject({
     kind: "merge_ready",
     title: "Ready to merge",
-    resource: { kind: "pull", number: clean.number },
+    resource_kind: "pull",
+    resource_number: clean.number,
   });
 
   git(repoPath, ["checkout", "-q", "clean"]);
@@ -302,16 +334,22 @@ test("merge-ready notifications follow clean transitions without sweep duplicate
   git(repoPath, ["checkout", "-q", "main"]);
 
   await svc.notifications.sweepMergeReady();
-  notifications = (await svc.notifications.list({ limit: 100 })).filter(
-    (n: any) => n.repo.name === "me/notify-transitions",
+  notifications = S.listNotifications({ limit: 100 }).filter(
+    (notification) => notification.repo_id === repo.id,
   );
   expect(notifications).toHaveLength(1);
 
   S.createReview(clean.id, "reviewer", "PASS", "passed again", changedSha);
   await svc.notifications.sweepMergeReady();
+  notifications = S.listNotifications({ limit: 100 }).filter(
+    (notification) => notification.repo_id === repo.id,
+  );
+  expect(notifications).toHaveLength(1);
+
+  ageMergeReadyState(repo.id, clean.number);
   await svc.notifications.sweepMergeReady();
-  notifications = (await svc.notifications.list({ limit: 100 })).filter(
-    (n: any) => n.repo.name === "me/notify-transitions",
+  notifications = S.listNotifications({ limit: 100 }).filter(
+    (notification) => notification.repo_id === repo.id,
   );
   expect(notifications).toHaveLength(2);
 }, 15_000);
