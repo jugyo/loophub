@@ -596,6 +596,31 @@ describe("PullDetail", () => {
     ).toBeTruthy();
   });
 
+  it("expands and shrinks the PR comment composer with its content", async () => {
+    renderDetail({ "comments/list": () => [] });
+
+    const composer = (await screen.findByLabelText(
+      "Add a PR comment",
+    )) as HTMLTextAreaElement;
+    expect(composer.className).toContain("min-h-24");
+    let scrollHeight = 144;
+    Object.defineProperty(composer, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+
+    fireEvent.change(composer, {
+      target: { value: "A comment that wraps onto several displayed lines." },
+    });
+    expect(composer.style.height).toBe("144px");
+    expect(composer.className).toContain("resize-none");
+    expect(composer.className).toContain("overflow-hidden");
+
+    scrollHeight = 72;
+    fireEvent.change(composer, { target: { value: "Short comment" } });
+    expect(composer.style.height).toBe("72px");
+  });
+
   it("shows reactions attached to PR comments", async () => {
     renderDetail({
       "comments/list": () => [

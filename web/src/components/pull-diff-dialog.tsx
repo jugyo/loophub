@@ -49,6 +49,7 @@ import {
   singleSelection,
 } from "@/lib/diff-feedback";
 import { errorMessage } from "@/lib/error-message";
+import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
 import {
@@ -1278,6 +1279,8 @@ function DiffCommentComposer({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const textareaRef = useAutosizeTextarea(body);
+
   return (
     <div className="m-2 rounded-md border bg-background p-3 font-sans">
       <div className="mb-2 text-xs font-medium">
@@ -1287,6 +1290,7 @@ function DiffCommentComposer({
           : `–${selection.endLine}`}
       </div>
       <textarea
+        ref={textareaRef}
         aria-label="Diff comment"
         value={body}
         onChange={(event) => onBodyChange(event.target.value)}
@@ -1296,7 +1300,7 @@ function DiffCommentComposer({
             if (body.trim() && !busy) onSubmit();
           }
         }}
-        className="min-h-20 w-full rounded-md border bg-background p-2 text-sm"
+        className="min-h-20 w-full resize-none overflow-hidden rounded-md border bg-background p-2 text-sm"
         placeholder="Leave a comment…"
       />
       <div className="mt-2 flex justify-end gap-2">
@@ -1650,6 +1654,7 @@ function ThreadCard({
   onResolved: (resolved: boolean) => void;
 }) {
   const [replyBody, setReplyBody] = useState("");
+  const replyTextareaRef = useAutosizeTextarea(replyBody);
   const displayedAnchor =
     thread.freshness === "current" && thread.resolved_anchor
       ? thread.resolved_anchor
@@ -1745,6 +1750,7 @@ function ThreadCard({
       </div>
       <div className="mt-2">
         <textarea
+          ref={replyTextareaRef}
           aria-label={`Reply to thread ${thread.id}`}
           value={replyBody}
           onChange={(event) => setReplyBody(event.target.value)}
@@ -1754,7 +1760,7 @@ function ThreadCard({
               submitReply();
             }
           }}
-          className="min-h-16 w-full rounded-md border bg-background p-2 text-sm"
+          className="min-h-16 w-full resize-none overflow-hidden rounded-md border bg-background p-2 text-sm"
           placeholder="Reply…"
         />
         <div className="mt-2 flex justify-end gap-2">

@@ -1308,6 +1308,64 @@ describe("DiffFileDialog", () => {
     await waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
   });
 
+  it("expands and shrinks diff comment composers with their content", async () => {
+    renderDialog({
+      handlers: {
+        "pulls/diff": stableDiff,
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                side: "LEFT",
+                start_line: 1,
+                end_line: 1,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+
+    await addComment("New line 1");
+    const commentComposer = screen.getByLabelText(
+      "Diff comment",
+    ) as HTMLTextAreaElement;
+    const replyComposer = screen.getByLabelText(
+      "Reply to thread 1",
+    ) as HTMLTextAreaElement;
+    let commentScrollHeight = 128;
+    let replyScrollHeight = 112;
+    Object.defineProperty(commentComposer, "scrollHeight", {
+      configurable: true,
+      get: () => commentScrollHeight,
+    });
+    Object.defineProperty(replyComposer, "scrollHeight", {
+      configurable: true,
+      get: () => replyScrollHeight,
+    });
+
+    fireEvent.change(commentComposer, {
+      target: {
+        value: "A diff comment that wraps onto several displayed lines.",
+      },
+    });
+    fireEvent.change(replyComposer, {
+      target: { value: "A reply that wraps onto several displayed lines." },
+    });
+    expect(commentComposer.style.height).toBe("128px");
+    expect(replyComposer.style.height).toBe("112px");
+    expect(commentComposer.className).toContain("resize-none");
+    expect(replyComposer.className).toContain("overflow-hidden");
+
+    commentScrollHeight = 64;
+    replyScrollHeight = 56;
+    fireEvent.change(commentComposer, { target: { value: "Short comment" } });
+    fireEvent.change(replyComposer, { target: { value: "Short reply" } });
+    expect(commentComposer.style.height).toBe("64px");
+    expect(replyComposer.style.height).toBe("56px");
+  });
+
   it("shows the author once for a single-message conversation", async () => {
     renderDialog({
       handlers: {

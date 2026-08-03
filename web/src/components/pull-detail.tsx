@@ -50,6 +50,7 @@ import { pullDetailBadges } from "@/lib/badges";
 import { errorMessage } from "@/lib/error-message";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
+import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
 import {
@@ -792,6 +793,7 @@ function CommentList({
 }) {
   const [body, setBody] = useState("");
   const [postFailed, setPostFailed] = useState(false);
+  const textareaRef = useAutosizeTextarea(body);
   const reaction = useReactToPullComment(owner, repo, number);
   const { showError } = useToast();
   const post = usePostPullComment(owner, repo, number, (_error, failedBody) => {
@@ -912,6 +914,7 @@ function CommentList({
         className="flex flex-col gap-2"
       >
         <textarea
+          ref={textareaRef}
           aria-label="Add a PR comment"
           placeholder="Add a comment"
           value={body}
@@ -923,7 +926,7 @@ function CommentList({
             }
           }}
           rows={4}
-          className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-24 w-full resize-none overflow-hidden rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <div className="flex items-center justify-end gap-2">
           {postFailed ? (
