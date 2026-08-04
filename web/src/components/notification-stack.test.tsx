@@ -14,13 +14,18 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HerdrRepoSessions, Notification } from "@/api/types";
+import type {
+  HerdrRepoSessions,
+  Notification,
+  WorkflowRunState,
+} from "@/api/types";
 import { NotificationStack } from "./notification-stack";
 
 const notifications = vi.hoisted(() => ({
   value: [] as Notification[],
   isError: false,
   herdrRepos: [] as HerdrRepoSessions[],
+  workflowRun: null as WorkflowRunState | null,
 }));
 const actions = vi.hoisted(() => ({
   list: vi.fn(),
@@ -28,6 +33,7 @@ const actions = vi.hoisted(() => ({
   readAll: vi.fn(),
   focus: vi.fn(),
   showError: vi.fn(),
+  increaseCostLimit: vi.fn(),
 }));
 
 vi.mock("@/queries/notifications", () => ({
@@ -51,12 +57,21 @@ vi.mock("@/components/toast", () => ({
   useToast: () => ({ showError: actions.showError }),
 }));
 
+vi.mock("@/queries/workflow-runs", () => ({
+  useWorkflowRunForPull: () => ({ data: notifications.workflowRun }),
+  useIncreaseWorkflowRunCostLimit: () => ({
+    mutate: actions.increaseCostLimit,
+    isPending: false,
+  }),
+}));
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   notifications.value = [];
   notifications.isError = false;
   notifications.herdrRepos = [];
+  notifications.workflowRun = null;
 });
 
 function makeNotification(
@@ -77,9 +92,50 @@ function makeNotification(
       href: `/r/me/proj/pulls/${id}`,
     },
     herdr_pane_id: null,
+    workflow_run_id: null,
     read_at: null,
     created_at: `2026-01-01T00:00:0${id}Z`,
     ...overrides,
+  };
+}
+
+function makeCostNotification(
+  overrides: Partial<Notification> = {},
+): Notification {
+  return makeNotification(12, {
+    kind: "over_budget",
+    severity: "warning",
+    title: "Workflow cost limit exceeded",
+    workflow_run_id: 7,
+    ...overrides,
+  });
+}
+
+function makeRunState(
+  partial: Partial<WorkflowRunState> = {},
+): WorkflowRunState {
+  return {
+    id: 7,
+    workflow_id: 3,
+    workflow_name: "standard",
+    status: "running",
+    current_step: "execute",
+    rework_count: 0,
+    rework_limit: 8,
+    cost_increment_usd: 10,
+    cost_limit_usd: 20,
+    cost_limit_increase_available: true,
+    needs_human_reason: "cost limit exceeded",
+    issue_number: 42,
+    pr_number: 12,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    ended_at: null,
+    latest_review: null,
+    verification_status: "unverified",
+    done: false,
+    merge_conflict: false,
+    ...partial,
   };
 }
 
@@ -165,7 +221,7 @@ describe("NotificationStack", () => {
       const link = screen.getByRole("link", {
         name: new RegExp(`Notification ${id}`),
       });
-      const icon = link.parentElement?.querySelector("svg");
+      const icon = link.closest("article")?.querySelector("svg");
       if (!icon) throw new Error(`no icon for Notification ${id}`);
       return icon as SVGSVGElement;
     }
@@ -335,6 +391,120 @@ describe("NotificationStack", () => {
     ).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: "Open PR #12 in Herdr" }),
+    ).toBeNull();
+  });
+
+  it("increases a cost-held run's limit from its notification after confirming", async () => {
+    notifications.value = [makeCostNotification()];
+    notifications.workflowRun = makeRunState();
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Increase cost limit" }),
+    );
+
+    expect(actions.increaseCostLimit).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("group", { name: "Increase to $30.00?" }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+
+    expect(actions.increaseCostLimit).toHaveBeenCalledWith(
+      { run: 7, expectedLimitUsd: 20 },
+      expect.any(Object),
+    );
+  });
+
+  it("keeps the question answerable with No without increasing", async () => {
+    notifications.value = [makeCostNotification()];
+    notifications.workflowRun = makeRunState();
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Increase cost limit" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "No" }));
+
+    expect(actions.increaseCostLimit).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Increase cost limit" }),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    {
+      case: "the run is not held on its limit",
+      notification: makeCostNotification(),
+      run: makeRunState({ cost_limit_increase_available: false }),
+    },
+    {
+      case: "the PR moved on to another run",
+      notification: makeCostNotification(),
+      run: makeRunState({ id: 8 }),
+    },
+    {
+      case: "the notification is not about a run",
+      notification: makeCostNotification({ workflow_run_id: null }),
+      run: makeRunState(),
+    },
+    {
+      case: "the notification is not a budget one",
+      notification: makeCostNotification({ kind: "human_attention" }),
+      run: makeRunState(),
+    },
+  ])("offers no increase when $case", async (testCase) => {
+    notifications.value = [testCase.notification];
+    notifications.workflowRun = testCase.run;
+    renderStack();
+
+    expect(
+      await screen.findByText("Workflow cost limit exceeded"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Increase cost limit" }),
+    ).toBeNull();
+  });
+
+  it("keeps an increase failure visible on the notification", async () => {
+    notifications.value = [makeCostNotification()];
+    notifications.workflowRun = makeRunState();
+    actions.increaseCostLimit.mockImplementationOnce(
+      (_input: unknown, options: { onError: (error: Error) => void }) =>
+        options.onError(new Error("cost limit changed since it was read")),
+    );
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Increase cost limit" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toBe("cost limit changed since it was read");
+    expect(alert.className).toContain("text-destructive");
+    expect(screen.getByRole("button", { name: "Yes" })).toBeTruthy();
+  });
+
+  it("reports the new limit and stops asking after a successful increase", async () => {
+    notifications.value = [makeCostNotification()];
+    notifications.workflowRun = makeRunState();
+    actions.increaseCostLimit.mockImplementationOnce(
+      (
+        _input: unknown,
+        options: { onSuccess: (result: { current_limit_usd: number }) => void },
+      ) => options.onSuccess({ current_limit_usd: 30 }),
+    );
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Increase cost limit" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+
+    expect(screen.getByText("Cost limit increased to $30.00.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Yes" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Increase cost limit" }),
     ).toBeNull();
   });
 

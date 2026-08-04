@@ -129,6 +129,7 @@ function backfillFromSignals(): void {
         resourceKind: "pull",
         resourceNumber: signal.number,
         sourceKey: signal.source_key,
+        workflowRunId: signal.workflow_run_id,
         createdAt: signal.created_at,
       });
       if (row) {

@@ -18,6 +18,7 @@ export interface NotificationInput {
   resourceNumber?: number | null;
   sourceKey: string;
   herdrPaneId?: string | null;
+  workflowRunId?: number | null;
   createdAt?: string | null;
 }
 
@@ -32,6 +33,7 @@ export interface NotificationRow {
   resource_number: number | null;
   source_key: string;
   herdr_pane_id: string | null;
+  workflow_run_id: number | null;
   read_at: string | null;
   created_at: string;
 }
@@ -42,8 +44,8 @@ export function createNotification(
   const row = db
     .query(
       `INSERT OR IGNORE INTO notifications
-        (repo_id, kind, severity, title, body, resource_kind, resource_number, source_key, herdr_pane_id, read_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+        (repo_id, kind, severity, title, body, resource_kind, resource_number, source_key, herdr_pane_id, workflow_run_id, read_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
        RETURNING *`,
     )
     .get(
@@ -56,6 +58,7 @@ export function createNotification(
       input.resourceNumber ?? null,
       input.sourceKey,
       input.herdrPaneId ?? null,
+      input.workflowRunId ?? null,
       input.createdAt ?? now(),
     ) as NotificationRow | null;
   return row ?? null;

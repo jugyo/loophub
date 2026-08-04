@@ -29,6 +29,14 @@ describe("YesNoPrompt", () => {
     expect(onNo).toHaveBeenCalledTimes(1);
   });
 
+  it("puts the acting answer last", () => {
+    render(<YesNoPrompt question="Retry?" onYes={vi.fn()} onNo={vi.fn()} />);
+
+    expect(
+      screen.getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["No", "Yes"]);
+  });
+
   it("disables both answers while the yes action is in flight", () => {
     const onYes = vi.fn();
     render(

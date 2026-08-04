@@ -1180,6 +1180,14 @@ export const MIGRATIONS: Migration[] = [
       dropColumnIfPresent(db, "diff_feedback_threads", "resolved_at");
     },
   },
+  // Existing notifications stay without a run: their signals are gone from the cursor range, and a
+  // reader can still open the resource the notification points at.
+  addColumn(
+    "072-notifications-workflow-run",
+    "notifications",
+    "workflow_run_id",
+    "INTEGER",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

@@ -187,6 +187,8 @@ test("list creates warning notifications for Workflow cost and rework limit even
           kind: "pull",
           number: pull.number,
         }),
+        // The run the notification is about, so a reader can act on it without parsing the body.
+        workflow_run_id: run.id,
       }),
       expect.objectContaining({
         kind: "human_attention",
@@ -201,6 +203,7 @@ test("list creates warning notifications for Workflow cost and rework limit even
           kind: "pull",
           number: pull.number,
         }),
+        workflow_run_id: run.id,
       }),
     ]),
   );

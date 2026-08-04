@@ -10,6 +10,8 @@ import {
 import { useMemo, useState } from "react";
 import type { Notification } from "@/api/types";
 import { useToast } from "@/components/toast";
+import { YesNoPrompt } from "@/components/yes-no-prompt";
+import { formatCost } from "@/lib/session-usage";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import {
@@ -18,6 +20,10 @@ import {
   useReadNotification,
 } from "@/queries/notifications";
 import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
+import {
+  useIncreaseWorkflowRunCostLimit,
+  useWorkflowRunForPull,
+} from "@/queries/workflow-runs";
 
 const MAX_VISIBLE_NOTIFICATIONS = 5;
 const STACK_ITEM_CLASSES =
@@ -41,6 +47,15 @@ function notificationTone(notification: Notification): string {
   if (kind === "over_budget") return "text-amber-700 dark:text-amber-300";
   if (kind === "human_attention") return "text-sky-700 dark:text-sky-300";
   return "text-rose-700 dark:text-rose-300";
+}
+
+// The run a cost-limit notification is about, or null when the notification is not one. A
+// run-scoped over-budget notification is the only place the stack offers an action on the run
+// itself, so the kind and the run id decide it — never the generated title.
+function costHeldWorkflowRun(notification: Notification): number | null {
+  if (notification.kind !== "over_budget") return null;
+  if (notification.resource.kind !== "pull") return null;
+  return notification.workflow_run_id;
 }
 
 function resourceLabel(notification: Notification): string {
@@ -214,6 +229,7 @@ function NotificationItem({
 }) {
   const Icon = notificationIcon(notification);
   const label = resourceLabel(notification);
+  const costHeldRun = costHeldWorkflowRun(notification);
   return (
     <article
       data-debug-component="NotificationItem"
@@ -224,30 +240,42 @@ function NotificationItem({
         className={cn("mt-0.5 size-4 shrink-0", notificationTone(notification))}
         aria-hidden="true"
       />
-      <Link
-        to={notification.resource.href}
-        onClick={onRead}
-        className="min-w-0 flex-1 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        <div className="truncate font-medium">{notification.title}</div>
-        {notification.resource.kind === "pull" &&
-        notification.resource.title ? (
-          <div className="truncate text-xs text-muted-foreground">
-            {notification.resource.title}
+      <div className="min-w-0 flex-1">
+        <Link
+          to={notification.resource.href}
+          onClick={onRead}
+          className="block rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <div className="truncate font-medium">{notification.title}</div>
+          {notification.resource.kind === "pull" &&
+          notification.resource.title ? (
+            <div className="truncate text-xs text-muted-foreground">
+              {notification.resource.title}
+            </div>
+          ) : null}
+          <div className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+            {notification.body}
           </div>
+          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="min-w-0 truncate">{notification.repo.name}</span>
+            <span aria-hidden="true">/</span>
+            <span>{label}</span>
+            <time
+              className="ml-auto shrink-0"
+              dateTime={notification.created_at}
+            >
+              {relativeTime(notification.created_at)}
+            </time>
+          </div>
+        </Link>
+        {costHeldRun != null && notification.resource.number != null ? (
+          <WorkflowBudgetAction
+            repo={notification.repo.name}
+            pull={notification.resource.number}
+            run={costHeldRun}
+          />
         ) : null}
-        <div className="mt-1 break-words text-xs leading-5 text-muted-foreground">
-          {notification.body}
-        </div>
-        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="min-w-0 truncate">{notification.repo.name}</span>
-          <span aria-hidden="true">/</span>
-          <span>{label}</span>
-          <time className="ml-auto shrink-0" dateTime={notification.created_at}>
-            {relativeTime(notification.created_at)}
-          </time>
-        </div>
-      </Link>
+      </div>
       <div className="flex shrink-0 self-stretch flex-col justify-between gap-2">
         <button
           type="button"
@@ -272,5 +300,87 @@ function NotificationItem({
         ) : null}
       </div>
     </article>
+  );
+}
+
+// Raises the limit of the cost-held run the notification is about, so a supervisor who is only
+// watching the stack answers the hold where they read it instead of opening the PR (#2358). The
+// increase is the same one the PR row offers: the run's persisted increment, guarded by the limit
+// the notification's run currently sits at. Nothing renders while the run is not held — a run
+// resumed elsewhere leaves an already-read-looking notification behind, not a dead action.
+function WorkflowBudgetAction({
+  repo,
+  pull,
+  run,
+}: {
+  repo: string;
+  pull: number;
+  run: number;
+}) {
+  const [owner, name] = repo.split("/");
+  const { data: state } = useWorkflowRunForPull(owner, name, pull);
+  const increaseCostLimit = useIncreaseWorkflowRunCostLimit(owner, name, pull);
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [increasedLimitUsd, setIncreasedLimitUsd] = useState<number | null>(
+    null,
+  );
+
+  // The answered question stays as the outcome: the action is gone, and the limit it moved to is
+  // the confirmation. Only the run state can bring the question back, at the next crossing.
+  if (increasedLimitUsd !== null) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        Cost limit increased to {formatCost(increasedLimitUsd)}.
+      </p>
+    );
+  }
+  if (!state || state.id !== run || !state.cost_limit_increase_available) {
+    return null;
+  }
+  const nextLimit = state.cost_limit_usd + state.cost_increment_usd;
+  return (
+    <div className="mt-2 flex flex-col items-start gap-1 text-xs">
+      {asking ? (
+        <YesNoPrompt
+          question={`Increase to ${formatCost(nextLimit)}?`}
+          pending={increaseCostLimit.isPending}
+          onYes={() =>
+            increaseCostLimit.mutate(
+              { run: state.id, expectedLimitUsd: state.cost_limit_usd },
+              {
+                onSuccess: (result) => {
+                  setError(null);
+                  setIncreasedLimitUsd(result.current_limit_usd);
+                },
+                onError: (failure) =>
+                  setError(
+                    failure instanceof Error
+                      ? failure.message
+                      : "Failed to increase the workflow budget.",
+                  ),
+              },
+            )
+          }
+          onNo={() => {
+            setAsking(false);
+            setError(null);
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAsking(true)}
+          className="rounded-md border px-2 py-0.5 font-medium text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          Increase cost limit
+        </button>
+      )}
+      {error ? (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }

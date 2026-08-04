@@ -1235,6 +1235,8 @@ export interface NotificationWire {
     href: string;
   };
   herdr_pane_id: string | null;
+  /** The Workflow run this notification is about, or null when it is not run-scoped. */
+  workflow_run_id: number | null;
   read_at: string | null;
   created_at: string;
 }
@@ -1270,6 +1272,7 @@ export function notificationJSON(n: S.NotificationRow): NotificationWire {
       href,
     },
     herdr_pane_id: n.herdr_pane_id,
+    workflow_run_id: n.workflow_run_id,
     read_at: n.read_at,
     created_at: n.created_at,
   };

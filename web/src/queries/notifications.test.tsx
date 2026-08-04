@@ -29,6 +29,7 @@ function makeNotification(id: number): Notification {
     body: "Ready for review.",
     resource: { kind: "pull", number: id, title: null, href: `/pulls/${id}` },
     herdr_pane_id: null,
+    workflow_run_id: null,
     read_at: null,
     created_at: "2026-01-01T00:00:00Z",
   };

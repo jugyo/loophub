@@ -885,6 +885,9 @@ CREATE TABLE IF NOT EXISTS notifications (
   resource_number INTEGER,
   source_key     TEXT NOT NULL UNIQUE,
   herdr_pane_id  TEXT,
+  -- The Workflow run this notification is about, when it came from a run-scoped signal. It names
+  -- the run a reader can act on (a cost-held run's limit increase) without parsing title or body.
+  workflow_run_id INTEGER,
   read_at        TEXT,
   created_at     TEXT NOT NULL
 );
