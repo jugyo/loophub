@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -59,6 +60,10 @@ function renderSection(fetchImpl: typeof fetch) {
 describe("Workflow run detail dialog", () => {
   it("fetches on open and shows agent costs, metadata, and history", async () => {
     const fetchMock = mockRpcFetch({
+      "workflowRuns/totalCost": () => ({
+        cost_usd: 1.25,
+        cost_status: "partial",
+      }),
       "workflowRuns/agentCosts": () => [
         {
           session_id: "parent-session",
@@ -119,7 +124,14 @@ describe("Workflow run detail dialog", () => {
     });
     renderSection(fetchMock);
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(rpcCall("workflowRuns/totalCost")?.params).toMatchObject({
+        repo: "me/loophub",
+        run: 7,
+      }),
+    );
+    expect(rpcCall("workflowRuns/history")).toBeUndefined();
+    expect(rpcCall("workflowRuns/agentCosts")).toBeUndefined();
     fireEvent.click(screen.getByRole("button", { name: "Detail" }));
 
     const dialog = await screen.findByRole("dialog", {

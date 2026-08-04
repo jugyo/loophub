@@ -1667,6 +1667,14 @@ export interface WorkflowRunAgentCostWire {
   cost_status: "known" | "unknown" | "pending";
 }
 
+// Run-scoped total calculated from the same persisted participant set and cost summary used by
+// Workflow budget enforcement. A partial total keeps the observed amount visible while one or more
+// participant sessions have not reported usage yet.
+export interface WorkflowRunTotalCostWire {
+  cost_usd: number | null;
+  cost_status: "known" | "partial" | "unknown" | "pending" | "not_recorded";
+}
+
 function workflowStepLabel(value: unknown): string | null {
   if (typeof value !== "string" || value.length === 0) return null;
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;

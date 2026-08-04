@@ -501,6 +501,23 @@ test("workflowRuns/agentCosts exposes the requested run's persisted participants
   expect(agentCosts).toHaveBeenCalledWith("me/proj", { run: 9 });
 });
 
+test("workflowRuns/totalCost exposes the core-calculated run total", async () => {
+  const totalCost = vi.spyOn(svc.workflowRuns, "totalCost").mockReturnValue({
+    cost_usd: 2.5,
+    cost_status: "partial",
+  });
+
+  const response: any = await call("workflowRuns/totalCost", {
+    repo: "me/proj",
+    run: 9,
+  });
+  expect(response.result).toEqual({
+    cost_usd: 2.5,
+    cost_status: "partial",
+  });
+  expect(totalCost).toHaveBeenCalledWith("me/proj", { run: 9 });
+});
+
 test("workflowRuns/increaseCostLimit raises a cost-held run from a Web session", async () => {
   const increase = vi
     .spyOn(svc.workflowRuns, "increaseCostLimitForHuman")

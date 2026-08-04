@@ -8,6 +8,7 @@ import {
   getWorkflowRunAgentCosts,
   getWorkflowRunHistory,
   getWorkflowRunStateForPull,
+  getWorkflowRunTotalCost,
   increaseWorkflowRunCostLimit,
 } from "@/api/client";
 import { queryKeys } from "./keys";
@@ -77,6 +78,21 @@ export function useWorkflowRunAgentCosts(
   return useQuery({
     queryKey: queryKeys.workflowRunAgentCosts(full, run),
     queryFn: () => getWorkflowRunAgentCosts(full, run),
+    enabled,
+  });
+}
+
+/** Core-calculated run total shown whenever the PR sidebar's Workflow section is visible. */
+export function useWorkflowRunTotalCost(
+  owner: string,
+  repo: string,
+  run: number,
+  enabled: boolean,
+) {
+  const full = `${owner}/${repo}`;
+  return useQuery({
+    queryKey: queryKeys.workflowRunTotalCost(full, run),
+    queryFn: () => getWorkflowRunTotalCost(full, run),
     enabled,
   });
 }

@@ -50,6 +50,7 @@ import type {
   WorkflowRunAgentCost,
   WorkflowRunHistoryEvent,
   WorkflowRunState,
+  WorkflowRunTotalCost,
   Workspace,
 } from "./types";
 
@@ -371,6 +372,11 @@ export function getWorkflowRunHistory(repo: string, run: number) {
 /** Persisted Workflow participants and their current per-session costs. */
 export function getWorkflowRunAgentCosts(repo: string, run: number) {
   return rpc<WorkflowRunAgentCost[]>("workflowRuns/agentCosts", { repo, run });
+}
+
+/** Core-calculated total for the persisted Workflow participants. */
+export function getWorkflowRunTotalCost(repo: string, run: number) {
+  return rpc<WorkflowRunTotalCost>("workflowRuns/totalCost", { repo, run });
 }
 
 /** Raise a cost-held run's budget by its persisted increment (#1828). */

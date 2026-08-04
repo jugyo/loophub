@@ -404,6 +404,7 @@ describe("queryKeysForEvent", () => {
     );
     expect(keys).toContainEqual(["agent-sessions"]);
     expect(keys).toContainEqual(["workflow-run", "agent-costs", "me/proj"]);
+    expect(keys).toContainEqual(["workflow-run", "total-cost", "me/proj"]);
     expect(keys).toContainEqual(["pull-usage", "me/proj", 7]);
     expect(keys).not.toContainEqual(["pull", "me/proj", 7]);
     expect(keys).not.toContainEqual(["issue", "me/proj", 4]);
@@ -540,6 +541,7 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["workflow-run", "issue", "me/proj", 4]);
     expect(keys).toContainEqual(["workflow-run", "pull", "me/proj", 13]);
     expect(keys).toContainEqual(["workflow-run", "history", "me/proj", 9]);
+    expect(keys).toContainEqual(["workflow-run", "total-cost", "me/proj", 9]);
   });
 
   it("falls back to the whole workflow-run prefix when the event names neither issue nor PR", () => {

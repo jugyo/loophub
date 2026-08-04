@@ -64,6 +64,8 @@ export const queryKeys = {
     ["workflow-run", "history", full, run] as const,
   workflowRunAgentCosts: (full: string, run: number) =>
     ["workflow-run", "agent-costs", full, run] as const,
+  workflowRunTotalCost: (full: string, run: number) =>
+    ["workflow-run", "total-cost", full, run] as const,
 };
 
 function numberedSubject(
@@ -265,6 +267,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       }
       if (workflowRunId !== null) {
         keys.push([...queryKeys.workflowRunHistory(repo, workflowRunId)]);
+        keys.push([...queryKeys.workflowRunTotalCost(repo, workflowRunId)]);
       }
       if (issueNumber === null && pullNumber === null) {
         keys.push(["workflow-run"]);
@@ -352,6 +355,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // detail's query too.
     if (repo) {
       keys.push(["workflow-run", "agent-costs", repo]);
+      keys.push(["workflow-run", "total-cost", repo]);
       const prNumber = payload?.pr;
       const issueNumber = payload?.issue;
       // #2263: a running agent's usage counter is the app's highest-frequency event, and the only

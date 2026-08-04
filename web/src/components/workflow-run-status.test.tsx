@@ -15,10 +15,19 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HerdrSessions, WorkflowRunState } from "@/api/types";
+import type {
+  HerdrSessions,
+  WorkflowRunState,
+  WorkflowRunTotalCost,
+} from "@/api/types";
 
 const mocks = vi.hoisted(() => ({
   herdrSessions: undefined as HerdrSessions | undefined,
+  totalCost: {
+    cost_usd: null,
+    cost_status: "not_recorded",
+  } as WorkflowRunTotalCost,
+  totalCostError: false,
   focusHerdrAgent: vi.fn(),
 }));
 vi.mock("@/queries/terminal", () => ({
@@ -31,6 +40,14 @@ vi.mock("@/queries/terminal", () => ({
     isPending: false,
   }),
 }));
+vi.mock("@/queries/workflow-runs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/queries/workflow-runs")>()),
+  useWorkflowRunTotalCost: () => ({
+    data: mocks.totalCost,
+    isLoading: false,
+    isError: mocks.totalCostError,
+  }),
+}));
 
 import { WorkflowRunStatusSection } from "./workflow-run-status";
 
@@ -38,6 +55,8 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   mocks.herdrSessions = undefined;
+  mocks.totalCost = { cost_usd: null, cost_status: "not_recorded" };
+  mocks.totalCostError = false;
   mocks.focusHerdrAgent.mockClear();
 });
 
@@ -173,6 +192,51 @@ describe("WorkflowRunStatusSection", () => {
     // Current step is marked with aria-current="step".
     const current = screen.getByText("Execute");
     expect(current.getAttribute("aria-current")).toBe("step");
+  });
+
+  it("shows the total cost of the Workflow run using the shared cost format", async () => {
+    mocks.totalCost = { cost_usd: 0.0092, cost_status: "known" };
+
+    renderInRouter(
+      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+    );
+
+    expect(await screen.findByText("Total cost")).toBeTruthy();
+    expect(screen.getByText("$0.0092")).toBeTruthy();
+  });
+
+  it.each([
+    [{ cost_usd: 1.25, cost_status: "partial" }, "$1.25+"],
+    [{ cost_usd: null, cost_status: "pending" }, "Pending"],
+    [{ cost_usd: null, cost_status: "unknown" }, "Unknown"],
+  ] as const)("shows the core-provided incomplete cost state", async (totalCost, expected) => {
+    mocks.totalCost = totalCost;
+
+    renderInRouter(
+      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+    );
+
+    expect(await screen.findByText(expected)).toBeTruthy();
+    expect(screen.queryByText("$0.00")).toBeNull();
+  });
+
+  it("shows n/a when the run has no recorded agent sessions", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+    );
+
+    expect(await screen.findByText("n/a")).toBeTruthy();
+  });
+
+  it("shows a visible error when the total cost request fails", async () => {
+    mocks.totalCostError = true;
+    renderInRouter(
+      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+    );
+
+    const failure = await screen.findByText("Failed to load total cost.");
+    expect(failure.className).toContain("text-destructive");
+    expect(screen.queryByText("n/a")).toBeNull();
   });
 
   it("shows one live elapsed duration for a running run", async () => {

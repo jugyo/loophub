@@ -16,7 +16,7 @@
 import { Link } from "@tanstack/react-router";
 import { History } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { WorkflowRunState } from "@/api/types";
+import type { WorkflowRunState, WorkflowRunTotalCost } from "@/api/types";
 import {
   type AcknowledgedCostHold,
   WorkflowBudgetControl,
@@ -26,8 +26,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WorkflowRunDetailDialog } from "@/components/workflow-run-history-dialog";
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
+import { formatCost } from "@/lib/session-usage";
 import { formatDuration } from "@/lib/time";
 import { useHerdrSessions } from "@/queries/terminal";
+import { useWorkflowRunTotalCost } from "@/queries/workflow-runs";
 
 const STATUS_META: Record<
   string,
@@ -52,6 +54,14 @@ function needsHuman(state: WorkflowRunState): boolean {
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked"
   );
+}
+
+function formatWorkflowRunTotalCost(total: WorkflowRunTotalCost): string {
+  if (total.cost_status === "unknown") return "Unknown";
+  if (total.cost_status === "pending") return "Pending";
+  if (total.cost_status === "not_recorded") return "n/a";
+  const formatted = formatCost(total.cost_usd);
+  return total.cost_status === "partial" ? `${formatted}+` : formatted;
 }
 
 function WorkflowRunDuration({ state }: { state: WorkflowRunState }) {
@@ -97,6 +107,12 @@ export function WorkflowRunStatusSection({
   const [detailOpen, setDetailOpen] = useState(false);
   const [acknowledgedCostHold, setAcknowledgedCostHold] =
     useState<AcknowledgedCostHold | null>(null);
+  const totalCost = useWorkflowRunTotalCost(
+    owner,
+    repo,
+    state?.id ?? 0,
+    state !== null && state !== undefined,
+  );
   // Pull detail already loads this shared query for merge safety. Observe that cache without
   // starting a second, otherwise-unrelated request when this section is rendered alone.
   const { data: herdrSessions, isError: herdrSessionsError } = useHerdrSessions(
@@ -165,6 +181,25 @@ export function WorkflowRunStatusSection({
           size="md"
           overBudget={overBudget}
         />
+
+        <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
+          <span className="text-muted-foreground">Total cost</span>
+          <span
+            className={
+              totalCost.isError
+                ? "text-right text-destructive"
+                : "font-medium tabular-nums"
+            }
+          >
+            {totalCost.isLoading
+              ? "…"
+              : totalCost.isError
+                ? "Failed to load total cost."
+                : totalCost.data
+                  ? formatWorkflowRunTotalCost(totalCost.data)
+                  : "n/a"}
+          </span>
+        </div>
 
         {overBudget ? (
           <WorkflowBudgetControl

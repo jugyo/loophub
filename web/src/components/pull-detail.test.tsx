@@ -211,6 +211,10 @@ function mockFetch(
     "comments/list": () => comments,
     "terminal/sessions": () => ({ repos: [] }),
     "workflowRuns/stateForPull": () => null,
+    "workflowRuns/totalCost": () => ({
+      cost_usd: null,
+      cost_status: "not_recorded",
+    }),
     "pulls/githubStatus": () => ({
       state: "open",
       merged: false,
@@ -1700,6 +1704,10 @@ describe("PullDetail", () => {
         updated_at: "2026-06-18T12:00:00Z",
         latest_review: null,
       }),
+      "workflowRuns/totalCost": () => ({
+        cost_usd: 1.75,
+        cost_status: "known",
+      }),
     });
 
     await screen.findByText("Implementation loop");
@@ -1710,6 +1718,8 @@ describe("PullDetail", () => {
     expect(screen.getByText("run 12")).toBeTruthy();
     expect(screen.getByText("Verify")).toBeTruthy();
     expect(screen.getByText("Rework: 2/8")).toBeTruthy();
+    expect(screen.getByText("Total cost")).toBeTruthy();
+    expect(screen.getByText("$1.75")).toBeTruthy();
     expect(screen.getByText("Needs human")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Detail" })).toBeTruthy();
   });

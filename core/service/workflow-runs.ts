@@ -28,6 +28,7 @@ import {
   type WorkflowRunHistoryEventWire,
   type WorkflowRunReviewSummaryWire,
   type WorkflowRunStateWire,
+  type WorkflowRunTotalCostWire,
   type WorkflowStepStatusWire,
   workflowRunHistoryEventJSON,
   workflowRunStateJSON,
@@ -218,6 +219,24 @@ function workflowRunCost(run: S.WorkflowRunRow) {
   return {
     ...workflowRunCostBudget(run),
     summary: S.sessionUsageCostSummaryForSessions(sessionIds),
+  };
+}
+
+function workflowRunTotalCost(run: S.WorkflowRunRow): WorkflowRunTotalCostWire {
+  const { summary } = workflowRunCost(run);
+  const hasUnobserved = summary.unobserved_session_ids.length > 0;
+  if (summary.unknown_cost_session_ids.length > 0) {
+    return { cost_usd: null, cost_status: "unknown" };
+  }
+  if (summary.cost_usd !== null) {
+    return {
+      cost_usd: summary.cost_usd,
+      cost_status: hasUnobserved ? "partial" : "known",
+    };
+  }
+  return {
+    cost_usd: null,
+    cost_status: hasUnobserved ? "pending" : "not_recorded",
   };
 }
 
@@ -2503,5 +2522,20 @@ export const workflowRuns = {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
     return workflowRunAgentCosts(run);
+  },
+
+  // Core owns both Workflow participant selection and aggregate semantics so every surface stays
+  // aligned with the cost summary used by budget enforcement.
+  totalCost(
+    name: string,
+    input: { run: number },
+    _sessionId?: string | null,
+  ): WorkflowRunTotalCostWire {
+    const r = repoOr404(name);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    return workflowRunTotalCost(run);
   },
 };

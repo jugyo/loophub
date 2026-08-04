@@ -3763,7 +3763,7 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
   expect(history[0].input).toBeNull();
 });
 
-test("agentCosts returns only the persisted participants with per-session cost state", () => {
+test("agentCosts and totalCost use the persisted Workflow participants", () => {
   const repo = S.createRepo("me/workflow-agent-costs", REPO_PATH);
   const workflow = S.createWorkflow({
     name: "agent-costs-wf",
@@ -3816,6 +3816,33 @@ test("agentCosts returns only the persisted participants with per-session cost s
   });
   S.appendWorkflowRunStepSession(run.id, "execute", execute);
   S.appendWorkflowRunStepSession(run.id, "verify", verify);
+  const emptyRun = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 11,
+    prNumber: 21,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+  });
+  const pendingRun = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 12,
+    prNumber: 22,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId: unrelated,
+  });
+  expect(
+    svc.workflowRuns.totalCost(repo.full_name, { run: emptyRun.id }),
+  ).toEqual({ cost_usd: null, cost_status: "not_recorded" });
+  expect(
+    svc.workflowRuns.totalCost(repo.full_name, { run: pendingRun.id }),
+  ).toEqual({ cost_usd: null, cost_status: "pending" });
   S.upsertSessionUsage(parent, {
     model: "priced",
     input_tokens: 1,
@@ -3862,6 +3889,35 @@ test("agentCosts returns only the persisted participants with per-session cost s
       cost_status: "pending",
     },
   ]);
+
+  expect(svc.workflowRuns.totalCost(repo.full_name, { run: run.id })).toEqual({
+    cost_usd: null,
+    cost_status: "unknown",
+  });
+  S.upsertSessionUsage(execute, {
+    model: "unpriced",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 0.5,
+  });
+  expect(svc.workflowRuns.totalCost(repo.full_name, { run: run.id })).toEqual({
+    cost_usd: 1.75,
+    cost_status: "partial",
+  });
+  S.upsertSessionUsage(verify, {
+    model: "priced",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 0.25,
+  });
+  expect(svc.workflowRuns.totalCost(repo.full_name, { run: run.id })).toEqual({
+    cost_usd: 2,
+    cost_status: "known",
+  });
 });
 
 test("history ranks lifecycle events by what a human judges the run by (#1867)", () => {
