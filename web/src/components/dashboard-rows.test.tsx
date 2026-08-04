@@ -603,20 +603,18 @@ describe("IssueRow Start workflow button (#1622)", () => {
         name: "Dev loop Build then review",
       }),
     );
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Start workflow with Claude Code",
-      }),
-    );
+    // One click on the workflow item launches immediately; agent/model are
+    // left unset so the CLI uses the repo effective config.
     expect(launchTerminal).toHaveBeenCalledWith(
       expect.objectContaining({
         repo: "me/proj",
         workflow: "workflow-run",
         issueNumber: 1,
         workflowId: 7,
-        agent: "claude-code",
       }),
     );
+    expect(launchTerminal.mock.calls[0][0]).not.toHaveProperty("agent");
+    expect(launchTerminal.mock.calls[0][0]).not.toHaveProperty("model");
   });
 });
 

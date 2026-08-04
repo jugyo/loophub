@@ -1,8 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ChevronDown, Loader2, Workflow } from "lucide-react";
+import { ChevronDown, Loader2, Workflow } from "lucide-react";
 import { useState } from "react";
-import type { CodingAgent, Issue } from "@/api/types";
-import { AgentModelPicker } from "@/components/agent-model-picker";
+import type { Issue } from "@/api/types";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,8 +12,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { WorkerLaunchUnavailable } from "@/components/worker-compatibility-warning";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
-import { useRepoAgentConfig } from "@/queries/repos";
-import { useSettings } from "@/queries/settings";
 import { useWorkerLaunchGate } from "@/queries/worker-status";
 import { useWorkflows } from "@/queries/workflows";
 
@@ -35,24 +32,15 @@ export function StartWorkflowControls({
   const { data: workflows, isLoading } = useWorkflows({
     applicableToRepo: fullRepo,
   });
-  const { data: settings } = useSettings();
-  const { data: agentConfig } = useRepoAgentConfig(owner, repo);
   const { canStartWorkflow, showRemediation } = useWorkerLaunchGate();
   const [isLaunching, startLaunching] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(
-    null,
-  );
-  const effective = agentConfig?.effective;
   const workflowList = Array.isArray(workflows) ? workflows : [];
-  const selectedWorkflow = workflowList.find(
-    (workflow) => workflow.id === selectedWorkflowId,
-  );
 
-  function start(
-    workflowId: number,
-    override: { agent: CodingAgent; model: string },
-  ) {
+  // Launch with the repo effective agent/model (no one-shot override). The
+  // terminal / CLI path resolves runtime from repo config when agent and model
+  // are omitted.
+  function start(workflowId: number) {
     startLaunching();
     setMenuOpen(false);
     launchTerminal({
@@ -61,32 +49,18 @@ export function StartWorkflowControls({
       workflow: "workflow-run",
       issueNumber: issue.number,
       workflowId,
-      agent: override.agent,
-      model: override.model.trim() || undefined,
     });
   }
 
   return (
-    <DropdownMenu
-      open={menuOpen}
-      onOpenChange={(open) => {
-        setMenuOpen(open);
-        if (!open) setSelectedWorkflowId(null);
-      }}
-    >
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant={compact ? "secondary" : undefined}
           size={compact ? "sm" : undefined}
           className={compact ? "h-6 gap-1 px-2 text-xs font-normal" : undefined}
-          title="Choose a saved workflow, agent, and model"
-          disabled={
-            isLaunching ||
-            isLoading ||
-            !settings ||
-            !effective ||
-            !canStartWorkflow
-          }
+          title="Start a saved workflow in auto mode (no approval prompts, no sandbox)"
+          disabled={isLaunching || isLoading || !canStartWorkflow}
         >
           {isLaunching ? (
             <Loader2
@@ -102,44 +76,13 @@ export function StartWorkflowControls({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align={compact ? "start" : "end"} className="w-80">
-        {selectedWorkflow && settings && effective ? (
-          <>
-            <DropdownMenuItem
-              onSelect={(event) => {
-                event.preventDefault();
-                setSelectedWorkflowId(null);
-              }}
-            >
-              <ArrowLeft className="size-4" />
-              Back to workflows
-            </DropdownMenuItem>
-            <div className="border-t p-3">
-              <p className="mb-3 font-medium">{selectedWorkflow.name}</p>
-              <AgentModelPicker
-                key={`${selectedWorkflow.id}:${effective.runtime}:${effective.model}`}
-                settings={settings}
-                defaults={{
-                  agent: effective.runtime,
-                  model: effective.model,
-                  effort: effective.effort,
-                }}
-                disabled={isLaunching}
-                showEffort={false}
-                actionVerb="Start workflow"
-                actionIcon={<Workflow className="size-4" />}
-                onSelect={(agent, model) =>
-                  start(selectedWorkflow.id, { agent, model })
-                }
-              />
-            </div>
-          </>
-        ) : workflowList.length > 0 && settings && effective ? (
+        {workflowList.length > 0 ? (
           workflowList.map((workflow) => (
             <DropdownMenuItem
               key={workflow.id}
               onSelect={(event) => {
                 event.preventDefault();
-                setSelectedWorkflowId(workflow.id);
+                start(workflow.id);
               }}
               className="flex-col items-start gap-1 px-3 py-3 whitespace-normal"
             >

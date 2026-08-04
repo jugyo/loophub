@@ -1294,7 +1294,7 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
   });
 
-  it("shows workflow descriptions without requiring one and preserves selection behavior", async () => {
+  it("shows workflow descriptions without requiring one and launches on one click", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     const longDescription =
       "Runs implementation and independent verification with enough detail to wrap across several lines without widening the workflow menu.";
@@ -1329,7 +1329,9 @@ describe("IssueDetail", () => {
     });
     expect(button.className).toContain("bg-primary");
     expect(button.className).toContain("text-primary-foreground");
-    expect(button.title).toBe("Choose a saved workflow, agent, and model");
+    expect(button.title).toBe(
+      "Start a saved workflow in auto mode (no approval prompts, no sandbox)",
+    );
 
     fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
     const standard = await screen.findByRole("menuitem", {
@@ -1356,21 +1358,9 @@ describe("IssueDetail", () => {
       "line-clamp-3",
     );
 
+    // Selecting a workflow launches immediately with the repo effective
+    // agent/model (no one-shot override fields on the launch call).
     fireEvent.click(standard);
-    const cursorAgent = await screen.findByRole("button", {
-      name: "Cursor Agent",
-    });
-    fireEvent.pointerDown(cursorAgent, { button: 0, ctrlKey: false });
-    fireEvent.click(cursorAgent);
-    expect(cursorAgent.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.change(screen.getByLabelText("Custom model"), {
-      target: { value: "gpt-5.3-codex-high" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Start workflow with Cursor Agent",
-      }),
-    );
 
     expect(launchTerminal).toHaveBeenCalledWith({
       repo: "me/proj",
@@ -1378,9 +1368,9 @@ describe("IssueDetail", () => {
       workflow: "workflow-run",
       issueNumber: 12,
       workflowId: 9,
-      agent: "cursor",
-      model: "gpt-5.3-codex-high",
     });
+    expect(launchTerminal.mock.calls[0][0]).not.toHaveProperty("agent");
+    expect(launchTerminal.mock.calls[0][0]).not.toHaveProperty("model");
   });
 
   it("shows the repository workflow that overrides a same-name global workflow", async () => {
@@ -1412,11 +1402,10 @@ describe("IssueDetail", () => {
     expect(repoLabel.parentElement).toBe(nameLabel.parentElement);
     expect(repoLabel.parentElement?.className).toContain("flex");
     fireEvent.click(choices[0]);
-    expect(
-      await screen.findByRole("button", {
-        name: "Start workflow with Claude Code",
-      }),
-    ).toBeTruthy();
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ workflowId: 21 }),
+    );
     expect(rpcCall("workflows/list")?.params).toMatchObject({
       applicable_to_repo: "me/proj",
     });
