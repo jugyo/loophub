@@ -126,9 +126,7 @@ function feedbackThread(
         reactions: [],
       },
     ],
-    resolved: false,
-    resolved_by: null,
-    resolved_at: null,
+    archived_at: null,
     ...patch,
     anchor,
     resolved_anchor:
@@ -1742,7 +1740,7 @@ describe("DiffFileDialog", () => {
 
   it("keeps a visible outdated conversation inline and replyable", async () => {
     const reply = vi.fn(() => ({}));
-    const resolve = vi.fn(() => ({}));
+    const archive = vi.fn(() => ({}));
     renderDialog({
       handlers: {
         "pulls/diff": () => ({
@@ -1801,7 +1799,7 @@ describe("DiffFileDialog", () => {
           ],
         }),
         "diffFeedback/reply": reply,
-        "diffFeedback/resolve": resolve,
+        "diffFeedback/archive": archive,
       },
     });
 
@@ -1841,10 +1839,57 @@ describe("DiffFileDialog", () => {
         expect.objectContaining({ thread_id: 1, body: "Still relevant" }),
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Actions for diff thread 1" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
     await waitFor(() =>
-      expect(resolve).toHaveBeenCalledWith(
-        expect.objectContaining({ thread_id: 1, resolved: true }),
+      expect(archive).toHaveBeenCalledWith(
+        expect.objectContaining({ thread_id: 1, archived: true }),
+      ),
+    );
+  });
+
+  it("collapses an archived conversation and expands it on demand", async () => {
+    const archive = vi.fn(() => ({}));
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+              archived_at: "2026-07-29T00:00:00Z",
+            }),
+          ],
+        }),
+        "diffFeedback/archive": archive,
+      },
+    });
+
+    const card = await screen.findByLabelText("Diff thread 1");
+    expect(
+      within(card).getByLabelText("Archived diff thread 1").textContent,
+    ).toContain("Please revisit this range.");
+    expect(within(card).queryByLabelText("Reply to thread 1")).toBeNull();
+
+    fireEvent.click(within(card).getByLabelText("Archived diff thread 1"));
+    expect(within(card).getByLabelText("Reply to thread 1")).toBeTruthy();
+
+    fireEvent.pointerDown(
+      within(card).getByRole("button", {
+        name: "Actions for diff thread 1",
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Unarchive" }));
+    await waitFor(() =>
+      expect(archive).toHaveBeenCalledWith(
+        expect.objectContaining({ thread_id: 1, archived: false }),
       ),
     );
   });
@@ -2948,7 +2993,9 @@ describe("DiffFeedbackHistory", () => {
     expect(list).toHaveBeenCalledWith(
       expect.objectContaining({ orphaned: true }),
     );
-    expect(screen.getByRole("button", { name: "Resolve" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Actions for diff thread 7" }),
+    ).toBeTruthy();
     expect(screen.queryByText("Pending")).toBeNull();
     expect(
       screen.queryByRole("button", { name: /submit (review|comments)/i }),

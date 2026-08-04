@@ -28,9 +28,7 @@ function thread(
     outdated_reason: freshness === "outdated" ? "modified" : null,
     placement: freshness === "current" ? "inline" : "historical",
     original_context: null,
-    resolved: false,
-    resolved_by: null,
-    resolved_at: null,
+    archived_at: null,
     created_by: "reviewer",
     created_by_type: "agent",
     created_at: "2026-07-28T00:00:00Z",
@@ -107,11 +105,11 @@ describe("selectUnansweredDiffFeedbackThreads", () => {
     ).toEqual([]);
   });
 
-  it("does not return a resolved conversation as pending", () => {
-    const resolved = withMessages(1, ["me"]);
-    resolved.resolved = true;
+  it("does not return an archived conversation as pending", () => {
+    const archived = withMessages(1, ["me"]);
+    archived.archived_at = "2026-07-28T01:00:00Z";
     expect(
-      selectUnansweredDiffFeedbackThreads([resolved], new Set(["executor #1"])),
+      selectUnansweredDiffFeedbackThreads([archived], new Set(["executor #1"])),
     ).toEqual([]);
   });
 });

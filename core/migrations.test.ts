@@ -464,6 +464,38 @@ test("the Workflow end migration freezes the best available terminal timestamp",
   db.close();
 });
 
+test("the diff feedback archive migration carries resolved threads over", () => {
+  const db = new DatabaseSync(join(HOME, "legacy-diff-feedback-archive.db"));
+  db.exec(`
+    CREATE TABLE diff_feedback_threads (
+      id INTEGER PRIMARY KEY,
+      resolved_by TEXT,
+      resolved_at TEXT
+    );
+    INSERT INTO diff_feedback_threads (id, resolved_by, resolved_at) VALUES
+      (1, NULL, NULL),
+      (2, 'me', 't2');
+  `);
+  const migration = M.MIGRATIONS.find(
+    (candidate) => candidate.id === "071-diff-feedback-archive",
+  );
+  if (!migration) throw new Error("diff feedback archive migration not found");
+  migration.run({
+    exec: db.exec.bind(db),
+    query: db.prepare.bind(db),
+    run: (sql: string, params: unknown[] = []) =>
+      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+  } as unknown as Parameters<(typeof migration)["run"]>[0]);
+
+  expect(
+    db.prepare("SELECT * FROM diff_feedback_threads ORDER BY id").all(),
+  ).toEqual([
+    { id: 1, archived_at: null },
+    { id: 2, archived_at: "t2" },
+  ]);
+  db.close();
+});
+
 test("a failing migration throws, rolls back, and stays out of the ledger", () => {
   const db = D.openDb(join(HOME, "failing.db"));
   const before = appliedIds(db);

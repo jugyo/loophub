@@ -316,7 +316,8 @@ CREATE TABLE IF NOT EXISTS comments (
   author_type TEXT NOT NULL CHECK (author_type IN ('human', 'agent', 'system')),
   body        TEXT NOT NULL,
   created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
+  updated_at  TEXT NOT NULL,
+  archived_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS reviews (
@@ -371,8 +372,7 @@ CREATE TABLE IF NOT EXISTS diff_feedback_threads (
   created_by     TEXT NOT NULL,
   created_by_type TEXT NOT NULL CHECK (created_by_type IN ('human', 'agent', 'system')),
   created_at     TEXT NOT NULL,
-  resolved_by    TEXT,
-  resolved_at    TEXT
+  archived_at    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_diff_feedback_threads_issue

@@ -15,8 +15,7 @@ export interface DiffFeedbackThreadRow {
   created_by: string;
   created_by_type: CommentAuthorType;
   created_at: string;
-  resolved_by: string | null;
-  resolved_at: string | null;
+  archived_at: string | null;
 }
 
 export interface DiffFeedbackMessageRow {
@@ -82,7 +81,7 @@ export function listUnansweredDiffFeedbackThreads(
            LIMIT 1
          )
        WHERE thread.issue_id = ?
-         AND thread.resolved_at IS NULL
+         AND thread.archived_at IS NULL
          ${responderClause}
        ORDER BY thread.created_at ASC, thread.id ASC`,
     )
@@ -135,18 +134,18 @@ export function createDiffFeedbackThread(input: {
     ) as DiffFeedbackThreadRow;
 }
 
-export function setDiffFeedbackThreadResolved(
+export function setDiffFeedbackThreadArchived(
   id: number,
-  actor: string | null,
+  archived: boolean,
 ): DiffFeedbackThreadRow {
   return db
     .query(
       `UPDATE diff_feedback_threads
-       SET resolved_by = ?, resolved_at = ?
+       SET archived_at = ?
        WHERE id = ?
        RETURNING *`,
     )
-    .get(actor, actor ? now() : null, id) as DiffFeedbackThreadRow;
+    .get(archived ? now() : null, id) as DiffFeedbackThreadRow;
 }
 
 export function listDiffFeedbackLocations(

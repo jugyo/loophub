@@ -16,6 +16,11 @@ import {
 } from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
+import {
+  ArchivedComment,
+  CommentActionsMenu,
+  commentPreview,
+} from "@/components/comment-archive";
 import { CommentMetadata } from "@/components/comment-metadata";
 import { CopyButton } from "@/components/copy-button";
 import {
@@ -64,6 +69,7 @@ import {
   usePullReviews,
   usePushGithubPull,
   useReactToPullComment,
+  useSetPullCommentArchived,
   useSetPullState,
 } from "@/queries/pulls";
 import { useSettings } from "@/queries/settings";
@@ -758,6 +764,7 @@ function CommentList({
   const [postFailed, setPostFailed] = useState(false);
   const textareaRef = useAutosizeTextarea(body);
   const reaction = useReactToPullComment(owner, repo, number);
+  const archive = useSetPullCommentArchived(owner, repo, number);
   const { showError } = useToast();
   const post = usePostPullComment(owner, repo, number, (_error, failedBody) => {
     setBody(failedBody);
@@ -792,87 +799,143 @@ function CommentList({
       ) : !comments || comments.length === 0 ? (
         <p className="text-sm text-muted-foreground">No comments.</p>
       ) : (
-        comments.map((c) => (
-          <article
-            key={c.id}
-            data-debug-component="PullComment"
-            className="rounded-md border p-3"
-          >
-            <header className="mb-1">
-              <CommentMetadata
-                author={c.user.login}
-                authorType={c.author_type}
-                createdAt={c.created_at}
-                id={c.id}
-              />
-            </header>
-            <Markdown owner={owner} repo={repo}>
-              {c.body}
-            </Markdown>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {c.reactions.map((item) => (
-                <button
-                  type="button"
-                  key={item.emoji}
-                  aria-label={`${item.emoji} reaction: ${item.count}`}
-                  aria-pressed={item.reacted}
-                  disabled={reaction.isPending}
-                  onClick={() =>
-                    reaction.mutate(
-                      { commentId: c.id, emoji: item.emoji },
-                      {
-                        onError: (error) =>
-                          showError(errorMessage(error, "Reaction failed")),
-                      },
-                    )
-                  }
-                  className={
-                    item.reacted
-                      ? "rounded-full border bg-accent px-2 py-0.5 text-xs text-accent-foreground"
-                      : "rounded-full border bg-background px-2 py-0.5 text-xs"
-                  }
-                >
-                  {item.emoji} {item.count}
-                </button>
-              ))}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+        comments.map((c) => {
+          const archived = c.archived_at != null;
+          const menu = (
+            <CommentActionsMenu
+              label={`Actions for PR comment ${c.id}`}
+              archived={archived}
+              busy={archive.isPending}
+              onArchived={(next) =>
+                archive.mutate(
+                  { commentId: c.id, archived: next },
+                  {
+                    onError: (error) =>
+                      showError(
+                        errorMessage(
+                          error,
+                          next ? "Archive failed" : "Unarchive failed",
+                        ),
+                      ),
+                  },
+                )
+              }
+            />
+          );
+          const content = (
+            <>
+              <Markdown owner={owner} repo={repo}>
+                {c.body}
+              </Markdown>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {c.reactions.map((item) => (
                   <button
                     type="button"
-                    className="inline-flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label={`Add reaction to PR comment ${c.id}`}
+                    key={item.emoji}
+                    aria-label={`${item.emoji} reaction: ${item.count}`}
+                    aria-pressed={item.reacted}
                     disabled={reaction.isPending}
+                    onClick={() =>
+                      reaction.mutate(
+                        { commentId: c.id, emoji: item.emoji },
+                        {
+                          onError: (error) =>
+                            showError(errorMessage(error, "Reaction failed")),
+                        },
+                      )
+                    }
+                    className={
+                      item.reacted
+                        ? "rounded-full border bg-accent px-2 py-0.5 text-xs text-accent-foreground"
+                        : "rounded-full border bg-background px-2 py-0.5 text-xs"
+                    }
                   >
-                    <SmilePlus className="size-3.5" aria-hidden="true" />
+                    {item.emoji} {item.count}
                   </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="flex min-w-0 gap-1 p-1"
-                >
-                  {COMMENT_REACTIONS.map((emoji) => (
-                    <DropdownMenuItem
-                      key={emoji}
-                      className="flex size-8 cursor-pointer items-center justify-center p-0 text-base"
-                      aria-label={`React to PR comment ${c.id} with ${emoji}`}
-                      onSelect={() =>
-                        reaction.mutate(
-                          { commentId: c.id, emoji },
-                          {
-                            onError: (error) =>
-                              showError(errorMessage(error, "Reaction failed")),
-                          },
-                        )
-                      }
+                ))}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label={`Add reaction to PR comment ${c.id}`}
+                      disabled={reaction.isPending}
                     >
-                      {emoji}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </article>
-        ))
+                      <SmilePlus className="size-3.5" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="flex min-w-0 gap-1 p-1"
+                  >
+                    {COMMENT_REACTIONS.map((emoji) => (
+                      <DropdownMenuItem
+                        key={emoji}
+                        className="flex size-8 cursor-pointer items-center justify-center p-0 text-base"
+                        aria-label={`React to PR comment ${c.id} with ${emoji}`}
+                        onSelect={() =>
+                          reaction.mutate(
+                            { commentId: c.id, emoji },
+                            {
+                              onError: (error) =>
+                                showError(
+                                  errorMessage(error, "Reaction failed"),
+                                ),
+                            },
+                          )
+                        }
+                      >
+                        {emoji}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </>
+          );
+          return (
+            <article
+              key={c.id}
+              data-debug-component="PullComment"
+              className={
+                archived
+                  ? "rounded-md border border-dashed px-3 py-2"
+                  : "rounded-md border p-3"
+              }
+            >
+              {archived ? (
+                <ArchivedComment
+                  label={`Archived PR comment ${c.id}`}
+                  preview={`${c.user.login}: ${commentPreview(c.body)}`}
+                  menu={menu}
+                >
+                  <header className="mb-1">
+                    <CommentMetadata
+                      author={c.user.login}
+                      authorType={c.author_type}
+                      createdAt={c.created_at}
+                      id={c.id}
+                    />
+                  </header>
+                  {content}
+                </ArchivedComment>
+              ) : (
+                <>
+                  <header className="mb-1 flex items-start justify-between gap-2">
+                    <CommentMetadata
+                      author={c.user.login}
+                      authorType={c.author_type}
+                      createdAt={c.created_at}
+                      id={c.id}
+                    />
+                    {menu}
+                  </header>
+                  {content}
+                </>
+              )}
+            </article>
+          );
+        })
       )}
       <div
         data-debug-component="PullCommentForm"

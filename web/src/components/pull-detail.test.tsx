@@ -148,6 +148,7 @@ const comments: IssueComment[] = [
     body: "Thanks!",
     created_at: "2026-06-18T11:45:00Z",
     reactions: [],
+    archived_at: null,
   },
   {
     id: 11,
@@ -156,6 +157,7 @@ const comments: IssueComment[] = [
     body: "Rebased on main.",
     created_at: "2026-06-18T11:50:00Z",
     reactions: [],
+    archived_at: null,
   },
 ];
 
@@ -793,6 +795,54 @@ describe("PullDetail", () => {
       expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
       expect(screen.getByText("Reaction failed: write failed")).toBeTruthy();
     });
+  });
+
+  it("archives a PR comment from its three dots menu", async () => {
+    const archive = vi.fn(() => ({
+      ...comments[0],
+      archived_at: "2026-06-18T12:00:00Z",
+    }));
+    renderDetail({ "pullComments/archive": archive });
+
+    fireEvent.pointerDown(
+      await screen.findByLabelText("Actions for PR comment 9"),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+
+    await waitFor(() =>
+      expect(archive).toHaveBeenCalledWith(
+        expect.objectContaining({ comment_id: 9, archived: true }),
+      ),
+    );
+  });
+
+  it("collapses an archived PR comment and expands it on demand", async () => {
+    const archive = vi.fn(() => ({ ...comments[0], archived_at: null }));
+    renderDetail({
+      "comments/list": () => [
+        { ...comments[0], archived_at: "2026-06-18T12:00:00Z" },
+      ],
+      "pullComments/archive": archive,
+    });
+
+    const summary = await screen.findByLabelText("Archived PR comment 9");
+    expect(summary.textContent).toContain("me: Thanks!");
+    expect(screen.queryByLabelText("Add reaction to PR comment 9")).toBeNull();
+
+    fireEvent.click(summary);
+    expect(screen.getByLabelText("Add reaction to PR comment 9")).toBeTruthy();
+
+    fireEvent.pointerDown(screen.getByLabelText("Actions for PR comment 9"), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Unarchive" }));
+    await waitFor(() =>
+      expect(archive).toHaveBeenCalledWith(
+        expect.objectContaining({ comment_id: 9, archived: false }),
+      ),
+    );
   });
 
   it("names the major PR regions for component debugging", async () => {

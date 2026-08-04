@@ -458,7 +458,7 @@ test("list and get resolve a shifted anchor without changing its original coordi
   }
 });
 
-test("an outdated conversation remains replyable, reactable, and resolvable", async () => {
+test("an outdated conversation remains replyable, reactable, and archivable", async () => {
   git(["checkout", "-q", "feature"]);
   writeFileSync(join(repoPath, "a.txt"), "zero\none\nthree\nfour\nfive\n");
   git(["add", "-A"]);
@@ -474,23 +474,19 @@ test("an outdated conversation remains replyable, reactable, and resolvable", as
     resolved_anchor: null,
   });
 
-  const resolved = await svc.diffFeedback.resolve(
+  const archived = await svc.diffFeedback.archive(
     REPO,
     prNumber,
     thread.id,
     true,
-    HUMAN_SESSION,
   );
-  expect(resolved).toMatchObject({
-    freshness: "outdated",
-    resolved: true,
-    resolved_by: "me",
-  });
+  expect(archived).toMatchObject({ freshness: "outdated" });
+  expect(archived.archived_at).not.toBeNull();
   await svc.diffFeedback.reply(
     REPO,
     prNumber,
     thread.id,
-    "Resolved after removal.",
+    "Archived after removal.",
     HUMAN_SESSION,
   );
   await svc.diffFeedback.react(
@@ -506,19 +502,21 @@ test("an outdated conversation remains replyable, reactable, and resolvable", as
     ),
   ).not.toContain(thread.id);
 
-  const reopened = await svc.diffFeedback.resolve(
+  const unarchived = await svc.diffFeedback.archive(
     REPO,
     prNumber,
     thread.id,
     false,
-    HUMAN_SESSION,
   );
-  expect(reopened).toMatchObject({
+  expect(unarchived).toMatchObject({
     freshness: "outdated",
-    resolved: false,
-    resolved_by: null,
-    resolved_at: null,
+    archived_at: null,
   });
+  expect(
+    (await svc.diffFeedback.pending(REPO, prNumber, runId)).threads.map(
+      ({ id }) => id,
+    ),
+  ).toContain(thread.id);
 });
 
 test("service responses expose move, fuzzy, ambiguous, and unavailable resolution", async () => {

@@ -10,6 +10,7 @@ export interface CommentRow {
   body: string;
   created_at: string;
   updated_at: string;
+  archived_at: string | null;
 }
 
 export interface CommentReactionRow {
@@ -47,6 +48,11 @@ export function createComment(
        VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(issueId, author, authorType, body, t, t) as CommentRow;
+}
+export function setCommentArchived(id: number, archived: boolean): CommentRow {
+  return db
+    .query(`UPDATE comments SET archived_at = ? WHERE id = ? RETURNING *`)
+    .get(archived ? now() : null, id) as CommentRow;
 }
 export function countComments(issueId: number): number {
   return (

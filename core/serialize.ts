@@ -479,9 +479,8 @@ export interface DiffFeedbackThreadWire {
   placement: DiffFeedbackPlacement;
   /** Context from the persisted commit pair, retained even when the anchor cannot be relocated. */
   original_context: DiffFeedbackContextLineWire[] | null;
-  resolved: boolean;
-  resolved_by: string | null;
-  resolved_at: string | null;
+  /** When set, the conversation is kept but shown collapsed and stays out of pending feedback. */
+  archived_at: string | null;
   created_by: string;
   created_by_type: S.CommentAuthorType;
   created_at: string;
@@ -1023,6 +1022,8 @@ export interface CommentWire {
   body: string;
   created_at: string;
   reactions: ReactionWire[];
+  /** When set, the comment is kept but shown collapsed. */
+  archived_at: string | null;
 }
 
 export function commentJSON(
@@ -1048,6 +1049,7 @@ export function commentJSON(
       emoji,
       ...reaction,
     })),
+    archived_at: m.archived_at,
   };
 }
 

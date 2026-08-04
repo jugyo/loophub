@@ -380,9 +380,7 @@ function threadWire(
     outdated_reason: location.reason,
     placement: location.placement,
     original_context: originalContext,
-    resolved: thread.resolved_at != null,
-    resolved_by: thread.resolved_by,
-    resolved_at: thread.resolved_at,
+    archived_at: thread.archived_at,
     created_by: thread.created_by,
     created_by_type: thread.created_by_type,
     created_at: thread.created_at,
@@ -976,22 +974,22 @@ export const diffFeedback = {
     };
   },
 
-  async resolve(
+  /**
+   * Archive or unarchive a conversation. An archived thread is kept and still rendered — collapsed —
+   * so the exchange stays readable; it only drops out of the pending feedback an Execute child reads.
+   */
+  async archive(
     name: string,
     number: number,
     threadId: number,
-    resolved: boolean,
-    sessionId?: string | null,
+    archived: boolean,
   ): Promise<DiffFeedbackThreadWire> {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
     const pull = S.getPull(row.id)!;
     const thread = threadForPull(row.id, threadId);
-    const updated = S.setDiffFeedbackThreadResolved(
-      thread.id,
-      resolved ? actorFor(sessionId) : null,
-    );
+    const updated = S.setDiffFeedbackThreadArchived(thread.id, archived);
     return threadJSON(r.local_path, pull, updated);
   },
 

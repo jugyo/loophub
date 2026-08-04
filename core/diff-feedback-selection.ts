@@ -54,12 +54,15 @@ export function selectDiffFeedbackThreads(
  * per turn, so a thread answered by an earlier child must not resurface as pending for the next
  * one. Threads without messages cannot exist (creating one writes the first comment), but an empty
  * one would read as unanswered, which is the safe direction.
+ *
+ * An archived conversation is settled by the human who archived it, so it drops out regardless of
+ * who wrote its newest message.
  */
 export function selectUnansweredDiffFeedbackThreads<
-  T extends Pick<DiffFeedbackThreadWire, "messages" | "resolved">,
+  T extends Pick<DiffFeedbackThreadWire, "messages" | "archived_at">,
 >(threads: T[], responders: ReadonlySet<string>): T[] {
   return threads.filter((thread) => {
-    if (thread.resolved) return false;
+    if (thread.archived_at != null) return false;
     const newest = thread.messages.at(-1);
     return !newest || !responders.has(newest.author);
   });

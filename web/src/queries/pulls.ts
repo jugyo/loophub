@@ -32,7 +32,8 @@ import {
   reactToDiffFeedback,
   reactToPullComment,
   replyDiffFeedback,
-  setDiffFeedbackResolved,
+  setDiffFeedbackArchived,
+  setPullCommentArchived,
   unarchivePull,
 } from "@/api/client";
 import type {
@@ -246,9 +247,7 @@ export function useCreateDiffFeedback(
         outdated_reason: null,
         placement: "inline",
         original_context: null,
-        resolved: false,
-        resolved_by: null,
-        resolved_at: null,
+        archived_at: null,
         created_by: "me",
         created_by_type: "human",
         created_at: createdAt,
@@ -387,20 +386,20 @@ export function useReactToDiffFeedback(
   });
 }
 
-export function useSetDiffFeedbackResolved(
+export function useSetDiffFeedbackArchived(
   owner: string,
   repo: string,
   number: number,
 ) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { threadId: number; resolved: boolean }) =>
-      setDiffFeedbackResolved(
+    mutationFn: (input: { threadId: number; archived: boolean }) =>
+      setDiffFeedbackArchived(
         owner,
         repo,
         number,
         input.threadId,
-        input.resolved,
+        input.archived,
       ),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: feedbackKey(owner, repo, number) }),
@@ -584,6 +583,32 @@ export function useReactToPullComment(
     onError: (_error, _input, context) => {
       if (context) qc.setQueryData(commentsKey, context.previous ?? []);
     },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: commentsKey }),
+        qc.invalidateQueries({
+          queryKey: [...queryKeys.pull(full(owner, repo), number), "pageData"],
+        }),
+      ]),
+  });
+}
+
+export function useSetPullCommentArchived(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  const commentsKey = queryKeys.issueComments(full(owner, repo), number);
+  return useMutation({
+    mutationFn: (input: { commentId: number; archived: boolean }) =>
+      setPullCommentArchived(
+        owner,
+        repo,
+        number,
+        input.commentId,
+        input.archived,
+      ),
     onSettled: () =>
       Promise.all([
         qc.invalidateQueries({ queryKey: commentsKey }),

@@ -763,6 +763,21 @@ export function reactToPullComment(
   });
 }
 
+export function setPullCommentArchived(
+  owner: string,
+  repo: string,
+  number: number,
+  commentId: number,
+  archived: boolean,
+) {
+  return rpc<IssueComment>("pullComments/archive", {
+    repo: full(owner, repo),
+    number,
+    comment_id: commentId,
+    archived,
+  });
+}
+
 export function patchIssue(
   owner: string,
   repo: string,
@@ -943,20 +958,18 @@ export function replyDiffFeedback(
   );
 }
 
-export function setDiffFeedbackResolved(
+export function setDiffFeedbackArchived(
   owner: string,
   repo: string,
   number: number,
   threadId: number,
-  resolved: boolean,
-  sessionId: string = getSessionId(),
+  archived: boolean,
 ) {
-  return rpc<DiffFeedbackThread>("diffFeedback/resolve", {
+  return rpc<DiffFeedbackThread>("diffFeedback/archive", {
     repo: full(owner, repo),
     number,
     thread_id: threadId,
-    resolved,
-    session_id: sessionId,
+    archived,
   });
 }
 

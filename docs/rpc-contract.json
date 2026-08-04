@@ -294,7 +294,8 @@
             "enum": [
               "claude-code",
               "codex",
-              "grok"
+              "grok",
+              "cursor"
             ]
           },
           "model": {
@@ -367,7 +368,8 @@
             "enum": [
               "claude-code",
               "codex",
-              "grok"
+              "grok",
+              "cursor"
             ]
           },
           "model": {
@@ -375,14 +377,14 @@
             "minLength": 1
           },
           "effort": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "codingAgent": {
             "enum": [
               "claude-code",
               "codex",
-              "grok"
+              "grok",
+              "cursor"
             ]
           },
           "devCostLimitUsd": {
@@ -513,10 +515,19 @@
     },
     {
       "name": "workflows/list",
-      "description": "List global workflow definitions (Execute/Verify prompt bundles).",
+      "description": "List workflow definitions in one management scope or applicable to one repository.",
       "params": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "applicable_to_repo": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "required": [],
         "additionalProperties": false
       },
@@ -526,11 +537,15 @@
     },
     {
       "name": "workflows/create",
-      "description": "Create a global workflow definition.",
+      "description": "Create a global or repository-scoped workflow definition.",
       "params": {
         "type": "object",
         "properties": {
           "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repo": {
             "type": "string",
             "minLength": 1
           },
@@ -559,13 +574,13 @@
     },
     {
       "name": "workflows/update",
-      "description": "Update a global workflow definition.",
+      "description": "Update a workflow definition by id.",
       "params": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
+          "id": {
+            "type": "integer",
+            "minimum": 1
           },
           "new_name": {
             "type": "string",
@@ -586,7 +601,7 @@
           }
         },
         "required": [
-          "name"
+          "id"
         ],
         "additionalProperties": false
       },
@@ -596,13 +611,13 @@
     },
     {
       "name": "workflows/archive",
-      "description": "Archive a global workflow definition.",
+      "description": "Archive a workflow definition by id.",
       "params": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
+          "id": {
+            "type": "integer",
+            "minimum": 1
           },
           "session_id": {
             "type": "string",
@@ -610,7 +625,7 @@
           }
         },
         "required": [
-          "name"
+          "id"
         ],
         "additionalProperties": false
       },
@@ -620,13 +635,13 @@
     },
     {
       "name": "workflows/delete",
-      "description": "Delete a global workflow definition unless a running run references it.",
+      "description": "Delete a workflow definition by id unless a running run references it.",
       "params": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
+          "id": {
+            "type": "integer",
+            "minimum": 1
           },
           "session_id": {
             "type": "string",
@@ -634,7 +649,7 @@
           }
         },
         "required": [
-          "name"
+          "id"
         ],
         "additionalProperties": false
       },
@@ -718,6 +733,56 @@
       }
     },
     {
+      "name": "workflowRuns/agentCosts",
+      "description": "List the persisted agent sessions that participated in one Workflow run and each session's current cost.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "run"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "workflowRuns/totalCost",
+      "description": "Return the current total cost and observation status for one Workflow run.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "run"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "workflowRuns/increaseCostLimit",
       "description": "Increase a cost-held Workflow run's limit by its persisted fixed increment. The emitted event is the human continuation decision the parent resumes from (#1828).",
       "params": {
@@ -795,7 +860,8 @@
             "enum": [
               "claude-code",
               "codex",
-              "grok"
+              "grok",
+              "cursor"
             ]
           },
           "model": {
@@ -1402,8 +1468,8 @@
             "minimum": 1
           },
           "criterion_id": {
-            "type": "integer",
-            "minimum": 1
+            "type": "string",
+            "minLength": 1
           },
           "enabled": {
             "type": "boolean"
@@ -1637,6 +1703,40 @@
           "number",
           "comment_id",
           "emoji"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pullComments/archive",
+      "description": "Archive or unarchive a pull request comment, keeping it collapsed on the PR page.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "comment_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "archived": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "comment_id",
+          "archived"
         ],
         "additionalProperties": false
       },
@@ -2140,8 +2240,8 @@
       }
     },
     {
-      "name": "diffFeedback/resolve",
-      "description": "Resolve or reopen a diff feedback conversation.",
+      "name": "diffFeedback/archive",
+      "description": "Archive or unarchive a diff feedback conversation, keeping it collapsed in the diff view.",
       "params": {
         "type": "object",
         "properties": {
@@ -2157,19 +2257,15 @@
             "type": "integer",
             "minimum": 1
           },
-          "resolved": {
+          "archived": {
             "type": "boolean"
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
           }
         },
         "required": [
           "repo",
           "number",
           "thread_id",
-          "resolved"
+          "archived"
         ],
         "additionalProperties": false
       },
@@ -2303,6 +2399,35 @@
               "merge",
               "rebase"
             ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/markGithubMerged",
+      "description": "Mark an open pull request as merged after its linked GitHub merge has been detected.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
           },
           "session_id": {
             "type": "string",

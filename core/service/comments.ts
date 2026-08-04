@@ -75,6 +75,26 @@ export const comments = {
     return createPullComment(r, row, body, "me", "human", null);
   },
 
+  /**
+   * Archive or unarchive a pull request comment. The comment is kept and still rendered — collapsed —
+   * so the discussion stays readable without the settled parts crowding it out.
+   */
+  setArchivedForPull(
+    name: string,
+    number: number,
+    commentId: number,
+    archived: boolean,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const comment = S.getComment(commentId);
+    if (!comment || comment.issue_id !== row.id) {
+      throw new ServiceError(404, "PR comment not found");
+    }
+    return commentWire(S.setCommentArchived(comment.id, archived));
+  },
+
   reactForPull(
     name: string,
     number: number,

@@ -174,8 +174,11 @@ test("issues, labels, comments, and review state round-trip through the adapter"
       .sort(),
   ).toEqual(["bug", "ready-to-build"]);
 
-  S.createComment(issue.id, "me", "hi");
+  const comment = S.createComment(issue.id, "me", "hi");
   expect(S.countComments(issue.id)).toBe(1);
+  expect(comment.archived_at).toBeNull();
+  expect(S.setCommentArchived(comment.id, true).archived_at).not.toBeNull();
+  expect(S.setCommentArchived(comment.id, false).archived_at).toBeNull();
 
   // The store primitive records only the PR merge; service subscribers own linked Issue closure.
   const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;

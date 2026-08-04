@@ -19,6 +19,11 @@ import type {
   PullFile,
   PullLineComment,
 } from "@/api/types";
+import {
+  ArchivedComment,
+  CommentActionsMenu,
+  commentPreview,
+} from "@/components/comment-archive";
 import { CommentMetadata } from "@/components/comment-metadata";
 import { CopyButton } from "@/components/copy-button";
 import { DiffCommentCount } from "@/components/diff-comment-count";
@@ -59,7 +64,7 @@ import {
   usePullFileAtRef,
   useReactToDiffFeedback,
   useReplyDiffFeedback,
-  useSetDiffFeedbackResolved,
+  useSetDiffFeedbackArchived,
 } from "@/queries/pulls";
 
 // Markdown files can also switch the same diff dialog to base/head rendered previews.
@@ -706,7 +711,7 @@ function FileDiffContent({
   const feedback = useDiffFeedback(owner, repo, number, { path });
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);
-  const resolution = useSetDiffFeedbackResolved(owner, repo, number);
+  const archive = useSetDiffFeedbackArchived(owner, repo, number);
   const { showError } = useToast();
   const [selection, setSelection] = useState<DiffSelection | null>(null);
   const [body, setBody] = useState("");
@@ -810,7 +815,7 @@ function FileDiffContent({
             thread={thread}
             busy={reply.isPending}
             reactionBusy={reaction.isPending}
-            resolutionBusy={resolution.isPending}
+            archiveBusy={archive.isPending}
             onReact={(messageId, emoji) =>
               reaction.mutate(
                 { messageId, emoji },
@@ -832,9 +837,9 @@ function FileDiffContent({
                 },
               )
             }
-            onResolved={(resolved) =>
-              resolution.mutate(
-                { threadId: thread.id, resolved },
+            onArchived={(archived) =>
+              archive.mutate(
+                { threadId: thread.id, archived },
                 {
                   onError: (error) =>
                     showError(errorMessage(error, "Update failed")),
@@ -857,7 +862,7 @@ function FileDiffContent({
               thread={thread}
               busy={reply.isPending}
               reactionBusy={reaction.isPending}
-              resolutionBusy={resolution.isPending}
+              archiveBusy={archive.isPending}
               onReact={(messageId, emoji) =>
                 reaction.mutate(
                   { messageId, emoji },
@@ -879,9 +884,9 @@ function FileDiffContent({
                   },
                 )
               }
-              onResolved={(resolved) =>
-                resolution.mutate(
-                  { threadId: thread.id, resolved },
+              onArchived={(archived) =>
+                archive.mutate(
+                  { threadId: thread.id, archived },
                   {
                     onError: (error) =>
                       showError(errorMessage(error, "Update failed")),
@@ -1568,7 +1573,7 @@ export function DiffFeedbackHistory({
   const feedback = useDiffFeedback(owner, repo, number, { orphaned: true });
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);
-  const resolution = useSetDiffFeedbackResolved(owner, repo, number);
+  const archive = useSetDiffFeedbackArchived(owner, repo, number);
   const { showError } = useToast();
   const historical = feedback.data?.threads ?? [];
   if (feedback.isLoading) {
@@ -1598,7 +1603,7 @@ export function DiffFeedbackHistory({
           thread={thread}
           busy={reply.isPending}
           reactionBusy={reaction.isPending}
-          resolutionBusy={resolution.isPending}
+          archiveBusy={archive.isPending}
           onReact={(messageId, emoji) =>
             reaction.mutate(
               { messageId, emoji },
@@ -1617,9 +1622,9 @@ export function DiffFeedbackHistory({
               },
             )
           }
-          onResolved={(resolved) =>
-            resolution.mutate(
-              { threadId: thread.id, resolved },
+          onArchived={(archived) =>
+            archive.mutate(
+              { threadId: thread.id, archived },
               {
                 onError: (error) =>
                   showError(errorMessage(error, "Update failed")),
@@ -1638,23 +1643,24 @@ function ThreadCard({
   thread,
   busy,
   reactionBusy,
-  resolutionBusy,
+  archiveBusy,
   onReact,
   onReply,
-  onResolved,
+  onArchived,
 }: {
   owner: string;
   repo: string;
   thread: DiffFeedbackThread;
   busy: boolean;
   reactionBusy: boolean;
-  resolutionBusy: boolean;
+  archiveBusy: boolean;
   onReact: (messageId: number, emoji: string) => void;
   onReply: (body: string) => void;
-  onResolved: (resolved: boolean) => void;
+  onArchived: (archived: boolean) => void;
 }) {
   const [replyBody, setReplyBody] = useState("");
   const replyTextareaRef = useAutosizeTextarea(replyBody);
+  const archived = thread.archived_at != null;
   const displayedAnchor =
     thread.freshness === "current" && thread.resolved_anchor
       ? thread.resolved_anchor
@@ -1667,14 +1673,16 @@ function ThreadCard({
     setReplyBody("");
   }
 
-  return (
-    <article
-      className="m-2 rounded-md border bg-background p-3 font-sans text-sm"
-      aria-label={`Diff thread ${thread.id}`}
-    >
-      <header className="mb-2 flex justify-end">
-        <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
-      </header>
+  const menu = (
+    <CommentActionsMenu
+      label={`Actions for diff thread ${thread.id}`}
+      archived={archived}
+      busy={archiveBusy}
+      onArchived={onArchived}
+    />
+  );
+  const conversation = (
+    <>
       <div className="space-y-2">
         {thread.messages.map((message) => (
           <div key={message.id} className="rounded-md bg-muted/20 p-2">
@@ -1738,16 +1746,6 @@ function ThreadCard({
           </div>
         ))}
       </div>
-      <div className="mt-2 flex justify-end">
-        <button
-          type="button"
-          className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
-          disabled={resolutionBusy}
-          onClick={() => onResolved(!thread.resolved)}
-        >
-          {thread.resolved ? "Reopen" : "Resolve"}
-        </button>
-      </div>
       <div className="mt-2">
         <textarea
           ref={replyTextareaRef}
@@ -1774,6 +1772,39 @@ function ThreadCard({
           </Button>
         </div>
       </div>
+    </>
+  );
+
+  return (
+    <article
+      className={cn(
+        "m-2 rounded-md border bg-background font-sans text-sm",
+        archived ? "border-dashed px-3 py-2" : "p-3",
+      )}
+      aria-label={`Diff thread ${thread.id}`}
+    >
+      {archived ? (
+        <ArchivedComment
+          label={`Archived diff thread ${thread.id}`}
+          preview={`${displayedAnchor.path}:${displayedAnchor.start_line} ${commentPreview(
+            thread.messages[0]?.body ?? "",
+          )}`}
+          menu={menu}
+        >
+          <header className="mb-2 flex justify-end">
+            <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
+          </header>
+          {conversation}
+        </ArchivedComment>
+      ) : (
+        <>
+          <header className="mb-2 flex items-center justify-end gap-1">
+            <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
+            {menu}
+          </header>
+          {conversation}
+        </>
+      )}
     </article>
   );
 }

@@ -169,11 +169,12 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `comments.create` | procedure | comment、`issue.commented` | — |
 | `comments.createForPull` / `createHumanForPull` | procedure | comment、`pull_request.commented` | — |
 | `comments.reactForPull` / `reactHumanForPull` | procedure | reaction の read-modify-write、`pull_request.comment_reaction_changed`、応答の read | — |
+| `comments.setArchivedForPull` | store helper | archived state | — |
 | `reviews.create` | procedure | review、AC grades、line comments、`pull_request.review_submitted` | head SHA の git read |
 | `diffFeedback.create` | procedure | thread、first message、`pull_request.diff_feedback_created` | anchor 解決の git diff read |
 | `diffFeedback.reply` | procedure | reply、`pull_request.diff_feedback_replied` | — |
 | `diffFeedback.react` | procedure | reaction の read-modify-write と応答の read | — |
-| `diffFeedback.resolve` | store helper | resolved state | 応答の git read |
+| `diffFeedback.archive` | store helper | archived state | 応答の git read |
 | `diffFeedback.precompute` | procedure | location cache の upsert 全件 | 全 anchor の git 解決 |
 | `closeOpenPullsForIssue` | procedure（caller の transaction に join） | 各 linked PR state、system comment、`pull_request.closed` | — |
 | `handoffs.record` | procedure | handoff、`handoff.recorded` | — |

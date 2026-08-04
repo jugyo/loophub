@@ -795,6 +795,27 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) =>
       svc.comments.reactHumanForPull(p.repo, p.number, p.comment_id, p.emoji),
   },
+  "pullComments/archive": {
+    description:
+      "Archive or unarchive a pull request comment, keeping it collapsed on the PR page.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        comment_id: positiveInt,
+        archived: { type: "boolean" },
+      },
+      ["repo", "number", "comment_id", "archived"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.comments.setArchivedForPull(
+        p.repo,
+        p.number,
+        p.comment_id,
+        p.archived,
+      ),
+  },
 
   // ---- handoffs (#352) ----
   "handoffs/list": {
@@ -1027,27 +1048,21 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
-  "diffFeedback/resolve": {
-    description: "Resolve or reopen a diff feedback conversation.",
+  "diffFeedback/archive": {
+    description:
+      "Archive or unarchive a diff feedback conversation, keeping it collapsed in the diff view.",
     params: params(
       {
         repo,
         number: positiveInt,
         thread_id: positiveInt,
-        resolved: { type: "boolean" },
-        session_id: sid,
+        archived: { type: "boolean" },
       },
-      ["repo", "number", "thread_id", "resolved"],
+      ["repo", "number", "thread_id", "archived"],
     ),
     result: anyObject,
     handler: (p) =>
-      svc.diffFeedback.resolve(
-        p.repo,
-        p.number,
-        p.thread_id,
-        p.resolved,
-        p.session_id,
-      ),
+      svc.diffFeedback.archive(p.repo, p.number, p.thread_id, p.archived),
   },
   "diffFeedback/react": {
     description: "Add an emoji reaction to a diff feedback message.",

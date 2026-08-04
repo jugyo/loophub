@@ -123,22 +123,18 @@ export async function run(): Promise<void> {
         console.log(
           `replied to feedback thread #${result.thread.id} (message ${result.reply.id})`,
         );
-    } else if (action === "resolve" || action === "reopen") {
+    } else if (action === "archive" || action === "unarchive") {
       if (!flags.pr) fail("--pr is required");
-      const thread = await runOp(async () =>
-        s.diffFeedback.resolve(
+      const thread = await runOp(() =>
+        s.diffFeedback.archive(
           repo,
           Number(flags.pr),
           Number(target),
-          action === "resolve",
-          await writeSession(),
+          action === "archive",
         ),
       );
       out(thread);
-      if (!flags.json)
-        console.log(
-          `${action === "resolve" ? "resolved" : "reopened"} feedback thread #${thread.id}`,
-        );
+      if (!flags.json) console.log(`${action}d feedback thread #${thread.id}`);
     } else if (action === "react") {
       if (!flags.pr) fail("--pr is required");
       if (!flags.emoji) fail("--emoji is required");

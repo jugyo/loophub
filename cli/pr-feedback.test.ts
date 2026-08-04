@@ -361,11 +361,11 @@ test("a precomputed anchor follows the current diff when the PR head advances", 
     outdated_reason: "deleted",
     anchor: { start_line: 2, end_line: 2 },
   });
-  const resolved = JSON.parse(
+  const archived = JSON.parse(
     lh([
       "pr",
       "feedback",
-      "resolve",
+      "archive",
       String(listed.threads[0].id),
       "--pr",
       String(prNumber),
@@ -374,12 +374,13 @@ test("a precomputed anchor follows the current diff when the PR head advances", 
       "--json",
     ]),
   );
-  expect(resolved).toMatchObject({ resolved: true, freshness: "outdated" });
-  const reopened = JSON.parse(
+  expect(archived).toMatchObject({ freshness: "outdated" });
+  expect(archived.archived_at).not.toBeNull();
+  const unarchived = JSON.parse(
     lh([
       "pr",
       "feedback",
-      "reopen",
+      "unarchive",
       String(listed.threads[0].id),
       "--pr",
       String(prNumber),
@@ -388,7 +389,10 @@ test("a precomputed anchor follows the current diff when the PR head advances", 
       "--json",
     ]),
   );
-  expect(reopened).toMatchObject({ resolved: false, freshness: "outdated" });
+  expect(unarchived).toMatchObject({
+    archived_at: null,
+    freshness: "outdated",
+  });
 });
 
 test("create rejects a stale commit pair", () => {

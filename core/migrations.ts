@@ -1160,6 +1160,26 @@ export const MIGRATIONS: Migration[] = [
     },
   },
   addColumn("069-agent-sessions-model", "agent_sessions", "model", "TEXT"),
+  addColumn("070-comments-archived-at", "comments", "archived_at", "TEXT"),
+  // Archive replaces resolve on a diff feedback conversation (#2346). The two states meant the same
+  // thing in practice — "this conversation is done, stop bringing it to Execute" — so a resolved
+  // thread carries its timestamp over instead of being reset to active. `resolved_by` is dropped
+  // without a home: nothing read it.
+  {
+    id: "071-diff-feedback-archive",
+    run(db) {
+      addColumnIfMissing(db, "diff_feedback_threads", "archived_at", "TEXT");
+      if (columnExists(db, "diff_feedback_threads", "resolved_at")) {
+        db.exec(
+          `UPDATE diff_feedback_threads
+           SET archived_at = resolved_at
+           WHERE archived_at IS NULL AND resolved_at IS NOT NULL`,
+        );
+      }
+      dropColumnIfPresent(db, "diff_feedback_threads", "resolved_by");
+      dropColumnIfPresent(db, "diff_feedback_threads", "resolved_at");
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

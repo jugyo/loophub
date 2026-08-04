@@ -563,6 +563,7 @@ describe("pure row -> wire serializers", () => {
       body: "looks good",
       created_at: "2026-07-03T00:00:00Z",
       updated_at: "2026-07-04T00:00:00Z",
+      archived_at: null,
     };
     expect(serialize.commentJSON(row)).toEqual({
       id: 7,
@@ -571,6 +572,7 @@ describe("pure row -> wire serializers", () => {
       body: "looks good",
       created_at: "2026-07-03T00:00:00Z",
       reactions: [],
+      archived_at: null,
     });
   });
 
