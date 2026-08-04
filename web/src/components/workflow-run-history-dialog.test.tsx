@@ -66,22 +66,28 @@ describe("Workflow run detail dialog", () => {
       }),
       "workflowRuns/agentCosts": () => [
         {
-          session_id: "parent-session",
           role: "parent",
-          sequence: null,
-          name: "orchestrator #7",
-          runtime: "codex",
+          session_count: 1,
+          known_session_count: 1,
+          pending_session_count: 0,
+          unknown_session_count: 0,
           cost_usd: 1.25,
-          cost_status: "known",
         },
         {
-          session_id: "execute-session",
           role: "execute",
-          sequence: 1,
-          name: "executor #7-1",
-          runtime: "codex",
-          cost_usd: null,
-          cost_status: "pending",
+          session_count: 4,
+          known_session_count: 2,
+          pending_session_count: 1,
+          unknown_session_count: 1,
+          cost_usd: 0.75,
+        },
+        {
+          role: "verify",
+          session_count: 1,
+          known_session_count: 0,
+          pending_session_count: 0,
+          unknown_session_count: 1,
+          cost_usd: 0,
         },
       ],
       "workflowRuns/history": () => [
@@ -143,11 +149,21 @@ describe("Workflow run detail dialog", () => {
     expect(within(dialog).getByText("1/8")).toBeTruthy();
     expect(within(dialog).getByText("Started")).toBeTruthy();
     expect(within(dialog).getByText("Updated")).toBeTruthy();
-    expect(await within(dialog).findByText("orchestrator #7")).toBeTruthy();
-    expect(within(dialog).getByText("$1.25")).toBeTruthy();
-    expect(within(dialog).getByText("executor #7-1")).toBeTruthy();
-    expect(within(dialog).getByText("Execute 1")).toBeTruthy();
-    expect(within(dialog).getByText("Pending")).toBeTruthy();
+    const agentCosts = within(dialog)
+      .getByText("Agents")
+      .closest("section") as HTMLElement;
+    await within(agentCosts).findByText("Parent");
+    const rows = within(agentCosts).getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    expect(within(rows[0]).getByText("Parent")).toBeTruthy();
+    expect(within(rows[0]).getByText("1 session")).toBeTruthy();
+    expect(within(rows[0]).getByText("$1.25")).toBeTruthy();
+    expect(within(rows[1]).getByText("Execute")).toBeTruthy();
+    expect(within(rows[1]).getByText("4 sessions")).toBeTruthy();
+    expect(within(rows[1]).getByText("$0.75 known")).toBeTruthy();
+    expect(within(rows[1]).getByText("1 pending · 1 unknown")).toBeTruthy();
+    expect(within(rows[2]).getByText("Verify")).toBeTruthy();
+    expect(within(rows[2]).getByText("Unknown")).toBeTruthy();
     expect(
       await within(dialog).findAllByText("Execute step started"),
     ).toHaveLength(2);
@@ -210,6 +226,39 @@ describe("Workflow run detail dialog", () => {
       screen.getByRole("button", { name: "Close Workflow run detail" }),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps agent cost loading, failure, and empty states visible", async () => {
+    let reject!: (reason: unknown) => void;
+    const pending = new Promise<never>((_resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    renderSection(
+      mockRpcFetch({
+        "workflowRuns/agentCosts": () => pending,
+        "workflowRuns/history": () => [],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
+    expect(await screen.findByText(/Loading agent costs/)).toBeTruthy();
+
+    reject(new RpcFault(500, "usage unavailable"));
+    expect(await screen.findByText(/Failed to load agent costs/)).toBeTruthy();
+    expect(screen.getByText(/usage unavailable/)).toBeTruthy();
+
+    cleanup();
+    renderSection(
+      mockRpcFetch({
+        "workflowRuns/agentCosts": () => [],
+        "workflowRuns/history": () => [],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
+    expect(
+      await screen.findByText(
+        "No agent sessions have been recorded for this run.",
+      ),
+    ).toBeTruthy();
   });
 
   it("ranks entries by significance: notable stands out, routine plays down", async () => {

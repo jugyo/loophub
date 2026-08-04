@@ -478,16 +478,15 @@ test("workflowRuns/history exposes only the requested run's lifecycle events", a
   });
 });
 
-test("workflowRuns/agentCosts exposes the requested run's persisted participants", async () => {
+test("workflowRuns/agentCosts exposes the requested run's participants by role", async () => {
   const agentCosts = vi.spyOn(svc.workflowRuns, "agentCosts").mockReturnValue([
     {
-      session_id: "55555555-5555-4555-8555-555555555555",
       role: "parent",
-      sequence: null,
-      name: "orchestrator #9",
-      runtime: "codex",
+      session_count: 1,
+      known_session_count: 1,
+      pending_session_count: 0,
+      unknown_session_count: 0,
       cost_usd: 2.5,
-      cost_status: "known",
     },
   ]);
 

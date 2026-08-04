@@ -161,14 +161,14 @@ export function WorkflowRunDetailDialog({
                 </div>
               ) : agents.data?.length ? (
                 <div className="overflow-hidden rounded-md border">
-                  <div className="grid grid-cols-[minmax(0,1fr)_8rem_6rem] gap-3 border-b bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground">
-                    <span>Agent</span>
+                  <div className="grid grid-cols-[minmax(0,1fr)_8rem_9rem] gap-3 border-b bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground">
                     <span>Role</span>
+                    <span>Sessions</span>
                     <span className="text-right">Cost</span>
                   </div>
                   <ol className="divide-y">
                     {agents.data.map((agent) => (
-                      <AgentCostRow key={agent.session_id} agent={agent} />
+                      <AgentCostRow key={agent.role} agent={agent} />
                     ))}
                   </ol>
                 </div>
@@ -223,38 +223,44 @@ export function WorkflowRunDetailDialog({
   );
 }
 
-function roleLabel(agent: WorkflowRunAgentCost): string {
-  if (agent.role === "parent") return "Parent";
-  return `${displayName(agent.role)} ${agent.sequence ?? ""}`.trim();
-}
-
-function agentName(agent: WorkflowRunAgentCost): string {
-  return agent.name ?? `${roleLabel(agent)} agent`;
-}
-
-function agentCost(agent: WorkflowRunAgentCost): string {
-  if (agent.cost_status === "pending") return "Pending";
-  if (agent.cost_status === "unknown") return "Unknown";
-  return formatCost(agent.cost_usd);
+function groupedAgentCost(agent: WorkflowRunAgentCost): string {
+  if (agent.known_session_count > 0) {
+    const cost = formatCost(agent.cost_usd);
+    return agent.pending_session_count > 0 || agent.unknown_session_count > 0
+      ? `${cost} known`
+      : cost;
+  }
+  if (agent.pending_session_count > 0 && agent.unknown_session_count > 0) {
+    return "Incomplete";
+  }
+  return agent.pending_session_count > 0 ? "Pending" : "Unknown";
 }
 
 function AgentCostRow({ agent }: { agent: WorkflowRunAgentCost }) {
+  const incomplete = [
+    agent.pending_session_count > 0
+      ? `${agent.pending_session_count} pending`
+      : null,
+    agent.unknown_session_count > 0
+      ? `${agent.unknown_session_count} unknown`
+      : null,
+  ].filter((value): value is string => value !== null);
+
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_8rem_6rem] items-center gap-3 px-4 py-3 text-sm">
-      <div className="min-w-0">
-        <div className="truncate font-medium" title={agentName(agent)}>
-          {agentName(agent)}
-        </div>
-        {agent.runtime ? (
+    <li className="grid grid-cols-[minmax(0,1fr)_8rem_9rem] items-center gap-3 px-4 py-3 text-sm">
+      <div className="font-medium">{displayName(agent.role)}</div>
+      <div className="text-muted-foreground tabular-nums">
+        {agent.session_count}{" "}
+        {agent.session_count === 1 ? "session" : "sessions"}
+      </div>
+      <div className="text-right tabular-nums">
+        <div className="font-medium">{groupedAgentCost(agent)}</div>
+        {incomplete.length > 0 ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
-            {agent.runtime}
+            {incomplete.join(" · ")}
           </div>
         ) : null}
       </div>
-      <span className="text-muted-foreground">{roleLabel(agent)}</span>
-      <span className="text-right font-medium tabular-nums">
-        {agentCost(agent)}
-      </span>
     </li>
   );
 }

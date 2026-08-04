@@ -246,55 +246,57 @@ function workflowRunAgentCosts(
   const candidates: Array<{
     sessionId: string;
     role: WorkflowRunAgentCostWire["role"];
-    sequence: number | null;
   }> = [
     ...(run.parent_session_id
       ? [
           {
             sessionId: run.parent_session_id,
             role: "parent" as const,
-            sequence: null,
           },
         ]
       : []),
     ...workflowStepSessionIds(run.step_sessions_json, "execute").map(
-      (sessionId, index) => ({
+      (sessionId) => ({
         sessionId,
         role: "execute" as const,
-        sequence: index + 1,
       }),
     ),
     ...workflowStepSessionIds(run.step_sessions_json, "verify").map(
-      (sessionId, index) => ({
+      (sessionId) => ({
         sessionId,
         role: "verify" as const,
-        sequence: index + 1,
       }),
     ),
   ];
   const seen = new Set<string>();
-  return candidates.flatMap(({ sessionId, role, sequence }) => {
-    if (seen.has(sessionId)) return [];
+  const groups = new Map<
+    WorkflowRunAgentCostWire["role"],
+    WorkflowRunAgentCostWire
+  >();
+  for (const { sessionId, role } of candidates) {
+    if (seen.has(sessionId)) continue;
     seen.add(sessionId);
-    const session = S.getAgentSession(sessionId);
     const summary = S.sessionUsageCostSummaryForSessions([sessionId]);
-    const costStatus = summary.unobserved_session_ids.length
-      ? "pending"
-      : summary.unknown_cost_session_ids.length
-        ? "unknown"
-        : "known";
-    return [
-      {
-        session_id: sessionId,
-        role,
-        sequence,
-        name: session?.name ?? null,
-        runtime: session?.runtime ?? null,
-        cost_usd: summary.cost_usd,
-        cost_status: costStatus,
-      },
-    ];
-  });
+    const group = groups.get(role) ?? {
+      role,
+      session_count: 0,
+      known_session_count: 0,
+      pending_session_count: 0,
+      unknown_session_count: 0,
+      cost_usd: 0,
+    };
+    group.session_count += 1;
+    if (summary.unobserved_session_ids.length > 0) {
+      group.pending_session_count += 1;
+    } else if (summary.unknown_cost_session_ids.length > 0) {
+      group.unknown_session_count += 1;
+    } else {
+      group.known_session_count += 1;
+      group.cost_usd += summary.cost_usd ?? 0;
+    }
+    groups.set(role, group);
+  }
+  return [...groups.values()];
 }
 
 export type WorkflowConfirmStepLaunchResult = {

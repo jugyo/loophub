@@ -3862,31 +3862,28 @@ test("agentCosts and totalCost use the persisted Workflow participants", () => {
 
   expect(svc.workflowRuns.agentCosts(repo.full_name, { run: run.id })).toEqual([
     {
-      session_id: parent,
       role: "parent",
-      sequence: null,
-      name: "orchestrator #1",
-      runtime: "codex",
+      session_count: 1,
+      known_session_count: 1,
+      pending_session_count: 0,
+      unknown_session_count: 0,
       cost_usd: 1.25,
-      cost_status: "known",
     },
     {
-      session_id: execute,
       role: "execute",
-      sequence: 1,
-      name: "executor #1-1",
-      runtime: "codex",
-      cost_usd: null,
-      cost_status: "unknown",
+      session_count: 1,
+      known_session_count: 0,
+      pending_session_count: 0,
+      unknown_session_count: 1,
+      cost_usd: 0,
     },
     {
-      session_id: verify,
       role: "verify",
-      sequence: 1,
-      name: "verifier #1-2",
-      runtime: "codex",
-      cost_usd: null,
-      cost_status: "pending",
+      session_count: 1,
+      known_session_count: 0,
+      pending_session_count: 1,
+      unknown_session_count: 0,
+      cost_usd: 0,
     },
   ]);
 
@@ -3918,6 +3915,62 @@ test("agentCosts and totalCost use the persisted Workflow participants", () => {
     cost_usd: 2,
     cost_status: "known",
   });
+
+  const executeKnown = "11111111-0000-4000-8000-000000000005";
+  const executeUnknown = "11111111-0000-4000-8000-000000000006";
+  const executePending = "11111111-0000-4000-8000-000000000007";
+  for (const sessionId of [executeKnown, executeUnknown, executePending]) {
+    S.registerAgentSession(
+      sessionId,
+      "workflow-step",
+      sessionId,
+      "execute rework",
+      "codex",
+    );
+    S.appendWorkflowRunStepSession(run.id, "execute", sessionId);
+  }
+  S.upsertSessionUsage(executeKnown, {
+    model: "priced",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 0.75,
+  });
+  S.upsertSessionUsage(executeUnknown, {
+    model: "unpriced",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: null,
+  });
+  expect(svc.workflowRuns.agentCosts(repo.full_name, { run: run.id })).toEqual([
+    {
+      role: "parent",
+      session_count: 1,
+      known_session_count: 1,
+      pending_session_count: 0,
+      unknown_session_count: 0,
+      cost_usd: 1.25,
+    },
+    {
+      role: "execute",
+      session_count: 4,
+      known_session_count: 2,
+      pending_session_count: 1,
+      unknown_session_count: 1,
+      cost_usd: 1.25,
+    },
+    {
+      role: "verify",
+      session_count: 1,
+      known_session_count: 1,
+      pending_session_count: 0,
+      unknown_session_count: 0,
+      cost_usd: 0.25,
+    },
+  ]);
 });
 
 test("history ranks lifecycle events by what a human judges the run by (#1867)", () => {
