@@ -33,6 +33,34 @@ criterion には actionable な説明を `note` に残します。
 構造化 criterion を持たない issue に rubric はありません。採点はせず、自由記述 findings と単一 verdict
 だけで報告します。この holistic フォールバックは通常の挙動であり、エラーではありません。
 
+## child agent への fan out
+
+child agent へ fan out する場合、各 child の最終出力を次の JSON だけにさせます。前後に文章は付けさせ
+ません。これにより run ごとにフォーマットを指示しなくても結果を統合できます。
+
+```json
+{
+  "status": "complete|failed",
+  "findings": [
+    {
+      "severity": "blocking|non_blocking",
+      "claim": "...",
+      "evidence": ["path:line", "command and result"]
+    }
+  ],
+  "checks": ["..."]
+}
+```
+
+`status` が `failed` になるのは、割り当てられた確認を child が完了できなかったときだけです。完了して
+指摘が無かった child は `findings` を空にして `complete` を返します。`severity` は、その finding 単独で
+`request_changes` が妥当なら `blocking` です。`evidence` には検証可能な pointer — `path:line`、または
+command とその結果 — を入れます。`checks` には child が実際に確認した内容を並べ、カバレッジの欠けを
+可視にします。
+
+フォーマットは child のもので、verdict はあなたのものです。child の finding は自分で検証してから自分の
+review に統合し、rubric の採点も自分で行います。fan out しない Verify はこの節を無視します。
+
 ## review の提出
 
 review した head に pin した review を正確に 1 件提出します。

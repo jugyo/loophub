@@ -34,6 +34,35 @@ failing criterion an actionable explanation in its `note`.
 An issue that carries no structured criteria has no rubric. Grade nothing and report free-form
 findings with the single verdict alone; that holistic fallback is normal, not an error.
 
+## Fan out to child agents
+
+When you fan out to child agents, have each child return exactly this JSON as its final output, with
+no prose around it, so the results merge without a per-run format instruction:
+
+```json
+{
+  "status": "complete|failed",
+  "findings": [
+    {
+      "severity": "blocking|non_blocking",
+      "claim": "...",
+      "evidence": ["path:line", "command and result"]
+    }
+  ],
+  "checks": ["..."]
+}
+```
+
+`status` is `failed` only when the child could not finish its assigned check; a child that finished
+and found nothing returns `complete` with an empty `findings`. `severity` is `blocking` when the
+finding alone justifies `request_changes`. `evidence` holds verifiable pointers — a `path:line`, or a
+command and its result. `checks` lists what the child actually inspected, so gaps in coverage stay
+visible.
+
+The format is the child's; the verdict stays yours. Merge child findings into your own review only
+after validating them, and grade the rubric yourself. A Verify that does not fan out ignores this
+section.
+
 ## Submit the review
 
 Submit exactly one review, pinned to the reviewed head:

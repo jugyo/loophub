@@ -240,6 +240,58 @@ test("Verify keeps structured rubric grading and verdict aggregation together", 
   }
 });
 
+test("Verify carries one child result format shared by both languages", () => {
+  const section = (text: string, heading: string): string => {
+    const start = text.indexOf(heading);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const rest = text.slice(start + heading.length);
+    const end = rest.indexOf("\n## ");
+    return end === -1 ? rest : rest.slice(0, end);
+  };
+
+  const contracts = [
+    {
+      text: workflowContracts("en").verify,
+      heading: "## Fan out to child agents",
+      optOut: ["does not fan out", "ignores this section"],
+      aid: ["review skill or auxiliary agent", "Validate its observations"],
+    },
+    {
+      text: workflowContracts("ja").verify,
+      heading: "## child agent への fan out",
+      optOut: ["fan out しない", "この節を無視"],
+      aid: ["skill や auxiliary agent", "自分で検証します"],
+    },
+  ];
+
+  const blocks = contracts.map(({ text, heading, optOut, aid }) => {
+    const fanOut = section(text, heading);
+    // One tagged block per contract keeps the cross-language comparison below anchored to this one.
+    expect(text.match(/```json/gu)).toHaveLength(1);
+    expectParagraphWithMarkers(fanOut, ["fan out", "child", "JSON"]);
+    expectParagraphWithMarkers(fanOut, optOut);
+    // The aid rule applies to every Verify, so it stays outside the section a run may ignore.
+    expect(fanOut).not.toContain("auxiliary agent");
+    expectParagraphWithMarkers(text, aid);
+
+    const match = fanOut.match(/```json\n([\s\S]*?)```/u);
+    expect(match).not.toBeNull();
+    return match?.[1] ?? "";
+  });
+
+  // Structural labels stay identical across languages; only the prose around them is localized.
+  expect(blocks[0]).toBe(blocks[1]);
+  for (const marker of [
+    '"status": "complete|failed"',
+    '"severity": "blocking|non_blocking"',
+    '"claim"',
+    '"evidence"',
+    '"checks"',
+  ]) {
+    expect(blocks[0]).toContain(marker);
+  }
+});
+
 test("parent keeps non-zero action errors visible without retry or recovery", () => {
   expectParagraphWithMarkers(workflowContracts("en").parent, [
     "non-zero action error",
