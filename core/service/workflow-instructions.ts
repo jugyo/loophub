@@ -18,7 +18,11 @@ const EFFECT_PREFIX = "workflow.instruction:";
 const MISSING_PARENT_EFFECT = `${EFFECT_PREFIX}parent-pane-missing`;
 const UNREADY_PARENT_EFFECT = `${EFFECT_PREFIX}parent-not-ready`;
 const HERDR_TIMEOUT_MS = 15_000;
-const PARENT_LAUNCH_GRACE_MS = 120_000;
+// Wide enough that machine load, not a broken launch, never closes the window: an unloaded parent
+// signals readiness within ~30s of run creation, and a heavily loaded one has been measured past
+// two minutes. Overshooting only delays how long a parent that never comes up stays invisible,
+// while undershooting kills a healthy run permanently.
+const PARENT_LAUNCH_GRACE_MS = 600_000;
 
 export type WorkflowInstructionDispatchResult =
   | { status: "idle" }

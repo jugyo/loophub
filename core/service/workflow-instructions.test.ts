@@ -453,7 +453,7 @@ test("a parent that never signals readiness after launch grace fails visibly and
   process.env.PATH = `${fake.bin}:${originalPath}`;
   const now = vi
     .spyOn(Date, "now")
-    .mockReturnValue(Date.parse(input.run.created_at) + 5 * 60_000);
+    .mockReturnValue(Date.parse(input.run.created_at) + 15 * 60_000);
   const next = vi.spyOn(svc.workflowRuns, "next");
   try {
     expect(await svc.workflowInstructions.dispatchPending()).toContainEqual(
@@ -527,7 +527,7 @@ test("a missing parent pane after launch grace fails visibly and is not retried"
   process.env.PATH = `${fake.bin}:${originalPath}`;
   const now = vi
     .spyOn(Date, "now")
-    .mockReturnValue(Date.parse(input.run.created_at) + 5 * 60_000);
+    .mockReturnValue(Date.parse(input.run.created_at) + 15 * 60_000);
   const next = vi.spyOn(svc.workflowRuns, "next");
   try {
     expect(await svc.workflowInstructions.dispatchPending()).toContainEqual(

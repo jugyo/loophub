@@ -140,7 +140,7 @@ superseded として receipt を作らず cursor だけを進める。
 CLI は parent の Herdr 起動成功後に pane 座標を run へ登録し、その pane の agent は起動プロンプトの指示で
 `lh workflow parent-ready <run>` を実行して readiness を記録する。pane 登録は pane の存在しか示さず、
 起動途中の agent はまだ pane を読んでいないため、この 2 つが揃うまで配送しない。worker は最古の event を
-run 作成から 2 分間だけ未処理のまま待つ。猶予後も pane row が無ければ missing-parent receipt、readiness が
+run 作成から 10 分間だけ未処理のまま待つ。猶予後も pane row が無ければ missing-parent receipt、readiness が
 無ければ parent-not-ready receipt と worker error を一度残し、自動再試行しない。両方が揃うと event id 順に
 判断する。各 event の判断は action、reason、
 instructions の fingerprint を receipt に記録し、直前の event と同じ instruction だけを入力せずに処理済みにする。
