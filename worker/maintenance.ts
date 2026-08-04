@@ -4,6 +4,7 @@ import {
 } from "../core/github-feedback-sync.ts";
 import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
 import { sweepPullConflicts } from "../core/pull-conflict-events.ts";
+import type { SessionUsageSyncResult } from "../core/service/sessions.ts";
 import type { WorktreeAutoPruneResult } from "../core/service/worktrees.ts";
 import {
   events,
@@ -17,6 +18,7 @@ import {
 import { sweepPullUpdates } from "../core/watcher.ts";
 import { WORKER_HEARTBEAT_INTERVAL_MS } from "../core/worker-protocol.ts";
 import { workerLog } from "./logger.ts";
+import { runUsageSyncSubprocess } from "./usage-sync.ts";
 
 export const DEFAULT_SWEEP_MS = 5000;
 export const DEFAULT_USAGE_SWEEP_MS = 10000;
@@ -366,6 +368,7 @@ export function startGithubFeedbackSweep(
 // sessions that actually changed. Unchanged transcripts are skipped by mtime/size before parsing.
 export function startUsageSweep(
   intervalMs = DEFAULT_USAGE_SWEEP_MS,
+  sync: () => Promise<SessionUsageSyncResult> = runUsageSyncSubprocess,
 ): () => void {
   let stopped = false;
   let running = false;
@@ -375,7 +378,7 @@ export function startUsageSweep(
     running = true;
     const startedAt = logLoopStarted("usage sweep");
     try {
-      const result = sessions.usageSync();
+      const result = await sync();
       for (const session of result.sessions) {
         if (session.status !== "updated") continue;
         const actor =

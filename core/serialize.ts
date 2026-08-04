@@ -817,6 +817,10 @@ export interface HerdrRepoSessionsWire {
 export interface HerdrSessionsWire {
   repos: HerdrRepoSessionsWire[];
   running_repos?: string[];
+  // Set when the top-level `herdr session list` capture failed. `repos` and `running_repos` are the
+  // last successful values when available, so clients can keep rendering them while making the
+  // failure explicit. Absent after the next successful capture.
+  session_list_capture_failed?: true;
   // Repos whose `herdr agent list` capture failed on the tick that wrote this snapshot (#2142).
   // Their `repos` entry — when one was already known — is the carried-over group tagged with
   // `stale_since`; a repo listed here with no `repos` entry never captured successfully. Absent

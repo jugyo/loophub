@@ -161,6 +161,44 @@ test("worker heartbeat refreshes while running and expires after stop", async ()
   }
 });
 
+test("worker heartbeat stays fresh while usage sync is still running", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-02T00:00:00Z"));
+  let finishUsageSync!: (result: {
+    synced: number;
+    skipped: number;
+    missing: number;
+    sessions: [];
+  }) => void;
+  const usageSync = vi.fn(
+    () =>
+      new Promise<{
+        synced: number;
+        skipped: number;
+        missing: number;
+        sessions: [];
+      }>((resolve) => {
+        finishUsageSync = resolve;
+      }),
+  );
+  const stopHeartbeat = M.startWorkerHeartbeat(
+    5_000,
+    "2026-08-02T00:00:00.000Z",
+  );
+  const stopUsage = M.startUsageSweep(1_000, usageSync);
+  try {
+    await vi.advanceTimersByTimeAsync(WORKER_HEARTBEAT_STALE_AFTER_MS + 1);
+    expect(usageSync).toHaveBeenCalledTimes(1);
+    expect(svc.workerRuntime.status().status).toBe("compatible");
+  } finally {
+    stopUsage();
+    stopHeartbeat();
+    finishUsageSync?.({ synced: 0, skipped: 0, missing: 0, sessions: [] });
+    await Promise.resolve();
+    vi.useRealTimers();
+  }
+});
+
 test("GitHub feedback sweep runs at its configured interval and logs per-PR failures", async () => {
   vi.useFakeTimers();
   const out = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -557,7 +595,7 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
       (event) => event.type === "workflow_run.cost_exceeded",
     );
 
-  const stop = M.startUsageSweep(20);
+  const stop = M.startUsageSweep(20, async () => svc.sessions.usageSync());
   try {
     await waitUntil(() => usageEvents().length === 1, "first usage event");
     expect(S.listSessionUsage(sessionId)[0]).toMatchObject({

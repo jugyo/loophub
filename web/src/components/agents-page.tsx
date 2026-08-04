@@ -7,7 +7,10 @@ import { GitPullRequest, Loader2, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { HerdrAgent, HerdrRepoSessions, HerdrSessions } from "@/api/types";
 import { AgentTree } from "@/components/pull-herdr-section";
-import { classifyHerdrSnapshotFreshness } from "@/lib/herdr-snapshot-freshness";
+import {
+  classifyHerdrSnapshotFreshness,
+  type HerdrSnapshotFreshness,
+} from "@/lib/herdr-snapshot-freshness";
 import { useHerdrSessions } from "@/queries/terminal";
 
 export type PullWorkspaceGroup = {
@@ -71,6 +74,20 @@ export function buildAgentsTrees(
 export function AgentsPage() {
   const { data, isLoading, isError } = useHerdrSessions();
   const trees = buildAgentsTrees(data);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+  const freshness = classifyHerdrSnapshotFreshness(data?.captured_at, nowMs);
+  const captureUnavailable =
+    data?.session_list_capture_failed === true ||
+    Boolean(data?.capture_failed_repos?.length);
+  const confirmedEmpty =
+    trees.length === 0 &&
+    freshness.state === "fresh" &&
+    Array.isArray(data?.running_repos) &&
+    !captureUnavailable;
 
   return (
     <div
@@ -84,7 +101,10 @@ export function AgentsPage() {
 
       {data && !isError ? (
         <>
-          <HerdrSnapshotStaleness capturedAt={data.captured_at} />
+          <HerdrSnapshotStaleness freshness={freshness} />
+          <HerdrSessionListCaptureFailure
+            failed={data.session_list_capture_failed}
+          />
           <HerdrCaptureFailures repos={data.capture_failed_repos} />
         </>
       ) : null}
@@ -105,9 +125,16 @@ export function AgentsPage() {
           >
             Failed to load Agents.
           </div>
-        ) : trees.length === 0 ? (
+        ) : confirmedEmpty ? (
           <p className="text-sm text-muted-foreground" role="status">
             No herdr sessions with agents.
+          </p>
+        ) : trees.length === 0 ? (
+          <p
+            className="text-sm text-amber-700 dark:text-amber-400"
+            role="status"
+          >
+            Agent information is unavailable.
           </p>
         ) : (
           <div className="flex flex-col gap-6">
@@ -145,17 +172,10 @@ function formatSnapshotAge(ageMs: number): string {
 // warning when the snapshot goes stale. This is the "staleness must be visible, no automatic
 // fallback" acceptance criterion.
 function HerdrSnapshotStaleness({
-  capturedAt,
+  freshness,
 }: {
-  capturedAt: string | null | undefined;
+  freshness: HerdrSnapshotFreshness;
 }) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNowMs(Date.now()), 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const freshness = classifyHerdrSnapshotFreshness(capturedAt, nowMs);
   if (freshness.state === "fresh") {
     // Supplementary muted info; deliberately no live-region role so it does not compete with the
     // page's primary status/empty-state region.
@@ -174,6 +194,23 @@ function HerdrSnapshotStaleness({
     <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
       <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
       {message}
+    </p>
+  );
+}
+
+function HerdrSessionListCaptureFailure({
+  failed,
+}: {
+  failed: true | undefined;
+}) {
+  if (!failed) return null;
+  return (
+    <p
+      role="alert"
+      className="mt-2 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400"
+    >
+      <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+      Could not read herdr sessions — showing last successful data.
     </p>
   );
 }

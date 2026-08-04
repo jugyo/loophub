@@ -16,8 +16,8 @@ interface HerdrSnapshotRow {
 }
 
 // Whether recording changed the structural signature (so the caller emits a change event) and the
-// timestamp stamped on this write. captured_at is refreshed every call, even when unchanged, so a
-// healthy-but-idle worker never reads as stale (see recordHerdrSessionSnapshot).
+// timestamp stamped on this write. captured_at is refreshed for successful captures and explicit
+// failure-state writes, so a healthy worker never reads as stopped (see recordHerdrSessionSnapshot).
 export interface HerdrSnapshotRecord {
   changed: boolean;
   captured_at: string;
@@ -40,7 +40,7 @@ export function getHerdrSessionSnapshot(): HerdrSessionSnapshot | null {
 }
 
 // Upsert the single snapshot row and report whether its structural signature changed. captured_at
-// is always refreshed so a frozen timestamp means a stopped worker, not merely an unchanged herdr
+// is always refreshed so a frozen timestamp means a stopped worker, not merely an unchanged capture
 // state; the signature comparison (which excludes volatile token usage — see
 // herdrSnapshotSignature) decides whether a terminal.sessions_updated event should fire. Mirrors
 // recordPullConflictState: record every tick, act only on a transition.

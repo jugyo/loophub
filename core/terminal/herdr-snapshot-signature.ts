@@ -44,6 +44,7 @@ function repoSignature(repo: HerdrRepoSessionsWire): unknown {
 export function herdrSnapshotSignature(snapshot: HerdrSessionsWire): string {
   return JSON.stringify({
     running_repos: [...(snapshot.running_repos ?? [])].sort(),
+    session_list_capture_failed: snapshot.session_list_capture_failed ?? false,
     capture_failed_repos: [...(snapshot.capture_failed_repos ?? [])].sort(),
     repos: snapshot.repos
       .map(repoSignature)

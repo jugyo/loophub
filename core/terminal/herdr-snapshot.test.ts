@@ -100,6 +100,35 @@ test("snapshot sweep persists the wire and emits only on a signature change", as
   expect(S.getHerdrSessionSnapshot()?.snapshot).toEqual(wire("idle"));
 });
 
+test("a failed top-level capture preserves data and same-structure recovery emits", async () => {
+  const previous = wire("working");
+  await C.snapshotHerdrSessionsImpl({ sweep: () => Promise.resolve(previous) });
+  const eventsBefore = terminalUpdateEvents();
+  const fail = () =>
+    C.snapshotHerdrSessionsImpl({
+      sweep: () => Promise.reject(new Error("session list failed")),
+    });
+
+  await expect(fail()).rejects.toThrow("session list failed");
+  expect(S.getHerdrSessionSnapshot()?.snapshot).toEqual({
+    ...previous,
+    session_list_capture_failed: true,
+  });
+  expect(terminalUpdateEvents()).toBe(eventsBefore + 1);
+
+  // A repeated failure is the same displayed state and does not emit again.
+  await expect(fail()).rejects.toThrow("session list failed");
+  expect(terminalUpdateEvents()).toBe(eventsBefore + 1);
+
+  // Recovery clears the marker, so clients refetch even though agents/status are unchanged.
+  const recovered = await C.snapshotHerdrSessionsImpl({
+    sweep: () => Promise.resolve(previous),
+  });
+  expect(recovered.changed).toBe(true);
+  expect(S.getHerdrSessionSnapshot()?.snapshot).toEqual(previous);
+  expect(terminalUpdateEvents()).toBe(eventsBefore + 2);
+});
+
 test("a failed per-repo capture keeps the last known agents and says so (#2142)", async () => {
   let current = wire("working");
   const sweep = () => Promise.resolve(current);

@@ -917,8 +917,9 @@ CREATE TABLE IF NOT EXISTS notification_cursors (
 -- with zero herdr subprocess spawn. snapshot is the serialized HerdrSessionsWire; signature is the
 -- structural digest (agents/status/workspaces, excluding volatile token usage) used to emit a
 -- terminal.sessions_updated event only when the displayed state actually changed. captured_at is
--- refreshed every successful sweep even when nothing changed, so a frozen value means a stopped
--- worker (surfaced as staleness), not merely an idle herdr.
+-- refreshed whenever the worker publishes a successful snapshot or explicit capture-failure
+-- transition, so a frozen value means a stopped worker, not merely an idle herdr. The snapshot's
+-- session_list_capture_failed marker distinguishes failure state from confirmed empty state.
 CREATE TABLE IF NOT EXISTS herdr_session_snapshots (
   id           INTEGER PRIMARY KEY CHECK (id = 1),
   snapshot     TEXT NOT NULL,

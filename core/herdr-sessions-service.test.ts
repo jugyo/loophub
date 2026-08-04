@@ -61,6 +61,10 @@ afterAll(() => {
 // dropping the captured_at freshness stamp the RPC adds so the projection assertions stay focused.
 async function snapshotAndReadSessions() {
   await svc.terminal.snapshotHerdrSessions();
+  return readSessions();
+}
+
+function readSessions() {
   const result = svc.terminal.sessions();
   delete (result as { captured_at?: string | null }).captured_at;
   return result;
@@ -190,27 +194,31 @@ test("terminal.sessions reports running repos independently from visible agent g
   }
 });
 
-test("terminal.sessions is empty when herdr is not on PATH", async () => {
+test("terminal.sessions snapshot fails when herdr is not on PATH", async () => {
   process.env.PATH = EMPTY_BIN;
   try {
-    expect(await snapshotAndReadSessions()).toEqual({ repos: [] });
+    await expect(svc.terminal.snapshotHerdrSessions()).rejects.toThrow(
+      "herdr command not found on PATH",
+    );
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }
 });
 
-test("terminal.sessions is empty when herdr exits non-zero", async () => {
+test("terminal.sessions snapshot fails when herdr exits non-zero", async () => {
   writeFileSync(join(FAKE_BIN, "herdr"), "#!/bin/sh\nexit 1\n");
   chmodSync(join(FAKE_BIN, "herdr"), 0o755);
   process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
   try {
-    expect(await snapshotAndReadSessions()).toEqual({ repos: [] });
+    await expect(svc.terminal.snapshotHerdrSessions()).rejects.toThrow(
+      "Herdr exited with status 1",
+    );
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }
 });
 
-test("terminal.sessions distinguishes a confirmed empty list from malformed output", async () => {
+test("terminal.sessions marks malformed output and recovers to the same empty snapshot", async () => {
   writeFileSync(
     join(FAKE_BIN, "herdr"),
     "#!/bin/sh\nprintf '%s' '{\"sessions\":[]}'\n",
@@ -227,13 +235,36 @@ test("terminal.sessions distinguishes a confirmed empty list from malformed outp
       join(FAKE_BIN, "herdr"),
       "#!/bin/sh\nprintf '%s' 'not-json'\n",
     );
-    expect(await snapshotAndReadSessions()).toEqual({ repos: [] });
+    await expect(svc.terminal.snapshotHerdrSessions()).rejects.toThrow(
+      "failed to parse Herdr session list",
+    );
+    expect(readSessions()).toEqual({
+      repos: [],
+      running_repos: [],
+      session_list_capture_failed: true,
+    });
 
     writeFileSync(
       join(FAKE_BIN, "herdr"),
       `#!/bin/sh\nprintf '%s' '${JSON.stringify({ sessions: [{ running: true }, 42] })}'\n`,
     );
-    expect(await snapshotAndReadSessions()).toEqual({ repos: [] });
+    await expect(svc.terminal.snapshotHerdrSessions()).rejects.toThrow(
+      "failed to parse Herdr session list",
+    );
+    expect(readSessions()).toEqual({
+      repos: [],
+      running_repos: [],
+      session_list_capture_failed: true,
+    });
+
+    writeFileSync(
+      join(FAKE_BIN, "herdr"),
+      "#!/bin/sh\nprintf '%s' '{\"sessions\":[]}'\n",
+    );
+    expect(await snapshotAndReadSessions()).toEqual({
+      repos: [],
+      running_repos: [],
+    });
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }

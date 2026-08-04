@@ -817,7 +817,8 @@ export const terminal = {
   // (snapshotHerdrSessions) does the herdr subprocess capture, so this RPC spawns nothing regardless
   // of how many browser tabs poll it. Read-only and deliberately failure-tolerant: no snapshot yet
   // (worker never ran) degrades to an empty list with captured_at: null, and clients surface the
-  // captured_at staleness rather than an automatic herdr fallback that would hide a stopped worker.
+  // captured_at staleness and explicit capture-failure marker rather than an automatic herdr
+  // fallback that would hide a stopped worker or failed capture.
   sessions(): HerdrSessionsResult {
     const snapshot = S.getHerdrSessionSnapshot();
     if (!snapshot) return { repos: [], captured_at: null };

@@ -199,3 +199,16 @@ test("signature reacts to a capture failure but not to it repeating (#2142)", ()
     }),
   );
 });
+
+test("signature reacts to a top-level capture failure and its recovery", () => {
+  const live = snapshot([repo()]);
+  const failed: HerdrSessionsWire = {
+    ...live,
+    session_list_capture_failed: true,
+  };
+
+  expect(herdrSnapshotSignature(live)).not.toBe(herdrSnapshotSignature(failed));
+  expect(herdrSnapshotSignature(failed)).toBe(
+    herdrSnapshotSignature({ ...live, session_list_capture_failed: true }),
+  );
+});

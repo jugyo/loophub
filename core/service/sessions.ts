@@ -5,6 +5,7 @@ import { isCodingAgent } from "../runtimes.ts";
 import {
   type AgentCostSummaryWire,
   agentSessionJSON,
+  type SessionUsageWire,
   sessionUsageJSON,
 } from "../serialize.ts";
 import { tokensPerFiveMinuteHistory } from "../session-rate-history.ts";
@@ -46,6 +47,27 @@ import {
   worktreePath,
 } from "../worktree-path.ts";
 import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
+
+export type SessionUsageSyncStatus = "updated" | "skipped" | "missing";
+
+export interface SessionUsageSyncRow {
+  session_id: string;
+  status: SessionUsageSyncStatus;
+  transcript_path?: string;
+  messages: number;
+  models: SessionUsageWire[];
+}
+
+export interface SessionUsageSyncResult {
+  synced: number;
+  skipped: number;
+  missing: number;
+  sessions: SessionUsageSyncRow[];
+}
+
+function usageSyncStatus(messages: number): SessionUsageSyncStatus {
+  return messages > 0 ? "updated" : "skipped";
+}
 
 function worktreeCwdForPullSession(
   row: S.AgentSessionRow,
@@ -642,7 +664,7 @@ export const sessions = {
       codexSessionsDir?: string;
       grokSessionsDir?: string;
     } = {},
-  ) {
+  ): SessionUsageSyncResult {
     // Default sweep (#1119): scan only sessions linked to an open PR, so closed/merged PRs and
     // unlinked sessions no longer trigger transcript walks. `--session <id>` still targets any
     // single session for a forced recompute.
@@ -697,7 +719,7 @@ export const sessions = {
         )
       : null;
 
-    const results = rows.map((row) => {
+    const results = rows.map<SessionUsageSyncRow>((row) => {
       if (sessionRuntime(row) === RUNTIME_CODEX) {
         const rowTarget = codexUsageTarget(row);
         const target = rowTarget
@@ -717,7 +739,7 @@ export const sessions = {
           S.resetSessionUsage(row.id);
           return {
             session_id: row.id,
-            status: "skipped",
+            status: usageSyncStatus(0),
             messages: 0,
             models: [],
           };
@@ -763,7 +785,7 @@ export const sessions = {
             saveUsageSamples(row.id, samplePlan);
             return {
               session_id: row.id,
-              status: "skipped",
+              status: usageSyncStatus(0),
               transcript_path: transcriptPath,
               messages: 0,
               models: S.listSessionUsage(row.id).map(sessionUsageJSON),
@@ -783,7 +805,7 @@ export const sessions = {
 
           return {
             session_id: row.id,
-            status: fresh.length ? "updated" : "skipped",
+            status: usageSyncStatus(fresh.length),
             transcript_path: transcriptPath,
             messages: fresh.length,
             models: S.listSessionUsage(row.id).map(sessionUsageJSON),
@@ -810,7 +832,7 @@ export const sessions = {
           S.resetSessionUsage(row.id);
           return {
             session_id: row.id,
-            status: "skipped",
+            status: usageSyncStatus(0),
             messages: 0,
             models: [],
           };
@@ -862,7 +884,7 @@ export const sessions = {
             saveUsageSamples(row.id, samplePlan);
             return {
               session_id: row.id,
-              status: "skipped",
+              status: usageSyncStatus(0),
               transcript_path: transcriptPath,
               messages: 0,
               models: S.listSessionUsage(row.id).map(sessionUsageJSON),
@@ -881,7 +903,7 @@ export const sessions = {
 
           return {
             session_id: row.id,
-            status: fresh.length ? "updated" : "skipped",
+            status: usageSyncStatus(fresh.length),
             transcript_path: transcriptPath,
             messages: fresh.length,
             models: S.listSessionUsage(row.id).map(sessionUsageJSON),
@@ -925,7 +947,7 @@ export const sessions = {
         saveUsageSamples(row.id, samplePlan);
         return {
           session_id: row.id,
-          status: "skipped",
+          status: usageSyncStatus(0),
           transcript_path: transcriptStats.transcriptPath,
           messages: 0,
           models: S.listSessionUsage(row.id).map(sessionUsageJSON),
@@ -990,7 +1012,7 @@ export const sessions = {
 
         return {
           session_id: row.id,
-          status: fresh.length ? "updated" : "skipped",
+          status: usageSyncStatus(fresh.length),
           transcript_path: transcriptStats.transcriptPath,
           messages: fresh.length,
           models: S.listSessionUsage(row.id).map(sessionUsageJSON),

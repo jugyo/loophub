@@ -27,14 +27,13 @@ const CLOSED_PULL_AGENT_KILLED_EVENT = "agent_session.killed";
 const CLOSED_PULL_AGENT_KILL_REASON = "pr_closed_grace_elapsed";
 
 export async function sweepHerdrSessions(): Promise<HerdrSessionsWire> {
-  let listOut: string;
-  try {
-    listOut = await runHerdrCapture(["session", "list", "--json"]);
-  } catch {
-    return { repos: [] };
-  }
+  const listOut = await runHerdrCapture(["session", "list", "--json"]);
   const running = parseHerdrSessionListIfValid(listOut);
-  if (running === null) return { repos: [] };
+  // A failed top-level capture is not an observed empty session list. Reject the tick so the
+  // snapshot layer can retain the last successful data with an explicit failure marker; a
+  // confirmed empty list remains the explicit running_repos: [] case below.
+  if (running === null)
+    throw new ServiceError(500, "failed to parse Herdr session list");
   if (running.length === 0) return { repos: [], running_repos: [] };
 
   const matched = reposWithRunningSession(S.listRepos("active"), running);
@@ -99,28 +98,10 @@ export interface HerdrSnapshotSweepDeps {
   sweep?: () => Promise<HerdrSessionsWire>;
 }
 
-// One worker tick (#1665): capture the live herdr snapshot, persist it as the single row
-// terminal/sessions reads, and fire a global terminal.sessions_updated event only when the
-// structural signature changed (herdrSnapshotSignature excludes token usage so a busy fleet does
-// not flood the events table). This is the ONLY path that spawns herdr for session state now — the
-// RPC is a pure DB read — so the whole herdr load is decoupled from the number of open browser tabs.
-// captured_at is refreshed every tick so a stopped worker surfaces as staleness, not silent
-// automatic fallback.
-export async function snapshotHerdrSessionsImpl(
-  deps: HerdrSnapshotSweepDeps = {},
-): Promise<HerdrSnapshotSweepResult> {
-  const capture = deps.sweep ?? sweepHerdrSessions;
-  const captured = await capture();
-  // A repo whose own capture failed keeps its last known agents (tagged stale_since) instead of
-  // vanishing from the snapshot — see carryOverFailedRepoSessions (#2142).
-  const snapshot = carryOverFailedRepoSessions(
-    captured,
-    S.getHerdrSessionSnapshot(),
-  );
+function persistHerdrSnapshot(
+  snapshot: HerdrSessionsWire,
+): HerdrSnapshotSweepResult {
   const signature = herdrSnapshotSignature(snapshot);
-  // The herdr capture is done. The stored signature is what decides whether this tick counts as a
-  // change, so it commits with the event: a stored signature whose event was lost leaves clients on
-  // the previous snapshot until some later tick happens to change the signature again.
   const record = db.transaction(() => {
     const stored = S.recordHerdrSessionSnapshot(snapshot, signature);
     if (stored.changed) {
@@ -137,6 +118,37 @@ export async function snapshotHerdrSessionsImpl(
     changed: record.changed,
     captured_at: record.captured_at,
   };
+}
+
+// One worker tick (#1665): capture the live herdr snapshot, persist it as the single row
+// terminal/sessions reads, and fire a global terminal.sessions_updated event only when the
+// structural signature changed (herdrSnapshotSignature excludes token usage so a busy fleet does
+// not flood the events table). This is the ONLY path that spawns herdr for session state now — the
+// RPC is a pure DB read — so the whole herdr load is decoupled from the number of open browser tabs.
+// captured_at is refreshed every tick so a stopped worker surfaces as staleness, not silent
+// automatic fallback.
+export async function snapshotHerdrSessionsImpl(
+  deps: HerdrSnapshotSweepDeps = {},
+): Promise<HerdrSnapshotSweepResult> {
+  const capture = deps.sweep ?? sweepHerdrSessions;
+  const previous = S.getHerdrSessionSnapshot();
+  let captured: HerdrSessionsWire;
+  try {
+    captured = await capture();
+  } catch (error) {
+    // Publish an explicit failure transition while retaining the last successful data. The marker
+    // participates in the structural signature, so the first failure and the next success both
+    // invalidate clients even when the session/agent structure itself is unchanged.
+    persistHerdrSnapshot({
+      ...(previous?.snapshot ?? { repos: [] }),
+      session_list_capture_failed: true,
+    });
+    throw error;
+  }
+  // A repo whose own capture failed keeps its last known agents (tagged stale_since) instead of
+  // vanishing from the snapshot — see carryOverFailedRepoSessions (#2142).
+  const snapshot = carryOverFailedRepoSessions(captured, previous);
+  return persistHerdrSnapshot(snapshot);
 }
 
 // Terminates whatever a pane's foreground job is running by signaling it directly, instead of

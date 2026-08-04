@@ -170,11 +170,66 @@ describe("AgentsPage", () => {
 
     cleanup();
     herdrSessions.isLoading = false;
-    herdrSessions.value = { repos: [] };
+    herdrSessions.value = {
+      repos: [],
+      running_repos: [],
+      captured_at: new Date().toISOString(),
+    };
     renderAgentsPage();
     expect((await screen.findByRole("status")).textContent).toMatch(
       /No herdr sessions with agents/,
     );
+  });
+
+  it("distinguishes unavailable snapshots from a confirmed empty session list", async () => {
+    herdrSessions.value = { repos: [], captured_at: null };
+    renderAgentsPage();
+
+    expect((await screen.findByRole("status")).textContent).toMatch(
+      /Agent information is unavailable/,
+    );
+    expect(screen.queryByText(/No herdr sessions with agents/)).toBeNull();
+
+    cleanup();
+    herdrSessions.value = {
+      repos: [],
+      running_repos: ["me/proj"],
+      capture_failed_repos: ["me/proj"],
+      captured_at: new Date().toISOString(),
+    };
+    renderAgentsPage();
+
+    expect((await screen.findByRole("status")).textContent).toMatch(
+      /Agent information is unavailable/,
+    );
+    expect(screen.queryByText(/No herdr sessions with agents/)).toBeNull();
+
+    cleanup();
+    herdrSessions.value = {
+      repos: [],
+      running_repos: [],
+      captured_at: "2020-01-01T00:00:00.000Z",
+    };
+    renderAgentsPage();
+
+    expect((await screen.findByRole("status")).textContent).toMatch(
+      /Agent information is unavailable/,
+    );
+    expect(screen.queryByText(/No herdr sessions with agents/)).toBeNull();
+  });
+
+  it("shows a top-level capture failure while retaining last successful agents", async () => {
+    herdrSessions.value = {
+      ...sample,
+      session_list_capture_failed: true,
+      captured_at: new Date().toISOString(),
+    };
+    renderAgentsPage();
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /Could not read herdr sessions — showing last successful data/,
+    );
+    expect(screen.getByText("orchestrator #7")).toBeTruthy();
   });
 
   it("shows an error when the sessions fetch fails with no data", async () => {
