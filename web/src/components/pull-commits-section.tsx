@@ -7,7 +7,7 @@
 // note. Grades therefore inherit the commit grouping — a grade is only ever read against the SHA it
 // was made on — and need no freshness state of their own.
 
-import { Check, Loader2, UploadCloud, X } from "lucide-react";
+import { Check, ImageIcon, Loader2, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { PullLineComment, PullRequest, PullReview } from "@/api/types";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
@@ -18,6 +18,7 @@ import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/lib/badges";
+import { hasMarkdownImage } from "@/lib/markdown-images";
 import { relativeTime } from "@/lib/time";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { usePullCommitFiles } from "@/queries/pulls";
@@ -235,12 +236,29 @@ function CommitReviewStatus({
       <span className="font-medium text-link">Reviewed</span>
       <ReviewVerdictSummary reviews={reviews} />
       <AcGradeCounts reviews={reviews} />
+      <ScreenshotHint reviews={reviews} />
       {commentCount > 0 ? (
         <span className="text-muted-foreground">
           {commentCount} comment{commentCount === 1 ? "" : "s"}
         </span>
       ) : null}
     </button>
+  );
+}
+
+// Screenshots are the visual evidence a review carries, so the row says one is there before the
+// dialog is opened (#2344). Silent when no review at this SHA embeds an image — a row without
+// evidence keeps the look it had.
+function ScreenshotHint({ reviews }: { reviews: PullReview[] }) {
+  if (!reviews.some((review) => hasMarkdownImage(review.body))) return null;
+  return (
+    <span
+      className="flex items-center text-muted-foreground"
+      title="Screenshot attached"
+      aria-label="Screenshot attached"
+    >
+      <ImageIcon className="size-3.5" aria-hidden />
+    </span>
   );
 }
 

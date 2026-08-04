@@ -382,6 +382,50 @@ describe("PullCommitsSection", () => {
     expect(within(dialog).getByText(/No AC grading/)).toBeTruthy();
   });
 
+  it("marks only the commit rows whose reviews carry a screenshot", () => {
+    const reviews: PullReview[] = [
+      {
+        id: 8,
+        user: { login: "verifier #7-1" },
+        author_type: "agent",
+        state: "PASS",
+        body: `## Evidence\n\n![shot.png](/attachments/${"a".repeat(64)})`,
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T12:30:00Z",
+        ac_results: [],
+      },
+      {
+        id: 9,
+        user: { login: "verifier #7-1" },
+        author_type: "agent",
+        state: "PASS",
+        body: "Looks good.",
+        head_sha: commits![1].sha,
+        model: null,
+        submitted_at: "2026-06-17T12:30:00Z",
+        ac_results: [],
+      },
+    ];
+
+    renderSection({ reviews });
+
+    expect(
+      within(
+        screen.getByRole("button", {
+          name: "View 1 review for aaaaaaa: Latest change",
+        }),
+      ).getByLabelText("Screenshot attached").title,
+    ).toBe("Screenshot attached");
+    expect(
+      within(
+        screen.getByRole("button", {
+          name: "View 1 review for bbbbbbb: Earlier change",
+        }),
+      ).queryByLabelText("Screenshot attached"),
+    ).toBeNull();
+  });
+
   it("omits null and out-of-range reviews while keeping known commit reviews", async () => {
     const reviews: PullReview[] = [
       {
