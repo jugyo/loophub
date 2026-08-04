@@ -1,4 +1,5 @@
 import { execFile, spawnSync } from "node:child_process";
+import { cachedGitResult } from "./git-cache.ts";
 import {
   measureSlowOperation,
   measureSlowOperationAsync,
@@ -36,11 +37,23 @@ export function runGitSync(
   );
 }
 
-// Run `git -C <repoPath> <args...>` without throwing; we inspect exitCode manually.
+// Run `git -C <repoPath> <args...>` without throwing; we inspect exitCode manually. Invocations
+// whose output cannot change (see core/git-cache.ts) are served from an in-process cache instead of
+// spawning git again.
 export function git(
   repoPath: string,
   args: string[],
   env: Record<string, string> = {},
+): Promise<GitResult> {
+  return cachedGitResult(repoPath, args, env, () =>
+    spawnGit(repoPath, args, env),
+  );
+}
+
+function spawnGit(
+  repoPath: string,
+  args: string[],
+  env: Record<string, string>,
 ): Promise<GitResult> {
   const argv = ["git", "-C", repoPath, ...args];
   return measureSlowOperationAsync(

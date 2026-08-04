@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { clearGitResultCache } from "../git-cache.ts";
 import { traceGitCommands } from "../git-trace-test-helper.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-pull-commits-"));
@@ -354,6 +355,9 @@ exec "${realGit}" "$@"
   chmodSync(fakeGit, 0o755);
   const originalPath = process.env.PATH;
   process.env.PATH = `${bin}:${originalPath ?? ""}`;
+  // This commit's parent diff is immutable, so an earlier test left it cached and the stub would
+  // never be reached. A fresh process would run git here, which is the path under test.
+  clearGitResultCache();
 
   try {
     await expect(

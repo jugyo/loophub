@@ -9,14 +9,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import {
+  commitDiffFiles,
+  commitInRange,
+  commitLog,
+  commitsAhead,
   diffFiles,
+  diffFilesBetween,
   diffStat,
   fileAtRef,
   git,
   hasEffectiveDiff,
   isIndexLockError,
+  mergeBase,
   mergePull,
   pathInDiff,
+  pushedCommitShas,
   runGitSync,
   sleep,
   worktreeAdd,
@@ -25,6 +32,7 @@ import {
   worktreeRemove,
   worktreeStatus,
 } from "./git.ts";
+import { clearGitResultCache } from "./git-cache.ts";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
 import { configureSlowOperationLogging } from "./slow-operation.ts";
 
@@ -808,6 +816,79 @@ test("pathInDiff reports only files actually changed in base...head", async () =
     await pathInDiff(p, "main", "feat", ":(exclude)nonexistent12345"),
   ).toBe(false);
   expect(await pathInDiff(p, "main", "feat", "*.md")).toBe(false);
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("a repeated SHA-resolved query is served from the cache, while ref queries re-run", async () => {
+  const p = await makeRepo();
+  clearGitResultCache();
+  const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
+  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
+
+  const cold = await traceGitCommands(() =>
+    diffFilesBetween(p, baseSha, headSha),
+  );
+  expect(
+    cold.commands.filter((command) => command.startsWith("diff ")),
+  ).toHaveLength(3);
+
+  const warm = await traceGitCommands(() =>
+    diffFilesBetween(p, baseSha, headSha),
+  );
+  expect(warm.commands).toEqual([]);
+  expect(warm.result).toEqual(cold.result);
+
+  // The same question asked by branch name still spawns git: a ref can move under it.
+  const byRef = await traceGitCommands(async () => {
+    await diffFiles(p, "main", "feat");
+    await diffFiles(p, "main", "feat");
+  });
+  expect(
+    byRef.commands.filter((command) => command.startsWith("diff ")),
+  ).toHaveLength(6);
+
+  // So does anything reporting where the working tree currently is.
+  const status = await traceGitCommands(async () => {
+    await worktreeStatus(p);
+    await worktreeStatus(p);
+  });
+  expect(
+    status.commands.filter((command) => command.startsWith("status ")),
+  ).toHaveLength(2);
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+// The cacheable-argument table in core/git-cache.ts only clears argv spellings it has vouched for,
+// so a flag added to one of these call sites silently stops being cached. Pin every query that is
+// meant to be cached: a second round of identical calls must not spawn git at all.
+test("every SHA-resolved query these helpers ask is served from the cache", async () => {
+  const p = await makeRepo();
+  clearGitResultCache();
+  const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
+  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
+
+  const ask = async () => {
+    await diffFiles(p, baseSha, headSha);
+    await diffFilesBetween(p, baseSha, headSha, { ignoreWhitespace: true });
+    await commitDiffFiles(p, headSha);
+    await diffStat(p, baseSha, headSha);
+    await pathInDiff(p, baseSha, headSha, "f.txt");
+    await hasEffectiveDiff(p, baseSha, headSha);
+    await commitLog(p, baseSha, headSha);
+    await commitsAhead(p, baseSha, headSha);
+    await commitInRange(p, baseSha, headSha, headSha);
+    await pushedCommitShas(p, baseSha, headSha, headSha);
+    await mergeBase(p, baseSha, headSha);
+    await fileAtRef(p, headSha, "f.txt");
+  };
+
+  const cold = await traceGitCommands(ask);
+  expect(cold.commands.length).toBeGreaterThan(0);
+
+  const warm = await traceGitCommands(ask);
+  expect(warm.commands).toEqual([]);
 
   rmSync(p, { recursive: true, force: true });
 });
