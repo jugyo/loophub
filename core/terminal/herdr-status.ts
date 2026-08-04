@@ -77,8 +77,8 @@ function runningSessionNames(sessions: unknown[]): string[] {
  * `herdr pane list` (`result.panes`) is the source since herdr 0.7.5: it is the only listing that
  * carries a pane's free-form `label`, which is the string LoopHub identifies an agent by (workflow
  * agent names, the sidebar). `agent list` reports a strict slug `name` instead, and only for agents
- * registered through `agent start` — panes running an agent LoopHub did not register (or that a
- * pre-0.7.5 launch labelled) have no `name` there at all.
+ * registered through `agent start` — which no LoopHub launch uses, so its panes have no `name`
+ * there at all.
  *
  * A pane only counts as an agent when herdr says one is running in it (`agent`), so a plain shell
  * sitting in a PR worktree is not mistaken for a working agent. `result.agents` stays accepted so a

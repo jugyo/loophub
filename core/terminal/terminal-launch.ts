@@ -1,48 +1,36 @@
 import { createHash } from "node:crypto";
 import { type CodingAgent, codingAgent } from "../config.ts";
-import {
-  buildRuntimeArgs,
-  buildRuntimeFlags,
-  runtimePrompt,
-} from "../runtime-args.ts";
-import { RUNTIMES, type RuntimeBin } from "../runtimes.ts";
+import { buildRuntimeFlags } from "../runtime-args.ts";
+import { RUNTIMES } from "../runtimes.ts";
 import type { WorkflowStep } from "../workflow/compose.ts";
 import { workflowStepHerdrAgentName } from "../workflow/herdr-agents.ts";
-import { herdrPromptPaneArgs } from "./herdr-paste.ts";
 
 export interface TerminalLaunchRepo {
   full_name: string;
   local_path: string;
 }
 
-// Placeholder token substituted with the pane id created by a plan's `paneArgv` step. herdr 0.7.5's
-// `agent start` no longer creates the pane it starts in (it attaches to an existing one), so a
-// launch is a small ordered script rather than a single argv — and the pane id only exists once the
-// first step has run. HERDR_ID rejects `{`/`}`, so this token can never collide with a real id.
+// Placeholder token substituted with the pane id created by a plan's `paneArgv` step. Since herdr
+// 0.7.5 a pane is created on its own rather than by the call that fills it, so a launch is a small
+// ordered script rather than a single argv — and the pane id only exists once the first step has
+// run. HERDR_ID rejects `{`/`}`, so this token can never collide with a real id.
 export const HERDR_PANE_PLACEHOLDER = "{pane}";
 
-// One herdr launch, as the ordered calls it now takes. `paneArgv` creates the pane (its stdout
-// carries the pane id); `renameArgv` gives that pane the human-readable label LoopHub later parses
-// back out of `pane list`; `argv` starts the actual work in it. Both later steps carry
-// HERDR_PANE_PLACEHOLDER wherever the pane id belongs — executeHerdrLaunchPlan substitutes it.
+// One herdr launch, as the ordered calls it takes. `paneArgv` creates the pane (its stdout carries
+// the pane id); `renameArgv` gives that pane the human-readable label LoopHub later parses back out
+// of `pane list`; `argv` types `command` into its shell, which is what starts the work. Both later
+// steps carry HERDR_PANE_PLACEHOLDER wherever the pane id belongs — executeHerdrLaunchPlan
+// substitutes it.
 export interface HerdrLaunchPlan {
   sessionName: string;
-  // The herdr 0.7.5 agent name: a strict slug (`^[a-z][a-z0-9_-]{0,31}$`), unique within the
-  // session. Distinct from `label` — pre-0.7.5 herdr had one free-form name that served as both.
-  agentName: string;
   // The display label written to the pane. This is the string LoopHub's own parsers (workflow agent
-  // names, the sidebar) read back, so it keeps the exact pre-0.7.5 wording.
+  // names, the sidebar) read back out of `pane list`, and the only identity a launch registers.
   label: string;
   command: string;
   cwd: string;
   paneArgv: string[];
   renameArgv: string[];
   argv: string[];
-  // The prompt delivery, as the pair of `herdr` calls that paste it and press Enter. Empty when the
-  // launch carries no prompt. Separate from `argv` because herdr 0.7.5's `agent start` refuses any
-  // argument containing a newline, and every LoopHub prompt is multi-line: the runtime is started
-  // with its flags only, then the prompt goes into the running agent's input.
-  promptArgv: string[][];
 }
 
 function pathSafePart(value: string): string {
@@ -97,34 +85,6 @@ export function normalizeAgentName(
     .trimEnd()}…`;
 }
 
-// herdr 0.7.5 validates the `agent start` name as `^[a-z][a-z0-9_-]{1,32}$` and rejects a name
-// already taken in the session (`invalid_agent_name` / `agent_name_taken`), where pre-0.7.5 herdr
-// accepted the free-form label as the name. So the label is no longer usable as the name: derive a
-// slug from it for identity and keep the label itself on the pane (see herdrPaneRenameArgv).
-//
-// `seed` makes the result unique — the pane id the agent starts in, which herdr guarantees is
-// unique within the session. Without it two launches sharing a label (two "New issue" agents, a
-// relaunched workflow child) would collide on the second `agent start`. Labels that slugify to
-// nothing (a fully non-ASCII issue title) still produce a usable name because the seeded suffix
-// always remains.
-const MAX_AGENT_SLUG_LENGTH = 32;
-const SLUG_SUFFIX_LENGTH = 8;
-export function herdrAgentSlug(label: string, seed: string): string {
-  const suffix = createHash("sha256")
-    .update(label)
-    .update("\0")
-    .update(seed)
-    .digest("hex")
-    .slice(0, SLUG_SUFFIX_LENGTH);
-  const base = label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^[^a-z]+/, "")
-    .slice(0, MAX_AGENT_SLUG_LENGTH - SLUG_SUFFIX_LENGTH - 1)
-    .replace(/-+$/, "");
-  return base ? `${base}-${suffix}` : `a-${suffix}`;
-}
-
 function shellArg(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -139,11 +99,11 @@ export function displayArg(value: string): string {
 }
 
 // The actual `herdr ...` invocations a caller can paste into their own shell to reproduce a launch
-// failure — distinct from HerdrLaunchPlan.command, which is only the inner workflow command herdr
-// would run once its session existed (e.g. "lh issue new '...'"). That inner command doesn't depend
-// on `herdr` at all, so it can't reproduce a herdr-specific failure. Since herdr 0.7.5 a launch is
-// an ordered pair of calls (create the pane, then start the agent in it), so both are shown; the
-// pane id is left as HERDR_PANE_PLACEHOLDER because it only exists once the first call has run.
+// failure — distinct from HerdrLaunchPlan.command, which is only the inner command the pane's shell
+// would run (e.g. "lh issue new '...'"). That inner command doesn't depend on `herdr` at all, so it
+// can't reproduce a herdr-specific failure. A launch is an ordered pair of calls (create the pane,
+// then type the command into it), so both are shown; the pane id is left as
+// HERDR_PANE_PLACEHOLDER because it only exists once the first call has run.
 export function herdrCommandLine(plan: HerdrLaunchPlan): string {
   return [plan.paneArgv, plan.argv]
     .map((argv) => argv.map(displayArg).join(" "))
@@ -159,34 +119,37 @@ export interface HerdrLaunchInput {
   // One-shot reasoning effort for New issue launches (#1534). Maps to `lh issue new --effort`.
   effort?: string;
   targetBranch?: string;
-  // Optional direct instructions for interactive creation flows.
+  // Optional direct instructions for the issue-create flow, passed as `lh issue new --prompt`.
   prompt?: string;
+  // File holding the initial prompt for the launches that run a coding agent directly. See
+  // agentCommandLine for why the prompt travels by path.
+  promptPath?: string;
   env?: Record<string, string>;
 }
 
-// The runtime binary and its unescaped argv, for the launches that run a coding agent directly.
-// herdr 0.7.5's `agent start --kind <kind> -- <args…>` execs the runtime's canonical binary with
-// these args, so the prompt-carrying tokens never pass through a shell — which is what makes it
-// safe for the multi-KB, newline-bearing contract prompts a workflow step launches with.
+// The shell command line a launch types into its pane to start a coding agent: the runtime binary,
+// its flags, and the prompt read back from `promptPath` by the shell receiving the line.
 //
-// Null for the issue-create workflow: its entrypoint is `lh issue new`, a LoopHub CLI that resolves
-// config and registers the session before spawning the agent itself, so it is not a runtime binary
-// `agent start --kind` could exec. That launch types its command into the pane instead
-// (herdrPaneSendTextArgv) — it is a single short line, unlike a rendered contract.
-export function agentProgramForHerdrLaunch(
-  input: HerdrLaunchInput,
-): { bin: RuntimeBin; args: string[]; prompt: string } | null {
-  const wantsAgent =
-    (input.workflow === "workflow-create" && input.prompt) ||
-    (input.workflow === "github-pr-export" && input.prNumber && input.prompt);
-  if (!wantsAgent || !input.prompt) return null;
-  const agent = input.codingAgent ?? codingAgent();
-  const runtimeInput = { runtime: agent, prompt: input.prompt };
-  return {
-    bin: RUNTIMES[agent].bin,
-    args: buildRuntimeFlags(runtimeInput),
-    prompt: runtimePrompt(runtimeInput),
-  };
+// The prompt rides on the command line rather than being injected into the running agent afterwards
+// so that starting the agent and giving it its prompt are one step — an injection that lands before
+// the runtime can accept input leaves the agent idle forever with no failure to report (#2354). It
+// travels by path rather than inline because a rendered prompt is multi-KB and multi-line, which
+// would bury the pane's scrollback under the command that started the agent; the command
+// substitution still hands the runtime exactly one positional argument whatever the file contains.
+export function agentCommandLine(input: {
+  bin: string;
+  args: string[];
+  promptPath: string;
+  env?: Record<string, string>;
+}): string {
+  return [
+    ...Object.entries(input.env ?? {}).map(
+      ([key, value]) => `${key}=${shellArg(value)}`,
+    ),
+    input.bin,
+    ...input.args.map(shellArg),
+    `"$(cat ${shellArg(input.promptPath)})"`,
+  ].join(" ");
 }
 
 export function commandForHerdrLaunch(input: HerdrLaunchInput): string {
@@ -218,34 +181,40 @@ export function commandForHerdrLaunch(input: HerdrLaunchInput): string {
       `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${agentFlag}${modelFlag}${effortFlag}${promptFlag}`,
     );
   }
-  if (input.workflow === "workflow-create" && input.prompt) {
+  if (input.workflow === "workflow-create" && input.promptPath) {
     // New workflow (Settings > Workflows): launch the coding agent interactively with the
     // workflow-create instructions as its initial prompt, mirroring the New issue flow's `--prompt`.
     // `lh workflow create` is global (no repo), so this runs from the LoopHub-home cwd the service
     // pins for it, not a repo worktree. The agent/model come from the global effective config
     // (`codingAgent()`).
     const agent = input.codingAgent ?? codingAgent();
-    const argv = buildRuntimeArgs({ runtime: agent, prompt: input.prompt });
-    return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
-  }
-  if (input.workflow === "github-pr-export" && input.prNumber && input.prompt) {
-    const agent = input.codingAgent ?? codingAgent();
-    // The full filing instructions are injected directly as the agent's initial prompt (#1892),
-    // the same prompt-injection approach as New issue, instead of dispatching the retired
-    // /lh-create-github-pr skill.
-    const argv = buildRuntimeArgs({
-      runtime: agent,
-      prompt: input.prompt,
+    return agentCommandLine({
+      bin: RUNTIMES[agent].bin,
+      args: buildRuntimeFlags({ runtime: agent }),
+      promptPath: input.promptPath,
     });
-    return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
+  }
+  if (
+    input.workflow === "github-pr-export" &&
+    input.prNumber &&
+    input.promptPath
+  ) {
+    const agent = input.codingAgent ?? codingAgent();
+    // The full filing instructions are the agent's initial prompt (#1892), instead of dispatching
+    // the retired /lh-create-github-pr skill.
+    return agentCommandLine({
+      bin: RUNTIMES[agent].bin,
+      args: buildRuntimeFlags({ runtime: agent }),
+      promptPath: input.promptPath,
+    });
   }
   return "";
 }
 
 // `--env KEY=VALUE`, repeated, in a stable order so the same launch always produces the same argv
-// (the tests and the reproduce hint both compare argv verbatim). Since herdr 0.7.5 `agent start`
-// execs the runtime binary directly and takes no environment of its own, so the agent's environment
-// has to come from the pane it is started in — every pane-creating call below accepts these.
+// (the tests and the reproduce hint both compare argv verbatim). A launch's command is typed into
+// the pane's own shell, so anything the agent must see has to be in that pane's environment — every
+// pane-creating call below accepts these.
 function herdrEnvArgs(env?: Record<string, string>): string[] {
   if (!env) return [];
   return Object.keys(env)
@@ -300,10 +269,8 @@ export function herdrPaneSplitArgv(
   ];
 }
 
-// Writes the human-readable label onto the pane. Pre-0.7.5 herdr took this string as the `agent
-// start` name and displayed it; 0.7.5 splits the two, so the label has to be set separately — and
-// it must be, because it is the string LoopHub parses back (workflow agent names, the sidebar) out
-// of `pane list`, not the slug in `agent start`.
+// Writes the human-readable label onto the pane. This is the launch's only identity step: the
+// label is the string LoopHub parses back (workflow agent names, the sidebar) out of `pane list`.
 export function herdrPaneRenameArgv(
   repo: TerminalLaunchRepo,
   paneId: string,
@@ -320,8 +287,9 @@ export function herdrPaneRenameArgv(
   ];
 }
 
-// Types a shell command into a pane, for the one launch whose entrypoint is not a runtime binary
-// (`lh issue new` — see agentProgramForHerdrLaunch). The trailing newline submits it.
+// Types a shell command into a pane. This is how every launch starts its work: the pane's shell
+// receives the whole invocation — environment, binary, flags and prompt — as one line. The trailing
+// newline submits it.
 export function herdrPaneSendTextArgv(
   repo: TerminalLaunchRepo,
   paneId: string,
@@ -550,8 +518,8 @@ export function parseHerdrTabId(stdout: string): string | null {
 }
 
 // `herdr tab create` seeds the new tab with one empty default pane, reported as
-// `.result.root_pane.pane_id`. `herdr agent start --tab <id>` splits alongside that pane
-// rather than replacing it (#503), so the caller closes it once the agent's own pane exists.
+// `.result.root_pane.pane_id`. A caller that seeds a tab it cannot launch into (the seeded pane
+// carries none of the launch's `--env`, #503) closes it once the launch's own pane exists.
 export function parseHerdrRootPaneId(stdout: string): string | null {
   try {
     const parsed = JSON.parse(stdout);
@@ -562,11 +530,10 @@ export function parseHerdrRootPaneId(stdout: string): string | null {
   }
 }
 
-// `herdr agent start` reports the pane the new agent is running in. Herdr has used a couple of
-// nearby shapes across commands, so accept the explicit agent/pane fields and validate exactly as
-// other pane ids before persisting or focusing it. `root_pane` covers the pane-creating commands:
-// `tab create` / `workspace create` / `worktree open` report their seeded pane there, while
-// `pane split` reports the new pane as `pane` — one parser serves every step of a launch.
+// The pane a launch will run its agent in, out of whichever call created it. Herdr uses a couple of
+// nearby shapes across commands, so accept each explicit pane field and validate exactly as other
+// pane ids before persisting or focusing it: `tab create` / `workspace create` / `worktree open`
+// report their seeded pane as `root_pane`, while `pane split` reports the new pane as `pane`.
 export function parseHerdrAgentPaneId(stdout: string): string | null {
   try {
     const parsed = JSON.parse(stdout);
@@ -611,20 +578,11 @@ export function parseHerdrWorkspaceId(stdout: string): string | null {
   }
 }
 
-// How long `agent start` waits for the runtime to become interactive before giving up. The launch
-// is only reported successful once herdr has seen the agent's prompt, so this bounds the slowest
-// acceptable cold start of `claude`/`codex`/`grok`. herdr's own default is 30s and its ceiling 300s.
-const AGENT_START_TIMEOUT_MS = 120_000;
-
 export function buildHerdrLaunchPlan(input: {
   repo: TerminalLaunchRepo;
-  // The command as a person would read it. Also what actually runs for a `shell` launch; for an
-  // `agent` launch it is display-only, since the argv below never passes through a shell.
+  // The command the launch types into its pane — the whole invocation, prompt included.
   command: string;
-  // The coding-agent binary, its (newline-free) flags, and the prompt to deliver once it is up —
-  // from agentProgramForHerdrLaunch. When absent the launch types `command` into the pane instead.
-  program?: { bin: RuntimeBin; args: string[]; prompt?: string } | null;
-  // Environment for the pane the agent runs in. `agent start` has no environment of its own, so
+  // Environment for the pane the command runs in. The command is typed into that pane's shell, so
   // anything the agent must see (LOOPHUB_SESSION_ID and friends) is set when the pane is created.
   env?: Record<string, string>;
   label?: string;
@@ -643,15 +601,6 @@ export function buildHerdrLaunchPlan(input: {
   const sessionName = herdrSessionName(input.repo);
   const label = normalizeAgentName(input.label || "LoopHub workflow");
   const cwd = input.cwd ?? input.repo.local_path;
-  // Seeded with the placement rather than a real pane id: the pane does not exist yet, and the plan
-  // has to be fully determined before it runs (it crosses the RPC boundary to `lh workflow
-  // launch-step`). Placement is unique per launch in practice — a workflow child splits a pane it
-  // reserved a sequence number for, and a fresh tab is created per launch — and any residual
-  // collision surfaces as herdr's own `agent_name_taken`, not as a silently misattributed agent.
-  const agentName = herdrAgentSlug(
-    label,
-    `${input.splitPaneId ?? ""} ${input.workspaceId ?? ""} ${cwd}`,
-  );
   const paneArgv =
     input.splitPaneId && input.split
       ? herdrPaneSplitArgv(
@@ -669,44 +618,18 @@ export function buildHerdrLaunchPlan(input: {
             input.env,
           )
         : herdrTabCreateArgv(input.repo, cwd, input.env);
-  const argv = input.program
-    ? [
-        "herdr",
-        "--session",
-        sessionName,
-        "agent",
-        "start",
-        agentName,
-        "--kind",
-        input.program.bin,
-        "--pane",
-        HERDR_PANE_PLACEHOLDER,
-        "--timeout",
-        String(AGENT_START_TIMEOUT_MS),
-        "--",
-        ...input.program.args,
-      ]
-    : herdrPaneSendTextArgv(input.repo, HERDR_PANE_PLACEHOLDER, input.command);
-  // Only an `agent start` launch defers its prompt; a typed shell command already carries its own.
-  const prompt = input.program?.prompt;
-  const promptArgs = prompt
-    ? herdrPromptPaneArgs(HERDR_PANE_PLACEHOLDER, prompt)
-    : null;
   return {
     sessionName,
-    agentName,
     label,
     command: input.command,
     cwd,
     paneArgv,
     renameArgv: herdrPaneRenameArgv(input.repo, HERDR_PANE_PLACEHOLDER, label),
-    argv,
-    promptArgv: promptArgs
-      ? [
-          ["herdr", "--session", sessionName, "pane", ...promptArgs.text],
-          ["herdr", "--session", sessionName, "pane", ...promptArgs.submit],
-        ]
-      : [],
+    argv: herdrPaneSendTextArgv(
+      input.repo,
+      HERDR_PANE_PLACEHOLDER,
+      input.command,
+    ),
   };
 }
 
@@ -714,36 +637,6 @@ export function buildHerdrLaunchPlan(input: {
 // shape — claude's --session-id / --append-system-prompt-file, codex/grok folding the rendered
 // contract into a positional prompt, the sandbox-vs-approval posture — comes from the
 // registry-driven runtime-args module.
-//
-// Flags and prompt are separate because herdr 0.7.5's `agent start` rejects any argument containing
-// a newline. The flags are newline-free and go on the command line; the prompt — a rendered
-// contract is multi-KB and full of newlines and quotes — is delivered into the agent's input
-// afterwards, through the same bracketed-paste path LoopHub already uses for workflow instructions.
-function buildWorkflowStepAgentProgram(
-  input: {
-    runtime: CodingAgent;
-    sessionId: string;
-    systemPromptPath: string;
-    systemPrompt: string;
-    userPrompt: string;
-  },
-  model: string | undefined,
-): { bin: RuntimeBin; args: string[]; prompt: string } {
-  const runtimeInput = {
-    runtime: input.runtime,
-    model,
-    sessionId: input.sessionId,
-    systemPromptFile: input.systemPromptPath,
-    systemPrompt: input.systemPrompt,
-    prompt: input.userPrompt,
-  };
-  return {
-    bin: RUNTIMES[input.runtime].bin,
-    args: buildRuntimeFlags(runtimeInput),
-    prompt: runtimePrompt(runtimeInput),
-  };
-}
-
 export function buildWorkflowStepHerdrLaunchPlan(input: {
   repo: TerminalLaunchRepo;
   runId: number;
@@ -757,10 +650,10 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
   sessionId: string;
   worktree: string;
   systemPromptPath: string;
-  // The rendered contract text (same content written to systemPromptPath). Codex and Grok have no
-  // --append-system-prompt-file equivalent, so the text is prepended to the positional prompt.
-  systemPrompt: string;
-  userPrompt: string;
+  // The file holding the step's positional prompt, already resolved for this runtime (Codex and
+  // Grok have no --append-system-prompt-file equivalent, so their file carries the contract folded
+  // in). The command line reads it back instead of carrying it inline — see agentCommandLine.
+  userPromptPath: string;
   // The parent run's pane, split to place the child beside it in the same tab. Comes from the
   // parent agent's own HERDR_PANE_ID (see `lh workflow launch-step`); when absent the child falls
   // back to its own fresh tab, the same degraded placement the tab-less launch has always had.
@@ -773,17 +666,19 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
     LOOPHUB_WORKFLOW_RUN: String(input.runId),
     LOOPHUB_WORKFLOW_STEP: input.step,
   };
-  const model = input.model?.trim();
-  const program = buildWorkflowStepAgentProgram(input, model);
   return buildHerdrLaunchPlan({
     repo: input.repo,
-    command: [
-      ...Object.entries(env).map(([key, value]) => `${key}=${shellArg(value)}`),
-      program.bin,
-      ...program.args.map(shellArg),
-      shellArg(program.prompt),
-    ].join(" "),
-    program,
+    command: agentCommandLine({
+      env,
+      bin: RUNTIMES[input.runtime].bin,
+      args: buildRuntimeFlags({
+        runtime: input.runtime,
+        model: input.model?.trim(),
+        sessionId: input.sessionId,
+        systemPromptFile: input.systemPromptPath,
+      }),
+      promptPath: input.userPromptPath,
+    }),
     env,
     label: workflowStepHerdrAgentName(input.runId, input.step, input.sequence),
     splitPaneId: input.splitPaneId,
@@ -812,17 +707,7 @@ export function withHerdrPane(argv: string[], paneId: string): string[] {
   );
 }
 
-// herdr rejects `agent start` against a pane whose shell has not reached its prompt yet
-// (`agent_pane_busy`: "agent target pane <id> is not an available shell"). A pane is not ready the
-// instant `tab create` returns — measured at ~100ms on a warm session — so a launch that starts the
-// agent immediately fails outright. This is a startup ordering race with a definite end, not a
-// failure a human could act on, so it is waited out rather than surfaced: retry only this one error
-// code, only within a short bound, and let every other failure through on the first attempt.
-const AGENT_PANE_BUSY = "agent_pane_busy";
-const PANE_READY_TIMEOUT_MS = 10_000;
-const PANE_READY_POLL_MS = 100;
-
-// A herdr invocation that reports enough to distinguish `agent_pane_busy` from a real failure.
+// A herdr invocation that reports enough to tell a failed step from a successful one.
 export type HerdrLaunchRunner = (
   argv: string[],
 ) => Promise<{ stdout: string; stderr: string; ok: boolean }>;
@@ -834,24 +719,26 @@ export interface HerdrLaunchOutcome {
   paneId: string | null;
   // The tab the pane step created, when it created one (absent for a split placement).
   tabId: string | null;
-  // Which step failed, for the caller's error message. Null on success. "prompt" means the agent
-  // is up but never received its instructions — visibly different from a launch that never started.
-  failed: "pane" | "agent" | "prompt" | null;
+  // Which step failed, for the caller's error message. Null on success.
+  failed: "pane" | "agent" | null;
   stdout: string;
   stderr: string;
 }
 
-// Runs a launch plan's steps in order: create the pane, label it, start the work in it. Shared by
-// every launcher (lh-web's terminal.launch, `lh workflow start --herdr`, `lh workflow launch-step`)
-// so the pane-first sequence herdr 0.7.5 requires exists once.
+// Runs a launch plan's steps in order: create the pane, label it, type the command into it. Shared
+// by every launcher (lh-web's terminal.launch, `lh workflow start --herdr`, `lh workflow
+// launch-step`) so the pane-first sequence herdr requires exists once.
+//
+// The command carries its own prompt, so there is nothing left to deliver once it is typed and no
+// window in which the agent is running but uninstructed (#2354). Writing to a pane whose shell has
+// not reached its prompt yet is safe — the bytes wait in the pty and the shell reads them when it
+// starts — so the launch does not gate on pane readiness either.
 //
 // The rename is best-effort: the label is how LoopHub recognizes the pane later, but an agent that
 // is already running must not be reported as a failed launch because its label did not stick.
 export async function executeHerdrLaunchPlan(
   plan: HerdrLaunchPlan,
   run: HerdrLaunchRunner,
-  sleep: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<HerdrLaunchOutcome> {
   const paneRes = await run(plan.paneArgv);
   const paneId = paneRes.ok ? parseHerdrAgentPaneId(paneRes.stdout) : null;
@@ -868,18 +755,7 @@ export async function executeHerdrLaunchPlan(
   const tabId = parseHerdrTabId(paneRes.stdout);
   await run(withHerdrPane(plan.renameArgv, paneId));
 
-  const deadline = PANE_READY_TIMEOUT_MS / PANE_READY_POLL_MS;
-  let agentRes = await run(withHerdrPane(plan.argv, paneId));
-  for (
-    let attempt = 0;
-    !agentRes.ok &&
-    attempt < deadline &&
-    agentRes.stderr.includes(AGENT_PANE_BUSY);
-    attempt++
-  ) {
-    await sleep(PANE_READY_POLL_MS);
-    agentRes = await run(withHerdrPane(plan.argv, paneId));
-  }
+  const agentRes = await run(withHerdrPane(plan.argv, paneId));
   if (!agentRes.ok) {
     return {
       ok: false,
@@ -889,19 +765,6 @@ export async function executeHerdrLaunchPlan(
       stdout: agentRes.stdout,
       stderr: agentRes.stderr,
     };
-  }
-  for (const argv of plan.promptArgv) {
-    const promptRes = await run(withHerdrPane(argv, paneId));
-    if (!promptRes.ok) {
-      return {
-        ok: false,
-        paneId,
-        tabId,
-        failed: "prompt",
-        stdout: promptRes.stdout,
-        stderr: promptRes.stderr,
-      };
-    }
   }
   return {
     ok: true,

@@ -13,7 +13,7 @@ export interface HerdrLaunchError {
   reason: string;
   command?: string;
   // The Herdr session this launch targeted — shown so first-time Herdr users can create that
-  // session before retrying (`agent start` only works against an already-running session; it does
+  // session before retrying (a launch's calls only work against an already-running session; they do
   // not create one, unlike the bare `herdr --session <name>` form).
   session?: string;
 }

@@ -20,6 +20,7 @@ import { ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
 import { hasEffectiveDiff, mergePreview, revParse } from "../git.ts";
 import { type MergeableState, resolveMergeable } from "../mergeable.ts";
+import { runtimePrompt } from "../runtime-args.ts";
 import {
   effectiveRepoAgentConfigFor,
   type WorkflowOutOfBandReviewWire,
@@ -73,7 +74,9 @@ import {
 } from "../workflow/reconcile.ts";
 import {
   writeParentContract,
+  writeParentPrompt,
   writeStepContract,
+  writeStepPrompt,
 } from "../workflow/run-files.ts";
 import {
   projectWorkflowRunEvents,
@@ -139,6 +142,9 @@ export type WorkflowRunStartResult = {
   parent: {
     system_prompt_path: string;
     user_prompt: string;
+    // The same prompt as it was written for the run's runtime, which the parent launch's command
+    // line reads back instead of carrying inline.
+    user_prompt_path: string;
   };
 };
 
@@ -190,14 +196,12 @@ export type WorkflowLaunchStepResult = {
   // hands it straight to executeHerdrLaunchPlan.
   herdr: {
     sessionName: string;
-    agentName: string;
     label: string;
     command: string;
     cwd: string;
     paneArgv: string[];
     renameArgv: string[];
     argv: string[];
-    promptArgv: string[][];
   };
 };
 
@@ -1448,17 +1452,33 @@ export const workflowRuns = {
         return created;
       });
 
-      const systemPromptPath = writeParentContract(
+      const systemPrompt = renderWorkflowContract(
+        {
+          template: workflowContractText("parent", contractLanguage),
+          step: "parent",
+          worktreePath: wtPath,
+          baseBranch: pull.base_ref,
+        },
+        contractLanguage,
+      );
+      const systemPromptPath = writeParentContract(run.id, systemPrompt);
+      const userPrompt = parentUserPrompt(
+        {
+          runId: run.id,
+          repoName: r.full_name,
+          workflowName: workflow.name,
+          issueNumber: issue.number,
+          prNumber: opened.number,
+          baseRef: pull.base_ref,
+        },
+        contractLanguage,
+      );
+      // The positional prompt goes to a file the launch's command line reads back, resolved for the
+      // run's runtime first: Codex and Grok have no --append-system-prompt-file, so their file
+      // carries the contract folded in.
+      const userPromptPath = writeParentPrompt(
         run.id,
-        renderWorkflowContract(
-          {
-            template: workflowContractText("parent", contractLanguage),
-            step: "parent",
-            worktreePath: wtPath,
-            baseBranch: pull.base_ref,
-          },
-          contractLanguage,
-        ),
+        runtimePrompt({ runtime, systemPrompt, prompt: userPrompt }),
       );
 
       return {
@@ -1480,17 +1500,8 @@ export const workflowRuns = {
         lock_path: lockPath,
         parent: {
           system_prompt_path: systemPromptPath,
-          user_prompt: parentUserPrompt(
-            {
-              runId: run.id,
-              repoName: r.full_name,
-              workflowName: workflow.name,
-              issueNumber: issue.number,
-              prNumber: opened.number,
-              baseRef: pull.base_ref,
-            },
-            contractLanguage,
-          ),
+          user_prompt: userPrompt,
+          user_prompt_path: userPromptPath,
         },
       };
     } catch (e) {
@@ -1943,6 +1954,18 @@ export const workflowRuns = {
     // agent; an explicit launch-step --model override still wins when passed.
     const runtime = runRuntime(run);
     const model = input.model?.trim() || runModel(run);
+    // The positional prompt goes to a file the launch's command line reads back, resolved for this
+    // runtime first: Codex and Grok have no --append-system-prompt-file, so their file carries the
+    // contract folded in.
+    const userPromptPath = writeStepPrompt(
+      run.id,
+      step,
+      runtimePrompt({
+        runtime,
+        systemPrompt: composed.systemPrompt,
+        prompt: composed.userPrompt,
+      }),
+    );
     const sequence = S.reserveWorkflowRunChildSequence(
       run.id,
       nextWorkflowChildSequence(run.step_sessions_json),
@@ -1957,8 +1980,7 @@ export const workflowRuns = {
       sessionId: childSessionId,
       worktree,
       systemPromptPath,
-      systemPrompt: composed.systemPrompt,
-      userPrompt: composed.userPrompt,
+      userPromptPath,
       splitPaneId: input.paneId,
       model,
     });

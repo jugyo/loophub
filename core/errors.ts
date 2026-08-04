@@ -8,7 +8,7 @@
 export interface ServiceErrorData {
   command?: string;
   // The Herdr session name a launch failure relates to — lets the client suggest creating that
-  // session first, since `agent start` only works over the socket of an already-running session.
+  // session first, since a launch's calls only work over the socket of an already-running session.
   session?: string;
 }
 

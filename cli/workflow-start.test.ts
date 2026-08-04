@@ -77,17 +77,15 @@ function git(args: string[], path = REPO_PATH): void {
 
 // A fake `herdr` that logs every invocation and emits configurable JSON on stdout for the
 // worktree-open / tab-create calls the launch orchestration makes, so a test can drive the
-// worktree open→reuse dance (`agent start --tab <id>`) the same way `lh build --herdr` does.
-// `agentStartExit` fails only the `agent start` call, leaving the earlier open/create succeeding —
+// worktree open→reuse dance the same way `lh build --herdr` does. `sendTextExit` fails only the
+// call that types the launch command into the pane, leaving the earlier open/create succeeding —
 // the shape a real failed parent launch takes after its workspace was already created.
 //
-// Neither `agent start` nor `pane split` moves herdr's focus in 0.7.5 (verified against the real
-// CLI: `agent start` attaches to a pane that already exists and reports it `focused: false`, and
+// Neither `pane send-text` nor `pane split` moves herdr's focus (verified against the real CLI:
 // `pane split` focuses only with an explicit `--focus`), so neither changes the focused state here.
 function fakeRuntime(
   opts: {
-    agentStartExit?: number;
-    agentStartJson?: string;
+    sendTextExit?: number;
     focusedState?: Record<string, string>;
     paneCloseExit?: number;
     paneListJson?: string;
@@ -97,8 +95,7 @@ function fakeRuntime(
   } = {},
 ) {
   const {
-    agentStartExit = 0,
-    agentStartJson = '{"result":{"agent":{"pane_id":"w1:p3"}}}',
+    sendTextExit = 0,
     focusedState,
     paneCloseExit = 0,
     paneListJson = "",
@@ -150,7 +147,7 @@ case " $command " in
   *" pane close "*) change_focus_if_closing pane_id "$3"; exit ${paneCloseExit} ;;
   *" tab close "*) change_focus_if_closing tab_id "$3"; exit 0 ;;
   *" tab create "*) change_focus_without_no_focus; printf '%s' '${tabCreateJson}'; exit 0 ;;
-  *" agent start "*) printf '%s' '${agentStartJson}'; exit ${agentStartExit} ;;
+  *" pane send-text "*) exit ${sendTextExit} ;;
   *" workspace focus "*|*" tab focus "*|*" agent focus "*|*" pane focus "*) change_focus; exit 0 ;;
 esac
 exit 0
@@ -667,9 +664,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     // The child splits its parent's pane, so it lands in the run's own tab.
     expect(log).toMatch(/pane split w1:p2 --direction down --cwd /);
     expect(log).toContain(`pane rename w1:p3 executor #${body.run.id}-1`);
-    expect(log).toMatch(
-      /agent start executor-\d+-1-[0-9a-f]{8} --kind claude --pane w1:p3 /,
-    );
+    expect(log).toMatch(/pane send-text w1:p3 .*claude /);
     expect(log).toContain("pane list");
     expect(log).toContain("tab create --workspace w1 --no-focus");
     expect(log).toContain(
@@ -715,7 +710,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     const relaunchedLog = readFileSync(runtime.log, "utf8").slice(log.length);
     // With no parent pane to split, the child falls back to its own fresh tab.
     expect(relaunchedLog).toMatch(/tab create --cwd /);
-    expect(relaunchedLog).toMatch(/agent start .+ --pane w1:p10 /);
+    expect(relaunchedLog).toMatch(/pane send-text w1:p10 /);
     expect(relaunchedLog).not.toMatch(/(?:workspace|tab|agent) focus/);
     expectUnrelatedHerdrFocus(runtime);
   } finally {
@@ -1014,25 +1009,23 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     expect(log).toMatch(
       /tab create --workspace w1 --cwd .+ --env LOOPHUB_SESSION_ID=/,
     );
-    expect(log).toMatch(
-      /agent start orchestrator-\d+-[0-9a-f]{8} --kind claude --pane w1:p2 /,
-    );
+    expect(log).toMatch(/pane send-text w1:p2 .*claude /);
     expect(log.indexOf("worktree open")).toBeLessThan(
-      log.indexOf("agent start"),
+      log.indexOf("pane send-text"),
     );
-    // The label LoopHub identifies the pane by is written separately from the herdr agent name.
+    // The label LoopHub identifies the pane by is written onto the pane.
     expect(log).toMatch(/pane rename w1:p2 orchestrator #\d+/);
     // The empty tab the worktree open seeded is dropped without changing the current focus.
     expect(log).toMatch(/tab close w1:t1/);
     expect(log).not.toContain("workspace focus");
     expect(log).not.toContain("tab focus");
-    expect(log).toContain("--kind claude");
-    expect(log).toContain("--permission-mode auto");
-    // The multi-line prompt cannot ride on the agent start command line, so it is pasted in after.
-    expect(log).toMatch(/pane send-text w1:p2 /);
-    expect(log).toMatch(/pane send-keys w1:p2 Enter/);
+    // #2354: the whole launch is that one typed line — flags, then the prompt read back from the
+    // run's prompt file. Nothing is pasted into the agent afterwards.
+    expect(log).toContain("'--permission-mode' 'auto'");
+    expect(log).toMatch(/"\$\(cat '.+\/parent-prompt\.md'\)"/);
+    expect(log).not.toContain("pane send-keys");
     expectUnrelatedHerdrFocus(runtime);
-    expect(started.stderr).toContain("Attach with: herdr --session");
+    expect(started.stderr).toContain("Attach with: herdr session attach");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
@@ -1086,8 +1079,10 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
     // A reused workspace gets a genuinely new tab inside it (not the repo-root fallback tab), then
     // the parent starts in that tab — no new conflicting workspace is created.
     expect(log).toMatch(/tab create --workspace w1 /);
-    expect(log).toMatch(/agent start .+ --pane w1:p2 /);
-    expect(log.indexOf("tab create")).toBeLessThan(log.indexOf("agent start"));
+    expect(log).toMatch(/pane send-text w1:p2 /);
+    expect(log.indexOf("tab create")).toBeLessThan(
+      log.indexOf("pane send-text"),
+    );
     // Reusing a workspace does not change the current workspace, tab, or pane focus.
     expect(log).not.toContain("workspace focus");
     expect(log).not.toContain("tab focus");
@@ -1138,7 +1133,7 @@ test("workflow start --herdr launches when the reused workspace's new tab id is 
     const log = readFileSync(runtime.log, "utf8");
     expect(log).toMatch(/tab create --workspace w1 /);
     // The pane is what the agent needs; a tab id is not required to complete the launch.
-    expect(log).toMatch(/agent start .+ --pane w1:p2 /);
+    expect(log).toMatch(/pane send-text w1:p2 /);
     expect(log).not.toContain("tab focus");
     expect(log).not.toContain("workspace focus");
   } finally {
@@ -1209,7 +1204,7 @@ test("workflow start --herdr surfaces a failed parent launch and cleans up its w
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
   const runtime = fakeRuntime({
-    agentStartExit: 7,
+    sendTextExit: 7,
     worktreeOpenJson: FRESH_OPEN_JSON,
   });
   try {
@@ -1233,7 +1228,7 @@ test("workflow start --herdr surfaces a failed parent launch and cleans up its w
     expect(started.exitCode).toBe(1);
     expect(started.stderr).toContain("herdr failed to start the agent");
     const log = readFileSync(runtime.log, "utf8");
-    expect(log).toMatch(/agent start /);
+    expect(log).toMatch(/pane send-text /);
     // The fresh workspace this launch created must be torn down when the agent fails to start,
     // rather than left as an empty orphan (herdr refuses to close its last tab, so the whole
     // workspace is closed).
@@ -1279,12 +1274,11 @@ test("workflow start launches the configured codingAgent (codex) without requiri
     // Exit 0 with no `claude` on PATH already proves the Codex launch never required claude.
     expect(started.exitCode, started.stderr).toBe(0);
     const log = readFileSync(runtime.log, "utf8");
-    // The parent launches codex with the config default model in auto mode. herdr execs the
-    // runtime named by `--kind`, so the binary appears there rather than as a shell word, and
-    // `--session-id` is not passed to codex.
-    expect(log).toContain("--kind codex");
-    expect(log).not.toContain("--kind claude");
-    expect(log).toContain("--model gpt-5.6-sol");
+    // The parent launches codex with the config default model in auto mode, as one command line
+    // typed into its pane. `--session-id` is not passed to codex.
+    expect(log).toMatch(/pane send-text \S+ .*\bcodex '/);
+    expect(log).not.toMatch(/pane send-text \S+ .*\bclaude '/);
+    expect(log).toContain("'--model' 'gpt-5.6-sol'");
     expect(log).toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(log).not.toContain("code_mode");
     expect(log).not.toContain("deferred_executor");
@@ -1334,10 +1328,10 @@ test("workflow start --claude-code overrides a codex codingAgent config (#516)",
     const log = readFileSync(runtime.log, "utf8");
     // The explicit flag wins over config: the parent launches claude with a --session-id, using the
     // claude config default model (opus).
-    expect(log).toContain("--kind claude");
-    expect(log).toContain("--session-id");
-    expect(log).toContain("--model opus");
-    expect(log).not.toContain("--kind codex");
+    expect(log).toMatch(/pane send-text \S+ .*\bclaude '/);
+    expect(log).toContain("'--session-id'");
+    expect(log).toContain("'--model' 'opus'");
+    expect(log).not.toMatch(/pane send-text \S+ .*\bcodex '/);
   } finally {
     clearConfig();
     rmSync(runtime.dir, { recursive: true, force: true });
@@ -1381,8 +1375,8 @@ test("workflow start --codex --model overrides the config default model (#516)",
 
     expect(started.exitCode, started.stderr).toBe(0);
     const log = readFileSync(runtime.log, "utf8");
-    expect(log).toContain("--kind codex");
-    expect(log).toContain("--model gpt-custom");
+    expect(log).toMatch(/pane send-text \S+ .*\bcodex '/);
+    expect(log).toContain("'--model' 'gpt-custom'");
     expect(log).not.toContain("gpt-5.5");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
@@ -1425,12 +1419,11 @@ test("workflow start --grok launches the grok runtime without requiring claude",
     // Exit 0 with no `claude` on PATH already proves the Grok launch never required claude.
     expect(started.exitCode, started.stderr).toBe(0);
     const log = readFileSync(runtime.log, "utf8");
-    // The parent launches grok with the grok config default model. herdr execs the runtime named
-    // by `--kind`, and grok is handed neither `--session-id` (claude-only) nor a sandbox posture
-    // (grok has none).
-    expect(log).toContain("--kind grok");
-    expect(log).not.toContain("--kind claude");
-    expect(log).toContain("--model grok-code-fast-1");
+    // The parent launches grok with the grok config default model, and grok is handed neither
+    // `--session-id` (claude-only) nor a sandbox posture (grok has none).
+    expect(log).toMatch(/pane send-text \S+ .*\bgrok '/);
+    expect(log).not.toMatch(/pane send-text \S+ .*\bclaude '/);
+    expect(log).toContain("'--model' 'grok-code-fast-1'");
     expect(log).not.toContain("--session-id");
     expect(log).toContain("--always-approve");
     expect(log).not.toContain("--force");
@@ -1476,10 +1469,10 @@ test("workflow start --cursor launches Cursor Agent with its verified flags", ()
     );
     expect(started.exitCode, started.stderr).toBe(0);
     const log = readFileSync(runtime.log, "utf8");
-    expect(log).toContain("--kind cursor-agent");
-    expect(log).toContain("--model auto");
+    expect(log).toMatch(/pane send-text \S+ .*\bcursor-agent '/);
+    expect(log).toContain("'--model' 'auto'");
     expect(log).toContain("--force");
-    expect(log).toContain("--sandbox disabled");
+    expect(log).toContain("'--sandbox' 'disabled'");
     expect(log).toContain("--approve-mcps");
     expect(log).not.toContain("--trust");
     expect(log).not.toContain("--print");

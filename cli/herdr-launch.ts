@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import type { RuntimeBin } from "../core/runtimes.ts";
 import {
   acquireHerdrWorktreeWorkspace,
   buildHerdrLaunchPlan,
@@ -20,17 +19,16 @@ export class HerdrLaunchError extends Error {}
 const HERDR_LAUNCH_FAILURE = {
   pane: "create the agent's pane",
   agent: "start the agent",
-  prompt: "deliver the agent's prompt",
 } as const;
 
 export interface HerdrLaunchResult {
   // The repo-derived herdr session name every launch for this repo lands in.
   sessionName: string;
-  // The herdr agent name the launch registered (a slug — see herdrAgentSlug), usable as an
-  // `agent attach` / `agent focus` target.
-  agentName: string;
   // The exact pane the agent runs in, used to persist a durable pane/session link.
   paneId: string | null;
+  // The tab that pane lives in, for a caller that wants to bring the launch forward. Null when the
+  // placement produced no parseable tab id.
+  tabId: string | null;
 }
 
 // Opens (or reuses) the target worktree's own herdr workspace and starts the agent in a fresh tab
@@ -42,14 +40,10 @@ export interface HerdrLaunchResult {
 export async function launchAgentInWorktreeHerdr(input: {
   repo: TerminalLaunchRepo;
   worktree: string;
-  // The runtime binary, the newline-free flags it is started with, and the prompt delivered into
-  // the running agent afterwards — herdr 0.7.5's `agent start` rejects any argument containing a
-  // newline, so the (multi-KB, newline-bearing) prompt cannot ride on the command line.
-  program: { bin: RuntimeBin; args: string[]; prompt?: string };
-  // Environment the agent must see. Applied when the pane is created — `agent start` execs the
-  // runtime binary directly and carries no environment of its own.
+  // Environment the agent must see. Applied when the pane is created — the command is typed into
+  // that pane's shell and inherits nothing else.
   env?: Record<string, string>;
-  // Human-readable rendering of the launch, for messages only.
+  // The command the launch types into its pane, prompt included (see agentCommandLine).
   command: string;
   label: string;
 }): Promise<HerdrLaunchResult> {
@@ -69,8 +63,8 @@ export async function launchAgentInWorktreeHerdr(input: {
       ok,
     };
   };
-  // The launch steps themselves also need stderr, which is where herdr reports its error codes —
-  // executeHerdrLaunchPlan waits out `agent_pane_busy` and fails on anything else.
+  // The launch steps themselves also need stderr, which is where herdr reports the error code a
+  // failed step is diagnosed from.
   const runLaunchStep: HerdrLaunchRunner = async (argv) => {
     const proc = spawnSync(argv[0], argv.slice(1), {
       stdio: ["inherit", "pipe", "pipe"],
@@ -92,7 +86,6 @@ export async function launchAgentInWorktreeHerdr(input: {
   const plan = buildHerdrLaunchPlan({
     repo,
     command: input.command,
-    program: input.program,
     env: input.env,
     label,
     // The pane is pinned to the worktree (not repo.local_path) but keeps the repo's herdr session
@@ -127,7 +120,7 @@ export async function launchAgentInWorktreeHerdr(input: {
   }
   return {
     sessionName: plan.sessionName,
-    agentName: plan.agentName,
     paneId: outcome.paneId,
+    tabId: outcome.tabId,
   };
 }

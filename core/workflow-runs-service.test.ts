@@ -251,6 +251,11 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(result.parent.user_prompt).not.toContain(
     "11111111-1111-4111-8111-111111111111",
   );
+  // #2354: the parent launch reads its prompt back from this file on its command line, so the
+  // prompt is delivered by starting the agent rather than by a separate injection.
+  expect(readFileSync(result.parent.user_prompt_path, "utf8")).toBe(
+    result.parent.user_prompt,
+  );
 
   // Escalation blocks automatic progress; an explicit resume releases it with a fresh rework budget.
   svc.workflowRuns.awaitHuman(
@@ -302,6 +307,15 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_RUN=");
   expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_STEP='execute'");
   expect(launched.herdr.command).toContain("'--permission-mode' 'auto'");
+  // The step's prompt travels the same way: written to a file, read back by the typed command line.
+  const stepPromptPath = /"\$\(cat '([^']+)'\)"/.exec(
+    launched.herdr.command,
+  )?.[1];
+  expect(stepPromptPath).toBeTruthy();
+  expect(readFileSync(stepPromptPath as string, "utf8")).toBe(
+    launched.user_prompt,
+  );
+  expect(launched.herdr.argv.slice(3, 5)).toEqual(["pane", "send-text"]);
   expect(launched.agent_name).toBe(`executor #${result.run.id}-1`);
 
   const launchedAt = new Date(Date.now() - 10_000).toISOString();

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -452,9 +452,7 @@ describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
       exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE), // workspace create
       exitWith(0, LAUNCH_TAB_JSON), // the launch's own tab (carries --env)
       exitWith(0), // pane rename
-      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'), // agent start
-      exitWith(0), // prompt paste
-      exitWith(0), // prompt submit
+      exitWith(0), // the launch command, typed into the pane
       exitWith(0), // seeded tab close
     );
 
@@ -473,20 +471,19 @@ describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
     );
     // The agent runs from LoopHub home (the isolated LOOPHUB_HOME), not a repo checkout.
     expect(tabCreate[tabCreate.indexOf("--cwd") + 1]).toBe(HOME);
-    const agentStart = herdr.calls[3];
-    expect(agentStart).toContain("start");
-    expect(agentStart[agentStart.indexOf("--pane") + 1]).toBe("w4:p2");
-    expect(agentStart[agentStart.indexOf("--kind") + 1]).toBe("claude");
-    expect(agentStart.slice(agentStart.indexOf("--") + 1)).toEqual([
-      "--permission-mode",
-      "auto",
-    ]);
-    // The workflow-create instructions are delivered into the agent, not put on its command line.
-    expect(herdr.calls[4]).toContain("send-text");
-    expect(herdr.calls[4][herdr.calls[4].length - 1]).toContain(
+    // The launch is one typed command line carrying the runtime, its flags, and a `cat` of the
+    // file the instructions were written to (#2354).
+    const launchCommand = herdr.calls[3];
+    expect(launchCommand.slice(3, 5)).toEqual(["pane", "send-text"]);
+    expect(launchCommand[5]).toBe("w4:p2");
+    const typed = launchCommand[6];
+    expect(typed).toContain("claude '--permission-mode' 'auto' \"$(cat ");
+    const promptPath = /"\$\(cat '([^']+)'\)"/.exec(typed)?.[1];
+    expect(promptPath).toBeTruthy();
+    expect(readFileSync(promptPath as string, "utf8")).toBe(
       "Create a workflow, then stop.",
     );
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(7));
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
     expect(
       herdr.calls.some(
         (call) => call.includes("focus") && call.includes("workspace"),
@@ -530,9 +527,7 @@ describe("terminal.launch github-pr-export focus preservation", () => {
       exitWith(openStatus, openStdout), // worktree open
       exitWith(0, LAUNCH_TAB_JSON), // launch tab
       exitWith(0), // pane rename
-      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'),
-      exitWith(0), // prompt paste
-      exitWith(0), // prompt submit
+      exitWith(0), // the launch command, typed into the pane
     );
     if (closesSeedTab) herdr.script.push(exitWith(0));
 
@@ -560,8 +555,8 @@ describe("terminal.launch github-pr-export focus preservation", () => {
       expect(tabCreate).not.toContain("--workspace");
     }
     if (closesSeedTab) {
-      await vi.waitFor(() => expect(herdr.calls).toHaveLength(7));
-      expect(herdr.calls[6]).toEqual(
+      await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
+      expect(herdr.calls[4]).toEqual(
         expect.arrayContaining(["tab", "close", "w4:t1"]),
       );
     }
@@ -617,8 +612,7 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     expect(herdr.calls[4]).toEqual(
       expect.arrayContaining(["tab", "create", "--workspace", "w4"]),
     );
-    // `lh issue new` is not a runtime binary, so it is typed into the pane rather than started
-    // through `agent start --kind`.
+    // The launch is typed into the pane's shell.
     expect(herdr.calls[6]).toEqual(
       expect.arrayContaining(["pane", "send-text", "w4:p2"]),
     );
@@ -1172,8 +1166,8 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
   });
 
   // The launch cannot start its agent in the tab a `workspace create` seeds: that tab was created
-  // without the launch's `--env`, and `agent start` carries no environment of its own. So the
-  // launch adds its own tab and the seeded one is dropped once the real one exists.
+  // without the launch's `--env`, and the typed command inherits nothing else. So the launch adds
+  // its own tab and the seeded one is dropped once the real one exists.
   test("closes the workspace's seeded tab after the first New Issue agent starts", async () => {
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),

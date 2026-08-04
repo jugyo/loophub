@@ -48,6 +48,18 @@ test("contract writers create run-scoped files under LOOPHUB_HOME", () => {
   expect(lstatSync(parent).mode & 0o777).toBe(0o600);
 });
 
+test("prompt writers sit beside the contracts in the same run dir", () => {
+  const parent = F.writeParentPrompt(7, "## Run context\n");
+  const execute = F.writeStepPrompt(7, "execute", "## Inputs\n");
+
+  expect(parent).toBe(join(HOME, "runs", "workflow", "7", "parent-prompt.md"));
+  expect(execute).toBe(
+    join(HOME, "runs", "workflow", "7", "execute-prompt.md"),
+  );
+  expect(readFileSync(parent, "utf8")).toBe("## Run context\n");
+  expect(readFileSync(execute, "utf8")).toBe("## Inputs\n");
+});
+
 test("a rewrite truncates the previous contract instead of appending", () => {
   F.writeStepContract(8, "execute", "# Long first contract\n");
   const path = F.writeStepContract(8, "execute", "# Short\n");
@@ -68,6 +80,9 @@ test.each([
   symlinkSync(target, path);
 
   expect(() => F.writeParentContract(9, "# Parent\n")).toThrow(
+    /must not be a symlink/,
+  );
+  expect(() => F.writeParentPrompt(9, "# Parent\n")).toThrow(
     /must not be a symlink/,
   );
   expect(() => readFileSync(join(target, "parent-contract.md"))).toThrow();

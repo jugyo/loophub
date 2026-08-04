@@ -3,16 +3,14 @@ import { readFileSync } from "node:fs";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
 import { ensureCursorWorkspaceTrusted } from "../../core/cursor-workspace.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
-import {
-  buildRuntimeArgs,
-  buildRuntimeFlags,
-  runtimePrompt,
-} from "../../core/runtime-args.ts";
+import { buildRuntimeFlags } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
 import { isClaudeSessionId } from "../../core/session-runtime.ts";
 import {
+  agentCommandLine,
   executeHerdrLaunchPlan,
   HERDR_ID,
+  herdrTabFocusArgv,
 } from "../../core/terminal/terminal-launch.ts";
 import {
   layoutWorkflowTab,
@@ -32,11 +30,9 @@ import {
   writeSession,
 } from "../context.ts";
 import {
-  formatSpawnCommand,
   parseDevTarget,
   reconcileTargetRepo,
   resolveDevRuntime,
-  shQuote,
 } from "../dev.ts";
 import {
   HerdrLaunchError,
@@ -169,38 +165,22 @@ function requestedSessionId(): string | undefined {
   return sessionId;
 }
 
-// Build the parent agent argv for the resolved runtime (#516) via the registry-driven core helper.
-// Claude Code takes --session-id and --append-system-prompt-file; Codex and Grok have neither, so the
-// rendered contract is folded into their positional prompt (read from the file only for those
-// runtimes) and correlation happens only through the LOOPHUB_SESSION_ID env prefix.
-function parentRuntimeInput(input: {
+// Build the parent agent's flag argv for the resolved runtime (#516) via the registry-driven core
+// helper. Claude Code takes --session-id and --append-system-prompt-file; Codex and Grok have
+// neither, so the rendered contract is folded into their positional prompt (already done when the
+// run wrote its prompt file) and correlation happens only through the LOOPHUB_SESSION_ID env prefix.
+function parentAgentFlags(input: {
   runtime: CodingAgent;
   sessionId: string;
   systemPromptPath: string;
-  userPrompt: string;
   model: string;
-}) {
-  return {
+}): string[] {
+  return buildRuntimeFlags({
     runtime: input.runtime,
     model: input.model,
     sessionId: input.sessionId,
     systemPromptFile: input.systemPromptPath,
-    systemPrompt:
-      input.runtime === "claude-code"
-        ? undefined
-        : readFileSync(input.systemPromptPath, "utf8"),
-    prompt: input.userPrompt,
-  };
-}
-
-function parentAgentArgs(input: {
-  runtime: CodingAgent;
-  sessionId: string;
-  systemPromptPath: string;
-  userPrompt: string;
-  model: string;
-}): string[] {
-  return buildRuntimeArgs(parentRuntimeInput(input));
+  });
 }
 
 // The parent agent's own pane, which a child step splits so Execute/Verify land beside it in the
@@ -262,7 +242,7 @@ async function launchParentHerdr(input: {
   worktree: string;
   sessionId: string;
   systemPromptPath: string;
-  userPrompt: string;
+  userPromptPath: string;
   model: string;
   // Fire-and-forget (`--herdr`): start the parent agent in its herdr pane and return without the
   // interactive attach, so a non-interactive caller — lh-web's terminal.launch spawns
@@ -273,10 +253,13 @@ async function launchParentHerdr(input: {
   if (input.runtime === "cursor") {
     ensureCursorWorkspaceTrusted(input.worktree);
   }
-  const bin = runtimeBin(input.runtime);
-  const agentArgs = parentAgentArgs(input);
-  const command = formatSpawnCommand(agentArgs, { bin });
-  const commandWithEnv = `LOOPHUB_SESSION_ID=${shQuote(input.sessionId)} ${command}`;
+  const env = { LOOPHUB_SESSION_ID: input.sessionId };
+  const command = agentCommandLine({
+    env,
+    bin: runtimeBin(input.runtime),
+    args: parentAgentFlags(input),
+    promptPath: input.userPromptPath,
+  });
   const label = workflowParentHerdrAgentName(input.runId);
   // Open (or reuse) the target PR worktree's own herdr workspace and start the parent there via the
   // shared launchAgentInWorktreeHerdr helper (#873) — without it herdr split whichever pane was
@@ -287,13 +270,8 @@ async function launchParentHerdr(input: {
     launched = await launchAgentInWorktreeHerdr({
       repo: input.repo,
       worktree: input.worktree,
-      program: {
-        bin,
-        args: buildRuntimeFlags(parentRuntimeInput(input)),
-        prompt: runtimePrompt(parentRuntimeInput(input)),
-      },
-      env: { LOOPHUB_SESSION_ID: input.sessionId },
-      command: commandWithEnv,
+      env,
+      command,
       label,
     });
   } catch (e) {
@@ -310,18 +288,31 @@ async function launchParentHerdr(input: {
       launched_at: launchedAt,
     }),
   );
+  // The session, not the agent: `herdr agent attach` resolves its target through herdr's agent
+  // detection, and the runtime the pane was just told to run has not been detected yet.
+  const attachHint = `herdr session attach ${launched.sessionName}`;
   if (input.detach) {
     // The agent now runs in its herdr pane; exit without attaching. process.exit(0) fires the
     // dev-lock release handler registered in startWorkflow.
     console.error(
-      `Launched Workflow parent in herdr agent ${launched.agentName}. Attach with: herdr --session ${launched.sessionName} agent attach ${launched.agentName}`,
+      `Launched Workflow parent in herdr pane ${launched.paneId}. Attach with: ${attachHint}`,
     );
     process.exit(0);
   }
+  // Bring the launch's own tab forward first so the attach opens on it: the tab was created
+  // `--no-focus` so a background launch never steals focus, but this caller is the human who asked
+  // for it. Best-effort — a failed focus is no reason not to attach.
+  if (launched.tabId) {
+    spawnSync("herdr", herdrTabFocusArgv(input.repo, launched.tabId).slice(1), {
+      stdio: "ignore",
+    });
+  }
   const attached = spawnSync(
     "herdr",
-    ["--session", launched.sessionName, "agent", "attach", launched.agentName],
-    { stdio: "inherit" },
+    ["session", "attach", launched.sessionName],
+    {
+      stdio: "inherit",
+    },
   );
   if (attached.error) fail(`failed to attach herdr: ${attached.error.message}`);
   process.exit(attached.status ?? 0);
@@ -411,7 +402,7 @@ async function startWorkflow(): Promise<void> {
     worktree: result.worktree,
     sessionId: result.session_id,
     systemPromptPath: result.parent.system_prompt_path,
-    userPrompt: result.parent.user_prompt,
+    userPromptPath: result.parent.user_prompt_path,
     model,
     // `--herdr` starts the parent fire-and-forget (no interactive attach) so lh-web can spawn this
     // headless (#1007); without it the CLI attaches for a human at a terminal.
@@ -529,18 +520,16 @@ async function launchStep(): Promise<void> {
       `herdr failed to ${
         outcome.failed === "pane"
           ? "create the step's pane"
-          : outcome.failed === "prompt"
-            ? "deliver the step agent's prompt"
-            : "start the step agent"
+          : "start the step agent"
       }: ${outcome.stderr.trim()}`,
     );
   }
   const childPaneId = outcome.paneId;
   if (!childPaneId) {
-    fail("herdr agent start returned no valid pane_id");
+    fail("herdr returned no valid pane_id for the step's pane");
   }
-  // The child process is live once agent start succeeds, so persist that truth before ancillary
-  // layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
+  // The child's command is in its pane once the launch succeeds, so persist that truth before
+  // ancillary layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
   // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
   await confirm(childPaneId);
   if (tabId) {

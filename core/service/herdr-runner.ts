@@ -9,9 +9,9 @@ const HERDR_SERVER_READY = "herdr server running;";
 export class HerdrExitError extends ServiceError {
   readonly exitStatus: number;
   // Herdr's own stderr, captured only when the caller asked for it (captureStderr). Herdr reports
-  // its failures there as a JSON `error.code`, which the launch sequence needs in order to tell a
-  // pane that is merely not ready yet (`agent_pane_busy`) from a real failure. It can embed the
-  // repo's absolute local_path, so it stays server-side: never put it in a message a client sees.
+  // its failures there as a JSON `error.code`, which is what a failed launch step is diagnosed
+  // from. It can embed the repo's absolute local_path, so it stays server-side: never put it in a
+  // message a client sees.
   readonly stderr: string;
 
   constructor(exitStatus: number, stderr = "") {

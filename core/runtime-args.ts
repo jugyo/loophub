@@ -42,7 +42,10 @@ function modelFlag(model: string | undefined): string[] {
   return m ? ["--model", m] : [];
 }
 
-export interface RuntimeArgsInput {
+// Everything a launch needs to build its flag argv. Split from the positional prompt below because
+// a herdr launch resolves the two at different times: the flags go straight onto the command line it
+// types into the pane, while the prompt is written to a file the same line reads back.
+export interface RuntimeFlagsInput {
   runtime: CodingAgent;
   // `--model <name>` for every runtime (sanitized; omitted when empty).
   model?: string;
@@ -57,6 +60,9 @@ export interface RuntimeArgsInput {
   managedSettings?: string;
   // claude-only: `--append-system-prompt-file <path>`. codex/grok fold `systemPrompt` in instead.
   systemPromptFile?: string;
+}
+
+export interface RuntimeArgsInput extends RuntimeFlagsInput {
   // non-Claude only: rendered system prompt folded into the positional prompt. Ignored by claude.
   systemPrompt?: string;
   // The trailing positional the runtime receives (a slash command or the user prompt).
@@ -73,12 +79,10 @@ export function runtimePrompt(input: RuntimeArgsInput): string {
 }
 
 // Build the flag argv (without the runtime binary and without the trailing positional prompt) for
-// one launch. Split out from buildRuntimeArgs because herdr 0.7.5's `agent start` refuses any
-// argument containing a newline (`invalid_agent_argument`: "agent arguments cannot be encoded
-// safely for the target shell"), and a rendered contract or user prompt is always multi-line. The
-// flags are newline-free, so a herdr launch starts the runtime with these and then delivers
-// runtimePrompt() into the running agent's input instead.
-export function buildRuntimeFlags(input: RuntimeArgsInput): string[] {
+// one launch. Split out from buildRuntimeArgs for the herdr launches, which put the flags on the
+// command line they type into the pane and append the prompt as a `"$(cat …)"` positional read back
+// from a file rather than as a literal token (see agentCommandLine).
+export function buildRuntimeFlags(input: RuntimeFlagsInput): string[] {
   const { runtime } = input;
   if (runtime === "codex") {
     const args = runtimeApprovalArgs(runtime);
@@ -121,9 +125,9 @@ export function buildRuntimeFlags(input: RuntimeArgsInput): string[] {
 // hand-written builders produced it, so every existing launch path emits byte-identical argv.
 export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
   const flags = buildRuntimeFlags(input);
-  // Cursor only accepts --trust together with --print. Full-argv launches already have the prompt
-  // available, so they can use headless mode; herdr launches use buildRuntimeFlags() and remain an
-  // interactive multi-turn process that receives its prompt after startup.
+  // Cursor only accepts --trust together with --print. This builder serves the headless launches;
+  // herdr launches use buildRuntimeFlags() and stay interactive multi-turn processes, appending
+  // their prompt as a `"$(cat …)"` positional instead (see agentCommandLine).
   if (input.runtime === "cursor") {
     flags.push("--print", "--trust", "--output-format", "json");
   }

@@ -15,10 +15,10 @@ import { useRepoAgentConfig } from "@/queries/repos";
 import { useSettings } from "@/queries/settings";
 import { issueCreatePrompt } from "../../../core/workflow/issue-create-prompt.ts";
 
-// Unlike Issue/PR/Resume launches (#497), there is no issue number yet to make the herdr agent
-// name unique — the issue doesn't exist until the launched session files it. A random suffix
-// keeps consecutive New Issue launches from colliding on the same agent name (`agent_name_taken`,
-// #501); unlike a Date.now() timestamp, it can't collide even when two launches land in the same
+// Unlike Issue/PR/Resume launches (#497), there is no issue number yet to make the pane's label
+// unique — the issue doesn't exist until the launched session files it, and the label is what
+// LoopHub identifies the pane by. A random suffix keeps consecutive New Issue launches apart
+// (#501); unlike a Date.now() timestamp, it can't collide even when two launches land in the same
 // millisecond.
 function launchSuffix(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto

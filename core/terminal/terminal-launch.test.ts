@@ -83,10 +83,12 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
-        prompt: "Create GitHub PR.",
+        promptPath: "/home/launches/a.md",
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
+    ).toBe(
+      "claude '--permission-mode' 'auto' \"$(cat '/home/launches/a.md')\"",
+    );
   });
 
   test("launches the coding agent with the workflow-create prompt as its initial input", () => {
@@ -95,9 +97,11 @@ describe("herdr terminal launch", () => {
         repo: "loophub",
         workflow: "workflow-create",
         codingAgent: "claude-code",
-        prompt: "Create a workflow, then stop.",
+        promptPath: "/home/launches/a.md",
       }),
-    ).toBe("claude '--permission-mode' 'auto' 'Create a workflow, then stop.'");
+    ).toBe(
+      "claude '--permission-mode' 'auto' \"$(cat '/home/launches/a.md')\"",
+    );
   });
 
   test("workflow-create without a prompt yields no command", () => {
@@ -164,21 +168,23 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
-        prompt: "Create GitHub PR.",
+        promptPath: "/home/launches/a.md",
         codingAgent: "codex",
       }),
     ).toBe(
-      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create GitHub PR.'",
+      "codex '--dangerously-bypass-approvals-and-sandbox' \"$(cat '/home/launches/a.md')\"",
     );
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
-        prompt: "Create GitHub PR.",
+        promptPath: "/home/launches/a.md",
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
+    ).toBe(
+      "claude '--permission-mode' 'auto' \"$(cat '/home/launches/a.md')\"",
+    );
   });
 
   test("yields no command for a GitHub PR export launch without a prompt", () => {
@@ -199,10 +205,10 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
-        prompt: "Create GitHub PR.",
+        promptPath: "/home/launches/a.md",
       }),
     ).toBe(
-      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create GitHub PR.'",
+      "codex '--dangerously-bypass-approvals-and-sandbox' \"$(cat '/home/launches/a.md')\"",
     );
 
     updateConfig({ codingAgent: "claude-code" });
@@ -211,9 +217,11 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
-        prompt: "Create GitHub PR.",
+        promptPath: "/home/launches/a.md",
       }),
-    ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
+    ).toBe(
+      "claude '--permission-mode' 'auto' \"$(cat '/home/launches/a.md')\"",
+    );
   });
 
   test("launches GitHub PR export in auto mode", () => {
@@ -222,21 +230,23 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
-        prompt: "Create GitHub PR.",
+        promptPath: "/home/launches/a.md",
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
+    ).toBe(
+      "claude '--permission-mode' 'auto' \"$(cat '/home/launches/a.md')\"",
+    );
 
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
-        prompt: "Create GitHub PR.",
+        promptPath: "/home/launches/a.md",
         codingAgent: "codex",
       }),
     ).toBe(
-      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create GitHub PR.'",
+      "codex '--dangerously-bypass-approvals-and-sandbox' \"$(cat '/home/launches/a.md')\"",
     );
   });
 
@@ -261,18 +271,17 @@ describe("herdr terminal launch", () => {
     );
   });
 
-  test("builds a pane-first Herdr agent start plan (herdr 0.7.5)", () => {
+  test("builds a pane-first Herdr launch plan", () => {
     const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
     const plan = buildHerdrLaunchPlan({
       repo,
       command: "claude --model sonnet",
-      program: { bin: "claude", args: ["--model", "sonnet"] },
       env: { LOOPHUB_SESSION_ID: "s-1" },
       label: "dev #444",
       workspaceId: "w1",
     });
-    // The pane is created first; its environment rides on the creating call because `agent start`
-    // execs the runtime binary directly and carries none of its own.
+    // The pane is created first; its environment rides on the creating call, because the command is
+    // typed into that pane's shell and inherits nothing else.
     expect(plan.paneArgv).toEqual([
       "herdr",
       "--session",
@@ -287,27 +296,17 @@ describe("herdr terminal launch", () => {
       "LOOPHUB_SESSION_ID=s-1",
       "--no-focus",
     ]);
-    // The agent starts in that pane, with its argv passed through rather than a shell string.
+    // The whole command is then typed into that pane's shell.
     expect(plan.argv).toEqual([
       "herdr",
       "--session",
       plan.sessionName,
-      "agent",
-      "start",
-      plan.agentName,
-      "--kind",
-      "claude",
-      "--pane",
+      "pane",
+      "send-text",
       HERDR_PANE_PLACEHOLDER,
-      "--timeout",
-      "120000",
-      "--",
-      "--model",
-      "sonnet",
+      "claude --model sonnet\n",
     ]);
-    expect(plan.argv).not.toContain("zsh");
-    // The human-readable label is applied separately: 0.7.5 splits the free-form label from the
-    // strict agent name, and the label is the string LoopHub reads back.
+    // The human-readable label is applied separately; it is the only identity LoopHub reads back.
     expect(plan.label).toBe("dev #444");
     expect(plan.renameArgv).toEqual([
       "herdr",
@@ -320,68 +319,10 @@ describe("herdr terminal launch", () => {
     ]);
   });
 
-  test("agent names satisfy herdr 0.7.5's slug rules and stay unique per placement", () => {
-    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
-    const plan = (label: string, workspaceId: string) =>
-      buildHerdrLaunchPlan({
-        repo,
-        command: "claude",
-        program: { bin: "claude", args: [] },
-        label,
-        workspaceId,
-      });
-    const valid = /^[a-z][a-z0-9_-]{0,31}$/;
-    // herdr rejects anything else with invalid_agent_name: uppercase, spaces, `#`, non-ASCII.
-    expect(plan("orchestrator #578", "w1").agentName).toMatch(valid);
-    expect(plan("New issue - 84394ec6", "w1").agentName).toMatch(valid);
-    expect(plan("日本語のタイトル", "w1").agentName).toMatch(valid);
-    expect(plan("x".repeat(200), "w1").agentName).toMatch(valid);
-    // And rejects a name already taken in the session, so two launches of the same label must not
-    // collide.
-    expect(plan("orchestrator #578", "w1").agentName).not.toBe(
-      plan("orchestrator #578", "w2").agentName,
-    );
-    // Same placement, same label: stable, so a reproduce hint matches what actually ran.
-    expect(plan("orchestrator #578", "w1").agentName).toBe(
-      plan("orchestrator #578", "w1").agentName,
-    );
-  });
-
-  // herdr 0.7.5's `agent start` answers invalid_agent_argument ("agent arguments cannot be encoded
-  // safely for the target shell") for any argument containing a newline, and every LoopHub prompt is
-  // multi-line. So no argv token may contain one — the prompt is delivered separately.
-  test("keeps the multi-line prompt out of agent start and delivers it afterwards", () => {
-    const plan = buildHerdrLaunchPlan({
-      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "claude",
-      program: {
-        bin: "claude",
-        args: ["--model", "sonnet"],
-        prompt: "line one\nline two 'quoted'",
-      },
-      label: "dev #1",
-    });
-    for (const token of [...plan.argv, ...plan.paneArgv, ...plan.renameArgv]) {
-      expect(token).not.toContain("\n");
-    }
-    expect(plan.argv).not.toContain("line one\nline two 'quoted'");
-    // Pasted as a literal argv positional, then submitted as a key press.
-    expect(plan.promptArgv).toHaveLength(2);
-    expect(plan.promptArgv[0].slice(3, 6)).toEqual([
-      "pane",
-      "send-text",
-      HERDR_PANE_PLACEHOLDER,
-    ]);
-    expect(plan.promptArgv[0][6]).toContain("line one\nline two 'quoted'");
-    expect(plan.promptArgv[1].slice(3)).toEqual([
-      "pane",
-      "send-keys",
-      HERDR_PANE_PLACEHOLDER,
-      "Enter",
-    ]);
-  });
-
-  test("a Workflow step delivers its rendered contract as a prompt, not as argv", () => {
+  // #2354: the prompt rides on the command line, read back from a file, so starting the agent and
+  // instructing it are one step. Nothing about the multi-line, quote-bearing prompt text reaches an
+  // argv token, and nothing is left to deliver afterwards.
+  test("a Workflow step reads its prompt back from a file on the command line", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 12,
@@ -391,25 +332,23 @@ describe("herdr terminal launch", () => {
       sessionId: "11111111-1111-4111-8111-111111111111",
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
-      systemPrompt: "# Execute contract\nstep: execute\n",
-      userPrompt: "## Inputs\n- task.md\n",
+      userPromptPath: "/tmp/run/execute-prompt.md",
       splitPaneId: "w1:p2",
       model: "gpt-5.5",
     });
-    for (const token of plan.argv) expect(token).not.toContain("\n");
-    // codex has no system-prompt flag, so the folded contract is what gets delivered.
-    expect(plan.promptArgv[0][6]).toContain("# Execute contract");
-    expect(plan.promptArgv[0][6]).toContain("## Inputs");
+    expect(plan.command).toContain("\"$(cat '/tmp/run/execute-prompt.md')\"");
+    // The typed line is the whole launch: one send-text call, no follow-up.
+    expect(plan.argv.slice(3, 5)).toEqual(["pane", "send-text"]);
+    expect(plan.argv.at(-1)).toBe(`${plan.command}\n`);
   });
 
-  test("a launch with no runtime binary types its command into the pane instead", () => {
+  test("a launch whose entrypoint is not a runtime binary types its command the same way", () => {
     const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
     const plan = buildHerdrLaunchPlan({
       repo,
       command: "lh issue new --repo 'jugyo/loophub'",
       label: "New issue",
     });
-    // `lh issue new` is not a runtime binary `agent start --kind` could exec.
     expect(plan.argv).toEqual([
       "herdr",
       "--session",
@@ -426,7 +365,6 @@ describe("herdr terminal launch", () => {
     const plan = buildHerdrLaunchPlan({
       repo,
       command: "claude '--session-id' 'x'",
-      program: { bin: "claude", args: ["--session-id", "x"] },
       label: "#12 dev",
       cwd: "/repo/worktrees/pr-12",
     });
@@ -445,7 +383,6 @@ describe("herdr terminal launch", () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       command: "claude",
-      program: { bin: "claude", args: [] },
       label: "dev #444",
       workspaceId: "w9",
       cwd: "/repo/worktrees/pr-42",
@@ -458,7 +395,6 @@ describe("herdr terminal launch", () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       command: "claude",
-      program: { bin: "claude", args: [] },
       label: "executor #1-1",
       splitPaneId: "w9:p2",
       split: "down",
@@ -472,28 +408,23 @@ describe("herdr terminal launch", () => {
     expect(plan.paneArgv).not.toContain("create");
   });
 
-  test("executeHerdrLaunchPlan runs pane, rename, then agent start with the real pane id", async () => {
+  test("executeHerdrLaunchPlan runs pane, rename, then the command with the real pane id", async () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       command: "claude",
-      program: { bin: "claude", args: [] },
       label: "dev #1",
     });
     const calls: string[][] = [];
-    const outcome = await executeHerdrLaunchPlan(
-      plan,
-      async (argv) => {
-        calls.push(argv);
-        return {
-          stdout: argv.includes("create")
-            ? '{"result":{"root_pane":{"pane_id":"w1:p5"},"tab":{"tab_id":"w1:t5"}}}'
-            : '{"result":{"agent":{"pane_id":"w1:p5"}}}',
-          stderr: "",
-          ok: true,
-        };
-      },
-      async () => {},
-    );
+    const outcome = await executeHerdrLaunchPlan(plan, async (argv) => {
+      calls.push(argv);
+      return {
+        stdout: argv.includes("create")
+          ? '{"result":{"root_pane":{"pane_id":"w1:p5"},"tab":{"tab_id":"w1:t5"}}}'
+          : "{}",
+        stderr: "",
+        ok: true,
+      };
+    });
     expect(outcome).toMatchObject({
       ok: true,
       paneId: "w1:p5",
@@ -502,50 +433,36 @@ describe("herdr terminal launch", () => {
     expect(calls.map((argv) => argv.slice(3, 5))).toEqual([
       ["tab", "create"],
       ["pane", "rename"],
-      ["agent", "start"],
+      ["pane", "send-text"],
     ]);
     // No placeholder survives into an executed call.
     expect(calls.flat()).not.toContain(HERDR_PANE_PLACEHOLDER);
     expect(calls[2]).toContain("w1:p5");
   });
 
-  // herdr answers agent_pane_busy until the new pane's shell reaches its prompt. That is a startup
-  // ordering race with a definite end, so it is waited out rather than failing the launch.
-  test("executeHerdrLaunchPlan waits out agent_pane_busy but fails on any other error", async () => {
+  test("executeHerdrLaunchPlan reports which step failed", async () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       command: "claude",
-      program: { bin: "claude", args: [] },
       label: "dev #1",
     });
-    const runner = (starts: { ok: boolean; stderr: string }[]) => {
-      let start = 0;
-      return async (argv: string[]) => {
-        if (!argv.includes("start"))
+    const runner =
+      (sendText: { ok: boolean; stderr: string }) => async (argv: string[]) => {
+        if (!argv.includes("send-text"))
           return {
             stdout: '{"result":{"root_pane":{"pane_id":"w1:p5"}}}',
             stderr: "",
             ok: true,
           };
-        const next = starts[Math.min(start++, starts.length - 1)];
-        return { stdout: "", ...next };
+        return { stdout: "", ...sendText };
       };
-    };
-    const busy = { ok: false, stderr: '{"error":{"code":"agent_pane_busy"}}' };
+    expect(
+      await executeHerdrLaunchPlan(plan, runner({ ok: true, stderr: "" })),
+    ).toMatchObject({ ok: true, paneId: "w1:p5", failed: null });
     expect(
       await executeHerdrLaunchPlan(
         plan,
-        runner([busy, busy, { ok: true, stderr: "" }]),
-        async () => {},
-      ),
-    ).toMatchObject({ ok: true, paneId: "w1:p5" });
-    expect(
-      await executeHerdrLaunchPlan(
-        plan,
-        runner([
-          { ok: false, stderr: '{"error":{"code":"agent_name_taken"}}' },
-        ]),
-        async () => {},
+        runner({ ok: false, stderr: '{"error":{"code":"pane_not_found"}}' }),
       ),
     ).toMatchObject({ ok: false, failed: "agent", paneId: "w1:p5" });
   });
@@ -560,8 +477,7 @@ describe("herdr terminal launch", () => {
       sessionId: "11111111-1111-4111-8111-111111111111",
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
-      systemPrompt: "# Execute contract\nstep: execute\n",
-      userPrompt: "## Inputs\n- /tmp/run/execute/input/task.md - Task\n",
+      userPromptPath: "/tmp/run/execute-prompt.md",
       splitPaneId: "w1:p2",
       model: "sonnet",
     });
@@ -599,7 +515,7 @@ describe("herdr terminal launch", () => {
     expect(plan.command).not.toContain("--sandbox");
   });
 
-  test("builds a Codex Workflow step launch that folds the contract into the prompt (#516)", () => {
+  test("builds a Codex Workflow step launch with no claude-only flags (#516)", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 12,
@@ -609,8 +525,7 @@ describe("herdr terminal launch", () => {
       sessionId: "11111111-1111-4111-8111-111111111111",
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
-      systemPrompt: "# Execute contract\nstep: execute\n",
-      userPrompt: "## Inputs\n- task.md\n",
+      userPromptPath: "/tmp/run/execute-prompt.md",
       splitPaneId: "w1:p2",
       model: "gpt-5.5",
     });
@@ -628,9 +543,9 @@ describe("herdr terminal launch", () => {
       "--dangerously-bypass-approvals-and-sandbox",
     );
     expect(plan.command).toContain("'--model' 'gpt-5.5'");
-    // The rendered contract is prepended to the positional prompt (single quoted as one arg).
-    expect(plan.command).toContain("# Execute contract");
-    expect(plan.command).toContain("## Inputs");
+    // codex has no --append-system-prompt-file, so its prompt file is where the folded contract
+    // lives; the command line only points at it.
+    expect(plan.command).toContain("\"$(cat '/tmp/run/execute-prompt.md')\"");
   });
 
   test("a Codex Workflow step always bypasses approvals and sandbox", () => {
@@ -643,8 +558,7 @@ describe("herdr terminal launch", () => {
       sessionId: "22222222-2222-4222-8222-222222222222",
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
-      systemPrompt: "contract",
-      userPrompt: "do it",
+      userPromptPath: "/tmp/run/execute-prompt.md",
       model: "gpt-5.5",
     });
 
@@ -654,7 +568,7 @@ describe("herdr terminal launch", () => {
     );
   });
 
-  test("builds a Grok Workflow step launch that folds the contract into the prompt (#1521)", () => {
+  test("builds a Grok Workflow step launch with no claude-only flags (#1521)", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 12,
@@ -664,8 +578,7 @@ describe("herdr terminal launch", () => {
       sessionId: "11111111-1111-4111-8111-111111111111",
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
-      systemPrompt: "# Execute contract\nstep: execute\n",
-      userPrompt: "## Inputs\n- task.md\n",
+      userPromptPath: "/tmp/run/execute-prompt.md",
       splitPaneId: "w1:p2",
       model: "grok-code-fast-1",
     });
@@ -685,9 +598,7 @@ describe("herdr terminal launch", () => {
     expect(plan.command).not.toContain("--force");
     expect(plan.command).not.toContain("--sandbox");
     expect(plan.command).toContain("'--model' 'grok-code-fast-1'");
-    // The rendered contract is prepended to the positional prompt (single quoted as one arg).
-    expect(plan.command).toContain("# Execute contract");
-    expect(plan.command).toContain("## Inputs");
+    expect(plan.command).toContain("\"$(cat '/tmp/run/execute-prompt.md')\"");
   });
 
   test("a Grok Workflow step always includes the approval bypass", () => {
@@ -700,8 +611,7 @@ describe("herdr terminal launch", () => {
       sessionId: "22222222-2222-4222-8222-222222222222",
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
-      systemPrompt: "contract",
-      userPrompt: "do it",
+      userPromptPath: "/tmp/run/execute-prompt.md",
       model: "grok-code-fast-1",
     });
 

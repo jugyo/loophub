@@ -26,9 +26,9 @@ import {
   parseHerdrSessionListIfValid,
   parseHerdrWorkspaceListIfValid,
 } from "../terminal/herdr-status.ts";
+import { writeLaunchPrompt } from "../terminal/launch-prompt.ts";
 import {
   acquireHerdrWorktreeWorkspace as acquireHerdrWorktreeWorkspaceCore,
-  agentProgramForHerdrLaunch,
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
   displayArg,
@@ -114,8 +114,8 @@ const LH_DEV_HERDR_TIMEOUT_MS = 90_000;
 const LH_DEV_STDERR_TAIL_BYTES = 4 * 1024;
 const NEW_ISSUE_WORKSPACE_LABEL = "New Issue";
 // A repo-scoped queue closes the workspace-list/create race between simultaneous New Issue RPCs.
-// It covers placement only; agent start remains outside the queue, and different repo sessions use
-// different keys so their placement calls can also run in parallel.
+// It covers placement only; the launch itself remains outside the queue, and different repo
+// sessions use different keys so their placement calls can also run in parallel.
 const newIssueLaunchQueueTails = new Map<string, Promise<void>>();
 
 async function acquireNewIssueLaunchLock(
@@ -269,8 +269,8 @@ async function launchWorkflowRunHerdr(
 
 // Runs one step of a herdr launch plan for lh-web. Async (never spawnSync — this is the single
 // process serving RPC for every client) and non-throwing, because executeHerdrLaunchPlan decides
-// what a failure means: it retries only `agent_pane_busy`, which it reads out of stderr. That
-// stderr stays here — see herdrLaunchFailureMessage for what a client is allowed to see.
+// what a failure means, reading herdr's error code out of stderr. That stderr stays here — see
+// herdrLaunchFailureMessage for what a client is allowed to see.
 function serviceHerdrLaunchRunner(cwd: string): HerdrLaunchRunner {
   return async (argv) => {
     try {
@@ -295,8 +295,6 @@ function serviceHerdrLaunchRunner(cwd: string): HerdrLaunchRunner {
 function herdrLaunchFailureMessage(outcome: HerdrLaunchOutcome): string {
   if (outcome.failed === "pane")
     return "Herdr could not create the agent's pane";
-  if (outcome.failed === "prompt")
-    return "Herdr started the agent but could not deliver its prompt";
   return "Herdr could not start the agent";
 }
 
@@ -319,18 +317,18 @@ async function launchWorkflowCreateHerdr(
   input: TerminalLaunchInput,
 ): Promise<TerminalLaunchResultWire> {
   const repo = workflowCreateLaunchRepo();
+  if (!input.prompt?.trim()) throw new ServiceError(422, "prompt is required");
   const command = commandForHerdrLaunch({
     repo: repo.full_name,
     workflow: "workflow-create",
     codingAgent: input.agent,
     model: input.model,
-    prompt: input.prompt,
+    promptPath: writeLaunchPrompt(input.prompt),
   });
-  if (!command.trim()) throw new ServiceError(422, "prompt is required");
 
   // Give the agent its own fresh workspace instead of piling onto whatever pane is focused (#544).
   // Only the workspace is created here: the launch creates its own tab inside it (that is where the
-  // agent's pane, and its environment, come from since herdr 0.7.5).
+  // agent's pane, and its environment, come from).
   let workspaceId: string | null = null;
   let seedTabId: string | null = null;
   try {
@@ -350,13 +348,6 @@ async function launchWorkflowCreateHerdr(
   const plan = buildHerdrLaunchPlan({
     repo,
     command,
-    program: agentProgramForHerdrLaunch({
-      repo: repo.full_name,
-      workflow: "workflow-create",
-      codingAgent: input.agent,
-      model: input.model,
-      prompt: input.prompt,
-    }),
     label: input.label,
     workspaceId,
   });
@@ -533,12 +524,13 @@ export const terminal = {
       effort: input.workflow === "issue-create" ? input.effort : undefined,
       targetBranch:
         input.workflow === "issue-create" ? input.targetBranch : undefined,
-      // Interactive creation and github-pr-export (#1892) inject their full instructions directly
-      // as the agent prompt.
-      prompt:
-        input.workflow === "issue-create" ||
-        input.workflow === "github-pr-export"
-          ? input.prompt
+      // `lh issue new` takes the operator's instructions as a `--prompt` flag; github-pr-export
+      // (#1892) starts a coding agent whose whole prompt is the generated filing instructions, so
+      // those go to a file its command line reads back.
+      prompt: input.workflow === "issue-create" ? input.prompt : undefined,
+      promptPath:
+        input.workflow === "github-pr-export" && input.prompt
+          ? writeLaunchPrompt(input.prompt)
           : undefined,
       env:
         issueCreateLaunchId != null
@@ -715,14 +707,6 @@ export const terminal = {
     const plan = buildHerdrLaunchPlan({
       repo,
       command,
-      program: agentProgramForHerdrLaunch({
-        repo: r.full_name,
-        workflow: input.workflow,
-        prNumber: input.prNumber,
-        codingAgent: input.agent,
-        model: input.model,
-        prompt: input.prompt,
-      }),
       label: input.label,
       workspaceId: placementWorkspaceId,
     });
