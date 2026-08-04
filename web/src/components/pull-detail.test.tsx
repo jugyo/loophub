@@ -385,6 +385,51 @@ describe("PullDetail", () => {
     ).toBe("comments");
   });
 
+  it("counts the comments in the Comments heading", async () => {
+    renderDetail();
+
+    expect(
+      await screen.findByRole("heading", { name: "Comments (2)" }),
+    ).toBeTruthy();
+  });
+
+  it("shows zero in the Comments heading when there are no comments", async () => {
+    renderDetail({ "comments/list": () => [] });
+
+    expect(
+      await screen.findByRole("heading", { name: "Comments (0)" }),
+    ).toBeTruthy();
+  });
+
+  it("updates the Comments heading count after a comment is posted", async () => {
+    let serverComments = [...comments];
+    renderDetail({
+      "comments/list": () => serverComments,
+      "pullComments/create": (params: { body: string }) => {
+        const comment: IssueComment = {
+          id: 10,
+          user: { login: "me" },
+          author_type: "human",
+          body: params.body,
+          created_at: "2026-06-18T12:00:00Z",
+          reactions: [],
+        };
+        serverComments = [...serverComments, comment];
+        return comment;
+      },
+    });
+
+    const composer = await screen.findByLabelText("Add a PR comment");
+    fireEvent.change(composer, { target: { value: "One more thing." } });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Comments (3)" }),
+      ).toBeTruthy();
+    });
+  });
+
   // #2129: a human post reads as @human whatever actor name it was stored under; agent posts keep
   // their own author.
   it("shows a human PR comment as @human and leaves an agent comment alone", async () => {
@@ -965,7 +1010,9 @@ describe("PullDetail", () => {
   it("keeps bottom spacing after the comments section when comments are empty", async () => {
     renderDetail({ "comments/list": () => [] });
 
-    const heading = await screen.findByRole("heading", { name: "Comments" });
+    const heading = await screen.findByRole("heading", {
+      name: "Comments (0)",
+    });
     const commentsSection = heading.closest("section");
 
     expect(commentsSection?.className).toContain("pb-6");

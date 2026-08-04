@@ -777,7 +777,9 @@ function CommentList({
       data-debug-component="PullCommentList"
       className="flex flex-col gap-3 pb-6"
     >
-      <h2 className="text-lg font-semibold">Comments</h2>
+      <h2 className="text-lg font-semibold">
+        Comments ({comments?.length ?? 0})
+      </h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading comments…
