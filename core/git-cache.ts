@@ -27,6 +27,7 @@
 // gc` that drops an object the cached run could still read — stays observable.
 
 import type { GitResult } from "./git.ts";
+import { logDiagnostic } from "./slow-operation.ts";
 
 /** How long a cached result stays usable. */
 export const TTL_MS = 60_000;
@@ -213,7 +214,16 @@ export function cachedGitResult(
   const startedAt = Date.now();
   const hit = cache.get(key);
   if (hit) {
-    if (hit.expiresAt > startedAt) return hit.result;
+    if (hit.expiresAt > startedAt) {
+      // Whether the cache is serving anything is otherwise invisible from outside the process. The
+      // command is spelled as the argv spawnGit would have run, so a hit lines up with the
+      // `[slow-operation] kind=git` line the same invocation prints when it does run.
+      logDiagnostic(
+        () =>
+          `[git-cache] event=hit command=${JSON.stringify(["git", "-C", repoPath, ...args])}`,
+      );
+      return hit.result;
+    }
     drop(key);
   }
 

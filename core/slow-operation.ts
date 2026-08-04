@@ -12,6 +12,16 @@ export function configureSlowOperationLogging(
   logger = nextLogger;
 }
 
+/**
+ * Emit one diagnostic line, or do nothing while diagnostics are disabled.
+ *
+ * The message is built lazily so a disabled process pays nothing for a line it would not print.
+ * Diagnostics that are not about duration share this switch so that one flag turns them all on.
+ */
+export function logDiagnostic(message: () => string): void {
+  logger?.(message());
+}
+
 function reportIfSlow(
   activeLogger: SlowOperationLogger,
   kind: SlowOperationKind,

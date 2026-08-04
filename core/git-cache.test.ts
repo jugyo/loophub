@@ -7,6 +7,7 @@ import {
   MAX_CACHED_BYTES,
   TTL_MS,
 } from "./git-cache.ts";
+import { configureSlowOperationLogging } from "./slow-operation.ts";
 
 const REPO = "/tmp/repo";
 const SHA = "a".repeat(40);
@@ -28,6 +29,7 @@ beforeEach(() => {
 
 afterEach(() => {
   clearGitResultCache();
+  configureSlowOperationLogging();
   vi.useRealTimers();
 });
 
@@ -220,4 +222,47 @@ test("entries are evicted oldest first once the byte budget is exceeded", async 
 
   await cachedGitResult(REPO, ["show", SHA], {}, small);
   expect(small).toHaveBeenCalledTimes(2);
+});
+
+test("a hit is logged with the repo path and arguments while diagnostics are on", async () => {
+  const log = vi.fn();
+  configureSlowOperationLogging(log);
+  const run = runner(ok("patch"));
+
+  await cachedGitResult(REPO, ["show", `${SHA}:core/git.ts`], {}, run);
+  expect(log).not.toHaveBeenCalled(); // the invocation that fills the cache is not a hit
+
+  await cachedGitResult(REPO, ["show", `${SHA}:core/git.ts`], {}, run);
+  expect(log).toHaveBeenCalledOnce();
+  expect(log).toHaveBeenCalledWith(
+    `[git-cache] event=hit command=["git","-C","${REPO}","show","${SHA}:core/git.ts"]`,
+  );
+});
+
+test("an expired or uncacheable invocation is not logged as a hit", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-04T00:00:00Z"));
+  const log = vi.fn();
+  configureSlowOperationLogging(log);
+  const run = runner(ok(""));
+
+  await cachedGitResult(REPO, ["show", SHA], {}, run);
+  vi.setSystemTime(new Date(Date.now() + TTL_MS));
+  await cachedGitResult(REPO, ["show", SHA], {}, run);
+  await cachedGitResult(REPO, ["status", "--porcelain"], {}, run);
+  await cachedGitResult(REPO, ["status", "--porcelain"], {}, run);
+
+  expect(log).not.toHaveBeenCalled();
+});
+
+test("nothing is logged while diagnostics are disabled", async () => {
+  const log = vi.fn();
+  configureSlowOperationLogging(log);
+  configureSlowOperationLogging();
+  const run = runner(ok("patch"));
+
+  await cachedGitResult(REPO, ["show", SHA], {}, run);
+  await cachedGitResult(REPO, ["show", SHA], {}, run);
+
+  expect(log).not.toHaveBeenCalled();
 });

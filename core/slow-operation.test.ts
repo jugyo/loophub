@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   configureSlowOperationLogging,
+  logDiagnostic,
   measureSlowOperation,
   measureSlowOperationAsync,
 } from "./slow-operation.ts";
@@ -64,5 +65,18 @@ describe("slow-operation logging", () => {
     expect(log).toHaveBeenCalledWith(
       '[slow-operation] kind=git duration_ms=1001.0 command=["git","status"]',
     );
+  });
+
+  it("builds a diagnostic line only while diagnostics are enabled", () => {
+    const message = vi.fn(() => "[git-cache] event=hit");
+
+    logDiagnostic(message);
+    expect(message).not.toHaveBeenCalled();
+
+    const log = vi.fn();
+    configureSlowOperationLogging(log);
+    logDiagnostic(message);
+
+    expect(log).toHaveBeenCalledWith("[git-cache] event=hit");
   });
 });
