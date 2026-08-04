@@ -1,18 +1,31 @@
-// #1668: Cache the SHA-derived slice of pullStatusFields' git fan-out.
+// #1668: The SHA-derived slice of an open PR's git fan-out, cached on the SHA pair it is a
+// function of.
 //
-// For an open PR, `pullStatusFields` (core/serialize.ts) spawns git several
-// times per row: the merge preview (merge-tree --write-tree), commits-ahead,
-// effective-diff, and diff stat. All four are deterministic in the resolved
-// (baseSha, headSha) pair — the same pair always yields the same result — so a
-// client that refetches a list while no ref has moved reuses the previous
-// result and spawns zero git subprocesses for it. This is the dominant cost
-// when a workflow run's events drive a ~1.5s list refetch across every open PR.
+// For an open PR this fan-out spawns git several times: the merge preview (merge-tree
+// --write-tree), commits-ahead, effective-diff, and diff stat. All four are deterministic in the
+// resolved (baseSha, headSha) pair — the same pair always yields the same result — so a client
+// that refetches a list while no ref has moved reuses the previous result and spawns zero git
+// subprocesses for it. This is the dominant cost when a workflow run's events drive a ~1.5s list
+// refetch across every open PR.
 //
-// Deliberately NOT cached here: `working` (worktree dirty) and review state.
-// Neither is a function of the SHA pair — the worktree can go dirty/clean and
-// a review can be submitted without either ref moving — so pullStatusFields
-// recomputes them every call. revParse of the refs also stays uncached: it is
-// exactly the probe that detects a moved ref, i.e. a cache miss.
+// #2364: every caller resolves its refs first and asks for the SHA pair, so they all share one
+// entry: the serializers rendering a list, the merge-ready sweep behind the notification badge,
+// and the Workflow run state on issue/PR detail. Calling with branch names instead would key
+// nothing and re-spawn merge-tree per poll — the git-command cache (core/git-cache.ts) cannot
+// stand in for that, since a branch name is exactly what makes an invocation uncacheable there
+// and a conflicting merge-tree exits non-zero, which it never caches.
+//
+// Deliberately NOT cached here: `working` (worktree dirty) and review state. Neither is a
+// function of the SHA pair — the worktree can go dirty/clean and a review can be submitted
+// without either ref moving — so callers recompute them every call. revParse of the refs also
+// stays uncached: it is exactly the probe that detects a moved ref, i.e. a cache miss.
+
+import {
+  commitsAhead,
+  diffStat,
+  hasEffectiveDiff,
+  mergePreview,
+} from "./git.ts";
 
 export interface PullShaStatus {
   conflict: boolean;
@@ -64,6 +77,50 @@ export function cachedPullShaStatus(
     cache.delete(oldest);
   }
   return pending;
+}
+
+// The one git fan-out behind an entry. A diff-stat failure must not break the caller — fall back
+// to zeros — while the other three propagate, matching what pullStatusFields did inline before
+// this moved here.
+function computePullShaStatus(
+  repoPath: string,
+  baseSha: string,
+  headSha: string,
+): Promise<PullShaStatus> {
+  return Promise.all([
+    mergePreview(repoPath, baseSha, headSha),
+    commitsAhead(repoPath, baseSha, headSha),
+    hasEffectiveDiff(repoPath, baseSha, headSha),
+    diffStat(repoPath, baseSha, headSha).catch(() => ({
+      additions: 0,
+      deletions: 0,
+      changedFiles: 0,
+    })),
+  ]).then(([preview, ahead, effectiveDiff, stat]) => ({
+    conflict: preview.conflict,
+    commitsAhead: ahead,
+    hasEffectiveDiff: effectiveDiff,
+    additions: stat.additions,
+    deletions: stat.deletions,
+    changedFiles: stat.changedFiles,
+  }));
+}
+
+/**
+ * The SHA-derived status of `baseSha...headSha` in `repoPath`, computed once per pair.
+ *
+ * This is the entry point every caller uses; `cachedPullShaStatus` stays separate only so the
+ * cache's semantics can be unit-tested without a git repo. Pass resolved SHAs: a branch name
+ * would key an entry that never invalidates when the ref moves.
+ */
+export function pullShaStatus(
+  repoPath: string,
+  baseSha: string,
+  headSha: string,
+): Promise<PullShaStatus> {
+  return cachedPullShaStatus(repoPath, baseSha, headSha, () =>
+    computePullShaStatus(repoPath, baseSha, headSha),
+  );
 }
 
 // Test-only: drop all cached entries so a test starts from a cold cache.

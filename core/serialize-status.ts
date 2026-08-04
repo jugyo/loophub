@@ -7,9 +7,6 @@
 import {
   commitLog,
   commitsAhead,
-  diffStat,
-  hasEffectiveDiff,
-  mergePreview,
   pushedCommitShas,
   remoteUrl,
   revParse,
@@ -20,7 +17,7 @@ import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import { resolvePullBaseSha } from "./pull-base.ts";
-import { cachedPullShaStatus } from "./pull-status-cache.ts";
+import { pullShaStatus } from "./pull-status-cache.ts";
 import {
   existingPullWorktreePath,
   pullWorktreeDirty,
@@ -106,36 +103,11 @@ async function pullStatusFields(
   let changed_files = 0;
   if (!p.merged && headSha && baseSha) {
     // #1668: the merge preview, commits-ahead, effective-diff, and diff stat
-    // are all deterministic in (baseSha, headSha), so cache the whole fan-out
-    // on that pair — a refetch with no moved ref spawns zero git subprocesses.
-    // Run each git command against the resolved SHAs (not the refs) so the
-    // cached value matches its key even if a ref moves after we resolved it.
-    const status = await cachedPullShaStatus(
-      repo.local_path,
-      baseSha,
-      headSha,
-      async () => {
-        const [prev, ahead, effectiveDiff, stat] = await Promise.all([
-          mergePreview(repo.local_path, baseSha, headSha),
-          commitsAhead(repo.local_path, baseSha, headSha),
-          hasEffectiveDiff(repo.local_path, baseSha, headSha),
-          // A diff stat failure must not break serialization — fall back to zeros.
-          diffStat(repo.local_path, baseSha, headSha).catch(() => ({
-            additions: 0,
-            deletions: 0,
-            changedFiles: 0,
-          })),
-        ]);
-        return {
-          conflict: prev.conflict,
-          commitsAhead: ahead,
-          hasEffectiveDiff: effectiveDiff,
-          additions: stat.additions,
-          deletions: stat.deletions,
-          changedFiles: stat.changedFiles,
-        };
-      },
-    );
+    // are all deterministic in (baseSha, headSha), so the whole fan-out is
+    // cached on that pair — a refetch with no moved ref spawns zero git
+    // subprocesses. Asking for the resolved SHAs (not the refs) is what makes
+    // the value match its key even if a ref moves after we resolved it.
+    const status = await pullShaStatus(repo.local_path, baseSha, headSha);
     commits_ahead = status.commitsAhead;
     additions = status.additions;
     deletions = status.deletions;

@@ -1,12 +1,19 @@
-import { hasEffectiveDiff, mergePreview, revParse } from "./git.ts";
+import { revParse } from "./git.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
+import { pullShaStatus } from "./pull-status-cache.ts";
 import * as S from "./store.ts";
 
 // Compute one open PR's current mergeable_state from live git + review signals, reusing the same
 // pure classifier serialize.ts's mergePreview path feeds (#427). Shared by the merge-ready
 // notification sweep and the conflict sweep so both read a single definition of "what state is
 // this PR in now" instead of each re-deriving it (#1232).
+//
+// #2364: both sweeps run over *every* open PR in every repo — the merge-ready one on each read of
+// the notification badge, which an idle browser tab refetches on any event — so the git side asks
+// for the SHA pair rather than passing the refs through. The pair is already resolved here for the
+// review gate, and going through it means an idle tab reuses the same entry the PR list rendered
+// instead of respawning merge-tree per PR per poll.
 export async function currentMergeableState(
   pull: S.OpenPullSweepRow,
 ): Promise<MergeableState> {
@@ -16,14 +23,11 @@ export async function currentMergeableState(
   ]);
   if (!headSha || !baseSha) return "unknown";
 
-  const [preview, effectiveDiff] = await Promise.all([
-    mergePreview(pull.local_path, pull.base_ref, pull.head_ref),
-    hasEffectiveDiff(pull.local_path, pull.base_ref, pull.head_ref),
-  ]);
+  const status = await pullShaStatus(pull.local_path, baseSha, headSha);
   const reviewGate = S.computeReviewGate(pull.issue_id, headSha);
   return resolveMergeable({
-    hasEffectiveDiff: effectiveDiff,
-    conflict: preview.conflict,
+    hasEffectiveDiff: status.hasEffectiveDiff,
+    conflict: status.conflict,
     reviewGate,
   }).mergeable_state;
 }

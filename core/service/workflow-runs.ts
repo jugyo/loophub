@@ -18,8 +18,9 @@ import {
 } from "../dev-lock.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
-import { hasEffectiveDiff, mergePreview, revParse } from "../git.ts";
+import { revParse } from "../git.ts";
 import { type MergeableState, resolveMergeable } from "../mergeable.ts";
+import { pullShaStatus } from "../pull-status-cache.ts";
 import { runtimePrompt } from "../runtime-args.ts";
 import {
   effectiveRepoAgentConfigFor,
@@ -1045,17 +1046,22 @@ async function workflowRunState(
     : null;
   const pull = prIssue ? S.getPull(prIssue.id) : null;
   const observedReview = reviewObservation(review);
-  const liveHead = pull ? await revParse(repo.local_path, pull.head_ref) : null;
+  // #2364: the base ref is resolved rather than handed to git as a name, so the merge preview and
+  // effective diff behind this state come from the (baseSha, headSha) cache the PR list already
+  // populates — issue/PR detail refetches on every event, and merge-tree costs a second per call.
+  const [liveHead, liveBase] = pull
+    ? await Promise.all([
+        revParse(repo.local_path, pull.head_ref),
+        revParse(repo.local_path, pull.base_ref),
+      ])
+    : [null, null];
   const currentHead = liveHead ?? pull?.head_sha ?? null;
-  const [mergeConflict, effectiveDiff] =
-    pull && liveHead
-      ? await Promise.all([
-          mergePreview(repo.local_path, pull.base_ref, liveHead).then(
-            (preview) => preview.conflict,
-          ),
-          hasEffectiveDiff(repo.local_path, pull.base_ref, liveHead),
-        ])
-      : [false, false];
+  const shaStatus =
+    liveHead && liveBase
+      ? await pullShaStatus(repo.local_path, liveBase, liveHead)
+      : null;
+  const mergeConflict = shaStatus?.conflict ?? false;
+  const effectiveDiff = shaStatus?.hasEffectiveDiff ?? false;
   const reviewFresh = Boolean(
     observedReview?.headSha &&
       currentHead &&
