@@ -1009,7 +1009,10 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   cost_increment_usd REAL NOT NULL,
   cost_limit_usd     REAL NOT NULL,
   created_at         TEXT NOT NULL,
-  updated_at         TEXT NOT NULL
+  updated_at         TEXT NOT NULL,
+  -- Set once when the run leaves the running lifecycle. Unlike updated_at, this does not move when
+  -- terminal-run maintenance advances an event cursor.
+  ended_at           TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_status

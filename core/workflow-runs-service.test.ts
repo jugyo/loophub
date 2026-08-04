@@ -3474,6 +3474,12 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(waiting?.needs_human_reason).toBe("waiting for guidance");
+
+  const completedRun = S.updateWorkflowRun(run.id, { status: "completed" });
+  const completed = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: prIssue.number,
+  });
+  expect(completed?.ended_at).toBe(completedRun?.ended_at);
 });
 
 test("stateForPull exposes only a Verify launch that has not submitted its review", async () => {

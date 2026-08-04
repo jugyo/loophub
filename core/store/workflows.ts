@@ -213,6 +213,8 @@ export interface WorkflowRunRow {
   cost_limit_usd: number | null;
   created_at: string;
   updated_at: string;
+  // Fixed when the run first leaves `running`; terminal maintenance must not move it.
+  ended_at: string | null;
 }
 
 export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
@@ -637,9 +639,14 @@ export function updateWorkflowRun(
 ): WorkflowRunRow | null {
   const sets: string[] = [];
   const params: unknown[] = [];
+  const updatedAt = now();
   if (patch.status !== undefined) {
     sets.push("status = ?");
     params.push(patch.status);
+    if (patch.status !== "running") {
+      sets.push("ended_at = COALESCE(ended_at, ?)");
+      params.push(updatedAt);
+    }
   }
   if (patch.currentStep !== undefined) {
     sets.push("current_step = ?");
@@ -662,7 +669,7 @@ export function updateWorkflowRun(
     params.push(patch.activeSessionId);
   }
   sets.push("updated_at = ?");
-  params.push(now(), id);
+  params.push(updatedAt, id);
   db.run(`UPDATE workflow_runs SET ${sets.join(", ")} WHERE id = ?`, params);
   return getWorkflowRun(id);
 }

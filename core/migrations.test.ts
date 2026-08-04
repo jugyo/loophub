@@ -430,6 +430,40 @@ test("the cache-read rate migration discards incompatible persisted history", ()
   ).toEqual({ count: 0 });
 });
 
+test("the Workflow end migration freezes the best available terminal timestamp", () => {
+  const db = new DatabaseSync(join(HOME, "legacy-workflow-ended-at.db"));
+  db.exec(`
+    CREATE TABLE workflow_runs (
+      id INTEGER PRIMARY KEY,
+      status TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO workflow_runs (id, status, updated_at) VALUES
+      (1, 'running', 't1'),
+      (2, 'completed', 't2'),
+      (3, 'blocked', 't3');
+  `);
+  const migration = M.MIGRATIONS.find(
+    (candidate) => candidate.id === "068-workflow-runs-ended-at",
+  );
+  if (!migration) throw new Error("Workflow end migration not found");
+  migration.run({
+    exec: db.exec.bind(db),
+    query: db.prepare.bind(db),
+    run: (sql: string, params: unknown[] = []) =>
+      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+  } as unknown as Parameters<(typeof migration)["run"]>[0]);
+
+  expect(
+    db.prepare("SELECT id, ended_at FROM workflow_runs ORDER BY id").all(),
+  ).toEqual([
+    { id: 1, ended_at: null },
+    { id: 2, ended_at: "t2" },
+    { id: 3, ended_at: "t3" },
+  ]);
+  db.close();
+});
+
 test("a failing migration throws, rolls back, and stays out of the ledger", () => {
   const db = D.openDb(join(HOME, "failing.db"));
   const before = appliedIds(db);

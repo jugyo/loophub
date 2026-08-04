@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WorkflowRunDetailDialog } from "@/components/workflow-run-history-dialog";
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
+import { formatDuration } from "@/lib/time";
 import { useHerdrSessions } from "@/queries/terminal";
 
 const STATUS_META: Record<
@@ -50,6 +51,35 @@ function needsHuman(state: WorkflowRunState): boolean {
   return (
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked"
+  );
+}
+
+function WorkflowRunDuration({ state }: { state: WorkflowRunState }) {
+  const running = state.status === "running";
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
+  const startedAtMs = new Date(state.created_at).getTime();
+  const endedAtMs = running
+    ? nowMs
+    : state.ended_at
+      ? new Date(state.ended_at).getTime()
+      : Number.NaN;
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(endedAtMs)) return null;
+
+  const duration = formatDuration((endedAtMs - startedAtMs) / 1000);
+  return (
+    <p
+      data-debug-component="WorkflowRunDuration"
+      className="text-sm text-muted-foreground"
+    >
+      Duration: {duration} {running ? "elapsed" : "total"}
+    </p>
   );
 }
 
@@ -124,11 +154,6 @@ export function WorkflowRunStatusSection({
             {state.workflow_name ?? "workflow"}
           </span>
           <span className="text-muted-foreground">run {state.id}</span>
-          {state.rework_count > 0 ? (
-            <span className="text-muted-foreground">
-              · rework ×{state.rework_count}/{state.rework_limit}
-            </span>
-          ) : null}
         </div>
 
         <WorkflowStepTracker
@@ -170,6 +195,18 @@ export function WorkflowRunStatusSection({
         {needsHuman(displayState) && !overBudget ? (
           <NeedsHumanNotice owner={owner} repo={repo} state={displayState} />
         ) : null}
+
+        <div
+          data-debug-component="WorkflowRunMetadata"
+          className="flex flex-col gap-1 text-sm text-muted-foreground"
+        >
+          {state.rework_count > 0 ? (
+            <p>
+              Rework: {state.rework_count}/{state.rework_limit}
+            </p>
+          ) : null}
+          <WorkflowRunDuration state={state} />
+        </div>
 
         {showDetail ? (
           <div>

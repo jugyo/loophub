@@ -43,7 +43,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { WorkDuration } from "@/components/work-duration";
 import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import { pullDetailBadges } from "@/lib/badges";
 import { errorMessage } from "@/lib/error-message";
@@ -119,10 +118,6 @@ export function PullDetail({
   }
 
   const pull = pullQuery.data;
-  // The sidebar column is now always reserved (#456): WorkDuration always renders (with an "N/A"
-  // fallback), so there is no longer a PR that leaves the aside empty. Other sidebar sections
-  // (workflow, Herdr, GitHub PR status) hide themselves individually when empty.
-
   return (
     // The whole PR detail is a two-column layout (#346): the main column (header, commit/review
     // timeline, diff, comments) on the left and the Sessions sidebar on the right, from the top
@@ -208,9 +203,6 @@ export function PullDetail({
               isLoading={githubStatusQuery.isLoading}
             />
           ) : null}
-          {/* Work duration sits at the bottom of the sidebar (#627): a low-priority historical
-            summary that ranks below the live Workflow state above. */}
-          <WorkDuration workDuration={pull.work_duration} />
         </aside>
       </div>
     </div>

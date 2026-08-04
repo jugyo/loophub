@@ -1147,6 +1147,18 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    id: "068-workflow-runs-ended-at",
+    run(db) {
+      addColumnIfMissing(db, "workflow_runs", "ended_at", "TEXT");
+      db.exec(`
+        UPDATE workflow_runs
+        SET ended_at = updated_at
+        WHERE ended_at IS NULL
+          AND status IN ('completed', 'stopped', 'blocked')
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

@@ -27,6 +27,7 @@ const RUN: WorkflowRunState = {
   pr_number: 99,
   created_at: "2026-07-10T00:00:00Z",
   updated_at: "2026-07-10T01:00:00Z",
+  ended_at: null,
   latest_review: null,
   verification_status: "unverified",
   done: false,

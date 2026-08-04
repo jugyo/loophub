@@ -11,6 +11,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +36,7 @@ import { WorkflowRunStatusSection } from "./workflow-run-status";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   mocks.herdrSessions = undefined;
   mocks.focusHerdrAgent.mockClear();
 });
@@ -76,6 +78,7 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     pr_number: 99,
     created_at: "2026-07-10T00:00:00Z",
     updated_at: "2026-07-10T00:00:00Z",
+    ended_at: null,
     latest_review: null,
     verification_status: "unverified",
     done: false,
@@ -153,10 +156,82 @@ describe("WorkflowRunStatusSection", () => {
     expect(heading.className).toBe("text-lg font-semibold");
     expect(screen.getByText("Running")).toBeTruthy();
     expect(screen.getByText("standard")).toBeTruthy();
-    expect(screen.getByText("· rework ×2/8")).toBeTruthy();
+    const metadata = document.querySelector(
+      '[data-debug-component="WorkflowRunMetadata"]',
+    );
+    expect(metadata).toBeTruthy();
+    expect(
+      within(metadata as HTMLElement).getByText("Rework: 2/8"),
+    ).toBeTruthy();
+    const tracker = document.querySelector(
+      '[data-debug-component="WorkflowStepTracker"]',
+    );
+    expect(
+      tracker?.compareDocumentPosition(metadata as HTMLElement) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     // Current step is marked with aria-current="step".
     const current = screen.getByText("Execute");
     expect(current.getAttribute("aria-current")).toBe("step");
+  });
+
+  it("shows one live elapsed duration for a running run", async () => {
+    const now = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date("2026-07-10T00:01:30Z").getTime());
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({ created_at: "2026-07-10T00:00:00Z" })}
+      />,
+    );
+
+    const duration = await screen.findByText("Duration: 1m 30s elapsed");
+    expect(duration.tagName).toBe("P");
+    expect(duration.parentElement?.dataset.debugComponent).toBe(
+      "WorkflowRunMetadata",
+    );
+    expect(
+      document.querySelectorAll('[data-debug-component="WorkflowRunDuration"]'),
+    ).toHaveLength(1);
+
+    now.mockReturnValue(new Date("2026-07-10T00:02:00Z").getTime());
+    await waitFor(
+      () => expect(screen.getByText("Duration: 2m elapsed")).toBeTruthy(),
+      { timeout: 2000 },
+    );
+  });
+
+  it("shows the fixed start-to-end total for a completed run", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          status: "completed",
+          created_at: "2026-07-10T00:00:00Z",
+          updated_at: "2026-07-11T00:00:00Z",
+          ended_at: "2026-07-10T01:01:01Z",
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("Duration: 1h 1m total")).toBeTruthy();
+    expect(screen.queryByText(/elapsed$/)).toBeNull();
+  });
+
+  it("omits the duration when a Workflow timestamp is invalid", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({ created_at: "invalid" })}
+      />,
+    );
+
+    expect(await screen.findByText("Running")).toBeTruthy();
+    expect(screen.queryByText(/(?:elapsed|total)$/)).toBeNull();
   });
 
   // A completed run means its PR merged (#1808), which can happen from any step and without a fresh

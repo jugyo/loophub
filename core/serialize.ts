@@ -1493,6 +1493,8 @@ export interface WorkflowRunStateWire {
   pr_number: number;
   created_at: string;
   updated_at: string;
+  // Fixed lifecycle end. Unlike `updated_at`, terminal-run maintenance never advances it.
+  ended_at: string | null;
   latest_review: WorkflowRunReviewSummaryWire | null;
   verification_status: "unverified" | "verified" | "stale";
   // Canonical pre-merge Done state. This remains distinct from the run lifecycle `status` and is
@@ -1578,6 +1580,7 @@ export function workflowRunStateJSON(input: {
     pr_number: run.pr_number,
     created_at: run.created_at,
     updated_at: run.updated_at,
+    ended_at: run.ended_at,
     latest_review: input.latestReview,
     verification_status: input.verificationStatus,
     done: input.done,

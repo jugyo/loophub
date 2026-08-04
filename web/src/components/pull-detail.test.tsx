@@ -893,6 +893,13 @@ describe("PullDetail", () => {
     ).toBeNull();
   });
 
+  it("does not render an independent Work duration section", async () => {
+    renderDetail();
+
+    await screen.findByRole("heading", { name: "Worktree" });
+    expect(screen.queryByRole("heading", { name: "Work duration" })).toBeNull();
+  });
+
   it("does not render an independent Reviews section", async () => {
     renderDetail();
 
@@ -1702,7 +1709,7 @@ describe("PullDetail", () => {
     expect(screen.getByText("Implementation loop")).toBeTruthy();
     expect(screen.getByText("run 12")).toBeTruthy();
     expect(screen.getByText("Verify")).toBeTruthy();
-    expect(screen.getByText("· rework ×2/8")).toBeTruthy();
+    expect(screen.getByText("Rework: 2/8")).toBeTruthy();
     expect(screen.getByText("Needs human")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Detail" })).toBeTruthy();
   });
@@ -1840,66 +1847,6 @@ describe("PullDetail", () => {
 
     await screen.findByText("Implementation loop");
     expect(screen.queryByText("over budget")).toBeNull();
-  });
-
-  it.each([
-    { currentStep: "execute", label: "Execute" },
-    { currentStep: "verify", label: "Verify" },
-  ])("animates the $label step while its PR agent is working", async ({
-    currentStep,
-    label,
-  }) => {
-    renderDetail({
-      "terminal/sessions": () => ({
-        repos: [
-          {
-            repo: "me/proj",
-            session_name: "lh-me-proj",
-            agents: [
-              {
-                id: "%3",
-                name: "workflow step #12",
-                status: "working",
-                pull: 30,
-                pull_closed: false,
-                focusable: true,
-                workflow: {
-                  kind: "step",
-                  runId: 12,
-                  step: currentStep,
-                  sequence: 1,
-                },
-              },
-            ],
-            pull_workspaces: [{ pull: 30, pane_id: "%3", status: "working" }],
-            issue_workspaces: [],
-          },
-        ],
-      }),
-      "workflowRuns/stateForPull": () => ({
-        id: 12,
-        workflow_id: 3,
-        workflow_name: "Implementation loop",
-        status: "running",
-        current_step: currentStep,
-        rework_count: 0,
-        rework_limit: 8,
-        needs_human_reason: null,
-        issue_number: 153,
-        pr_number: 30,
-        created_at: "2026-06-18T11:00:00Z",
-        updated_at: "2026-06-18T12:00:00Z",
-        latest_review: null,
-        verification_status: "unverified",
-      }),
-    });
-
-    await screen.findByText("Implementation loop");
-    await waitFor(() =>
-      expect(screen.getByText(label).className).toContain(
-        "animate-[workflow-stage-glow",
-      ),
-    );
   });
 
   it("does not show continuing for a verified running Workflow run", async () => {
