@@ -3,15 +3,12 @@
 // — comment posting and close/reopen. Body and comments are stored as plain
 // Markdown and rendered as GFM via <Markdown>.
 
-import { useNavigate } from "@tanstack/react-router";
 import {
-  ChevronDown,
   Loader2,
   MoreHorizontal,
   Paperclip,
   Plus,
   Square,
-  Workflow,
   X,
 } from "lucide-react";
 import {
@@ -32,7 +29,7 @@ import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
 import { Markdown } from "@/components/markdown";
-import { useTerminalLauncher } from "@/components/terminal-controller";
+import { StartWorkflowControls } from "@/components/start-workflow-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,13 +38,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { WorkerLaunchUnavailable } from "@/components/worker-compatibility-warning";
 import { issueBadges, issueCanStartWork, stateBadge } from "@/lib/badges";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useAttachmentUpload } from "@/lib/use-attachment-upload";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
-import { useFixedLoading } from "@/lib/use-fixed-loading";
 import {
   useAcceptanceCriteria,
   useAddAcceptanceCriterion,
@@ -59,8 +54,6 @@ import {
   useSetIssueState,
 } from "@/queries/issues";
 import { usePullUsage, useUnarchivePull } from "@/queries/pulls";
-import { useWorkerLaunchGate } from "@/queries/worker-status";
-import { useWorkflows } from "@/queries/workflows";
 
 export function IssueDetail({
   owner,
@@ -216,102 +209,6 @@ function IssueHeader({
         ) : null}
       </div>
     </div>
-  );
-}
-
-// Start workflow dropdown (#1007): pick a saved workflow by name and launch it
-// via `terminal/launch` with workflow "workflow-run", which spawns `lh workflow start
-// <owner>/<repo>/<n> --workflow-id <id> --herdr`. Rendered only when the issue has no
-// active/merged linked PR (issueCanStartWork), keeping one launch per issue at a time
-// (workflow design: CLI / UI). With no saved workflows, the menu links to Settings > Workflows.
-function StartWorkflowControls({
-  owner,
-  repo,
-  issue,
-}: {
-  owner: string;
-  repo: string;
-  issue: Issue;
-}) {
-  const { launchTerminal } = useTerminalLauncher();
-  const navigate = useNavigate();
-  const { data: workflows, isLoading } = useWorkflows({
-    applicableToRepo: `${owner}/${repo}`,
-  });
-  const { canStartWorkflow, showRemediation } = useWorkerLaunchGate();
-  const [isLaunching, startLaunching] = useFixedLoading();
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  function start(workflowId: number) {
-    startLaunching();
-    setMenuOpen(false);
-    launchTerminal({
-      repo: `${owner}/${repo}`,
-      label: `Issue #${issue.number} - ${issue.title}`,
-      workflow: "workflow-run",
-      issueNumber: issue.number,
-      workflowId,
-    });
-  }
-
-  return (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          title="Start a saved workflow in auto mode (no approval prompts, no sandbox)"
-          disabled={isLaunching || isLoading || !canStartWorkflow}
-        >
-          {isLaunching ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Workflow className="size-4" />
-          )}
-          Start workflow
-          <ChevronDown className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
-        {workflows && workflows.length > 0 ? (
-          workflows.map((wf) => (
-            <DropdownMenuItem
-              key={wf.id}
-              className="flex-col items-start gap-1 px-3 py-3 whitespace-normal"
-              onSelect={(event) => {
-                event.preventDefault();
-                start(wf.id);
-              }}
-            >
-              <div className="flex w-full min-w-0 items-baseline gap-2">
-                <span className="min-w-0 font-medium leading-tight">
-                  {wf.name}
-                </span>
-                {wf.scope.kind === "repository" ? (
-                  <span className="shrink-0 text-xs leading-tight text-muted-foreground">
-                    {wf.scope.repo.owner}/{wf.scope.repo.name}
-                  </span>
-                ) : null}
-              </div>
-              {wf.description ? (
-                <span className="line-clamp-3 w-full min-w-0 break-words text-xs leading-relaxed text-muted-foreground">
-                  {wf.description}
-                </span>
-              ) : null}
-            </DropdownMenuItem>
-          ))
-        ) : (
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault();
-              setMenuOpen(false);
-              navigate({ to: "/settings/workflows" });
-            }}
-          >
-            No saved workflows — set one up in Settings
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-      {showRemediation ? <WorkerLaunchUnavailable /> : null}
-    </DropdownMenu>
   );
 }
 

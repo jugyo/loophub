@@ -270,6 +270,34 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
     expect(result.attach).toBe(`herdr session attach ${result.session_name}`);
   });
 
+  test("forwards one-shot Cursor and model overrides to workflow start", async () => {
+    lhDev.script.push(exitWith(0));
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "workflow-run",
+      issueNumber: 1,
+      workflowId: 9,
+      agent: "cursor",
+      model: "gpt-5.3-codex-high",
+    });
+
+    expect(lhDev.calls).toEqual([
+      [
+        "lh",
+        "workflow",
+        "start",
+        "me/proj/1",
+        "--workflow-id",
+        "9",
+        "--herdr",
+        "--cursor",
+        "--model",
+        "gpt-5.3-codex-high",
+      ],
+    ]);
+  });
+
   test("surfaces a failed CLI launch with the retry command", async () => {
     lhDev.script.push(exitWith(7));
 

@@ -1,4 +1,4 @@
-// Single registry (SSOT) for coding runtimes: claude-code (default), codex (#458), and grok.
+// Single registry (SSOT) for coding runtimes: claude-code (default), codex, grok, and cursor.
 // Every runtime-specific fact that was previously duplicated across core/config.ts, cli/dev.ts,
 // cli/args.ts, core/service/{terminal,settings}.ts, and the web (agent-models.ts /
 // settings-page.tsx / linked-pull-summary.tsx / agent-sessions-page.tsx) lives here once, so adding
@@ -12,10 +12,10 @@
 
 // Which coding agent launches use. The runtime id doubles as the persisted `codingAgent`
 // config value and the `runtime` recorded on a session.
-export type CodingAgent = "claude-code" | "codex" | "grok";
+export type CodingAgent = "claude-code" | "codex" | "grok" | "cursor";
 
 // The runtime binary spawned for each runtime (`claude` / `codex` / `grok`).
-export type RuntimeBin = "claude" | "codex" | "grok";
+export type RuntimeBin = "claude" | "codex" | "grok" | "cursor-agent";
 
 // One runtime's complete definition. Everything a caller needs to know about a runtime is a field
 // here — no branch keyed on the id belongs anywhere else.
@@ -119,6 +119,31 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     // Auto-approve all tool executions. The older tentative `--force` is rejected by current `grok`
     // CLIs as unknown, which made Web Start workflow exit the agent pane at once (#1540).
     autoApproveArgs: ["--always-approve"],
+  },
+  {
+    id: "cursor",
+    bin: "cursor-agent",
+    label: "Cursor Agent",
+    buildFlag: "--cursor",
+    defaultModel: "auto",
+    defaultEffort: "",
+    // Verified against `cursor-agent models` from Cursor Agent CLI 2026.07.09.
+    // Cursor encodes reasoning effort in the model id instead of accepting a separate effort flag.
+    modelSuggestions: [
+      "auto",
+      "gpt-5.3-codex",
+      "gpt-5.3-codex-high",
+      "gpt-5.3-codex-xhigh",
+      "gpt-5.6-sol-medium",
+      "gpt-5.6-sol-high",
+      "claude-opus-5-thinking-high",
+      "composer-2.5",
+    ],
+    effortSuggestions: [],
+    sandboxCapable: false,
+    // Cursor exposes command approval, sandbox override, and MCP approval as independent controls.
+    // Headless launches add --print/--trust together at the full-argv boundary in runtime-args.ts.
+    autoApproveArgs: ["--force", "--sandbox", "disabled", "--approve-mcps"],
   },
 ];
 

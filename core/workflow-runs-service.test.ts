@@ -304,6 +304,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(launched.herdr.command).toContain("'--permission-mode' 'auto'");
   expect(launched.agent_name).toBe(`executor #${result.run.id}-1`);
 
+  const launchedAt = new Date(Date.now() - 10_000).toISOString();
   confirmStepLaunch(
     repo.full_name,
     {
@@ -313,6 +314,8 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       agentName: launched.agent_name,
       pointers: launched.pointers,
       note: "Read the issue first.",
+      model: launched.model,
+      launchedAt,
     },
     result.session_id,
   );
@@ -322,6 +325,8 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(S.getAgentSession(launched.session_id)?.name).toBe(
     launched.agent_name,
   );
+  expect(S.getAgentSession(launched.session_id)?.model).toBe("sonnet");
+  expect(S.getAgentSession(launched.session_id)?.created_at).toBe(launchedAt);
   expect(
     S.listHandoffs(repo.id, {
       prId: S.getIssue(repo.id, result.pr.number)!.id,
@@ -393,6 +398,7 @@ test("instruction delivery preserves the real next decision for the same state",
       launch_id: sessionId,
       session_name: "me-instruction-parity",
       pane_id: "w1:p1",
+      launched_at: new Date().toISOString(),
     });
     // A registered pane is not yet an agent that reads it, so nothing is delivered — and nothing is
     // recorded as delivered — until the parent declares itself ready (#2156).

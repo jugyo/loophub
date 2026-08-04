@@ -127,6 +127,10 @@ function renderInRouter(
         started_at: "2026-08-02T00:00:00Z",
         heartbeat_at: "2026-08-02T00:00:01Z",
       }),
+      "repos/agentConfig": () => ({
+        setting: { override: false, runtime: null, model: null, effort: null },
+        effective: { runtime: "claude-code", model: "", effort: "" },
+      }),
       ...handlers,
     }),
   );
@@ -599,12 +603,18 @@ describe("IssueRow Start workflow button (#1622)", () => {
         name: "Dev loop Build then review",
       }),
     );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Start workflow with Claude Code",
+      }),
+    );
     expect(launchTerminal).toHaveBeenCalledWith(
       expect.objectContaining({
         repo: "me/proj",
         workflow: "workflow-run",
         issueNumber: 1,
         workflowId: 7,
+        agent: "claude-code",
       }),
     );
   });

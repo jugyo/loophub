@@ -1,3 +1,4 @@
+import { sessionRuntime } from "../../core/session-runtime.ts";
 import { flags, rest, sub } from "../args.ts";
 import { fail, out, run as runOp, svc } from "../context.ts";
 import { usage } from "../usage.ts";
@@ -45,6 +46,7 @@ export async function run(): Promise<void> {
         session,
         ...(flags.name ? { name: flags.name } : {}),
         ...(flags.runtime ? { runtime: flags.runtime } : {}),
+        ...(flags.model ? { model: flags.model } : {}),
         ...(flags.kind ? { kind: flags.kind } : {}),
       }),
     );
@@ -55,7 +57,7 @@ export async function run(): Promise<void> {
     if (!flags.json)
       rows.forEach((x: any) => {
         console.log(
-          `${x.id}\t${x.agent}\t${x.session}${x.name ? `\t${x.name}` : ""}`,
+          `${x.id}\t${x.agent}\truntime=${sessionRuntime(x) ?? "unknown"}\tmodel=${x.model ?? "default"}\tsession=${x.session}${x.name ? `\t${x.name}` : ""}`,
         );
       });
   } else usage();

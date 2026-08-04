@@ -65,12 +65,22 @@ function writeConfig(config: Record<string, unknown>): void {
   writeFileSync(join(home, "config.json"), JSON.stringify(config));
 }
 
-function sessions(): Array<{ runtime: string | null }> {
+function sessions(): Array<{
+  runtime: string | null;
+  model: string | null;
+  external_session: string;
+}> {
   const db = new DatabaseSync(join(home, "loophub.db"), { readOnly: true });
   try {
     return db
-      .prepare("SELECT runtime FROM agent_sessions ORDER BY rowid")
-      .all() as Array<{ runtime: string | null }>;
+      .prepare(
+        "SELECT runtime, model, external_session FROM agent_sessions ORDER BY rowid",
+      )
+      .all() as Array<{
+      runtime: string | null;
+      model: string | null;
+      external_session: string;
+    }>;
   } finally {
     db.close();
   }
@@ -137,9 +147,12 @@ beforeAll(() => {
 printf 'bin=%s\\n' "$(basename "$0")" > "$RUNTIME_LOG"
 printf 'workspace=%s\\n' "$LOOPHUB_WORKSPACE" >> "$RUNTIME_LOG"
 for arg in "$@"; do printf 'arg=%s\\n' "$arg" >> "$RUNTIME_LOG"; done
+if [ "$(basename "$0")" = "cursor-agent" ]; then
+  printf '%s\\n' '{"type":"result","session_id":"cursor-headless-chat","result":"Created issue"}'
+fi
 exit 0
 `;
-  for (const bin of ["claude", "codex", "grok"]) {
+  for (const bin of ["claude", "codex", "grok", "cursor-agent"]) {
     const path = join(runtimeDir, bin);
     writeFileSync(path, runtime);
     chmodSync(path, 0o755);
@@ -172,6 +185,7 @@ test("issue new uses the configured default runtime and model", () => {
     "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",
   );
   expect(sessions().at(-1)?.runtime).toBe("codex");
+  expect(sessions().at(-1)?.model).toBe("configured-codex-model");
 });
 
 test("issue new forwards a direct prompt instead of the default filing prompt", () => {
@@ -259,6 +273,7 @@ test.each([
   ["--claude-code", "claude", "claude-code", "codex"],
   ["--codex", "codex", "codex", "claude-code"],
   ["--grok", "grok", "grok", "claude-code"],
+  ["--cursor", "cursor-agent", "cursor", "claude-code"],
 ])("issue new forwards %s and --model to the final %s launch boundary", (flag, expectedBin, expectedRuntime, configuredAgent) => {
   writeConfig({ codingAgent: configuredAgent });
   const model = `${expectedRuntime}-custom-model`;
@@ -278,6 +293,15 @@ test.each([
     "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",
   );
   expect(sessions().at(-1)?.runtime).toBe(expectedRuntime);
+  expect(sessions().at(-1)?.model).toBe(model);
+  if (expectedRuntime === "cursor") {
+    expect(result.runtimeLog).toContain("arg=--force");
+    expect(result.runtimeLog).toContain("arg=--sandbox");
+    expect(result.runtimeLog).toContain("arg=disabled");
+    expect(result.runtimeLog).toContain("arg=--approve-mcps");
+    expect(sessions().at(-1)?.external_session).toBe("cursor-headless-chat");
+    expect(result.stdout).toContain("Created issue");
+  }
 });
 
 test("issue new rejects multiple runtime flags before registering or spawning", () => {

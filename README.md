@@ -68,7 +68,7 @@ herdr が PATH に無い場合、`lh workflow start` は
 Web UI の **Start workflow** も同じ経路なので失敗する。issue や PR の作成・閲覧のように
 エージェントを起動しない操作は herdr 無しでも動くが、**エージェントに作業させることはできない**。
 
-コーディングエージェントは 3 つのランタイムから選べる。選んだものの実行ファイルが PATH に
+コーディングエージェントは 4 つのランタイムから選べる。選んだものの実行ファイルが PATH に
 必要で、無ければ `workflow start requires <bin> on PATH` で終了する。
 
 | ランタイム | 必要な実行ファイル | 備考 |
@@ -76,12 +76,17 @@ Web UI の **Start workflow** も同じ経路なので失敗する。issue や P
 | Claude Code（既定） | `claude` | [claude.com/claude-code](https://claude.com/claude-code) |
 | Codex | `codex` | [github.com/openai/codex](https://github.com/openai/codex) |
 | Grok Build | `grok` | Grok CLI |
+| Cursor Agent | `cursor-agent` | [cursor.com/cli](https://cursor.com/cli) |
 
 LoopHub はコーディングエージェントの Session を再開しない。各 workflow step は新しい
 agent-runtime invocation として起動し、Session の記録は履歴表示と usage 集計に使う。
 
 既定のランタイム・モデルは Web UI の Settings、またはリポジトリごとの設定で変えられる。
-1 回の起動だけ変えたいときは `--claude-code` / `--codex` / `--grok` と `--model` を使う。
+1 回の起動だけ変えたいときは `--claude-code` / `--codex` / `--grok` / `--cursor` と `--model` を使う。
+
+Cursor transcript から chat identifier を各 LoopHub session に対応付ける。現在の Cursor CLI
+transcript は token count を提供せず、Cursor Admin API の usage event も chat や cwd の identifier を
+持たないため、時刻だけで usage を帰属させない。取得できない token usage と cost は unknown のまま扱う。
 
 ### 任意
 

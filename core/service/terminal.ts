@@ -84,10 +84,9 @@ export interface TerminalLaunchInput {
   workflowId?: number;
   targetBranch?: string;
   prompt?: string;
-  // One-shot agent/model/effort overrides from the issue-create (New issue) dropdown
-  // (#1275/#1534). Plain buttons leave these unset so `lh issue new` resolves the repo's
-  // effective Coding agent config. They map to the corresponding CLI flags and never touch
-  // persisted Settings defaults.
+  // One-shot agent/model/effort overrides from launch pickers (#1275/#1534). Plain buttons leave
+  // these unset so the CLI resolves the repo's effective Coding agent config. They map to the
+  // corresponding CLI flags and never touch persisted Settings defaults.
   agent?: CodingAgent;
   model?: string;
   effort?: string;
@@ -233,6 +232,7 @@ async function launchWorkflowRunHerdr(
   r: S.Repo,
   issueNumber: number,
   workflowId: number,
+  override: { agent?: CodingAgent; model?: string },
   reportError: (message: string) => void,
 ): Promise<TerminalLaunchResultWire> {
   const repo = { full_name: r.full_name, local_path: r.local_path };
@@ -244,6 +244,8 @@ async function launchWorkflowRunHerdr(
     String(workflowId),
     "--herdr",
   ];
+  if (override.agent) args.push(`--${override.agent}`);
+  if (override.model?.trim()) args.push("--model", override.model.trim());
   try {
     await runLhDevLaunch(args, r.local_path, "lh workflow start", reportError);
   } catch (e) {
@@ -515,6 +517,7 @@ export const terminal = {
         r,
         input.issueNumber,
         input.workflowId,
+        { agent: input.agent, model: input.model },
         reportError,
       );
     }

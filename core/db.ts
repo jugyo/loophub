@@ -504,6 +504,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   name              TEXT,
   runtime           TEXT,
   kind              TEXT,
+  model             TEXT,
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL,
   UNIQUE (agent, external_session)

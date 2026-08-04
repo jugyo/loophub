@@ -12,6 +12,7 @@ import { tokensPerFiveMinuteHistory } from "../session-rate-history.ts";
 import {
   RUNTIME_CLAUDE_CODE,
   RUNTIME_CODEX,
+  RUNTIME_CURSOR,
   RUNTIME_GROK,
   sessionRuntime,
 } from "../session-runtime.ts";
@@ -19,6 +20,7 @@ import {
   aggregateUsage,
   type ClaudeSubagentTranscript,
   type ClaudeSubagentTranscriptCandidate,
+  type CursorTranscriptCandidate,
   calculateCostUsd,
   claudeContextWindowForModel,
   createClaudeTranscriptIndex,
@@ -26,6 +28,7 @@ import {
   findClaudeSubagentTranscriptCandidates,
   findClaudeTranscript,
   findCodexRollouts,
+  findCursorTranscripts,
   findGrokSessionUpdates,
   type GrokTurnUsage,
   type ModelUsage,
@@ -47,6 +50,17 @@ import {
   worktreePath,
 } from "../worktree-path.ts";
 import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
+
+const CURSOR_TRANSCRIPT_CORRELATION_WINDOW_MS = 120_000;
+
+interface UsageSyncInput {
+  sessionId?: string;
+  full?: boolean;
+  projectsDir?: string;
+  codexSessionsDir?: string;
+  grokSessionsDir?: string;
+  cursorProjectsDir?: string;
+}
 
 export type SessionUsageSyncStatus = "updated" | "skipped" | "missing";
 
@@ -71,7 +85,7 @@ function usageSyncStatus(messages: number): SessionUsageSyncStatus {
 
 function worktreeCwdForPullSession(
   row: S.AgentSessionRow,
-): { cwd: string; pullIssueId: number } | null {
+): { cwd: string; pullIssueId: number; repoId: number } | null {
   const target = S.listSessionLinkedTargets(row.id).find(
     (x) => x.kind === "pull",
   );
@@ -86,7 +100,7 @@ function worktreeCwdForPullSession(
       identity.scheme === "legacy-issue"
         ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
         : worktreePath(worktreeRoot(), r.full_name, identity.number);
-    return { cwd, pullIssueId: prRow.id };
+    return { cwd, pullIssueId: prRow.id, repoId: r.id };
   } catch {
     return null;
   }
@@ -148,6 +162,40 @@ function grokUsageTarget(row: S.AgentSessionRow): {
     ...base,
     ownerSessionId: grokUsageOwnerForPull(base.pullIssueId, row.id),
   };
+}
+
+interface CursorUsageTarget {
+  cwd: string;
+  pullIssueId: number | null;
+  sessionId: string;
+}
+
+function cursorUsageTarget(row: S.AgentSessionRow): CursorUsageTarget | null {
+  if (sessionRuntime(row) !== RUNTIME_CURSOR) return null;
+  const base = worktreeCwdForPullSession(row);
+  if (base) {
+    return {
+      ...base,
+      sessionId: row.id,
+    };
+  }
+
+  const target = S.listSessionLinkedTargets(row.id).find(
+    (linked) => linked.kind === "issue",
+  );
+  if (!target) return null;
+  const repo = S.getRepoById(target.repo_id);
+  if (!repo) return null;
+  try {
+    issueOr404(repo, target.number, "issue");
+    return {
+      cwd: repo.local_path,
+      pullIssueId: null,
+      sessionId: row.id,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function transcriptSetStats(
@@ -430,6 +478,12 @@ function codexTargetKey(target: {
   return `${target.pullIssueId}\0${target.ownerSessionId}`;
 }
 
+function cursorTargetKey(target: CursorUsageTarget): string {
+  return target.pullIssueId === null
+    ? `repo\0${target.cwd}`
+    : `pull\0${target.pullIssueId}`;
+}
+
 function modelUsageEqualsStored(
   expected: ModelUsage[],
   actual: S.SessionUsageRow[],
@@ -516,8 +570,9 @@ export const sessions = {
     name?: string | null;
     runtime?: string | null;
     kind?: string | null;
+    model?: string | null;
   }) {
-    const { id, agent, session, name, runtime, kind } = input;
+    const { id, agent, session, name, runtime, kind, model } = input;
     if (!id || !agent || !session)
       throw new ServiceError(422, "id, agent, and session are required");
     try {
@@ -532,6 +587,7 @@ export const sessions = {
           name,
           runtime,
           kind,
+          model,
         );
         S.emitEvent(
           null,
@@ -544,6 +600,7 @@ export const sessions = {
             ...(row.name ? { name: row.name } : {}),
             ...(row.runtime ? { runtime: row.runtime } : {}),
             ...(row.kind ? { kind: row.kind } : {}),
+            ...(row.model ? { model: row.model } : {}),
           },
         );
         return { session: agentSessionJSON(row), created };
@@ -554,6 +611,28 @@ export const sessions = {
       }
       throw e;
     }
+  },
+
+  recordExternalSession(input: { sessionId: string; externalSession: string }) {
+    const row = S.getAgentSession(input.sessionId);
+    const externalSession = input.externalSession.trim();
+    if (!row) throw new ServiceError(404, "Not Found");
+    if (!externalSession) {
+      throw new ServiceError(422, "externalSession is required");
+    }
+    return db.transaction(() => {
+      S.setAgentSessionExternalSession(row.id, externalSession);
+      const updated = S.getAgentSession(row.id)!;
+      S.emitEvent(null, "agent_session.updated", row.agent, {
+        id: updated.id,
+        agent: updated.agent,
+        session: updated.external_session,
+        ...(updated.runtime ? { runtime: updated.runtime } : {}),
+        ...(updated.kind ? { kind: updated.kind } : {}),
+        ...(updated.model ? { model: updated.model } : {}),
+      });
+      return agentSessionJSON(updated);
+    });
   },
 
   // Link an already-registered session to an issue or a PR (#298). The generalized attach point for
@@ -596,7 +675,11 @@ export const sessions = {
   list() {
     return S.listAgentSessions()
       .map((row) => agentSessionJSON(row, { withLinkedTargets: true }))
-      .filter((session) => (session.usage?.length ?? 0) > 0);
+      .filter(
+        (session) =>
+          session.runtime === RUNTIME_CURSOR ||
+          (session.usage?.length ?? 0) > 0,
+      );
   },
 
   costSummary(now = new Date()): AgentCostSummaryWire[] {
@@ -656,23 +739,14 @@ export const sessions = {
     return S.listAllSessionUsage().map(sessionUsageJSON);
   },
 
-  usageSync(
-    input: {
-      sessionId?: string;
-      full?: boolean;
-      projectsDir?: string;
-      codexSessionsDir?: string;
-      grokSessionsDir?: string;
-    } = {},
-  ): SessionUsageSyncResult {
-    // Default sweep (#1119): scan only sessions linked to an open PR, so closed/merged PRs and
-    // unlinked sessions no longer trigger transcript walks. `--session <id>` still targets any
-    // single session for a forced recompute.
+  usageSync(input: UsageSyncInput = {}): SessionUsageSyncResult {
+    // Default sweep (#1119): scan sessions linked to an open PR and Cursor issue-create sessions
+    // linked to an open issue. `--session <id>` still targets any single session for recompute.
     const rows: S.AgentSessionRow[] = input.sessionId
       ? [S.getAgentSession(input.sessionId)].filter(
           (row): row is S.AgentSessionRow => row !== null,
         )
-      : S.listSessionsLinkedToOpenPull();
+      : S.listSessionsForUsageSweep();
     if (input.sessionId && rows.length === 0)
       throw new ServiceError(404, "Not Found");
     S.deleteZeroTokenSessionUsageRows(input.sessionId);
@@ -693,6 +767,7 @@ export const sessions = {
         pullIssueId: number;
       }
     >();
+    const cursorTargets = new Map<string, CursorUsageTarget>();
     for (const row of rows) {
       if (sessionRuntime(row) === RUNTIME_CODEX) {
         const target = codexUsageTarget(row);
@@ -702,6 +777,11 @@ export const sessions = {
       if (sessionRuntime(row) === RUNTIME_GROK) {
         const target = grokUsageTarget(row);
         if (target) grokTargets.set(codexTargetKey(target), target);
+        continue;
+      }
+      if (sessionRuntime(row) === RUNTIME_CURSOR) {
+        const target = cursorUsageTarget(row);
+        if (target) cursorTargets.set(cursorTargetKey(target), target);
       }
     }
     const codexScan =
@@ -718,6 +798,148 @@ export const sessions = {
             .map((row) => row.external_session),
         )
       : null;
+    const cursorMatches = new Map<string, CursorTranscriptCandidate>();
+    const cursorExternalSessions = new Map<string, string>();
+    for (const target of cursorTargets.values()) {
+      const targetKey = cursorTargetKey(target);
+      const transcripts = findCursorTranscripts({
+        cwd: target.cwd,
+        projectsDir: input.cursorProjectsDir,
+      }).sort((a, b) => a.createdAtMs - b.createdAtMs);
+      const sessions = (
+        target.pullIssueId
+          ? S.listSessionsForIssue(target.pullIssueId)
+          : rows.filter((session) => {
+              const candidateTarget = cursorUsageTarget(session);
+              return (
+                candidateTarget !== null &&
+                cursorTargetKey(candidateTarget) === targetKey
+              );
+            })
+      )
+        .filter((session) => sessionRuntime(session) === RUNTIME_CURSOR)
+        // listSessionsForIssue is newest-link-first (including a rowid tiebreaker). Reverse it
+        // before the stable timestamp sort so sessions launched in the same second retain their
+        // actual launch order and pair with transcript creation order.
+        .reverse()
+        .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+      const sessionStartTimes = sessions.map((session) =>
+        Date.parse(session.created_at),
+      );
+      const distinctStartTimes = [...new Set(sessionStartTimes)];
+      const nextStartedAtByStartedAt = new Map(
+        distinctStartTimes.map((startedAt, index) => [
+          startedAt,
+          Math.min(
+            distinctStartTimes[index + 1] ?? Number.POSITIVE_INFINITY,
+            startedAt + CURSOR_TRANSCRIPT_CORRELATION_WINDOW_MS,
+          ),
+        ]),
+      );
+      const claimed = new Set<string>();
+      const exactBySession = new Map<string, CursorTranscriptCandidate>();
+      for (const session of sessions) {
+        // Cursor headless output provides the authoritative chat id. Reserve that transcript before
+        // chronological matching so another same-cwd session cannot claim it first.
+        if (session.external_session === session.id) continue;
+        const exact = transcripts.find(
+          (candidate) => candidate.sessionId === session.external_session,
+        );
+        if (!exact || claimed.has(exact.sessionId)) continue;
+        claimed.add(exact.sessionId);
+        exactBySession.set(session.id, exact);
+      }
+      for (let index = 0; index < sessions.length; index += 1) {
+        const session = sessions[index];
+        const startedAt = sessionStartTimes[index];
+        const nextStartedAt = nextStartedAtByStartedAt.get(startedAt)!;
+        const hasAuthoritativeId = session.external_session !== session.id;
+        const transcript =
+          exactBySession.get(session.id) ??
+          (hasAuthoritativeId
+            ? undefined
+            : transcripts.find(
+                (candidate) =>
+                  !claimed.has(candidate.sessionId) &&
+                  candidate.createdAtMs >= startedAt - 5_000 &&
+                  candidate.createdAtMs < nextStartedAt,
+              ));
+        if (!transcript) continue;
+        if (!hasAuthoritativeId) claimed.add(transcript.sessionId);
+        cursorMatches.set(session.id, transcript);
+        if (session.external_session !== transcript.sessionId)
+          cursorExternalSessions.set(session.id, transcript.sessionId);
+      }
+    }
+
+    // Cursor transcript discovery and correlation finish before this DB phase. Commit every
+    // candidate from the sweep together so an identifier conflict cannot leave peer sessions
+    // partially updated.
+    const cursorResults = new Map<string, SessionUsageSyncRow>();
+    const cursorRows = rows.filter(
+      (row) => sessionRuntime(row) === RUNTIME_CURSOR,
+    );
+    if (cursorRows.length > 0) {
+      db.transaction(() => {
+        for (const row of cursorRows) {
+          const externalSession = cursorExternalSessions.get(row.id);
+          const identifierChanged = externalSession !== undefined;
+          const rowTarget = cursorUsageTarget(row);
+          const target = rowTarget
+            ? cursorTargets.get(cursorTargetKey(rowTarget))
+            : null;
+          if (!target) {
+            S.resetSessionUsage(row.id);
+            cursorResults.set(row.id, {
+              session_id: row.id,
+              status: "missing",
+              messages: 0,
+              models: [],
+            });
+            continue;
+          }
+          const transcript = cursorMatches.get(row.id);
+          if (!transcript) {
+            S.resetSessionUsage(row.id);
+            cursorResults.set(row.id, {
+              session_id: row.id,
+              status: "missing",
+              messages: 0,
+              models: [],
+            });
+            continue;
+          }
+          const stored = S.listSessionUsage(row.id);
+          const status: SessionUsageSyncStatus =
+            identifierChanged || stored.length > 0 ? "updated" : "skipped";
+          if (!modelUsageEqualsStored(stored, S.listSessionUsage(row.id))) {
+            throw new Error("Session usage changed during sync");
+          }
+          if (externalSession) {
+            S.setAgentSessionExternalSession(row.id, externalSession);
+            const updated = S.getAgentSession(row.id)!;
+            S.emitEvent(null, "agent_session.updated", row.agent, {
+              id: updated.id,
+              agent: updated.agent,
+              session: updated.external_session,
+              ...(updated.runtime ? { runtime: updated.runtime } : {}),
+              ...(updated.kind ? { kind: updated.kind } : {}),
+              ...(updated.model ? { model: updated.model } : {}),
+            });
+          }
+          // Cursor CLI transcripts identify chats but do not expose token counts. Remove any
+          // previously inferred usage instead of attributing undocumented data to this session.
+          S.resetSessionUsage(row.id);
+          cursorResults.set(row.id, {
+            session_id: row.id,
+            status,
+            transcript_path: transcript.path,
+            messages: 0,
+            models: [],
+          });
+        }
+      });
+    }
 
     const results = rows.map<SessionUsageSyncRow>((row) => {
       if (sessionRuntime(row) === RUNTIME_CODEX) {
@@ -909,6 +1131,10 @@ export const sessions = {
             models: S.listSessionUsage(row.id).map(sessionUsageJSON),
           };
         });
+      }
+
+      if (sessionRuntime(row) === RUNTIME_CURSOR) {
+        return cursorResults.get(row.id)!;
       }
 
       const transcript = findClaudeTranscript(

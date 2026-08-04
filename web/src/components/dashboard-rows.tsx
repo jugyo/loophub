@@ -2,33 +2,21 @@
 // links to its detail/list view and shows the v1-parity status badges
 // (../lib/badges.ts).
 
-import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Loader2, MessageSquare, Workflow } from "lucide-react";
-import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { MessageSquare } from "lucide-react";
 import type { Issue, Label, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { OpenIssueHerdrButton } from "@/components/issue-herdr-section";
 import { IssueWorkspaceChip } from "@/components/issue-workspace-chip";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
-import { useTerminalLauncher } from "@/components/terminal-controller";
+import { StartWorkflowControls } from "@/components/start-workflow-controls";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { WorkerLaunchUnavailable } from "@/components/worker-compatibility-warning";
 import { type Badge as BadgeData, pullBadges } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
-import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import type { IssueListFilters } from "@/queries/issues";
-import { useWorkerLaunchGate } from "@/queries/worker-status";
-import { useWorkflows } from "@/queries/workflows";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
   if (badges.length === 0) return null;
@@ -226,106 +214,6 @@ function IssuePopover({
   );
 }
 
-// Compact "Start workflow" launcher shown when an issue has no active linked
-// PR. It mirrors issue-detail's StartWorkflowControls (#1007) — same
-// `terminal/launch` with the "workflow-run" workflow — but is sized down (h-6,
-// text-xs, size-3 icons) to sit quietly at the linked-PR sub-row scale (text-xs)
-// instead of reading as a primary action. With no saved workflows the menu
-// links to Settings > Workflows, matching the detail control.
-function StartWorkflowButton({
-  owner,
-  repo,
-  issue,
-}: {
-  owner: string;
-  repo: string;
-  issue: Issue;
-}) {
-  const { launchTerminal } = useTerminalLauncher();
-  const navigate = useNavigate();
-  const { data: workflows, isLoading } = useWorkflows({
-    applicableToRepo: `${owner}/${repo}`,
-  });
-  const { canStartWorkflow, showRemediation } = useWorkerLaunchGate();
-  const [isLaunching, startLaunching] = useFixedLoading();
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  function start(workflowId: number) {
-    startLaunching();
-    setMenuOpen(false);
-    launchTerminal({
-      repo: `${owner}/${repo}`,
-      label: `Issue #${issue.number} - ${issue.title}`,
-      workflow: "workflow-run",
-      issueNumber: issue.number,
-      workflowId,
-    });
-  }
-
-  return (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="h-6 gap-1 px-2 text-xs font-normal"
-          title="Start a saved workflow in auto mode (no approval prompts, no sandbox)"
-          disabled={isLaunching || isLoading || !canStartWorkflow}
-        >
-          {isLaunching ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <Workflow className="size-3" />
-          )}
-          Start workflow
-          <ChevronDown className="size-3" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-80">
-        {workflows && workflows.length > 0 ? (
-          workflows.map((wf) => (
-            <DropdownMenuItem
-              key={wf.id}
-              className="flex-col items-start gap-1 px-3 py-3 whitespace-normal"
-              onSelect={(event) => {
-                event.preventDefault();
-                start(wf.id);
-              }}
-            >
-              <div className="flex w-full min-w-0 items-baseline gap-2">
-                <span className="min-w-0 font-medium leading-tight">
-                  {wf.name}
-                </span>
-                {wf.scope.kind === "repository" ? (
-                  <span className="shrink-0 text-xs leading-tight text-muted-foreground">
-                    {wf.scope.repo.owner}/{wf.scope.repo.name}
-                  </span>
-                ) : null}
-              </div>
-              {wf.description ? (
-                <span className="line-clamp-3 w-full min-w-0 break-words text-xs leading-relaxed text-muted-foreground">
-                  {wf.description}
-                </span>
-              ) : null}
-            </DropdownMenuItem>
-          ))
-        ) : (
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault();
-              setMenuOpen(false);
-              navigate({ to: "/settings/workflows" });
-            }}
-          >
-            No saved workflows — set one up in Settings
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-      {showRemediation ? <WorkerLaunchUnavailable compact /> : null}
-    </DropdownMenu>
-  );
-}
-
 // Single issue list row, shared by every issue list (home "Recent issues",
 // repo dashboard "Open Issues", and the dedicated /issues page). Pattern E
 // (#194): the title is the issue link — so a linked PR can render as its own
@@ -455,7 +343,12 @@ export function IssueRow({
         // to sit where the linked-PR sub-rows render (pl-7). This includes
         // issues whose previous attempts are all closed.
         <div className="flex items-center gap-2 pl-7">
-          <StartWorkflowButton owner={owner} repo={repo} issue={issue} />
+          <StartWorkflowControls
+            owner={owner}
+            repo={repo}
+            issue={issue}
+            compact
+          />
         </div>
       ) : null}
     </div>

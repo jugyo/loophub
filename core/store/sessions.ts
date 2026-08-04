@@ -8,6 +8,7 @@ export interface AgentSessionRow {
   name: string | null;
   runtime: string | null;
   kind: string | null;
+  model: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,20 +47,24 @@ export function listAgentSessions(): AgentSessionRow[] {
     .all() as AgentSessionRow[];
 }
 
-// The default usage sweep's candidate set (#1119): sessions linked (session_links) to an *open* PR
-// only — kind='pull', state='open', and pulls.merged = 0. Sessions with no link, links only to
-// issues, or links to closed/merged PRs are excluded, so the sweep stops walking their transcripts.
-// `--session <id>` bypasses this (see service usageSync) to force-recompute any session.
-export function listSessionsLinkedToOpenPull(): AgentSessionRow[] {
+// The default usage sweep's candidate set (#1119): sessions linked to an open PR, plus Cursor
+// issue-create sessions linked to an open issue. Cursor's structured headless result normally
+// records the chat id immediately, while this second set also lets maintenance correlate older or
+// interrupted launches from the repository transcript.
+export function listSessionsForUsageSweep(): AgentSessionRow[] {
   return db
     .query(
       `SELECT DISTINCT s.*
        FROM agent_sessions s
        JOIN session_links l ON l.session_id = s.id
        JOIN issues i ON i.id = l.issue_id
-       JOIN pulls p ON p.issue_id = i.id
-       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
-         AND p.archived_at IS NULL
+       LEFT JOIN pulls p ON p.issue_id = i.id
+       WHERE (
+         i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND p.archived_at IS NULL
+       ) OR (
+         i.kind = 'issue' AND i.state = 'open' AND s.runtime = 'cursor'
+         AND s.kind = 'issue-create'
+       )
        ORDER BY s.updated_at DESC`,
     )
     .all() as AgentSessionRow[];
@@ -74,6 +79,8 @@ export function registerAgentSession(
   name?: string | null,
   runtime?: string | null,
   kind?: string | null,
+  model?: string | null,
+  createdAt?: string | null,
 ): { session: AgentSessionRow; created: boolean } {
   const existing = getAgentSession(id);
   const t = now();
@@ -87,11 +94,12 @@ export function registerAgentSession(
     // Preserve-on-re-register: an undefined arg keeps the stored value (the service layer relies on
     // this — it forwards name/runtime/kind straight through without `?? null`).
     db.run(
-      `UPDATE agent_sessions SET name = ?, runtime = ?, kind = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE agent_sessions SET name = ?, runtime = ?, kind = ?, model = ?, updated_at = ? WHERE id = ?`,
       [
         name !== undefined ? name : existing.name,
         runtime !== undefined ? runtime : existing.runtime,
         kind !== undefined ? kind : existing.kind,
+        model !== undefined ? model : existing.model,
         t,
         id,
       ],
@@ -105,8 +113,8 @@ export function registerAgentSession(
     .get(agent, externalSession) as { id: string } | null;
   if (byPair) throw new Error("CONFLICT_PAIR" satisfies RegisterConflict);
   db.query(
-    `INSERT INTO agent_sessions (id, agent, external_session, name, runtime, kind, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    `INSERT INTO agent_sessions (id, agent, external_session, name, runtime, kind, model, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
   ).get(
     id,
     agent,
@@ -114,10 +122,31 @@ export function registerAgentSession(
     name ?? null,
     runtime ?? null,
     kind ?? null,
-    t,
+    model ?? null,
+    createdAt ?? t,
     t,
   );
   return { session: getAgentSession(id) as AgentSessionRow, created: true };
+}
+
+export function setAgentSessionExternalSession(
+  sessionId: string,
+  externalSession: string,
+) {
+  db.run(
+    `UPDATE agent_sessions SET external_session = ?, updated_at = ? WHERE id = ?`,
+    [externalSession, now(), sessionId],
+  );
+}
+
+// Workflow parents are registered before PR/worktree preparation so the run can refer to them.
+// Once the process launch succeeds, replace that provisional timestamp with the actual launch
+// boundary used for transcript correlation.
+export function setAgentSessionCreatedAt(sessionId: string, createdAt: string) {
+  db.run(`UPDATE agent_sessions SET created_at = ? WHERE id = ?`, [
+    createdAt,
+    sessionId,
+  ]);
 }
 
 // Set a session's kind in place (#298). Used when the kind becomes known at association time (e.g.
@@ -214,10 +243,16 @@ export function pullAgentSummary(issueId: number): PullAgentSummary | null {
   if (!sessionId) return null;
   const session = getAgentSession(sessionId);
   if (!session) return null;
+  const usageModels = listSessionUsage(sessionId).map((row) => row.model);
   return {
     agent: session.agent,
     runtime: session.runtime,
-    models: listSessionUsage(sessionId).map((row) => row.model),
+    models:
+      usageModels.length > 0
+        ? usageModels
+        : session.model
+          ? [session.model]
+          : [],
   };
 }
 

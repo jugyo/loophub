@@ -98,8 +98,9 @@ function AgentModelEffortDropdown({
   saving: boolean;
   onSave: (model: string, effort: string) => void;
 }) {
+  const efforts = effortSuggestions.length > 0 ? effortSuggestions : [""];
   const combos = modelSuggestions.flatMap((m) =>
-    effortSuggestions.map((e) => ({ model: m, effort: e })),
+    efforts.map((e) => ({ model: m, effort: e })),
   );
   const currentValue = comboValue(model, effort);
   const hasCurrent = combos.some(

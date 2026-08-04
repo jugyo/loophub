@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { RUNTIMES } from "./runtimes.ts";
+import { CODING_AGENTS, RUNTIMES } from "./runtimes.ts";
 
 test("Claude Code suggests the fable model", () => {
   expect(RUNTIMES["claude-code"].modelSuggestions).toContain("claude-fable-5");
@@ -14,6 +14,14 @@ test("every runtime defines the auto-approve argv the launch paths append", () =
     "--dangerously-bypass-approvals-and-sandbox",
   ]);
   expect(RUNTIMES.grok.autoApproveArgs).toEqual(["--always-approve"]);
+  expect(RUNTIMES.cursor).toMatchObject({
+    bin: "cursor-agent",
+    buildFlag: "--cursor",
+    defaultModel: "auto",
+    effortSuggestions: [],
+    autoApproveArgs: ["--force", "--sandbox", "disabled", "--approve-mcps"],
+  });
+  expect(CODING_AGENTS).toContain("cursor");
 });
 
 test("runtime definitions do not expose a session resume capability", () => {

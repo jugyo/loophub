@@ -63,7 +63,7 @@ const GPT_54_MINI_PRICE: UsagePrice = {
 // (e.g. pricepertoken.com) report spark as matching — a working stand-in
 // borrowed from a confirmed sibling model, not a confirmed spark-specific
 // price. Replace with OpenAI's own spark rate once it is published.
-const GPT_53_CODEX_SPARK_PRICE: UsagePrice = {
+const GPT_53_CODEX_PRICE: UsagePrice = {
   input: 1.75,
   cacheCreation: 1.75,
   cacheRead: 0.175,
@@ -123,8 +123,32 @@ const GROK_43_PRICE: UsagePrice = {
   output: 2.5,
 };
 
+function priceForCursorModel(model: string): UsagePrice | null {
+  // Cursor appends parameter selections such as context size in brackets. Strip only that
+  // structured suffix, then match complete model ids so unknown future slugs cannot inherit a
+  // price merely by containing a familiar provider model name.
+  const m = model.replace(/\[[^\]]+\]$/u, "");
+  // Auto can mean Cost, Balance, or Intelligence. The latter modes bill the routed model's API
+  // rate, but Cursor transcripts expose neither the mode nor the routed model. Keep cost unknown
+  // until the session records enough information to select the official rate.
+  if (m === "auto") return null;
+  if (/^gpt-5\.3-codex(?:-(?:low|medium|high|xhigh))?(?:-fast)?$/u.test(m))
+    return GPT_53_CODEX_PRICE;
+  if (
+    /^gpt-5\.6-sol(?:-(?:none|low|medium|high|xhigh|max))?(?:-fast)?$/u.test(m)
+  )
+    return GPT_56_SOL_PRICE;
+  if (/^claude-opus-5(?:-thinking)?(?:-(?:low|medium|high|xhigh))?$/u.test(m))
+    return PRICES.opus;
+  return null;
+}
+
 export function priceForModel(model: string): UsagePrice | null {
   const m = model.toLowerCase();
+  // Explicit Cursor models consume usage at the model's list API price. Match Cursor's known ids
+  // independently from the permissive provider aliases below.
+  if (m.startsWith("cursor:"))
+    return priceForCursorModel(m.slice("cursor:".length));
   if (m.includes("sonnet-5")) return SONNET_5_INTRO_PRICE;
   if (/opus-4-(8|7|6|5)/.test(m)) return PRICES.opus;
   if (
@@ -144,7 +168,7 @@ export function priceForModel(model: string): UsagePrice | null {
   if (m.includes("gpt-5.5")) return GPT_55_PRICE;
   if (m.includes("gpt-5.4-mini")) return GPT_54_MINI_PRICE;
   if (m.includes("gpt-5.4")) return GPT_54_PRICE;
-  if (m.includes("gpt-5.3-codex-spark")) return GPT_53_CODEX_SPARK_PRICE;
+  if (m.includes("gpt-5.3-codex-spark")) return GPT_53_CODEX_PRICE;
   // Grok: more-specific model ids first so "grok-4.5" does not fall through to
   // the broader "grok-4" branch, and "grok-4-fast" does not match plain "grok-4".
   if (m.includes("grok-4.5")) return GROK_45_PRICE;

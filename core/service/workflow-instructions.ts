@@ -165,6 +165,7 @@ export const workflowInstructions = {
       launch_id: string;
       session_name: string;
       pane_id: string | null;
+      launched_at: string;
     },
   ): S.HerdrPaneRow {
     const repo = repoOr404(name);
@@ -178,8 +179,12 @@ export const workflowInstructions = {
         `Workflow run #${run.id} parent session does not match`,
       );
     }
+    if (!Number.isFinite(Date.parse(input.launched_at))) {
+      throw new ServiceError(422, "invalid Workflow parent launch timestamp");
+    }
     // The pane row and the link that makes it findable as this run's parent are one registration.
     return db.transaction(() => {
+      S.setAgentSessionCreatedAt(input.launch_id, input.launched_at);
       const pane = S.registerHerdrPane({
         repoId: repo.id,
         launchId: input.launch_id,

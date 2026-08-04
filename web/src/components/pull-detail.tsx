@@ -256,6 +256,7 @@ function WorkflowRunSection({
       repo={repo}
       state={query.data}
       showDetail
+      observeHerdrSessions
     />
   );
 }

@@ -39,6 +39,16 @@ function fixture(name: string, options: { started?: boolean } = {}) {
     verifyPrompt: "",
   });
   const parent = `${String(repo.id).padStart(8, "0")}-0000-4000-8000-000000000001`;
+  S.registerAgentSession(
+    parent,
+    "lh-workflow",
+    parent,
+    null,
+    "cursor",
+    "dev",
+    "auto",
+    "2000-01-01T00:00:00.000Z",
+  );
   const run = S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
@@ -101,12 +111,14 @@ function registerParent(
 function registerParentPane(
   input: ReturnType<typeof fixture>,
   paneId: string | null = "w1:p1",
+  launchedAt = new Date().toISOString(),
 ) {
   return svc.workflowInstructions.registerParentPane(input.repo.full_name, {
     run: input.run.id,
     launch_id: input.run.parent_session_id as string,
     session_name: "me-repo",
     pane_id: paneId,
+    launched_at: launchedAt,
   });
 }
 
@@ -119,6 +131,19 @@ function markParentReady(input: ReturnType<typeof fixture>) {
 function herdrCalls(path: string): string {
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
+
+test("parent pane registration records the successful process launch time", () => {
+  const input = fixture("parent-launch-time");
+  const launchedAt = "2030-07-09T12:34:56.789Z";
+  try {
+    registerParentPane(input, "w1:p1", launchedAt);
+    expect(S.getAgentSession(input.run.parent_session_id!)?.created_at).toBe(
+      launchedAt,
+    );
+  } finally {
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
 
 function instructionResult(event: number) {
   return {

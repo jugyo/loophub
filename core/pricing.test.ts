@@ -10,6 +10,7 @@ test("priceForModel prices gpt-5.3-codex-spark without breaking the gpt-5.4-mini
   });
   expect(priceForModel("gpt-5.4-mini")).toMatchObject({ input: 0.75 });
   expect(priceForModel("gpt-5.4")).toMatchObject({ input: 2.5 });
+  expect(priceForModel("future-gpt-5.3-codex-unknown")).toBeNull();
 });
 
 test("priceForModel calculates cost for the fable model", () => {
@@ -119,6 +120,46 @@ test("priceForModel prices known Grok models and leaves unknown Grok models null
       cache_creation_input_tokens: 0,
       cache_read_input_tokens: 0,
       output_tokens: 10,
+    }),
+  ).toBeNull();
+});
+
+test("Cursor usage keeps ambiguous Auto and unknown slugs unpriced", () => {
+  expect(priceForModel("cursor:auto")).toBeNull();
+  expect(
+    calculateCostUsd("cursor:auto", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 1_000_000,
+      cache_read_input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+    }),
+  ).toBeNull();
+  expect(priceForModel("cursor:gpt-5.6-sol-high")).toEqual({
+    input: 5,
+    cacheCreation: 6.25,
+    cacheRead: 0.5,
+    output: 30,
+  });
+  expect(priceForModel("cursor:gpt-5.3-codex-high-fast[1m]")).toEqual({
+    input: 1.75,
+    cacheCreation: 1.75,
+    cacheRead: 0.175,
+    output: 14,
+  });
+  expect(priceForModel("cursor:claude-opus-5-thinking-high")).toEqual({
+    input: 5,
+    cacheCreation: 6.25,
+    cacheRead: 0.5,
+    output: 25,
+  });
+  expect(priceForModel("cursor:composer-2.5")).toBeNull();
+  expect(priceForModel("cursor:unknown-gpt-5.6-sol-future")).toBeNull();
+  expect(
+    calculateCostUsd("cursor:unknown", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 1_000_000,
+      cache_read_input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
     }),
   ).toBeNull();
 });

@@ -98,11 +98,13 @@ export function WorkflowRunStatusSection({
   repo,
   state,
   showDetail = false,
+  observeHerdrSessions = false,
 }: {
   owner: string;
   repo: string;
   state: WorkflowRunState | null | undefined;
   showDetail?: boolean;
+  observeHerdrSessions?: boolean;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [acknowledgedCostHold, setAcknowledgedCostHold] =
@@ -113,10 +115,10 @@ export function WorkflowRunStatusSection({
     state?.id ?? 0,
     state !== null && state !== undefined,
   );
-  // Pull detail already loads this shared query for merge safety. Observe that cache without
-  // starting a second, otherwise-unrelated request when this section is rendered alone.
+  // PR detail can make this section the only Herdr consumer in the tab. Standalone renderers keep
+  // the query disabled so opening the history dialog remains their first network boundary.
   const { data: herdrSessions, isError: herdrSessionsError } = useHerdrSessions(
-    { enabled: false },
+    { enabled: observeHerdrSessions },
   );
   useEffect(() => {
     if (

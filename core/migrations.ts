@@ -1159,6 +1159,7 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  addColumn("069-agent-sessions-model", "agent_sessions", "model", "TEXT"),
 ];
 
 const LEDGER_SCHEMA = `

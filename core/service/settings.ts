@@ -11,7 +11,7 @@ import {
 } from "../config.ts";
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
-import { CODING_AGENTS, isCodingAgent } from "../runtimes.ts";
+import { CODING_AGENTS, isCodingAgent, RUNTIMES } from "../runtimes.ts";
 import type { GlobalSettingsWire } from "../serialize.ts";
 import * as S from "../store.ts";
 import { isTheme, type Theme } from "../theme.ts";
@@ -121,10 +121,14 @@ export const settings = {
       validateAgentScopedSetting(input.agent);
     }
     if (input.effort !== undefined) {
-      if (typeof input.effort !== "string" || !input.effort.trim()) {
+      validateAgentScopedSetting(input.agent);
+      if (
+        typeof input.effort !== "string" ||
+        (!input.effort.trim() &&
+          RUNTIMES[input.agent].effortSuggestions.length > 0)
+      ) {
         throw new ServiceError(422, "effort must be a non-empty string");
       }
-      validateAgentScopedSetting(input.agent);
     }
     if (input.codingAgent !== undefined && !isCodingAgent(input.codingAgent)) {
       throw new ServiceError(

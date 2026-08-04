@@ -812,10 +812,23 @@ test("pullAgentSummary returns the primary dev session runtime and usage models 
     "claude-code",
     "dev",
   );
-  S.registerAgentSession(newDev, "lh-build", "ext-new", null, "codex", "dev");
+  S.registerAgentSession(
+    newDev,
+    "lh-build",
+    "ext-new",
+    null,
+    "codex",
+    "dev",
+    "gpt-5.6-sol",
+  );
   S.linkSession(review, pr.id);
   S.linkSession(oldDev, pr.id);
   S.setPullSession(pr.id, newDev);
+  expect(S.pullAgentSummary(pr.id)).toEqual({
+    agent: "lh-build",
+    runtime: "codex",
+    models: ["gpt-5.6-sol"],
+  });
   S.upsertSessionUsage(oldDev, {
     model: "claude-opus-4-8",
     input_tokens: 1,

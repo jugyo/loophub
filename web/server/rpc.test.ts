@@ -938,6 +938,21 @@ test("settings RPC persists and validates the application theme", async () => {
   expect(invalid.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
 });
 
+test("settings RPC accepts Cursor's canonical empty effort", async () => {
+  const updated: any = await call("settings/update", {
+    agent: "cursor",
+    model: "composer-2.5",
+    effort: "",
+  });
+  expect(updated.error).toBeUndefined();
+  expect(updated.result.agents.cursor).toEqual({
+    model: "composer-2.5",
+    effort: "",
+  });
+
+  await call("settings/update", { agent: "cursor", model: "auto", effort: "" });
+});
+
 test("dispatchRaw turns invalid JSON into -32700", async () => {
   const r: any = await dispatchRaw("{not json");
   expect(r.error.code).toBe(ERROR_CODES.PARSE_ERROR);

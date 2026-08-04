@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
+import { ensureCursorWorkspaceTrusted } from "../../core/cursor-workspace.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import {
   buildRuntimeArgs,
@@ -269,6 +270,9 @@ async function launchParentHerdr(input: {
   // attach it has no TTY for.
   detach?: boolean;
 }): Promise<void> {
+  if (input.runtime === "cursor") {
+    ensureCursorWorkspaceTrusted(input.worktree);
+  }
   const bin = runtimeBin(input.runtime);
   const agentArgs = parentAgentArgs(input);
   const command = formatSpawnCommand(agentArgs, { bin });
@@ -278,6 +282,7 @@ async function launchParentHerdr(input: {
   // shared launchAgentInWorktreeHerdr helper (#873) — without it herdr split whichever pane was
   // focused, so the Workflow parent could land in an unrelated PR's workspace.
   let launched: HerdrLaunchResult;
+  const launchedAt = new Date().toISOString();
   try {
     launched = await launchAgentInWorktreeHerdr({
       repo: input.repo,
@@ -302,6 +307,7 @@ async function launchParentHerdr(input: {
       launch_id: input.sessionId,
       session_name: launched.sessionName,
       pane_id: launched.paneId,
+      launched_at: launchedAt,
     }),
   );
   if (input.detach) {
@@ -324,7 +330,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok] [--model <name>] [--herdr] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --cursor] [--model <name>] [--herdr] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -346,7 +352,7 @@ async function startWorkflow(): Promise<void> {
   }
   const s = await svc();
   // The repo's effective Coding agent config (#1532) supplies the defaults an explicit
-  // --claude-code / --codex / --grok / --model flag still overrides: the run's runtime and — when
+  // An explicit runtime/model flag still overrides: the run's runtime and — when
   // that runtime matches the effective config's — its model. A flag that selects a different runtime
   // than the override falls back to that runtime's application-default model (agentModel).
   const agentCfg = await runOp(() => s.repos.agentConfig(repo));
@@ -354,6 +360,7 @@ async function startWorkflow(): Promise<void> {
     claudeCode: flags["claude-code"] === true,
     codex: flags.codex === true,
     grok: flags.grok === true,
+    cursor: flags.cursor === true,
     defaultRuntime: agentCfg.effective.runtime,
   });
   const sessionId = requestedSessionId();
@@ -476,6 +483,7 @@ async function launchStep(): Promise<void> {
   for (const pointer of result.pointers) {
     console.log(`input\t${display(pointer.label)}\t${display(pointer.value)}`);
   }
+  let launchedAt: string | undefined;
   const confirm = (paneId: string) =>
     runOp(() =>
       s.workflowRuns.confirmStepLaunch(
@@ -493,10 +501,16 @@ async function launchStep(): Promise<void> {
           pointers: result.pointers,
           headSha: result.head_sha,
           note,
+          model: result.model,
+          launchedAt,
         },
         actorSessionId,
       ),
     );
+  if (result.runtime === "cursor") {
+    ensureCursorWorkspaceTrusted(result.worktree);
+  }
+  launchedAt = new Date().toISOString();
   const outcome = await executeHerdrLaunchPlan(result.herdr, async (argv) => {
     const proc = spawnSync(argv[0], argv.slice(1), {
       encoding: "utf8",

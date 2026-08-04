@@ -93,7 +93,7 @@ export function reconcileTargetRepo(
 // the two are the same set of values, kept as one type here so the union isn't declared twice.
 export type DevRuntime = CodingAgent;
 
-// Resolve the runtime from the mutually-exclusive `--claude-code` / `--codex` / `--grok` flags.
+// Resolve the runtime from the mutually-exclusive runtime flags.
 // Passing more than one is ambiguous — fail loudly rather than pick one. When no flag is passed,
 // `defaultRuntime` (the `codingAgent` app setting, #516) decides; omitting it too falls back to the
 // historical default (Claude Code), so the resolved runtime is unchanged for callers that
@@ -103,12 +103,14 @@ export function resolveDevRuntime(flags: {
   claudeCode?: boolean;
   codex?: boolean;
   grok?: boolean;
+  cursor?: boolean;
   defaultRuntime?: DevRuntime;
 }): DevRuntime {
   const passed: Record<CodingAgent, boolean | undefined> = {
     "claude-code": flags.claudeCode,
     codex: flags.codex,
     grok: flags.grok,
+    cursor: flags.cursor,
   };
   const selected = CODING_AGENTS.filter((id) => passed[id]);
   if (selected.length > 1) {
@@ -228,7 +230,7 @@ export function buildRuntimeLaunch({
   effort,
 }: RuntimeArgvInput & {
   runtime: DevRuntime;
-}): { bin: "claude" | "codex" | "grok"; args: string[] } {
+}): { bin: (typeof RUNTIMES)[CodingAgent]["bin"]; args: string[] } {
   return {
     bin: RUNTIMES[runtime].bin,
     args: buildRuntimeArgs({

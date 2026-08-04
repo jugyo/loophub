@@ -23,6 +23,7 @@ export function AgentModelPicker({
   settings,
   defaults,
   disabled,
+  showEffort = true,
   actionVerb,
   actionIcon,
   onSelect,
@@ -32,6 +33,7 @@ export function AgentModelPicker({
   // Coding agent config so the dialog reflects what an un-overridden launch would use (#1534).
   defaults: { agent: CodingAgent; model: string; effort: string };
   disabled: boolean;
+  showEffort?: boolean;
   actionVerb: string;
   actionIcon: ReactNode;
   onSelect: (agent: CodingAgent, model: string, effort: string) => void;
@@ -65,7 +67,15 @@ export function AgentModelPicker({
                     ? "border-primary bg-primary/10 font-medium"
                     : "hover:bg-accent hover:text-accent-foreground",
                 )}
-                onClick={() => selectAgent(candidate)}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  selectAgent(candidate);
+                }}
               >
                 {CODING_AGENT_LABELS[candidate]}
               </button>
@@ -103,15 +113,19 @@ export function AgentModelPicker({
         }}
       />
 
-      <p className="mt-3 mb-1 block text-xs font-medium text-muted-foreground">
-        Effort
-      </p>
-      <EffortDropdown
-        agent={agent}
-        effort={effort}
-        disabled={disabled}
-        onChange={setEffort}
-      />
+      {showEffort ? (
+        <>
+          <p className="mt-3 mb-1 block text-xs font-medium text-muted-foreground">
+            Effort
+          </p>
+          <EffortDropdown
+            agent={agent}
+            effort={effort}
+            disabled={disabled}
+            onChange={setEffort}
+          />
+        </>
+      ) : null}
 
       <Button
         className="mt-3 w-full"

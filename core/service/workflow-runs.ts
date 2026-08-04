@@ -177,6 +177,7 @@ export type WorkflowLaunchStepResult = {
   // Runtime the step inherited from the parent run (#516). The CLI preflights this binary before
   // spawning the herdr launch it returns.
   runtime: CodingAgent;
+  model: string;
   session_id: string;
   worktree: string;
   system_prompt_path: string;
@@ -1351,6 +1352,7 @@ export const workflowRuns = {
       `Workflow #${issue.number} ${issue.title}`,
       runtime,
       "dev",
+      input.model ?? agentModel(runtime),
     );
 
     const opened = await dev.openPr(
@@ -1973,6 +1975,7 @@ export const workflowRuns = {
       step,
       agent_name: herdr.label,
       runtime,
+      model,
       session_id: childSessionId,
       worktree,
       system_prompt_path: systemPromptPath,
@@ -2021,6 +2024,8 @@ export const workflowRuns = {
       pointers: WorkflowInputPointer[];
       headSha?: string;
       note?: string;
+      model?: string;
+      launchedAt?: string;
     },
     actorSessionId?: string | null,
   ): WorkflowConfirmStepLaunchResult {
@@ -2038,6 +2043,9 @@ export const workflowRuns = {
     if (input.agentName)
       validateWorkflowStepAgentName(input.agentName, run.id, step);
     assertAgentExecutionTarget(input.executionTarget);
+    if (input.launchedAt && !Number.isFinite(Date.parse(input.launchedAt))) {
+      throw new ServiceError(422, "invalid Workflow step launch timestamp");
+    }
     if (step === "verify") {
       if (!input.headSha || !/^[0-9a-f]{40,64}$/u.test(input.headSha)) {
         throw new ServiceError(
@@ -2070,6 +2078,8 @@ export const workflowRuns = {
         input.agentName ?? `Workflow ${step} run #${run.id}`,
         runRuntime(run),
         "workflow-step",
+        input.model?.trim() || runModel(run),
+        input.launchedAt,
       );
       S.registerAgentExecutionTarget({
         sessionId,

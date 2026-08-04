@@ -86,6 +86,28 @@ describe("--help", () => {
     expect(existsSync(join(home, "loophub.db"))).toBe(false);
   });
 
+  test("documents interactive issue runtime and model options without touching the DB", () => {
+    const result = lh(["issue", "new", "--help"]);
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain("--cursor");
+    expect(result.stdout).toContain("--model <name>");
+    expect(result.stdout).toContain("--effort <level>");
+    expect(result.stdout).toContain("--target-branch <ref>");
+    expect(result.stdout).toContain("--prompt <text>");
+    expect(existsSync(join(home, "loophub.db"))).toBe(false);
+  });
+
+  test("documents every supported session runtime without touching the DB", () => {
+    const result = lh(["session", "register", "--help"]);
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain(
+      "--runtime <runtime>   Runtime: claude-code, codex, grok, or cursor.",
+    );
+    expect(existsSync(join(home, "loophub.db"))).toBe(false);
+  });
+
   test.each([
     {
       args: ["issue", "view", "--help"],

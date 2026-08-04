@@ -37,6 +37,7 @@ const DEFAULT_AGENT_SETTINGS: Record<CodingAgent, AgentSettingsForTest> = {
     model: "grok-code-fast-1",
     effort: "medium",
   },
+  cursor: { model: "auto", effort: "" },
 };
 
 function mockFetch(
@@ -191,6 +192,9 @@ describe("SettingsPage", () => {
       expect(codexOption.getAttribute("aria-checked")).toBe("true"),
     );
     expect(claudeCodeOption.getAttribute("aria-checked")).toBe("false");
+    expect(
+      within(group).getByRole("radio", { name: "Cursor Agent" }),
+    ).toBeTruthy();
   });
 
   it("switches the coding agent and persists via settings/update", async () => {
@@ -282,6 +286,31 @@ describe("SettingsPage", () => {
     // ("xhigh"/"max") should leak into its options.
     expect(codexOptions).not.toEqual(
       expect.arrayContaining(["gpt-5.5 — xhigh"]),
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    menu = await openModelDropdown("Cursor Agent");
+    const cursorOptions = within(menu)
+      .getAllByRole("menuitem")
+      .map((o) => o.textContent);
+    expect(cursorOptions).toEqual(
+      expect.arrayContaining([
+        "auto — default",
+        "gpt-5.3-codex-high — default",
+        "claude-opus-5-thinking-high — default",
+      ]),
+    );
+    fireEvent.click(
+      within(menu).getByRole("menuitem", {
+        name: "composer-2.5 — default",
+      }),
+    );
+    await waitFor(() =>
+      expect(rpcCall("settings/update")?.params).toMatchObject({
+        agent: "cursor",
+        model: "composer-2.5",
+        effort: "",
+      }),
     );
   });
 

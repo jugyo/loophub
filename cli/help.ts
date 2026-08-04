@@ -37,6 +37,27 @@ Example:
 Preserve input order."
     --ac "Exports retain input order" --ac "Repeated exports are byte-identical"`;
 
+const ISSUE_NEW_DETAILS = `
+
+Usage:
+  lh issue new [options]
+
+Options:
+  --claude-code          Launch Claude Code.
+  --codex                Launch Codex.
+  --grok                 Launch Grok Build.
+  --cursor               Launch Cursor Agent.
+  --model <name>         Override the selected runtime's default model.
+  --effort <level>       Override the selected runtime's reasoning effort when supported.
+  --target-branch <ref>  Carry an existing target branch into the issue-filing session.
+  --prompt <text>        Replace the default issue-filing prompt.
+  --repo <owner/name>    Repository (defaults to the repository at the current path).
+  --help                 Show this help without launching an agent or changing the database.
+
+Constraints:
+  Runtime flags are mutually exclusive. When omitted, the effective repository or application
+  Coding agent setting is used.`;
+
 const ISSUE_VIEW_DETAILS = `
 
 Usage:
@@ -46,6 +67,21 @@ Options:
   --repo <owner/name>   Repository (defaults to the repository at the current path).
   --json                Print the issue, comments, acceptance criteria, and linked PR as JSON.
   --help                Show this help without reading the database.`;
+
+const SESSION_REGISTER_DETAILS = `
+
+Usage:
+  lh session register --id <uuid> --agent <kind> --session <runtime-id> [options]
+
+Options:
+  --id <uuid>           LoopHub session identifier.
+  --agent <kind>        Agent or launcher kind.
+  --session <id>        Runtime session identifier.
+  --name <text>         Human-readable session name.
+  --runtime <runtime>   Runtime: claude-code, codex, grok, or cursor.
+  --model <name>        Runtime model identifier.
+  --kind <kind>         Session kind such as dev, review, or issue-create.
+  --help                Show this help without changing the database.`;
 
 const PR_REVIEW_DETAILS = `
 
@@ -144,7 +180,11 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Show an issue.",
     details: ISSUE_VIEW_DETAILS,
   },
-  { path: ["issue", "new"], description: "Create an issue interactively." },
+  {
+    path: ["issue", "new"],
+    description: "Create an issue interactively.",
+    details: ISSUE_NEW_DETAILS,
+  },
   {
     path: ["issue", "create"],
     description: "Create an issue.",
@@ -156,7 +196,11 @@ export const commandHelp: readonly CommandHelp[] = [
   { path: ["issue", "close"], description: "Close an issue." },
   { path: ["issue", "label"], description: "Add a label to an issue." },
   { path: ["session"], description: "Manage agent sessions." },
-  { path: ["session", "register"], description: "Register an agent session." },
+  {
+    path: ["session", "register"],
+    description: "Register an agent session.",
+    details: SESSION_REGISTER_DETAILS,
+  },
   { path: ["session", "list"], description: "List agent sessions." },
   { path: ["session", "usage"], description: "Show recorded session usage." },
   {

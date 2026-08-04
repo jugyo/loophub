@@ -118,8 +118,14 @@ function mockFetch(
           model: "gpt-5.5",
           effort: "medium",
         },
+        grok: { model: "grok-4.5", effort: "medium" },
+        cursor: { model: "auto", effort: "" },
       },
       codingAgent: "claude-code",
+    }),
+    "repos/agentConfig": () => ({
+      setting: { override: false, runtime: null, model: null, effort: null },
+      effective: { runtime: "claude-code", model: "opus", effort: "medium" },
     }),
   });
 }
@@ -1271,9 +1277,7 @@ describe("IssueDetail", () => {
     });
     expect(button.className).toContain("bg-primary");
     expect(button.className).toContain("text-primary-foreground");
-    expect(button.title).toBe(
-      "Start a saved workflow in auto mode (no approval prompts, no sandbox)",
-    );
+    expect(button.title).toBe("Choose a saved workflow, agent, and model");
 
     fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
     const standard = await screen.findByRole("menuitem", {
@@ -1301,6 +1305,20 @@ describe("IssueDetail", () => {
     );
 
     fireEvent.click(standard);
+    const cursorAgent = await screen.findByRole("button", {
+      name: "Cursor Agent",
+    });
+    fireEvent.pointerDown(cursorAgent, { button: 0, ctrlKey: false });
+    fireEvent.click(cursorAgent);
+    expect(cursorAgent.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.change(screen.getByLabelText("Custom model"), {
+      target: { value: "gpt-5.3-codex-high" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Start workflow with Cursor Agent",
+      }),
+    );
 
     expect(launchTerminal).toHaveBeenCalledWith({
       repo: "me/proj",
@@ -1308,6 +1326,8 @@ describe("IssueDetail", () => {
       workflow: "workflow-run",
       issueNumber: 12,
       workflowId: 9,
+      agent: "cursor",
+      model: "gpt-5.3-codex-high",
     });
   });
 
@@ -1340,10 +1360,11 @@ describe("IssueDetail", () => {
     expect(repoLabel.parentElement).toBe(nameLabel.parentElement);
     expect(repoLabel.parentElement?.className).toContain("flex");
     fireEvent.click(choices[0]);
-
-    expect(launchTerminal).toHaveBeenCalledWith(
-      expect.objectContaining({ workflowId: 21 }),
-    );
+    expect(
+      await screen.findByRole("button", {
+        name: "Start workflow with Claude Code",
+      }),
+    ).toBeTruthy();
     expect(rpcCall("workflows/list")?.params).toMatchObject({
       applicable_to_repo: "me/proj",
     });

@@ -18,6 +18,7 @@ export const ENV_ISSUE_CREATE_HERDR_LAUNCH =
 export const RUNTIME_CLAUDE_CODE = RUNTIMES["claude-code"].id;
 export const RUNTIME_CODEX = RUNTIMES.codex.id;
 export const RUNTIME_GROK = RUNTIMES.grok.id;
+export const RUNTIME_CURSOR = RUNTIMES.cursor.id;
 
 // Claude accepts UUIDs for caller-supplied session ids. Validate them before they become argv so a
 // flag-like value cannot be interpreted as another option.

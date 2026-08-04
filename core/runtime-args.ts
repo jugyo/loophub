@@ -28,7 +28,7 @@ export function runtimeApprovalArgs(runtime: CodingAgent): string[] {
   return [...RUNTIMES[runtime].autoApproveArgs];
 }
 
-// codex/grok take no system-prompt flag, so the rendered contract is folded into the positional
+// Non-Claude runtimes take no system-prompt flag, so the rendered contract is folded into the positional
 // prompt; claude delivers it out of band via --append-system-prompt-file instead (see buildRuntimeArgs).
 function foldPrompt(systemPrompt: string | undefined, prompt: string): string {
   return systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
@@ -46,10 +46,10 @@ export interface RuntimeArgsInput {
   runtime: CodingAgent;
   // `--model <name>` for every runtime (sanitized; omitted when empty).
   model?: string;
-  // Reasoning effort. claude: `--effort <level>`; codex: `-c model_reasoning_effort=<level>`; grok
-  // has no verified effort flag, so it is ignored.
+  // Reasoning effort. claude: `--effort <level>`; codex: `-c model_reasoning_effort=<level>`;
+  // grok/cursor have no separate effort flag, so it is ignored.
   effort?: string;
-  // claude-only: `--session-id <id>`. codex/grok have no equivalent and correlate via env instead.
+  // claude-only: `--session-id <id>`. Other runtimes correlate through their transcript metadata.
   sessionId?: string;
   // claude-only: `--name <name>` (terminal/session-picker title, sanitized).
   sessionName?: string;
@@ -57,7 +57,7 @@ export interface RuntimeArgsInput {
   managedSettings?: string;
   // claude-only: `--append-system-prompt-file <path>`. codex/grok fold `systemPrompt` in instead.
   systemPromptFile?: string;
-  // codex/grok only: rendered system prompt folded into the positional prompt. Ignored by claude.
+  // non-Claude only: rendered system prompt folded into the positional prompt. Ignored by claude.
   systemPrompt?: string;
   // The trailing positional the runtime receives (a slash command or the user prompt).
   prompt: string;
@@ -89,7 +89,7 @@ export function buildRuntimeFlags(input: RuntimeArgsInput): string[] {
     }
     return args;
   }
-  if (runtime === "grok") {
+  if (runtime === "grok" || runtime === "cursor") {
     const args = runtimeApprovalArgs(runtime);
     args.push(...modelFlag(input.model));
     return args;
@@ -120,5 +120,12 @@ export function buildRuntimeFlags(input: RuntimeArgsInput): string[] {
 // trailing positional prompt. The per-runtime ordering is preserved exactly as the previous
 // hand-written builders produced it, so every existing launch path emits byte-identical argv.
 export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
-  return [...buildRuntimeFlags(input), runtimePrompt(input)];
+  const flags = buildRuntimeFlags(input);
+  // Cursor only accepts --trust together with --print. Full-argv launches already have the prompt
+  // available, so they can use headless mode; herdr launches use buildRuntimeFlags() and remain an
+  // interactive multi-turn process that receives its prompt after startup.
+  if (input.runtime === "cursor") {
+    flags.push("--print", "--trust", "--output-format", "json");
+  }
+  return [...flags, runtimePrompt(input)];
 }
