@@ -3,6 +3,7 @@
 // — comment posting and close/reopen. Body and comments are stored as plain
 // Markdown and rendered as GFM via <Markdown>.
 
+import { Link } from "@tanstack/react-router";
 import {
   Loader2,
   MoreHorizontal,
@@ -522,12 +523,7 @@ function ArchivedPullsDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">Archived pull requests</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Previous attempts remain available with their complete history.
-            </p>
-          </div>
+          <h2 className="text-lg font-semibold">Archived pull requests</h2>
           <button
             type="button"
             aria-label="Close archived pull requests"
@@ -558,6 +554,10 @@ function ArchivedPullsDialog({
   );
 }
 
+// The dialog exists to find an archived attempt and open it, so the row carries
+// only its identity — number and title. The operational summary a live linked PR
+// row shows (workflow progress, runtime, usage) is noise here and did not fit the
+// dialog width.
 function ArchivedPullRow({
   owner,
   repo,
@@ -573,14 +573,21 @@ function ArchivedPullRow({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <LinkedPullSummaryRow
-            owner={owner}
-            repo={repo}
-            pull={pull}
-            showTitle
-          />
-        </div>
+        <Link
+          to="/r/$owner/$repo/pulls/$number"
+          params={{ owner, repo, number: String(pull.number) }}
+          className="shrink-0 text-xs font-medium text-primary hover:underline"
+        >
+          PR #{pull.number}
+        </Link>
+        <Link
+          to="/r/$owner/$repo/pulls/$number"
+          params={{ owner, repo, number: String(pull.number) }}
+          className="min-w-0 flex-1 truncate text-sm hover:underline"
+          title={pull.title}
+        >
+          {pull.title}
+        </Link>
         <Button
           variant="secondary"
           size="sm"

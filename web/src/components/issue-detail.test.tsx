@@ -623,14 +623,66 @@ describe("IssueDetail", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Archived pull requests",
     });
-    expect(within(dialog).getByText("PR #28")).toBeTruthy();
-    expect(within(dialog).getByText("archived attempt")).toBeTruthy();
+    expect(
+      within(dialog).getByRole("link", { name: "PR #28" }).getAttribute("href"),
+    ).toBe("/r/me/proj/pulls/28");
+    expect(
+      within(dialog)
+        .getByRole("link", { name: "archived attempt" })
+        .getAttribute("href"),
+    ).toBe("/r/me/proj/pulls/28");
     fireEvent.click(
       within(dialog).getByRole("button", {
         name: "Close archived pull requests",
       }),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // #2340: the dialog is a way back to an archived attempt, not a status board. The row
+  // keeps number, title and Unarchive; the live row's agent/usage metadata is dropped.
+  it("keeps the archived row to number, title and Unarchive (#2340)", async () => {
+    renderDetail(() => ({
+      ...issue,
+      archived_pull_requests: [
+        {
+          ...issue.linked_pull_request!,
+          number: 28,
+          title: "archived attempt",
+          state: "closed",
+          agent_runtime: "cursor-agent",
+          agent_model: "composer-1",
+          total_tokens: 12_000,
+          cost_usd: 3.4,
+        },
+      ],
+    }));
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Archived pull requests (1)",
+      }),
+    );
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Archived pull requests",
+    });
+    expect(within(dialog).getByRole("link", { name: "PR #28" })).toBeTruthy();
+    expect(
+      within(dialog).getByRole("link", { name: "archived attempt" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByRole("button", { name: "Unarchive" }),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/Cursor/)).toBeNull();
+    expect(within(dialog).queryByText(/composer-1/)).toBeNull();
+    expect(within(dialog).queryByText("12k")).toBeNull();
+    expect(within(dialog).queryByText("$3")).toBeNull();
+    expect(
+      within(dialog).queryByText(
+        "Previous attempts remain available with their complete history.",
+      ),
+    ).toBeNull();
   });
 
   it("unarchives a pull request from the archived history dialog", async () => {
