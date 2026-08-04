@@ -888,6 +888,24 @@ describe("PullDetail", () => {
     expect(mainContent?.contains(sidebar as Node)).toBe(false);
   });
 
+  // #2348: the sidebar stays in view while the main column scrolls, but only in the two-column
+  // layout — every sticky class is `lg:`-gated so the stacked layout keeps the normal flow.
+  it("sticks the sidebar below the sticky header only beside the main column", async () => {
+    const { container } = renderDetail();
+
+    await screen.findByText("ui2: PR detail");
+    const sidebar = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullSidebar"]',
+    );
+    const classes = sidebar?.className.split(/\s+/) ?? [];
+    expect(classes).toContain("lg:sticky");
+    expect(classes).toContain("lg:top-5");
+    expect(classes.filter((c) => c.includes("sticky"))).toEqual(["lg:sticky"]);
+    // The row must keep aligning its columns to the start: stretched to the row's height, the
+    // sidebar has no room left to slide within and sticky silently becomes a no-op.
+    expect(sidebar?.parentElement?.className).toContain("lg:items-start");
+  });
+
   it("shows a regular PR author in the header", async () => {
     renderDetail();
 

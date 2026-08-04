@@ -228,6 +228,25 @@ describe("Workflow run detail dialog", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  // #2348: the PR sidebar that renders this section is a sticky box, and sticky creates a stacking
+  // context, so an overlay left inside the section can only stack against the section's siblings —
+  // the app shell's sticky header and toasts would then draw over the modal.
+  it("renders the overlay outside the section that opened it", async () => {
+    const { container } = renderSection(
+      mockRpcFetch({
+        "workflowRuns/agentCosts": () => [],
+        "workflowRuns/history": () => [],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const overlay = dialog.parentElement;
+    expect(overlay?.className).toContain("fixed");
+    expect(container.contains(overlay)).toBe(false);
+    expect(overlay?.parentElement).toBe(document.body);
+  });
+
   it("keeps agent cost loading, failure, and empty states visible", async () => {
     let reject!: (reason: unknown) => void;
     const pending = new Promise<never>((_resolve, rejectPromise) => {

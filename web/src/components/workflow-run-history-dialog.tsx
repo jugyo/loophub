@@ -1,5 +1,6 @@
 import { ChevronRight, Loader2, X } from "lucide-react";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import type {
   WorkflowRunAgentCost,
   WorkflowRunHistoryEvent,
@@ -70,7 +71,12 @@ export function WorkflowRunDetailDialog({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  // Portal to the body so the overlay's z-50 is compared against the app shell's own layers
+  // (the toast viewport's z-40, a detail page's sticky header at z-20) instead of against its
+  // siblings inside whichever section rendered it. The PR sidebar is a sticky box (#2348), and
+  // sticky creates a stacking context regardless of z-index, which would otherwise trap this
+  // modal below those layers.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"
       {...backdropDismiss}
@@ -219,7 +225,8 @@ export function WorkflowRunDetailDialog({
           </section>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

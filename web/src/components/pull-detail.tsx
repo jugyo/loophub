@@ -194,9 +194,17 @@ export function PullDetail({
           </div>
         </div>
 
+        {/* The sidebar sticks (#2348) only while it sits beside the main column: below `lg` it
+            wraps under the content, where there is nothing left to scroll past it. lg:top-5 parks
+            it right under the sticky header (#2033) — the scroll area's own pt-6 shifts sticky
+            offsets down by 1.5rem (see DetailStickyHeader's -top-6), so the bar's h-11 bottom edge
+            lands at 2.75rem - 1.5rem. A sticky inset applies from the first paint, so the price of
+            clearing the bar is that the sidebar starts those same 20px below the main column's
+            first line instead of level with it; top-0 would align them but then park the sidebar
+            under the bar once the page scrolls. */}
         <aside
           data-debug-component="PullSidebar"
-          className="flex w-full shrink-0 flex-col gap-6 lg:w-80"
+          className="flex w-full shrink-0 flex-col gap-6 lg:sticky lg:top-5 lg:w-80"
         >
           <WorkflowRunSection owner={owner} repo={repo} number={number} />
           <WorktreeSection value={pull.worktree_path} />
