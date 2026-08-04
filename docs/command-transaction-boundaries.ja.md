@@ -108,7 +108,9 @@ write の間に外部 I/O が挟まっている場合は、read を DB 区間の
 
 - diff feedback の location precompute — anchor を全件 git に対して解決してから、cache の書き込みだけを
   一つの区間で行う
-- `sessions.usageSync` — transcript の走査と読み出しを済ませてから、session ごとの write を一区間にする
+- `sessions.usageSync` — runtime module が transcript の走査と読み出しと相関を済ませて sync plan を組み、
+  その後 executor が cohort ごとの write を一区間にする。cohort は同じ transcript 群を取り合う session の
+  集まり（Cursor の同一 cwd）で、取り合いのない runtime では session 単位になる
 - `workflowRuns.start` — run row と `workflow_run.started` を一区間にし、parent contract file の
   書き出しはその後に置く
 
@@ -219,7 +221,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `sessions.register` | procedure | session row、`agent_session.registered` / `updated` | — |
 | `sessions.link` | procedure | session link、`agent_session.linked` | — |
 | `sessions.recordLiveRateSample` | procedure | rate sample、retention prune | — |
-| `sessions.usageSync` | procedure（session ごと） | usage rows、subagent usage、message dedupe、cursor、rate sample | transcript の走査と読み出し、cost 計算 |
+| `sessions.usageSync` | executor（cohort ごと） | usage rows、subagent usage、message dedupe、cursor、rate sample、external session と `agent_session.updated` | transcript の走査と読み出し、相関、cost 計算 |
 | `notifications.send` | procedure | notification、`notification.created` | — |
 | `notifications.read` / `readAll` | procedure | read state、`notification.updated` | 先行する generated notification の refresh |
 | notification の signal backfill | procedure | generated notification、`notification.created`、source cursor | — |

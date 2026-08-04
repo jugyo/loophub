@@ -26,6 +26,12 @@ function parseTime(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Retention and window boundaries are expressed as "this many seconds before now"; the callers that
+// prune samples and query rate windows share this conversion.
+export function secondsAgo(now: Date, seconds: number): string {
+  return new Date(now.getTime() - seconds * 1000).toISOString();
+}
+
 export function totalTokens(usage: {
   input_tokens: number;
   cache_creation_input_tokens: number;
