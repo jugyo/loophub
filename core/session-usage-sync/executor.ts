@@ -6,7 +6,6 @@ import {
   type SessionUsagePlan,
   type SessionUsageSyncCohort,
   type SessionUsageSyncRow,
-  type UsageSamplePlan,
   usageCursorEquals,
 } from "./plan.ts";
 
@@ -87,7 +86,6 @@ function applyPlan(plan: SessionUsagePlan): SessionUsageSyncRow {
     }
   }
   if (plan.cursor) S.upsertSessionUsageCursor({ sessionId, ...plan.cursor });
-  applyUsageSamples(sessionId, plan.samples);
 
   return {
     session_id: sessionId,
@@ -101,22 +99,4 @@ function applyPlan(plan: SessionUsagePlan): SessionUsageSyncRow {
         ? S.listSessionUsage(sessionId).map(sessionUsageJSON)
         : [],
   };
-}
-
-function applyUsageSamples(
-  sessionId: string,
-  plan: UsageSamplePlan | null | undefined,
-): void {
-  if (!plan) return;
-  for (const sample of plan.samples) {
-    S.recordSessionUsageSample({
-      sessionId,
-      totalTokens: sample.totalTokens,
-      cacheReadTokens: sample.cacheReadTokens,
-      observedAt: sample.observedAt,
-      tokenDelta: sample.tokenDelta,
-      cacheReadDelta: sample.cacheReadDelta,
-    });
-  }
-  S.pruneSessionUsageSamples(plan.pruneBefore);
 }

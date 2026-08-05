@@ -411,23 +411,49 @@ test("a database migrated from an old schema ends up structurally identical to a
   expect(structure(D.db)).toEqual(structure(fresh));
 });
 
-test("the cache-read rate migration discards incompatible persisted history", () => {
-  const db = D.openDb(join(HOME, "legacy-rate-history.db"));
-  db.run(
-    `INSERT INTO session_rate_history (tokens_per_second, observed_at)
-     VALUES (?, ?)`,
-    [1234, "2040-07-09T11:31:00.000Z"],
-  );
-
+test("the cache-read rate migration tolerates a database that holds only one rate table", () => {
+  // The base schema stopped creating both tables, so this step now runs against databases that
+  // carry neither — and against the narrow case of one without the other, since the two tables were
+  // introduced at different times.
+  const db = new DatabaseSync(join(HOME, "legacy-samples-only.db"));
+  db.exec(`
+    CREATE TABLE session_usage_samples (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id   TEXT NOT NULL,
+      total_tokens INTEGER NOT NULL,
+      token_delta  INTEGER NOT NULL,
+      observed_at  TEXT NOT NULL
+    );
+    INSERT INTO session_usage_samples (session_id, total_tokens, token_delta, observed_at)
+    VALUES ('s1', 100, 0, '2040-07-09T11:31:00.000Z');
+  `);
   const migration = M.MIGRATIONS.find(
     (candidate) => candidate.id === "065-session-usage-sample-cache-read",
   );
-  expect(migration).toBeDefined();
-  migration!.run(db);
+  if (!migration) throw new Error("cache-read rate migration not found");
+  const adapter = {
+    exec: db.exec.bind(db),
+    query: db.prepare.bind(db),
+    run: (sql: string, params: unknown[] = []) =>
+      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+  } as unknown as Parameters<(typeof migration)["run"]>[0];
 
+  expect(() => migration.run(adapter)).not.toThrow();
   expect(
-    db.query("SELECT COUNT(*) AS count FROM session_rate_history").get(),
+    db.prepare("SELECT COUNT(*) AS count FROM session_usage_samples").get(),
   ).toEqual({ count: 0 });
+  db.close();
+
+  const empty = new DatabaseSync(join(HOME, "legacy-no-rate-tables.db"));
+  expect(() =>
+    migration.run({
+      exec: empty.exec.bind(empty),
+      query: empty.prepare.bind(empty),
+      run: (sql: string, params: unknown[] = []) =>
+        empty.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+    } as unknown as Parameters<(typeof migration)["run"]>[0]),
+  ).not.toThrow();
+  empty.close();
 });
 
 test("the Workflow end migration freezes the best available terminal timestamp", () => {

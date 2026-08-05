@@ -26,48 +26,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function costSummaryHandlers(
-  tokenRateHistory?: number[],
-  tokensPerSecond?: number | null,
-  cacheReadTokensPerSecond?: number | null,
-) {
-  return {
-    "sessions/costSummary": () => [
-      {
-        agent: "claude-code",
-        month: 1,
-        week: 1,
-        day: 1,
-        ...(tokenRateHistory
-          ? { tokens_per_5m_history: tokenRateHistory }
-          : {}),
-        ...(tokensPerSecond !== undefined
-          ? { tokens_per_second: tokensPerSecond }
-          : {}),
-        ...(cacheReadTokensPerSecond !== undefined
-          ? { cache_read_tokens_per_second: cacheReadTokensPerSecond }
-          : {}),
-      },
-    ],
-  };
-}
-
-function renderSettingsShell(
-  initial: GlobalSettings,
-  tokenRateHistory?: number[],
-  tokensPerSecond?: number | null,
-  cacheReadTokensPerSecond?: number | null,
-) {
+function renderSettingsShell(initial: GlobalSettings) {
   let settings = structuredClone(initial);
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({
       "settings/get": () => settings,
-      ...costSummaryHandlers(
-        tokenRateHistory,
-        tokensPerSecond,
-        cacheReadTokensPerSecond,
-      ),
       "settings/update": (params) => {
         const agent = params.agent as CodingAgent | undefined;
         settings = {
@@ -140,7 +104,6 @@ function renderRepoShell(
     "fetch",
     mockRpcFetch({
       "settings/get": () => structuredClone(initial),
-      ...costSummaryHandlers(),
       "repos/agentConfig": () => agentConfig,
     }),
   );
@@ -202,7 +165,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 };
 
 describe("AppStatusbar", () => {
-  it("shows TPS first and keeps the selected agent settings in order in a right-aligned group", async () => {
+  it("keeps the selected agent settings in order in a right-aligned group", async () => {
     renderSettingsShell(DEFAULT_SETTINGS);
 
     const statusbar = await screen.findByRole("contentinfo", {
@@ -217,7 +180,7 @@ describe("AppStatusbar", () => {
         group?.children ?? [],
         (item) => item.querySelector("dt")?.textContent,
       ),
-    ).toEqual(["TPS", "Agent", "Model", "Effort", "Cost limit / session"]);
+    ).toEqual(["Agent", "Model", "Effort", "Cost limit / session"]);
 
     for (const [label, value] of [
       ["Agent", "Claude Code"],
@@ -249,101 +212,6 @@ describe("AppStatusbar", () => {
       name: "Application status",
     });
     expect(within(statusbar).getAllByText("Not set")).toHaveLength(2);
-  });
-
-  it("shows unavailable TPS without an Activity icon", async () => {
-    renderSettingsShell(DEFAULT_SETTINGS);
-
-    const statusbar = await screen.findByRole("contentinfo", {
-      name: "Application status",
-    });
-    expect(
-      within(statusbar).getByLabelText("TPS: n/a tokens per second"),
-    ).toBeTruthy();
-    expect(
-      within(statusbar).getByLabelText("Cache TPS: n/a tokens per second"),
-    ).toBeTruthy();
-    expect(statusbar.querySelector(".lucide-activity")).toBeNull();
-    expect(
-      within(statusbar).queryByRole("img", {
-        name: /token throughput buckets/,
-      }),
-    ).toBeNull();
-  });
-
-  it("shows unavailable TPS when the current sample is missing without discarding history", async () => {
-    const history = Array(24).fill(0);
-    history[23] = 1_200_000;
-    renderSettingsShell(DEFAULT_SETTINGS, history, null);
-
-    const statusbar = await screen.findByRole("contentinfo", {
-      name: "Application status",
-    });
-    expect(
-      within(statusbar).getByLabelText("TPS: n/a tokens per second"),
-    ).toBeTruthy();
-    const chart = within(statusbar).getByRole("img", {
-      name: "24 token throughput buckets, oldest to newest",
-    });
-    const bars = chart.querySelectorAll<HTMLElement>("[data-token-count]");
-    expect(bars).toHaveLength(24);
-    expect(bars[23].dataset.tokenCount).toBe("1200000");
-    expect(bars[23].style.height).toBe("100%");
-  });
-
-  it("shows short TPS without an average qualifier and keeps history buckets in order", async () => {
-    const history = Array(24).fill(0);
-    history[1] = 600_000;
-    history[22] = 300_000;
-    history[23] = 1_200_000;
-    renderSettingsShell(DEFAULT_SETTINGS, history, 4_000, 2_400);
-
-    const statusbar = await screen.findByRole("contentinfo", {
-      name: "Application status",
-    });
-    const rate = await within(statusbar).findByLabelText(
-      "TPS: 4k tokens per second",
-    );
-    expect(rate.textContent).toContain("4k");
-    expect(
-      within(statusbar).getByLabelText("Cache TPS: 2.4k tokens per second"),
-    ).toBeTruthy();
-    expect(rate.textContent).toContain("cache2.4k");
-    expect(statusbar.textContent).not.toContain("Token rate");
-    expect(statusbar.textContent).not.toContain("avg / 5m");
-
-    const chart = within(statusbar).getByRole("img", {
-      name: "24 token throughput buckets, oldest to newest",
-    });
-    const bars = chart.querySelectorAll<HTMLElement>("[data-token-count]");
-    expect(bars).toHaveLength(24);
-    expect(bars[0].dataset.tokenCount).toBe("0");
-    expect(bars[0].style.height).toBe("0%");
-    expect(bars[1].dataset.tokenCount).toBe("600000");
-    expect(bars[1].style.height).toBe("50%");
-    expect(bars[22].dataset.tokenCount).toBe("300000");
-    expect(bars[22].style.height).toBe("25%");
-    expect(bars[23].dataset.tokenCount).toBe("1200000");
-    expect(bars[23].style.height).toBe("100%");
-  });
-
-  it("distinguishes measured zero TPS from unavailable current samples", async () => {
-    renderSettingsShell(DEFAULT_SETTINGS, Array(24).fill(0), 0, 0);
-
-    const statusbar = await screen.findByRole("contentinfo", {
-      name: "Application status",
-    });
-    expect(
-      within(statusbar).getByLabelText("TPS: 0 tokens per second"),
-    ).toBeTruthy();
-    expect(
-      within(statusbar).getByLabelText("Cache TPS: 0 tokens per second"),
-    ).toBeTruthy();
-    expect(
-      within(statusbar).getByRole("img", {
-        name: "24 token throughput buckets, oldest to newest",
-      }),
-    ).toBeTruthy();
   });
 
   it("refreshes the selected agent values after they are changed on Settings", async () => {
@@ -406,11 +274,8 @@ describe("AppStatusbar", () => {
       expect(statusValue(statusbar, "Model")).toBe("gpt-5.4");
       expect(statusValue(statusbar, "Effort")).toBe("xhigh");
     });
-    // Cost limit / TPS stay instance-wide even when the agent triple is repo-scoped.
+    // Cost limit stays instance-wide even when the agent triple is repo-scoped.
     expect(statusValue(statusbar, "Cost limit / session")).toBe("$12.50");
-    expect(
-      within(statusbar).getByLabelText("TPS: n/a tokens per second"),
-    ).toBeTruthy();
     expect(rpcCall("repos/agentConfig")?.params).toEqual({ name: "me/proj" });
   });
 

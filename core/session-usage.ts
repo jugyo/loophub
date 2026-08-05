@@ -364,16 +364,11 @@ function grokTokenUsageFromRaw(u: Record<string, unknown>): TokenUsage {
   };
 }
 
-// One Grok turn_completed observation. Grok does not emit mid-turn billed usage
-// (streaming rows may carry `_meta.totalTokens`, but that tracks context size,
-// not the cost/TPS totals we store). Rate reconstruction therefore uses the
-// turn's tokens plus `apiDurationMs` when present.
+// One Grok turn_completed observation, carrying the per-model billed usage the
+// row reported.
 export interface GrokTurnUsage {
   promptId: string;
   models: Map<string, TokenUsage>;
-  usage: TokenUsage;
-  totalTokens: number;
-  apiDurationMs: number | null;
 }
 
 // Parse Grok Build `updates.jsonl` into per-prompt turns. Each
@@ -381,10 +376,7 @@ export interface GrokTurnUsage {
 // modelUsage[<modelId>]); the same prompt_id may appear more than once as a
 // multi-turn prompt progresses, so the latest row for a prompt_id wins.
 export function parseGrokTurnUsages(text: string): GrokTurnUsage[] {
-  const byPrompt = new Map<
-    string,
-    { models: Map<string, TokenUsage>; apiDurationMs: number | null }
-  >();
+  const byPrompt = new Map<string, Map<string, TokenUsage>>();
 
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
@@ -425,35 +417,14 @@ export function parseGrokTurnUsages(text: string): GrokTurnUsage[] {
       if (hasTokenUsage(tokens)) models.set("grok", tokens);
     }
     if (models.size === 0) continue;
-    byPrompt.set(promptId, {
-      models,
-      apiDurationMs: positiveNumber(usage.apiDurationMs),
-    });
+    byPrompt.set(promptId, models);
   }
 
-  const turns: GrokTurnUsage[] = [];
-  for (const [promptId, { models, apiDurationMs }] of byPrompt) {
-    let usage = ZERO_USAGE;
-    for (const modelUsage of models.values()) {
-      usage = addUsage(usage, modelUsage);
-    }
-    turns.push({
-      promptId,
-      models,
-      usage,
-      totalTokens:
-        usage.input_tokens +
-        usage.cache_creation_input_tokens +
-        usage.cache_read_input_tokens +
-        usage.output_tokens,
-      apiDurationMs,
-    });
-  }
-  return turns;
+  return [...byPrompt].map(([promptId, models]) => ({ promptId, models }));
 }
 
 // Aggregate per-prompt turns into the flat UsageEntry[] shape used by cost
-// sync. Rate-sensitive callers should prefer parseGrokTurnUsages.
+// sync.
 export function parseGrokUpdatesJsonl(
   text: string,
   messageId = "grok-updates",
@@ -734,8 +705,6 @@ export function encodeGrokSessionCwd(cwd: string): string {
 export interface GrokSessionCandidate extends TranscriptCandidate {
   sessionId: string;
   entries: UsageEntry[];
-  /** Per-prompt turns with apiDurationMs for live TPS reconstruction. */
-  turns: GrokTurnUsage[];
 }
 
 export interface CursorTranscriptCandidate extends TranscriptCandidate {
@@ -1121,7 +1090,6 @@ export function findGrokSessionUpdates(input: {
       mtimeMs: st.mtimeMs,
       sessionId: dirent.name,
       entries,
-      turns,
     });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));

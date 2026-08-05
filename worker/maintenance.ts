@@ -412,10 +412,6 @@ export function startUsageSweep(
           }
         }
       }
-      // #1123: persist the live aggregate tokens/sec into prune-resistant history so the rate time
-      // series survives the 600s sample TTL. Same cadence as the sweep; no-op when no active rate.
-      // Run after the usage_updated emissions so a rare insert failure can't suppress this tick's events.
-      sessions.recordLiveRateSample();
       logLoopCompleted("usage sweep", startedAt, {
         synced: result.synced,
         skipped: result.skipped,

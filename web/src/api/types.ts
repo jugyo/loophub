@@ -9,7 +9,6 @@ import type { MergeMode } from "../../../core/merge-mode.ts";
 import type {
   AcceptanceCriterionDetailWire,
   AcceptanceCriterionWire,
-  AgentCostSummaryWire,
   AgentSessionWire,
   CodingAgent as CodingAgentWire,
   CommentWire,
@@ -243,8 +242,6 @@ export type SessionLinkedTarget = SessionLinkedTargetWire;
 
 /** Agent session list row (`sessions/list`). Usage and links are present when known. */
 export type AgentSession = AgentSessionWire;
-
-export type AgentCostSummary = AgentCostSummaryWire;
 
 /** The GitHub PR a loophub PR was exported to (#406), or null until the export skill records one. */
 export type GithubPull = GithubPullWire;

@@ -19,7 +19,6 @@ import {
 import * as S from "../store.ts";
 import {
   missingUsagePlan,
-  planUsageSample,
   type SessionUsagePlan,
   type SessionUsageSyncModule,
   type SessionUsageSyncOptions,
@@ -86,7 +85,6 @@ function planClaudeSession(
   if (unchanged) {
     return {
       sessionId: row.id,
-      samples: planUsageSample(S.listSessionUsage(row.id)),
       report: {
         status: usageSyncStatus(0),
         transcriptPath: stats.transcriptPath,
@@ -140,7 +138,6 @@ function planClaudeSession(
       cursorOffset: stats.size,
       mtimeMs: stats.mtimeMs,
     },
-    samples: planUsageSample(finalUsage),
     report: {
       status: usageSyncStatus(fresh.length),
       transcriptPath: stats.transcriptPath,

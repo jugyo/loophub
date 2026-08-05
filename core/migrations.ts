@@ -1063,24 +1063,31 @@ export const MIGRATIONS: Migration[] = [
   {
     id: "065-session-usage-sample-cache-read",
     run(db) {
-      addColumnIfMissing(
-        db,
-        "session_usage_samples",
-        "cache_read_tokens",
-        "INTEGER NOT NULL DEFAULT 0",
-      );
-      addColumnIfMissing(
-        db,
-        "session_usage_samples",
-        "cache_read_delta",
-        "INTEGER NOT NULL DEFAULT 0",
-      );
+      // The base schema stopped creating both tables when 073 dropped them, so a database created
+      // after that reaches this step with nothing to migrate. Each table is guarded on its own
+      // because they were introduced separately and a database can hold one without the other. For
+      // any database that still carries a table, the outcome is unchanged.
+      //
       // Existing samples and persisted rate history both include cache reads and cannot be split
-      // after the fact. Discard them instead of briefly inflating regular TPS after upgrade.
-      db.exec(`
-        DELETE FROM session_usage_samples;
-        DELETE FROM session_rate_history;
-      `);
+      // after the fact. Discard them instead of briefly inflating the non-cache rate after upgrade.
+      if (tableExists(db, "session_usage_samples")) {
+        addColumnIfMissing(
+          db,
+          "session_usage_samples",
+          "cache_read_tokens",
+          "INTEGER NOT NULL DEFAULT 0",
+        );
+        addColumnIfMissing(
+          db,
+          "session_usage_samples",
+          "cache_read_delta",
+          "INTEGER NOT NULL DEFAULT 0",
+        );
+        db.exec("DELETE FROM session_usage_samples");
+      }
+      if (tableExists(db, "session_rate_history")) {
+        db.exec("DELETE FROM session_rate_history");
+      }
     },
   },
   addColumn("066-pulls-archived-at", "pulls", "archived_at", "TEXT"),
@@ -1187,6 +1194,17 @@ export const MIGRATIONS: Migration[] = [
     "notifications",
     "workflow_run_id",
     "INTEGER",
+  ),
+  // Tokens/sec display is gone (#2366), and both tables only ever fed it: the samples were the
+  // rate's raw input and the history was its persisted time series. Neither is worth carrying.
+  sql(
+    "073-drop-token-rate-tables",
+    `
+    DROP INDEX IF EXISTS idx_session_rate_history_time;
+    DROP TABLE IF EXISTS session_rate_history;
+    DROP INDEX IF EXISTS idx_session_usage_samples_session_time;
+    DROP TABLE IF EXISTS session_usage_samples;
+  `,
   ),
 ];
 

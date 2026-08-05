@@ -18,10 +18,6 @@ vi.mock("@/queries/repos", () => ({
   useRepos: () => ({ data: [], isLoading: false, isError: false }),
 }));
 
-vi.mock("@/queries/sessions", () => ({
-  useAgentCostSummary: () => ({ data: [], isLoading: false, isError: false }),
-}));
-
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();

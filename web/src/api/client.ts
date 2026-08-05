@@ -8,7 +8,6 @@
 import { getSessionId } from "@/lib/session";
 import type {
   AcceptanceCriterionDetail,
-  AgentCostSummary,
   AgentSession,
   CodingAgent,
   DashboardOverview,
@@ -436,10 +435,6 @@ export function getStats() {
 // Agent session inventory for the /sessions page.
 export function getAgentSessions() {
   return rpc<AgentSession[]>("sessions/list");
-}
-
-export function getAgentCostSummary() {
-  return rpc<AgentCostSummary[]>("sessions/costSummary");
 }
 
 // --- notifications ---

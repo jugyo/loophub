@@ -254,15 +254,4 @@ describe("AppTopbar", () => {
     ).toBe("/agents");
     expect(screen.queryByRole("complementary")).toBeNull();
   });
-
-  it("does not render token rate in the topbar", async () => {
-    renderTopbar();
-    await screen.findByRole("link", { name: /LoopHub/ });
-
-    expect(screen.queryByText("Token rate")).toBeNull();
-    expect(screen.queryByLabelText(/TPS:/)).toBeNull();
-    expect(
-      screen.queryByRole("img", { name: /token throughput buckets/ }),
-    ).toBeNull();
-  });
 });

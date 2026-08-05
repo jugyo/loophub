@@ -147,25 +147,16 @@ test("notification signal sweep (type + id range, no repo_id) uses idx_events_ty
   expect(plan).toContain("idx_events_type_id");
 });
 
-// The real store/events.ts and store/session-usage.ts queries below all inline the event type
-// as a SQL literal (e.g. `type = 'dev.cost_stopped'`), never as a bound `?` parameter — SQLite's
-// partial-index matching only recognizes the index's WHERE condition when the query's own type
-// filter is a literal, so these tests mirror that exact shape rather than parameterizing type.
+// The real store/events.ts queries below all inline the event type as a SQL literal
+// (e.g. `type = 'dev.cost_stopped'`), never as a bound `?` parameter — SQLite's partial-index
+// matching only recognizes the index's WHERE condition when the query's own type filter is a
+// literal, so these tests mirror that exact shape rather than parameterizing type.
 
-test("firstReadyForReviewAt's repo_id+number+ORDER BY id lookup uses the ready_for_review partial index, incl. through the e.payload alias", () => {
+test("firstReadyForReviewAt's repo_id+number+ORDER BY id lookup uses the ready_for_review partial index", () => {
   // Mirrors store/events.ts firstReadyForReviewAt (bare `payload`).
   expect(
     explain(
       `SELECT created_at FROM events WHERE repo_id = ? AND type = 'pull_request.ready_for_review' AND json_extract(payload, '$.number') = ? ORDER BY id ASC LIMIT 1`,
-      [1, 5],
-    ),
-  ).toContain("idx_events_repo_ready_number_id");
-
-  // Mirrors store/session-usage.ts listRecentInProgressSessionUsageSamples's NOT EXISTS
-  // subquery, which aliases the table as `e` — SQLite must still match the expression index.
-  expect(
-    explain(
-      `SELECT 1 FROM events e WHERE e.repo_id = ? AND e.type = 'pull_request.ready_for_review' AND json_extract(e.payload, '$.number') = ?`,
       [1, 5],
     ),
   ).toContain("idx_events_repo_ready_number_id");

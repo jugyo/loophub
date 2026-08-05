@@ -369,9 +369,6 @@ test("sessions.costSummary returns minimal per-agent period costs", () => {
       month: null,
       week: null,
       day: null,
-      tokens_per_5m_history: Array(24).fill(0),
-      tokens_per_second: null,
-      cache_read_tokens_per_second: null,
     },
     { agent: "codex", month: 11, week: 8, day: 6 },
     { agent: "grok", month: 0, week: 0, day: 0 },
@@ -418,33 +415,6 @@ test("sessions.costSummary includes grok as a coding agent", () => {
   }
 });
 
-test("sessions.costSummary aggregates persisted rate history into five-minute buckets", () => {
-  const observedAt = [
-    "2040-07-09T11:31:00.000Z",
-    "2040-07-09T11:34:00.000Z",
-    "2040-07-09T11:36:00.000Z",
-  ];
-  try {
-    D.db.run(
-      `INSERT INTO session_rate_history (tokens_per_second, observed_at)
-       VALUES (?, ?), (?, ?), (?, ?)`,
-      [2, observedAt[0], 4, observedAt[1], 8, observedAt[2]],
-    );
-
-    const history = svc.sessions.costSummary(
-      new Date("2040-07-09T11:37:30.000Z"),
-    )[0].tokens_per_5m_history;
-
-    expect(history).toHaveLength(24);
-    expect(history?.slice(-3)).toEqual([0, 900, 2400]);
-  } finally {
-    D.db.run(
-      `DELETE FROM session_rate_history WHERE observed_at IN (?, ?, ?)`,
-      observedAt,
-    );
-  }
-});
-
 test("sessions.costSummary counts legacy build sessions as Claude Code", () => {
   const sessionId = "11111111-1017-0000-0000-000000000006";
   svc.sessions.register({
@@ -472,9 +442,6 @@ test("sessions.costSummary counts legacy build sessions as Claude Code", () => {
       month: 2,
       week: 2,
       day: 2,
-      tokens_per_5m_history: Array(24).fill(0),
-      tokens_per_second: null,
-      cache_read_tokens_per_second: null,
     },
     { agent: "codex", month: 0, week: 0, day: 0 },
     { agent: "grok", month: 0, week: 0, day: 0 },
@@ -542,23 +509,6 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
     context_usage_percent: 0.042,
   });
   expect(getSession(sessionId).usage![0].cost_usd).toBeCloseTo(0.000615);
-  expect(
-    D.db
-      .query(
-        `SELECT session_id, total_tokens, token_delta, cache_read_tokens, cache_read_delta
-         FROM session_usage_samples
-         WHERE session_id = ?`,
-      )
-      .all(sessionId),
-  ).toMatchObject([
-    {
-      session_id: sessionId,
-      total_tokens: 430,
-      token_delta: 0,
-      cache_read_tokens: 300,
-      cache_read_delta: 0,
-    },
-  ]);
 
   D.db.run(
     `UPDATE session_usage SET context_usage_percent = NULL WHERE session_id = ?`,
@@ -613,41 +563,6 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
     input_tokens: 107,
     output_tokens: 13,
   });
-  expect(
-    D.db
-      .query(
-        `SELECT total_tokens, token_delta, cache_read_tokens, cache_read_delta
-         FROM session_usage_samples
-         WHERE session_id = ?
-         ORDER BY id`,
-      )
-      .all(sessionId),
-  ).toMatchObject([
-    {
-      total_tokens: 430,
-      token_delta: 0,
-      cache_read_tokens: 300,
-      cache_read_delta: 0,
-    },
-    {
-      total_tokens: 430,
-      token_delta: 0,
-      cache_read_tokens: 300,
-      cache_read_delta: 0,
-    },
-    {
-      total_tokens: 430,
-      token_delta: 0,
-      cache_read_tokens: 300,
-      cache_read_delta: 0,
-    },
-    {
-      total_tokens: 470,
-      token_delta: 10,
-      cache_read_tokens: 330,
-      cache_read_delta: 30,
-    },
-  ]);
 
   writeFileSync(
     transcript,
@@ -667,65 +582,6 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   });
 
   rmSync(projectsDir, { recursive: true, force: true });
-});
-
-test("sessions.usageSync rolls back an unchanged Claude sample when pruning fails", () => {
-  const sessionId = "99999999-0000-0000-0000-000000000012";
-  svc.sessions.register({
-    id: sessionId,
-    agent: "lh-build",
-    session: sessionId,
-    runtime: "claude-code",
-    kind: "dev",
-  });
-  const projectsDir = mkdtempSync(join(tmpdir(), "lh-claude-sample-tx-"));
-  const projectDir = join(projectsDir, "repo-worktree");
-  mkdirSync(projectDir);
-  writeFileSync(
-    join(projectDir, `${sessionId}.jsonl`),
-    assistantLine("msg_1", "claude-sonnet-4-6-20260601", {
-      input_tokens: 100,
-      cache_creation_input_tokens: 0,
-      cache_read_input_tokens: 0,
-      output_tokens: 10,
-    }),
-  );
-
-  svc.sessions.usageSync({ sessionId, projectsDir });
-  D.db.run(
-    `INSERT INTO session_usage_samples
-       (session_id, total_tokens, token_delta, observed_at)
-     VALUES (?, ?, ?, ?)`,
-    [sessionId, 100, 0, "2000-01-01T00:00:00.000Z"],
-  );
-  const countSamples = () =>
-    (
-      D.db
-        .query(
-          `SELECT COUNT(*) AS count
-           FROM session_usage_samples
-           WHERE session_id = ?`,
-        )
-        .get(sessionId) as { count: number }
-    ).count;
-  expect(countSamples()).toBe(2);
-
-  D.db.exec(
-    `CREATE TRIGGER fail_usage_sample_prune
-     BEFORE DELETE ON session_usage_samples
-     WHEN OLD.session_id = '${sessionId}'
-     BEGIN SELECT RAISE(ABORT, 'injected usage sample prune failure'); END`,
-  );
-  try {
-    expect(() => svc.sessions.usageSync({ sessionId, projectsDir })).toThrow(
-      "injected usage sample prune failure",
-    );
-  } finally {
-    D.db.run("DROP TRIGGER fail_usage_sample_prune");
-    rmSync(projectsDir, { recursive: true, force: true });
-  }
-
-  expect(countSamples()).toBe(2);
 });
 
 test("sessions.usageSync rejects a stale Claude dedupe plan", () => {
@@ -777,214 +633,6 @@ test("sessions.usageSync rejects a stale Claude dedupe plan", () => {
     input_tokens: 100,
     output_tokens: 10,
   });
-});
-
-test("sessions.costSummary limits token rate to in-progress dev sessions", async () => {
-  const sessionId = "99999999-0000-0000-0000-0000000000ac";
-  svc.sessions.register({
-    id: sessionId,
-    agent: "lh-build",
-    session: sessionId,
-    runtime: "claude-code",
-    kind: "dev",
-  });
-  const issue = svc.issues.create("me/proj", { title: "rate active pr" });
-  const opened = await svc.dev.openPr(
-    "me/proj",
-    {
-      issue: issue.number,
-      head: `loophub/issue-${issue.number}`,
-      base: "main",
-    },
-    sessionId,
-  );
-  D.db.run(
-    `INSERT INTO session_usage_samples
-       (session_id, total_tokens, token_delta, cache_read_tokens, cache_read_delta, observed_at)
-     VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)`,
-    [
-      sessionId,
-      100,
-      0,
-      60,
-      0,
-      "2026-07-10T00:00:30Z",
-      sessionId,
-      550,
-      150,
-      360,
-      300,
-      "2026-07-10T00:01:00Z",
-    ],
-  );
-
-  const activeSummary = svc.sessions.costSummary(
-    new Date("2026-07-10T00:01:00Z"),
-  )[0];
-  expect(activeSummary.tokens_per_second).toBe(5);
-  expect(activeSummary.cache_read_tokens_per_second).toBe(10);
-  expect(activeSummary.tokens_per_5m_history?.at(-1)).toBe(1500);
-
-  await svc.reviews.create("me/proj", opened.number, {
-    event: "REQUEST_CHANGES",
-    body: "please review",
-  });
-  ST.emitEvent(
-    ST.getRepo("me", "proj")!.id,
-    "pull_request.ready_for_review",
-    sessionId,
-    { number: opened.number },
-  );
-
-  expect(
-    svc.sessions.costSummary(new Date("2026-07-10T00:01:00Z"))[0],
-  ).toMatchObject({
-    tokens_per_second: null,
-    cache_read_tokens_per_second: null,
-  });
-});
-
-test("sessions.costSummary counts in-progress workflow-step sessions toward the live rate", async () => {
-  // Under workflow-first the token-consuming session is kind='workflow-step', not 'dev'. Its samples
-  // must still feed the live TPS as long as the linked pull is open, unmerged, and has no historical
-  // ready_for_review event (#1662).
-  const sessionId = "99999999-0000-0000-0000-0000000000af";
-  svc.sessions.register({
-    id: sessionId,
-    agent: "workflow-step",
-    session: sessionId,
-    runtime: "claude-code",
-    kind: "workflow-step",
-  });
-  const issue = svc.issues.create("me/proj", {
-    title: "rate workflow-step pr",
-  });
-  const opened = await svc.dev.openPr(
-    "me/proj",
-    { issue: issue.number, base: "main" },
-    undefined,
-  );
-  svc.sessions.link("me/proj", { sessionId, pr: opened.number });
-  D.db.run(
-    `INSERT INTO session_usage_samples
-       (session_id, total_tokens, token_delta, observed_at)
-     VALUES (?, ?, ?, ?), (?, ?, ?, ?)`,
-    [
-      sessionId,
-      100,
-      0,
-      "2026-07-12T00:00:30Z",
-      sessionId,
-      250,
-      150,
-      "2026-07-12T00:01:00Z",
-    ],
-  );
-
-  const activeSummary = svc.sessions.costSummary(
-    new Date("2026-07-12T00:01:00Z"),
-  )[0];
-  expect(activeSummary.tokens_per_second).toBe(5);
-  expect(activeSummary.tokens_per_5m_history?.at(-1)).toBe(1500);
-
-  await svc.reviews.create("me/proj", opened.number, {
-    event: "REQUEST_CHANGES",
-    body: "please review",
-  });
-  ST.emitEvent(
-    ST.getRepo("me", "proj")!.id,
-    "pull_request.ready_for_review",
-    sessionId,
-    { number: opened.number },
-  );
-
-  expect(
-    svc.sessions.costSummary(new Date("2026-07-12T00:01:00Z"))[0],
-  ).toMatchObject({
-    tokens_per_second: null,
-  });
-});
-
-test("sessions.recordLiveRateSample persists rate that survives the 600s sample prune", async () => {
-  const sessionId = "99999999-0000-0000-0000-0000000000ad";
-  svc.sessions.register({
-    id: sessionId,
-    agent: "lh-build",
-    session: sessionId,
-    runtime: "claude-code",
-    kind: "dev",
-  });
-  const issue = svc.issues.create("me/proj", { title: "rate history pr" });
-  await svc.dev.openPr(
-    "me/proj",
-    {
-      issue: issue.number,
-      head: `loophub/issue-${issue.number}`,
-      base: "main",
-    },
-    sessionId,
-  );
-  D.db.run(
-    `INSERT INTO session_usage_samples
-       (session_id, total_tokens, token_delta, observed_at)
-     VALUES (?, ?, ?, ?), (?, ?, ?, ?)`,
-    [
-      sessionId,
-      100,
-      0,
-      "2026-07-11T00:00:30Z",
-      sessionId,
-      250,
-      150,
-      "2026-07-11T00:01:00Z",
-    ],
-  );
-
-  const now = new Date("2026-07-11T00:01:00Z");
-  expect(svc.sessions.recordLiveRateSample(now)).toBe(5);
-
-  const history = D.db
-    .query(
-      `SELECT tokens_per_second, observed_at FROM session_rate_history ORDER BY observed_at`,
-    )
-    .all() as { tokens_per_second: number; observed_at: string }[];
-  expect(history).toHaveLength(1);
-  expect(history[0].tokens_per_second).toBe(5);
-
-  // Simulate the 600s sample prune running ~10 min later, once both source samples have aged out: it
-  // must actually delete them (proving the source rate data is gone) while the persisted rate history
-  // survives in its separate, prune-resistant table.
-  const laterPrune = new Date("2026-07-11T00:11:30Z");
-  D.db.run(`DELETE FROM session_usage_samples WHERE observed_at < ?`, [
-    new Date(laterPrune.getTime() - 600 * 1000).toISOString(),
-  ]);
-  const samplesLeft = D.db
-    .query(
-      `SELECT COUNT(*) AS n FROM session_usage_samples WHERE session_id = ?`,
-    )
-    .get(sessionId) as { n: number };
-  expect(samplesLeft.n).toBe(0);
-  const remaining = D.db
-    .query(`SELECT COUNT(*) AS n FROM session_rate_history`)
-    .get() as { n: number };
-  expect(remaining.n).toBe(1);
-});
-
-test("sessions.recordLiveRateSample writes nothing when there is no active rate", () => {
-  const before = (
-    D.db.query(`SELECT COUNT(*) AS n FROM session_rate_history`).get() as {
-      n: number;
-    }
-  ).n;
-  expect(
-    svc.sessions.recordLiveRateSample(new Date("2027-01-01T00:00:00Z")),
-  ).toBeNull();
-  const after = (
-    D.db.query(`SELECT COUNT(*) AS n FROM session_rate_history`).get() as {
-      n: number;
-    }
-  ).n;
-  expect(after).toBe(before);
 });
 
 test("sessions.usageSync does not repeatedly backfill unavailable Claude context", () => {
@@ -2178,8 +1826,8 @@ test("sessions.usageSync replaces Cursor usage atomically", async () => {
   ).toBe(eventCountBeforeFailure);
 });
 
-test("sessions.usageSync reconstructs Grok turn rate samples for live TPS", async () => {
-  const issue = svc.issues.create("me/proj", { title: "grok tps" });
+test("sessions.usageSync records Grok turn usage once per model", async () => {
+  const issue = svc.issues.create("me/proj", { title: "grok usage" });
   const sessionId = "99999999-0000-0000-0000-0000000000g3";
   svc.sessions.register({
     id: sessionId,
@@ -2195,11 +1843,10 @@ test("sessions.usageSync reconstructs Grok turn rate samples for live TPS", asyn
   );
 
   const worktree = join(HOME, "worktrees", "me", "proj", `pr-${opened.number}`);
-  const grokSessionsDir = mkdtempSync(join(tmpdir(), "lh-grok-tps-"));
+  const grokSessionsDir = mkdtempSync(join(tmpdir(), "lh-grok-usage-"));
   const cwdDir = join(grokSessionsDir, encodeURIComponent(worktree));
   mkdirSync(join(cwdDir, "grok-sess"), { recursive: true });
 
-  // 1500 mapped tokens (no cache/reasoning) over 10s → 150 TPS after first turn.
   writeFileSync(
     join(cwdDir, "grok-sess", "updates.jsonl"),
     grokUpdatesJsonl([
@@ -2215,43 +1862,6 @@ test("sessions.usageSync reconstructs Grok turn rate samples for live TPS", asyn
 
   const synced = svc.sessions.usageSync({ sessionId, grokSessionsDir });
   expect(synced).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-
-  const samples = D.db
-    .query(
-      `SELECT total_tokens, token_delta, observed_at
-       FROM session_usage_samples
-       WHERE session_id = ?
-       ORDER BY observed_at, id`,
-    )
-    .all(sessionId) as {
-    total_tokens: number;
-    token_delta: number;
-    observed_at: string;
-  }[];
-  expect(samples).toHaveLength(2);
-  expect(samples[0]).toMatchObject({ total_tokens: 0, token_delta: 0 });
-  expect(samples[1]).toMatchObject({ total_tokens: 1500, token_delta: 1500 });
-  expect(samples[1].token_delta).toBeGreaterThan(0);
-
-  // Reconstruct rate from this session's samples only (costSummary aggregates every
-  // in-progress dev session in the shared test DB).
-  const rateNow = new Date(samples[1].observed_at);
-  const { calculateTokensPerSecond } = await import("./session-usage-rate.ts");
-  expect(
-    calculateTokensPerSecond(
-      samples.map((sample) => ({
-        session_id: sessionId,
-        total_tokens: sample.total_tokens,
-        token_delta: sample.token_delta,
-        observed_at: sample.observed_at,
-      })),
-      { now: rateNow },
-    ),
-  ).toBe(150);
-  // Status-bar path must also see a non-null live rate while this PR is in progress.
-  const summary = svc.sessions.costSummary(rateNow)[0];
-  expect(summary.tokens_per_second).not.toBeNull();
-  expect(summary.tokens_per_second!).toBeGreaterThan(0);
 
   // Cost columns stay single-counted (one upsert path only).
   const usage = getSession(sessionId).usage ?? [];

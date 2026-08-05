@@ -4,22 +4,15 @@ import {
   calculateCostUsd,
   findGrokSessionUpdates,
   type GrokSessionCandidate,
-  type GrokTurnUsage,
-  type ModelUsage,
 } from "../session-usage.ts";
-import { planGrokTurnRateSamples } from "../session-usage-rate.ts";
 import * as S from "../store.ts";
 import {
   missingUsagePlan,
   modelUsageEqualsStored,
-  planUsageSample,
   type SessionUsagePlan,
   type SessionUsageSyncModule,
   type SessionUsageSyncOptions,
-  type UsageSamplePlan,
-  usageSamplePruneBefore,
   usageSyncStatus,
-  usageTotals,
 } from "./plan.ts";
 import {
   supersededWorktreeSessions,
@@ -30,8 +23,7 @@ import {
 
 /**
  * Grok usage sync. Like Codex, Grok correlates by worktree cwd and aggregates onto the PR's owner
- * session. Unlike Codex it reports per-turn API durations, which the plan turns into the rate sample
- * pair the live tokens/sec reading needs.
+ * session.
  */
 export const grokUsageSync: SessionUsageSyncModule = {
   owns: (row) => sessionRuntime(row) === RUNTIME_GROK,
@@ -90,7 +82,6 @@ function planGrokSession(
 
   const transcriptPath = grokSessions.map((x) => x.path).join("\n");
   const fresh = grokSessions.flatMap((x) => x.entries);
-  const turns = grokSessions.flatMap((x) => x.turns);
   const aggregated = aggregateUsage(fresh);
   const stored = S.listSessionUsage(row.id);
   const clearUsageFor = supersededWorktreeSessions(target, RUNTIME_GROK);
@@ -102,9 +93,6 @@ function planGrokSession(
       sessionId: row.id,
       expect: { usage: stored },
       clearUsageFor,
-      // Unchanged totals: keep a heartbeat sample (delta 0). Rate pairs are only written when turn
-      // usage advances.
-      samples: planUsageSample(stored),
       report: {
         status: usageSyncStatus(0),
         transcriptPath,
@@ -125,11 +113,6 @@ function planGrokSession(
       model: usage.model,
       costUsd: calculateCostUsd(usage.model, usage),
     })),
-    samples: planGrokUsageRateSamples(
-      S.tokenTotalsForSession(row.id),
-      aggregated,
-      turns,
-    ),
     report: {
       status: usageSyncStatus(fresh.length),
       transcriptPath,
@@ -137,31 +120,4 @@ function planGrokSession(
       models: "stored",
     },
   };
-}
-
-// Grok has no mid-turn billed usage events. Reconstruct the sample pair from the turn durations so
-// the live rate reading has something to interpolate, falling back to a single total sample.
-function planGrokUsageRateSamples(
-  previousTotals: ReturnType<typeof S.tokenTotalsForSession>,
-  usage: ModelUsage[],
-  turns: GrokTurnUsage[],
-  now = new Date(),
-): UsageSamplePlan | null {
-  const newTotals = usageTotals(usage);
-  if (newTotals == null) return null;
-  const samples = planGrokTurnRateSamples({
-    previousTotal: previousTotals?.totalTokens ?? 0,
-    newTotal: newTotals.totalTokens,
-    previousCacheRead: previousTotals?.cacheReadTokens ?? 0,
-    newCacheRead: newTotals.cacheReadTokens,
-    turns: turns.map((turn) => ({
-      totalTokens: turn.totalTokens,
-      cacheReadTokens: turn.usage.cache_read_input_tokens,
-      apiDurationMs: turn.apiDurationMs,
-    })),
-    now,
-  });
-  return samples
-    ? { samples, pruneBefore: usageSamplePruneBefore(now) }
-    : planUsageSample(usage, now);
 }

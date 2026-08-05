@@ -7,9 +7,7 @@ import {
   agentSessionJSON,
   sessionUsageJSON,
 } from "../serialize.ts";
-import { tokensPerFiveMinuteHistory } from "../session-rate-history.ts";
 import { RUNTIME_CURSOR, sessionRuntime } from "../session-runtime.ts";
-import { calculateTokenRates, secondsAgo } from "../session-usage-rate.ts";
 import {
   applySessionUsageSync,
   planSessionUsageSync,
@@ -71,20 +69,6 @@ function sessionPeriodCosts(
 function addCost(current: number | null, next: number | null): number | null {
   if (current === null || next === null) return null;
   return current + next;
-}
-
-// Retention for the persisted live-rate history (#1123). Longer than the 600s sample TTL so a rate time
-// series survives, bounded so the table cannot grow without limit.
-const RATE_HISTORY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
-
-// The live aggregate tokens/sec used by the topbar's current five-minute bucket: in-progress dev and
-// workflow-step sessions over the trailing 60s. The persisted history and current bucket share this
-// definition.
-function liveTokenRates(now: Date) {
-  return calculateTokenRates(
-    S.listRecentInProgressSessionUsageSamples(secondsAgo(now, 60)),
-    { now },
-  );
 }
 
 export const sessions = {
@@ -226,7 +210,6 @@ export const sessions = {
 
   costSummary(now = new Date()): AgentCostSummaryWire[] {
     const starts = periodStarts(now);
-    const rates = liveTokenRates(now);
     const byAgent = new Map<CodingAgent, AgentCostSummaryWire>();
     for (const agent of CODING_AGENTS) {
       byAgent.set(agent, { agent, month: 0, week: 0, day: 0 });
@@ -243,34 +226,7 @@ export const sessions = {
       }
     }
 
-    const out = CODING_AGENTS.map((agent) => byAgent.get(agent)!);
-    out[0].tokens_per_second = rates.tokensPerSecond;
-    out[0].cache_read_tokens_per_second = rates.cacheReadTokensPerSecond;
-    out[0].tokens_per_5m_history = tokensPerFiveMinuteHistory(
-      S.listSessionRateHistory(secondsAgo(now, 3 * 60 * 60)),
-      { now, liveTokensPerSecond: rates.tokensPerSecond },
-    );
-    return out;
-  },
-
-  // Persist the current live aggregate tokens/sec (the source value the topbar converts to tokens/5m)
-  // into the prune-resistant session_rate_history table (#1123), then trim rows past the retention
-  // window. Called periodically by the worker's usage sweep. Skips writing when there is no active
-  // rate so the table isn't padded with placeholder rows. Returns the recorded rate, or null when
-  // nothing was written.
-  recordLiveRateSample(now = new Date()): number | null {
-    const rate = liveTokenRates(now).tokensPerSecond;
-    if (rate == null) return null;
-    db.transaction(() => {
-      S.recordSessionRateHistory({
-        tokensPerSecond: rate,
-        observedAt: now.toISOString(),
-      });
-      S.pruneSessionRateHistory(
-        secondsAgo(now, RATE_HISTORY_RETENTION_SECONDS),
-      );
-    });
-    return rate;
+    return CODING_AGENTS.map((agent) => byAgent.get(agent)!);
   },
 
   usage(id?: string) {

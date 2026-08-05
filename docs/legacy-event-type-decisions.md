@@ -13,16 +13,13 @@ exercise the saved-row readers; they are not current producers.
 
 - **Producer:** none. The draft/ready transition that wrote this event was retired.
 - **Readers:** `firstReadyForReviewAt` in `core/store/events.ts` supplies the first review boundary
-  to `pullWorkDuration` in `core/serialize.ts`. `listRecentInProgressSessionUsageSamples` in
-  `core/store/session-usage.ts` excludes sessions for pull requests whose implementation already
-  reached that boundary.
+  to `pullWorkDuration` in `core/serialize.ts`.
 - **Saved rows and UI:** historical rows still split implementation time from review time in pull
-  request details. They also prevent completed implementations from contributing to the live token
-  rate. Removing either reader would change current output for an unchanged database.
-- **Index:** keep `idx_events_repo_ready_number_id`; both saved-row queries filter by repository and
+  request details. Removing the reader would change current output for an unchanged database.
+- **Index:** keep `idx_events_repo_ready_number_id`; the saved-row query filters by repository and
   pull request number, and the query-plan contract is covered by `core/db.test.ts`.
-- **Tests:** retain the duration cases in `core/pull-work-duration.test.ts`, the live-rate cases in
-  `core/sessions-service.test.ts`, and the query-plan cases in `core/db.test.ts`.
+- **Tests:** retain the duration cases in `core/pull-work-duration.test.ts` and the query-plan cases
+  in `core/db.test.ts`.
 
 ## `dev.cost_stopped`: keep
 

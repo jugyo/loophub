@@ -54,7 +54,6 @@ function invalidateReconnectQueries(
     ["pull-review-comments"],
     ["github-pr-status"],
     queryKeys.agentSessions(),
-    queryKeys.agentCostSummary(),
     queryKeys.terminalSessions(),
     queryKeys.events(),
     queryKeys.dashboard(),

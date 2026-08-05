@@ -1,6 +1,5 @@
 import type { SessionUsageWire } from "../serialize.ts";
 import type { ModelUsage, SubagentUsage } from "../session-usage.ts";
-import { secondsAgo, totalTokens } from "../session-usage-rate.ts";
 import type * as S from "../store.ts";
 
 export type SessionUsageSyncStatus = "updated" | "skipped" | "missing";
@@ -20,17 +19,6 @@ export interface SessionUsageSyncOptions {
   codexSessionsDir?: string;
   grokSessionsDir?: string;
   cursorProjectsDir?: string;
-}
-
-export interface UsageSamplePlan {
-  samples: {
-    totalTokens: number;
-    cacheReadTokens: number;
-    tokenDelta?: number;
-    cacheReadDelta?: number;
-    observedAt: string;
-  }[];
-  pruneBefore: string;
 }
 
 /**
@@ -75,7 +63,6 @@ export interface SessionUsagePlan {
   usageCosts?: { model: string; costUsd: number | null }[];
   subagents?: SubagentUsagePlan;
   cursor?: { transcriptPath: string; cursorOffset: number; mtimeMs: number };
-  samples?: UsageSamplePlan | null;
   report: SessionUsageReport;
 }
 
@@ -115,35 +102,6 @@ export function missingUsagePlan(
     ...(resetUsage ? { resetUsage: true } : {}),
     report: { status: "missing", messages: 0, models: "none" },
   };
-}
-
-export function usageTotals(
-  usage: readonly ModelUsage[],
-): { totalTokens: number; cacheReadTokens: number } | null {
-  if (usage.length === 0) return null;
-  return {
-    totalTokens: usage.reduce((sum, row) => sum + totalTokens(row), 0),
-    cacheReadTokens: usage.reduce(
-      (sum, row) => sum + row.cache_read_input_tokens,
-      0,
-    ),
-  };
-}
-
-export function planUsageSample(
-  usage: readonly ModelUsage[],
-  now = new Date(),
-): UsageSamplePlan | null {
-  const totals = usageTotals(usage);
-  if (totals == null) return null;
-  return {
-    samples: [{ ...totals, observedAt: now.toISOString() }],
-    pruneBefore: usageSamplePruneBefore(now),
-  };
-}
-
-export function usageSamplePruneBefore(now: Date): string {
-  return secondsAgo(now, 600);
 }
 
 export function modelUsageEqualsStored(

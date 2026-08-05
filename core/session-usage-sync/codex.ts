@@ -11,7 +11,6 @@ import * as S from "../store.ts";
 import {
   missingUsagePlan,
   modelUsageEqualsStored,
-  planUsageSample,
   type SessionUsagePlan,
   type SessionUsageSyncModule,
   type SessionUsageSyncOptions,
@@ -115,7 +114,6 @@ function planCodexSession(
       // Child rollouts come and go across sweeps, so their rows are replaced even when the totals
       // did not move.
       subagents: { deleteKind: CHILD_ROLLOUT_KIND, rows: subagents },
-      samples: planUsageSample(stored),
       report: {
         status: usageSyncStatus(0),
         transcriptPath,
@@ -132,7 +130,6 @@ function planCodexSession(
     clearUsageFor,
     usage: aggregated,
     subagents: { rows: subagents },
-    samples: planUsageSample(aggregated),
     report: {
       status: usageSyncStatus(fresh.length),
       transcriptPath,

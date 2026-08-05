@@ -152,7 +152,6 @@ const USAGE_TABLES = [
   "session_usage_subagents",
   "session_usage_cursors",
   "session_usage_messages",
-  "session_usage_samples",
   "events",
 ] as const;
 

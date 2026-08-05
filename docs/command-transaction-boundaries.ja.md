@@ -221,8 +221,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 |---|---|---|---|
 | `sessions.register` | procedure | session row、`agent_session.registered` / `updated` | — |
 | `sessions.link` | procedure | session link、`agent_session.linked` | — |
-| `sessions.recordLiveRateSample` | procedure | rate sample、retention prune | — |
-| `sessions.usageSync` | executor（cohort ごと） | usage rows、subagent usage、message dedupe、cursor、rate sample、external session と `agent_session.updated` | transcript の走査と読み出し、相関、cost 計算 |
+| `sessions.usageSync` | executor（cohort ごと） | usage rows、subagent usage、message dedupe、cursor、external session と `agent_session.updated` | transcript の走査と読み出し、相関、cost 計算 |
 | `notifications.send` | procedure | notification、`notification.created` | — |
 | `notifications.read` / `readAll` | procedure | read state、`notification.updated` | 先行する generated notification の refresh |
 | notification の signal backfill | procedure | generated notification、`notification.created`、source cursor | — |

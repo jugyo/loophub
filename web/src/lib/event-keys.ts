@@ -50,8 +50,6 @@ export const queryKeys = {
     ["github-pr-status", full, number] as const,
   notifications: () => ["notifications"] as const,
   agentSessions: () => ["agent-sessions"] as const,
-  // Keep the 60s cost poll outside the agent-session event invalidation prefix.
-  agentCostSummary: () => ["agent-cost-summary"] as const,
   // Top-level rather than a child of repo(full): every repo-scoped event invalidates that prefix,
   // but the coding-agent override only changes through repo.agent_config_changed.
   repoAgentConfig: (full: string) => ["repo-agent-config", full] as const,
