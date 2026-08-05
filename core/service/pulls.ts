@@ -29,7 +29,7 @@ import {
 } from "../github.ts";
 import { parseClosingIssueNumber } from "../links.ts";
 import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
-import { resolvePullBaseSha } from "../pull-base.ts";
+import { resolvePullBaseSha, resolvePullDiffBaseSha } from "../pull-base.ts";
 import { existingPullWorktreePath } from "../pull-worktree.ts";
 import {
   agentSessionJSON,
@@ -342,8 +342,10 @@ export const pulls = {
         headRef: p.head_ref,
         prNumber: row.number,
       }) ?? r.local_path;
+    // Live three-dot base (merge-base of base_ref and head), not the stored fork point.
+    // After base advances and is merged into head, fork-point..head includes base-side files.
     const [baseSha, headSha] = await Promise.all([
-      resolvePullBaseSha(r.local_path, p),
+      resolvePullDiffBaseSha(r.local_path, p),
       revParse(r.local_path, p.head_ref),
     ]);
     if (!baseSha || !headSha)

@@ -322,6 +322,92 @@ test("diff roots absolute paths at the PR worktree with a repo fallback", async 
   });
 });
 
+// #2417: After merging an advanced base into head, Changed Files must still list only the
+// PR's own changes. Comparing the stored fork-point to head as a two-dot tree diff would
+// surface base-side files that arrived via the merge commit.
+test("diff excludes base-side files after merging an advanced base into head", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-diff-merge-base-"));
+  const g = (args: string[]) => gitAt(path, args);
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base"]);
+  const forkSha = g(["rev-parse", "main"]);
+  g(["checkout", "-qb", "feature"]);
+  writeFileSync(join(path, "feature-only.txt"), "from pr\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "pr change"]);
+  g(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path, name: "me/diff-merge-base" });
+  const pull = await svc.pulls.create("me/diff-merge-base", {
+    title: "merge base into head",
+    head: "feature",
+    base: "main",
+  });
+  // Fork point is recorded at create; still matches the live merge-base for now.
+  expect(pull.base_sha).toBe(forkSha);
+
+  const before = await svc.pulls.diff("me/diff-merge-base", pull.number);
+  expect(before.files.map((f) => f.path).sort()).toEqual(["feature-only.txt"]);
+
+  // Base advances with an unrelated file, then is merged into the PR head.
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "advance main"]);
+  const advancedMain = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "feature"]);
+  g(["merge", "-q", "main", "-m", "merge main into feature"]);
+  const headSha = g(["rev-parse", "HEAD"]);
+
+  const after = await svc.pulls.diff("me/diff-merge-base", pull.number);
+  expect(after.base_sha).toBe(advancedMain);
+  expect(after.head_sha).toBe(headSha);
+  expect(after.files.map((f) => f.path).sort()).toEqual(["feature-only.txt"]);
+  expect(after.files.some((f) => f.path === "base-only.txt")).toBe(false);
+  // Stored fork point is unchanged and must not be used as the live diff base.
+  const row = S.getPull(
+    S.getIssue(S.getRepo("me", "diff-merge-base")!.id, pull.number)!.id,
+  )!;
+  expect(row.base_sha).toBe(forkSha);
+  expect(after.base_sha).not.toBe(forkSha);
+
+  // A PR without any base merge still lists only its own files (no regression).
+  const plainPath = mkdtempSync(join(tmpdir(), "lh-pull-diff-plain-"));
+  const pg = (args: string[]) => gitAt(plainPath, args);
+  pg(["init", "-q", "-b", "main"]);
+  pg(["config", "user.email", "t@t.local"]);
+  pg(["config", "user.name", "tester"]);
+  writeFileSync(join(plainPath, "a.txt"), "a\n");
+  pg(["add", "-A"]);
+  pg(["commit", "-qm", "base"]);
+  const plainFork = pg(["rev-parse", "main"]);
+  pg(["checkout", "-qb", "feature"]);
+  writeFileSync(join(plainPath, "b.txt"), "b\n");
+  pg(["add", "-A"]);
+  pg(["commit", "-qm", "feature"]);
+  const plainHead = pg(["rev-parse", "HEAD"]);
+  pg(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path: plainPath, name: "me/diff-plain" });
+  const plainPull = await svc.pulls.create("me/diff-plain", {
+    title: "plain pr",
+    head: "feature",
+    base: "main",
+  });
+  const plainDiff = await svc.pulls.diff("me/diff-plain", plainPull.number);
+  expect(plainDiff).toMatchObject({
+    base_sha: plainFork,
+    head_sha: plainHead,
+  });
+  expect(plainDiff.files.map((f) => f.path)).toEqual(["b.txt"]);
+
+  rmSync(path, { recursive: true, force: true });
+  rmSync(plainPath, { recursive: true, force: true });
+});
+
 test("commitFiles rejects a SHA outside the pull request's base..head range", async () => {
   await expect(
     svc.pulls.commitFiles("me/commit-files", commitFilesPullNumber, outsideSha),

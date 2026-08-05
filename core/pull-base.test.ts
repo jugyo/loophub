@@ -11,6 +11,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let D: typeof import("./db.ts");
 let S: typeof import("./store.ts");
 let svc: typeof import("./service.ts");
+let pullBase: typeof import("./pull-base.ts");
 let repoPath: string;
 let forkSha: string;
 
@@ -26,6 +27,7 @@ beforeAll(async () => {
   D = await import("./db.ts");
   S = await import("./store.ts");
   svc = await import("./service.ts");
+  pullBase = await import("./pull-base.ts");
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-pull-base-repo-"));
   git(["init", "-q", "-b", "main"]);
@@ -85,4 +87,57 @@ test("legacy PR reads fall back to the merge base", async () => {
     forkSha,
   );
   expect((await svc.pulls.get("me/proj", issue.number)).base_sha).toBe(forkSha);
+});
+
+test("diff base follows the live merge-base after base is merged into head", async () => {
+  // Own repo so earlier tests' NULL base_sha / advanced main do not interfere.
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-diff-base-"));
+  const g = (args: string[]): string => {
+    const result = spawnSync("git", ["-C", path, ...args], {
+      encoding: "utf8",
+    });
+    if (result.status !== 0) throw new Error(result.stderr);
+    return result.stdout.trim();
+  };
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "base.txt"), "base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base"]);
+  const localFork = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "-b", "feature"]);
+  writeFileSync(join(path, "feature.txt"), "feature\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "feature"]);
+  g(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path, name: "me/diff-base" });
+  const created = await svc.pulls.create("me/diff-base", {
+    title: "diff base",
+    head: "feature",
+    base: "main",
+  });
+  const repo = S.getRepo("me", "diff-base")!;
+  const issue = S.getIssue(repo.id, created.number)!;
+  const pull = S.getPull(issue.id)!;
+
+  // Before base moves, fork point and live merge-base agree.
+  expect(await pullBase.resolvePullBaseSha(path, pull)).toBe(localFork);
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(localFork);
+
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["checkout", "-q", "main"]);
+  g(["add", "-A"]);
+  g(["commit", "-qm", "advance main with unrelated file"]);
+  const advancedMain = g(["rev-parse", "main"]);
+
+  g(["checkout", "-q", "feature"]);
+  g(["merge", "-q", "main", "-m", "merge main into feature"]);
+
+  // Fork point stays fixed; live three-dot base moves to the merged main tip.
+  expect(await pullBase.resolvePullBaseSha(path, pull)).toBe(localFork);
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(advancedMain);
+
+  rmSync(path, { recursive: true, force: true });
 });

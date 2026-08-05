@@ -21,7 +21,7 @@ import {
   fileAtRef,
   revParse,
 } from "../git.ts";
-import { resolvePullBaseSha } from "../pull-base.ts";
+import { resolvePullDiffBaseSha } from "../pull-base.ts";
 import {
   type DiffFeedbackContextLineWire,
   type DiffFeedbackFreshness,
@@ -52,8 +52,9 @@ async function currentPair(
   repoPath: string,
   pull: S.PullRow,
 ): Promise<{ baseSha: string; headSha: string } | null> {
+  // Same pair as pulls.diff: live three-dot merge-base + head, not the fork-point base_sha.
   const [baseSha, headSha] = await Promise.all([
-    resolvePullBaseSha(repoPath, pull),
+    resolvePullDiffBaseSha(repoPath, pull),
     revParse(repoPath, pull.head_ref),
   ]);
   return baseSha && headSha ? { baseSha, headSha } : null;
