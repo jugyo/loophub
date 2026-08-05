@@ -27,6 +27,7 @@ import type {
   IssueDetailPageWire,
   IssueListPageWire,
   IssueListPullSummaryWire,
+  IssueRefKindWire,
   IssueWire,
   LabelWire,
   LinkedIssueWire,
@@ -77,6 +78,9 @@ import type {
 export type WebConfig = WebConfigWire;
 
 export type Label = LabelWire;
+
+/** Kind of one `#n` reference, used to link it to the canonical issue / pull route. */
+export type IssueRefKind = IssueRefKindWire;
 
 export type UserRef = UserWire;
 

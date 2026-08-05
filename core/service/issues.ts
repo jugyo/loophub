@@ -13,7 +13,9 @@ import {
   commentJSON,
   githubIssueJSON,
   herdrPaneJSON,
+  type IssueRefKindWire,
   issueJSON,
+  issueRefKindJSON,
   labelJSON,
   relatedSessionsJSON,
 } from "../serialize.ts";
@@ -274,6 +276,19 @@ export const issues = {
         .map((criterion) => acceptanceCriterionJSON(criterion, row.number));
     }
     return out;
+  },
+
+  /**
+   * Kind of each referenced number, for rendering `#n` in a Markdown body as a link to the
+   * canonical issue or pull route (#2362). Numbers that do not exist in the repo are absent
+   * from the result, which the caller renders as it sees fit.
+   */
+  refKinds(name: string, numbers: number[]): IssueRefKindWire[] {
+    const r = repoOr404(name);
+    const wanted = [
+      ...new Set(numbers.filter((n) => Number.isInteger(n) && n > 0)),
+    ];
+    return S.listIssueKinds(r.id, wanted).map(issueRefKindJSON);
   },
 
   create(

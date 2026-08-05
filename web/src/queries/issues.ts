@@ -16,6 +16,7 @@ import {
   getIssueListPage,
   listAcceptanceCriteria,
   listIssueComments,
+  listIssueRefKinds,
   listLabels,
   patchIssue,
   postIssueComment,
@@ -108,6 +109,23 @@ export function useIssue(
     queryKey: queryKeys.issue(full(owner, repo), number),
     queryFn: () => getIssue(owner, repo, number),
     enabled,
+  });
+}
+
+/**
+ * Kinds of the `#n` references in one Markdown body, so the renderer can link each to its
+ * canonical route (#2362). `numbers` must be sorted and deduplicated by the caller — it is
+ * part of the query key, so bodies referencing the same numbers share one lookup.
+ */
+export function useIssueRefKinds(
+  owner: string,
+  repo: string,
+  numbers: readonly number[],
+) {
+  return useQuery({
+    queryKey: queryKeys.issueRefKinds(full(owner, repo), numbers),
+    queryFn: () => listIssueRefKinds(owner, repo, [...numbers]),
+    enabled: numbers.length > 0,
   });
 }
 

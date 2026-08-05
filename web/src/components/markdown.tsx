@@ -6,25 +6,38 @@
 // so bodies cannot inject markup. Keep it that way — do not add rehype-raw.
 //
 // When `owner`/`repo` are provided, `#123` references in the body are linkified
-// to the in-repo resolver route (see remarkIssueRefs); the custom `a` renderer
-// turns those internal links into client-side router navigations.
+// (see remarkIssueRefs); the custom `a` renderer turns those internal links into
+// client-side router navigations. The referenced numbers are classified first so a
+// reference links straight to its canonical issue / pull route (#2362); a number
+// whose kind is unknown — the lookup is in flight, or there is no such Issue/PR —
+// stays plain text.
 
 import { Link } from "@tanstack/react-router";
-import { isValidElement, type ReactNode, useState } from "react";
+import { isValidElement, type ReactNode, useMemo, useState } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
-import { remarkIssueRefs } from "@/lib/remark-issue-refs";
+import {
+  type IssueRefKind,
+  issueRefNumbers,
+  remarkIssueRefs,
+} from "@/lib/remark-issue-refs";
 import { cn } from "@/lib/utils";
+import { useIssueRefKinds } from "@/queries/issues";
 
-// Matches the hrefs produced by remarkIssueRefs: /r/<owner>/<repo>/n/<number>.
-const REF_HREF = /^\/r\/([^/]+)\/([^/]+)\/n\/(\d+)$/;
+// Matches the hrefs produced by remarkIssueRefs: /r/<owner>/<repo>/<segment>/<number>.
+const REF_HREF = /^\/r\/([^/]+)\/([^/]+)\/(issues|pulls)\/(\d+)$/;
+
+const REF_ROUTES = {
+  issues: "/r/$owner/$repo/issues/$number",
+  pulls: "/r/$owner/$repo/pulls/$number",
+} as const;
 
 // Decode the owner/repo captured from an internal ref href. A hand-authored
 // body could contain a link that matches REF_HREF but has malformed percent
-// encoding (e.g. `/r/%/y/n/1`); decodeURIComponent would throw and tear down
-// the whole render, so fall back to a plain anchor by returning null here.
+// encoding (e.g. `/r/%/y/issues/1`); decodeURIComponent would throw and tear
+// down the whole render, so fall back to a plain anchor by returning null here.
 function refParams(
   m: RegExpExecArray,
 ): { owner: string; repo: string; number: string } | null {
@@ -32,7 +45,7 @@ function refParams(
     return {
       owner: decodeURIComponent(m[1]),
       repo: decodeURIComponent(m[2]),
-      number: m[3],
+      number: m[4],
     };
   } catch {
     return null;
@@ -73,10 +86,10 @@ const components: Components = {
   a({ href, title, children }) {
     const m = href ? REF_HREF.exec(href) : null;
     const params = m ? refParams(m) : null;
-    if (params) {
+    if (m && params) {
       return (
         <Link
-          to="/r/$owner/$repo/n/$number"
+          to={REF_ROUTES[m[3] as keyof typeof REF_ROUTES]}
           params={params}
           className="text-link hover:underline"
         >
@@ -111,9 +124,22 @@ export function Markdown({
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
     null,
   );
+  const linkRefs = Boolean(owner && repo);
+  const numbers = useMemo(
+    () => (linkRefs ? issueRefNumbers(children) : []),
+    [linkRefs, children],
+  );
+  const { data: refKinds } = useIssueRefKinds(owner ?? "", repo ?? "", numbers);
+  const kinds = useMemo(
+    () =>
+      new Map<number, IssueRefKind>(
+        (refKinds ?? []).map((ref) => [ref.number, ref.kind]),
+      ),
+    [refKinds],
+  );
   const remarkPlugins: Options["remarkPlugins"] =
     owner && repo
-      ? [remarkGfm, [remarkIssueRefs, { owner, repo }]]
+      ? [remarkGfm, [remarkIssueRefs, { owner, repo, kinds }]]
       : [remarkGfm];
   const componentsWithImg: Components = {
     ...components,

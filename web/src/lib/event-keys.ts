@@ -26,6 +26,10 @@ export const queryKeys = {
   issue: (full: string, number: number) => ["issue", full, number] as const,
   issueComments: (full: string, number: number) =>
     ["issue-comments", full, number] as const,
+  // Top-level rather than a child of issues(full): a number's kind never changes once the
+  // Issue/PR exists, so the repo's issue events must not invalidate these lookups (#2362).
+  issueRefKinds: (full: string, numbers: readonly number[]) =>
+    ["issue-ref-kinds", full, numbers] as const,
   workspaces: (full: string) => ["workspaces", full] as const,
   pulls: (full: string) => ["pulls", full] as const,
   pull: (full: string, number: number) => ["pull", full, number] as const,

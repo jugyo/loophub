@@ -231,6 +231,30 @@ export function getIssue(repoId: number, number: number): IssueRow | null {
     .get(repoId, number) as IssueRow | null;
 }
 
+export interface IssueKindRow {
+  number: number;
+  kind: "issue" | "pull";
+}
+
+/**
+ * Kind of each of `numbers` within the repo. Numbers with no row are omitted, so the
+ * caller can tell "this number is an issue" from "this number does not exist".
+ */
+export function listIssueKinds(
+  repoId: number,
+  numbers: number[],
+): IssueKindRow[] {
+  if (numbers.length === 0) return [];
+  const placeholders = numbers.map(() => "?").join(", ");
+  return db
+    .query(
+      `SELECT number, kind FROM issues
+       WHERE repo_id = ? AND number IN (${placeholders})
+       ORDER BY number`,
+    )
+    .all(repoId, ...numbers) as IssueKindRow[];
+}
+
 export function listIssues(
   repoId: number,
   kind: "issue" | "pull" | "any",

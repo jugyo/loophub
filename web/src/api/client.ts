@@ -26,6 +26,7 @@ import type {
   IssueComment,
   IssueDetailPage,
   IssueListPage,
+  IssueRefKind,
   Label,
   LoopEvent,
   Notification,
@@ -646,6 +647,17 @@ export function listLabels(owner: string, repo: string) {
 
 export function getIssue(owner: string, repo: string, number: number) {
   return rpc<Issue>("issues/get", { repo: full(owner, repo), number });
+}
+
+export function listIssueRefKinds(
+  owner: string,
+  repo: string,
+  numbers: number[],
+) {
+  return rpc<IssueRefKind[]>("issues/refKinds", {
+    repo: full(owner, repo),
+    numbers,
+  });
 }
 
 export function getIssueDetailPage(

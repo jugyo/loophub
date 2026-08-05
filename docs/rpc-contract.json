@@ -1374,6 +1374,35 @@
       }
     },
     {
+      "name": "issues/refKinds",
+      "description": "Classify referenced numbers as issue or pull. Numbers absent from the repo are omitted.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "numbers": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxItems": 200
+          }
+        },
+        "required": [
+          "repo",
+          "numbers"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
       "name": "pageData/issueDetail",
       "description": "Get all initial data for one issue-detail screen.",
       "params": {

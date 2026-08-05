@@ -1282,6 +1282,17 @@ export function labelJSON(l: S.LabelRow): LabelWire {
   return { name: l.name, color: l.color };
 }
 
+// Kind of one `#n` reference within a repo, so a renderer can link the reference to the
+// canonical issue or pull route instead of a resolver that redirects after a lookup.
+export interface IssueRefKindWire {
+  number: number;
+  kind: "issue" | "pull";
+}
+
+export function issueRefKindJSON(row: S.IssueKindRow): IssueRefKindWire {
+  return { number: row.number, kind: row.kind };
+}
+
 // Summary of the issue a PR closes (pull-detail `linked_issue`).
 export interface LinkedIssueWire {
   number: number;

@@ -25,6 +25,13 @@ const devCostLimitUsd = {
 } as const;
 const positiveInt = { type: "integer", minimum: 1 } as const;
 const stringArray = { type: "array", items: { type: "string" } } as const;
+// `#n` references collected from one Markdown body. Bounded so a pathological body cannot
+// turn a single lookup into an unbounded SQL parameter list.
+const refNumberArray = {
+  type: "array",
+  items: positiveInt,
+  maxItems: 200,
+} as const;
 const strOrNull = { type: ["string", "null"] } as const;
 const workflowFields = {
   description: str,
@@ -655,6 +662,13 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.issues.get(p.repo, p.number),
+  },
+  "issues/refKinds": {
+    description:
+      "Classify referenced numbers as issue or pull. Numbers absent from the repo are omitted.",
+    params: params({ repo, numbers: refNumberArray }, ["repo", "numbers"]),
+    result: anyArray,
+    handler: (p) => svc.issues.refKinds(p.repo, p.numbers),
   },
   "pageData/issueDetail": {
     description: "Get all initial data for one issue-detail screen.",
