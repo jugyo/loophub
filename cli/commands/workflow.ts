@@ -5,6 +5,7 @@ import { ensureCursorWorkspaceTrusted } from "../../core/cursor-workspace.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { buildRuntimeFlags } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
+import type { WorkflowRunStateWire } from "../../core/serialize.ts";
 import { isClaudeSessionId } from "../../core/session-runtime.ts";
 import {
   agentCommandLine,
@@ -675,16 +676,21 @@ async function stepInput(): Promise<void> {
   console.log(result.user_prompt);
 }
 
-async function stepStatus(): Promise<void> {
-  const runId = positiveInt(rest[1], "<run>");
-  const repo = await resolveRepo();
-  const result = await runOp(async () =>
-    (await svc()).workflowRuns.status(repo, { run: runId }),
+// An unobserved value prints as `(unobserved)` rather than as `false`: not having looked is the
+// whole point of the null, and it is what tells a reader to stop instead of proceeding.
+function observedValue(value: boolean | null): string {
+  return value === null ? "(unobserved)" : String(value);
+}
+
+function printRunState(result: WorkflowRunStateWire): void {
+  console.log(`state_version\t${result.state_version}`);
+  console.log(`run\t#${result.id} ${display(result.status)}`);
+  console.log(`current_step\t${display(result.current_step)}`);
+  console.log(
+    `active\t${display(result.active_step ?? "(none)")} session=${display(
+      result.active_session_id ?? "(none)",
+    )}`,
   );
-  if (flags.json) {
-    out(result);
-    return;
-  }
   if (result.needs_human_reason !== null) {
     console.log(`needs_human\t${display(result.needs_human_reason)}`);
   }
@@ -700,10 +706,49 @@ async function stepStatus(): Promise<void> {
   }
   console.log(`cost_increment_usd\t${result.cost_increment_usd}`);
   console.log(`cost_limit_usd\t${result.cost_limit_usd}`);
+  console.log(
+    `cost_usd\t${result.total_cost.cost_usd ?? "(none)"} (${display(
+      result.total_cost.cost_status,
+    )})`,
+  );
   console.log(`head\t${display(result.head_sha ?? "(unresolved)")}`);
-  console.log(`done\t${result.done}`);
+  console.log(
+    `head_ahead_of_base\t${observedValue(result.head_ahead_of_base)}`,
+  );
+  console.log(
+    `head_ahead_of_review\t${observedValue(result.head_ahead_of_latest_review)}`,
+  );
+  console.log(
+    `pr\t${result.pr_merged ? "merged" : result.pr_closed ? "closed" : "open"}`,
+  );
+  console.log(`merge_conflict\t${observedValue(result.merge_conflict)}`);
+  console.log(`done\t${observedValue(result.done)}`);
   if (result.last_turn_done_at !== null) {
     console.log(`last_turn_done\t${display(result.last_turn_done_at)}`);
+  }
+  for (const [label, comment] of [
+    ["issue_comment", result.latest_issue_comment],
+    ["pull_comment", result.latest_pull_comment],
+  ] as const) {
+    if (comment) {
+      console.log(
+        `${label}\t#${comment.id} ${display(comment.author_type)} ${display(comment.author)}`,
+      );
+    }
+  }
+  for (const thread of result.unaddressed_diff_feedback) {
+    console.log(
+      `unaddressed_diff_feedback\tthread ${thread.thread_id} comment ${
+        thread.latest_comment_id ?? "(none)"
+      }`,
+    );
+  }
+  for (const item of result.github_feedback) {
+    console.log(
+      `github_feedback\t${display(item.kind)} ${item.github_id} ${display(
+        item.content_hash,
+      )}`,
+    );
   }
   for (const step of STEP_STATUS_ORDER) {
     const s = result.steps[step];
@@ -718,6 +763,38 @@ async function stepStatus(): Promise<void> {
       );
     }
   }
+}
+
+// The run's complete current state in one read. `--state-version` declares the wire version the
+// caller was written against, so an unfamiliar shape fails visibly instead of being read as facts.
+async function runState(): Promise<void> {
+  const runId = positiveInt(rest[0], "<run>");
+  const expectStateVersion =
+    flags["state-version"] === undefined
+      ? undefined
+      : positiveInt(flags["state-version"], "--state-version");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).workflowRuns.state(repo, { run: runId, expectStateVersion }),
+  );
+  if (flags.json) {
+    out(result);
+    return;
+  }
+  printRunState(result);
+}
+
+async function stepStatus(): Promise<void> {
+  const runId = positiveInt(rest[1], "<run>");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).workflowRuns.status(repo, { run: runId }),
+  );
+  if (flags.json) {
+    out(result);
+    return;
+  }
+  printRunState(result);
 }
 
 // The parent's own inputs to the run: a direct human instruction, or its verdict on the GitHub
@@ -1060,6 +1137,8 @@ export async function run(): Promise<void> {
     await effect();
   } else if (sub === "cost-hold") {
     await costHold();
+  } else if (sub === "state") {
+    await runState();
   } else if (sub === "step") {
     if (rest[0] === "input") await stepInput();
     else if (rest[0] === "status") await stepStatus();

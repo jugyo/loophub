@@ -92,7 +92,7 @@ test("lh workflow instruction --note decides from a direct human instruction", (
     action: "deliver",
     delivery_reason: "human_instruction",
   });
-  expect(decided.observed.run).toBe(run);
+  expect(decided.observed.id).toBe(run);
   // A human instruction is not a run event, so the worker's delivery cursor is untouched.
   expect(decided.event).toBeNull();
   expect(S.getWorkflowRun(run)?.event_cursor).toBe(0);

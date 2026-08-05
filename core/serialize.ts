@@ -1479,37 +1479,6 @@ export interface WorkflowRunReviewSummaryWire {
   ac_results: ReviewAcResultWire[];
 }
 
-export interface WorkflowRunStateWire {
-  id: number;
-  workflow_id: number | null;
-  workflow_name: string | null;
-  status: string; // running | completed (closed PR); legacy rows may read 'stopped' or 'blocked'
-  current_step: string; // execute | verify
-  active_verify_head_sha: string | null;
-  rework_count: number;
-  rework_limit: number;
-  cost_increment_usd: number;
-  cost_limit_usd: number;
-  // True only while the run is held on the current limit's cost-exceeded event and still has an
-  // interrupted step to resume. Web surfaces may call the explicit increase operation only then.
-  cost_limit_increase_available: boolean;
-  // Non-null while the run waits for an explicit human instruction (#1307). The run stays
-  // `running` (active + resumable); the UI renders this as a Needs human state.
-  needs_human_reason: string | null;
-  issue_number: number;
-  pr_number: number;
-  created_at: string;
-  updated_at: string;
-  // Fixed lifecycle end. Unlike `updated_at`, terminal-run maintenance never advances it.
-  ended_at: string | null;
-  latest_review: WorkflowRunReviewSummaryWire | null;
-  verification_status: "unverified" | "verified" | "stale";
-  // Canonical pre-merge Done state. This remains distinct from the run lifecycle `status` and is
-  // false when a merge conflict blocks the otherwise fresh passing review.
-  done: boolean;
-  merge_conflict: boolean;
-}
-
 export interface WorkflowPendingEffectReceiptWire {
   event_id: number;
   effect: string;
@@ -1522,38 +1491,122 @@ export interface WorkflowOutOfBandReviewWire {
   verdict: "feedback" | "request_changes";
 }
 
-// Complete observed state the Workflow parent's instructions are decided from. This wire shape
-// remains in core even though its current presentation is CLI-only, so future web consumers share
-// the same source of truth instead of re-declaring it.
-export interface WorkflowStepStatusWire {
-  run: number;
-  current_step: string;
-  status: string;
+/** The newest comment on one of the run's pinned resources, with who wrote it. */
+export interface WorkflowRunStateCommentWire {
+  id: number;
+  author: string;
+  author_type: S.CommentAuthorType;
+  created_at: string;
+}
+
+/** A diff feedback conversation this run has not answered, with its newest message. */
+export interface WorkflowRunStateDiffFeedbackWire {
+  thread_id: number;
+  latest_comment_id: number | null;
+}
+
+// One observed GitHub feedback item, identified by the revision of its content. The state carries
+// no body for these — `content_hash` is the only value a reader can compare to tell an item that
+// changed since it last looked from one that did not.
+export interface WorkflowRunStateGithubFeedbackWire {
+  kind: S.GithubFeedbackObservation["kind"];
+  github_id: number;
+  content_hash: string;
+  updated_at: string;
+}
+
+/**
+ * Wire contract version of {@link WorkflowRunStateWire}.
+ *
+ * The state is an agent input, so a change to its shape is a change to how a reader reads it: a
+ * missing field reads as a missing fact. A reader declares the version it understands and gets a
+ * visible error on a mismatch instead of a silently converted shape.
+ */
+export const WORKFLOW_RUN_STATE_VERSION = 1;
+
+/**
+ * The complete current state of a Workflow run, read in one call.
+ *
+ * This is the single read model for a run: the parent decides its next action from it and the web
+ * run display renders from it. Areas covered are the run row, the current commit, reviews, comments,
+ * diff feedback, the revision of each observed GitHub feedback item, PR lifecycle and the holds.
+ *
+ * Values that could not be observed are `null` rather than `false` — "does not conflict" and "was
+ * not looked at" lead a reader to opposite actions, so they never share a representation. A run row
+ * that cannot be read at all is a visible error, not a state with null fields.
+ */
+export interface WorkflowRunStateWire {
+  state_version: number;
+
+  // ---- run row ----
+  id: number;
+  workflow_id: number | null;
+  workflow_name: string | null;
+  status: string; // running | completed (closed PR); legacy rows may read 'stopped' or 'blocked'
+  current_step: string; // execute | verify
+  // The step whose pane was activated last, and the child session in it. Both null means the run
+  // has no live child — a positive observation, distinct from a run row that could not be read.
   active_step: string | null;
-  rework_count: number;
-  rework_limit: number;
-  needs_human_reason: string | null;
-  awaiting_human: boolean;
-  pending_effect_receipt: WorkflowPendingEffectReceiptWire | null;
-  unaddressed_out_of_band_reviews: WorkflowOutOfBandReviewWire[];
-  cost_increment_usd: number;
-  cost_limit_usd: number;
-  head_sha: string | null;
-  head_ahead_of_base: boolean;
-  head_ahead_of_latest_review: boolean;
-  merge_conflict: boolean;
-  // Canonical pre-merge Done state derived from the current HEAD, its pinned review, and PR state.
-  done: boolean;
-  // The linked PR's own domain state. The run's terminal condition is read from these fields
-  // rather than from a close / merge event, so every route lands on the same reconciliation.
-  pr_merged: boolean;
-  pr_closed: boolean;
+  active_session_id: string | null;
+  active_verify_head_sha: string | null;
   last_turn_done_at: string | null;
   turn_done_for_active_execute: boolean;
   // Whether a Verify child was launched after the latest turn done. False means the Verify marked
   // active was launched for older work, so waiting on it would never produce a review (#1857).
   verify_launched_after_turn_done: boolean;
+  issue_number: number;
+  pr_number: number;
+  created_at: string;
+  updated_at: string;
+  // Fixed lifecycle end. Unlike `updated_at`, terminal-run maintenance never advances it.
+  ended_at: string | null;
+
+  // ---- commit ----
+  head_sha: string | null;
+  // Null when the (base, head) pair could not be resolved, so nothing was compared.
+  head_ahead_of_base: boolean | null;
+  head_ahead_of_latest_review: boolean | null;
+
+  // ---- review ----
+  latest_review: WorkflowRunReviewSummaryWire | null;
+  verification_status: "unverified" | "verified" | "stale";
+  unaddressed_out_of_band_reviews: WorkflowOutOfBandReviewWire[];
   steps: WorkflowStepStatuses;
+
+  // ---- comment ----
+  latest_issue_comment: WorkflowRunStateCommentWire | null;
+  latest_pull_comment: WorkflowRunStateCommentWire | null;
+
+  // ---- diff feedback ----
+  unaddressed_diff_feedback: WorkflowRunStateDiffFeedbackWire[];
+
+  // ---- GitHub feedback ----
+  github_feedback: WorkflowRunStateGithubFeedbackWire[];
+
+  // ---- PR lifecycle ----
+  // The linked PR's own domain state. The run's terminal condition is read from these fields
+  // rather than from a close / merge event, so every route lands on the same reconciliation.
+  pr_merged: boolean;
+  pr_closed: boolean;
+  merge_conflict: boolean | null;
+  // Canonical pre-merge Done state derived from the current HEAD, its pinned review and PR state.
+  // Distinct from the run lifecycle `status`, and null while the merge state is unobserved.
+  done: boolean | null;
+
+  // ---- hold ----
+  // Non-null while the run waits for an explicit human instruction (#1307). The run stays
+  // `running` (active + resumable); the UI renders this as a Needs human state.
+  needs_human_reason: string | null;
+  awaiting_human: boolean;
+  pending_effect_receipt: WorkflowPendingEffectReceiptWire | null;
+  rework_count: number;
+  rework_limit: number;
+  cost_increment_usd: number;
+  cost_limit_usd: number;
+  // True only while the run is held on the current limit's cost-exceeded event and still has an
+  // interrupted step to resume. Web surfaces may call the explicit increase operation only then.
+  cost_limit_increase_available: boolean;
+  total_cost: WorkflowRunTotalCostWire;
 }
 
 export function workflowRunStateJSON(input: {
@@ -1561,37 +1614,73 @@ export function workflowRunStateJSON(input: {
   workflowName: string | null;
   latestReview: WorkflowRunReviewSummaryWire | null;
   verificationStatus: WorkflowRunStateWire["verification_status"];
+  unaddressedOutOfBandReviews: WorkflowOutOfBandReviewWire[];
+  steps: WorkflowStepStatuses;
+  latestIssueComment: WorkflowRunStateCommentWire | null;
+  latestPullComment: WorkflowRunStateCommentWire | null;
+  unaddressedDiffFeedback: WorkflowRunStateDiffFeedbackWire[];
+  githubFeedback: WorkflowRunStateGithubFeedbackWire[];
+  pendingEffectReceipt: WorkflowPendingEffectReceiptWire | null;
   reworkLimit: number;
   costIncrementUsd: number;
   costLimitUsd: number;
   costLimitIncreaseAvailable: boolean;
+  totalCost: WorkflowRunTotalCostWire;
   activeVerifyHeadSha: string | null;
-  done: boolean;
-  mergeConflict: boolean;
+  lastTurnDoneAt: string | null;
+  turnDoneForActiveExecute: boolean;
+  verifyLaunchedAfterTurnDone: boolean;
+  headSha: string | null;
+  headAheadOfBase: boolean | null;
+  headAheadOfLatestReview: boolean | null;
+  prMerged: boolean;
+  prClosed: boolean;
+  done: boolean | null;
+  mergeConflict: boolean | null;
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
+    state_version: WORKFLOW_RUN_STATE_VERSION,
     id: run.id,
     workflow_id: run.workflow_id,
     workflow_name: input.workflowName,
     status: run.status,
     current_step: run.current_step,
+    active_step: run.active_step,
+    active_session_id: run.active_session_id,
     active_verify_head_sha: input.activeVerifyHeadSha,
-    rework_count: run.rework_count,
-    rework_limit: input.reworkLimit,
-    cost_increment_usd: input.costIncrementUsd,
-    cost_limit_usd: input.costLimitUsd,
-    cost_limit_increase_available: input.costLimitIncreaseAvailable,
-    needs_human_reason: run.needs_human_reason,
+    last_turn_done_at: input.lastTurnDoneAt,
+    turn_done_for_active_execute: input.turnDoneForActiveExecute,
+    verify_launched_after_turn_done: input.verifyLaunchedAfterTurnDone,
     issue_number: run.issue_number,
     pr_number: run.pr_number,
     created_at: run.created_at,
     updated_at: run.updated_at,
     ended_at: run.ended_at,
+    head_sha: input.headSha,
+    head_ahead_of_base: input.headAheadOfBase,
+    head_ahead_of_latest_review: input.headAheadOfLatestReview,
     latest_review: input.latestReview,
     verification_status: input.verificationStatus,
-    done: input.done,
+    unaddressed_out_of_band_reviews: input.unaddressedOutOfBandReviews,
+    steps: input.steps,
+    latest_issue_comment: input.latestIssueComment,
+    latest_pull_comment: input.latestPullComment,
+    unaddressed_diff_feedback: input.unaddressedDiffFeedback,
+    github_feedback: input.githubFeedback,
+    pr_merged: input.prMerged,
+    pr_closed: input.prClosed,
     merge_conflict: input.mergeConflict,
+    done: input.done,
+    needs_human_reason: run.needs_human_reason,
+    awaiting_human: run.needs_human_reason !== null,
+    pending_effect_receipt: input.pendingEffectReceipt,
+    rework_count: run.rework_count,
+    rework_limit: input.reworkLimit,
+    cost_increment_usd: input.costIncrementUsd,
+    cost_limit_usd: input.costLimitUsd,
+    cost_limit_increase_available: input.costLimitIncreaseAvailable,
+    total_cost: input.totalCost,
   };
 }
 

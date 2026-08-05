@@ -18,6 +18,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
+import { makeWorkflowRunState as baseWorkflowRunState } from "@/api/workflow-run-state-mock";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 
 const { focusHerdrAgent, showError } = vi.hoisted(() => ({
@@ -128,29 +129,18 @@ function herdrWithOrchestrator(focusable = true): HerdrSessions {
 function makeWorkflowRunState(
   overrides: Partial<WorkflowRunState> = {},
 ): WorkflowRunState {
-  return {
+  return baseWorkflowRunState({
     id: 1,
     workflow_id: 1,
     workflow_name: "workflow",
-    status: "running",
-    current_step: "execute",
-    rework_count: 0,
-    rework_limit: 8,
     cost_increment_usd: 10,
     cost_limit_usd: 10,
-    cost_limit_increase_available: false,
-    needs_human_reason: null,
     issue_number: 5,
     pr_number: 10,
     created_at: "2026-07-17T00:00:00Z",
     updated_at: "2026-07-17T00:00:00Z",
-    ended_at: null,
-    latest_review: null,
-    verification_status: "unverified",
-    done: false,
-    merge_conflict: false,
     ...overrides,
-  };
+  });
 }
 
 function renderRowWithRun(

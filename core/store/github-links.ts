@@ -134,6 +134,21 @@ export function getGithubFeedbackObservation(
   );
 }
 
+// Every GitHub feedback item observed on one PR, so a reader can compare the whole set's revisions
+// in one read instead of asking per item. Ordered by identity rather than observation time: the
+// order must not change when a single item is re-observed.
+export function listGithubFeedbackObservations(
+  issueId: number,
+): GithubFeedbackObservation[] {
+  return db
+    .query(
+      `SELECT * FROM github_pull_feedback
+       WHERE issue_id = ?
+       ORDER BY kind ASC, github_id ASC`,
+    )
+    .all(issueId) as GithubFeedbackObservation[];
+}
+
 export function saveGithubFeedbackObservation(input: {
   issueId: number;
   kind: GithubFeedbackObservation["kind"];

@@ -10,30 +10,14 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { WorkflowRunState } from "@/api/types";
+import { makeWorkflowRunState } from "@/api/workflow-run-state-mock";
 import { WorkflowRunStatusSection } from "./workflow-run-status";
 
-const RUN: WorkflowRunState = {
-  id: 7,
-  workflow_id: 3,
+const RUN: WorkflowRunState = makeWorkflowRunState({
   workflow_name: "standard",
-  status: "running",
-  current_step: "execute",
   rework_count: 1,
-  rework_limit: 8,
-  cost_increment_usd: 30,
-  cost_limit_usd: 30,
-  cost_limit_increase_available: false,
-  needs_human_reason: null,
-  issue_number: 42,
-  pr_number: 99,
-  created_at: "2026-07-10T00:00:00Z",
   updated_at: "2026-07-10T01:00:00Z",
-  ended_at: null,
-  latest_review: null,
-  verification_status: "unverified",
-  done: false,
-  merge_conflict: false,
-};
+});
 
 afterEach(() => {
   cleanup();

@@ -24,14 +24,14 @@ import { pullShaStatus } from "../pull-status-cache.ts";
 import { runtimePrompt } from "../runtime-args.ts";
 import {
   effectiveRepoAgentConfigFor,
+  WORKFLOW_RUN_STATE_VERSION,
   type WorkflowOutOfBandReviewWire,
-  type WorkflowPendingEffectReceiptWire,
   type WorkflowRunAgentCostWire,
   type WorkflowRunHistoryEventWire,
   type WorkflowRunReviewSummaryWire,
+  type WorkflowRunStateCommentWire,
   type WorkflowRunStateWire,
   type WorkflowRunTotalCostWire,
-  type WorkflowStepStatusWire,
   workflowRunHistoryEventJSON,
   workflowRunStateJSON,
 } from "../serialize.ts";
@@ -91,6 +91,7 @@ import {
   type WorkflowTwinSourceRef,
 } from "../workflow/source-events.ts";
 import {
+  evaluateWorkflowSteps,
   type WorkflowLatestReviewState,
   workflowDone,
 } from "../workflow/steps.ts";
@@ -112,6 +113,7 @@ import {
 } from "../worktree-provision.ts";
 import { agentControl, assertAgentExecutionTarget } from "./agent-control.ts";
 import { dev } from "./dev.ts";
+import { unansweredDiffFeedbackThreadsForRun } from "./diff-feedback.ts";
 import { reviewAcResultsJSON } from "./reviews.ts";
 import { workflowContractLanguage } from "./settings.ts";
 import {
@@ -342,15 +344,13 @@ export type WorkflowStepInputResult = {
   pointers: WorkflowInputPointer[];
 };
 
-export type WorkflowStepStatusResult = WorkflowStepStatusWire;
-
 // The action plus the facts it was decided from. The snapshot travels with the action so the parent
 // never has to re-observe state to act on it, and `event` names the run event the call was pointed
 // at (`--event`) — the parent needs its id for event-scoped commands such as `lh workflow cost-hold`
 // and for reading a GitHub reference.
 export type WorkflowNextResult = WorkflowNextAction & {
   instructions: ReturnType<typeof workflowActionPlan>;
-  observed: WorkflowStepStatusWire;
+  observed: WorkflowRunStateWire;
   event: LoopEvent | null;
 };
 
@@ -822,7 +822,8 @@ function outOfBandReviewVerdict(
 async function unaddressedOutOfBandReviews(input: {
   runId: number;
   prIssueId: number;
-  worktree: string;
+  /** Any git directory sharing the PR's objects — the repository or one of its linked worktrees. */
+  gitDir: string;
   currentHead: string | null;
   projection: WorkflowRunProjection;
 }): Promise<WorkflowOutOfBandReviewWire[]> {
@@ -849,7 +850,7 @@ async function unaddressedOutOfBandReviews(input: {
           : null;
       if (!submissionHeadSha || !turnDoneHead || !input.currentHead) continue;
       const advancedAtTurn = await isHeadAheadOfReview(
-        input.worktree,
+        input.gitDir,
         {
           id: review.id,
           event: "request_changes",
@@ -860,7 +861,7 @@ async function unaddressedOutOfBandReviews(input: {
       const turnDoneHeadStillPresent =
         turnDoneHead === input.currentHead ||
         (await isHeadAheadOfReview(
-          input.worktree,
+          input.gitDir,
           {
             id: review.id,
             event: "request_changes",
@@ -939,129 +940,115 @@ async function workflowRunProgress(
   });
 }
 
-// Observe everything `workflow step status` reports, from one already-loaded event projection. It
-// is a module function rather than a procedure body so `next` can observe on the same projection it
-// used to resolve its wake event, instead of re-loading the run's trail.
-async function observeWorkflowRunStatus(
-  r: S.Repo,
+// The newest comment on one of the run's pinned resources. Archived comments are left out: they
+// have been withdrawn from the conversation, so a reader must not be woken by one.
+function latestRunComment(issueId: number): WorkflowRunStateCommentWire | null {
+  const comments = S.listComments(issueId).filter(
+    (comment) => comment.archived_at === null,
+  );
+  const latest = comments[comments.length - 1];
+  return latest
+    ? {
+        id: latest.id,
+        author: latest.author,
+        author_type: latest.author_type,
+        created_at: latest.created_at,
+      }
+    : null;
+}
+
+/**
+ * The complete current state of a Workflow run, observed in one pass.
+ *
+ * This is the single read model behind `workflow state`, `workflow step status` and the issue / PR
+ * run display: one shape means a reader never has to work out which of two observations it is
+ * holding. It is a module function rather than a procedure body so `next` can observe on the same
+ * projection it used to resolve its wake event, instead of re-loading the run's trail.
+ *
+ * The issue and PR are the ones pinned on the run row, resolved regardless of their own state: a
+ * closed or merged PR still reports its own state, and a later attempt's PR on the same issue is
+ * never substituted for it. A pinned resource that cannot be read at all raises here rather than
+ * returning a state full of nulls — "the run has no live child" and "the run could not be read"
+ * must not reach a reader in the same shape.
+ *
+ * #2364: the (base, head) SHA pair is resolved before anything is asked of git, so the merge preview
+ * and effective diff come from the cache the PR list already populates — issue / PR detail refetches
+ * on every event, and a merge preview run by branch name costs a second per call.
+ */
+async function observeWorkflowRunState(
+  repo: S.Repo,
   run: S.WorkflowRunRow,
   projection: WorkflowRunProjection,
-): Promise<WorkflowStepStatusResult> {
-  const progress = await workflowRunProgress(r, run, projection);
-  const prIssue = issueOr404(r, run.pr_number, "pull");
-  const latestReview = latestWorkflowRunReview(prIssue.id, run.id, projection);
-  const turnDone = turnDoneObservation(projection, latestReview);
+): Promise<WorkflowRunStateWire> {
+  const issue = issueOr404(repo, run.issue_number);
+  const prIssue = issueOr404(repo, run.pr_number, "pull");
   const pull = S.getPull(prIssue.id);
   if (!pull)
     throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-  const worktree = workflowRunWorktree({
-    repo: r,
-    prNumber: run.pr_number,
-    headRef: pull.head_ref,
-  });
-  const pendingEffect = S.pendingWorkflowEventEffect(run.id);
-  const pendingEffectReceipt: WorkflowPendingEffectReceiptWire | null =
-    pendingEffect
-      ? {
-          event_id: pendingEffect.event_id,
-          effect: pendingEffect.effect,
-          status: "pending",
-          claimed_at: pendingEffect.created_at,
-        }
-      : null;
-  const unaddressedReviews = await unaddressedOutOfBandReviews({
-    runId: run.id,
-    prIssueId: prIssue.id,
-    worktree,
-    currentHead: progress.currentHead,
-    projection,
-  });
-  const mergeableState = workflowMergeableState({
-    prIssueId: prIssue.id,
-    currentHead: progress.currentHead,
-    hasEffectiveDiff: progress.hasEffectiveDiff,
-    mergeConflict: progress.mergeConflict,
-  });
-  const costIncrementUsd = run.cost_increment_usd ?? devCostLimitUsd();
-  return {
-    run: run.id,
-    current_step: run.current_step,
-    status: run.status,
-    active_step: run.active_step,
-    rework_count: run.rework_count,
-    rework_limit: WORKFLOW_REWORK_LIMIT,
-    needs_human_reason: run.needs_human_reason,
-    awaiting_human: run.needs_human_reason !== null,
-    pending_effect_receipt: pendingEffectReceipt,
-    unaddressed_out_of_band_reviews: unaddressedReviews,
-    cost_increment_usd: costIncrementUsd,
-    cost_limit_usd: run.cost_limit_usd ?? costIncrementUsd,
-    head_sha: progress.currentHead,
-    head_ahead_of_base: progress.headAheadOfBase,
-    head_ahead_of_latest_review: progress.headAheadOfLatestReview,
-    merge_conflict: progress.mergeConflict,
-    done: workflowDone({
-      mergeableState,
-      prClosed: prIssue.state === "closed",
-      prMerged: pull.merged === 1,
-    }),
-    pr_merged: pull.merged === 1,
-    pr_closed: prIssue.state === "closed",
-    last_turn_done_at: turnDone.at,
-    turn_done_for_active_execute: turnDone.forActiveExecute,
-    verify_launched_after_turn_done: turnDone.verifyLaunchedAfter,
-    steps: progress.steps,
-  };
-}
 
-// Build the issue / PR detail display state (#1008). Lifecycle fields come from the run row, while
-// Done and verification freshness are observed from the PR's live head and pinned review so Web
-// and `workflow step status` share the same domain meaning. `latest_review` gives the
-// human-readable reason behind a rework / block.
-async function workflowRunState(
-  repo: S.Repo,
-  run: S.WorkflowRunRow,
-): Promise<WorkflowRunStateWire> {
-  const workflowName = run.workflow_id
-    ? (S.getWorkflowById(run.workflow_id)?.name ?? null)
-    : null;
-  const projection = workflowRunEventProjection(run);
-  const prIssue = S.getIssue(repo.id, run.pr_number);
-  const review = prIssue
-    ? latestWorkflowRunReview(prIssue.id, run.id, projection)
-    : null;
+  const [liveHead, liveBase] = await Promise.all([
+    revParse(repo.local_path, pull.head_ref),
+    revParse(repo.local_path, pull.base_ref),
+  ]);
+  const currentHead = liveHead ?? pull.head_sha ?? null;
+  // Null carries "the pair was never compared". Rounding it to "no conflict" / "no diff" would make
+  // an unobserved merge read exactly like a clean one, and those two lead to opposite actions.
+  const shaStatus =
+    liveHead && liveBase
+      ? await pullShaStatus(repo.local_path, liveBase, liveHead)
+      : null;
+  const mergeConflict = shaStatus === null ? null : shaStatus.conflict;
+  const headAheadOfBase =
+    shaStatus === null ? null : shaStatus.commitsAhead > 0;
+
+  const review = latestWorkflowRunReview(prIssue.id, run.id, projection);
+  const observedReview = reviewObservation(review);
+  // Ancestry is asked of the repository rather than the run's worktree: a linked worktree shares
+  // the object database, and the state must stay readable after the worktree is pruned.
+  const headAheadOfLatestReview =
+    currentHead === null
+      ? null
+      : await isHeadAheadOfReview(repo.local_path, observedReview, currentHead);
+  // Step completeness is a judgement over the observations above rather than an observation of its
+  // own, so an unobserved comparison leaves the step incomplete: the run waits instead of advancing
+  // on a fact nobody read.
+  const steps = evaluateWorkflowSteps({
+    currentHead,
+    headAheadOfBase: headAheadOfBase ?? false,
+    headAheadOfLatestReview: headAheadOfLatestReview ?? false,
+    latestReview: observedReview,
+  });
+
+  const prClosed = prIssue.state === "closed";
+  const prMerged = pull.merged === 1;
+  const mergeableState =
+    shaStatus === null
+      ? "unknown"
+      : workflowMergeableState({
+          prIssueId: prIssue.id,
+          currentHead,
+          hasEffectiveDiff: shaStatus.hasEffectiveDiff,
+          mergeConflict: shaStatus.conflict,
+        });
+  // A closed or merged PR is not Done whatever git says, so that answer stays observed. Otherwise
+  // Done rests on the merge state, and an unobserved merge leaves it unobserved too.
+  const done =
+    shaStatus === null && !prClosed && !prMerged
+      ? null
+      : workflowDone({ mergeableState, prClosed, prMerged });
+
   const latestReview: WorkflowRunReviewSummaryWire | null = review
     ? {
         id: review.id,
         event: review.event === "PASS" ? "pass" : "request_changes",
         summary: review.body,
-        findings_count: prIssue
-          ? S.listReviewComments(prIssue.id).filter(
-              (comment) => comment.review_id === review.id,
-            ).length
-          : 0,
+        findings_count: S.listReviewComments(prIssue.id).filter(
+          (comment) => comment.review_id === review.id,
+        ).length,
         // Per-criterion grades of this review (#1895), joined to the rubric text via criterion_id.
         ac_results: reviewAcResultsJSON(review.id),
       }
     : null;
-  const pull = prIssue ? S.getPull(prIssue.id) : null;
-  const observedReview = reviewObservation(review);
-  // #2364: the base ref is resolved rather than handed to git as a name, so the merge preview and
-  // effective diff behind this state come from the (baseSha, headSha) cache the PR list already
-  // populates — issue/PR detail refetches on every event, and merge-tree costs a second per call.
-  const [liveHead, liveBase] = pull
-    ? await Promise.all([
-        revParse(repo.local_path, pull.head_ref),
-        revParse(repo.local_path, pull.base_ref),
-      ])
-    : [null, null];
-  const currentHead = liveHead ?? pull?.head_sha ?? null;
-  const shaStatus =
-    liveHead && liveBase
-      ? await pullShaStatus(repo.local_path, liveBase, liveHead)
-      : null;
-  const mergeConflict = shaStatus?.conflict ?? false;
-  const effectiveDiff = shaStatus?.hasEffectiveDiff ?? false;
   const reviewFresh = Boolean(
     observedReview?.headSha &&
       currentHead &&
@@ -1073,16 +1060,7 @@ async function workflowRunState(
       : observedReview?.event === "pass"
         ? "stale"
         : "unverified";
-  const mergeableState =
-    prIssue && pull
-      ? workflowMergeableState({
-          prIssueId: prIssue.id,
-          currentHead,
-          hasEffectiveDiff: effectiveDiff,
-          mergeConflict,
-        })
-      : "unknown";
-  const { incrementUsd, limitUsd } = workflowRunCostBudget(run);
+
   const verifyLaunch = projection.latestVerifyLaunch;
   const verifyHeadSha =
     typeof verifyLaunch?.payload.head_sha === "string"
@@ -1097,15 +1075,60 @@ async function workflowRunState(
     verifyLaunch !== null &&
     (latestReviewSubmission === undefined ||
       latestReviewSubmission.id < verifyLaunch.id);
+
+  const pendingEffect = S.pendingWorkflowEventEffect(run.id);
+  const turnDone = turnDoneObservation(projection, review);
+  const { incrementUsd, limitUsd } = workflowRunCostBudget(run);
   return workflowRunStateJSON({
     run,
-    workflowName,
+    workflowName: run.workflow_id
+      ? (S.getWorkflowById(run.workflow_id)?.name ?? null)
+      : null,
     latestReview,
     verificationStatus,
+    unaddressedOutOfBandReviews: await unaddressedOutOfBandReviews({
+      runId: run.id,
+      prIssueId: prIssue.id,
+      gitDir: repo.local_path,
+      currentHead,
+      projection,
+    }),
+    steps,
+    latestIssueComment: latestRunComment(issue.id),
+    latestPullComment: latestRunComment(prIssue.id),
+    unaddressedDiffFeedback: unansweredDiffFeedbackThreadsForRun(
+      prIssue.id,
+      run,
+    ).map((thread) => {
+      const messages = S.listDiffFeedbackMessages(thread.id);
+      return {
+        thread_id: thread.id,
+        latest_comment_id: messages[messages.length - 1]?.id ?? null,
+      };
+    }),
+    // Revisions only: these items have no body here, so their content hash is the one value a
+    // reader can compare to tell an item that changed from one that did not.
+    githubFeedback: S.listGithubFeedbackObservations(prIssue.id).map(
+      (observation) => ({
+        kind: observation.kind,
+        github_id: observation.github_id,
+        content_hash: observation.content_hash,
+        updated_at: observation.updated_at,
+      }),
+    ),
+    pendingEffectReceipt: pendingEffect
+      ? {
+          event_id: pendingEffect.event_id,
+          effect: pendingEffect.effect,
+          status: "pending",
+          claimed_at: pendingEffect.created_at,
+        }
+      : null,
     reworkLimit: WORKFLOW_REWORK_LIMIT,
     costIncrementUsd: incrementUsd,
     costLimitUsd: limitUsd,
     costLimitIncreaseAvailable: costLimitIncreaseAvailable(repo, run),
+    totalCost: workflowRunTotalCost(run),
     activeVerifyHeadSha:
       run.status === "running" &&
       run.needs_human_reason === null &&
@@ -1113,11 +1136,15 @@ async function workflowRunState(
       verifyLaunchPending
         ? verifyHeadSha
         : null,
-    done: workflowDone({
-      mergeableState,
-      prClosed: prIssue?.state === "closed",
-      prMerged: pull?.merged === 1,
-    }),
+    lastTurnDoneAt: turnDone.at,
+    turnDoneForActiveExecute: turnDone.forActiveExecute,
+    verifyLaunchedAfterTurnDone: turnDone.verifyLaunchedAfter,
+    headSha: currentHead,
+    headAheadOfBase,
+    headAheadOfLatestReview,
+    prMerged,
+    prClosed,
+    done,
     mergeConflict,
   });
 }
@@ -2342,17 +2369,43 @@ export const workflowRuns = {
     };
   },
 
-  async status(
+  /**
+   * The run's complete current state, read in one call.
+   *
+   * `expectStateVersion` is the wire version the caller was written against. A mismatch is reported
+   * rather than converted: the state is an agent input, so a silently reshaped result would have the
+   * caller read a missing field as a missing fact.
+   */
+  async state(
     name: string,
-    input: { run: number },
+    input: { run: number; expectStateVersion?: number },
     _sessionId?: string | null,
-  ): Promise<WorkflowStepStatusResult> {
+  ): Promise<WorkflowRunStateWire> {
     const r = repoOr404(name);
     const run = workflowRunOr404(input.run);
     if (run.repo_id !== r.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
-    return observeWorkflowRunStatus(r, run, workflowRunEventProjection(run));
+    if (
+      input.expectStateVersion !== undefined &&
+      input.expectStateVersion !== WORKFLOW_RUN_STATE_VERSION
+    ) {
+      throw new ServiceError(
+        422,
+        `Workflow run state version mismatch: this build produces state_version ${WORKFLOW_RUN_STATE_VERSION}, the caller expects ${input.expectStateVersion}`,
+      );
+    }
+    return observeWorkflowRunState(r, run, workflowRunEventProjection(run));
+  },
+
+  // Retained alongside `state` while the parent is migrated onto it (#2370); both report the same
+  // observation.
+  async status(
+    name: string,
+    input: { run: number },
+    sessionId?: string | null,
+  ): Promise<WorkflowRunStateWire> {
+    return workflowRuns.state(name, { run: input.run }, sessionId);
   },
 
   // Decide the run's next action from observed state. The worker calls this per undigested event to
@@ -2407,7 +2460,7 @@ export const workflowRuns = {
           markedWorkflowSourceExists(r.id),
         )
       : null;
-    const observedState = await observeWorkflowRunStatus(
+    const observedState = await observeWorkflowRunState(
       r,
       run,
       workflowRunEventProjection(run),
@@ -2483,8 +2536,8 @@ export const workflowRuns = {
     };
   },
 
-  // Display state for issue / PR detail. Verification is derived from the same current HEAD versus
-  // pinned review comparison as `workflow step status`; it is not persisted separately.
+  // The run display on issue / PR detail reads the same state the parent decides from, so a field
+  // never means one thing in the UI and another to an agent.
   async stateForIssue(
     name: string,
     input: { issue: number },
@@ -2492,7 +2545,9 @@ export const workflowRuns = {
   ): Promise<WorkflowRunStateWire | null> {
     const r = repoOr404(name);
     const run = S.latestWorkflowRunForIssue(r.id, input.issue);
-    return run ? await workflowRunState(r, run) : null;
+    return run
+      ? await observeWorkflowRunState(r, run, workflowRunEventProjection(run))
+      : null;
   },
 
   async stateForPull(
@@ -2502,7 +2557,9 @@ export const workflowRuns = {
   ): Promise<WorkflowRunStateWire | null> {
     const r = repoOr404(name);
     const run = S.latestWorkflowRunForPull(r.id, input.pull);
-    return run ? await workflowRunState(r, run) : null;
+    return run
+      ? await observeWorkflowRunState(r, run, workflowRunEventProjection(run))
+      : null;
   },
 
   // On-demand audit history for the PR detail dialog. It reads the same observation trail the run

@@ -105,6 +105,7 @@ export type Flags = {
   reason?: string;
   "expected-limit"?: string;
   "requires-changes"?: string;
+  "state-version"?: string;
   review?: string;
   "review-comment"?: string;
   "tab-id"?: string;
@@ -214,6 +215,7 @@ const { values, positionals } = parseArgs({
     reason: { type: "string" },
     "expected-limit": { type: "string" },
     "requires-changes": { type: "string" },
+    "state-version": { type: "string" },
     review: { type: "string" },
     "review-comment": { type: "string" },
     "tab-id": { type: "string" },

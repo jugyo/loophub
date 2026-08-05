@@ -1,7 +1,7 @@
 import type {
   WorkflowOutOfBandReviewWire,
   WorkflowPendingEffectReceiptWire,
-  WorkflowStepStatusWire,
+  WorkflowRunStateWire,
 } from "../serialize.ts";
 import type { WorkflowStep } from "./compose.ts";
 import type { WorkflowStepStatuses } from "./steps.ts";
@@ -12,15 +12,16 @@ export type WorkflowReconcileInput = {
   prClosed: boolean;
   currentStep: WorkflowStep;
   activeStep: WorkflowStep | null;
-  needsHumanReason: WorkflowStepStatusWire["needs_human_reason"];
-  awaitingHuman: WorkflowStepStatusWire["awaiting_human"];
+  needsHumanReason: WorkflowRunStateWire["needs_human_reason"];
+  awaitingHuman: WorkflowRunStateWire["awaiting_human"];
   costLimitIncreaseRequired: boolean;
-  reworkCount: WorkflowStepStatusWire["rework_count"];
-  reworkLimit: WorkflowStepStatusWire["rework_limit"];
+  reworkCount: WorkflowRunStateWire["rework_count"];
+  reworkLimit: WorkflowRunStateWire["rework_limit"];
   pendingEffectReceipt: WorkflowPendingEffectReceiptWire | null;
   unaddressedOutOfBandReviews: WorkflowOutOfBandReviewWire[];
   currentHead: string | null;
-  mergeConflict: boolean;
+  /** Null when the merge against base was not observed — never conflated with "no conflict". */
+  mergeConflict: boolean | null;
   turnDoneForActiveExecute: boolean;
   /**
    * Whether a Verify child was launched after the latest Execute turn done. `activeStep` only
@@ -114,7 +115,7 @@ export type WorkflowNextAction =
   | {
       action: "ask_human";
       reason: string;
-      question_reason: "head_unresolved";
+      question_reason: "head_unresolved" | "merge_state_unresolved";
     };
 
 export type WorkflowActionInstruction = {
@@ -505,6 +506,16 @@ export function reconcileWorkflow(
       action: "ask_human",
       reason: "Current HEAD could not be resolved.",
       question_reason: "head_unresolved",
+    };
+  }
+
+  // An unobserved merge state is not a clean one: continuing here would advance the run on a fact
+  // nobody looked at, so it goes to the human the same way an unresolved HEAD does.
+  if (input.mergeConflict === null) {
+    return {
+      action: "ask_human",
+      reason: "The merge against the base branch could not be observed.",
+      question_reason: "merge_state_unresolved",
     };
   }
 

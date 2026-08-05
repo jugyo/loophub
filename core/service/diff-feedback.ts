@@ -671,6 +671,29 @@ function threadForPull(
   return thread;
 }
 
+/**
+ * The diff feedback conversations on a PR that a Workflow run has not answered yet (#2045).
+ *
+ * The run — not the individual child session — is the responding party, so a thread an earlier turn
+ * already replied to stays out of the result. This is the selection on its own; `diffFeedback.pending`
+ * adds the diff context around each anchor, while the Workflow run state reports the same set as
+ * identifiers only.
+ */
+export function unansweredDiffFeedbackThreadsForRun(
+  prIssueId: number,
+  run: S.WorkflowRunRow,
+): S.DiffFeedbackThreadRow[] {
+  const responders = new Set(
+    [
+      ...workflowStepSessionIds(run.step_sessions_json, "execute"),
+      ...workflowStepSessionIds(run.step_sessions_json, "verify"),
+    ]
+      .map((sessionId) => S.authorFromSession(sessionId))
+      .filter((author): author is string => author !== null),
+  );
+  return S.listUnansweredDiffFeedbackThreads(prIssueId, [...responders]);
+}
+
 export const diffFeedback = {
   async list(
     name: string,
@@ -756,17 +779,7 @@ export const diffFeedback = {
         `workflow run #${runId} not found for pull request #${number}`,
       );
     }
-    const responders = new Set(
-      [
-        ...workflowStepSessionIds(run.step_sessions_json, "execute"),
-        ...workflowStepSessionIds(run.step_sessions_json, "verify"),
-      ]
-        .map((sessionId) => S.authorFromSession(sessionId))
-        .filter((author): author is string => author !== null),
-    );
-    const unanswered = S.listUnansweredDiffFeedbackThreads(row.id, [
-      ...responders,
-    ]);
+    const unanswered = unansweredDiffFeedbackThreadsForRun(row.id, run);
     if (unanswered.length === 0) {
       return { run: run.id, threads: [] };
     }

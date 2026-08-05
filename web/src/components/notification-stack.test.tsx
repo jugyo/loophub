@@ -19,6 +19,7 @@ import type {
   Notification,
   WorkflowRunState,
 } from "@/api/types";
+import { makeWorkflowRunState } from "@/api/workflow-run-state-mock";
 import { NotificationStack } from "./notification-stack";
 
 const notifications = vi.hoisted(() => ({
@@ -114,29 +115,18 @@ function makeCostNotification(
 function makeRunState(
   partial: Partial<WorkflowRunState> = {},
 ): WorkflowRunState {
-  return {
-    id: 7,
-    workflow_id: 3,
+  return makeWorkflowRunState({
     workflow_name: "standard",
-    status: "running",
-    current_step: "execute",
-    rework_count: 0,
-    rework_limit: 8,
     cost_increment_usd: 10,
     cost_limit_usd: 20,
     cost_limit_increase_available: true,
     needs_human_reason: "cost limit exceeded",
-    issue_number: 42,
+    awaiting_human: true,
     pr_number: 12,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
-    ended_at: null,
-    latest_review: null,
-    verification_status: "unverified",
-    done: false,
-    merge_conflict: false,
     ...partial,
-  };
+  });
 }
 
 function renderStack() {

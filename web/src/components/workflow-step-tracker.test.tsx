@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HerdrSessions, WorkflowRunState } from "@/api/types";
+import { makeWorkflowRunState } from "@/api/workflow-run-state-mock";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 
 const { focusHerdrAgent } = vi.hoisted(() => ({
@@ -29,29 +30,16 @@ afterEach(() => {
 });
 
 function state(partial: Partial<WorkflowRunState> = {}): WorkflowRunState {
-  return {
+  return makeWorkflowRunState({
     id: 1,
     workflow_id: 1,
     workflow_name: "workflow",
-    status: "running",
-    current_step: "execute",
-    rework_count: 0,
-    rework_limit: 8,
-    cost_increment_usd: 30,
-    cost_limit_usd: 30,
-    cost_limit_increase_available: false,
-    needs_human_reason: null,
     issue_number: 5,
     pr_number: 10,
     created_at: "2026-07-17T00:00:00Z",
     updated_at: "2026-07-17T00:00:00Z",
-    ended_at: null,
-    latest_review: null,
-    verification_status: "unverified",
-    done: false,
-    merge_conflict: false,
     ...partial,
-  };
+  });
 }
 
 const herdrSessions: HerdrSessions = {
@@ -588,6 +576,30 @@ describe("WorkflowStepTracker", () => {
     render(<WorkflowStepTracker state={state({ current_step: "execute" })} />);
     expect(screen.getByText("Done")).toBeTruthy();
     expect(screen.queryByText("Conflict!")).toBeNull();
+  });
+
+  it("separates an unobserved merge from a clean one on the Done pill (#2370)", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({
+          current_step: "execute",
+          merge_conflict: null,
+          done: null,
+        })}
+      />,
+    );
+    // Neither Conflict! nor a reached Done: nothing was compared, and the pill says so rather than
+    // rounding the missing observation to "clean".
+    expect(screen.queryByText("Conflict!")).toBeNull();
+    const donePill = screen.getByText("Done");
+    expect(donePill.className).not.toContain("text-red");
+    expect(donePill.className).not.toContain("text-green");
+    expect(donePill.className).toContain("border-dashed");
+    fireEvent.focus(donePill);
+    expect(
+      screen.getByRole("dialog", { name: "Done workflow step details" })
+        .textContent,
+    ).toContain("Merge state unobserved");
   });
 
   it("lets a conflict override the verified-green Done pill", () => {

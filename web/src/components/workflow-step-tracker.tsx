@@ -9,8 +9,18 @@
 // Verify label as-is and is conveyed by the pill's amber tone plus its popover status (#1906); a
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker unless the caller
 // already says why with its own "over budget" marker (#1932).
+//
+// `merge_conflict` and `done` are three-valued: null means core did not observe the merge against
+// base, which is neither a conflict nor a clean merge (#2370). It gets its own Done pill — showing
+// it as "Done" or as "Conflict!" would move the rounding core refuses to do into the UI.
 
-import { Check, Loader2, Terminal, TriangleAlert } from "lucide-react";
+import {
+  Check,
+  CircleHelp,
+  Loader2,
+  Terminal,
+  TriangleAlert,
+} from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import type { HerdrAgent, HerdrSessions, WorkflowRunState } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
@@ -56,7 +66,7 @@ export function workflowTrackerState(
   const needsHuman =
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked";
-  const done = state.done;
+  const done = state.done === true;
   const stale =
     state.status === "running" &&
     state.needs_human_reason === null &&
@@ -71,8 +81,11 @@ function workflowTrackerTitle(
   state: WorkflowRunState,
   { done, stale, needsHuman }: WorkflowTrackerState,
 ): string {
-  if (state.merge_conflict) {
+  if (state.merge_conflict === true) {
     return "Merge conflict — resolve it before this PR can merge";
+  }
+  if (state.merge_conflict === null) {
+    return "Merge state could not be observed — check this PR before merging";
   }
   if (needsHuman) {
     return "Workflow run is waiting for a human instruction";
@@ -423,22 +436,29 @@ export function WorkflowStepTracker({
         const isPast = index < activeIndex;
         // A PR-level conflict wins the terminal pill regardless of the run's step: an un-mergeable
         // PR is the most actionable state to surface, so "Done" becomes "Conflict!" (#1659).
-        const isDoneConflict = stage.key === "done" && state.merge_conflict;
+        const isDoneConflict =
+          stage.key === "done" && state.merge_conflict === true;
+        // Unobserved is its own pill: it is neither Done nor Conflict, and showing it as either
+        // would hide that nothing was actually looked at.
+        const isDoneUnobserved =
+          stage.key === "done" && state.merge_conflict === null;
         const isDoneReached = stage.key === "done" && done;
         const isStaleVerify = stage.key === "verify" && isCurrent && stale;
         const stageStatus = isDoneConflict
           ? "Conflict"
-          : isStaleVerify
-            ? "Reverify required"
-            : isDoneReached
-              ? "Reached"
-              : isCurrent
-                ? needsHuman
-                  ? "Needs human"
-                  : "Current"
-                : isPast
-                  ? "Completed"
-                  : "Upcoming";
+          : isDoneUnobserved
+            ? "Merge state unobserved"
+            : isStaleVerify
+              ? "Reverify required"
+              : isDoneReached
+                ? "Reached"
+                : isCurrent
+                  ? needsHuman
+                    ? "Needs human"
+                    : "Current"
+                  : isPast
+                    ? "Completed"
+                    : "Upcoming";
         const agent =
           stage.key === "done"
             ? undefined
@@ -477,15 +497,17 @@ export function WorkflowStepTracker({
                 pillSize,
                 isDoneConflict
                   ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-400"
-                  : isStaleVerify
-                    ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                    : isDoneReached
-                      ? "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-400"
-                      : isCurrent
-                        ? "border-primary-border bg-primary-subtle text-link"
-                        : isPast
-                          ? "border-border bg-muted text-foreground"
-                          : "border-border text-muted-foreground",
+                  : isDoneUnobserved
+                    ? "border-dashed border-border bg-muted text-muted-foreground"
+                    : isStaleVerify
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                      : isDoneReached
+                        ? "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-400"
+                        : isCurrent
+                          ? "border-primary-border bg-primary-subtle text-link"
+                          : isPast
+                            ? "border-border bg-muted text-foreground"
+                            : "border-border text-muted-foreground",
                 stageWorking &&
                   "animate-[workflow-stage-glow_2.4s_ease-in-out_infinite]",
               )}
@@ -499,6 +521,8 @@ export function WorkflowStepTracker({
               ) : null}
               {isDoneConflict ? (
                 <TriangleAlert className="size-3" aria-hidden="true" />
+              ) : isDoneUnobserved ? (
+                <CircleHelp className="size-3" aria-hidden="true" />
               ) : isDoneReached ? (
                 <Check className="size-3" aria-hidden="true" />
               ) : null}

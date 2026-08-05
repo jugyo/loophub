@@ -438,7 +438,14 @@ test("instruction delivery preserves the real next decision for the same state",
     const payload = (delivery as string)
       .slice((delivery as string).indexOf(marker) + marker.length)
       .split("[201~")[0];
-    expect(JSON.parse(payload)).toEqual(expected);
+    // Parity is about the decision and the facts behind it, not the moment each side looked: the
+    // observation carries the run row's own `updated_at`, and marking the parent ready moved it
+    // between these two reads.
+    const atSameMoment = (result: typeof expected) => ({
+      ...result,
+      observed: { ...result.observed, updated_at: null },
+    });
+    expect(atSameMoment(JSON.parse(payload))).toEqual(atSameMoment(expected));
   } finally {
     process.env.PATH = originalPath;
     rmSync(bin, { recursive: true, force: true });
@@ -1868,7 +1875,7 @@ test("a decision from one event never spends the worker's delivery cursor", asyn
   });
   expect(first).toMatchObject({ action: "launch_execute" });
   expect(first.event?.id).toBe(wake.id);
-  expect(first.observed.run).toBe(run);
+  expect(first.observed.id).toBe(run);
   expect(first.observed.steps.execute.complete).toBe(false);
   // Advancing the cursor is the worker's delivery decision alone; deciding an action never moves it.
   expect(S.getWorkflowRun(run)?.event_cursor).toBe(0);
@@ -4385,4 +4392,274 @@ test("successive runs on one PR do not blend their review submissions", async ()
     firstReview,
     secondReview,
   ]);
+}, 20_000);
+
+test("state reports every area of the run in one read", async () => {
+  const { repo } = freshRepo("me/state-one-read");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Observe the run",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "state-one-read-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "aaaaaaa1-1111-4111-8111-aaaaaaaaaaaa";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+  const headSha = commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+
+  const runRow = S.getWorkflowRun(started.run.id)!;
+  const prIssue = S.getIssue(repo.id, runRow.pr_number)!;
+  const issueComment = S.createComment(
+    issue.id,
+    "me",
+    "Extra context on the issue.",
+    "human",
+  );
+  const pullComment = S.createComment(
+    prIssue.id,
+    "me",
+    "Please rename this.",
+    "human",
+  );
+  const thread = S.createDiffFeedbackThread({
+    issueId: prIssue.id,
+    prNumber: prIssue.number,
+    baseSha: "base",
+    headSha,
+    path: "impl.txt",
+    originalPath: null,
+    side: "RIGHT",
+    startLine: 1,
+    endLine: 1,
+    actor: "me",
+    authorType: "human",
+  });
+  const threadMessage = S.createDiffFeedbackMessage(
+    thread.id,
+    "me",
+    "Rename this file.",
+    "human",
+  );
+  S.saveGithubFeedbackObservation({
+    issueId: prIssue.id,
+    kind: "review_comment",
+    githubId: 4242,
+    contentHash: "hash-v1",
+    updatedAt: "2026-08-01T00:00:00Z",
+  });
+
+  const state = await svc.workflowRuns.state(repo.full_name, {
+    run: started.run.id,
+  });
+
+  // run row — including the live child, which distinguishes "no child" from an unreadable run.
+  expect(state).toMatchObject({
+    state_version: 1,
+    id: started.run.id,
+    issue_number: issue.number,
+    pr_number: prIssue.number,
+    current_step: "execute",
+    active_step: "execute",
+    active_session_id: exec.session_id,
+    turn_done_for_active_execute: true,
+  });
+  expect(state.last_turn_done_at).not.toBeNull();
+  // commit
+  expect(state).toMatchObject({
+    head_sha: headSha,
+    head_ahead_of_base: true,
+    head_ahead_of_latest_review: false,
+  });
+  // review
+  expect(state.latest_review).toBeNull();
+  expect(state.unaddressed_out_of_band_reviews).toEqual([]);
+  expect(state.steps.execute.complete).toBe(true);
+  // comment
+  expect(state.latest_issue_comment).toMatchObject({
+    id: issueComment.id,
+    author_type: "human",
+  });
+  expect(state.latest_pull_comment).toMatchObject({
+    id: pullComment.id,
+    author_type: "human",
+  });
+  // diff feedback
+  expect(state.unaddressed_diff_feedback).toEqual([
+    { thread_id: thread.id, latest_comment_id: threadMessage.id },
+  ]);
+  // GitHub feedback — the revision, since the state carries no body to compare.
+  expect(state.github_feedback).toEqual([
+    {
+      kind: "review_comment",
+      github_id: 4242,
+      content_hash: "hash-v1",
+      updated_at: "2026-08-01T00:00:00Z",
+    },
+  ]);
+  // PR lifecycle
+  expect(state).toMatchObject({
+    pr_closed: false,
+    pr_merged: false,
+    merge_conflict: false,
+  });
+  // hold
+  expect(state).toMatchObject({
+    needs_human_reason: null,
+    awaiting_human: false,
+    pending_effect_receipt: null,
+    rework_count: 0,
+  });
+  expect(state.rework_limit).toBeGreaterThan(0);
+  expect(state.total_cost.cost_status).toBeTruthy();
+
+  // `workflow step status` is retained during the migration and reports the same observation.
+  expect(
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+  ).toEqual(state);
+}, 20_000);
+
+test("state refuses a wire version it does not produce", async () => {
+  const { repo } = freshRepo("me/state-version");
+  const issue = S.createIssue(repo.id, "issue", "Version", "", "me");
+  const workflow = S.createWorkflow({
+    name: "state-version-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    "aaaaaaa2-2222-4222-8222-aaaaaaaaaaaa",
+  );
+
+  const current = await svc.workflowRuns.state(repo.full_name, {
+    run: started.run.id,
+    expectStateVersion: 1,
+  });
+  expect(current.state_version).toBe(1);
+  // A caller written against another shape is told so rather than handed a converted state.
+  await expect(
+    svc.workflowRuns.state(repo.full_name, {
+      run: started.run.id,
+      expectStateVersion: 99,
+    }),
+  ).rejects.toMatchObject({ status: 422 });
+}, 20_000);
+
+test("an unobserved merge stays null and stops the run instead of reading as clean", async () => {
+  const { repo, path } = freshRepo("me/state-unobserved-merge");
+  const issue = S.createIssue(repo.id, "issue", "Unobserved", "", "me");
+  const workflow = S.createWorkflow({
+    name: "state-unobserved-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "aaaaaaa3-3333-4333-8333-aaaaaaaaaaaa";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const prIssue = S.getIssue(
+    repo.id,
+    S.getWorkflowRun(started.run.id)!.pr_number,
+  )!;
+  const pull = S.getPull(prIssue.id)!;
+  const headSha = commit(started.worktree, "impl.txt", "v1\n");
+  S.setHeadSha(prIssue.id, headSha);
+
+  expect(
+    await svc.workflowRuns.state(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ merge_conflict: false, done: false });
+
+  // Drop the branch the PR points at: the pair can no longer be resolved, so nothing is compared.
+  gitAt(path, ["worktree", "remove", "--force", started.worktree]);
+  gitAt(path, ["branch", "-D", pull.head_ref]);
+
+  const state = await svc.workflowRuns.state(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(state).toMatchObject({
+    head_sha: headSha,
+    head_ahead_of_base: null,
+    merge_conflict: null,
+    done: null,
+  });
+  // The parent must not advance on a merge nobody looked at.
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({
+    action: "ask_human",
+    question_reason: "merge_state_unresolved",
+  });
+}, 20_000);
+
+test("state stays on the PR the run pinned after it closes", async () => {
+  const { repo } = freshRepo("me/state-pinned-pr");
+  const issue = S.createIssue(repo.id, "issue", "Pinned", "", "me");
+  const workflow = S.createWorkflow({
+    name: "state-pinned-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    "aaaaaaa4-4444-4444-8444-aaaaaaaaaaaa",
+  );
+  const pinned = S.getIssue(
+    repo.id,
+    S.getWorkflowRun(started.run.id)!.pr_number,
+  )!;
+  S.updateIssue(pinned.id, { state: "closed" });
+  // A later attempt on the same issue opens another PR; the run keeps reading its own.
+  const retry = S.createIssue(
+    repo.id,
+    "pull",
+    "Retry",
+    `Closes #${issue.number}`,
+    "me",
+  );
+  S.createPull(retry.id, "loophub/pr-retry", "main", null, issue.id);
+
+  const state = await svc.workflowRuns.state(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(state.pr_number).toBe(pinned.number);
+  expect(state.pr_closed).toBe(true);
+  expect(state.done).toBe(false);
 }, 20_000);
