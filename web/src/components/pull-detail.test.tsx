@@ -322,11 +322,15 @@ describe("PullDetail", () => {
   });
 
   it("renders title, head→base, file summary, reviews, comments, and the linked issue", async () => {
-    renderDetail();
+    const { container } = renderDetail();
 
     expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
-    expect(screen.getByText("issue-153")).toBeTruthy();
-    expect(screen.getByText("main")).toBeTruthy();
+    // Branch names are scoped to the header: the sidebar's PR details section shows them too.
+    const header = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullHeader"]',
+    )!;
+    expect(within(header).getByText("issue-153")).toBeTruthy();
+    expect(within(header).getByText("main")).toBeTruthy();
     expect(screen.getByText("Render diff, reviews, comments.")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Develop" })).toBeNull();
 
@@ -369,7 +373,7 @@ describe("PullDetail", () => {
     expect(screen.getByText("Thanks!")).toBeTruthy();
 
     // Bidirectional link back to the issue this PR closes.
-    const linked = screen.getByText("#153").closest("a");
+    const linked = within(header).getByText("#153").closest("a");
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
@@ -867,7 +871,7 @@ describe("PullDetail", () => {
       "FileSummaryRow",
       "PullCommentList",
       "PullSidebar",
-      "WorktreeSection",
+      "PullInfoSection",
     ]) {
       expect(names.has(name)).toBe(true);
     }
@@ -915,7 +919,7 @@ describe("PullDetail", () => {
   });
 
   it("hides a Workflow-generated PR author without removing other header details", async () => {
-    renderDetail({
+    const { container } = renderDetail({
       "pulls/get": () => ({
         ...pull,
         user: { login: "Workflow #153 ui2: PR detail" },
@@ -925,8 +929,11 @@ describe("PullDetail", () => {
     await screen.findByText("ui2: PR detail");
     expect(screen.queryByText(/@Workflow #153/)).toBeNull();
     expect(screen.getByText(/opened .* · wants to merge/)).toBeTruthy();
-    expect(screen.getByText("issue-153")).toBeTruthy();
-    expect(screen.getByText("main")).toBeTruthy();
+    const header = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullHeader"]',
+    )!;
+    expect(within(header).getByText("issue-153")).toBeTruthy();
+    expect(within(header).getByText("main")).toBeTruthy();
   });
 
   // #863: a cost-stopped PR shows an "over budget" badge in the PR-detail header.
@@ -979,7 +986,9 @@ describe("PullDetail", () => {
     );
   });
 
-  it("shows the PR worktree path in the sidebar with a copy button", async () => {
+  // #2406: the sidebar's first section carries the PR basics — worktree, branches, head SHA, and
+  // the linked issue — so they are readable without scrolling back to the header.
+  it("shows the PR basics in the sidebar with copy actions for the worktree path and head branch", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const worktreePath = "/Users/me/.loophub/worktrees/me/proj/pr-30";
@@ -988,9 +997,16 @@ describe("PullDetail", () => {
     });
 
     const section = (
-      await screen.findByRole("heading", { name: "Worktree" })
+      await screen.findByRole("heading", { name: "PR details" })
     ).closest("section")!;
     expect(within(section).getByText(worktreePath)).toBeTruthy();
+    expect(within(section).getByText("issue-153")).toBeTruthy();
+    expect(within(section).getByText("main")).toBeTruthy();
+    expect(within(section).getByText("aaa")).toBeTruthy();
+    expect(within(section).getByRole("link", { name: "#153" })).toBeTruthy();
+    expect(
+      within(section).getByText("ui2: PR list + detail + merged"),
+    ).toBeTruthy();
 
     await act(async () => {
       fireEvent.click(
@@ -998,24 +1014,77 @@ describe("PullDetail", () => {
       );
     });
     expect(writeText).toHaveBeenCalledWith(worktreePath);
+
+    await act(async () => {
+      fireEvent.click(
+        within(section).getByRole("button", { name: "Copy head branch" }),
+      );
+    });
+    expect(writeText).toHaveBeenCalledWith("issue-153");
   });
 
-  it("shows an unavailable worktree sidebar state without an empty copy action", async () => {
+  it("shows an unavailable worktree row without an empty copy action, keeping the other basics", async () => {
     renderDetail();
 
     const section = (
-      await screen.findByRole("heading", { name: "Worktree" })
+      await screen.findByRole("heading", { name: "PR details" })
     ).closest("section")!;
     expect(within(section).getByText("Unavailable")).toBeTruthy();
     expect(
       within(section).queryByRole("button", { name: "Copy worktree path" }),
     ).toBeNull();
+    expect(within(section).getByText("issue-153")).toBeTruthy();
+    expect(within(section).getByText("main")).toBeTruthy();
+  });
+
+  it("omits the linked issue row for a PR without one", async () => {
+    renderDetail({ "pulls/get": () => ({ ...pull, linked_issue: null }) });
+
+    const section = (
+      await screen.findByRole("heading", { name: "PR details" })
+    ).closest("section")!;
+    expect(within(section).queryByText("Linked issue")).toBeNull();
+    expect(within(section).getByText("issue-153")).toBeTruthy();
+    expect(within(section).getByText("main")).toBeTruthy();
+  });
+
+  // #2406: a long issue title must not stretch the fixed-width sidebar — it truncates on one line
+  // and keeps its full text in the tooltip.
+  it("truncates a long linked issue title in the sidebar and keeps the full text on hover", async () => {
+    const title =
+      `A very long linked issue title ${"that keeps going ".repeat(10)}`.trim();
+    renderDetail({
+      "pulls/get": () => ({
+        ...pull,
+        linked_issue: { ...pull.linked_issue!, title },
+      }),
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "PR details" })
+    ).closest("section")!;
+    const titleElement = within(section).getByText(title);
+    expect(titleElement.className).toContain("truncate");
+    expect(titleElement.getAttribute("title")).toBe(title);
+  });
+
+  // #2406: the basics lead the sidebar, above the Workflow section.
+  it("orders the sidebar with the PR details section first", async () => {
+    const { container } = renderDetail();
+
+    await screen.findByRole("heading", { name: "PR details" });
+    const sidebar = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullSidebar"]',
+    )!;
+    expect(
+      sidebar.firstElementChild?.getAttribute("data-debug-component"),
+    ).toBe("PullInfoSection");
   });
 
   it("does not render an independent Work duration section", async () => {
     renderDetail();
 
-    await screen.findByRole("heading", { name: "Worktree" });
+    await screen.findByRole("heading", { name: "PR details" });
     expect(screen.queryByRole("heading", { name: "Work duration" })).toBeNull();
   });
 

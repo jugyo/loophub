@@ -14,7 +14,13 @@ import {
   SmilePlus,
   UploadCloud,
 } from "lucide-react";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
 import {
   ArchivedComment,
@@ -206,8 +212,10 @@ export function PullDetail({
           data-debug-component="PullSidebar"
           className="flex w-full shrink-0 flex-col gap-6 lg:sticky lg:top-5 lg:w-80"
         >
+          {/* #2406: where and on which branch this PR is being worked on is the first thing to
+              know when opening it, so the basics lead the sidebar. */}
+          <PullInfoSection owner={owner} repo={repo} pull={pull} />
           <WorkflowRunSection owner={owner} repo={repo} number={number} />
-          <WorktreeSection value={pull.worktree_path} />
           {/* GitHub PR status (#850): only for a PR with a linked GitHub PR. Fetched on demand;
             loading/error live in the section. */}
           {pull.github_pull ? (
@@ -480,25 +488,105 @@ function PullHeader({
   );
 }
 
-function WorktreeSection({ value }: { value: string | null }) {
+// One labeled row of the PR details section: the label above its value, so a long value (a worktree
+// path, a branch name) gets the sidebar's full width instead of sharing a line with its label.
+function PullInfoRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-1 min-w-0">{children}</dd>
+    </div>
+  );
+}
+
+// The PR's basics at the top of the sidebar (#2406): where it is checked out, which branches it
+// moves between, the head commit, and the issue it belongs to. Every value comes from the PR itself,
+// so the section never loads or fails on its own. The head→base row and the linked issue also appear
+// in the header; the duplication is accepted so the sidebar answers "where am I working on this?"
+// without scrolling back up.
+function PullInfoSection({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+}) {
+  const linked = pull.linked_issue;
   return (
     <section
-      data-debug-component="WorktreeSection"
+      data-debug-component="PullInfoSection"
       className="flex flex-col gap-3"
     >
-      <h2 className="text-lg font-semibold">Worktree</h2>
-      {value ? (
-        <div className="flex items-start gap-2 rounded-md border p-3 text-sm">
-          <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
-            {value}
+      <h2 className="text-lg font-semibold">PR details</h2>
+      <dl className="flex flex-col gap-3 rounded-md border p-3 text-sm">
+        <PullInfoRow label="Worktree">
+          {pull.worktree_path ? (
+            <div className="flex items-start gap-1">
+              <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
+                {pull.worktree_path}
+              </code>
+              <CopyButton
+                value={pull.worktree_path}
+                label="Copy worktree path"
+                className="size-6"
+              />
+            </div>
+          ) : (
+            <span className="text-muted-foreground">Unavailable</span>
+          )}
+        </PullInfoRow>
+        <PullInfoRow label="Head branch">
+          <div className="flex items-start gap-1">
+            <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
+              {pull.head.ref}
+            </code>
+            <CopyButton
+              value={pull.head.ref}
+              label="Copy head branch"
+              className="size-6"
+            />
+          </div>
+        </PullInfoRow>
+        <PullInfoRow label="Base branch">
+          <code className="inline-block max-w-full break-all rounded bg-muted px-1.5 py-1 text-xs">
+            {pull.base.ref}
           </code>
-          <CopyButton value={value} label="Copy worktree path" />
-        </div>
-      ) : (
-        <p className="rounded-md border p-3 text-sm text-muted-foreground">
-          Unavailable
-        </p>
-      )}
+        </PullInfoRow>
+        <PullInfoRow label="Head SHA">
+          <code className="inline-block rounded bg-muted px-1.5 py-1 text-xs">
+            {pull.head.sha.slice(0, 7)}
+          </code>
+        </PullInfoRow>
+        {linked ? (
+          <PullInfoRow label="Linked issue">
+            {/* A long issue title must not widen the sidebar, so it truncates on one line and keeps
+                its full text in the tooltip. */}
+            <div className="flex min-w-0 items-baseline gap-1.5">
+              <Link
+                to="/r/$owner/$repo/issues/$number"
+                params={{ owner, repo, number: String(linked.number) }}
+                className="shrink-0 font-medium hover:underline"
+              >
+                #{linked.number}
+              </Link>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                ({linked.state})
+              </span>
+              <span className="min-w-0 flex-1 truncate" title={linked.title}>
+                {linked.title}
+              </span>
+            </div>
+          </PullInfoRow>
+        ) : null}
+      </dl>
     </section>
   );
 }
