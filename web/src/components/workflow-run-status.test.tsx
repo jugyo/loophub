@@ -249,13 +249,14 @@ describe("WorkflowRunStatusSection", () => {
     );
   });
 
-  it("shows the fixed start-to-end total for a completed run", async () => {
+  // Legacy rows are the only ones carrying a recorded end, so they are the only ones with a total.
+  it("shows the fixed start-to-end total for a run with a recorded end", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
         state={state({
-          status: "completed",
+          pr_merged: true,
           created_at: "2026-07-10T00:00:00Z",
           updated_at: "2026-07-11T00:00:00Z",
           ended_at: "2026-07-10T01:01:01Z",
@@ -265,6 +266,40 @@ describe("WorkflowRunStatusSection", () => {
 
     expect(await screen.findByText("Duration: 1h 1m total")).toBeTruthy();
     expect(screen.queryByText(/elapsed$/)).toBeNull();
+  });
+
+  // The PR says the run ended, not when it stopped working, so an ended run without a recorded end
+  // shows no duration rather than presenting time-since-start as a total.
+  it("omits the duration for an ended run with no recorded end", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({ pr_closed: true, ended_at: null })}
+      />,
+    );
+
+    expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(screen.queryByText(/(?:elapsed|total)$/)).toBeNull();
+  });
+
+  // The budget control replaces the badge, so a stale increase flag on an ended run would hide the
+  // one thing that must stay visible — and offer an increase that leads nowhere.
+  it("keeps the completed badge and drops the budget control on an ended run", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          pr_merged: true,
+          needs_human_reason: "Cost limit exceeded",
+          cost_limit_increase_available: true,
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(screen.queryByText(/Increase to/)).toBeNull();
   });
 
   it("omits the duration when a Workflow timestamp is invalid", async () => {
@@ -280,17 +315,17 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.queryByText(/(?:elapsed|total)$/)).toBeNull();
   });
 
-  // A completed run means its PR merged (#1808), which can happen from any step and without a fresh
-  // pass, so the message never claims Verify passed.
+  // A run ends when its PR merged (#1808), which can happen from any step and without a fresh pass,
+  // so the message never claims Verify passed.
   it.each([
     "verify",
     "execute",
-  ])("shows the completed message for a completed run at %s", async (current_step) => {
+  ])("shows the completed message for an ended run at %s", async (current_step) => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
-        state={state({ status: "completed", current_step })}
+        state={state({ pr_merged: true, current_step })}
       />,
     );
     expect(await screen.findByText("Completed")).toBeTruthy();
@@ -402,30 +437,25 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.queryByText("Open Inbox")).toBeNull();
   });
 
-  it("renders a legacy blocked run as a terminal Needs human state", async () => {
+  // The end outranks the hold: a run whose PR closed while it waited cannot be resumed by answering.
+  it("renders an ended run as completed even while it holds a needs-human reason", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
         state={state({
-          status: "blocked",
+          pr_closed: true,
           current_step: "verify",
-          issue_number: 42,
-          latest_review: {
-            id: 5,
-            event: "request_changes",
-            summary: "Two criteria unmet.",
-            findings_count: 2,
-            ac_results: [],
-          },
+          needs_human_reason: "rework limit exceeded",
         })}
       />,
     );
-    expect(await screen.findByText("Needs human")).toBeTruthy();
+    expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(screen.queryByText("Needs human")).toBeNull();
     expect(
-      screen.getByText(/escalated to a human and is no longer running/),
-    ).toBeTruthy();
-    expect(screen.getByText(/Two criteria unmet\./)).toBeTruthy();
-    expect(screen.getByText("Read issue #42")).toBeTruthy();
+      screen.queryByText(
+        /waiting for a human instruction to its parent session/,
+      ),
+    ).toBeNull();
   });
 });

@@ -154,18 +154,36 @@ test("archive preserves the workflow and run reference while excluding it from t
   expect(S.getWorkflowRun(run.id)?.workflow_id).toBe(workflow.id);
 });
 
-test("delete is rejected while a running Workflow run references the workflow", () => {
-  const workflow = svc.workflows.create({ name: "in-use" });
-  const repo = S.createRepo("me/workflow", HOME);
+// A run and the issue / PR pair it is pinned to. Whether the run is still active is read from the
+// PR, so the delete guard needs the real rows rather than a run row on its own.
+function runWithPull(input: {
+  workflowId: number;
+  repoName: string;
+  currentStep: string;
+}) {
+  const repo = S.createRepo(input.repoName, HOME);
+  const issue = S.createIssue(repo.id, "issue", "Issue", "", "me");
+  const prIssue = S.createIssue(repo.id, "pull", "PR", "", "me");
+  S.createPull(prIssue.id, "head", "main", null, issue.id);
   const run = S.createWorkflowRun({
-    workflowId: workflow.id,
+    workflowId: input.workflowId,
     repoId: repo.id,
-    issueNumber: 1,
-    prNumber: 2,
+    issueNumber: issue.number,
+    prNumber: prIssue.number,
     status: "running",
-    currentStep: "execute",
+    currentStep: input.currentStep,
     costIncrementUsd: 10,
     costLimitUsd: 10,
+  });
+  return { repo, issue, prIssue, run };
+}
+
+test("delete is rejected while a run with an open PR references the workflow", () => {
+  const workflow = svc.workflows.create({ name: "in-use" });
+  const { run } = runWithPull({
+    workflowId: workflow.id,
+    repoName: "me/workflow",
+    currentStep: "execute",
   });
   expect(run.contract_language).toBe("en");
 
@@ -175,41 +193,16 @@ test("delete is rejected while a running Workflow run references the workflow", 
 
 test("delete is rejected while a run waiting for a human references the workflow", () => {
   const workflow = svc.workflows.create({ name: "needs-human-run" });
-  const repo = S.createRepo("me/workflow-needs-human", HOME);
-  const run = S.createWorkflowRun({
+  const { run } = runWithPull({
     workflowId: workflow.id,
-    repoId: repo.id,
-    issueNumber: 1,
-    prNumber: 2,
-    status: "running",
+    repoName: "me/workflow-needs-human",
     currentStep: "verify",
-    costIncrementUsd: 10,
-    costLimitUsd: 10,
   });
-  // Waiting for a human keeps the run `running`, so it stays active (#1307).
+  // Waiting for a human leaves the PR open, so the run stays active (#1307).
   S.updateWorkflowRun(run.id, { needsHumanReason: "rework limit exceeded" });
 
   expectServiceStatus(() => svc.workflows.delete("needs-human-run"), 409);
   expect(svc.workflows.get("needs-human-run").id).toBe(workflow.id);
-});
-
-test("delete succeeds when only a legacy blocked run references the workflow", () => {
-  const workflow = svc.workflows.create({ name: "legacy-blocked-run" });
-  const repo = S.createRepo("me/workflow-legacy-blocked", HOME);
-  S.createWorkflowRun({
-    workflowId: workflow.id,
-    repoId: repo.id,
-    issueNumber: 1,
-    prNumber: 2,
-    status: "blocked",
-    currentStep: "verify",
-    costIncrementUsd: 10,
-    costLimitUsd: 10,
-  });
-
-  // Legacy `blocked` is terminal (#1307): its parent session is gone, so it is not active.
-  svc.workflows.delete("legacy-blocked-run");
-  expectServiceStatus(() => svc.workflows.get("legacy-blocked-run"), 404);
 });
 
 test("delete succeeds when no runs reference the workflow", () => {
@@ -219,20 +212,28 @@ test("delete succeeds when no runs reference the workflow", () => {
   expectServiceStatus(() => svc.workflows.get("unused"), 404);
 });
 
-test("delete succeeds when only non-running runs reference the workflow", () => {
-  const workflow = svc.workflows.create({ name: "done-run" });
-  const repo = S.createRepo("me/workflow-done", HOME);
-  S.createWorkflowRun({
+test("delete succeeds when every run's PR is closed", () => {
+  const workflow = svc.workflows.create({ name: "closed-run" });
+  const { prIssue } = runWithPull({
     workflowId: workflow.id,
-    repoId: repo.id,
-    issueNumber: 1,
-    prNumber: 2,
-    status: "completed",
+    repoName: "me/workflow-closed",
     currentStep: "verify",
-    costIncrementUsd: 10,
-    costLimitUsd: 10,
   });
+  S.updateIssue(prIssue.id, { state: "closed" });
 
-  expect(svc.workflows.delete("done-run")).toEqual({ ok: true });
-  expectServiceStatus(() => svc.workflows.get("done-run"), 404);
+  expect(svc.workflows.delete("closed-run")).toEqual({ ok: true });
+  expectServiceStatus(() => svc.workflows.get("closed-run"), 404);
+});
+
+test("delete succeeds when every run's PR is merged", () => {
+  const workflow = svc.workflows.create({ name: "merged-run" });
+  const { prIssue } = runWithPull({
+    workflowId: workflow.id,
+    repoName: "me/workflow-merged",
+    currentStep: "verify",
+  });
+  S.setMerged(prIssue.id, "deadbeef", "merge");
+
+  expect(svc.workflows.delete("merged-run")).toEqual({ ok: true });
+  expectServiceStatus(() => svc.workflows.get("merged-run"), 404);
 });

@@ -335,8 +335,7 @@ test("a follow-up comment from outside the run becomes pending again", async () 
   ).toEqual([thread.id]);
 });
 
-test("a PR with no running workflow run only records the domain event", async () => {
-  S.updateWorkflowRun(runId, { status: "completed" });
+test("creating a thread records the domain event and nothing else", async () => {
   const before = S.listEvents(0, repoId, 500).length;
 
   const created = await createThread("Late thought.");

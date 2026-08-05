@@ -2153,14 +2153,14 @@ test("a merged PR completes the run and ends cost detection", async () => {
     payload: { number: started.pr.number, source_payload_version: 1 },
   });
   expect(completed.observed.pr_merged).toBe(true);
-  expect(completed.observed.status).toBe("completed");
-  expect(S.getWorkflowRun(run)?.status).toBe("completed");
+  // The PR carries the end; nothing records it a second time on the run row.
+  expect(S.getWorkflowRun(run)?.status).toBe("running");
 
   // A terminal run keeps deciding the same terminal action, so a later state change cannot revive it.
   const replayed = await svc.workflowRuns.next(repo.full_name, { run });
   expect(replayed).toMatchObject({ action: "complete", event: null });
 
-  // No further cost-exceeded edge can fire for a run that is no longer running.
+  // No further cost-exceeded edge can fire for a run that has ended.
   S.upsertSessionUsage(child, {
     model: "test",
     input_tokens: 1,
@@ -2211,8 +2211,8 @@ test("any merge route that leaves the PR merged completes the run", async () => 
 
   expect(await svc.workflowRuns.next(repo.full_name, { run })).toMatchObject({
     action: "complete",
+    observed: { pr_merged: true },
   });
-  expect(S.getWorkflowRun(run)?.status).toBe("completed");
 }, 20_000);
 
 test("closing an unmerged PR completes the run", async () => {
@@ -2253,9 +2253,8 @@ test("closing an unmerged PR completes the run", async () => {
   expect(completed.observed).toMatchObject({
     pr_merged: false,
     pr_closed: true,
-    status: "completed",
   });
-  expect(S.getWorkflowRun(run)?.status).toBe("completed");
+  expect(S.getWorkflowRun(run)?.status).toBe("running");
 
   expect(
     S.eventsForWorkflowRun(repo.id, run).filter(
@@ -2302,10 +2301,102 @@ test("closing a PR through issues.update completes the run", async () => {
   });
   expect(completed).toMatchObject({
     action: "complete",
-    observed: { pr_closed: true, status: "completed" },
+    observed: { pr_closed: true },
     event: { type: "pull_request.updated" },
   });
-  expect(S.getWorkflowRun(run)?.status).toBe("completed");
+}, 20_000);
+
+// The run row records no end, so every lifecycle operation asks the PR instead. Without this a
+// merged PR's worktree would still accept a fresh child, and a cost hold on it would stay
+// actionable — both are steps toward a goal the merge already settled.
+test("an ended run refuses lifecycle progress and withholds the cost-limit increase", async () => {
+  const { repo } = freshRepo("me/workflow-ended-guards");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Ended guards",
+    "## Acceptance criteria\n- [ ] Ships\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "ended-guards-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "f5f5f5f5-f5f5-4f5f-8f5f-f5f5f5f5f5f5";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const run = started.run.id;
+  commit(started.worktree, "impl.txt", "shipped\n");
+  const child = "f6f6f6f6-f6f6-4f6f-8f6f-f6f6f6f6f6f6";
+  S.registerAgentSession(child, "workflow-step", child);
+  S.appendWorkflowRunStepSession(run, "execute", child);
+  S.updateWorkflowRun(run, {
+    activeStep: "execute",
+    activeSessionId: child,
+    needsHumanReason: "Cost limit exceeded; human decision required",
+  });
+  const limitUsd = S.getWorkflowRun(run)!.cost_limit_usd as number;
+  const incrementUsd = S.getWorkflowRun(run)!.cost_increment_usd as number;
+  S.emitWorkflowRunCostExceeded(
+    repo.id,
+    "test",
+    {
+      id: run,
+      number: issue.number,
+      pr_number: started.pr.number,
+      parent_session_id: parent,
+      session_id: parent,
+      usage_session_id: child,
+      active_step: "execute",
+      active_session_id: child,
+      cost_usd: limitUsd + 2.5,
+      limit_usd: limitUsd,
+      increment_usd: incrementUsd,
+      next_limit_usd: limitUsd + incrementUsd,
+    },
+    0,
+  );
+  const held = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: started.pr.number,
+  });
+  expect(held?.cost_limit_increase_available).toBe(true);
+
+  await svc.pulls.merge(repo.full_name, started.pr.number, "merge");
+
+  const ended = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: started.pr.number,
+  });
+  expect(ended).toMatchObject({
+    pr_merged: true,
+    cost_limit_increase_available: false,
+    active_verify_head_sha: null,
+  });
+  expect(() =>
+    svc.workflowRuns.awaitHuman(
+      repo.full_name,
+      { run, reason: "still deciding" },
+      parent,
+    ),
+  ).toThrowError(/has ended/);
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run, step: "execute" },
+      parent,
+    ),
+  ).rejects.toThrowError(/has ended/);
+  expect(() =>
+    svc.workflowRuns.increaseCostLimitForHuman(
+      repo.full_name,
+      { run, expectedLimitUsd: limitUsd },
+      parent,
+    ),
+  ).toThrowError(/has ended/);
 }, 20_000);
 
 test("step status exposes hold, rework, pending effects, and unaddressed out-of-band reviews", async () => {
@@ -3511,11 +3602,11 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   });
   expect(waiting?.needs_human_reason).toBe("waiting for guidance");
 
-  const completedRun = S.updateWorkflowRun(run.id, { status: "completed" });
-  const completed = await svc.workflowRuns.stateForPull(repo.full_name, {
+  S.updateIssue(prIssue.id, { state: "closed" });
+  const closed = await svc.workflowRuns.stateForPull(repo.full_name, {
     pull: prIssue.number,
   });
-  expect(completed?.ended_at).toBe(completedRun?.ended_at);
+  expect(closed).toMatchObject({ pr_closed: true, pr_merged: false });
 });
 
 test("stateForPull exposes only a Verify launch that has not submitted its review", async () => {
@@ -3633,11 +3724,15 @@ test("human lifecycle intents sanitize reasons and authorize explicit resume (#1
   });
   const parent = "44444444-4444-4444-8444-444444444444";
   S.registerAgentSession(parent, "lh-workflow", parent);
+  // The lifecycle guard reads the run's end from the linked PR, so the run needs its real rows.
+  const holdIssue = S.createIssue(repo.id, "issue", "Hold", "", "me");
+  const holdPr = S.createIssue(repo.id, "pull", "Hold PR", "", "me");
+  S.createPull(holdPr.id, "hold-head", "main", null, holdIssue.id);
   const run = S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
-    issueNumber: 11,
-    prNumber: 22,
+    issueNumber: holdIssue.number,
+    prNumber: holdPr.number,
     status: "running",
     currentStep: "execute",
     costIncrementUsd: 10,

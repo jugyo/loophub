@@ -1023,6 +1023,9 @@ async function observeWorkflowRunState(
 
   const prClosed = prIssue.state === "closed";
   const prMerged = pull.merged === 1;
+  // The run's end. Every value below that used to ask "is this run still running" reads it, so the
+  // state cannot report a live child or an actionable hold for a run whose PR is already resolved.
+  const runEnded = prClosed || prMerged;
   const mergeableState =
     shaStatus === null
       ? "unknown"
@@ -1129,10 +1132,10 @@ async function observeWorkflowRunState(
     reworkLimit: WORKFLOW_REWORK_LIMIT,
     costIncrementUsd: incrementUsd,
     costLimitUsd: limitUsd,
-    costLimitIncreaseAvailable: costLimitIncreaseAvailable(repo, run),
+    costLimitIncreaseAvailable: costLimitIncreaseAvailable(repo, run, runEnded),
     totalCost: workflowRunTotalCost(run),
     activeVerifyHeadSha:
-      run.status === "running" &&
+      !runEnded &&
       run.needs_human_reason === null &&
       run.active_step === "verify" &&
       verifyLaunchPending
@@ -1152,13 +1155,15 @@ async function observeWorkflowRunState(
 }
 
 // A Web surface may increase the limit only where `increaseCostLimitForHuman` would succeed: the run
-// is held on the current limit's cost-exceeded event and still has an interrupted step to resume.
+// has not ended, is held on the current limit's cost-exceeded event, and still has an interrupted
+// step to resume.
 function costLimitIncreaseAvailable(
   repo: S.Repo,
   run: S.WorkflowRunRow,
+  ended: boolean,
 ): boolean {
   return (
-    run.status === "running" &&
+    !ended &&
     run.needs_human_reason !== null &&
     run.cost_increment_usd !== null &&
     run.cost_limit_usd !== null &&
@@ -1227,14 +1232,20 @@ function lifecycleRun(
   return resolved;
 }
 
-function assertRunningLifecycle(run: S.WorkflowRunRow): void {
-  if (run.status !== "running") {
-    throw new ServiceError(409, `Workflow run is ${run.status}`);
+// A run whose linked PR is closed or merged has ended, and every lifecycle operation below is a
+// step toward a goal that PR already settled — launching a child into its worktree, advancing its
+// step, holding it for a human. The end is read from the PR because that is where it is recorded.
+function assertRunNotEnded(run: S.WorkflowRunRow): void {
+  if (!S.isWorkflowRunActive(run.id)) {
+    throw new ServiceError(
+      409,
+      `Workflow run #${run.id} has ended: pull request #${run.pr_number} is closed or merged`,
+    );
   }
 }
 
 function assertAutomaticProgressAllowed(run: S.WorkflowRunRow): void {
-  assertRunningLifecycle(run);
+  assertRunNotEnded(run);
   if (run.needs_human_reason !== null) {
     throw new ServiceError(
       409,
@@ -1246,7 +1257,6 @@ function assertAutomaticProgressAllowed(run: S.WorkflowRunRow): void {
 function updateRunLifecycle(
   run: S.WorkflowRunRow,
   patch: {
-    status?: string;
     currentStep?: WorkflowStep;
     reworkCount?: number;
     needsHumanReason?: string | null;
@@ -1296,7 +1306,7 @@ function increaseRunCostLimit(
   input: { expectedLimitUsd: number },
   sessionId: string | null | undefined,
 ): WorkflowRunCostLimitIncreaseResult {
-  assertRunningLifecycle(run);
+  assertRunNotEnded(run);
   if (!Number.isFinite(input.expectedLimitUsd) || input.expectedLimitUsd <= 0) {
     throw new ServiceError(
       422,
@@ -1587,7 +1597,7 @@ export const workflowRuns = {
     sessionId?: string | null,
   ): WorkflowRunUpdateResult {
     const { run } = lifecycleRun(name, input.run, sessionId);
-    assertRunningLifecycle(run);
+    assertRunNotEnded(run);
     if (run.needs_human_reason !== null) {
       throw new ServiceError(
         409,
@@ -1609,7 +1619,7 @@ export const workflowRuns = {
     sessionId?: string | null,
   ): Promise<WorkflowRunUpdateResult> {
     const { repo, run } = lifecycleRun(name, input.run, sessionId);
-    assertRunningLifecycle(run);
+    assertRunNotEnded(run);
     if (run.needs_human_reason === null) {
       throw new ServiceError(409, "Workflow run is not waiting for a human");
     }
@@ -1748,7 +1758,9 @@ export const workflowRuns = {
     if (run.repo_id !== repo.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
-    if (run.status !== "running") {
+    // A run whose PR is closed or merged has ended, and a hold cannot reach anyone: its parent has
+    // already left the loop. The usage sweep still visits it, so the guard belongs here.
+    if (!S.isWorkflowRunActive(run.id)) {
       return {
         emitted: false,
         cost_usd: null,
@@ -2212,8 +2224,11 @@ export const workflowRuns = {
     const run = workflowRunOr404(input.run);
     if (run.repo_id !== r.id)
       throw new ServiceError(404, "Workflow run not found for repo");
-    if (run.status !== "running")
-      throw new ServiceError(422, `Workflow run is ${run.status}`);
+    if (!S.isWorkflowRunActive(run.id))
+      throw new ServiceError(
+        422,
+        `Workflow run #${run.id} has ended: pull request #${run.pr_number} is closed or merged`,
+      );
     if (!stepActorAllowed(run, "execute", sessionId)) {
       throw new ServiceError(
         403,
@@ -2265,8 +2280,11 @@ export const workflowRuns = {
     const run = workflowRunOr404(input.run);
     if (run.repo_id !== r.id)
       throw new ServiceError(404, "Workflow run not found for repo");
-    if (run.status !== "running")
-      throw new ServiceError(422, `Workflow run is ${run.status}`);
+    if (!S.isWorkflowRunActive(run.id))
+      throw new ServiceError(
+        422,
+        `Workflow run #${run.id} has ended: pull request #${run.pr_number} is closed or merged`,
+      );
     if (!stepActorAllowed(run, "execute", sessionId)) {
       throw new ServiceError(
         403,
@@ -2421,7 +2439,7 @@ export const workflowRuns = {
       note?: string;
       requiresChanges?: boolean;
     },
-    sessionId?: string | null,
+    _sessionId?: string | null,
   ): Promise<WorkflowNextResult> {
     if (input.event !== undefined && input.note !== undefined) {
       throw new ServiceError(
@@ -2462,32 +2480,16 @@ export const workflowRuns = {
           markedWorkflowSourceExists(r.id),
         )
       : null;
-    const observedState = await observeWorkflowRunState(
+    // Terminal condition: once the linked PR is closed there is nothing left to reconcile. Merge
+    // closes the PR and reaches this same path. The PR's own state is the fact, so nothing records
+    // the end on the run row — a second answer to the same question is a row someone can forget to
+    // write, and every close / merge route already lands on this observation.
+    const observed = await observeWorkflowRunState(
       r,
       run,
       workflowRunEventProjection(run),
     );
     const prIssue = issueOr404(r, run.pr_number, "pull");
-    // Terminal condition: once the linked PR is closed there is nothing left to reconcile. Merge
-    // closes the PR and reaches this same path.
-    // Record it from the observation rather than from the PR operation itself — that keeps the run
-    // lifecycle owned by this service, makes every close / merge route land on the same result
-    // (the PR's own state is the fact), and covers the event path too: the close event the operation
-    // produced records the completion when its instruction is decided. A completed run is no longer
-    // a `running` target for cost detection, so no further cost-exceeded edge can fire for it.
-    const completedNow =
-      observedState.pr_closed && S.getWorkflowRun(run.id)?.status === "running"
-        ? updateRunLifecycle(
-            run,
-            { status: "completed" },
-            "complete",
-            sessionId,
-          ).run.status
-        : null;
-    const observed =
-      completedNow === null
-        ? observedState
-        : { ...observedState, status: completedNow };
     const action = reconcileWorkflow({
       status: observed.status,
       prClosed: observed.pr_closed,

@@ -535,17 +535,17 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Done").className).not.toContain("text-green");
   });
 
-  it("does not treat a completed run as reaching Done", () => {
+  it("does not treat an ended run as reaching Done", () => {
     render(
       <WorkflowStepTracker
         state={state({
-          status: "completed",
+          pr_merged: true,
           current_step: "verify",
           verification_status: "verified",
         })}
       />,
     );
-    // `status === completed` is not the terminal signal — Done stays unreached (grey, not current).
+    // Having ended is not the terminal signal — Done stays unreached (grey, not current).
     expect(screen.getByText("Done").className).not.toContain("text-green");
     expect(screen.getByText("Verify").getAttribute("aria-current")).toBe(
       "step",

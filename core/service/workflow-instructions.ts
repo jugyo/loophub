@@ -280,13 +280,15 @@ export const workflowInstructions = {
     const event = pendingEvent(run);
     if (!event) return { status: "idle" };
 
-    if (run.status !== "running") {
+    // An ended run is drained rather than observed: its remaining subject events cannot change the
+    // outcome, and a full observation per event costs two rev-parses and a merge preview each.
+    if (!S.isWorkflowRunActive(run.id)) {
       S.advanceWorkflowRunEventCursor(run.id, event.id);
       return {
         status: "skipped",
         run: run.id,
         event: event.id,
-        reason: `Workflow run is ${run.status}`,
+        reason: `Workflow run #${run.id} has ended: pull request #${run.pr_number} is closed or merged`,
       };
     }
 

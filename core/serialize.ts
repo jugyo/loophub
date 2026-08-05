@@ -1572,7 +1572,9 @@ export interface WorkflowRunStateWire {
   id: number;
   workflow_id: number | null;
   workflow_name: string | null;
-  status: string; // running | completed (closed PR); legacy rows may read 'stopped' or 'blocked'
+  // Fixed at `running` for the life of the run — whether it has ended is read from `pr_closed` /
+  // `pr_merged`. Legacy rows may read 'completed', 'stopped' or 'blocked'.
+  status: string;
   current_step: string; // execute | verify
   // The step whose pane was activated last, and the child session in it. Both null means the run
   // has no live child — a positive observation, distinct from a run row that could not be read.
@@ -1588,7 +1590,8 @@ export interface WorkflowRunStateWire {
   pr_number: number;
   created_at: string;
   updated_at: string;
-  // Fixed lifecycle end. Unlike `updated_at`, terminal-run maintenance never advances it.
+  // Legacy lifecycle end, carried only by rows written while a terminal status was recorded. NULL
+  // for every run started since; a run's end is read from `pr_closed` / `pr_merged`.
   ended_at: string | null;
 
   // ---- commit ----
@@ -1910,10 +1913,9 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     significance: "default",
   },
   "workflow_run.updated": {
-    // `completed` marks the run's terminal condition: its linked PR closed. A passing
-    // Verify does not reach it — that keeps the run `running` + `verification_status: verified`
-    // (#1513). `stopped` (#1525) stays a legacy status with no write path (a cost stop interrupts
-    // only the child); old event rows can still carry it, like the legacy `blocked` case.
+    // `completed` / `stopped` / `blocked` are legacy statuses with no write path: a run's end is
+    // read from its linked PR rather than recorded on the run. Old event rows still carry them, so
+    // the labels stay for the history timeline.
     label: (context) => {
       const { status, transition, touchedNeedsHuman, needsHumanReason } =
         workflowRunUpdatedFacts(context);

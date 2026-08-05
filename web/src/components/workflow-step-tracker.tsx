@@ -5,9 +5,9 @@
 // traversed connectors fill in to convey progression.
 //
 // `execute` / `verify` are the run's real steps; "Done" is the canonical pre-merge state from core
-// (`done`) — NOT `status === completed`, which means the linked PR closed or merged (#1808). A stale verification keeps the
-// Verify label as-is and is conveyed by the pill's amber tone plus its popover status (#1906); a
-// needs-human run (#1307, or a legacy `blocked` row) appends a warning marker unless the caller
+// (`done`) — NOT the run having ended, which means the linked PR closed or merged (#1808). A stale
+// verification keeps the Verify label as-is and is conveyed by the pill's amber tone plus its
+// popover status (#1906); a needs-human run (#1307) appends a warning marker unless the caller
 // already says why with its own "over budget" marker (#1932).
 //
 // `merge_conflict` and `done` are three-valued: null means core did not observe the merge against
@@ -29,6 +29,7 @@ import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
+import { workflowRunEnded } from "@/lib/workflow-run";
 import { useFocusHerdrAgent } from "@/queries/terminal";
 
 const STAGES = [
@@ -63,12 +64,12 @@ function workflowParentAgent(
 export function workflowTrackerState(
   state: WorkflowRunState,
 ): WorkflowTrackerState {
-  const needsHuman =
-    (state.status === "running" && state.needs_human_reason !== null) ||
-    state.status === "blocked";
+  // An ended run leads nowhere, so neither marker applies to it.
+  const ended = workflowRunEnded(state);
+  const needsHuman = !ended && state.needs_human_reason !== null;
   const done = state.done === true;
   const stale =
-    state.status === "running" &&
+    !ended &&
     state.needs_human_reason === null &&
     state.verification_status === "stale";
   // Canonical Done advances the tracker to index 2; otherwise it sits on the run's current step.
@@ -227,7 +228,13 @@ function WorkflowNode({
             </div>
             <dl className="mt-2 grid grid-cols-[3.5rem_1fr] gap-x-2 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Status</dt>
-              <dd className="font-medium">{agent?.status ?? state.status}</dd>
+              {/* The live pane's own status when there is one; otherwise the run's, which is the
+                  PR's state rather than anything stored on the run. The wording matches the badge
+                  and the run detail dialog so one fact is not named three ways. */}
+              <dd className="font-medium">
+                {agent?.status ??
+                  (workflowRunEnded(state) ? "completed" : "running")}
+              </dd>
             </dl>
             <p className="mt-2 text-xs text-muted-foreground">{stateSummary}</p>
             {herdrUnavailable ? (

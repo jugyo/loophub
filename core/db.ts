@@ -1075,8 +1075,8 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   cost_limit_usd     REAL NOT NULL,
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL,
-  -- Set once when the run leaves the running lifecycle. Unlike updated_at, this does not move when
-  -- terminal-run maintenance advances an event cursor.
+  -- Legacy lifecycle end, carried by rows written while a terminal status was recorded. Nothing
+  -- writes it now: a run's end is read from its linked PR, not stored here.
   ended_at           TEXT
 );
 

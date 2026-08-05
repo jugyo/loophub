@@ -10,6 +10,24 @@ const RUN_SUBJECT = {
   issue: "run.issue_number",
 } as const;
 
+/**
+ * SQL matching a pull request that is still open and unmerged.
+ *
+ * Whether a Workflow run has ended is the same question as whether its linked PR is still open and
+ * unmerged — closing and merging are human operations, and the fact lives on the PR row. Callers
+ * share this fragment rather than each restating the predicate, for the same reason
+ * {@link workflowSubjectMatchSql} is shared: two callers that disagree about which runs qualify
+ * produce runs one accepts and the other drops.
+ *
+ * The caller supplies the aliases of the PR's `issues` and `pulls` rows and binds no parameters.
+ */
+export function openUnmergedPullSql(input: {
+  issue: string;
+  pull: string;
+}): string {
+  return `(${input.issue}.state = 'open' AND ${input.pull}.merged = 0)`;
+}
+
 export interface WorkflowInput {
   repoId?: number | null;
   name: string;
@@ -150,17 +168,38 @@ export function archiveWorkflow(id: number): WorkflowRow | null {
   return getWorkflowById(id);
 }
 
-// Active means `running` only (#1307) — a run waiting for a human keeps status `running`, so it
-// stays active; legacy terminal `blocked` rows do not.
+// Active means the run's linked PR is still open and unmerged: such a run may still launch a child,
+// so its workflow's prompts must stay. A run waiting for a human keeps its PR open, so it stays
+// active; a run whose PR is gone from the database counts as ended.
 export function countActiveWorkflowRunsForWorkflow(workflowId: number): number {
   const row = db
     .query(
       `SELECT COUNT(*) AS count
-       FROM workflow_runs
-       WHERE workflow_id = ? AND status = 'running'`,
+       FROM workflow_runs run
+       JOIN issues pr_issue ON pr_issue.repo_id = run.repo_id
+         AND pr_issue.number = run.pr_number AND pr_issue.kind = 'pull'
+       JOIN pulls pr ON pr.issue_id = pr_issue.id
+       WHERE run.workflow_id = ?
+         AND ${openUnmergedPullSql({ issue: "pr_issue", pull: "pr" })}`,
     )
     .get(workflowId) as { count: number } | null;
   return row?.count ?? 0;
+}
+
+// Whether one run is still active, by the same predicate the count above uses.
+export function isWorkflowRunActive(runId: number): boolean {
+  const row = db
+    .query(
+      `SELECT 1 AS active
+       FROM workflow_runs run
+       JOIN issues pr_issue ON pr_issue.repo_id = run.repo_id
+         AND pr_issue.number = run.pr_number AND pr_issue.kind = 'pull'
+       JOIN pulls pr ON pr.issue_id = pr_issue.id
+       WHERE run.id = ?
+         AND ${openUnmergedPullSql({ issue: "pr_issue", pull: "pr" })}`,
+    )
+    .get(runId) as { active: number } | null;
+  return row !== null;
 }
 
 export interface WorkflowRunInput {
@@ -185,6 +224,9 @@ export interface WorkflowRunRow {
   repo_id: number;
   issue_number: number;
   pr_number: number;
+  // Fixed at `running` for the life of the run: whether a run has ended is read from its linked PR
+  // (see openUnmergedPullSql), not stored here. Legacy rows may still read `completed`, `stopped`
+  // or `blocked`, and are kept for history.
   status: string;
   current_step: string;
   rework_count: number;
@@ -213,7 +255,8 @@ export interface WorkflowRunRow {
   cost_limit_usd: number | null;
   created_at: string;
   updated_at: string;
-  // Fixed when the run first leaves `running`; terminal maintenance must not move it.
+  // Legacy lifecycle end, carried by rows that were moved to a terminal status while that write
+  // path existed. Nothing writes it now, so it is NULL for every run started since.
   ended_at: string | null;
 }
 
@@ -628,7 +671,6 @@ export function workflowRunForLegacyParent(
 export function updateWorkflowRun(
   id: number,
   patch: {
-    status?: string;
     currentStep?: string;
     reworkCount?: number;
     // string sets the human-wait reason, explicit null clears it (#1307).
@@ -640,14 +682,6 @@ export function updateWorkflowRun(
   const sets: string[] = [];
   const params: unknown[] = [];
   const updatedAt = now();
-  if (patch.status !== undefined) {
-    sets.push("status = ?");
-    params.push(patch.status);
-    if (patch.status !== "running") {
-      sets.push("ended_at = COALESCE(ended_at, ?)");
-      params.push(updatedAt);
-    }
-  }
   if (patch.currentStep !== undefined) {
     sets.push("current_step = ?");
     params.push(patch.currentStep);

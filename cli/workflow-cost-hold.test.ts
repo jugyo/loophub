@@ -28,7 +28,6 @@ const PARENT_SESSION_ID = "00000000-0000-4000-8000-000000000001";
 let S: typeof import("../core/store.ts");
 let repoId: number;
 let workflowId: number;
-let nextNumber = 1;
 
 function runCli(args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, [...NODE_ARGS, ...args], {
@@ -51,12 +50,16 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
   reemit: (limitUsd?: number) => number;
   spend: (costUsd: number) => void;
 } {
-  const number = nextNumber++;
+  // The run's PR is what says the run has not ended, so the lifecycle guard needs the real rows.
+  const issue = S.createIssue(repoId, "issue", "Cost hold", "", "me");
+  const prIssue = S.createIssue(repoId, "pull", "Cost hold PR", "", "me");
+  S.createPull(prIssue.id, "head", "main", null, issue.id);
+  const number = prIssue.number;
   const run = S.createWorkflowRun({
     workflowId,
     repoId,
-    issueNumber: number,
-    prNumber: number,
+    issueNumber: issue.number,
+    prNumber: prIssue.number,
     status: "running",
     currentStep: "execute",
     parentSessionId: PARENT_SESSION_ID,
@@ -346,7 +349,6 @@ test("lh workflow cost-hold does not fire effects twice for the same limit", () 
   };
   expect(runCli(costHoldArgs(input), env).status).toBe(0);
   const firstLog = readFileSync(input.log, "utf8");
-  S.updateWorkflowRun(input.run, { status: "completed" });
 
   const replay = runCli(costHoldArgs(input), env);
 

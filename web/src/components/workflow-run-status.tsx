@@ -5,10 +5,12 @@
 // this deliberately does not re-derive step-completion truth (that stays with
 // `workflow step status` — HEAD vs the pinned Verify review).
 //
-// - needs human (#1307): a running run with `needs_human_reason` set is waiting for an explicit
-//   human instruction. Surfaces that reason (plus the latest Verify review summary when present) and
-//   links to the issue, where the parent files its escalation comment. Legacy terminal `blocked`
-//   rows get the same prominent display.
+// - needs human (#1307): a run with `needs_human_reason` set is waiting for an explicit human
+//   instruction. Surfaces that reason (plus the latest Verify review summary when present) and
+//   links to the issue, where the parent files its escalation comment.
+// - ended: the run's linked PR closed or merged. That is the run's only terminal condition — the run
+//   row never records one — so the badge, the duration ticker and the notices all read it from
+//   `pr_closed` / `pr_merged`.
 // A running run can be verified for its current HEAD or need re-verification after HEAD advances.
 //
 // Renders nothing when the issue / PR has no run.
@@ -28,32 +30,24 @@ import { WorkflowRunDetailDialog } from "@/components/workflow-run-history-dialo
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
 import { formatCost } from "@/lib/session-usage";
 import { formatDuration } from "@/lib/time";
+import { workflowRunEnded } from "@/lib/workflow-run";
 import { useHerdrSessions } from "@/queries/terminal";
 import { useWorkflowRunTotalCost } from "@/queries/workflow-runs";
 
-const STATUS_META: Record<
-  string,
-  { label: string; tone: NonNullable<BadgeProps["tone"]> }
-> = {
-  running: { label: "Running", tone: "working" },
-  // Legacy terminal status (#1307): pre-needs-human escalations; shown like a needs-human run.
-  blocked: { label: "Needs human", tone: "cost-stopped" },
-  // Terminal status: the run's linked PR merged (#1808). A passing Verify does not reach it — that
-  // keeps the run `running` + `verification_status: verified` (#1513).
-  completed: { label: "Completed", tone: "review-passed" },
-  // Legacy terminal status (#1525): the run-stop write path was removed — a cost stop now interrupts
-  // only the child (Esc) and leaves the run `running`. Old rows may still be `stopped`, so keep the
-  // read-only rendering for them.
-  stopped: { label: "Stopped", tone: "closed" },
+const RUNNING_STATUS = {
+  label: "Running",
+  tone: "working" as NonNullable<BadgeProps["tone"]>,
+};
+// The run ended when its linked PR closed or merged. A passing Verify does not reach it — that
+// keeps the run running + `verification_status: verified` (#1513).
+const ENDED_STATUS = {
+  label: "Completed",
+  tone: "review-passed" as NonNullable<BadgeProps["tone"]>,
 };
 
-// Waiting for an explicit human instruction (#1307): a running run holding a needs-human reason,
-// or a legacy terminal `blocked` row.
+// Waiting for an explicit human instruction (#1307).
 function needsHuman(state: WorkflowRunState): boolean {
-  return (
-    (state.status === "running" && state.needs_human_reason !== null) ||
-    state.status === "blocked"
-  );
+  return state.needs_human_reason !== null;
 }
 
 function formatWorkflowRunTotalCost(total: WorkflowRunTotalCost): string {
@@ -65,7 +59,7 @@ function formatWorkflowRunTotalCost(total: WorkflowRunTotalCost): string {
 }
 
 function WorkflowRunDuration({ state }: { state: WorkflowRunState }) {
-  const running = state.status === "running";
+  const running = !workflowRunEnded(state);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -75,6 +69,9 @@ function WorkflowRunDuration({ state }: { state: WorkflowRunState }) {
   }, [running]);
 
   const startedAtMs = new Date(state.created_at).getTime();
+  // An ended run only has a total when its end was recorded, which legacy rows carry and current
+  // ones do not — the PR says the run ended, not when it stopped working. Show nothing rather than
+  // present time-since-start as a total.
   const endedAtMs = running
     ? nowMs
     : state.ended_at
@@ -139,23 +136,27 @@ export function WorkflowRunStatusSection({
   const displayState = budgetResumePending
     ? { ...state, needs_human_reason: null }
     : state;
-  const status = needsHuman(displayState)
-    ? { label: "Needs human", tone: "cost-stopped" as const }
-    : state.done
-      ? { label: "Ready to merge", tone: "review-passed" as const }
-      : state.status === "running" && state.verification_status === "stale"
-        ? { label: "Reverify required", tone: "review-changes" as const }
-        : (STATUS_META[state.status] ?? {
-            label: state.status,
-            tone: "unknown" as const,
-          });
-  const completed = state.status === "completed";
+  // The end outranks every other display: a hold or a stale verification on an ended run cannot
+  // lead anywhere.
+  const runEnded = workflowRunEnded(state);
+  const status = runEnded
+    ? ENDED_STATUS
+    : needsHuman(displayState)
+      ? { label: "Needs human", tone: "cost-stopped" as const }
+      : state.done
+        ? { label: "Ready to merge", tone: "review-passed" as const }
+        : state.verification_status === "stale"
+          ? { label: "Reverify required", tone: "review-changes" as const }
+          : RUNNING_STATUS;
   const isStaleVerification =
-    state.status === "running" &&
+    !runEnded &&
     state.needs_human_reason === null &&
     state.verification_status === "stale";
   const isVerified = state.verification_status === "verified";
-  const overBudget = state.cost_limit_increase_available;
+  // Core withholds the increase from an ended run, so this is already false there. Keep the
+  // condition anyway: this flag replaces the badge with the budget control, and the badge is the
+  // one thing that must not disappear when a run ends.
+  const overBudget = !runEnded && state.cost_limit_increase_available;
 
   return (
     <section
@@ -213,7 +214,7 @@ export function WorkflowRunStatusSection({
           />
         ) : null}
 
-        {completed ? (
+        {runEnded ? (
           <p className="text-sm text-muted-foreground">
             The Workflow run is completed.
           </p>
@@ -229,7 +230,7 @@ export function WorkflowRunStatusSection({
           </p>
         ) : null}
 
-        {needsHuman(displayState) && !overBudget ? (
+        {needsHuman(displayState) && !runEnded && !overBudget ? (
           <NeedsHumanNotice owner={owner} repo={repo} state={displayState} />
         ) : null}
 
@@ -288,9 +289,7 @@ function NeedsHumanNotice({
   return (
     <div className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
       <p className="font-medium text-amber-700 dark:text-amber-300">
-        {state.status === "blocked"
-          ? "This run was escalated to a human and is no longer running."
-          : "This run is waiting for a human instruction to its parent session."}
+        This run is waiting for a human instruction to its parent session.
       </p>
       {state.needs_human_reason !== null ? (
         <p className="text-muted-foreground">{state.needs_human_reason}</p>

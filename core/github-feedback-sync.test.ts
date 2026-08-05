@@ -380,11 +380,15 @@ test("isolates a GitHub failure to one PR and reports it visibly to the worker",
   ).toBe(true);
 });
 
-test("does not poll closed PRs or Workflow runs that are no longer active", async () => {
+test("does not poll PRs that are closed or merged", async () => {
   const closed = await workflowGithubPull(301);
   svc.issues.update("me/proj", closed.number, { state: "closed" });
-  const completed = await workflowGithubPull(302);
-  S.updateWorkflowRun(completed.runId, { status: "completed" });
+  const merged = await workflowGithubPull(302);
+  S.setMerged(
+    S.getIssue(S.getRepo("me", "proj")!.id, merged.number)!.id,
+    "abc",
+    "merge",
+  );
   const called: string[] = [];
 
   await sync.syncGithubFeedback({
@@ -395,5 +399,5 @@ test("does not poll closed PRs or Workflow runs that are no longer active", asyn
   });
 
   expect(called).not.toContain(closed.url);
-  expect(called).not.toContain(completed.url);
+  expect(called).not.toContain(merged.url);
 });

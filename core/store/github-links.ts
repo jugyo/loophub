@@ -1,4 +1,5 @@
 import { db, now } from "../db.ts";
+import { openUnmergedPullSql } from "./workflows.ts";
 
 export interface GithubPull {
   issue_id: number;
@@ -83,9 +84,10 @@ export interface WorkflowGithubPullSyncRow extends GithubPullSyncRow {
   parent_session_id: string;
 }
 
-// GitHub feedback is relevant only while an open LoopHub PR's latest running Workflow run has a
-// parent session to observe the projected Workflow event. Without a parent_session_id the
-// projection has no consumer on the parent contract's event cursor.
+// GitHub feedback is relevant only while an open LoopHub PR's latest Workflow run has a parent
+// session to observe the projected Workflow event. Without a parent_session_id the projection has
+// no consumer on the parent contract's event cursor. The open-and-unmerged predicate is what says
+// the run has not ended, so the candidate is selected on identity alone.
 export function activeWorkflowGithubPullLinks(): WorkflowGithubPullSyncRow[] {
   return db
     .query(
@@ -99,10 +101,9 @@ export function activeWorkflowGithubPullLinks(): WorkflowGithubPullSyncRow[] {
        JOIN workflow_runs wr ON wr.id = (
          SELECT candidate.id FROM workflow_runs candidate
          WHERE candidate.repo_id = i.repo_id AND candidate.pr_number = i.number
-           AND candidate.status = 'running'
          ORDER BY candidate.id DESC LIMIT 1
        )
-       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
+       WHERE i.kind = 'pull' AND ${openUnmergedPullSql({ issue: "i", pull: "p" })}
          AND p.archived_at IS NULL AND r.archived = 0
          AND wr.parent_session_id IS NOT NULL
        ORDER BY i.repo_id, i.number`,

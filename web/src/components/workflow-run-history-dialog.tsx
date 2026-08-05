@@ -10,26 +10,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCost } from "@/lib/session-usage";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
+import { workflowRunEnded } from "@/lib/workflow-run";
 import {
   useWorkflowRunAgentCosts,
   useWorkflowRunHistory,
 } from "@/queries/workflow-runs";
 
-const STATUS_LABELS: Record<string, string> = {
-  running: "Running",
-  // Legacy terminal status (#1307): shown like a needs-human run.
-  blocked: "Needs human",
-  completed: "Completed",
-  stopped: "Stopped",
-};
-
-// A running run holding a needs-human reason is waiting for a human (#1307) — surface that over
-// the plain status, matching the run-status section's badge.
+// The same three states the run-status section's badge shows, read from the same facts: the run
+// ends when its linked PR closes or merges, and a run holding a needs-human reason is waiting for
+// a human (#1307).
 function statusLabel(state: WorkflowRunState): string {
-  if (state.status === "running" && state.needs_human_reason !== null) {
-    return "Needs human";
-  }
-  return STATUS_LABELS[state.status] ?? state.status;
+  if (workflowRunEnded(state)) return "Completed";
+  if (state.needs_human_reason !== null) return "Needs human";
+  return "Running";
 }
 
 function displayName(value: string): string {

@@ -16,7 +16,6 @@ import type { WorkflowStep } from "./compose.ts";
 
 /** The lifecycle move a `workflow_run.updated` event records. */
 export type WorkflowRunTransition =
-  | "complete"
   | "advance_to_verify"
   | "activate_step"
   | "await_human"

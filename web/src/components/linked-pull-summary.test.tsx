@@ -401,17 +401,17 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
     expect(within_.getByText("Verify")).toBeTruthy();
   });
 
-  it("does not reach Done for a completed run (completed is not the terminal signal)", async () => {
+  it("does not reach Done for an ended run (having ended is not the terminal signal)", async () => {
     renderRowWithRun(
       makeWorkflowRunState({
-        status: "completed",
+        pr_merged: true,
         current_step: "verify",
         verification_status: "verified",
         done: false,
       }),
     );
-    // `status === completed` is a separate lifecycle state, so canonical Done stays unreached and
-    // Verify remains the current stage.
+    // A merged PR ends the run but says nothing about the pre-merge Done state, so canonical Done
+    // stays unreached and Verify remains the current stage.
     const tracker = (await screen.findByText("Done")).closest(
       "[data-workflow-step-tracker]",
     );

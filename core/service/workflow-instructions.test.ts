@@ -979,16 +979,19 @@ test("an ambiguous send failure leaves a visible pending receipt and is not repe
   }
 });
 
-test("terminal runs consume pending events without delivering progression", async () => {
+test("ended runs consume pending events without delivering progression", async () => {
   const input = fixture("terminal");
-  S.updateWorkflowRun(input.run.id, { status: "completed" });
+  // The run ends when its linked PR closes; nothing is written on the run row to say so.
+  S.updateIssue(S.getIssue(input.repo.id, input.run.pr_number)!.id, {
+    state: "closed",
+  });
   const next = vi.spyOn(svc.workflowRuns, "next");
   try {
     await expect(
       svc.workflowInstructions.dispatchRun(input.run.id),
     ).resolves.toMatchObject({
       status: "skipped",
-      reason: "Workflow run is completed",
+      reason: `Workflow run #${input.run.id} has ended: pull request #${input.run.pr_number} is closed or merged`,
     });
     expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(input.event.id);
     expect(next).not.toHaveBeenCalled();

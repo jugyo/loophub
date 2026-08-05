@@ -392,10 +392,13 @@ rework 上限は 8。rework は parent の **1 行の**
 宣言がないまま run 活動が停止しても、worker が時間経過だけで run を自動ホールドすることはない。進捗の
 有無は turn done と HEAD / review を観測する parent が扱い、本当に死んだ run は人間が気づいて stop /
 resume する（人間がリカバリ可能な失敗に自動機構を足さない原則）。rework 上限・escalation・
-人間による resume は引き続き機能する。新規に到達し得る run の status は `running` のみ
-（人間待ちは `running` のまま needs_human_reason を持つ）。`completed`（#1513）と `stopped`（#1525）は
-legacy status で、いずれも書き込み経路は削除済み。古い DB 行として残り得るため UI / serialize は
-read-only 表示だけ維持する。
+人間による resume は引き続き機能する。run の status は作成時の `running` から動かない
+（人間待ちも `running` のまま needs_human_reason を持つ）。run が終わったかどうかは
+**linked PR が closed または merged かどうか**であり、その事実は PR 行にある。同じ問いに 2 つの答えを
+持たないため、terminal status を書く経路は無く、`completed`（#1513）/ `stopped`（#1525）/ `blocked` は
+古い DB 行だけが持つ legacy status である（event の履歴表示だけが read-only で扱う）。「linked PR が
+open かつ未 merge」は `openUnmergedPullSql()` として 1 箇所に置かれ、delete guard・GitHub feedback
+sweep・lifecycle guard・コスト検出が共有する。
 
 fresh pass 後も run は complete せず `running` + `verification_status: verified` のまま保つ。run を恒久
 終了する command は無い。コスト超過時は `cost-hold` が needs-human hold を先に設定し、

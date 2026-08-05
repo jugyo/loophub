@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test } from "vitest";
 
 // Isolate the DB before db.ts runs its import-time setup. config.ts reads env lazily,
 // but db.ts builds the connection at import time, so set env then dynamic-import store.
@@ -31,40 +31,33 @@ test("createRepo normalizes slashless names to me/<name> (RETURNING row)", () =>
   expect(S.getRepo("me", "proj")?.id).toBe(repo.id);
 });
 
-test("a Workflow run keeps its first lifecycle end while terminal maintenance continues", () => {
-  vi.useFakeTimers();
-  try {
-    vi.setSystemTime("2026-08-03T10:00:00Z");
-    const repo = S.createRepo("me/workflow-ended-at", "/tmp/workflow-ended-at");
-    const workflow = S.createWorkflow({
-      name: "workflow-ended-at",
-      description: "",
-      executePrompt: "",
-      verifyPrompt: "",
-    });
-    const run = S.createWorkflowRun({
-      workflowId: workflow.id,
-      repoId: repo.id,
-      issueNumber: 1,
-      prNumber: 2,
-      status: "running",
-      currentStep: "verify",
-      costIncrementUsd: 10,
-      costLimitUsd: 10,
-    });
-    expect(run.ended_at).toBeNull();
+test("a Workflow run keeps its creation status for its whole life", () => {
+  const repo = S.createRepo("me/workflow-status", "/tmp/workflow-status");
+  const workflow = S.createWorkflow({
+    name: "workflow-status",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 1,
+    prNumber: 2,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+  });
+  expect(run.ended_at).toBeNull();
 
-    vi.setSystemTime("2026-08-03T11:00:00Z");
-    const completed = S.updateWorkflowRun(run.id, { status: "completed" });
-    expect(completed?.ended_at).toBe("2026-08-03T11:00:00Z");
+  // Whether the run ended is read from its linked PR, so no update writes `status` or `ended_at`.
+  S.updateWorkflowRun(run.id, { currentStep: "execute" });
+  S.advanceWorkflowRunEventCursor(run.id, 42);
 
-    vi.setSystemTime("2026-08-03T12:00:00Z");
-    const maintained = S.advanceWorkflowRunEventCursor(run.id, 42);
-    expect(maintained?.updated_at).toBe("2026-08-03T12:00:00Z");
-    expect(maintained?.ended_at).toBe("2026-08-03T11:00:00Z");
-  } finally {
-    vi.useRealTimers();
-  }
+  const maintained = S.getWorkflowRun(run.id);
+  expect(maintained?.status).toBe("running");
+  expect(maintained?.ended_at).toBeNull();
 });
 
 test("deleteRepo removes repository workflows, runs, and review responses before the repo", () => {
