@@ -997,33 +997,36 @@ async function effect(): Promise<void> {
 
 async function costHold(): Promise<void> {
   const run = positiveInt(flags.run, "--run");
-  const event = positiveInt(flags.event, "--event");
   const repo = await resolveRepo();
   const result = await runOp(async () =>
-    (await svc()).workflowCostHold.run(
-      repo,
-      { run, event },
-      await writeSession(),
-    ),
+    (await svc()).workflowCostHold.run(repo, { run }, await writeSession()),
   );
   if (flags.json) out(result);
   if (result.status === "completed") {
     if (!flags.json) {
-      console.log(`completed cost hold for event #${event}`);
+      console.log(`completed cost hold for run #${run}`);
       console.log(`receipt\t${result.receipt}`);
     }
     return;
   }
   if (result.status === "already_completed") {
     if (!flags.json) {
-      console.log(`cost hold for event #${event} is already complete`);
+      console.log(`cost hold for run #${run} is already complete`);
       console.log(`receipt\t${result.receipt}`);
+    }
+    return;
+  }
+  if (result.status === "not_exceeded") {
+    if (!flags.json) {
+      console.log(
+        `Workflow run #${run} has no recorded cost exceedance at its $${result.limit_usd} limit; nothing to hold`,
+      );
     }
     return;
   }
   if (result.status === "pending") {
     fail(
-      `cost hold for event #${event} is pending; side effects will not be replayed automatically`,
+      `cost hold for run #${run} is pending; side effects will not be replayed automatically`,
     );
   }
   const failure = result.failed!;

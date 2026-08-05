@@ -502,10 +502,7 @@ describe("reconcileWorkflow", () => {
       { kind: "github_feedback" },
       { action: "deliver", delivery_reason: "github_feedback" },
     ],
-    [
-      { kind: "cost_exceeded", eventId: 91 },
-      { action: "cost_hold", event_id: 91 },
-    ],
+    [{ kind: "cost_exceeded" }, { action: "cost_hold" }],
     [
       { kind: "out_of_band_review", reviewId: 42 },
       {
@@ -561,10 +558,10 @@ describe("reconcileWorkflow", () => {
           needsHumanReason: "Cost limit exceeded",
           awaitingHuman: true,
           costLimitIncreaseRequired: true,
-          wake: { kind: "cost_exceeded", eventId: 92 },
+          wake: { kind: "cost_exceeded" },
         }),
       ),
-    ).toMatchObject({ action: "cost_hold", event_id: 92 });
+    ).toMatchObject({ action: "cost_hold" });
   });
 
   test("completes a merged run instead of holding for cost", () => {
@@ -572,7 +569,7 @@ describe("reconcileWorkflow", () => {
       reconcileWorkflow(
         observed({
           prClosed: true,
-          wake: { kind: "cost_exceeded", eventId: 93 },
+          wake: { kind: "cost_exceeded" },
         }),
       ),
     ).toMatchObject({ action: "complete" });
@@ -691,10 +688,13 @@ describe("workflowActionPlan", () => {
         review_id: 9,
       }).commands.at(-1)?.args,
     ).toContain("orchestrator: address review 9");
-    expect(
-      plan({ action: "cost_hold", reason: "cost", event_id: 11 }).commands[0]
-        ?.args,
-    ).toContain("11");
+    // The hold names the run only: a ping-woken parent has no event id to pass along.
+    expect(plan({ action: "cost_hold", reason: "cost" }).commands).toEqual([
+      {
+        command: "lh",
+        args: ["workflow", "cost-hold", "--repo", "me/repo", "--run", "42"],
+      },
+    ]);
   });
 
   test("reacts to a diff comment before delivering its fixed instruction", () => {

@@ -218,7 +218,10 @@ function workflowRunCostBudget(run: S.WorkflowRunRow) {
   };
 }
 
-function workflowRunCost(run: S.WorkflowRunRow) {
+// The budget and the cumulative cost observed against it. Cost detection and `cost-hold` read the
+// same snapshot, so the interrupt reports the cost the run has actually reached rather than the one
+// recorded when the limit was first crossed.
+export function workflowRunCost(run: S.WorkflowRunRow) {
   const sessionIds = [
     ...(run.parent_session_id ? [run.parent_session_id] : []),
     ...workflowStepSessionIds(run.step_sessions_json, "execute"),
@@ -346,8 +349,7 @@ export type WorkflowStepInputResult = {
 
 // The action plus the facts it was decided from. The snapshot travels with the action so the parent
 // never has to re-observe state to act on it, and `event` names the run event the call was pointed
-// at (`--event`) — the parent needs its id for event-scoped commands such as `lh workflow cost-hold`
-// and for reading a GitHub reference.
+// at (`--event`) — the parent needs its id to read a GitHub reference.
 export type WorkflowNextResult = WorkflowNextAction & {
   instructions: ReturnType<typeof workflowActionPlan>;
   observed: WorkflowRunStateWire;
@@ -780,7 +782,7 @@ function workflowWakeObservation(input: {
     return { kind: "cost_limit_increased" };
   }
   if (event.type === "workflow_run.cost_exceeded") {
-    return { kind: "cost_exceeded", eventId };
+    return { kind: "cost_exceeded" };
   }
   if (
     event.type === "workflow_run.review_submitted" ||

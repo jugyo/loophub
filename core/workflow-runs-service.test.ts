@@ -2018,12 +2018,15 @@ test("next returns cost_hold for every cost-exceeded wake and the receipt keeps 
     { issue: issue.number, workflowId: workflow.id },
     parent,
   );
+  // The event names the run's own cumulative limit: that is what `cost-hold` resolves from the run
+  // row, and what its receipt is scoped to.
+  const limitUsd = S.getWorkflowRun(started.run.id)?.cost_limit_usd ?? 0;
   const costPayload = {
     id: started.run.id,
     active_step: "execute" as const,
     active_session_id: null,
-    cost_usd: 12,
-    limit_usd: 10,
+    cost_usd: limitUsd + 2,
+    limit_usd: limitUsd,
   };
   const first = S.emitEvent(
     repo.id,
@@ -2039,10 +2042,20 @@ test("next returns cost_hold for every cost-exceeded wake and the receipt keeps 
     }),
   ).toMatchObject({
     action: "cost_hold",
-    event_id: first.id,
     instructions: {
       boundary: "mechanical",
-      commands: [{ args: expect.arrayContaining([String(first.id)]) }],
+      commands: [
+        {
+          args: [
+            "workflow",
+            "cost-hold",
+            "--repo",
+            repo.full_name,
+            "--run",
+            String(started.run.id),
+          ],
+        },
+      ],
     },
   });
 
@@ -2066,13 +2079,9 @@ test("next returns cost_hold for every cost-exceeded wake and the receipt keeps 
       run: started.run.id,
       event: replay.id,
     }),
-  ).toMatchObject({ action: "cost_hold", event_id: replay.id });
+  ).toMatchObject({ action: "cost_hold" });
   await expect(
-    svc.workflowCostHold.run(
-      repo.full_name,
-      { run: started.run.id, event: replay.id },
-      parent,
-    ),
+    svc.workflowCostHold.run(repo.full_name, { run: started.run.id }, parent),
   ).resolves.toMatchObject({ status: "already_completed", completed: [] });
 }, 20_000);
 

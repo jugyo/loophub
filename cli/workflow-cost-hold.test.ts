@@ -49,6 +49,7 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
   event: number;
   log: string;
   reemit: (limitUsd?: number) => number;
+  spend: (costUsd: number) => void;
 } {
   const number = nextNumber++;
   const run = S.createWorkflowRun({
@@ -88,6 +89,20 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
       activeSessionId: childSessionId,
     });
   }
+  // `cost-hold` reports the run's cumulative cost from usage, so the child's usage row is what the
+  // hold reason and the pane notification quote.
+  const spend = (costUsd: number): void => {
+    if (!childSessionId) return;
+    S.upsertSessionUsage(childSessionId, {
+      model: "claude-opus-5",
+      input_tokens: 1,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1,
+      cost_usd: costUsd,
+    });
+  };
+  spend(12.5);
   // A 0 ms re-emit interval stands in for "the interval has elapsed", so `reemit` deterministically
   // produces the further events a stopped parent leaves queued. `limitUsd` models the event a raised
   // limit produces once the run burns through it again.
@@ -131,10 +146,10 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
       },
     }),
   );
-  return { run: run.id, event, log, reemit: emit };
+  return { run: run.id, event, log, reemit: emit, spend };
 }
 
-function costHoldArgs(input: { run: number; event: number }): string[] {
+function costHoldArgs(input: { run: number }): string[] {
   return [
     "workflow",
     "cost-hold",
@@ -142,8 +157,6 @@ function costHoldArgs(input: { run: number; event: number }): string[] {
     "me/workflow-cost-hold",
     "--run",
     String(input.run),
-    "--event",
-    String(input.event),
   ];
 }
 
@@ -195,9 +208,7 @@ test("lh workflow cost-hold holds the run, sends Escape, and notifies the active
   });
 
   expect(result.status, result.stderr).toBe(0);
-  expect(result.stdout).toContain(
-    `completed cost hold for event #${input.event}`,
-  );
+  expect(result.stdout).toContain(`completed cost hold for run #${input.run}`);
   expect(result.stdout).toContain("receipt\tcompleted");
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBe(
     "Cost limit exceeded: current $12.5, limit $10; human decision required",
@@ -218,23 +229,26 @@ test("a re-emitted cost event interrupts a run whose parent stopped before cost-
     HERDR_AGENTS: join(home, `agents-${input.run}.json`),
   };
   // The parent was handed the first event's instruction and stopped before running cost-hold. The
-  // worker had already advanced its cursor past that event, so only a re-emission can interrupt the
-  // run.
+  // worker had already advanced its cursor past that event, so only a re-emission brings the parent
+  // back — and what it holds is the run at its current limit, not that one event.
   const reemitted = input.reemit();
   expect(reemitted).not.toBe(input.event);
 
-  const result = runCli(
-    costHoldArgs({ run: input.run, event: reemitted }),
-    env,
-  );
+  const result = runCli(costHoldArgs(input), env);
 
   expect(result.status, result.stderr).toBe(0);
-  expect(result.stdout).toContain(
-    `completed cost hold for event #${reemitted}`,
-  );
+  expect(result.stdout).toContain(`completed cost hold for run #${input.run}`);
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBe(
     "Cost limit exceeded: current $12.5, limit $10; human decision required",
   );
+  // The receipt anchors to the limit's first observation whichever wake got the parent here, so a
+  // later one finds it instead of holding again.
+  expect(S.getWorkflowEventEffect(input.run, input.event, "cost.hold")).toEqual(
+    expect.objectContaining({ status: "completed" }),
+  );
+  expect(
+    S.getWorkflowEventEffect(input.run, reemitted, "cost.hold"),
+  ).toBeNull();
   const log = readFileSync(input.log, "utf8");
   expect(log).toContain("pane send-keys w1:p2 Escape");
 });
@@ -253,10 +267,10 @@ test("queued re-emissions the parent drains after a hold do not replay the inter
   const heldReason = S.getWorkflowRun(input.run)?.needs_human_reason;
   expect(heldReason).not.toBeNull();
 
-  // The human said "no", so the hold stands. Draining the leftovers must not send Esc again, and
-  // must not leave a pending receipt behind — that would pin the parent's reconcile to `wait`.
+  // The human said "no", so the hold stands. Each further wake must not send Esc again, and must
+  // not leave a pending receipt behind — that would pin the parent's reconcile to `wait`.
   for (const event of queued) {
-    const drained = runCli(costHoldArgs({ run: input.run, event }), env);
+    const drained = runCli(costHoldArgs(input), env);
     expect(drained.status, drained.stderr).toBe(0);
     expect(drained.stdout).toContain("receipt\tcompleted");
     expect(readFileSync(input.log, "utf8")).toBe(heldLog);
@@ -271,7 +285,7 @@ test("a raised limit still holds again while the old limit's leftovers stay iner
     HERDR_LOG: input.log,
     HERDR_AGENTS: join(home, `agents-${input.run}.json`),
   };
-  const stale = input.reemit();
+  input.reemit();
   expect(runCli(costHoldArgs(input), env).status).toBe(0);
 
   const increased = runCli([
@@ -301,26 +315,30 @@ test("a raised limit still holds again while the old limit's leftovers stay iner
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBeNull();
   const resumedLog = readFileSync(input.log, "utf8");
 
-  // A leftover event names the old limit the human already answered for; re-holding here would
-  // interrupt a child that is running under the raised limit.
-  const drained = runCli(costHoldArgs({ run: input.run, event: stale }), env);
+  // The leftover events name the old limit the human already answered for. The run is inside its
+  // raised limit now, so a wake that still reaches cost-hold reports nothing to hold rather than
+  // interrupting a child that is running under the new budget.
+  const drained = runCli(costHoldArgs(input), env);
   expect(drained.status, drained.stderr).toBe(0);
-  expect(drained.stdout).toContain("receipt\tcompleted");
+  expect(drained.stdout).toContain(
+    `Workflow run #${input.run} has no recorded cost exceedance at its $20 limit`,
+  );
   expect(readFileSync(input.log, "utf8")).toBe(resumedLog);
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBeNull();
 
   // Burning through the raised limit is a new interrupt, not a replay.
-  const raised = input.reemit(20);
-  const held = runCli(costHoldArgs({ run: input.run, event: raised }), env);
+  input.spend(22.5);
+  input.reemit(20);
+  const held = runCli(costHoldArgs(input), env);
   expect(held.status, held.stderr).toBe(0);
-  expect(held.stdout).toContain(`completed cost hold for event #${raised}`);
+  expect(held.stdout).toContain(`completed cost hold for run #${input.run}`);
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBe(
     "Cost limit exceeded: current $22.5, limit $20; human decision required",
   );
   expect(readFileSync(input.log, "utf8")).not.toBe(resumedLog);
 });
 
-test("lh workflow cost-hold does not fire effects twice for the same event", () => {
+test("lh workflow cost-hold does not fire effects twice for the same limit", () => {
   const input = createCostEvent();
   const env = {
     HERDR_LOG: input.log,
@@ -334,7 +352,7 @@ test("lh workflow cost-hold does not fire effects twice for the same event", () 
 
   expect(replay.status, replay.stderr).toBe(0);
   expect(replay.stdout).toContain(
-    `cost hold for event #${input.event} is already complete`,
+    `cost hold for run #${input.run} is already complete`,
   );
   expect(replay.stdout).toContain("receipt\tcompleted");
   expect(readFileSync(input.log, "utf8")).toBe(firstLog);
@@ -361,9 +379,7 @@ test("a partial cost-hold failure is visible and leaves the run held", () => {
     HERDR_FAIL: "",
   });
   expect(replay.status).not.toBe(0);
-  expect(replay.stderr).toContain(
-    `cost hold for event #${input.event} is pending`,
-  );
+  expect(replay.stderr).toContain(`cost hold for run #${input.run} is pending`);
   expect(readFileSync(input.log, "utf8")).toBe(logAfterFailure);
 });
 

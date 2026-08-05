@@ -104,9 +104,9 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    それがある run への `launch-step --step execute` は 409 で失敗する（同じ worktree を 2 つの child が
    編集する二重起動を、成功として記録させないため）。fresh launch の確認は active step/session も
    自動記録する。修正後の Verify は常に fresh child とする。
-6. コスト上限超過では event payload の `usage_session_id` と `active_step` /
-   `active_session_id` を区別し、run を needs-human hold にしてから active child の pane だけに
-   実 Esc と理由通知を送る。ここまでが `cost-hold` の責務で、親はその後 loop に戻る。増額と再開の判断は
+6. コスト上限超過では run 行の `active_step` / `active_session_id` が中断対象であり、run を
+   needs-human hold にしてから active child の pane だけに実 Esc と理由通知を送る。ここまでが
+   `cost-hold` の責務で、親はその後 loop に戻る。増額と再開の判断は
    人間が行う。解消不能状態も issue comment + needs-human 状態で人間へ渡す。
 7. passing verdict 後も run と parent agent、および可能なら Execute pane を維持し、追加指示や
    turn-done を待つ。run を恒久終了する command は無く、終了させるのは人間である。merge はしない。
@@ -157,9 +157,11 @@ action を届ける。action は event id と canonical reference だけを含�
 この二段目が必要かどうかは action が示すため、親の prompt にこの規則を持たない。
 人間からの直接指示は待たずに `lh workflow instruction <run> --note <text|->` で渡す。
 
-`workflow_run.cost_exceeded` の event は `cost_hold` action を返す。親は `lh workflow cost-hold` を実行して
-次の instruction を待つ。hold 中の event 再送に対しても同じ action が返るが、effect が
-一度きりであることは action ではなく `cost.hold` receipt が保証する。
+`workflow_run.cost_exceeded` の event は `cost_hold` action を返す。親は `lh workflow cost-hold --run <run>`
+を実行して次の instruction を待つ。command は run 単位であり event id を取らない —— 累計上限は run 行の
+`cost_limit_usd`、累計 cost は usage、中断対象は run 行の active target から解決する。hold 中の event
+再送に対しても同じ action が返るが、effect が一度きりであることは action ではなく `cost.hold` receipt が
+保証する。
 
 Esc、pane 通知、Issue comment のような DB transaction 外の side effect は、実行前に durable
 receipt を claim し、成功後に complete する。
@@ -309,16 +311,20 @@ sweep 再送）。生存している親は再送間隔より早く hold を確�
 上限を固定増分 `B` と初期累計上限 `B` の両方として保存するため、その後の設定変更は既存 run に
 影響しない。payload には `cost_usd`、`limit_usd`、`increment_usd`、`next_limit_usd` が含まれる。
 `usage_session_id` はコスト更新を検知した
-usage 集約であり、中断対象ではない。中断対象は別フィールドの `active_step` /
+usage 集約であり、中断対象ではない。中断対象は run 行の `active_step` /
 `active_session_id` である。passing Verify 後の追加 Execute 中も `current_step` は Verify のままだが、
-直前の `deliver` が行った live-control target 更新により active target は Execute になる。親はその
-step の active session に関連付けられた実行 target を解決し、まず run を `await-human` で hold
+直前の `deliver` が行った live-control target 更新により active target は Execute になる。
+`cost-hold` は run 単位の command であり、event id を取らない —— 累計上限は run 行の `cost_limit_usd`、
+累計 cost は usage、中断対象は run 行の active target から解決する。親はその
+実行 target を解決し、まず run を `await-human` で hold
 してから agent-control port で実 Esc を送り、同じ target に
 `orchestrator: Cost limit exceeded: current $<cost>, limit $<limit>. Wait for human instruction.`
-という 1 行を一度だけ通知する。key input と text input は別の port 操作である。ここまでが
+という 1 行を一度だけ通知する（usage に unknown cost の session が混ざり累計 cost を確定できない場合は
+`current unknown` と表示し、hold 自体は行う）。key input と text input は別の port 操作である。ここまでが
 `cost-hold` の効果であり、粒度が event id 単位でないのは、同じ上限に対して event が
-再送されるためである。停止中に溜まった event を drain したときの `cost-hold` は `already_completed` を
-返し、effect を再発火しない。親は worker instruction の `cost_hold` action を実行したら次の instruction を
+再送されるためである。停止中に溜まった event を drain した後の `cost-hold` は、同じ上限なら
+`already_completed`、現在の累計上限に対する超過 event が無ければ（増額後に古い上限の event だけが
+残っている状態）`not_exceeded` を返し、いずれも effect を再発火しない。親は worker instruction の `cost_hold` action を実行したら次の instruction を
 待つだけで、続行可否を自分では問わない。event の
 filter は payload の `id` を使って対象 run に絞り込む。子の contract に親の pane id や topology は現れない。
 
@@ -346,7 +352,7 @@ hold を維持する。
 | start | run started | worker instruction に従って Execute を launch |
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
 | Execute | `workflow_run.escalated` を受領 | event の reason で `escalate-human` → Issue comment に通知。run state は変えず、人間の指示まで step launch も rework もしない |
-| Execute / Verify | `workflow_run.cost_exceeded` を受領 | `cost_hold` action → `cost-hold` が active child を解決 → `await-human` → 実 Esc + 1 行通知（再送分は `already_completed` で effect を発火しない）→ loop に戻る |
+| Execute / Verify | `workflow_run.cost_exceeded` を受領 | `cost_hold` action → `cost-hold` が run 行から上限と active child を解決 → `await-human` → 実 Esc + 1 行通知（再送分は `already_completed` で effect を発火しない）→ loop に戻る |
 | Cost hold | 人間が増額 | 人間が期待上限付き専用操作で `B` 増額 → hold を解除。Execute は同じ target で続行、Verify は current HEAD に fresh launch |
 | Cost hold | 増額なし | hold を維持し、子起動・注入・自動遷移を行わず次の明示的指示を待つ |
 | Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
@@ -479,7 +485,7 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
   親が wake 後・`cost-hold` 前に停止しても後続 wake で hold できる。hold 確立後と増額後は再送されない。
 - 停止中に溜まった再送 event を親が順に処理しても、Esc・child 通知・yes / no の継続確認はいずれも一度しか
   発火しない。`cost.hold` の receipt は event id 単位ではなく (run, 累計上限) 単位で、同じ上限に対する
-  後続 event は `already_completed` になる。親はこれを skip するため、増額・resume 済みの子を再び中断せず、
+  後続の `cost-hold` は `already_completed` になる。親はこれを skip するため、増額・resume 済みの子を再び中断せず、
   決定済みの質問を人間へ再提示せず、古い `limit_usd` で増額を試みず、pending receipt も残さない。
   増額後の新しい上限を超えた場合は別の上限なので改めて hold し、改めて確認する。
 - fresh pass 後の追加 Execute では `current_step: verify` を維持しつつ

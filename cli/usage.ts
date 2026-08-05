@@ -37,7 +37,7 @@ export function usage(): void {
   lh workflow escalate-human --reason <text> [--repo owner/name] [--run <id>] [--issue <n>]   # record an idempotent Issue comment
   lh workflow instruction <run> [--repo owner/name] (--event <id> --requires-changes true|false | --note <text|->) [--json]      # submit a parent input — a GitHub-reference verdict or a direct human instruction — and return the instruction it produces, without changing run state
   lh workflow effect begin|complete --repo owner/name --run <id> --event <id> --effect <key> [--json]   # durable idempotency receipt for a non-transactional parent side effect
-  lh workflow cost-hold --repo owner/name --run <id> --event <id> [--json]   # hold a cost-exceeded run, interrupt its active pane, and notify the child exactly once
+  lh workflow cost-hold --repo owner/name --run <id> [--json]   # hold a run that is over its cost limit, interrupt its active pane, and notify the child exactly once
   lh workflow state <run> [--repo owner/name] [--state-version <n>] [--json]   # read the run's complete current state in one call: run row, commit, review, comment, diff feedback, GitHub feedback revisions, PR lifecycle, holds
   lh workflow step input <run> <step> [--repo owner/name] [--note <text|->] [--review <id>]   # dry-run the composed contract + input pointers + prompt for a step (no launch)
   lh workflow step status <run> [--repo owner/name] [--json]   # same observation as lh workflow state, kept while callers move over

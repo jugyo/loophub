@@ -428,6 +428,35 @@ export function getOrCreateWorkflowHumanEscalationEvent(
     .get(repoId, payload.id, payload.reason) as EventRow;
 }
 
+// The event a run's `cost.hold` receipt anchors to at one cumulative limit. Detection re-emits
+// while a parent is away (#1844), so the same limit accumulates several events that all ask for the
+// one interrupt it warrants; the oldest is the stable anchor no matter when the parent gets there.
+export function firstWorkflowRunCostExceededEvent(
+  repoId: number,
+  runId: number,
+  limitUsd: number,
+): EventRow | null {
+  return (
+    (db
+      .query(
+        `SELECT * FROM events
+         WHERE repo_id = ? AND type = 'workflow_run.cost_exceeded'
+           AND json_extract(payload, '$.id') = ?
+           AND json_extract(payload, '$.limit_usd') = ?
+         ORDER BY id ASC LIMIT 1`,
+      )
+      .get(repoId, runId, limitUsd) as EventRow | null) ?? null
+  );
+}
+
+// Deliberately its own query rather than a `!!first…()` delegation. The ordering the anchor lookup
+// needs is satisfied from `idx_events_repo` (repo_id, id), which walks the repo's events; unordered,
+// this one seeks `idx_events_repo_type_number_session_id` (repo_id, type, …) instead. That index is
+// not in `core/db.ts` — installs created before it was dropped from the schema still carry it, and
+// on one such database (207k events, 151k of them in the repo measured) the two plans are ~0.03 ms
+// against ~19 ms. A database created by the current schema sees no difference, so the duplication
+// buys nothing there; on the ones that do differ, existence is asked on every poll of a held run —
+// exactly while a human is on the page deciding whether to raise the limit.
 export function hasWorkflowRunCostExceededEvent(
   repoId: number,
   runId: number,

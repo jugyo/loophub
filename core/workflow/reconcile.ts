@@ -42,7 +42,7 @@ export type WorkflowWakeInput =
   | { kind: "out_of_band_review"; reviewId: number }
   | { kind: "cost_limit_increased" }
   | { kind: "human_instruction" }
-  | { kind: "cost_exceeded"; eventId: number };
+  | { kind: "cost_exceeded" };
 
 export type WorkflowNextAction =
   | { action: "complete"; reason: string }
@@ -99,7 +99,7 @@ export type WorkflowNextAction =
       event_id: number;
       references: readonly string[];
     }
-  | { action: "cost_hold"; reason: string; event_id: number }
+  | { action: "cost_hold"; reason: string }
   | { action: "wait"; reason: string }
   | {
       action: "escalate";
@@ -290,9 +290,7 @@ export function workflowActionPlan(
         after: "watch",
       };
     case "cost_hold":
-      return watch([
-        command("cost-hold", ...scoped, "--event", String(action.event_id)),
-      ]);
+      return watch([command("cost-hold", ...scoped)]);
     case "wait":
       return watch([]);
     case "escalate": {
@@ -358,7 +356,6 @@ export function reconcileWorkflow(
     return {
       action: "cost_hold",
       reason: "The run exceeded its cost limit and must be held for a human.",
-      event_id: input.wake.eventId,
     };
   }
 
