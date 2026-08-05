@@ -183,9 +183,10 @@ function parentAgentFlags(input: {
   });
 }
 
-// The parent agent's own pane, which a child step splits so Execute/Verify land beside it in the
-// same tab. herdr exports it into every pane it starts; `lh workflow launch-step` runs inside the
-// parent agent's pane, so it inherits the value without being told.
+// This process's own herdr pane. Placement no longer depends on it: launch-step anchors a child to
+// the pane the run's parent launch registered, and derives the tab from that pane. This is only the
+// fallback for a run that has no registered pane at all, and the `--pane-id` escape hatch for
+// naming one explicitly.
 function inheritedHerdrPaneId(): string | null {
   if (flags["pane-id"] !== undefined) {
     if (!HERDR_ID.test(flags["pane-id"])) fail("--pane-id is invalid");
@@ -193,21 +194,6 @@ function inheritedHerdrPaneId(): string | null {
   }
   const value = process.env.HERDR_PANE_ID;
   return value && HERDR_ID.test(value) ? value : null;
-}
-
-function inheritedHerdrTabId(): string | null {
-  if (flags["tab-id"] !== undefined) {
-    if (!HERDR_ID.test(flags["tab-id"])) fail("--tab-id is invalid");
-    return flags["tab-id"];
-  }
-  for (const value of [
-    process.env.HERDR_TAB_ID,
-    process.env.HERDR_TAB,
-    process.env.HERDR_PANE_TAB_ID,
-  ]) {
-    if (value && HERDR_ID.test(value)) return value;
-  }
-  return null;
 }
 
 // The explicit `--model <name>` a caller passed, or undefined when none was given.
@@ -434,7 +420,6 @@ async function launchStep(): Promise<void> {
   if (flags.json === true) {
     fail("--json is not supported for workflow launch-step");
   }
-  const tabId = inheritedHerdrTabId();
   const paneId = inheritedHerdrPaneId();
   const actorSessionId = await writeSession();
   const result = await runOp(() =>
@@ -447,7 +432,6 @@ async function launchStep(): Promise<void> {
         review,
         // The step inherits the parent run's model; only forward an explicit --model override.
         model: explicitModelFlag(),
-        tabId,
         paneId,
       },
       actorSessionId,
@@ -532,10 +516,10 @@ async function launchStep(): Promise<void> {
   // ancillary layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
   // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
   await confirm(childPaneId);
-  if (tabId) {
+  if (result.anchor_pane_id) {
     try {
       layoutWorkflowTab({
-        tabId,
+        anchorPaneId: result.anchor_pane_id,
         runId: result.run.id,
         herdr: herdrPaneLayoutRunner(result.herdr.sessionName),
       });
@@ -544,11 +528,11 @@ async function launchStep(): Promise<void> {
       throw e;
     }
   } else {
-    // Preserve the legacy/headless launch path that had no placement selector. There is no safe
-    // target to rebuild in this case, so make the missing visual guarantee explicit without moving
-    // whichever unrelated tab happens to be focused.
+    // Preserve the legacy/headless launch path that had no placement anchor. The child got its own
+    // tab, so there is no run tab to rebuild; make the missing visual guarantee explicit without
+    // moving whichever unrelated tab happens to be focused.
     console.error(
-      "warning: skipped Workflow pane layout because no parent Herdr tab id was available",
+      "warning: skipped Workflow pane layout because the run has no anchor Herdr pane",
     );
   }
 }

@@ -8,9 +8,14 @@ import {
   parseHerdrTabId,
 } from "./terminal-launch.ts";
 
-export interface WorkflowPane {
-  paneId: string;
+/**
+ * One Workflow run's tab, resolved from its anchor pane. `paneIds` is the layout order: the anchor
+ * first, then the run's step panes in launch order.
+ */
+export interface WorkflowRunTab {
+  tabId: string;
   workspaceId: string;
+  paneIds: string[];
 }
 
 export interface WorkflowPanePlacement {
@@ -29,16 +34,19 @@ export interface WorkflowPaneGridPlan {
   placements: WorkflowPanePlacement[];
 }
 
-function paneSequence(paneId: string): number | null {
-  const match = paneId.match(/:p(\d+)$/u);
-  return match ? Number(match[1]) : null;
+function isHerdrId(value: unknown): value is string {
+  return typeof value === "string" && HERDR_ID.test(value);
 }
 
-function workflowPaneKind(
-  label: unknown,
-  runId: number,
-): "parent" | "step" | null {
-  return workflowHerdrPaneKind(label, runId);
+/**
+ * The launch order of a step pane, taken from the child sequence LoopHub itself put in the label
+ * ("executor #7-3"). Herdr's own pane ids are opaque counters (`w14Z:pX`), so they cannot order a
+ * tab; the sequence LoopHub assigns at launch can. Legacy panes predate the sequence and sort last,
+ * in the order Herdr listed them.
+ */
+function stepLaunchSequence(label: unknown): number | null {
+  const agent = parseWorkflowHerdrAgentName(label);
+  return agent?.kind === "step" ? agent.sequence : null;
 }
 
 /**
@@ -93,62 +101,77 @@ export function parsePreviousWorkflowVerifyPane(
 }
 
 /**
- * Reads the Workflow-owned panes in one tab. A foreign pane makes the operation unsafe: rebuilding
- * the tab around it would change a pane outside Workflow's scope, so the caller must surface an
- * error instead of laying out only a subset.
+ * Resolves a run's tab from its anchor pane — the pane its parent agent runs in, as the launch
+ * recorded it. The tab is whichever tab Herdr *currently* reports the anchor in, so a caller can
+ * never name a tab that has since stopped holding the run (nor one it merely inherited from its own
+ * environment); pane and tab come from a single observation and cannot disagree.
+ *
+ * `null` means the tab is unsafe to rebuild, and the caller must surface an error rather than lay
+ * out part of it: the anchor is absent or not this run's parent pane, a second pane claims to be the
+ * parent, or a pane in the tab belongs to another run or to nobody — rebuilding around any of those
+ * would move a pane outside this run's scope.
  */
-export function parseWorkflowTabPanes(
+export function parseWorkflowRunTab(
   stdout: string,
-  tabId: string,
+  anchorPaneId: string,
   runId: number,
-): WorkflowPane[] | null {
+): WorkflowRunTab | null {
+  let panes: unknown;
   try {
-    const parsed = JSON.parse(stdout);
-    const panes = parsed?.result?.panes;
-    if (!Array.isArray(panes)) return null;
-    const inTab = panes.filter((pane) => pane?.tab_id === tabId);
-    const kinds = inTab.map((pane) => workflowPaneKind(pane?.label, runId));
-    if (
-      inTab.length === 0 ||
-      kinds.some((kind) => kind === null) ||
-      kinds.filter((kind) => kind === "parent").length !== 1
-    ) {
-      return null;
-    }
-    const result = inTab.map((pane, index) => ({
-      paneId: pane?.pane_id,
-      workspaceId: pane?.workspace_id,
-      index,
-    }));
-    if (
-      result.some(
-        (pane) =>
-          typeof pane.paneId !== "string" ||
-          !HERDR_ID.test(pane.paneId) ||
-          typeof pane.workspaceId !== "string" ||
-          !HERDR_ID.test(pane.workspaceId),
-      ) ||
-      result.some((pane) => pane.workspaceId !== result[0]?.workspaceId)
-    ) {
-      return null;
-    }
-    return result
-      .sort((a, b) => {
-        const aSequence = paneSequence(a.paneId);
-        const bSequence = paneSequence(b.paneId);
-        if (
-          aSequence !== null &&
-          bSequence !== null &&
-          aSequence !== bSequence
-        ) {
-          return aSequence - bSequence;
-        }
-        return a.index - b.index;
-      })
-      .map(({ paneId, workspaceId }) => ({ paneId, workspaceId }));
+    panes = JSON.parse(stdout)?.result?.panes;
   } catch {
     return null;
   }
+  if (!Array.isArray(panes)) return null;
+
+  const anchor = panes.find((pane) => pane?.pane_id === anchorPaneId);
+  const tabId = anchor?.tab_id;
+  const workspaceId = anchor?.workspace_id;
+  if (
+    !isHerdrId(anchorPaneId) ||
+    !isHerdrId(tabId) ||
+    !isHerdrId(workspaceId) ||
+    workflowHerdrPaneKind(anchor?.label, runId) !== "parent"
+  ) {
+    return null;
+  }
+
+  const ordered: Array<{
+    paneId: string;
+    parent: boolean;
+    sequence: number;
+    index: number;
+  }> = [];
+  for (const [index, pane] of panes.entries()) {
+    if (pane?.tab_id !== tabId) continue;
+    const paneId = pane?.pane_id;
+    const kind = workflowHerdrPaneKind(pane?.label, runId);
+    if (!isHerdrId(paneId) || pane?.workspace_id !== workspaceId) return null;
+    if (kind === null) return null;
+    // A second parent pane in the tab means the anchor is not the only candidate, so which pane the
+    // grid is built around would again depend on who asked. Refuse instead of picking one.
+    if (kind === "parent" && paneId !== anchorPaneId) return null;
+    ordered.push({
+      paneId,
+      parent: kind === "parent",
+      sequence: stepLaunchSequence(pane?.label) ?? Number.MAX_SAFE_INTEGER,
+      index,
+    });
+  }
+
+  // A total order, so the grid a tab produces depends only on the tab's contents: the anchor, then
+  // step panes by launch order, then anything without a sequence in Herdr's listing order.
+  ordered.sort(
+    (a, b) =>
+      Number(b.parent) - Number(a.parent) ||
+      a.sequence - b.sequence ||
+      a.index - b.index,
+  );
+  return {
+    tabId,
+    workspaceId,
+    paneIds: ordered.map((pane) => pane.paneId),
+  };
 }
 
 /**
@@ -230,34 +253,38 @@ function runLayoutCommand(
 }
 
 /**
- * Rebuilds one Workflow tab as a balanced grid: read its panes, stage them on a scratch tab, move
- * them back in grid order, then drop the scratch tab. The staging detour exists because Herdr can
- * only split against a pane that is already in the target tab; moving panes out first frees the
- * anchor's geometry so each placement lands where the plan says.
+ * Rebuilds a run's tab as a balanced grid: read the panes, stage them on a scratch tab, move them
+ * back in grid order, then drop the scratch tab. The staging detour exists because Herdr can only
+ * split against a pane that is already in the target tab; moving panes out first frees the anchor's
+ * geometry so each placement lands where the plan says.
+ *
+ * The tab is named by `anchorPaneId` rather than by a tab id, because the anchor is what the run
+ * actually owns: it is the run's parent pane, it is the grid's first cell, and it is therefore the
+ * one pane the rebuild never moves. Whatever else goes wrong, the parent agent stays where it was.
  *
  * Every mutation is `--no-focus`: layout is ancillary to a launch that already happened, so it must
  * never steal focus from an unrelated tab (the regression in 65cda7cf). Failures throw
  * WorkflowPaneLayoutError and are left for a human — no cleanup or retry of a partial rebuild.
  */
 export function layoutWorkflowTab(input: {
-  tabId: string;
+  anchorPaneId: string;
   runId: number;
   herdr: WorkflowPaneLayoutHerdr;
 }): void {
-  const { tabId, runId, herdr } = input;
+  const { anchorPaneId, runId, herdr } = input;
   const paneList = runLayoutCommand(herdr, ["pane", "list"], true);
-  const panes = parseWorkflowTabPanes(paneList, tabId, runId);
-  if (!panes) {
+  const tab = parseWorkflowRunTab(paneList, anchorPaneId, runId);
+  if (!tab) {
     throw new WorkflowPaneLayoutError(
-      `tab ${tabId} is missing or contains a non-Workflow pane`,
+      `pane ${anchorPaneId} is not the only parent pane of a tab holding just run #${runId}'s panes`,
     );
   }
-  const plan = workflowPaneGridPlan(panes.map((pane) => pane.paneId));
+  const plan = workflowPaneGridPlan(tab.paneIds);
   if (plan.stagingPaneIds.length === 0) return;
 
   const created = runLayoutCommand(
     herdr,
-    ["tab", "create", "--workspace", panes[0].workspaceId, "--no-focus"],
+    ["tab", "create", "--workspace", tab.workspaceId, "--no-focus"],
     true,
   );
   const stagingTabId = parseHerdrTabId(created);
@@ -290,7 +317,7 @@ export function layoutWorkflowTab(input: {
       "move",
       placement.paneId,
       "--tab",
-      tabId,
+      tab.tabId,
       "--split",
       placement.split,
       "--target-pane",

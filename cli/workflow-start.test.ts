@@ -652,7 +652,9 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_FOCUSED_STATE: runtime.focusedStatePath,
         HERDR_LOG: runtime.log,
-        HERDR_TAB_ID: "w1:t1",
+        // A stale tab id: the anchor pane w1:p2 is in w1:t1, and that is the tab the rebuild must
+        // use. Nothing reads this any more, and no launch may act on a tab it was merely told about.
+        HERDR_TAB_ID: "w1:t9",
         HERDR_PANE_ID: "w1:p2",
         LOOPHUB_SESSION_ID: body.session_id,
       },
@@ -680,7 +682,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     expectUnrelatedHerdrFocus(runtime);
 
     // The layout is step-agnostic, and the run now owns a live Execute child, so the launch that
-    // exercises the missing-tab-id fallback is a Verify one (#2150).
+    // exercises the missing-anchor fallback is a Verify one (#2150).
     const legacyLaunch = run(
       [
         "workflow",
@@ -705,7 +707,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     );
     expect(legacyLaunch.exitCode, legacyLaunch.stderr).toBe(0);
     expect(legacyLaunch.stderr).toContain(
-      "warning: skipped Workflow pane layout because no parent Herdr tab id was available",
+      "warning: skipped Workflow pane layout because the run has no anchor Herdr pane",
     );
     const relaunchedLog = readFileSync(runtime.log, "utf8").slice(log.length);
     // With no parent pane to split, the child falls back to its own fresh tab.

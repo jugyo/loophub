@@ -107,7 +107,6 @@ export type Flags = {
   "requires-changes"?: string;
   review?: string;
   "review-comment"?: string;
-  "tab-id"?: string;
   "pane-id"?: string;
   // Repeatable structured acceptance criterion text for `lh issue create` (#1894).
   ac?: string[];
@@ -216,7 +215,6 @@ const { values, positionals } = parseArgs({
     "requires-changes": { type: "string" },
     review: { type: "string" },
     "review-comment": { type: "string" },
-    "tab-id": { type: "string" },
     "pane-id": { type: "string" },
     ac: { type: "string", multiple: true },
   },

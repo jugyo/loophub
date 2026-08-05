@@ -507,6 +507,62 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   expect(S.getAgentSession(launched.session_id)?.runtime).toBe("codex");
 });
 
+test("launch-step anchors every child to the run's registered parent pane", async () => {
+  const { repo } = freshRepo("me/workflow-anchor-pane");
+  const issue = S.createIssue(repo.id, "issue", "Anchored panes", "", "me");
+  const workflow = S.createWorkflow({
+    name: "anchor-standard",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  );
+
+  // Before the parent's pane is registered there is nothing to anchor to, so the caller's own pane
+  // is the only remaining hint.
+  const unregistered = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute", paneId: "w9:pQ" },
+    started.session_id,
+  );
+  expect(unregistered.anchor_pane_id).toBe("w9:pQ");
+  expect(unregistered.herdr.paneArgv).toContain("split");
+  expect(unregistered.herdr.paneArgv).toContain("w9:pQ");
+
+  svc.workflowInstructions.registerParentPane(repo.full_name, {
+    run: started.run.id,
+    launch_id: started.session_id,
+    session_name: "me-workflow-anchor-pane",
+    pane_id: "w1:pB",
+    launched_at: new Date().toISOString(),
+  });
+
+  // Once it is registered the record wins: the child splits the parent's pane even though the
+  // caller reports a different pane of its own, so placement does not follow whoever ran the
+  // command — or whatever is focused.
+  const anchored = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify", paneId: "w9:pQ" },
+    started.session_id,
+  );
+  expect(anchored.anchor_pane_id).toBe("w1:pB");
+  expect(anchored.herdr.paneArgv).toContain("w1:pB");
+  expect(anchored.herdr.paneArgv).not.toContain("w9:pQ");
+
+  // A caller with no pane at all still gets the registered anchor rather than a fresh tab.
+  const withoutCallerPane = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    started.session_id,
+  );
+  expect(withoutCallerPane.anchor_pane_id).toBe("w1:pB");
+  expect(withoutCallerPane.herdr.paneArgv).toContain("w1:pB");
+});
+
 test("start snapshots the contract language for parent and every later step", async () => {
   const { repo } = freshRepo("me/workflow-language-run");
   const issue = S.createIssue(repo.id, "issue", "Japanese run", "", "me");

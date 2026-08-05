@@ -122,6 +122,7 @@ import {
   repoOr404,
   UNKNOWN_ACTOR,
 } from "./shared.ts";
+import { workflowRunParentPaneId } from "./workflow-panes.ts";
 
 export type WorkflowRunStartResult = {
   run: {
@@ -192,6 +193,10 @@ export type WorkflowLaunchStepResult = {
   pointers: WorkflowInputPointer[];
   head_sha?: string;
   base_sha?: string;
+  // The pane this child was placed against, and the pane the run's tab is identified by afterwards.
+  // Null only for a run with no registered parent pane and a caller with no pane of its own, which
+  // is the one case where the child gets its own tab and no grid layout.
+  anchor_pane_id: string | null;
   // The ordered herdr calls that place and start the child agent. Structural (not a reference to
   // HerdrLaunchPlan) because it crosses the JSON-RPC boundary to `lh workflow launch-step`, which
   // hands it straight to executeHerdrLaunchPlan.
@@ -1883,8 +1888,8 @@ export const workflowRuns = {
       note?: string;
       review?: number;
       model?: string | null;
-      tabId?: string | null;
-      // The parent agent's pane, split so the child lands beside it in the run's tab.
+      // Fallback anchor for a run whose parent pane was never registered — the caller's own pane, if
+      // it has one. The registered parent pane wins whenever there is one; see anchorPaneId below.
       paneId?: string | null;
     },
     sessionId: string | null | undefined,
@@ -1977,6 +1982,12 @@ export const workflowRuns = {
       nextWorkflowChildSequence(run.step_sessions_json),
     );
     if (sequence == null) throw new ServiceError(404, "Workflow run not found");
+    // Where the child goes is decided here, from the pane the run's parent launch registered — not
+    // from the environment of whoever ran the command. That record is the run's own anchor, so the
+    // child lands beside its parent no matter which pane, tab or workspace is focused. A run with no
+    // registered pane (parent started outside the recorded launch path) still falls back to the
+    // caller's pane, which is better than the tab-create fallback that ignores the run entirely.
+    const anchorPaneId = workflowRunParentPaneId(run) ?? input.paneId ?? null;
     const herdr = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: r.full_name, local_path: r.local_path },
       runId: run.id,
@@ -1987,7 +1998,7 @@ export const workflowRuns = {
       worktree,
       systemPromptPath,
       userPromptPath,
-      splitPaneId: input.paneId,
+      splitPaneId: anchorPaneId,
       model,
     });
     // Keep confirmation's validation at the persistence boundary, but also validate the generated
@@ -2011,6 +2022,7 @@ export const workflowRuns = {
       pointers,
       head_sha: headSha,
       base_sha: baseSha,
+      anchor_pane_id: anchorPaneId,
       herdr,
     };
   },

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   layoutWorkflowTab,
   parsePreviousWorkflowVerifyPane,
-  parseWorkflowTabPanes,
+  parseWorkflowRunTab,
   WorkflowPaneLayoutError,
   workflowPaneGridPlan,
 } from "./workflow-pane-layout.ts";
@@ -68,15 +68,17 @@ describe("Workflow pane grid", () => {
     ]);
   });
 
-  test("parses only Workflow panes in creation order", () => {
+  test("resolves the run's tab from its anchor pane, ordered by launch sequence", () => {
+    // Real Herdr pane ids are opaque counters (`w1:pX`), not a decimal creation order, and the list
+    // order does not follow the launch order either. Only the labels LoopHub wrote can order them.
     const stdout = JSON.stringify({
       result: {
         panes: [
           {
-            pane_id: "w1:p11",
+            pane_id: "w1:pX",
             tab_id: "w1:t2",
             workspace_id: "w1",
-            label: "executor #7-1",
+            label: "verifier #7-3",
           },
           {
             pane_id: "w1:p2",
@@ -85,7 +87,13 @@ describe("Workflow pane grid", () => {
             label: "dev #4",
           },
           {
-            pane_id: "w1:p10",
+            pane_id: "w1:pB",
+            tab_id: "w1:t2",
+            workspace_id: "w1",
+            label: "executor #7-2",
+          },
+          {
+            pane_id: "w1:p9",
             tab_id: "w1:t2",
             workspace_id: "w1",
             label: "orchestrator #7",
@@ -93,10 +101,11 @@ describe("Workflow pane grid", () => {
         ],
       },
     });
-    expect(parseWorkflowTabPanes(stdout, "w1:t2", 7)).toEqual([
-      { paneId: "w1:p10", workspaceId: "w1" },
-      { paneId: "w1:p11", workspaceId: "w1" },
-    ]);
+    expect(parseWorkflowRunTab(stdout, "w1:p9", 7)).toEqual({
+      tabId: "w1:t2",
+      workspaceId: "w1",
+      paneIds: ["w1:p9", "w1:pB", "w1:pX"],
+    });
   });
 
   test("keeps an existing run's legacy panes eligible for grid layout", () => {
@@ -118,10 +127,11 @@ describe("Workflow pane grid", () => {
         ],
       },
     });
-    expect(parseWorkflowTabPanes(stdout, "w1:t1", 7)).toEqual([
-      { paneId: "w1:p1", workspaceId: "w1" },
-      { paneId: "w1:p2", workspaceId: "w1" },
-    ]);
+    expect(parseWorkflowRunTab(stdout, "w1:p1", 7)).toEqual({
+      tabId: "w1:t1",
+      workspaceId: "w1",
+      paneIds: ["w1:p1", "w1:p2"],
+    });
   });
 
   test("refuses to change a tab containing a non-Workflow pane", () => {
@@ -143,7 +153,7 @@ describe("Workflow pane grid", () => {
         ],
       },
     });
-    expect(parseWorkflowTabPanes(stdout, "w1:t1", 7)).toBeNull();
+    expect(parseWorkflowRunTab(stdout, "w1:p1", 7)).toBeNull();
   });
 
   test("refuses to move a step pane from another Workflow run", () => {
@@ -165,7 +175,46 @@ describe("Workflow pane grid", () => {
         ],
       },
     });
-    expect(parseWorkflowTabPanes(stdout, "w1:t1", 7)).toBeNull();
+    expect(parseWorkflowRunTab(stdout, "w1:p1", 7)).toBeNull();
+  });
+
+  test("refuses an anchor that is missing, is a step pane, or shares its tab with a second parent", () => {
+    const panes = [
+      {
+        pane_id: "w1:p1",
+        tab_id: "w1:t1",
+        workspace_id: "w1",
+        label: "orchestrator #7",
+      },
+      {
+        pane_id: "w1:p2",
+        tab_id: "w1:t1",
+        workspace_id: "w1",
+        label: "executor #7-1",
+      },
+    ];
+    const stdout = JSON.stringify({ result: { panes } });
+    expect(parseWorkflowRunTab(stdout, "w1:p9", 7)).toBeNull();
+    expect(parseWorkflowRunTab(stdout, "w1:p2", 7)).toBeNull();
+    expect(
+      parseWorkflowRunTab(
+        JSON.stringify({
+          result: {
+            panes: [
+              ...panes,
+              {
+                pane_id: "w1:p3",
+                tab_id: "w1:t1",
+                workspace_id: "w1",
+                label: "workflow-a1b2c3d4",
+              },
+            ],
+          },
+        }),
+        "w1:p1",
+        7,
+      ),
+    ).toBeNull();
   });
 
   test("finds only the latest Verify pane for the requested Workflow run", () => {
@@ -273,7 +322,7 @@ describe("Workflow tab layout", () => {
       "tab create": TAB_CREATE_JSON,
     });
 
-    layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr });
+    layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr });
 
     expect(commands).toEqual([
       "pane list",
@@ -302,7 +351,7 @@ describe("Workflow tab layout", () => {
       ]),
     });
 
-    layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr });
+    layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr });
 
     expect(commands).toEqual(["pane list"]);
   });
@@ -326,9 +375,84 @@ describe("Workflow tab layout", () => {
     });
 
     expect(() =>
-      layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr }),
-    ).toThrow(/tab w1:t1 is missing or contains a non-Workflow pane/);
+      layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr }),
+    ).toThrow(
+      /pane w1:p2 is not the only parent pane of a tab holding just run #7's panes/,
+    );
     expect(commands).toEqual(["pane list"]);
+  });
+
+  test("rebuilds the tab the anchor pane is in, never the caller's idea of it", () => {
+    // The parent pane sits in w1:t9 while an unrelated tab holds a look-alike Workflow pane. The
+    // rebuild must follow the anchor and leave the other tab alone.
+    const { commands, herdr } = fakeHerdr({
+      "pane list": paneListJson([
+        {
+          pane_id: "w1:p5",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "executor #7-9",
+        },
+        {
+          pane_id: "w2:p2",
+          tab_id: "w2:t9",
+          workspace_id: "w2",
+          label: "orchestrator #7",
+        },
+        {
+          pane_id: "w2:p3",
+          tab_id: "w2:t9",
+          workspace_id: "w2",
+          label: "executor #7-1",
+        },
+      ]),
+      "tab create": TAB_CREATE_JSON,
+    });
+
+    layoutWorkflowTab({ anchorPaneId: "w2:p2", runId: 7, herdr });
+
+    expect(commands).toEqual([
+      "pane list",
+      "tab create --workspace w2 --no-focus",
+      "pane move w2:p3 --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
+      "pane move w2:p3 --tab w2:t9 --split right --target-pane w2:p2 --ratio 0.5 --no-focus",
+      "tab close w1:t3",
+    ]);
+  });
+
+  test("never stages the anchor pane, whatever order Herdr lists the tab in", () => {
+    const { commands, herdr } = fakeHerdr({
+      "pane list": paneListJson([
+        {
+          pane_id: "w1:pB",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "verifier #7-2",
+        },
+        {
+          pane_id: "w1:pX",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "executor #7-1",
+        },
+        {
+          pane_id: "w1:p2",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "orchestrator #7",
+        },
+      ]),
+      "tab create": TAB_CREATE_JSON,
+    });
+
+    layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr });
+
+    expect(commands.filter((c) => c.startsWith("pane move"))).toEqual([
+      "pane move w1:pX --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
+      "pane move w1:pB --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
+      "pane move w1:pX --tab w1:t1 --split right --target-pane w1:p2 --ratio 0.5 --no-focus",
+      "pane move w1:pB --tab w1:t1 --split down --target-pane w1:p2 --ratio 0.5 --no-focus",
+    ]);
   });
 
   test("surfaces invalid tab create JSON before moving any pane", () => {
@@ -351,7 +475,7 @@ describe("Workflow tab layout", () => {
     });
 
     expect(() =>
-      layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr }),
+      layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr }),
     ).toThrow(/herdr tab create returned invalid JSON/);
     expect(commands).not.toContain(
       "pane move w1:p3 --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
@@ -381,7 +505,7 @@ describe("Workflow tab layout", () => {
     );
 
     expect(() =>
-      layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr }),
+      layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr }),
     ).toThrow(new WorkflowPaneLayoutError("herdr exited with status 7"));
     // No cleanup of the half-staged rebuild: the failure is left visible for a human.
     expect(commands).not.toContain("tab close w1:t3");

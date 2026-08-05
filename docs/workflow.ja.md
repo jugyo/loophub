@@ -115,6 +115,19 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 rework は通常 Execute の turn done 後に届く。継続指示が作業中に来ても注入する（Esc は
 `workflow_run.cost_exceeded` のときだけ）。親はコード・review・PR を直接編集しない。
 
+### 子 pane の配置
+
+run は anchor pane を 1 つだけ持つ。それは parent 起動時に run へ登録された parent agent の pane であり、
+instruction の注入先と同一である。child step はこの pane を split して作られ、run の tab は Herdr が
+その pane を今どの tab で報告しているかで決まる。launch-step を実行した process の `HERDR_PANE_ID` /
+`HERDR_TAB_ID` や、その時点の focus は配置に関与しない（parent pane が未登録の run に限り、呼び出し元の
+pane が fallback anchor になる）。
+
+grid 整列は同じ anchor を第 1 セルとして tab を組み直す。したがって anchor は staging tab へ退避される
+対象にならず、整列が途中で失敗しても parent pane は元の tab に留まる。残りの pane の並びは Herdr の
+pane id ではなく LoopHub が label に書いた child sequence（`executor #<run>-<n>`）で決まる。tab に
+別 run の pane・所有者不明の pane・2 つ目の parent pane がある場合は組み直さず可視 error にする。
+
 ### Worker instruction delivery
 
 worker は run が所有する 3 つの subject —— run 自身、その issue、その PR —— の event を
@@ -443,6 +456,8 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
 | `core/workflow/steps.ts` | HEAD / review 観測から 2 step の状態を導く pure query |
 | `core/service/workflow-runs.ts` | run start、child launch、turn done、status、rework |
 | `core/service/workflow-instructions.ts` | run event から parent pane への構造化 instruction 配送 |
+| `core/service/workflow-panes.ts` | run の anchor pane（登録済み parent pane）の解決 |
+| `core/terminal/workflow-pane-layout.ts` | anchor pane からの run tab 解決と grid 整列 |
 | `core/service/agent-control.ts` | provider に対応する agent-control adapter の選択 |
 | `core/service/herdr-agent-control.ts` | agent-control port の Herdr adapter |
 | `worker/runner.ts` | workflow instruction 配送と repository automation の event tail |

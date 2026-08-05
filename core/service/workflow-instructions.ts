@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
-import { HERDR_ID, herdrSessionName } from "../terminal/terminal-launch.ts";
+import { herdrSessionName } from "../terminal/terminal-launch.ts";
 import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
 import {
   classifyWorkflowSubjectEvent,
@@ -12,6 +12,7 @@ import {
 } from "../workflow/source-events.ts";
 import { sendHerdrPrompt } from "./herdr-prompt.ts";
 import { repoOr404 } from "./shared.ts";
+import { workflowRunParentPaneId } from "./workflow-panes.ts";
 import { workflowRuns } from "./workflow-runs.ts";
 
 const EFFECT_PREFIX = "workflow.instruction:";
@@ -80,17 +81,6 @@ function pendingEventRole(
     },
     markedSourceExists,
   );
-}
-
-function parentPane(run: S.WorkflowRunRow): string | null | undefined {
-  const matches = S.listHerdrPanesForResource({
-    repoId: run.repo_id,
-    resourceKind: "workflow_run",
-    resourceKey: String(run.id),
-  });
-  if (matches.length === 0) return undefined;
-  if (matches.length !== 1 || !matches[0].pane_id) return null;
-  return HERDR_ID.test(matches[0].pane_id) ? matches[0].pane_id : null;
 }
 
 function parentLaunchPending(run: S.WorkflowRunRow): boolean {
@@ -347,7 +337,7 @@ export const workflowInstructions = {
     // before it attached — the delivery would record itself as done and the run would wait forever.
     // Allow the bounded launch window for both without reconciling the event; afterward, claim a
     // durable failure receipt so a parent that never came up is visible exactly once.
-    const registeredPane = parentPane(run);
+    const registeredPane = workflowRunParentPaneId(run);
     const paneMissing = registeredPane === undefined;
     if (paneMissing || !run.parent_ready_at) {
       if (parentLaunchPending(run)) return { status: "idle" };
