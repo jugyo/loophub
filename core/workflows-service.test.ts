@@ -47,6 +47,33 @@ test("create trims name and preserves empty markdown prompts", () => {
   expect(svc.workflows.list().map((w) => w.name)).toContain("standard");
 });
 
+test("a starter template creates an ordinary workflow that keeps its prompts verbatim", async () => {
+  const { workflowTemplates } = await import(
+    "./workflow/workflow-templates.ts"
+  );
+  const template = workflowTemplates("ja")[0];
+
+  const created = svc.workflows.create({
+    name: template.name,
+    description: template.description,
+    execute_prompt: template.execute_prompt,
+    verify_prompt: template.verify_prompt,
+  });
+
+  expect(created).toMatchObject({
+    name: template.name,
+    description: template.description,
+    execute_prompt: template.execute_prompt,
+    verify_prompt: template.verify_prompt,
+    scope: { kind: "global" },
+  });
+  // Nothing ties it back to the template: it renames and archives like any other workflow.
+  expect(
+    svc.workflows.updateById(created.id, { name: "renamed template" }).name,
+  ).toBe("renamed template");
+  expect(svc.workflows.archiveById(created.id).archived_at).not.toBeNull();
+});
+
 test("name validation rejects blank, long, and duplicate names with 422", () => {
   expectServiceStatus(() => svc.workflows.create({ name: " " }), 422);
   expectServiceStatus(

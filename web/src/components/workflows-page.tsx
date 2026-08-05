@@ -4,7 +4,7 @@
 // are the only user-configurable part. Same workflows/* RPCs the CLI uses; this is the
 // management UI. Start-workflow and run status are intentionally out of scope here.
 
-import { Check, Plus, X } from "lucide-react";
+import { Check, LayoutTemplate, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
 import type { Workflow, WorkflowContracts } from "@/api/types";
@@ -17,11 +17,16 @@ import { cn } from "@/lib/utils";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 import {
   useArchiveWorkflow,
+  useCreateWorkflow,
   useUpdateWorkflow,
   useWorkflowContracts,
   useWorkflows,
 } from "@/queries/workflows";
 import { workflowCreatePrompt } from "../../../core/workflow/workflow-create-prompt.ts";
+import {
+  type WorkflowTemplate,
+  workflowTemplates,
+} from "../../../core/workflow/workflow-templates.ts";
 
 // The fixed Workflow steps, in order, with the wire field each maps to. The form presents their
 // textareas one at a time through tabs while keeping both values in form state.
@@ -79,7 +84,10 @@ export function WorkflowsPage() {
         <WorkflowContractLanguageSettings />
 
         <section className="mt-8">
-          <NewWorkflowButton />
+          <div className="flex flex-wrap items-center gap-2">
+            <NewWorkflowButton />
+            <TemplateWorkflowButton />
+          </div>
 
           <div className="mt-6 flex flex-col gap-3">
             {isLoading ? (
@@ -172,6 +180,143 @@ function NewWorkflowButton({ repo }: { repo?: string }) {
       <Plus className="size-4" />
       New workflow
     </Button>
+  );
+}
+
+// Create workflow from template (#2396): the fast path for an instance with no workflows yet. It
+// copies a starter template's name, description, and step prompts into a normal workflow, so the
+// result is edited and archived like a hand-written one and keeps no reference to its template.
+function TemplateWorkflowButton() {
+  const [picking, setPicking] = useState(false);
+
+  return (
+    <>
+      <Button variant="secondary" onClick={() => setPicking(true)}>
+        <LayoutTemplate className="size-4" />
+        Create workflow from template
+      </Button>
+      {picking ? (
+        <TemplatePickerDialog onClose={() => setPicking(false)} />
+      ) : null}
+    </>
+  );
+}
+
+function TemplatePickerDialog({ onClose }: { onClose: () => void }) {
+  const create = useCreateWorkflow();
+  const { data: settings } = useSettings();
+  // A template's prose follows the workflow contract language, so the created workflow reads in
+  // the same language as the contracts its prompts sit on top of.
+  const templates = workflowTemplates(settings?.workflowContractLanguage);
+  const [creating, setCreating] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const title = "Create workflow from template";
+  const backdropDismiss = useBackdropDismiss(() => {
+    if (!create.isPending) onClose();
+  });
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    dialogRef.current
+      ?.querySelector<HTMLElement>("[data-dialog-initial-focus]")
+      ?.focus();
+    return () => previouslyFocused?.focus();
+  }, []);
+
+  async function onCreate(template: WorkflowTemplate) {
+    setCreating(template.name);
+    try {
+      await create.mutateAsync({
+        name: template.name,
+        description: template.description,
+        execute_prompt: template.execute_prompt,
+        verify_prompt: template.verify_prompt,
+      });
+    } catch {
+      return; // surfaced via create.error below
+    }
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
+      {...backdropDismiss}
+    >
+      <div
+        ref={dialogRef}
+        data-debug-component="TemplatePickerDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="flex max-h-full w-full max-w-2xl flex-col rounded-lg border bg-background shadow-lg"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            if (!create.isPending) onClose();
+            return;
+          }
+          trapDialogFocus(event, event.currentTarget);
+        }}
+      >
+        <header className="flex items-start justify-between gap-2 border-b px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Starts a workflow from a ready-made Execute and Verify pair. Edit
+              it afterwards like any other workflow.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={`Close ${title}`}
+            onClick={onClose}
+            disabled={create.isPending}
+          >
+            <X className="size-4" />
+          </Button>
+        </header>
+
+        <ul className="min-h-0 flex-1 overflow-y-auto p-5">
+          {templates.map((template) => (
+            <li
+              key={template.name}
+              className="flex items-start justify-between gap-3 border-b py-3 first:pt-0 last:border-b-0 last:pb-0"
+            >
+              <div className="min-w-0">
+                <h3 className="font-medium">{template.name}</h3>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {template.description}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                className="shrink-0"
+                aria-label={`Create ${template.name} workflow`}
+                data-dialog-initial-focus={
+                  template === templates[0] ? "" : undefined
+                }
+                disabled={create.isPending}
+                onClick={() => onCreate(template)}
+              >
+                {create.isPending && creating === template.name
+                  ? "Creating…"
+                  : "Create"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+
+        {create.error ? (
+          <p className="border-t px-5 py-4 text-sm text-destructive">
+            {errorMessage(create.error)}
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

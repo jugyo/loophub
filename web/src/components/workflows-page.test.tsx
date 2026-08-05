@@ -18,7 +18,11 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { Workflow } from "@/api/types";
+import { workflowTemplates } from "../../../core/workflow/workflow-templates.ts";
 import { WorkflowsPage } from "./workflows-page";
+
+// renderPage answers settings/get with the English contract language unless a test overrides it.
+const EN_TEMPLATES = workflowTemplates("en");
 
 const CONTRACTS = {
   parent: "# Parent workflow contract\nParent contract body",
@@ -79,6 +83,15 @@ function renderPage(
     </QueryClientProvider>,
   );
   return { ...result, router };
+}
+
+async function openTemplateDialog() {
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Create workflow from template",
+    }),
+  );
+  return screen.getByRole("dialog", { name: "Create workflow from template" });
 }
 
 // Open a workflow's edit dialog: the only remaining create/edit form path is edit (#1889).
@@ -502,6 +515,136 @@ describe("WorkflowsPage", () => {
     expect(rpcCall("workflows/archive")?.params).toMatchObject({
       id: 1,
     });
+  });
+
+  it("offers every starter template in the template picker", async () => {
+    renderPage({});
+    const dialog = await openTemplateDialog();
+
+    expect(EN_TEMPLATES.map((template) => template.name)).toEqual([
+      "Build",
+      "Design",
+      "Investigate",
+      "Research",
+    ]);
+    for (const template of EN_TEMPLATES) {
+      expect(
+        within(dialog).getByRole("heading", { name: template.name }),
+      ).toBeTruthy();
+      expect(within(dialog).getByText(template.description)).toBeTruthy();
+      expect(
+        within(dialog).getByRole("button", {
+          name: `Create ${template.name} workflow`,
+        }),
+      ).toBeTruthy();
+    }
+  });
+
+  it("creates the selected template as a plain workflow and lists it", async () => {
+    let workflows: Workflow[] = [];
+    renderPage({
+      "workflows/list": () => workflows,
+      "workflows/create": (params) => {
+        const created = workflow({
+          id: 2,
+          name: params.name as string,
+          description: params.description as string,
+          execute_prompt: params.execute_prompt as string,
+          verify_prompt: params.verify_prompt as string,
+        });
+        workflows = [created];
+        return created;
+      },
+    });
+    expect(await screen.findByText("No workflows yet.")).toBeTruthy();
+
+    const dialog = await openTemplateDialog();
+    const template = EN_TEMPLATES[0];
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: `Create ${template.name} workflow`,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(rpcCall("workflows/create")?.params).toMatchObject({
+        name: template.name,
+        description: template.description,
+        execute_prompt: template.execute_prompt,
+        verify_prompt: template.verify_prompt,
+      }),
+    );
+    // The created workflow keeps no reference to the template it was copied from.
+    const params = rpcCall("workflows/create")?.params as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(params).sort()).toEqual([
+      "description",
+      "execute_prompt",
+      "name",
+      "session_id",
+      "verify_prompt",
+    ]);
+
+    expect(await screen.findByText(template.name)).toBeTruthy();
+    expect(
+      screen.queryByRole("dialog", { name: "Create workflow from template" }),
+    ).toBeNull();
+    // It is managed like any hand-written workflow.
+    expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
+  });
+
+  it("offers the templates in the configured contract language", async () => {
+    renderPage({
+      "settings/get": () => ({ workflowContractLanguage: "ja" }),
+      "workflows/create": (params) => workflow(params as Partial<Workflow>),
+    });
+    const dialog = await openTemplateDialog();
+    const template = workflowTemplates("ja")[0];
+
+    // The names label the loop and stay English; the prose follows the contract language.
+    expect(template.name).toBe(EN_TEMPLATES[0].name);
+    expect(within(dialog).getByText(template.description)).toBeTruthy();
+    expect(within(dialog).queryByText(EN_TEMPLATES[0].description)).toBeNull();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: `Create ${template.name} workflow`,
+      }),
+    );
+    await waitFor(() =>
+      expect(rpcCall("workflows/create")?.params).toMatchObject({
+        name: template.name,
+        description: template.description,
+        execute_prompt: template.execute_prompt,
+        verify_prompt: template.verify_prompt,
+      }),
+    );
+  });
+
+  it("keeps the template picker open and shows why a create failed", async () => {
+    renderPage({
+      "workflows/create": () => {
+        throw new RpcFault(422, "workflow name must be unique");
+      },
+    });
+    const dialog = await openTemplateDialog();
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: `Create ${EN_TEMPLATES[0].name} workflow`,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByText(/workflow name must be unique/),
+      ).toBeTruthy(),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Create workflow from template" }),
+    ).toBeTruthy();
   });
 
   it("surfaces an RPC error when archiving a workflow", async () => {
