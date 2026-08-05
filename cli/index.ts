@@ -1,3 +1,4 @@
+#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
 import { flags, group, pos } from "./args.ts";
 import * as attachmentCmd from "./commands/attachment.ts";
 import * as eventsCmd from "./commands/events.ts";
