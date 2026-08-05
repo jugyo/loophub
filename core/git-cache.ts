@@ -216,8 +216,8 @@ export function cachedGitResult(
   if (hit) {
     if (hit.expiresAt > startedAt) {
       // Whether the cache is serving anything is otherwise invisible from outside the process. The
-      // command is spelled as the argv spawnGit would have run, so a hit lines up with the
-      // `[slow-operation] kind=git` line the same invocation prints when it does run.
+      // command is spelled as the argv spawnGit would have run, so a hit names the invocation it
+      // stood in for.
       logDiagnostic(
         () =>
           `[git-cache] event=hit command=${JSON.stringify(["git", "-C", repoPath, ...args])}`,

@@ -1,8 +1,7 @@
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
-import { configureSlowOperationLogging } from "./slow-operation.ts";
+import { afterAll, beforeAll, expect, test } from "vitest";
 
 // Isolate the DB before db.ts runs its import-time setup (see store.test.ts).
 const HOME = mkdtempSync(join(tmpdir(), "lh-db-"));
@@ -31,25 +30,6 @@ test("WAL journal mode is preserved alongside busy_timeout", () => {
     journal_mode: string;
   };
   expect(row.journal_mode.toLowerCase()).toBe("wal");
-});
-
-test("database operations expose their SQL to slow-operation diagnostics", () => {
-  const log = vi.fn();
-  configureSlowOperationLogging(log);
-  const clock = vi
-    .spyOn(performance, "now")
-    .mockReturnValueOnce(10)
-    .mockReturnValueOnce(1011);
-
-  try {
-    D.db.query("SELECT 1 AS value").get();
-    expect(log).toHaveBeenCalledWith(
-      '[slow-operation] kind=sql duration_ms=1001.0 sql="SELECT 1 AS value"',
-    );
-  } finally {
-    clock.mockRestore();
-    configureSlowOperationLogging();
-  }
 });
 
 test("journal_size_limit caps the WAL after a checkpoint", () => {

@@ -4,7 +4,6 @@ import { dirname } from "node:path";
 import type * as SqliteNS from "node:sqlite";
 import { dbPath } from "./config.ts";
 import { runMigrations } from "./migrations.ts";
-import { measureSlowOperation } from "./slow-operation.ts";
 
 // node:sqlite is an experimental builtin (Node 22.x, behind --experimental-sqlite).
 // Load it through createRequire so bundler-based transformers (Vite/vitest) don't try
@@ -126,47 +125,24 @@ export class Db {
   }
 
   exec(sql: string): void {
-    measureSlowOperation(
-      "sql",
-      () => `sql=${JSON.stringify(sql)}`,
-      () => withWriteRetry(() => this.#raw.exec(sql)),
-    );
+    withWriteRetry(() => this.#raw.exec(sql));
   }
 
   query(sql: string): BunStyleQuery {
     const stmt = this.#prepare(sql);
     return {
       get: (...params: Param[]) =>
-        measureSlowOperation(
-          "sql",
-          () => `sql=${JSON.stringify(sql)}`,
-          () => stmt.get(...(normalize(params) as never[])) ?? null,
-        ),
-      all: (...params: Param[]) =>
-        measureSlowOperation(
-          "sql",
-          () => `sql=${JSON.stringify(sql)}`,
-          () => stmt.all(...(normalize(params) as never[])),
-        ),
+        stmt.get(...(normalize(params) as never[])) ?? null,
+      all: (...params: Param[]) => stmt.all(...(normalize(params) as never[])),
       run: (...params: Param[]) => {
-        measureSlowOperation(
-          "sql",
-          () => `sql=${JSON.stringify(sql)}`,
-          () =>
-            withWriteRetry(() => stmt.run(...(normalize(params) as never[]))),
-        );
+        withWriteRetry(() => stmt.run(...(normalize(params) as never[])));
       },
     };
   }
 
   run(sql: string, params: Param[] = []): void {
-    measureSlowOperation(
-      "sql",
-      () => `sql=${JSON.stringify(sql)}`,
-      () =>
-        withWriteRetry(() =>
-          this.#prepare(sql).run(...(normalize(params) as never[])),
-        ),
+    withWriteRetry(() =>
+      this.#prepare(sql).run(...(normalize(params) as never[])),
     );
   }
 

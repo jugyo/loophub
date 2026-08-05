@@ -1,9 +1,5 @@
 import { execFile, spawnSync } from "node:child_process";
 import { cachedGitResult } from "./git-cache.ts";
-import {
-  measureSlowOperation,
-  measureSlowOperationAsync,
-} from "./slow-operation.ts";
 
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,21 +16,15 @@ export function runGitSync(
   env: Record<string, string> = {},
 ): GitResult {
   const argv = ["git", ...args];
-  return measureSlowOperation(
-    "git",
-    () => `command=${JSON.stringify(argv)}`,
-    () => {
-      const result = spawnSync(argv[0], argv.slice(1), {
-        env: { ...process.env, ...env },
-        encoding: "utf8",
-      });
-      return {
-        code: result.status ?? 1,
-        stdout: result.stdout ?? "",
-        stderr: result.stderr ?? "",
-      };
-    },
-  );
+  const result = spawnSync(argv[0], argv.slice(1), {
+    env: { ...process.env, ...env },
+    encoding: "utf8",
+  });
+  return {
+    code: result.status ?? 1,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
 }
 
 // Run `git -C <repoPath> <args...>` without throwing; we inspect exitCode manually. Invocations
@@ -56,31 +46,26 @@ function spawnGit(
   env: Record<string, string>,
 ): Promise<GitResult> {
   const argv = ["git", "-C", repoPath, ...args];
-  return measureSlowOperationAsync(
-    "git",
-    () => `command=${JSON.stringify(argv)}`,
-    () =>
-      new Promise((resolve) => {
-        execFile(
-          argv[0],
-          argv.slice(1),
-          {
-            env: { ...process.env, ...env },
-            maxBuffer: 256 * 1024 * 1024,
-            encoding: "utf8",
-          },
-          (err, stdout, stderr) => {
-            const code =
-              err && typeof (err as { code?: unknown }).code === "number"
-                ? (err as { code: number }).code
-                : err
-                  ? 1
-                  : 0;
-            resolve({ code, stdout: stdout ?? "", stderr: stderr ?? "" });
-          },
-        );
-      }),
-  );
+  return new Promise((resolve) => {
+    execFile(
+      argv[0],
+      argv.slice(1),
+      {
+        env: { ...process.env, ...env },
+        maxBuffer: 256 * 1024 * 1024,
+        encoding: "utf8",
+      },
+      (err, stdout, stderr) => {
+        const code =
+          err && typeof (err as { code?: unknown }).code === "number"
+            ? (err as { code: number }).code
+            : err
+              ? 1
+              : 0;
+        resolve({ code, stdout: stdout ?? "", stderr: stderr ?? "" });
+      },
+    );
+  });
 }
 
 export async function revParse(
