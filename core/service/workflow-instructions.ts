@@ -207,73 +207,6 @@ export const workflowInstructions = {
     });
   },
 
-  // Record readiness and synchronously release the instruction that was waiting on it. This keeps
-  // the command's success tied to delivery instead of relying on a later worker poll. A worker that
-  // still has the pre-readiness implementation may have claimed or completed the event already;
-  // surface that existing receipt instead of reporting a successful handshake.
-  async parentReady(
-    name: string,
-    input: { run: number },
-  ): Promise<{
-    run: number;
-    ready_at: string;
-    instruction: WorkflowInstructionDispatchResult;
-  }> {
-    const repo = repoOr404(name);
-    const run = S.getWorkflowRun(input.run);
-    if (!run || run.repo_id !== repo.id) {
-      throw new ServiceError(404, `Workflow run #${input.run} not found`);
-    }
-    const readyRow = S.markWorkflowRunParentReadyIfNoEffect(
-      run.id,
-      EFFECT_PREFIX,
-    );
-    if (!readyRow?.parent_ready_at || readyRow.parent_ready_confirmed !== 1) {
-      const pending = S.pendingWorkflowEventEffectWithPrefix(
-        run.id,
-        EFFECT_PREFIX,
-      );
-      if (pending) {
-        throw new ServiceError(
-          409,
-          `Workflow instruction delivery for event #${pending.event_id} has a pending receipt`,
-        );
-      }
-      const completed = S.latestCompletedWorkflowEventEffectWithPrefix(
-        run.id,
-        Number.MAX_SAFE_INTEGER,
-        EFFECT_PREFIX,
-      );
-      if (completed) {
-        throw new ServiceError(
-          409,
-          `Workflow instruction for event #${completed.event_id} was recorded before parent readiness; delivery cannot be confirmed`,
-        );
-      }
-      throw new ServiceError(
-        500,
-        `could not record parent readiness for Workflow run #${run.id}`,
-      );
-    }
-    const ready = { run: readyRow.id, ready_at: readyRow.parent_ready_at };
-
-    let instruction = await this.dispatchRun(ready.run);
-    while (instruction.status === "skipped") {
-      instruction = await this.dispatchRun(ready.run);
-    }
-    if (instruction.status === "idle") {
-      const current = S.getWorkflowRun(ready.run);
-      const event = current ? pendingEvent(current) : null;
-      if (event) {
-        throw new ServiceError(
-          409,
-          `Workflow instruction for event #${event.id} is pending but was not delivered`,
-        );
-      }
-    }
-    return { ...ready, instruction };
-  },
-
   async dispatchRun(runId: number): Promise<WorkflowInstructionDispatchResult> {
     const run = S.getWorkflowRun(runId);
     if (!run) return { status: "idle" };
@@ -349,6 +282,12 @@ export const workflowInstructions = {
     // before it attached — the delivery would record itself as done and the run would wait forever.
     // Allow the bounded launch window for both without reconciling the event; afterward, claim a
     // durable failure receipt so a parent that never came up is visible exactly once.
+    //
+    // `parent_ready_at` is only ever set on a run whose parent declared readiness while that
+    // handshake existed. A parent that follows the current contract registers an event subscription
+    // instead, which takes its run out of this delivery path entirely (see
+    // `workflowRunsWithPendingEvents`), so reaching this branch without the timestamp means no
+    // parent came up for this run at all.
     const registeredPane = parentPane(run);
     const paneMissing = registeredPane === undefined;
     if (paneMissing || !run.parent_ready_at) {

@@ -59,20 +59,30 @@ test("contracts preserve the workflow command protocol in both languages", () =>
       expect(contract).not.toMatch(/\/lh-[a-z]/u);
     }
 
-    expect(parent).toContain("lh workflow parent-ready <run> --repo '<repo>'");
-    expect(parent).toContain(
-      "lh workflow instruction <run> --repo '<repo>' --note <text|-> --json",
-    );
     expect(parent).toContain("orchestrator: address review <id>");
+    // The parent runs the lifecycle commands itself now, so each one it may reach for is spelled
+    // out in the contract rather than arriving inside a delivered instruction.
+    for (const command of [
+      "lh events subscribe --repo '<repo>' --target herdr-pane",
+      "lh events unsubscribe --subscription <id>",
+      "lh workflow state <run> --repo '<repo>' --state-version 1 --json",
+      "lh workflow launch-step --repo '<repo>' --run <run> --step execute",
+      "lh workflow launch-step --repo '<repo>' --run <run> --step verify",
+      "lh workflow run advance-to-verify --repo '<repo>' --run <run>",
+      "lh workflow run request-rework --repo '<repo>' --run <run> --review <id>",
+      "lh workflow run resume --repo '<repo>' --run <run> --step execute",
+      "lh workflow deliver --repo '<repo>' --run <run>",
+      "lh workflow cost-hold --repo '<repo>' --run <run>",
+      "lh workflow escalate-human --repo '<repo>' --run <run>",
+    ]) {
+      expect(parent).toContain(command);
+    }
 
     for (const command of [
       "lh workflow next",
       "lh workflow watch",
-      "lh workflow run request-rework",
-      "lh workflow launch-step",
-      "lh workflow deliver",
-      "lh workflow cost-hold",
-      "lh workflow escalate-human",
+      "lh workflow parent-ready",
+      "lh workflow instruction",
       "lh workflow run enforce-cost-limit",
       "lh workflow run increase-cost-limit",
       "lh workflow step status",
@@ -104,8 +114,8 @@ test("contracts preserve the workflow command protocol in both languages", () =>
       "session_id",
       "next_command",
       "watcher_armed",
-      "HERDR_PANE_ID",
       "event_ack_cursor",
+      "workflow instruction:",
     ]) {
       expect(parent).not.toContain(legacyMarker);
     }
@@ -133,6 +143,60 @@ test("contracts preserve the workflow command protocol in both languages", () =>
     );
     expect(verify).toContain("--ac-results <json|file>");
     expect(verify).not.toContain("lh pr view");
+  }
+});
+
+// The parent's loop is the contract's load-bearing part: it is what decides whether the agent acts
+// on a read of current state or on whatever text reached its pane, so both the four stages and
+// their order are asserted rather than left to prose review.
+test("the parent contract runs a subscribe / observe / reconcile / unsubscribe loop", () => {
+  const stages = {
+    en: ["**Subscribe**", "**Observe**", "**Reconcile**", "**unsubscribe**"],
+    ja: ["**subscribe**", "**observe**", "**reconcile**", "**unsubscribe**"],
+  };
+  const stateOverEvents = {
+    en: "**Decide what to do from state. Read events only to find out how something came about.**",
+    ja: "**行動は state で決める。events は経緯を調べるときに読む。**",
+  };
+
+  for (const language of WORKFLOW_CONTRACT_LANGUAGES) {
+    const { parent } = workflowContracts(language);
+    expect(parent).toContain(stateOverEvents[language]);
+
+    let previous = -1;
+    for (const stage of stages[language]) {
+      const at = parent.indexOf(stage);
+      expect(at).toBeGreaterThan(previous);
+      previous = at;
+    }
+  }
+});
+
+// The delivery-independent invariants are the run's definition of done, not part of how the parent
+// is woken, so replacing the loop must leave every one of them standing.
+test("the parent contract keeps the goal invariants that outlive the wake-up path", () => {
+  const invariants = {
+    en: [
+      "Pane output, child self-reports, event verdict payloads, PR body markers",
+      "**always a fresh child**",
+      "The state's `done` is the canonical pre-merge Done signal",
+      "Do not use child-session resume or idle detection",
+      "Never merge. Closing the linked PR is the run's terminal condition",
+    ],
+    ja: [
+      "pane output、child の自己申告、event payload の verdict、",
+      "**常に fresh child**",
+      "state の `done` が pre-merge の canonical な Done signal である",
+      "child-session resume や idle detection は使わない",
+      "merge はしない。linked PR の close が run の terminal condition である",
+    ],
+  };
+
+  for (const language of WORKFLOW_CONTRACT_LANGUAGES) {
+    const { parent } = workflowContracts(language);
+    for (const invariant of invariants[language]) {
+      expect(parent).toContain(invariant);
+    }
   }
 });
 
@@ -307,7 +371,7 @@ test("parent keeps non-zero action errors visible without retry or recovery", ()
   ]);
 });
 
-test("parent keeps lifecycle facts, child freshness, and command ownership explicit", () => {
+test("parent keeps lifecycle facts, child freshness, and reconcile ownership explicit", () => {
   const contracts = [
     {
       text: workflowContracts("en").parent,
@@ -317,11 +381,10 @@ test("parent keeps lifecycle facts, child freshness, and command ownership expli
         "never reuse a verifier session",
       ],
       childState: ["child-session resume", "idle detection", "Do not use"],
-      commandOwnership: [
-        "`commands`",
-        "ordered list",
-        "Run it in order",
-        "do not invent other transitions",
+      reconcileOwnership: [
+        "Read the entries in order",
+        "run only the first one that matches",
+        "wait for the next ping",
       ],
     },
     {
@@ -332,11 +395,10 @@ test("parent keeps lifecycle facts, child freshness, and command ownership expli
         "verifier session を再利用しない",
       ],
       childState: ["child-session resume", "idle detection", "使わない"],
-      commandOwnership: [
-        "`commands`",
-        "順序付き list",
-        "記載順に実行する",
-        "ほかの遷移を独自に作らない",
+      reconcileOwnership: [
+        "上から順に見て",
+        "最初に当てはまる 1 つだけを実行し",
+        "次の ping を待つ",
       ],
     },
   ];
@@ -346,12 +408,12 @@ test("parent keeps lifecycle facts, child freshness, and command ownership expli
     transitionFacts,
     verifierFreshness,
     childState,
-    commandOwnership,
+    reconcileOwnership,
   } of contracts) {
     expectParagraphWithMarkers(text, transitionFacts);
     expectParagraphWithMarkers(text, verifierFreshness);
     expectParagraphWithMarkers(text, childState);
-    expectParagraphWithMarkers(text, commandOwnership);
+    expectParagraphWithMarkers(text, reconcileOwnership);
   }
 });
 

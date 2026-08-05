@@ -874,28 +874,6 @@ async function turnDone(): Promise<void> {
     );
 }
 
-// The parent's first act after launch: declare that its agent is up and reads its pane. Instructions
-// are held until this arrives, because bytes written to the pane before the agent attaches to it are
-// lost and the delivery still records itself as done (#2156).
-async function parentReady(): Promise<void> {
-  const runId = positiveInt(rest[0], "<run>");
-  const repo = await resolveRepo();
-  const result = await runOp(async () =>
-    (await svc()).workflowInstructions.parentReady(repo, { run: runId }),
-  );
-  if (flags.json) out(result);
-  else {
-    console.log(
-      `parent is ready for Workflow run #${result.run} (${result.ready_at})`,
-    );
-    if (result.instruction.status === "delivered") {
-      console.log(
-        `delivered Workflow instruction for event #${result.instruction.event}`,
-      );
-    }
-  }
-}
-
 async function escalate(): Promise<void> {
   if (!flags.reason) fail("--reason is required");
   const reason = flags.reason;
@@ -1126,8 +1104,6 @@ export async function run(): Promise<void> {
     await runLifecycle();
   } else if (sub === "turn") {
     await turnDone();
-  } else if (sub === "parent-ready") {
-    await parentReady();
   } else if (sub === "escalate") {
     await escalate();
   } else if (sub === "deliver") {

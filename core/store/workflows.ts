@@ -238,10 +238,10 @@ export interface WorkflowRunRow {
   // `running`. NULL on legacy rows and after resume.
   needs_human_reason: string | null;
   parent_session_id: string | null;
-  // When the parent agent declared it can read its pane. NULL until that signal arrives, which is
-  // what keeps instruction delivery from writing to an agent that has not started reading yet.
+  // When the parent agent declared it can read its pane, on a run started while that handshake
+  // existed. A parent now declares the same thing by registering its event subscription, so both
+  // columns are NULL / 0 on every run started since and only gate the runs delivery still serves.
   parent_ready_at: string | null;
-  // Set only when the readiness write was serialized before any instruction receipt claim.
   parent_ready_confirmed: number;
   step_sessions_json: string;
   // The child pane most recently launched or reactivated for live input. This can intentionally
@@ -324,8 +324,9 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
     .get(id) as WorkflowRunRow | null;
 }
 
-// Legacy timestamp-only write retained for tests that model rows created before the confirmed
-// handshake. Production readiness goes through markWorkflowRunParentReadyIfNoEffect below.
+// The readiness handshake was replaced by the parent's event subscription, so nothing writes this
+// timestamp in production any more. The write stays for tests that model a run created while the
+// handshake existed, which is the only kind of run instruction delivery still serves.
 export function markWorkflowRunParentReady(id: number): WorkflowRunRow | null {
   const t = now();
   return db
@@ -336,33 +337,6 @@ export function markWorkflowRunParentReady(id: number): WorkflowRunRow | null {
        RETURNING *`,
     )
     .get(t, t, id) as WorkflowRunRow | null;
-}
-
-// Linearize the first readiness signal against an instruction claim. If an older worker claims the
-// event first, this update leaves readiness unset; if this update wins, any later claim and pane
-// write happen after the parent declared itself ready. Repeated confirmed signals keep the original
-// timestamp.
-export function markWorkflowRunParentReadyIfNoEffect(
-  id: number,
-  effectPrefix: string,
-): WorkflowRunRow | null {
-  const t = now();
-  return db
-    .query(
-      `UPDATE workflow_runs
-       SET parent_ready_at = COALESCE(parent_ready_at, ?),
-           parent_ready_confirmed = 1,
-           updated_at = ?
-       WHERE id = ?
-         AND (parent_ready_confirmed = 1 OR (
-           parent_ready_at IS NULL AND NOT EXISTS (
-             SELECT 1 FROM workflow_event_effects
-             WHERE run_id = ? AND effect GLOB ?
-           )
-         ))
-       RETURNING *`,
-    )
-    .get(t, t, id, id, `${effectPrefix}*`) as WorkflowRunRow | null;
 }
 
 // Move the run event bookmark forward. The guard keeps the cursor monotonic when two consumers race.
@@ -388,11 +362,25 @@ export function advanceWorkflowRunEventCursor(
 // on the issue / PR backlog its narrower subscription never had to skip. A run with no started
 // event falls back to its cursor here rather than being hidden: this query is a prefilter, and the
 // dispatcher resolves the bound again and raises the missing start as a visible error.
+//
+// A run whose parent registered an event subscription for it is not a delivery target: that parent
+// is woken by a ping and reads the run's state itself, so delivering an instruction as well would
+// drive one run down two paths. Which path a run takes is read from the subscription rows alone —
+// there is no protocol column on the run — so a parent that subscribes mid-flight simply stops
+// being selected here.
 export function workflowRunsWithPendingEvents(): WorkflowRunRow[] {
   return db
     .query(
       `SELECT run.* FROM workflow_runs run
-       WHERE EXISTS (
+       WHERE NOT EXISTS (
+         SELECT 1 FROM event_subscriptions subscription
+         JOIN event_subscription_resources resource
+           ON resource.subscription_id = subscription.id
+         WHERE subscription.repo_id = run.repo_id
+           AND resource.resource_kind = 'workflow_run'
+           AND resource.resource_key = CAST(run.id AS TEXT)
+       )
+       AND EXISTS (
          SELECT 1 FROM events event
          WHERE event.repo_id = run.repo_id
            AND event.id > max(run.event_cursor, COALESCE((

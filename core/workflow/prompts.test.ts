@@ -22,7 +22,7 @@ function expectLineWithMarkers(text: string, markers: string[]): void {
   ).toBe(true);
 }
 
-test("the parent prompt starts with readiness before worker-delivered instructions", () => {
+test("the parent prompt starts with the subscription before observing state", () => {
   for (const language of ["en", "ja"] as const) {
     const prompt = parentUserPrompt(INPUT, language);
     for (const value of [
@@ -36,29 +36,29 @@ test("the parent prompt starts with readiness before worker-delivered instructio
       expect(prompt).toContain(value);
     }
     expectLineWithMarkers(prompt, ["current step", "execute"]);
-    expect(prompt).toContain(
-      "lh workflow parent-ready 42 --repo 'me/workflow-run'",
-    );
+    const subscribe =
+      "lh events subscribe --repo 'me/workflow-run' --target herdr-pane " +
+      '--session "$HERDR_SESSION" --pane "$HERDR_PANE_ID" ' +
+      "--resource workflow_run:42 --resource issue:7 --resource pull:8 --json";
+    expect(prompt).toContain(subscribe);
     const commands = [...prompt.matchAll(/`(lh [^`]+)`/gu)].map(
       (match) => match[1],
     );
-    expect(commands[0]).toBe(
-      "lh workflow parent-ready 42 --repo 'me/workflow-run'",
+    expect(commands[0]).toBe(subscribe);
+    expectLineWithMarkers(
+      prompt,
+      language === "en"
+        ? ["events subscribe", "first", "before anything else"]
+        : ["まず最初", "events subscribe"],
     );
     expectLineWithMarkers(
       prompt,
       language === "en"
-        ? ["parent-ready", "first", "before anything else"]
-        : ["まず最初", "parent-ready"],
+        ? ["current state", "reconcile", "next ping"]
+        : ["現在の state", "reconcile", "次の ping"],
     );
-    expectLineWithMarkers(
-      prompt,
-      language === "en"
-        ? ["Wait", "delivered to this pane", "structured `instructions`"]
-        : ["この pane に配送される", "待", "構造化 `instructions`"],
-    );
-    expect(prompt.indexOf("parent-ready")).toBeLessThan(
-      prompt.indexOf("`instructions`"),
+    expect(prompt.indexOf("events subscribe")).toBeLessThan(
+      prompt.indexOf("ping"),
     );
     for (const retiredProtocol of [
       "launch-step",
@@ -66,13 +66,14 @@ test("the parent prompt starts with readiness before worker-delivered instructio
       "--since",
       "lh workflow watch",
       "watcher_armed",
-      "HERDR_PANE_ID",
       "nohup",
       "Stay alive and poll",
       "lh subscribe",
       "functions.exec",
       "functions.wait",
       "lh workflow next",
+      "parent-ready",
+      "workflow instruction",
     ]) {
       expect(prompt).not.toContain(retiredProtocol);
     }
