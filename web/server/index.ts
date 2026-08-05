@@ -1,3 +1,4 @@
+#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
 // `lh-web` entry point: start the lh-web HTTP process. Runs only while in use (no daemon).
 //   lh-web [--port <n>] [--debug]
 //   (port: default 8730 or LOOPHUB_PORT)

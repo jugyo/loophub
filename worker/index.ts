@@ -1,3 +1,4 @@
+#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
 // `lh-worker` entry point: a resident process that tails the shared events table, runs the
 // per-repo `.loophub/workflow.yml` commands (issue #52), and owns resident maintenance loops.
 // Runs only while invoked (no daemon).
