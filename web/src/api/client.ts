@@ -1104,6 +1104,23 @@ export function pushGithubPull(
   });
 }
 
+/** Drop the PR's GitHub PR link (#2384); the GitHub PR itself is left alone. */
+export function unlinkGithubPull(
+  owner: string,
+  repo: string,
+  number: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ unlinked: true; github_number: number }>(
+    "pulls/unlinkGithubPull",
+    {
+      repo: full(owner, repo),
+      number,
+      session_id: sessionId,
+    },
+  );
+}
+
 // --- dashboard ---
 export function getDashboardOverview() {
   return rpc<DashboardOverview>("dashboard/overview");

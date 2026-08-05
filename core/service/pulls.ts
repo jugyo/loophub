@@ -466,6 +466,30 @@ export const pulls = {
     });
   },
 
+  // #2384: drop the GitHub PR link recorded on a loophub PR. The inverse of recordGithubPull, for a
+  // link that points at the wrong PR or at a GitHub PR that no longer exists — with the link gone,
+  // `github_pull` is null again and the PR-detail action row offers "Create PR on GitHub" once more.
+  // Only the LoopHub-side link is removed; nothing is done to the GitHub PR itself. 409 when there is
+  // no link, so an accidental double-submit reads as an error rather than silently succeeding.
+  unlinkGithubPull(name: string, number: number, sessionId?: string | null) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const link = S.getGithubPull(row.id);
+    if (!link)
+      throw new ServiceError(409, `PR #${number} has no GitHub PR to unlink`);
+    const actor = actorFor(sessionId);
+    return db.transaction(() => {
+      S.deleteGithubPull(row.id);
+      S.emitEvent(r.id, "pull_request.github_pr_unlinked", actor, {
+        number: row.number,
+        github_number: link.number,
+        url: link.url,
+      });
+      return { unlinked: true as const, github_number: link.number };
+    });
+  },
+
   // #411: orchestrate submitting a loophub PR to GitHub as a Draft PR in one place — push the head
   // branch under a content-based name, open (or recover) a GitHub Draft PR, and record it back.
   // The "Create PR on GitHub" export prompt (github-pr-export-prompt.ts) only generates

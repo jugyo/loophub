@@ -165,6 +165,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
         }
         if (
           type === "pull_request.github_pr_recorded" ||
+          type === "pull_request.github_pr_unlinked" ||
           type === "pull_request.github_pr_pushed" ||
           type === "pull_request.github_feedback" ||
           type === "pull_request.github_merged"
@@ -197,6 +198,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       }
       if (
         type === "pull_request.github_pr_recorded" ||
+        type === "pull_request.github_pr_unlinked" ||
         type === "pull_request.github_pr_pushed" ||
         type === "pull_request.github_feedback" ||
         type === "pull_request.github_merged"

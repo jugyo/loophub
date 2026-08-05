@@ -212,6 +212,9 @@ export function PullDetail({
             loading/error live in the section. */}
           {pull.github_pull ? (
             <GithubPrStatusSection
+              owner={owner}
+              repo={repo}
+              number={number}
               githubPull={pull.github_pull}
               status={githubStatusQuery.data}
               isLoading={githubStatusQuery.isLoading}

@@ -4,17 +4,23 @@
 // it sits alongside the other sidebar sections (work duration, sessions, handoff) without crowding
 // them — a badge row plus a few small labeled rows and a freshness footnote. The section body opens
 // with the link out to the GitHub PR (#2091), so the GitHub route lives where the status is read;
-// the heading itself is plain text.
+// the heading itself is plain text. The section also owns the link's only write action — unlinking
+// it (#2384) — for the same reason: the link is managed where it is shown.
 //
 // Loading / error states mirror the sibling sidebar sections (e.g. WorkDuration): a spinner while
 // fetching and a destructive box on failure. The "not linked" state is handled by the caller — the
 // section is not rendered at all when github_pull is absent.
 
-import { ExternalLink, Github, Loader2 } from "lucide-react";
+import { ExternalLink, Github, Loader2, Unlink } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { GithubPrStatus, GithubPull } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/lib/badges";
+import { errorMessage } from "@/lib/error-message";
 import { relativeTime } from "@/lib/time";
+import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
+import { useUnlinkGithubPull } from "@/queries/pulls";
 
 const STATE: Record<
   GithubPrStatus["state"],
@@ -82,10 +88,17 @@ function StatusRow({
 }
 
 export function GithubPrStatusSection({
+  owner,
+  repo,
+  number,
   githubPull,
   status,
   isLoading,
 }: {
+  // Coordinates of the loophub PR, for the unlink action's mutation (#2384).
+  owner: string;
+  repo: string;
+  number: number;
   // The linked GitHub PR itself (#2035): the body's first row is the single link out to GitHub, so
   // the PR-detail action row doesn't need a separate "View PR on GitHub" button. Non-null because
   // the caller only renders the section for a linked PR.
@@ -162,6 +175,117 @@ export function GithubPrStatusSection({
           Failed to load GitHub status.
         </div>
       )}
+      {/* Outside the status branches, like the link above: unlinking is what you reach for when the
+          link is wrong or its GitHub PR is gone, which is exactly when the status fails to load. */}
+      <UnlinkGithubPrAction
+        owner={owner}
+        repo={repo}
+        number={number}
+        githubPull={githubPull}
+      />
     </section>
+  );
+}
+
+/**
+ * Unlink action for the section (#2384): drops the LoopHub-side link so a wrong link can be
+ * corrected or a GitHub PR created again — the PR-detail action row returns to "Create PR on
+ * GitHub" once `github_pull` is null. Destructive enough to confirm first, and the confirmation
+ * says what is and is not affected, since "unlink" could otherwise be read as closing the GitHub PR.
+ * The dialog follows the PR archive confirmation (pull-debug-menu.tsx): backdrop/Escape dismissal
+ * gated on the in-flight request, and the mutation error shown in the dialog rather than a toast, so
+ * the failure lands next to the action that caused it.
+ */
+function UnlinkGithubPrAction({
+  owner,
+  repo,
+  number,
+  githubPull,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  githubPull: GithubPull;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const unlink = useUnlinkGithubPull(owner, repo, number);
+  const backdropDismiss = useBackdropDismiss(() => {
+    if (!unlink.isPending) setConfirming(false);
+  });
+
+  // Escape dismisses the dialog, under the same in-flight guard as the buttons and the backdrop.
+  useEffect(() => {
+    if (!confirming) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !unlink.isPending) setConfirming(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirming, unlink.isPending]);
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-fit px-2 text-muted-foreground"
+        title="Remove this PR's link to the GitHub PR (the GitHub PR itself is not changed)"
+        onClick={() => setConfirming(true)}
+      >
+        <Unlink className="size-3.5" />
+        Unlink GitHub PR
+      </Button>
+      {confirming ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12vh]"
+          {...backdropDismiss}
+        >
+          <div
+            data-debug-component="UnlinkGithubPrDialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Unlink GitHub PR #${githubPull.number}?`}
+            className="w-full max-w-md rounded-lg border bg-background p-5 shadow-lg"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold">
+              Unlink GitHub PR #{githubPull.number}?
+            </h2>
+            <p className="mt-3 text-sm text-muted-foreground">
+              This removes only this PR's link to {githubPrPath(githubPull.url)}{" "}
+              in LoopHub. The pull request on GitHub is not closed or changed.
+              Afterwards you can create a GitHub PR again from this PR.
+            </p>
+            {unlink.error ? (
+              <p className="mt-3 text-sm text-destructive">
+                {errorMessage(unlink.error, "Unlink failed")}
+              </p>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={unlink.isPending}
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={unlink.isPending}
+                onClick={() =>
+                  unlink.mutate(undefined, {
+                    onSuccess: () => setConfirming(false),
+                  })
+                }
+              >
+                {unlink.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                {unlink.isPending ? "Unlinking…" : "Unlink"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

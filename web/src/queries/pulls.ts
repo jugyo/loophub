@@ -35,6 +35,7 @@ import {
   setDiffFeedbackArchived,
   setPullCommentArchived,
   unarchivePull,
+  unlinkGithubPull,
 } from "@/api/client";
 import type {
   DiffFeedbackList,
@@ -703,6 +704,33 @@ export function usePushGithubPull(owner: string, repo: string, number: number) {
       qc.invalidateQueries({
         queryKey: queryKeys.githubPrStatus(full(owner, repo), number),
       });
+    },
+  });
+}
+
+/**
+ * Drop the PR's GitHub PR link (#2384), then invalidate the PR + lists. The cached PR is patched to
+ * `github_pull: null` right away so the action row flips back to "Create PR on GitHub" without
+ * waiting for the refetch, and the GitHub status query is removed rather than invalidated — with no
+ * link the endpoint 404s, so a refetch would only produce an error.
+ */
+export function useUnlinkGithubPull(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => unlinkGithubPull(owner, repo, number),
+    onSuccess: () => {
+      qc.setQueryData<PullRequest>(
+        queryKeys.pull(full(owner, repo), number),
+        (current) => (current ? { ...current, github_pull: null } : current),
+      );
+      qc.removeQueries({
+        queryKey: queryKeys.githubPrStatus(full(owner, repo), number),
+      });
+      invalidatePull(qc, owner, repo, number);
     },
   });
 }

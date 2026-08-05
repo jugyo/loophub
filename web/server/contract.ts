@@ -1200,6 +1200,16 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "pulls/unlinkGithubPull": {
+    description:
+      "Remove the GitHub PR link recorded on a loophub PR (#2384), so a wrong link can be corrected or a GitHub PR created again. Only the LoopHub-side link (and its cached GitHub status) is dropped; the GitHub PR itself is untouched. 409 when the PR has no linked GitHub PR.",
+    params: params({ repo, number: positiveInt, session_id: sid }, [
+      "repo",
+      "number",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.pulls.unlinkGithubPull(p.repo, p.number, p.session_id),
+  },
   "pulls/githubStatus": {
     description:
       "GitHub-side status (draft / review / checks / comment counts / merged) of a PR's linked GitHub PR (#850). Fetched on demand via `gh` and cached; 404 when the PR has no linked GitHub PR.",

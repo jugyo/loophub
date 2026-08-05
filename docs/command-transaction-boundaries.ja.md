@@ -161,6 +161,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `pulls.update` | procedure | issue fields、`pull_request.updated` | 応答の `pullJSON` |
 | `pulls.delete` | procedure | PR 関連 row の削除、`pull_request.deleted` | git ref / worktree は削除しない |
 | `pulls.recordGithubPull` | procedure | GitHub PR link、`pull_request.github_pr_recorded` | URL validation のみ |
+| `pulls.unlinkGithubPull` | procedure | GitHub PR link と status cache の削除、`pull_request.github_pr_unlinked` | link 有無の guard read |
 | `pulls.createGithubPull` / `pushGithubPull` | procedure | GitHub PR link / pushed SHA、対応する event | git push、`gh`、pushed SHA の read |
 | `pulls.merge` | procedure | merge state、linked issue close、`pull_request.merged` と `issue.closed` | merge の git operation |
 | `pulls.githubStatus` | store helper | status cache | GitHub fetch |

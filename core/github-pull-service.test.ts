@@ -799,3 +799,68 @@ test("removeRepo sweeps github_pulls so repo removal does not fail the FK (#406)
   expect(() => svc.repos.get("me/throwaway")).toThrow();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("unlinkGithubPull drops the link, its status cache, and the merge polling (#2384)", async () => {
+  const number = await openPull();
+  const repo = S.getRepo("me", "proj")!;
+  const row = S.getIssue(repo.id, number)!;
+  svc.pulls.recordGithubPull("me/proj", number, {
+    github_number: 77,
+    url: "https://github.com/me/proj/pull/77",
+    branch: "feature/unlink-me",
+  });
+  // Both kinds of ancillary data the link accumulates: the cached GitHub-side status and the
+  // digest ledger of feedback already observed on the GitHub PR.
+  S.saveGithubPullStatus(row.id, JSON.stringify({ state: "open" }));
+  S.saveGithubFeedbackObservation({
+    issueId: row.id,
+    kind: "review",
+    githubId: 991,
+    contentHash: "abc",
+    updatedAt: "2026-01-01T00:00:00Z",
+  });
+  expect(
+    S.unmergedGithubPullLinks().some((link) => link.number === number),
+  ).toBe(true);
+
+  const res = svc.pulls.unlinkGithubPull("me/proj", number);
+  expect(res).toEqual({ unlinked: true, github_number: 77 });
+
+  // The link is gone, so the PR reads as never exported and the export action returns.
+  const after = (await svc.pulls.get("me/proj", number)) as any;
+  expect(after.github_pull).toBeNull();
+  // The cached GitHub status went with it (a snapshot of a PR no longer linked), while the
+  // feedback digests stay so re-linking the same PR doesn't replay observed feedback as new.
+  expect(S.getGithubPullStatus(row.id)).toBeNull();
+  expect(S.getGithubFeedbackObservation(row.id, "review", 991)).toMatchObject({
+    content_hash: "abc",
+  });
+  // The worker's merge-status sweep no longer polls `gh` for this PR.
+  expect(
+    S.unmergedGithubPullLinks().some((link) => link.number === number),
+  ).toBe(false);
+
+  const events = S.listEvents(0, repo.id, 100, undefined, "asc", {
+    types: ["pull_request.github_pr_unlinked"],
+  }).filter((event) => JSON.parse(event.payload).number === number);
+  expect(events).toHaveLength(1);
+  expect(JSON.parse(events[0].payload)).toEqual({
+    number,
+    github_number: 77,
+    url: "https://github.com/me/proj/pull/77",
+  });
+
+  // Exporting again is allowed once the link is gone (the double-create guard is off).
+  const relinked = svc.pulls.recordGithubPull("me/proj", number, {
+    github_number: 78,
+    url: "https://github.com/me/proj/pull/78",
+  });
+  expect(relinked.number).toBe(78);
+});
+
+test("unlinkGithubPull refuses a PR with no linked GitHub PR (#2384)", async () => {
+  const number = await openPull();
+  expect(() => svc.pulls.unlinkGithubPull("me/proj", number)).toThrow(
+    /has no GitHub PR to unlink/,
+  );
+});

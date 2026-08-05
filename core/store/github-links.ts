@@ -65,6 +65,19 @@ export function recordGithubPull(input: {
     ) as GithubPull;
 }
 
+// #2384: drop a loophub PR's GitHub PR link, so a wrong link can be corrected and a GitHub PR can be
+// created again. The caller reads the row first (for the event payload and its own guard), so this
+// takes no return value. The cached GitHub-side status goes with it: it is a snapshot of a PR that is
+// no longer linked, and leaving it would serve a stale panel (within the TTL) for whatever GitHub PR
+// is linked next. `pushed_sha` is a column of the deleted row, so it goes too. github_pull_feedback
+// is deliberately kept — it is a de-dup ledger of feedback already delivered, keyed by GitHub's own
+// comment/review ids, so re-linking the same PR must not replay every comment as new; ids belonging
+// to a different GitHub PR never collide with the retained ones.
+export function deleteGithubPull(issueId: number): void {
+  db.run(`DELETE FROM github_pull_status WHERE issue_id = ?`, [issueId]);
+  db.run(`DELETE FROM github_pulls WHERE issue_id = ?`, [issueId]);
+}
+
 // #800: a github_pulls row not yet known to be merged on GitHub, joined with enough to run the
 // merge-status check and record the result — the loophub PR number (for the event payload), the
 // repo id (to emit into), and local_path (gh's cwd; the URL itself carries owner/repo/number so
