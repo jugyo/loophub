@@ -380,7 +380,12 @@ function AcceptanceCriteria({
         </div>
       ) : null}
 
-      <form className="flex items-center gap-2" onSubmit={onAdd}>
+      {/* relative: Tailwind sr-only is position:absolute; keep that label's
+          containing block on this form so a below-the-fold static position
+          cannot expand document scrollHeight (double vertical scrollbar).
+          The app shell is also relative; this is defense in depth at the
+          control that owns the label. */}
+      <form className="relative flex items-center gap-2" onSubmit={onAdd}>
         <label htmlFor="new-acceptance-criterion" className="sr-only">
           New acceptance criterion
         </label>

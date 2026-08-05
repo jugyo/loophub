@@ -113,6 +113,9 @@ describe("AppLayout", () => {
     const statusbar = screen.getByTestId("app-statusbar");
     expect(shell?.className).toContain("h-screen");
     expect(shell?.className).toContain("overflow-hidden");
+    // relative + overflow-hidden: contain absolute descendants (sr-only labels) so
+    // they cannot expand document scrollHeight and create a second scrollbar.
+    expect(shell?.className).toContain("relative");
     expect(main?.className).toContain("overflow-y-auto");
     expect(main?.contains(statusbar)).toBe(false);
     expect(statusbar.compareDocumentPosition(main as Node)).toBe(
@@ -128,6 +131,22 @@ describe("AppLayout", () => {
     // area lands below the bar instead of underneath it.
     expect(container.querySelector("main")?.className).toContain(
       "scroll-pt-11",
+    );
+  });
+
+  // #2414: without a positioned shell, below-the-fold Tailwind sr-only labels
+  // (position:absolute) expand document scrollHeight and paint a second vertical
+  // scrollbar beside main. relative + overflow-hidden keeps one scrollport.
+  it("positions the shell so absolute descendants cannot create a document scrollbar (#2414)", async () => {
+    const { container } = renderLayout();
+    await screen.findByText("Dashboard route");
+
+    const shell = container.firstElementChild;
+    expect(shell?.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["relative", "h-screen", "overflow-hidden"]),
+    );
+    expect(container.querySelector("main")?.className).toContain(
+      "overflow-y-auto",
     );
   });
 

@@ -29,9 +29,14 @@ export function AppLayout() {
     // dialog here at the shell level.
     <TerminalControllerProvider>
       <ToastProvider>
+        {/* relative + overflow-hidden makes the shell the containing block for any
+            position:absolute descendants (e.g. Tailwind sr-only labels). Without a
+            positioned ancestor those elements resolve against the initial containing
+            block, so a label whose static position sits below the viewport expands
+            document scrollHeight and yields a second vertical scrollbar beside main. */}
         <div
           data-debug-component="AppLayout"
-          className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground"
+          className="relative flex h-screen w-full flex-col overflow-hidden bg-background text-foreground"
         >
           <AppTopbar
             onOpenRepoSwitcher={() =>

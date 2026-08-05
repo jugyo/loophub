@@ -180,13 +180,25 @@ bar at the bottom-right. Repository routes also show a repository navigation bar
 | Application header height | `h-14` | `app-topbar.tsx` |
 | Repository navigation height | `h-11` | `repo-topbar.tsx` |
 | Status bar height | `h-8` | `app-statusbar.tsx` |
-| Shell | `h-screen w-full overflow-hidden` | `app-layout.tsx` |
+| Shell | `relative h-screen w-full overflow-hidden` | `app-layout.tsx` |
 | Main content padding | `px-4 pt-6 sm:px-6` | `app-layout.tsx` `<main>` |
 
 The application header, repository navigation, and application status bar are
 `shrink-0`; the main column is `min-w-0 flex-1`, and only `<main>` scrolls
 (`overflow-y-auto`). Routes outside a repository omit the repository
 navigation bar entirely.
+
+#### Single vertical scrollport
+
+Only `<main>` may own the page's vertical scrollbar. The shell is therefore
+`relative` as well as `overflow-hidden`: Tailwind's `.sr-only` utility uses
+`position: absolute`, and without a positioned ancestor those labels resolve
+against the initial containing block. When an Issue detail's
+"New acceptance criterion" label (or any other `sr-only` control) sits below
+the first viewport, its static position expands `documentElement.scrollHeight`
+and the browser paints a second vertical scrollbar beside `main`. Making the
+shell the containing block keeps absolute descendants inside the fixed-height
+shell so document overflow cannot appear.
 
 #### Shell dividers
 
