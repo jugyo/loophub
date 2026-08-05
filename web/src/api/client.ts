@@ -645,14 +645,9 @@ export function getIssue(owner: string, repo: string, number: number) {
 }
 
 export function listIssueRefKinds(
-  owner: string,
-  repo: string,
-  numbers: number[],
+  targets: { repo: string; numbers: number[] }[],
 ) {
-  return rpc<IssueRefKind[]>("issues/refKinds", {
-    repo: full(owner, repo),
-    numbers,
-  });
+  return rpc<IssueRefKind[]>("issues/refKinds", { targets });
 }
 
 export function getIssueDetailPage(

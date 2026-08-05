@@ -279,16 +279,26 @@ export const issues = {
   },
 
   /**
-   * Kind of each referenced number, for rendering `#n` in a Markdown body as a link to the
-   * canonical issue or pull route (#2362). Numbers that do not exist in the repo are absent
-   * from the result, which the caller renders as it sees fit.
+   * Kind of each referenced number, for rendering `#n` and `owner/repo#n` in a Markdown body as
+   * a link to the canonical issue or pull route (#2362). References come grouped by the repo
+   * they point at, so one body needs one lookup however many repos it names. A repo that is not
+   * registered here is skipped rather than a 404, the same way a number with no Issue or PR is
+   * absent from the result: a body may name anything, and the caller renders what it cannot
+   * resolve as plain text.
    */
-  refKinds(name: string, numbers: number[]): IssueRefKindWire[] {
-    const r = repoOr404(name);
-    const wanted = [
-      ...new Set(numbers.filter((n) => Number.isInteger(n) && n > 0)),
-    ];
-    return S.listIssueKinds(r.id, wanted).map(issueRefKindJSON);
+  refKinds(targets: { repo: string; numbers: number[] }[]): IssueRefKindWire[] {
+    const out: IssueRefKindWire[] = [];
+    for (const target of targets) {
+      const r = S.getRepo(...S.splitName(target.repo));
+      if (!r) continue;
+      const wanted = [
+        ...new Set(target.numbers.filter((n) => Number.isInteger(n) && n > 0)),
+      ];
+      for (const row of S.listIssueKinds(r.id, wanted)) {
+        out.push(issueRefKindJSON(target.repo, row));
+      }
+    }
+    return out;
   },
 
   create(

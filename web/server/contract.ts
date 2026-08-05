@@ -25,12 +25,23 @@ const devCostLimitUsd = {
 } as const;
 const positiveInt = { type: "integer", minimum: 1 } as const;
 const stringArray = { type: "array", items: { type: "string" } } as const;
-// `#n` references collected from one Markdown body. Bounded so a pathological body cannot
-// turn a single lookup into an unbounded SQL parameter list.
+// References collected from one Markdown body, grouped by the repo each points at. Both
+// levels are bounded so a pathological body cannot turn a single lookup into an unbounded
+// number of queries or SQL parameters.
 const refNumberArray = {
   type: "array",
   items: positiveInt,
   maxItems: 200,
+} as const;
+const refTargetArray = {
+  type: "array",
+  maxItems: 50,
+  items: {
+    type: "object",
+    properties: { repo: strNonEmpty, numbers: refNumberArray },
+    required: ["repo", "numbers"],
+    additionalProperties: false,
+  },
 } as const;
 const strOrNull = { type: ["string", "null"] } as const;
 const workflowFields = {
@@ -665,10 +676,10 @@ export const methods: Record<string, MethodDef> = {
   },
   "issues/refKinds": {
     description:
-      "Classify referenced numbers as issue or pull. Numbers absent from the repo are omitted.",
-    params: params({ repo, numbers: refNumberArray }, ["repo", "numbers"]),
+      "Classify referenced numbers as issue or pull, per repo they point at. Unregistered repos and numbers absent from a repo are omitted.",
+    params: params({ targets: refTargetArray }, ["targets"]),
     result: anyArray,
-    handler: (p) => svc.issues.refKinds(p.repo, p.numbers),
+    handler: (p) => svc.issues.refKinds(p.targets),
   },
   "pageData/issueDetail": {
     description: "Get all initial data for one issue-detail screen.",

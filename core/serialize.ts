@@ -1300,15 +1300,22 @@ export function labelJSON(l: S.LabelRow): LabelWire {
   return { name: l.name, color: l.color };
 }
 
-// Kind of one `#n` reference within a repo, so a renderer can link the reference to the
-// canonical issue or pull route instead of a resolver that redirects after a lookup.
+// Kind of one reference in a Markdown body, so a renderer can link the reference to the
+// canonical issue or pull route instead of a resolver that redirects after a lookup. `repo`
+// is the "owner/name" the reference points at — the rendering repo for `#n`, another one for
+// `owner/repo#n` — echoed exactly as the caller asked for it, so a result maps back onto the
+// reference that produced it.
 export interface IssueRefKindWire {
+  repo: string;
   number: number;
   kind: "issue" | "pull";
 }
 
-export function issueRefKindJSON(row: S.IssueKindRow): IssueRefKindWire {
-  return { number: row.number, kind: row.kind };
+export function issueRefKindJSON(
+  repo: string,
+  row: S.IssueKindRow,
+): IssueRefKindWire {
+  return { repo, number: row.number, kind: row.kind };
 }
 
 // Summary of the issue a PR closes (pull-detail `linked_issue`).

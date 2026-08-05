@@ -5,12 +5,12 @@
 // it is not. Any HTML embedded in a body is escaped and shown as literal text,
 // so bodies cannot inject markup. Keep it that way — do not add rehype-raw.
 //
-// When `owner`/`repo` are provided, `#123` references in the body are linkified
-// (see remarkIssueRefs); the custom `a` renderer turns those internal links into
-// client-side router navigations. The referenced numbers are classified first so a
-// reference links straight to its canonical issue / pull route (#2362); a number
-// whose kind is unknown — the lookup is in flight, or there is no such Issue/PR —
-// stays plain text.
+// When `owner`/`repo` are provided, `#123` and `owner/repo#123` references in the body
+// are linkified (see remarkIssueRefs); the custom `a` renderer turns those internal links
+// into client-side router navigations. The references are classified first so each links
+// straight to its canonical issue / pull route (#2362); a reference whose kind is unknown
+// — the lookup is in flight, there is no such Issue/PR, or this hub does not host the repo
+// it names — stays plain text.
 
 import { Link } from "@tanstack/react-router";
 import { isValidElement, type ReactNode, useMemo, useState } from "react";
@@ -20,7 +20,8 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
 import {
   type IssueRefKind,
-  issueRefNumbers,
+  issueRefKey,
+  issueRefTargets,
   remarkIssueRefs,
 } from "@/lib/remark-issue-refs";
 import { cn } from "@/lib/utils";
@@ -125,15 +126,18 @@ export function Markdown({
     null,
   );
   const linkRefs = Boolean(owner && repo);
-  const numbers = useMemo(
-    () => (linkRefs ? issueRefNumbers(children) : []),
-    [linkRefs, children],
+  const targets = useMemo(
+    () => (linkRefs ? issueRefTargets(children, `${owner}/${repo}`) : []),
+    [linkRefs, children, owner, repo],
   );
-  const { data: refKinds } = useIssueRefKinds(owner ?? "", repo ?? "", numbers);
+  const { data: refKinds } = useIssueRefKinds(targets);
   const kinds = useMemo(
     () =>
-      new Map<number, IssueRefKind>(
-        (refKinds ?? []).map((ref) => [ref.number, ref.kind]),
+      new Map<string, IssueRefKind>(
+        (refKinds ?? []).map((ref) => [
+          issueRefKey(ref.repo, ref.number),
+          ref.kind,
+        ]),
       ),
     [refKinds],
   );

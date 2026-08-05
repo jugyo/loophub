@@ -20,7 +20,7 @@ vi.mock("@/components/mermaid-diagram", () => ({
   ),
 }));
 
-// The kinds of the `#n` numbers in the body come from the server. Tests set `refKinds` to
+// The kinds of the references in the body come from the server. Tests set `refKinds` to
 // pick what came back; the default (empty) is also the state while the lookup is in flight,
 // where a reference stays plain text.
 const { refKinds } = vi.hoisted(() => ({
@@ -151,7 +151,7 @@ describe("Markdown", () => {
 
 describe("Markdown #n references", () => {
   it("links #n to the canonical issue route when the number is an issue", async () => {
-    refKinds.value = [{ number: 123, kind: "issue" }];
+    refKinds.value = [{ repo: "me/proj", number: 123, kind: "issue" }];
     const { container } = await renderInRouter(
       <Markdown owner="me" repo="proj">
         {"See #123 for details."}
@@ -166,7 +166,7 @@ describe("Markdown #n references", () => {
   });
 
   it("links #n to the canonical pull route when the number is a pull", async () => {
-    refKinds.value = [{ number: 123, kind: "pull" }];
+    refKinds.value = [{ repo: "me/proj", number: 123, kind: "pull" }];
     const { container } = await renderInRouter(
       <Markdown owner="me" repo="proj">
         {"See #123 for details."}
@@ -181,8 +181,8 @@ describe("Markdown #n references", () => {
 
   it("links issue and pull refs in one body to their own routes", async () => {
     refKinds.value = [
-      { number: 1, kind: "issue" },
-      { number: 2, kind: "pull" },
+      { repo: "me/proj", number: 1, kind: "issue" },
+      { repo: "me/proj", number: 2, kind: "pull" },
     ];
     const { container } = await renderInRouter(
       <Markdown owner="me" repo="proj">
@@ -210,7 +210,7 @@ describe("Markdown #n references", () => {
   });
 
   it("links only the refs whose kind is known, keeping the rest as text", async () => {
-    refKinds.value = [{ number: 2, kind: "pull" }];
+    refKinds.value = [{ repo: "me/proj", number: 2, kind: "pull" }];
     const { container } = await renderInRouter(
       <Markdown owner="me" repo="proj">
         {"#1 then #2"}
@@ -229,8 +229,8 @@ describe("Markdown #n references", () => {
 
   it("only linkifies Issue and PR ids when generated ids are mixed in", async () => {
     refKinds.value = [
-      { number: 42, kind: "issue" },
-      { number: 43, kind: "pull" },
+      { repo: "me/proj", number: 42, kind: "issue" },
+      { repo: "me/proj", number: 43, kind: "pull" },
     ];
     const { container } = await renderInRouter(
       <Markdown owner="me" repo="proj">
@@ -314,6 +314,46 @@ describe("Markdown #n references", () => {
     expect(anchors).toHaveLength(1);
     expect(anchors[0].getAttribute("href")).toBe("https://example.com");
     expect(anchors[0].textContent).toContain("#5");
+  });
+
+  it("links owner/repo#n to the referenced repo's canonical route", async () => {
+    refKinds.value = [{ repo: "other/lib", number: 7, kind: "issue" }];
+    const { container } = await renderInRouter(
+      <Markdown owner="me" repo="proj">
+        {"See other/lib#7 for details."}
+      </Markdown>,
+    );
+    await waitFor(() =>
+      expect(container.querySelector("a")?.getAttribute("href")).toBe(
+        "/r/other/lib/issues/7",
+      ),
+    );
+    expect(container.querySelector("a")?.textContent).toBe("other/lib#7");
+  });
+
+  it("keeps a cross-repo reference plain when the repo is not hosted here", async () => {
+    refKinds.value = [];
+    const { container } = await renderInRouter(
+      <Markdown owner="me" repo="proj">
+        {"See other/lib#7 for details."}
+      </Markdown>,
+    );
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toContain("See other/lib#7 for details.");
+  });
+
+  it("does not linkify a repo-shaped path inside a URL", async () => {
+    refKinds.value = [{ repo: "other/lib", number: 7, kind: "issue" }];
+    const { container } = await renderInRouter(
+      <Markdown owner="me" repo="proj">
+        {"see <https://github.com/other/lib#7> now"}
+      </Markdown>,
+    );
+    // The autolink itself, and no ref link nested in or beside it.
+    const anchors = Array.from(container.querySelectorAll("a"));
+    expect(anchors.map((a) => a.getAttribute("href"))).toEqual([
+      "https://github.com/other/lib#7",
+    ]);
   });
 
   it("preserves the title attribute on non-ref links", () => {

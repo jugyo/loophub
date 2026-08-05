@@ -22,6 +22,7 @@ import {
   postIssueComment,
   setAcceptanceCriterionEnabled,
 } from "@/api/client";
+import type { IssueRefTarget } from "@/lib/remark-issue-refs";
 import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
@@ -113,19 +114,18 @@ export function useIssue(
 }
 
 /**
- * Kinds of the `#n` references in one Markdown body, so the renderer can link each to its
- * canonical route (#2362). `numbers` must be sorted and deduplicated by the caller — it is
- * part of the query key, so bodies referencing the same numbers share one lookup.
+ * Kinds of the references in one Markdown body, so the renderer can link each to its canonical
+ * route (#2362). `targets` must be sorted and deduplicated by the caller (issueRefTargets does
+ * this) — it is part of the query key, so bodies referencing the same set share one lookup.
  */
-export function useIssueRefKinds(
-  owner: string,
-  repo: string,
-  numbers: readonly number[],
-) {
+export function useIssueRefKinds(targets: readonly IssueRefTarget[]) {
   return useQuery({
-    queryKey: queryKeys.issueRefKinds(full(owner, repo), numbers),
-    queryFn: () => listIssueRefKinds(owner, repo, [...numbers]),
-    enabled: numbers.length > 0,
+    queryKey: queryKeys.issueRefKinds(targets),
+    queryFn: () =>
+      listIssueRefKinds(
+        targets.map((t) => ({ repo: t.repo, numbers: [...t.numbers] })),
+      ),
+    enabled: targets.length > 0,
   });
 }
 

@@ -14,6 +14,7 @@
 // renamed repo's old name, and are read through the shared object decoder.
 
 import type { LoopEvent } from "@/api/types";
+import type { IssueRefTarget } from "@/lib/remark-issue-refs";
 import { eventPayloadRecord } from "../../../core/event-subjects.ts";
 
 /** Query keys used across the app. Components build keys via these factories. */
@@ -28,8 +29,10 @@ export const queryKeys = {
     ["issue-comments", full, number] as const,
   // Top-level rather than a child of issues(full): a number's kind never changes once the
   // Issue/PR exists, so the repo's issue events must not invalidate these lookups (#2362).
-  issueRefKinds: (full: string, numbers: readonly number[]) =>
-    ["issue-ref-kinds", full, numbers] as const,
+  // Keyed by the whole body's references, which may span repos, so bodies referencing the same
+  // set share one lookup.
+  issueRefKinds: (targets: readonly IssueRefTarget[]) =>
+    ["issue-ref-kinds", targets] as const,
   workspaces: (full: string) => ["workspaces", full] as const,
   pulls: (full: string) => ["pulls", full] as const,
   pull: (full: string, number: number) => ["pull", full, number] as const,
