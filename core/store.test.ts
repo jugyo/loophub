@@ -53,7 +53,6 @@ test("a Workflow run keeps its creation status for its whole life", () => {
 
   // Whether the run ended is read from its linked PR, so no update writes `status` or `ended_at`.
   S.updateWorkflowRun(run.id, { currentStep: "execute" });
-  S.advanceWorkflowRunEventCursor(run.id, 42);
 
   const maintained = S.getWorkflowRun(run.id);
   expect(maintained?.status).toBe("running");

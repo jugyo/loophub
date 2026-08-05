@@ -10,16 +10,16 @@ prompt 配送では、literal text を `pane send-text` で入力し、その re
 
 ただし request を分けても paste 処理との衝突は解消しない。2 つの request の書き込みは PTY 上で約 7ms 差で連続し、coding agent の paste 判定窓の内側に収まるため、`Enter` は依然として paste に取り込まれうる。実機観測と、bracketed paste で本文を囲む修正は [Herdr prompt が pane に残り未送信で止まる根本原因](herdr-prompt-unsent-root-cause.ja.md) を参照。
 
-workflow instruction、live Execute への継続指示、cost-limit 通知、Web から PR agent への入力は同じ順序に揃える。Web 入力は pane の再検証後に配送し、non-zero exit を既存の 409 error に変換する。
+live Execute への継続指示、購読者への ping、cost-limit 通知、Web から PR agent への入力は同じ順序に揃える。Web 入力は pane の再検証後に配送し、non-zero exit を既存の 409 error に変換する。
 
 ## 配送と失敗
 
-配送先は workflow run に結び付いた唯一の有効な parent pane であり、instruction は `workflow instruction: <JSON>` の1行に変換される（`core/service/workflow-instructions.ts:34-55`）。
+どの配送先も、宛先の pane 座標を持つ 1 つの行から解決する（continuing 指示は run の Execute target、ping は購読行）。
 
-配送前に effect receipt を `pending` で確保し、text と `Enter` の両 request が成功した後だけ `completed` にして event cursor を進める。receipt schema は `pending` / `completed` のみを許可し、`run_id`・`event_id`・`effect` を主キーにする。どちらかの request の failure は既存の error path に出て、成功として扱わない。
+pane を伴う one-time effect は、配送前に effect receipt を `pending` で確保し、text と `Enter` の両 request が成功した後だけ `completed` にする。receipt schema は `pending` / `completed` のみを許可し、`run_id`・`event_id`・`effect` を主キーにする。どちらかの request の failure は既存の error path に出て、成功として扱わない。ping は receipt を持たない best-effort な配送で、失敗は log に残して落とす。
 
 ## 検証
 
-service test は正しい pane への `pane send-text` と `pane send-keys Enter` が順に1回ずつ行われることを確認する。同 test は Herdr の non-zero exit 後に receipt が `pending`、cursor が未更新のまま残り、再配送されないことも確認する。
+service test は正しい pane への `pane send-text` と `pane send-keys Enter` が順に1回ずつ行われることを確認する。同 test は Herdr の non-zero exit 後に receipt が `pending` のまま残り、自動再送されないことも確認する。
 
 Web 入力の test は日本語、`-` 始まり、shell-like text の各入力がそれぞれ `pane send-text` と `pane send-keys Enter` の組になり、shell command として評価されないことを確認する。

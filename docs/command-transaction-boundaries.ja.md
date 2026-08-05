@@ -133,7 +133,6 @@ claim の意味が失われる。
 
 - `workflowEscalation.escalateHuman`
 - `workflowCostHold.run`
-- `workflowInstructions.dispatchRun`（pane への配送を挟む）
 - `scheduledTasks` の発火（herdr launch を挟む）
 - pane cleanup（`terminal.cleanupClosedIssuePanes` と `closeManagedHerdrPaneIfUnclaimed`）— claim を
   解放してから herdr の pane を閉じ、閉じ終えてから `markHerdrPaneClosed` を書く。閉じる前に
@@ -220,10 +219,8 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `workflowRuns.detectCostExceeded` | store helper | 条件付き `workflow_run.cost_exceeded` | — |
 | `workflowRuns.launchStep` | store helper | child sequence の予約 | worktree / git read、launch plan 作成 |
 | `workflowRuns.turnDone` / `escalate` | store helper | 対応する event | step result / git SHA read |
-| `workflowRuns.next` | store helper | run cursor advance | watch wait |
 | `workflowRuns.deliver` | 委譲（`activateStep`） | — | herdr agent list と pane run |
-| `workflowInstructions.registerParentPane` | procedure | pane row、resource link | — |
-| `workflowInstructions.dispatchRun` | procedure（区間ごと） | receipt claim / complete と cursor advance | pane への配送。claim と complete は配送を挟んだ別区間 |
+| `workflowRuns.registerParentPane` | procedure | pane row、resource link | — |
 | `workflowEscalation.escalateHuman` | 三段 protocol | escalation event、claim、issue comment と `issue.commented`、complete | — |
 | `workflowCostHold.run` | 三段 protocol | claim、await-human の state と event、complete | herdr list / Escape / pane notification |
 | `workflowWatch.beginEffect` / `completeEffect` | store helper | receipt の claim / complete | wait、source event の選択 |

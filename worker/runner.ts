@@ -6,14 +6,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logsDir, workerCursorPath } from "../core/config.ts";
 import { worktreeList } from "../core/git.ts";
-import {
-  events,
-  pulls,
-  type Repo,
-  repos,
-  terminal,
-  workflowInstructions,
-} from "../core/service.ts";
+import { events, pulls, type Repo, repos, terminal } from "../core/service.ts";
 import { resolveStartCursor, writeCursor } from "../core/worker-cursor.ts";
 import {
   buildRunEnv,
@@ -267,39 +260,6 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
   }
 }
 
-export async function dispatchWorkflowInstructions(): Promise<void> {
-  const batchStartedAt = Date.now();
-  let results: Awaited<ReturnType<typeof workflowInstructions.dispatchPending>>;
-  try {
-    results = await workflowInstructions.dispatchPending();
-  } catch (err) {
-    workerLog.error(
-      `lh-worker: workflow instruction delivery failed run_id=- event_id=- duration_ms=${Date.now() - batchStartedAt} error=${errorMessage(err)}`,
-    );
-    return;
-  }
-
-  // One run may consume several non-actionable events before it reaches its final result. Only the
-  // last result is the completion of that run's delivery operation, so log it once. An empty result
-  // is the normal high-frequency poll and intentionally stays silent.
-  const completedByRun = new Map<number, (typeof results)[number]>();
-  for (const result of results) {
-    completedByRun.set(result.run, result);
-  }
-  for (const result of completedByRun.values()) {
-    const event = "event" in result ? (result.event ?? "-") : "-";
-    if (result.status === "failed") {
-      workerLog.error(
-        `lh-worker: workflow instruction delivery failed run_id=${result.run} event_id=${event} duration_ms=${result.durationMs} error=${result.error}`,
-      );
-      continue;
-    }
-    workerLog.info(
-      `lh-worker: workflow instruction delivery completed run_id=${result.run} event_id=${event} outcome=${result.status} duration_ms=${result.durationMs}`,
-    );
-  }
-}
-
 export interface WorkerHandle {
   stop: () => void;
 }
@@ -325,7 +285,6 @@ export function startWorker(
     if (stopped || running) return;
     running = true;
     try {
-      await dispatchWorkflowInstructions();
       for (;;) {
         if (stopped) break;
         const rows = events.page(cursor, null, PAGE) as EventRow[];

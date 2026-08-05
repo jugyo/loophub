@@ -281,7 +281,7 @@ async function launchParentHerdr(input: {
   }
   const s = await svc();
   await runOp(() =>
-    s.workflowInstructions.registerParentPane(input.repo.full_name, {
+    s.workflowRuns.registerParentPane(input.repo.full_name, {
       run: input.runId,
       launch_id: input.sessionId,
       session_name: launched.sessionName,
@@ -684,7 +684,7 @@ function observedValue(value: boolean | null): string {
 
 function printRunState(result: WorkflowRunStateWire): void {
   console.log(`state_version\t${result.state_version}`);
-  console.log(`run\t#${result.id} ${display(result.status)}`);
+  console.log(`run\t#${result.id}`);
   console.log(`current_step\t${display(result.current_step)}`);
   console.log(
     `active\t${display(result.active_step ?? "(none)")} session=${display(
@@ -795,59 +795,6 @@ async function stepStatus(): Promise<void> {
     return;
   }
   printRunState(result);
-}
-
-// The parent's own inputs to the run: a direct human instruction, or its verdict on the GitHub
-// references a delivered instruction asked it to read. State-derived instructions reach the parent
-// through the worker, so this command always carries one input rather than polling for progress.
-async function instruction(): Promise<void> {
-  const runId = positiveInt(rest[0], "<run>");
-  const event =
-    flags.event === undefined ? undefined : positiveInt(flags.event, "--event");
-  const note =
-    flags.note === "-"
-      ? await readStdin()
-      : typeof flags.note === "string"
-        ? flags.note
-        : undefined;
-  if (event !== undefined && note !== undefined) {
-    fail("workflow instruction accepts either --event or --note");
-  }
-  if (event === undefined && note === undefined) {
-    fail("workflow instruction requires --event or --note");
-  }
-  const requiresChanges =
-    flags["requires-changes"] === undefined
-      ? undefined
-      : flags["requires-changes"] === "true"
-        ? true
-        : flags["requires-changes"] === "false"
-          ? false
-          : fail("--requires-changes must be true or false");
-  if (event !== undefined && requiresChanges === undefined) {
-    fail("--event requires --requires-changes");
-  }
-  const repo = await resolveRepo();
-  const result = await runOp(async () =>
-    (await svc()).workflowRuns.next(repo, {
-      run: runId,
-      event,
-      note,
-      requiresChanges,
-    }),
-  );
-  if (flags.json) {
-    out(result);
-    return;
-  }
-  console.log(result.action);
-  console.log(result.reason);
-  if (result.action === "read_github_reference") {
-    for (const reference of result.references)
-      console.log(`reference\t${reference}`);
-  }
-  if (result.event)
-    console.log(`event\t#${result.event.id} ${result.event.type}`);
 }
 
 // The Execute child's payload-less turn-done declaration (#1358). Target resolution mirrors the
@@ -1110,8 +1057,6 @@ export async function run(): Promise<void> {
     await deliver();
   } else if (sub === "escalate-human") {
     await escalateHuman();
-  } else if (sub === "instruction") {
-    await instruction();
   } else if (sub === "effect") {
     await effect();
   } else if (sub === "cost-hold") {

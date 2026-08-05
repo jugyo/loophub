@@ -83,7 +83,7 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("classifies PR commenters and only instructs the workflow for a human", async () => {
+test("classifies PR commenters and records the class on the source event", async () => {
   const human = svc.comments.createHumanForPull(
     repoName,
     prNumber,
@@ -106,8 +106,8 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
     "agent",
     "system",
   ]);
-  // No run-scoped twin is written any more: the run reads `author_type` off the source event and
-  // decides for itself which comment is an instruction.
+  // No run-scoped twin is written any more: whoever reacts to a comment reads `author_type` off
+  // the source event and decides for itself.
   expect(
     store
       .eventsForWorkflowRun(repoId, runId)
@@ -124,35 +124,8 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
     author_type: "human",
     source_payload_version: 1,
   });
-  const next = await svc.workflowRuns.next(repoName, {
-    run: runId,
-    event: sources[0].id,
-  });
-  expect(next).toMatchObject({
-    action: "deliver",
-    delivery_reason: "pr_comment",
-    comment_id: human.id,
-  });
-  // An agent's own comment is selected too, but reconciles to state observation only.
-  const agentWake = await svc.workflowRuns.next(repoName, {
-    run: runId,
-    event: sources[1].id,
-  });
-  expect(agentWake.action).not.toBe("deliver");
-  expect(next.instructions.commands[0]?.args).toEqual([
-    "pr",
-    "comment",
-    "react",
-    String(human.id),
-    "--pr",
-    String(prNumber),
-    "--emoji",
-    "👀",
-    "--repo",
-    repoName,
-  ]);
-  expect(next.instructions.commands[1]?.args).toContain(
-    `orchestrator: address PR comment ${human.id}`,
+  expect(sources.map((event) => JSON.parse(event.payload).author_type)).toEqual(
+    ["human", "agent", "system"],
   );
 
   const detail = await svc.pulls.get(repoName, prNumber);

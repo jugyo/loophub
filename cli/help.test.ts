@@ -146,18 +146,6 @@ describe("--help", () => {
       usage: "lh pr review view <number> --review <id> [options]",
       options: ["--review <id>", "--repo <owner/name>", "--json", "--help"],
     },
-    {
-      args: ["workflow", "instruction", "--help"],
-      usage: "lh workflow instruction <run>",
-      options: [
-        "--event <id>",
-        "--requires-changes <bool>",
-        "--note <text|->",
-        "--repo <owner/name>",
-        "--json",
-        "--help",
-      ],
-    },
   ])("documents usage and options for $usage without touching the DB", ({
     args,
     usage,

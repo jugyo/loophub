@@ -231,9 +231,8 @@ test("a re-emitted cost event interrupts a run whose parent stopped before cost-
     HERDR_LOG: input.log,
     HERDR_AGENTS: join(home, `agents-${input.run}.json`),
   };
-  // The parent was handed the first event's instruction and stopped before running cost-hold. The
-  // worker had already advanced its cursor past that event, so only a re-emission brings the parent
-  // back — and what it holds is the run at its current limit, not that one event.
+  // The parent was woken by the first event and stopped before running cost-hold, so only a
+  // re-emission brings it back — and what it holds is the run at its current limit, not one event.
   const reemitted = input.reemit();
   expect(reemitted).not.toBe(input.event);
 

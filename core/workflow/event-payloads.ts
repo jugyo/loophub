@@ -235,18 +235,6 @@ export type StoredWorkflowEventPayload = {
 } & Partial<WorkflowSourceEventKeys>;
 
 /**
- * View an already-parsed payload as a stored workflow payload. Anything that is not a JSON object
- * reads as an empty payload, which lands every reader on its missing-key fallback.
- */
-export function workflowEventPayloadOf(
-  value: unknown,
-): StoredWorkflowEventPayload {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as StoredWorkflowEventPayload)
-    : {};
-}
-
-/**
  * Parse a stored payload column, or null when the row does not hold a JSON object. Callers that
  * must reject a malformed row use the null; callers that only read best-effort fields fold it into
  * an empty payload with `?? {}`.
@@ -263,22 +251,4 @@ export function parseWorkflowEventPayload(
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as StoredWorkflowEventPayload)
     : null;
-}
-
-/**
- * The canonical `gh api` paths a `workflow_run.github_event` recorded for the changed items. Items
- * without a string reference are dropped: legacy rows may carry a different item shape.
- */
-export function workflowGithubFeedbackReferences(
-  payload: StoredWorkflowEventPayload,
-): string[] {
-  const feedback: unknown = payload.feedback;
-  if (!Array.isArray(feedback)) return [];
-  return feedback
-    .map((item: unknown) =>
-      item && typeof item === "object"
-        ? (item as { reference?: unknown }).reference
-        : undefined,
-    )
-    .filter((reference): reference is string => typeof reference === "string");
 }

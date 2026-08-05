@@ -116,6 +116,8 @@ test("contracts preserve the workflow command protocol in both languages", () =>
       "watcher_armed",
       "event_ack_cursor",
       "workflow instruction:",
+      // The run's lifecycle `status` left the state, so the contract must not name it as a field.
+      "`status`",
     ]) {
       expect(parent).not.toContain(legacyMarker);
     }

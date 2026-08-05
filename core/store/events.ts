@@ -122,108 +122,12 @@ export function listEvents(
 }
 
 /**
- * SQL matching the three subjects one Workflow run owns: the run itself, its PR, and its issue.
- *
- * The selector, the pending-run query and the effect receipt claim all have to agree on which
- * events belong to a run — a row one of them accepts and another rejects is a wake that never
- * clears. They share this fragment rather than each restating the predicate.
- *
- * The caller supplies the alias of the events table and the expressions holding the run's identity,
- * and binds no parameters for them beyond whatever those expressions contain.
- */
-export function workflowSubjectMatchSql(input: {
-  event: string;
-  run: string;
-  pr: string;
-  issue: string;
-}): string {
-  return `(
-    ((${input.event}.type GLOB 'workflow_run.*' OR ${input.event}.type GLOB 'workflow_step.*')
-       AND json_extract(${input.event}.payload, '$.id') = ${input.run})
-    OR (${input.event}.type GLOB 'pull_request.*'
-       AND json_extract(${input.event}.payload, '$.number') = ${input.pr})
-    OR (${input.event}.type GLOB 'issue.*'
-       AND json_extract(${input.event}.payload, '$.number') = ${input.issue})
-  )`;
-}
-
-/**
- * The oldest event after `afterId` belonging to one of the run's three subjects, or null.
- *
- * One row at a time keeps each wake and the observation that follows focused: the caller reconciles
- * from the state that event produced before asking for the next one. Advancing a row at a time is
- * also what keeps an unrelated event interleaved between an old source and its twin from being
- * skipped over.
- *
- * `afterId` is the run's effective exclusive bound — its cursor, or one less than its
- * `workflow_run.started` id when that is higher. This includes the start itself as the initial
- * Execute wake while excluding all older subject history. The scan is a bounded `id > ?` range on
- * the existing `(repo_id, id)` index; the type and `json_extract` predicates then apply to the few
- * rows it walks.
- */
-export function nextWorkflowSubjectEvent(input: {
-  repoId: number;
-  runId: number;
-  issueNumber: number;
-  prNumber: number;
-  afterId: number;
-}): EventRow | null {
-  return (
-    (db
-      .query(
-        `SELECT event.* FROM events event
-         WHERE event.repo_id = ? AND event.id > ?
-           AND ${workflowSubjectMatchSql({ event: "event", run: "?", pr: "?", issue: "?" })}
-         ORDER BY event.id ASC LIMIT 1`,
-      )
-      .get(
-        input.repoId,
-        input.afterId,
-        input.runId,
-        input.prNumber,
-        input.issueNumber,
-      ) as EventRow | null) ?? null
-  );
-}
-
-/**
- * One event of the run's subjects by id, or null when it belongs to none of them.
- *
- * `lh workflow next --event` points the run at an event it was already handed, so this asks the
- * same ownership question the selector answers rather than a narrower one.
- */
-export function workflowSubjectEventById(input: {
-  repoId: number;
-  runId: number;
-  issueNumber: number;
-  prNumber: number;
-  eventId: number;
-}): EventRow | null {
-  return (
-    (db
-      .query(
-        `SELECT event.* FROM events event
-         WHERE event.id = ? AND event.repo_id = ?
-           AND ${workflowSubjectMatchSql({ event: "event", run: "?", pr: "?", issue: "?" })}
-         LIMIT 1`,
-      )
-      .get(
-        input.eventId,
-        input.repoId,
-        input.runId,
-        input.prNumber,
-        input.issueNumber,
-      ) as EventRow | null) ?? null
-  );
-}
-
-/**
  * The id of the run's `workflow_run.started` event, or null when the run has none.
  *
- * This is the lower bound of the run's subscription. Without it, widening the subscription from
- * run-scoped twins to the run's whole issue and PR would make every run wake on the backlog its
- * cursor had never needed to skip. A missing started event is a visible error rather than a
- * fallback to 0 — the instruction dispatcher treats a missing start event as a visible error.
+ * This is the lower bound of the run's attempt window: a PR may be attempted more than once, and
+ * the start is what tells this attempt's reviews from an earlier one's. A missing start leaves the
+ * run with its lifecycle-only trail rather than falling back to 0, so no other attempt's history is
+ * read as this run's work.
  */
 export function workflowRunStartedEventId(
   repoId: number,
@@ -238,39 +142,6 @@ export function workflowRunStartedEventId(
     )
     .get(repoId, runId) as { id: number } | null;
   return row?.id ?? null;
-}
-
-// Whether the source a legacy twin names is itself a marked source, in which case the source
-// already provided the instruction and the twin is a duplicate (see workflow/source-events.ts).
-export function hasMarkedWorkflowSourceEvent(
-  repoId: number,
-  eventId: number,
-): boolean {
-  return !!db
-    .query(
-      `SELECT 1 AS ok FROM events
-       WHERE id = ? AND repo_id = ?
-         AND json_extract(payload, '$.source_payload_version') = ?
-       LIMIT 1`,
-    )
-    .get(eventId, repoId, SOURCE_PAYLOAD_VERSION);
-}
-
-// The same question for `workflow_run.review_submitted`, whose payload predates `source_event_id`
-// and identifies its source only by the review both rows announce.
-export function hasMarkedWorkflowReviewSourceEvent(
-  repoId: number,
-  reviewId: number,
-): boolean {
-  return !!db
-    .query(
-      `SELECT 1 AS ok FROM events
-       WHERE repo_id = ? AND type = 'pull_request.review_submitted'
-         AND json_extract(payload, '$.review_id') = ?
-         AND json_extract(payload, '$.source_payload_version') = ?
-       LIMIT 1`,
-    )
-    .get(repoId, reviewId, SOURCE_PAYLOAD_VERSION);
 }
 
 /**

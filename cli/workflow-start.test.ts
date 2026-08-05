@@ -539,36 +539,25 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   expect(existsSync(body.lock_path)).toBe(true);
   expect(body.parent.user_prompt).not.toMatch(/^\/lh-/m);
 
-  const instructionJson = run([
+  // The run is readable by its parent from the start: one state read, no live child yet.
+  const state = run([
     "workflow",
-    "instruction",
+    "state",
     String(body.run.id),
     "--repo",
     REPO,
-    "--note",
-    "start on the first acceptance criterion",
+    "--state-version",
+    "1",
     "--json",
   ]);
-  expect(instructionJson.exitCode, instructionJson.stderr).toBe(0);
-  expect(JSON.parse(instructionJson.stdout)).toMatchObject({
-    action: "deliver",
-    delivery_reason: "human_instruction",
+  expect(state.exitCode, state.stderr).toBe(0);
+  expect(JSON.parse(state.stdout)).toMatchObject({
+    state_version: 1,
+    id: body.run.id,
+    current_step: "execute",
+    active_step: null,
+    pr_closed: false,
   });
-
-  const instructionText = run([
-    "workflow",
-    "instruction",
-    String(body.run.id),
-    "--repo",
-    REPO,
-    "--note",
-    "start on the first acceptance criterion",
-  ]);
-  expect(instructionText.exitCode, instructionText.stderr).toBe(0);
-  expect(instructionText.stdout.trim().split("\n")).toEqual([
-    "deliver",
-    "A human supplied additional work for Execute.",
-  ]);
 });
 
 test("workflow launch-step rebuilds only its parent tab as a staged grid", () => {

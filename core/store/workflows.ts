@@ -1,23 +1,13 @@
 import { db, now } from "../db.ts";
 import type { WorkflowContractLanguage } from "../workflow/contracts.ts";
-import { workflowSubjectMatchSql } from "./events.ts";
-
-// The identity columns a run's subject predicate reads, as SQL expressions against `run`.
-const RUN_SUBJECT = {
-  event: "event",
-  run: "run.id",
-  pr: "run.pr_number",
-  issue: "run.issue_number",
-} as const;
 
 /**
  * SQL matching a pull request that is still open and unmerged.
  *
  * Whether a Workflow run has ended is the same question as whether its linked PR is still open and
  * unmerged — closing and merging are human operations, and the fact lives on the PR row. Callers
- * share this fragment rather than each restating the predicate, for the same reason
- * {@link workflowSubjectMatchSql} is shared: two callers that disagree about which runs qualify
- * produce runs one accepts and the other drops.
+ * share this fragment rather than each restating the predicate: two callers that disagree about
+ * which runs qualify produce runs one accepts and the other drops.
  *
  * The caller supplies the aliases of the PR's `issues` and `pulls` rows and binds no parameters.
  */
@@ -240,7 +230,7 @@ export interface WorkflowRunRow {
   parent_session_id: string | null;
   // When the parent agent declared it can read its pane, on a run started while that handshake
   // existed. A parent now declares the same thing by registering its event subscription, so both
-  // columns are NULL / 0 on every run started since and only gate the runs delivery still serves.
+  // columns are history: nothing writes or reads them.
   parent_ready_at: string | null;
   parent_ready_confirmed: number;
   step_sessions_json: string;
@@ -249,7 +239,8 @@ export interface WorkflowRunRow {
   active_step: string | null;
   active_session_id: string | null;
   child_sequence: number;
-  // Internal bookmark of the latest run event whose instruction was delivered by the worker.
+  // Bookmark of the latest run event the worker had delivered an instruction for. History: a parent
+  // is woken by a ping and reads state, so nothing advances or reads this.
   event_cursor: number;
   cost_increment_usd: number | null;
   cost_limit_usd: number | null;
@@ -322,79 +313,6 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
   return db
     .query(`SELECT * FROM workflow_runs WHERE id = ?`)
     .get(id) as WorkflowRunRow | null;
-}
-
-// The readiness handshake was replaced by the parent's event subscription, so nothing writes this
-// timestamp in production any more. The write stays for tests that model a run created while the
-// handshake existed, which is the only kind of run instruction delivery still serves.
-export function markWorkflowRunParentReady(id: number): WorkflowRunRow | null {
-  const t = now();
-  return db
-    .query(
-      `UPDATE workflow_runs
-       SET parent_ready_at = COALESCE(parent_ready_at, ?), updated_at = ?
-       WHERE id = ?
-       RETURNING *`,
-    )
-    .get(t, t, id) as WorkflowRunRow | null;
-}
-
-// Move the run event bookmark forward. The guard keeps the cursor monotonic when two consumers race.
-export function advanceWorkflowRunEventCursor(
-  id: number,
-  cursor: number,
-): WorkflowRunRow | null {
-  return db
-    .query(
-      `UPDATE workflow_runs
-       SET event_cursor = ?, updated_at = ?
-       WHERE id = ? AND event_cursor < ?
-       RETURNING *`,
-    )
-    .get(cursor, now(), id, cursor) as WorkflowRunRow | null;
-}
-
-// Runs with at least one undelivered subject event. This is intentionally independent of run
-// status: the worker advances terminal runs past their remaining events without delivering a
-// progression instruction, so a restart does not scan the same terminal history forever.
-//
-// The `workflow_run.started` bound keeps a run that was already running at the cutover from waking
-// on the issue / PR backlog its narrower subscription never had to skip. A run with no started
-// event falls back to its cursor here rather than being hidden: this query is a prefilter, and the
-// dispatcher resolves the bound again and raises the missing start as a visible error.
-//
-// A run whose parent registered an event subscription for it is not a delivery target: that parent
-// is woken by a ping and reads the run's state itself, so delivering an instruction as well would
-// drive one run down two paths. Which path a run takes is read from the subscription rows alone —
-// there is no protocol column on the run — so a parent that subscribes mid-flight simply stops
-// being selected here.
-export function workflowRunsWithPendingEvents(): WorkflowRunRow[] {
-  return db
-    .query(
-      `SELECT run.* FROM workflow_runs run
-       WHERE NOT EXISTS (
-         SELECT 1 FROM event_subscriptions subscription
-         JOIN event_subscription_resources resource
-           ON resource.subscription_id = subscription.id
-         WHERE subscription.repo_id = run.repo_id
-           AND resource.resource_kind = 'workflow_run'
-           AND resource.resource_key = CAST(run.id AS TEXT)
-       )
-       AND EXISTS (
-         SELECT 1 FROM events event
-         WHERE event.repo_id = run.repo_id
-           AND event.id > max(run.event_cursor, COALESCE((
-             SELECT started.id - 1 FROM events started
-             WHERE started.repo_id = run.repo_id
-               AND started.type = 'workflow_run.started'
-               AND json_extract(started.payload, '$.id') = run.id
-             ORDER BY started.id ASC LIMIT 1
-           ), 0))
-           AND ${workflowSubjectMatchSql(RUN_SUBJECT)}
-       )
-       ORDER BY run.id`,
-    )
-    .all() as WorkflowRunRow[];
 }
 
 export interface WorkflowEventEffectRow {
@@ -515,30 +433,18 @@ export function getWorkflowEventEffectForCostLimit(
 }
 
 /**
- * Which events a receipt may be claimed against.
+ * Claim a one-time effect against one of the run's own events.
  *
- * `lifecycle` is the original condition: the run's own events, which are the only ones the cost
- * hold and escalation receipts ever anchor to. Widening it for them would let an unrelated PR event
- * claim a lifecycle effect.
- *
- * `subject` is the wider set the instruction receipt needs, matching exactly what the instruction
- * selector returns. The two share `workflowSubjectMatchSql`, so an event the selector hands the
- * dispatcher can never be one the claim rejects.
+ * The receipt anchors to the run's lifecycle events — the only ones the cost hold and escalation
+ * receipts ever name. Widening the condition would let an unrelated PR event claim a receipt that
+ * gates a run-scoped side effect.
  */
-export type WorkflowEventEffectScope = "lifecycle" | "subject";
-
 export function beginWorkflowEventEffect(
   runId: number,
   eventId: number,
   effect: string,
-  scope: WorkflowEventEffectScope = "lifecycle",
 ): { row: WorkflowEventEffectRow; acquired: boolean } | null {
-  const ownership =
-    scope === "subject"
-      ? `(${workflowSubjectMatchSql(RUN_SUBJECT)}
-           OR (event.type = 'workflow_effect.human_escalation'
-             AND json_extract(event.payload, '$.id') = run.id))`
-      : `((event.type GLOB 'workflow_run.*'
+  const ownership = `((event.type GLOB 'workflow_run.*'
              OR event.type GLOB 'workflow_step.*'
              OR event.type = 'workflow_effect.human_escalation')
            AND json_extract(event.payload, '$.id') = run.id)`;

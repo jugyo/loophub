@@ -15,10 +15,10 @@ uses these shared invariants throughout:
 - Facts live in git / PR / reviews / DB. Pane output, child self-reports, event verdict payloads, PR body markers, and
   successful injection are not transition facts.
 - Verify is **always a fresh child**; never reuse a verifier session.
-- The run stays `running` after reaching the goal. Reconcile again when a human instruction or a new fact creates a gap.
+- The run does not end on reaching the goal. Reconcile again when a human instruction or a new fact creates a gap.
   Never merge. Closing the linked PR is the run's terminal condition.
 - The state's `done` is the canonical pre-merge Done signal. It is derived by core from the current HEAD, its pinned
-  review, and blocking PR state; do not reconstruct it from `status`, `steps`, pane state, or child prose.
+  review, and blocking PR state; do not reconstruct it from `steps`, pane state, or child prose.
 - Do not use child-session resume or idle detection.
 
 ## Loop
@@ -92,7 +92,7 @@ Read the entries in order and run only the first one that matches, then wait for
     `lh workflow deliver --repo '<repo>' --run <run> --text 'orchestrator: address review <id>'`. When the limit is
     reached, do not rework; hand it to a human with `lh workflow escalate-human --repo '<repo>' --run <run>
     --issue <issue> --reason <short summary>`.
-12. **The latest review is a fresh `pass`** — do nothing. The run stays `running` and waits for the next ping.
+12. **The latest review is a fresh `pass`** — do nothing. The run does not end; wait for the next ping.
 13. **`turn_done_for_active_execute` is true and `verify_launched_after_turn_done` is false** — when
     `steps.execute.complete` is true, launch a fresh Verify: with `current_step` execute run
     `lh workflow run advance-to-verify --repo '<repo>' --run <run>` and then

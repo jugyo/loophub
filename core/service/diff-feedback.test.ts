@@ -59,12 +59,9 @@ function diffFeedbackSources() {
   );
 }
 
-// What the run makes of the latest diff feedback source it would be woken by.
-function nextForLatestSource() {
-  return svc.workflowRuns.next(REPO, {
-    run: runId,
-    event: diffFeedbackSources().at(-1)!.id,
-  });
+// The payload of the latest diff feedback source: what a woken reader has to work from.
+function latestSourcePayload(): Record<string, unknown> {
+  return JSON.parse(diffFeedbackSources().at(-1)!.payload);
 }
 
 beforeAll(async () => {
@@ -181,10 +178,9 @@ test("the running run takes the comment from the source event, with no twin", as
   ).toEqual([]);
   const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
 
-  expect(await nextForLatestSource()).toMatchObject({
-    action: "deliver",
-    delivery_reason: "diff_feedback",
+  expect(latestSourcePayload()).toMatchObject({
     thread_id: thread.id,
+    session_id: HUMAN_SESSION,
   });
 });
 
@@ -226,7 +222,7 @@ test("an Execute reply answers the comment without waking its own parent", async
   expect(diffFeedbackSources().at(-1)!.type).toBe(
     "pull_request.diff_feedback_replied",
   );
-  expect((await nextForLatestSource()).action).not.toBe("deliver");
+  expect(latestSourcePayload().session_id).toBe(EXECUTE_SESSION);
   const pending = await traceGitCommands(() =>
     svc.diffFeedback.pending(REPO, prNumber, runId),
   );
@@ -322,11 +318,10 @@ test("a follow-up comment from outside the run becomes pending again", async () 
   );
 
   expect(diffFeedbackSources()).toHaveLength(before + 1);
-  expect(await nextForLatestSource()).toMatchObject({
-    action: "deliver",
-    delivery_reason: "diff_feedback",
+  expect(latestSourcePayload()).toMatchObject({
     thread_id: thread.id,
-    comment_id: replied.reply.id,
+    reply_message_id: replied.reply.id,
+    session_id: HUMAN_SESSION,
   });
   expect(
     (await svc.diffFeedback.pending(REPO, prNumber, runId)).threads.map(

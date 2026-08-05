@@ -157,24 +157,6 @@ Example:
   lh events subscribe --target herdr-pane --session my-session --pane w1:p2
     --resource workflow_run:618 --resource issue:2371 --resource pull:2379`;
 
-const WORKFLOW_INSTRUCTION_DETAILS = `
-
-Usage:
-  lh workflow instruction <run> [--repo <owner/name>]
-    (--event <id> --requires-changes true|false | --note <text|->) [--json]
-
-Options:
-  --event <id>              The event whose GitHub references the parent read.
-  --requires-changes <bool> The parent's verdict on those references.
-  --note <text|->           A direct human instruction; - reads the instruction from stdin.
-  --repo <owner/name>       Repository (defaults to the repository at the current path).
-  --json                    Print the action, observations, and structured instructions as JSON.
-  --help                    Show this help without reading or changing the database.
-
-Constraints:
-  --event and --note are mutually exclusive, and exactly one of them is required.
-  --event requires --requires-changes.`;
-
 export const commandHelp: readonly CommandHelp[] = [
   { path: ["info"], description: "Show the resolved LoopHub environment." },
   { path: ["repo"], description: "Manage registered repositories." },
@@ -366,12 +348,6 @@ export const commandHelp: readonly CommandHelp[] = [
   {
     path: ["workflow", "escalate-human"],
     description: "Notify a human about a workflow escalation.",
-  },
-  {
-    path: ["workflow", "instruction"],
-    description:
-      "Submit a parent input and return the instruction it produces.",
-    details: WORKFLOW_INSTRUCTION_DETAILS,
   },
   {
     path: ["workflow", "step"],

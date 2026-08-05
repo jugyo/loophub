@@ -15,10 +15,10 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 - 判断の事実は git / PR / review / DB にあり、pane output、child の自己申告、event payload の verdict、
   PR body marker、注入成功は transition fact ではない。
 - Verify は**常に fresh child**として起動し、以前の verifier session を再利用しない。
-- ゴール到達後も run は `running` のままとし、人間の指示や新しい事実で gap が生じたら reconcile を再開する。
+- ゴール到達後も run は終わらない。人間の指示や新しい事実で gap が生じたら reconcile を再開する。
   merge はしない。linked PR の close が run の terminal condition である。
 - state の `done` が pre-merge の canonical な Done signal である。core が current HEAD、そこに pin された
-  review、blocking PR state から導出する。`status`、`steps`、pane state、child の文章から再構築しない。
+  review、blocking PR state から導出する。`steps`、pane state、child の文章から再構築しない。
 - child-session resume や idle detection は使わない。
 
 ## Loop
@@ -91,7 +91,7 @@ launch prompt の値、それ以外の id は state から読む。
     `lh workflow deliver --repo '<repo>' --run <run> --text 'orchestrator: address review <id>'`。上限に
     達していれば rework せず `lh workflow escalate-human --repo '<repo>' --run <run> --issue <issue>
     --reason <short summary>` で人間へ渡す。
-12. **最新 review が fresh な `pass`** — 何もしない。run は `running` のまま次の ping を待つ。
+12. **最新 review が fresh な `pass`** — 何もしない。run は終わらせず次の ping を待つ。
 13. **`turn_done_for_active_execute` が true で `verify_launched_after_turn_done` が false** —
     `steps.execute.complete` が true なら Verify を fresh に起動する。`current_step` が execute のときは
     `lh workflow run advance-to-verify --repo '<repo>' --run <run>` の後に

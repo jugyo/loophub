@@ -1494,7 +1494,7 @@ export interface WorkflowContractsWire {
   verify: string;
 }
 
-// Workflow run display state (#1008): the current step / status / rework count of the run linked to an
+// Workflow run display state (#1008): the current step / rework count of the run linked to an
 // issue or PR, for issue / PR detail. Lifecycle comes from the run row; verification freshness is
 // derived from the PR current HEAD and the pinned review rather than persisted on the run.
 // `latest_review` surfaces the human-readable reason behind a rework / block; the web derives the
@@ -1572,9 +1572,6 @@ export interface WorkflowRunStateWire {
   id: number;
   workflow_id: number | null;
   workflow_name: string | null;
-  // Fixed at `running` for the life of the run — whether it has ended is read from `pr_closed` /
-  // `pr_merged`. Legacy rows may read 'completed', 'stopped' or 'blocked'.
-  status: string;
   current_step: string; // execute | verify
   // The step whose pane was activated last, and the child session in it. Both null means the run
   // has no live child — a positive observation, distinct from a run row that could not be read.
@@ -1623,7 +1620,7 @@ export interface WorkflowRunStateWire {
   pr_closed: boolean;
   merge_conflict: boolean | null;
   // Canonical pre-merge Done state derived from the current HEAD, its pinned review and PR state.
-  // Distinct from the run lifecycle `status`, and null while the merge state is unobserved.
+  // Null while the merge state is unobserved.
   done: boolean | null;
 
   // ---- hold ----
@@ -1677,7 +1674,6 @@ export function workflowRunStateJSON(input: {
     id: run.id,
     workflow_id: run.workflow_id,
     workflow_name: input.workflowName,
-    status: run.status,
     current_step: run.current_step,
     active_step: run.active_step,
     active_session_id: run.active_session_id,

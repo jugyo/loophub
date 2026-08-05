@@ -205,12 +205,11 @@ test("eventsForWorkflowRun seeks the workflow run-id partial index", () => {
   ).toContain("idx_events_repo_workflow_run_id");
 });
 
-test("workflowRunsWithPendingEvents seeks the workflow run-id partial index per run", () => {
-  // Mirrors store/workflows.ts workflowRunsWithPendingEvents, which the worker's event tail runs
-  // once per second. The CAST is what keeps this a seek: the run id comes from workflow_runs.id,
-  // an INTEGER-affinity column, and SQLite skips an expression index whose affinity does not
-  // match the comparison's — dropping the CAST turns each run into a full scan of the repo's
-  // events with no other visible symptom.
+test("a run-scoped event lookup joined from workflow_runs seeks the same partial index", () => {
+  // The CAST is what keeps this a seek: the run id comes from workflow_runs.id, an
+  // INTEGER-affinity column, and SQLite skips an expression index whose affinity does not match
+  // the comparison's — dropping the CAST turns each run into a full scan of the repo's events with
+  // no other visible symptom.
   const plan = explain(
     `SELECT run.* FROM workflow_runs run
      WHERE EXISTS (
@@ -219,7 +218,6 @@ test("workflowRunsWithPendingEvents seeks the workflow run-id partial index per 
          AND (event.type GLOB 'workflow_run.*'
            OR event.type GLOB 'workflow_step.*')
          AND CAST(json_extract(event.payload, '$.id') AS INTEGER) = run.id
-         AND event.id > run.event_cursor
      )
      ORDER BY run.id`,
     [],
