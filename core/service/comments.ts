@@ -162,8 +162,11 @@ function createIssueComment(
 ) {
   return db.transaction(() => {
     const m = S.createComment(row.id, actor, body, authorType);
+    // `author_type` travels for the same reason it does on a PR comment: only a human's comment is
+    // input for a run watching the issue, and the distinction has to be readable off the event.
     S.emitEvent(repo.id, "issue.commented", actor, {
       number: row.number,
+      author_type: authorType,
       ...(sessionId ? { session_id: sessionId } : {}),
     });
     return commentWire(m);

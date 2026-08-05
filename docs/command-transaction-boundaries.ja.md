@@ -114,6 +114,17 @@ write の間に外部 I/O が挟まっている場合は、read を DB 区間の
 - `workflowRuns.start` — run row と `workflow_run.started` を一区間にし、parent contract file の
   書き出しはその後に置く
 
+### commit の後に置く通知
+
+書き込みが確定したことを外へ知らせるだけの処理は、callback の中ではなく `Db.afterCommit` に置く。
+callback はその時点でまだ commit されておらず、起こされた側が読みに来ても変更が見えないためである。
+transaction が開いていなければ単一 statement は既に確定しているのでその場で走り、rollback した
+transaction の分は走らずに捨てられる。
+
+現在の利用は event 購読者への ping 一つ（`core/event-ping-delivery.ts`）で、commit 後に
+fire-and-forget で送る。callback は command が成功した後に走るので、そこで throw すると成功した
+command が失敗として報告される — 失敗は callback 自身が log に残して飲む。
+
 ## 一つに束ねない protocol
 
 claim → 外部 effect → complete の receipt protocol は、意図的に別々の commit 点を持つ。claim が

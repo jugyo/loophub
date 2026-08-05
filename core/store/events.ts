@@ -1,4 +1,5 @@
 import { db, now } from "../db.ts";
+import { pingEventSubscribers } from "../event-ping-delivery.ts";
 import type {
   WorkflowEventPayloadMap,
   WorkflowEventType,
@@ -20,6 +21,23 @@ export interface EventFilters {
 }
 
 // ---- events ----
+/**
+ * Announce a row that was really inserted to whoever subscribed to what it names.
+ *
+ * Every `INSERT INTO events` in this module passes its statement's result through here, so the
+ * seam is one helper rather than one insert function — the two conditional inserts below cannot be
+ * folded into `emitEvent()` without breaking the single statement their dedupe depends on.
+ *
+ * What is passed is the *statement's* result, never the enclosing function's return value:
+ * `getOrCreateWorkflowHumanEscalationEvent()` answers with an existing row when its insert finds
+ * one, and announcing that would be a wake-up with no new fact behind it. A statement that inserted
+ * nothing is exactly the case where nothing changed.
+ */
+function recordEventPing<T extends EventRow | null>(inserted: T): T {
+  if (inserted) pingEventSubscribers(inserted);
+  return inserted;
+}
+
 // Persist an event for audit history and cursor-based consumers.
 export function emitEvent(
   repoId: number | null,
@@ -27,12 +45,14 @@ export function emitEvent(
   actor: string,
   payload: unknown,
 ): EventRow {
-  return db
-    .query(
-      `INSERT INTO events (repo_id, type, actor, payload, created_at)
-       VALUES (?, ?, ?, ?, ?) RETURNING *`,
-    )
-    .get(repoId, type, actor, JSON.stringify(payload), now()) as EventRow;
+  return recordEventPing(
+    db
+      .query(
+        `INSERT INTO events (repo_id, type, actor, payload, created_at)
+         VALUES (?, ?, ?, ?, ?) RETURNING *`,
+      )
+      .get(repoId, type, actor, JSON.stringify(payload), now()) as EventRow,
+  );
 }
 
 // Emit a workflow event with its payload checked against the shared payload map, so the keys the
@@ -359,7 +379,7 @@ export function emitWorkflowRunCostExceeded(
   const reemitAfter = new Date(Date.now() - reemitAfterMs)
     .toISOString()
     .replace(/\.\d+Z$/, "Z");
-  return (
+  return recordEventPing(
     (db
       .query(
         `INSERT INTO events (repo_id, type, actor, payload, created_at)
@@ -382,7 +402,7 @@ export function emitWorkflowRunCostExceeded(
         payload.id,
         payload.limit_usd,
         reemitAfter,
-      ) as EventRow | null) ?? null
+      ) as EventRow | null) ?? null,
   );
 }
 
@@ -395,9 +415,10 @@ export function getOrCreateWorkflowHumanEscalationEvent(
   actor: string,
   payload: WorkflowEventPayloadMap["workflow_effect.human_escalation"],
 ): EventRow {
-  const inserted = db
-    .query(
-      `INSERT INTO events (repo_id, type, actor, payload, created_at)
+  const inserted = recordEventPing(
+    db
+      .query(
+        `INSERT INTO events (repo_id, type, actor, payload, created_at)
        SELECT ?, 'workflow_effect.human_escalation', ?, ?, ?
        WHERE NOT EXISTS (
          SELECT 1 FROM events
@@ -406,16 +427,17 @@ export function getOrCreateWorkflowHumanEscalationEvent(
            AND json_extract(payload, '$.reason') = ?
        )
        RETURNING *`,
-    )
-    .get(
-      repoId,
-      actor,
-      JSON.stringify(payload),
-      now(),
-      repoId,
-      payload.id,
-      payload.reason,
-    ) as EventRow | null;
+      )
+      .get(
+        repoId,
+        actor,
+        JSON.stringify(payload),
+        now(),
+        repoId,
+        payload.id,
+        payload.reason,
+      ) as EventRow | null,
+  );
   if (inserted) return inserted;
   return db
     .query(

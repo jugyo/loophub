@@ -106,6 +106,50 @@ test("a store helper is atomic on its own and joins an outer transaction", () =>
   expect(S.getIssueById(joinedId)).toBeNull();
 });
 
+test("an after-commit callback runs on the spot when no transaction is open", () => {
+  const seen: string[] = [];
+  insert("autocommitted");
+  D.db.afterCommit(() => seen.push(labels().join(",")));
+  // A single statement is already committed, so waiting for a COMMIT that is never coming would
+  // leave the callback unrun forever.
+  expect(seen).toEqual(["autocommitted"]);
+});
+
+test("an after-commit callback runs once, after the outermost COMMIT", () => {
+  const seen: string[] = [];
+  D.db.transaction(() => {
+    insert("outer");
+    D.db.afterCommit(() => seen.push("outer-callback"));
+    D.db.transaction(() => {
+      insert("inner");
+      D.db.afterCommit(() => seen.push("inner-callback"));
+    });
+    // Neither has run yet: the writes they announce are not readable by anyone else.
+    expect(seen).toEqual([]);
+  });
+  expect(seen).toEqual(["outer-callback", "inner-callback"]);
+  expect(labels()).toEqual(["outer", "inner"]);
+});
+
+test("a rollback drops the after-commit callbacks unrun", () => {
+  const seen: string[] = [];
+  expect(() =>
+    D.db.transaction(() => {
+      insert("rolled-back");
+      D.db.afterCommit(() => seen.push("callback"));
+      throw new Error("boom");
+    }),
+  ).toThrow("boom");
+  expect(seen).toEqual([]);
+
+  // The discarded callbacks belong to the failed transaction alone; the next one is unaffected.
+  D.db.transaction(() => {
+    insert("next");
+    D.db.afterCommit(() => seen.push("next-callback"));
+  });
+  expect(seen).toEqual(["next-callback"]);
+});
+
 test("a native async callback is rejected before it runs", () => {
   let called = false;
   const callback = async () => {

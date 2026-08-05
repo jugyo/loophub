@@ -106,6 +106,9 @@ export class Db {
   #cache = new Map<string, StatementSync>();
   // Depth of the transaction this connection owns; 0 means no transaction is open.
   #depth = 0;
+  // Callbacks handed to `afterCommit` while a transaction was open. They run when the outermost
+  // COMMIT succeeds; if it rolls back instead, they are discarded without ever being called.
+  #afterCommit: (() => void)[] = [];
 
   constructor(path: string) {
     this.#raw = new DatabaseSync(path);
@@ -114,6 +117,33 @@ export class Db {
   /** Whether this connection is currently inside a synchronous command transaction. */
   get inTransaction(): boolean {
     return this.#depth > 0;
+  }
+
+  /**
+   * Run `callback` once the write it announces is durable.
+   *
+   * With a transaction open the callback waits for the outermost `COMMIT`, so whoever it wakes
+   * cannot read the database before the write it was told about is there; if that transaction
+   * rolls back instead, the callback is discarded without running, because the write it would
+   * announce never happened. With no transaction open the single statement is already committed,
+   * so the callback runs on the spot — waiting for a `COMMIT` that is never coming would silence
+   * it forever.
+   *
+   * A callback owns its own failures: it runs after the command it belongs to has succeeded, so
+   * throwing from here would report that committed command as failed.
+   */
+  afterCommit(callback: () => void): void {
+    if (this.#depth === 0) {
+      callback();
+      return;
+    }
+    this.#afterCommit.push(callback);
+  }
+
+  #runAfterCommit(): void {
+    const callbacks = this.#afterCommit;
+    this.#afterCommit = [];
+    for (const callback of callbacks) callback();
   }
 
   #prepare(sql: string): StatementSync {
@@ -208,6 +238,7 @@ export class Db {
       result = this.#callSync(fn);
     } catch (error) {
       this.#depth = 0;
+      this.#afterCommit = [];
       try {
         this.run("ROLLBACK");
       } catch {
@@ -218,6 +249,7 @@ export class Db {
     }
     this.#depth = 0;
     this.run("COMMIT");
+    this.#runAfterCommit();
     return result as ReturnType<F>;
   }
 
