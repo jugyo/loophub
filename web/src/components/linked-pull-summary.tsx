@@ -131,15 +131,30 @@ function WorkflowReworkCount({ count }: { count: number }) {
 
 // #2152: how much has been said on the PR — its comments plus every diff comment, as one number.
 // Icon and count only, like the diff view's own count, so it spends no width on a label.
-function CommentCount({ count }: { count: number }) {
+// #2394: the count is also the way in — it links to the PR's Comments section, so reading what was
+// said is one click from the row instead of opening the PR and scrolling to the bottom.
+function CommentCount({
+  owner,
+  repo,
+  number,
+  count,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  count: number;
+}) {
   return (
-    <span
+    <Link
+      to="/r/$owner/$repo/pulls/$number"
+      params={{ owner, repo, number: String(number) }}
+      hash="comments"
       aria-label={`${count} ${count === 1 ? "comment" : "comments"}`}
-      className="flex shrink-0 items-center gap-1 whitespace-nowrap tabular-nums text-muted-foreground/70"
+      className="flex shrink-0 items-center gap-1 whitespace-nowrap tabular-nums text-muted-foreground/70 hover:text-foreground hover:underline"
     >
       <MessageSquare className="size-3" aria-hidden="true" />
       {count}
-    </span>
+    </Link>
   );
 }
 
@@ -149,10 +164,14 @@ function CommentCount({ count }: { count: number }) {
 // is how the rework count came to sit against its neighbours with no dot between them. A zero
 // rework count or no comments still says nothing, so a row with neither spends no width on them.
 function RowMetadata({
+  owner,
+  repo,
   pull,
   runtimeMetadata,
   overBudget,
 }: {
+  owner: string;
+  repo: string;
   pull: LinkedPull;
   runtimeMetadata: string;
   overBudget: boolean;
@@ -177,7 +196,17 @@ function RowMetadata({
       : null,
     ...metricItems(pull, overBudget),
     pull.total_comments
-      ? { key: "comments", node: <CommentCount count={pull.total_comments} /> }
+      ? {
+          key: "comments",
+          node: (
+            <CommentCount
+              owner={owner}
+              repo={repo}
+              number={pull.number}
+              count={pull.total_comments}
+            />
+          ),
+        }
       : null,
   ].filter((item): item is MetadataItem => item !== null);
   return (
@@ -570,6 +599,8 @@ export function LinkedPullSummaryRow({
         >
           <LinkedGithubPrBadge github_pull={pull.github_pull} />
           <RowMetadata
+            owner={owner}
+            repo={repo}
             pull={pull}
             runtimeMetadata={runtimeMetadata}
             overBudget={costStopped !== null}

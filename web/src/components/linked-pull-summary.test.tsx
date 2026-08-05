@@ -186,11 +186,14 @@ function renderRowWithRun(
     routeTree: rootRoute.addChildren([indexRoute, pullRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+    router,
+  };
 }
 
 describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
@@ -588,6 +591,32 @@ describe("LinkedPullSummaryRow workflow rework count (#2147)", () => {
     renderRowWithRun(null);
     await screen.findByRole("link", { name: "PR #10" });
     expect(rework()).toBeNull();
+  });
+});
+
+// #2394: the comment count is the way in to what was said, so it carries the link to the PR's
+// Comments section instead of leaving the reader to open the PR and scroll.
+describe("LinkedPullSummaryRow comment count link (#2394)", () => {
+  it("links the count to the PR's Comments section", async () => {
+    renderRowWithRun(null, { total_comments: 4 });
+    const link = await screen.findByRole("link", { name: "4 comments" });
+    expect(link.getAttribute("href")).toBe("/r/me/proj/pulls/10#comments");
+  });
+
+  it("navigates to the PR's Comments section when clicked", async () => {
+    const { router } = renderRowWithRun(null, { total_comments: 1 });
+    const link = await screen.findByRole("link", { name: "1 comment" });
+    await act(async () => {
+      fireEvent.click(link, { button: 0 });
+    });
+    expect(router.state.location.pathname).toBe("/r/me/proj/pulls/10");
+    expect(router.state.location.hash).toBe("comments");
+  });
+
+  it("shows nothing for a PR with no comments", async () => {
+    renderRowWithRun(null, { total_comments: 0 });
+    await screen.findByRole("link", { name: "PR #10" });
+    expect(screen.queryByRole("link", { name: /comment/ })).toBeNull();
   });
 });
 

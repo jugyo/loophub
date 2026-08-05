@@ -237,6 +237,7 @@ function mockFetch(
 
 function renderDetail(
   extraHandlers: Record<string, (params: any) => unknown> = {},
+  initialEntries: string[] = ["/"],
 ) {
   vi.stubGlobal("fetch", mockFetch(extraHandlers));
   const queryClient = new QueryClient({
@@ -261,7 +262,7 @@ function renderDetail(
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    history: createMemoryHistory({ initialEntries }),
   });
   const result = render(
     <QueryClientProvider client={queryClient}>
@@ -2298,5 +2299,38 @@ describe("PullDetail — GitHub export action (#406)", () => {
         force: true,
       });
     });
+  });
+});
+
+// #2394: a linked-PR row's comment count links here with the `#comments` hash. The section only
+// exists once the page's data has loaded, so the page brings it into view itself.
+describe("PullDetail — #comments landing (#2394)", () => {
+  async function commentsSection() {
+    const heading = await screen.findByRole("heading", {
+      name: /^Comments \(/,
+    });
+    return heading.closest("section");
+  }
+
+  it("scrolls the Comments section into view when the page opens on #comments", async () => {
+    const scrollIntoView = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    renderDetail({}, ["/#comments"]);
+
+    const section = await commentsSection();
+    expect(section?.id).toBe("comments");
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView.mock.instances[0]).toBe(section);
+  });
+
+  it("leaves the page where it is without the hash", async () => {
+    const scrollIntoView = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    renderDetail();
+
+    await commentsSection();
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });

@@ -6,7 +6,7 @@
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
 // via <Markdown>.
 
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ChevronDown,
   Github,
@@ -774,6 +774,15 @@ function CommentList({
   const [body, setBody] = useState("");
   const [postFailed, setPostFailed] = useState(false);
   const textareaRef = useAutosizeTextarea(body);
+  const sectionRef = useRef<HTMLElement>(null);
+  // #2394: a row's comment count links here with the `#comments` hash, but this section only exists
+  // once the page's data has loaded — by then the router has already looked for the anchor and found
+  // nothing. Scroll to it when it first exists. The in-page "Comments (n)" link needs no help: it is
+  // a same-document anchor the browser jumps to itself.
+  const hash = useRouterState({ select: (state) => state.location.hash });
+  useEffect(() => {
+    if (hash === "comments") sectionRef.current?.scrollIntoView();
+  }, [hash]);
   const reaction = useReactToPullComment(owner, repo, number);
   const archive = useSetPullCommentArchived(owner, repo, number);
   const { showError } = useToast();
@@ -792,6 +801,7 @@ function CommentList({
 
   return (
     <section
+      ref={sectionRef}
       id="comments"
       data-debug-component="PullCommentList"
       className="flex flex-col gap-3 pb-6"
