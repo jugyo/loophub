@@ -369,7 +369,7 @@ export function WorkflowStepTracker({
   herdrUnavailable?: boolean;
   /** Lets a containing resource popover yield while a step popup is active. */
   onStageInteract?: () => void;
-  /** Show the workflow/orchestrator root before Execute in compact linked-PR rows. */
+  /** Show the workflow/orchestrator root before Execute. */
   showWorkflowNode?: boolean;
   /** `sm` for the compact PR-row tracker, `md` for the detail Workflow run section. */
   size?: "sm" | "md";

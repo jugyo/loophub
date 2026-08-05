@@ -151,6 +151,78 @@ describe("WorkflowRunStatusSection", () => {
     );
   });
 
+  it("shows the parent agent bot before Execute and opens its Workflow details", async () => {
+    mocks.herdrSessions = {
+      repos: [
+        {
+          repo: "me/loophub",
+          session_name: "lh-me-loophub",
+          agents: [
+            {
+              id: "w7:p0",
+              name: "Workflow #42",
+              status: "working",
+              pull: 99,
+              pull_closed: false,
+              focusable: true,
+              workflow: { kind: "parent", runId: 7 },
+            },
+          ],
+          pull_workspaces: [],
+          issue_workspaces: [],
+        },
+      ],
+    };
+    renderInRouter(
+      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+    );
+
+    const workflow = await screen.findByRole("button", { name: "Workflow" });
+    const parentBot = workflow.querySelector("[data-agent-bot-icon]");
+    expect(parentBot?.className).toContain("linked-pull-pulse");
+    const connector = workflow.parentElement?.nextElementSibling;
+    expect(connector?.getAttribute("data-workflow-connector")).toBe(
+      "workflow-execute",
+    );
+
+    fireEvent.focus(workflow);
+    const dialog = screen.getByRole("dialog", { name: "Workflow details" });
+    expect(dialog.textContent).toContain("standard");
+    expect(dialog.textContent).toContain("Run #7");
+  });
+
+  it("keeps the parent agent bot static when the parent is not working", async () => {
+    mocks.herdrSessions = {
+      repos: [
+        {
+          repo: "me/loophub",
+          session_name: "lh-me-loophub",
+          agents: [
+            {
+              id: "w7:p0",
+              name: "Workflow #42",
+              status: "done",
+              pull: 99,
+              pull_closed: false,
+              focusable: true,
+              workflow: { kind: "parent", runId: 7 },
+            },
+          ],
+          pull_workspaces: [],
+          issue_workspaces: [],
+        },
+      ],
+    };
+    renderInRouter(
+      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+    );
+
+    const workflow = await screen.findByRole("button", { name: "Workflow" });
+    expect(
+      workflow.querySelector("[data-agent-bot-icon]")?.className,
+    ).not.toContain("linked-pull-pulse");
+  });
+
   it("renders nothing when there is no run", () => {
     const { container } = renderInRouter(
       <WorkflowRunStatusSection owner="me" repo="loophub" state={null} />,

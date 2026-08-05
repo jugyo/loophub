@@ -180,6 +180,7 @@ export function WorkflowRunStatusSection({
           state={displayState}
           herdrSessions={herdrSessionsError ? undefined : herdrSessions}
           herdrUnavailable={herdrSessionsError}
+          showWorkflowNode
           size="md"
           overBudget={overBudget}
         />
