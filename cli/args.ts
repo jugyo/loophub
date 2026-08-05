@@ -83,7 +83,13 @@ export type Flags = {
   number?: string;
   url?: string;
   branch?: string;
-  resource?: string;
+  // Repeatable so one `lh events subscribe` can name every resource it wants to be woken for.
+  // Commands that take a single resource read the last value, matching how a non-repeatable flag
+  // resolved a repeated occurrence before.
+  resource?: string[];
+  target?: string;
+  pane?: string;
+  subscription?: string;
   "source-key"?: string;
   "herdr-pane-id"?: string;
   "herdr-session"?: string;
@@ -193,7 +199,10 @@ const { values, positionals } = parseArgs({
     number: { type: "string" },
     url: { type: "string" },
     branch: { type: "string" },
-    resource: { type: "string" },
+    resource: { type: "string", multiple: true },
+    target: { type: "string" },
+    pane: { type: "string" },
+    subscription: { type: "string" },
     "source-key": { type: "string" },
     "herdr-pane-id": { type: "string" },
     "herdr-session": { type: "string" },

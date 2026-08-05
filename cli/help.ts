@@ -130,6 +130,33 @@ Options:
   --json                 Print the response or response list as JSON.
   --help                 Show this help without changing the database.`;
 
+const EVENTS_SUBSCRIBE_DETAILS = `
+
+Usage:
+  lh events subscribe --target herdr-pane --session <name> --pane <id>
+    --resource <kind>:<key> [--resource <kind>:<key>]... [--repo <owner/name>] [--json]
+
+Options:
+  --target <kind>         Wake-up transport. Only herdr-pane is supported.
+  --session <name>        Herdr session name of the pane to wake.
+  --pane <id>             Herdr pane id within that session.
+  --resource <kind>:<key> Resource to be woken for (repeatable, at least one).
+  --repo <owner/name>     Repository (defaults to the repository at the current path).
+  --json                  Print the subscription as JSON.
+  --help                  Show this help without changing the database.
+
+Resources:
+  A resource is <kind>:<key>, for example workflow_run:618, issue:2371 or pull:2379. The kind is
+  open text: a subscriber declares what it wants to be woken for, and nothing here interprets it.
+
+Lifetime:
+  A subscription lives until the subscriber releases it with lh events unsubscribe. Nothing
+  expires it, so a subscriber that goes away without unsubscribing leaves its row behind.
+
+Example:
+  lh events subscribe --target herdr-pane --session my-session --pane w1:p2
+    --resource workflow_run:618 --resource issue:2371 --resource pull:2379`;
+
 const WORKFLOW_INSTRUCTION_DETAILS = `
 
 Usage:
@@ -301,6 +328,15 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Detect and publish pull request head updates.",
   },
   { path: ["events"], description: "Show a snapshot of LoopHub events." },
+  {
+    path: ["events", "subscribe"],
+    description: "Subscribe a target to resource changes.",
+    details: EVENTS_SUBSCRIBE_DETAILS,
+  },
+  {
+    path: ["events", "unsubscribe"],
+    description: "Release an event subscription.",
+  },
   { path: ["workflow"], description: "Manage workflows and workflow runs." },
   { path: ["workflow", "list"], description: "List workflows." },
   { path: ["workflow", "view"], description: "Show a workflow." },

@@ -350,6 +350,36 @@ export function herdrPaneJSON(
   };
 }
 
+// An event subscription and the resources it asked to be woken for. The pane row behind the
+// subscription stays internal: a subscriber already knows its own coordinates, and nothing else
+// needs them until a wake-up is delivered.
+export interface EventSubscriptionResourceWire {
+  resource_kind: string;
+  resource_key: string;
+}
+
+export interface EventSubscriptionWire {
+  id: number;
+  target: S.EventSubscriptionTarget;
+  resources: EventSubscriptionResourceWire[];
+  created_at: string;
+}
+
+export function eventSubscriptionJSON(
+  s: S.EventSubscriptionRow,
+  resources: S.EventSubscriptionResourceRow[],
+): EventSubscriptionWire {
+  return {
+    id: s.id,
+    target: s.target,
+    resources: resources.map((r) => ({
+      resource_kind: r.resource_kind,
+      resource_key: r.resource_key,
+    })),
+    created_at: s.created_at,
+  };
+}
+
 export interface IssueWire {
   number: number;
   state: "open" | "closed";

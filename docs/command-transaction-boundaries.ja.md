@@ -195,6 +195,8 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `workflows.create` / `update` / `delete` | procedure | workflow row、対応する `workflow.*` | — |
 | `settings.update` | procedure | SQLite の instance setting、`settings.updated` | `config.json` の write |
 | `events.emit` | store helper | event row | — |
+| `events.subscribe` | store helper | subscription 行と resource 行（`createEventSubscription`） | target / resource の検証と、pane row の解決・登録。未購読の pane row が残っても読み手に見えない |
+| `events.unsubscribe` | store helper | subscription 行の削除と resource 行の cascade（`deleteEventSubscription`） | — |
 
 ### Workflow run
 

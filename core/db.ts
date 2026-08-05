@@ -831,6 +831,35 @@ CREATE INDEX IF NOT EXISTS idx_herdr_pane_claims_active
   ON herdr_pane_claims(pane_id)
   WHERE released_at IS NULL;
 
+-- A subscriber declares "wake this target when these resources change". Whoever delivers a wake-up
+-- reads only these two tables: it never derives a subscriber from a domain row (a workflow run's
+-- pr_number, say), so the delivery path carries no caller's domain knowledge and no caller's
+-- lifetime rules. Subscriptions are created and released by the subscriber itself.
+--
+-- target is the transport, currently only a Herdr pane; pane_id points at the herdr_panes row that
+-- already holds the pane coordinates, so they are not duplicated here.
+CREATE TABLE IF NOT EXISTS event_subscriptions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id    INTEGER NOT NULL REFERENCES repos(id),
+  target     TEXT NOT NULL CHECK (target IN ('herdr-pane')),
+  pane_id    INTEGER NOT NULL REFERENCES herdr_panes(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL
+);
+
+-- Same shape as herdr_pane_resources: resource_kind is intentionally open text (for example issue,
+-- pull, workflow_run) and resource_key is text so future resources are not restricted to SQLite
+-- integer identifiers.
+CREATE TABLE IF NOT EXISTS event_subscription_resources (
+  subscription_id INTEGER NOT NULL REFERENCES event_subscriptions(id) ON DELETE CASCADE,
+  resource_kind   TEXT NOT NULL,
+  resource_key    TEXT NOT NULL,
+  created_at      TEXT NOT NULL,
+  PRIMARY KEY (subscription_id, resource_kind, resource_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_subscription_resources_resource
+  ON event_subscription_resources(resource_kind, resource_key, subscription_id);
+
 -- Retired scheduled-task storage. Keep these tables so existing installations retain their saved
 -- rows and historical run metadata; there is intentionally no active service or worker producer.
 CREATE TABLE IF NOT EXISTS scheduled_tasks (

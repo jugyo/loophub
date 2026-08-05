@@ -34,7 +34,7 @@ export async function run(): Promise<void> {
     if (!flags.title) fail(`--title is required\n${sendUsage}`);
     if (!flags.body) fail(`--body is required\n${sendUsage}`);
     const body = flags.body === "-" ? await readStdin() : flags.body;
-    const resource = parseResource(flags.resource);
+    const resource = parseResource(flags.resource?.at(-1));
     const notification = await runOp(async () =>
       s.notifications.send(
         repo,

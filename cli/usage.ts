@@ -52,6 +52,8 @@ export function usage(): void {
   lh attachment get <sha256|url> [--output <path>] [--json]   # read an attached document: text to stdout, --output to a file, --json for metadata + stored path
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--type type[,type]] [--run <id>] [--order asc|desc]   # print a bounded event snapshot; --type accepts exact types or namespace prefixes
+  lh events subscribe --target herdr-pane --session <name> --pane <id> --resource <kind>:<key> [--resource <kind>:<key>]...   # wake a target when these resources change
+  lh events unsubscribe --subscription <id>
 
   common: --session-id <uuid>  --json
   examples:
@@ -84,6 +86,7 @@ export function usage(): void {
     lh attachment add --file findings.md     # attach a hand-off document to an issue body/comment
     lh attachment get /attachments/<sha256>  # print an attached document (as linked from an issue body)
     lh events --since 0
-    lh events --since 120 --order asc --repo me/proj --json`);
+    lh events --since 120 --order asc --repo me/proj --json
+    lh events subscribe --target herdr-pane --session me-proj --pane w1:p2 --resource workflow_run:618`);
   process.exit(group ? 1 : 0);
 }
