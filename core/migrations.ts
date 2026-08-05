@@ -1206,6 +1206,16 @@ export const MIGRATIONS: Migration[] = [
     DROP TABLE IF EXISTS session_usage_samples;
   `,
   ),
+  // Existing reviews stay without a session: nothing recorded which one produced them, so they
+  // report no duration rather than a reconstructed guess (#2387). The REFERENCES clause matches
+  // what core/db.ts declares for a fresh database, so a migrated one enforces the same key —
+  // SQLite accepts it on ADD COLUMN because the column is nullable and defaults to NULL.
+  addColumn(
+    "074-reviews-session",
+    "reviews",
+    "session_id",
+    "TEXT REFERENCES agent_sessions(id)",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

@@ -283,6 +283,15 @@ export const reviews = {
     // correcting (CLAUDE.md「可視エラーを優先」).
     const acResults = validateAcResults(row, input.acResults);
     const { actor, authorType } = commentActor(sessionId);
+    // Bind the review to the agent session that submitted it (#2387): that session exists to
+    // produce this one review, so its start is when the review began — what grounds the reported
+    // duration. Only an agent session qualifies. `commentActor` resolved the row already, so this
+    // also rejects an id with no session (an unknown id would break the foreign key) and, crucially,
+    // the CLI's human session: that one is persistent — a single row per LOOPHUB_HOME, reused by
+    // every human write forever (cli/context.ts ensureHumanSession) — so its start marks when the
+    // home was created, not when anyone started reviewing. Recording it would report the home's age
+    // as the review's duration. A human review therefore stores no session and reports no duration.
+    const reviewSessionId = authorType === "agent" ? (sessionId ?? null) : null;
     // Bind the review to the live head it was made against. The watcher-backed
     // stored SHA can lag immediately after a rebase, so it is only a fallback
     // when the ref cannot be resolved. Workflow placement may pass its pinned
@@ -304,6 +313,7 @@ export const reviews = {
         model,
         acResults,
         authorType,
+        reviewSessionId,
       );
       for (const cm of lineComments) {
         S.createReviewComment(row.id, v.id, actor, authorType, {

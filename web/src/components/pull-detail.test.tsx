@@ -122,6 +122,7 @@ const reviews: PullReview[] = [
     head_sha: pull.commits![0].sha,
     model: "claude-opus-4-8",
     submitted_at: "2026-06-18T11:30:00Z",
+    duration_seconds: null,
     ac_results: [],
   },
 ];
@@ -1402,6 +1403,7 @@ describe("PullDetail", () => {
         body: "needs work",
         head_sha: "old1234deadbeef",
         submitted_at: "2026-06-18T10:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
       {
@@ -1412,6 +1414,7 @@ describe("PullDetail", () => {
         body: "LGTM now",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T11:30:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
     ];
@@ -1484,6 +1487,7 @@ describe("PullDetail", () => {
         body: "older feedback",
         head_sha: "older12",
         submitted_at: "2026-06-18T09:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
       {
@@ -1494,6 +1498,7 @@ describe("PullDetail", () => {
         body: "newest feedback",
         head_sha: "newer34",
         submitted_at: "2026-06-18T10:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
     ];
@@ -1555,6 +1560,7 @@ describe("PullDetail", () => {
         body: "round 1: needs work",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
       {
@@ -1565,6 +1571,7 @@ describe("PullDetail", () => {
         body: "security ok",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:05:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
       {
@@ -1575,6 +1582,7 @@ describe("PullDetail", () => {
         body: "round 2: looks good now",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T11:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
     ];
@@ -1635,6 +1643,7 @@ describe("PullDetail", () => {
         body: "security ok",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
       {
@@ -1645,6 +1654,7 @@ describe("PullDetail", () => {
         body: "still needs work",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:05:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
     ];

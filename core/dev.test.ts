@@ -586,4 +586,78 @@ describe("pull review state", () => {
       "PASSED",
     );
   });
+
+  // A review carries how long it took (#2387), grounded in the agent session that submitted it. A
+  // submission with no registered session records none and reports no duration.
+  test("reports the submitting agent session's elapsed time as the review duration", async () => {
+    const pr = await svc.pulls.create(
+      "me/proj",
+      { title: "review duration", head: "main", base: "main" },
+      "sess-1",
+    );
+    svc.sessions.register({
+      id: "sess-verify",
+      agent: "verifier",
+      session: "sess-verify",
+    });
+    S.setAgentSessionCreatedAt(
+      "sess-verify",
+      new Date(Date.now() - 252_000).toISOString().replace(/\.\d+Z$/, "Z"),
+    );
+
+    const timed = await svc.reviews.create(
+      "me/proj",
+      pr.number,
+      { event: "COMMENT", body: "read the whole diff" },
+      "sess-verify",
+    );
+    expect(timed.duration_seconds).toBeGreaterThanOrEqual(252);
+    expect(timed.duration_seconds).toBeLessThan(300);
+
+    const untimed = await svc.reviews.create(
+      "me/proj",
+      pr.number,
+      { event: "COMMENT", body: "no session at all" },
+      "sess-unregistered",
+    );
+    expect(untimed.duration_seconds).toBeNull();
+  });
+
+  // The CLI's human session (agent "me") is persistent — one row per LOOPHUB_HOME, reused by every
+  // human write — so its start is when the home was created, not when a review began. A human
+  // review must therefore record no session at all, or it would report the home's age as its
+  // duration. This is the default path for `lh pr review` without an explicit session.
+  test("records no session for a human review, so it reports no duration", async () => {
+    const pr = await svc.pulls.create(
+      "me/proj",
+      { title: "human review duration", head: "main", base: "main" },
+      "sess-1",
+    );
+    // agent "me" is what marks a session as the human one (service/shared.ts commentActor).
+    svc.sessions.register({
+      id: "sess-human",
+      agent: "me",
+      session: "sess-human",
+    });
+    S.setAgentSessionCreatedAt(
+      "sess-human",
+      new Date(Date.now() - 8_309_851_000)
+        .toISOString()
+        .replace(/\.\d+Z$/, "Z"),
+    );
+
+    const human = await svc.reviews.create(
+      "me/proj",
+      pr.number,
+      { event: "FEEDBACK", body: "posted by hand" },
+      "sess-human",
+    );
+    expect(human.author_type).toBe("human");
+    expect(human.duration_seconds).toBeNull();
+
+    const repo = S.getRepo("me", "proj")!;
+    const row = S.getIssue(repo.id, pr.number)!;
+    const stored = S.listReviews(row.id).find((r) => r.id === human.id)!;
+    expect(stored.session_id).toBeNull();
+  });
 });

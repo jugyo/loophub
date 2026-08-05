@@ -11,6 +11,8 @@ export interface ReviewRow {
   body: string;
   head_sha: string | null;
   model: string | null;
+  // The agent session that submitted the review (#2387); null when none was recorded.
+  session_id: string | null;
   created_at: string;
 }
 
@@ -68,12 +70,13 @@ export function createReview(
   headSha: string | null = null,
   model: string | null = null,
   authorType: CommentAuthorType = "system",
+  sessionId: string | null = null,
 ): ReviewRow {
   return db
     .query(
       `INSERT INTO reviews
-       (issue_id, author, author_type, event, body, head_sha, model, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+       (issue_id, author, author_type, event, body, head_sha, model, session_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       issueId,
@@ -83,6 +86,7 @@ export function createReview(
       body,
       headSha,
       model,
+      sessionId,
       now(),
     ) as ReviewRow;
 }
@@ -101,6 +105,7 @@ export function createReviewWithAcResults(
   model: string | null,
   acResults: { criterionId: number; verdict: string; note: string }[],
   authorType: CommentAuthorType = "system",
+  sessionId: string | null = null,
 ): ReviewRow {
   return db.transaction(() => {
     const review = createReview(
@@ -111,6 +116,7 @@ export function createReviewWithAcResults(
       headSha,
       model,
       authorType,
+      sessionId,
     );
     for (const r of acResults)
       createReviewAcResult(review.id, r.criterionId, r.verdict, r.note);

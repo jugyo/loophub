@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/lib/badges";
 import { hasMarkdownImage } from "@/lib/markdown-images";
-import { relativeTime } from "@/lib/time";
+import { formatDuration, relativeTime } from "@/lib/time";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { usePullCommitFiles } from "@/queries/pulls";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
@@ -436,6 +436,18 @@ function ReviewItem({
         <span className="text-xs text-muted-foreground">
           {relativeTime(review.submitted_at)}
         </span>
+        {/* How long the review itself took (#2387). Omitted — never 0 — for a review whose
+            duration the wire could not derive. formatDuration keeps the two largest units, so the
+            title carries the exact seconds for a span long enough to drop them. */}
+        {review.duration_seconds !== null ? (
+          <span
+            className="text-xs text-muted-foreground"
+            title={`Review took ${review.duration_seconds}s`}
+          >
+            {" · took "}
+            {formatDuration(review.duration_seconds)}
+          </span>
+        ) : null}
       </header>
       {review.body ? (
         <Markdown owner={owner} repo={repo}>

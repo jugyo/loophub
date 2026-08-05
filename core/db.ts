@@ -329,6 +329,10 @@ CREATE TABLE IF NOT EXISTS reviews (
   body        TEXT NOT NULL DEFAULT '',
   head_sha    TEXT,
   model       TEXT,
+  -- The agent session that submitted this review (#2387). Its start is what grounds the
+  -- review's duration; NULL for a review with no registered session (human/manual submission,
+  -- or a row written before the column existed) — such a review reports no duration.
+  session_id  TEXT REFERENCES agent_sessions(id),
   created_at  TEXT NOT NULL
 );
 

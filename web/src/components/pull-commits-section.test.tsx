@@ -163,6 +163,7 @@ describe("PullCommitsSection", () => {
           head_sha: pushedCommits[0].sha,
           model: null,
           submitted_at: "2026-06-18T12:30:00Z",
+          duration_seconds: null,
           ac_results: [],
         },
       ],
@@ -195,6 +196,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: "claude-opus-4-8",
         submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
     ];
@@ -281,6 +283,58 @@ describe("PullCommitsSection", () => {
     expect(within(unreviewedCommit).queryByText("Looks good.")).toBeNull();
   });
 
+  // How long each review took (#2387) rides along on the wire. A review the wire could not time
+  // shows nothing at all — never 0s — so a missing figure is never mistaken for an instant review.
+  it("shows how long each review took, and omits it when the wire has no duration", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 1,
+        user: { login: "verifier #7-1" },
+        author_type: "agent",
+        state: "PASS",
+        body: "Read the whole diff.",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: 252,
+        ac_results: [],
+      },
+      {
+        id: 2,
+        user: { login: "me" },
+        author_type: "human",
+        state: "FEEDBACK",
+        body: "Posted by hand.",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T12:40:00Z",
+        duration_seconds: null,
+        ac_results: [],
+      },
+    ];
+
+    renderSection({ reviews });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View 2 reviews for aaaaaaa: Latest change",
+      }),
+    );
+    const reviewDialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    const items = Array.from(
+      reviewDialog.querySelectorAll<HTMLElement>(
+        '[data-debug-component="ReviewItem"]',
+      ),
+    );
+    expect(items).toHaveLength(2);
+    const timed = within(items[0]).getByText(/took 4m 12s/);
+    expect(timed.title).toBe("Review took 252s");
+    expect(within(items[1]).queryByText(/took/)).toBeNull();
+    expect(within(items[1]).queryByText(/0s/)).toBeNull();
+  });
+
   // Rubric grades (#1897) belong to the review that recorded them: counted on the commit row,
   // listed criterion by criterion in the review dialog.
   it("counts rubric grades on the commit row and lists them in the review dialog", async () => {
@@ -294,6 +348,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: "claude-opus-5",
         submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
         ac_results: [
           {
             criterion_id: "5-1",
@@ -364,6 +419,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
     ];
@@ -393,6 +449,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
       {
@@ -404,6 +461,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![1].sha,
         model: null,
         submitted_at: "2026-06-17T12:30:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
     ];
@@ -437,6 +495,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
       {
@@ -448,6 +507,7 @@ describe("PullCommitsSection", () => {
         head_sha: null,
         model: null,
         submitted_at: "2026-06-16T10:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
       {
@@ -459,6 +519,7 @@ describe("PullCommitsSection", () => {
         head_sha: "cccccccccccccccccccccccccccccccccccccccc",
         model: null,
         submitted_at: "2026-06-17T10:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
     ];
@@ -494,6 +555,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T10:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
       {
@@ -505,6 +567,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T11:00:00Z",
+        duration_seconds: null,
         ac_results: [],
       },
     ];

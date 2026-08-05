@@ -612,6 +612,7 @@ describe("pure row -> wire serializers", () => {
       body: "looks good",
       head_sha: "abc123",
       model: "gpt-test",
+      session_id: null,
       created_at: "2026-07-05T00:00:00Z",
     };
     expect(serialize.reviewJSON(row, [])).toEqual({
@@ -623,8 +624,63 @@ describe("pure row -> wire serializers", () => {
       head_sha: "abc123",
       model: "gpt-test",
       submitted_at: "2026-07-05T00:00:00Z",
+      duration_seconds: null,
       ac_results: [],
     });
+  });
+
+  // The review's duration (#2387) is the reviewing session's start → the submission. Everything
+  // that leaves it ungrounded reports null, so the UI can omit it instead of showing 0.
+  test("reviewDurationSeconds measures from the reviewing session's start", async () => {
+    const store = await import("./store.ts");
+    store.registerAgentSession(
+      "sess-review",
+      "verifier",
+      "sess-review",
+      "verifier #1-1",
+      "claude-code",
+      "workflow-step",
+      null,
+      "2026-07-05T00:00:00Z",
+    );
+    const row: ReviewRow = {
+      id: 11,
+      issue_id: 3,
+      author: "verifier #1-1",
+      author_type: "agent",
+      event: "PASS",
+      body: "looks good",
+      head_sha: "abc123",
+      model: "gpt-test",
+      session_id: "sess-review",
+      created_at: "2026-07-05T00:04:12Z",
+    };
+    expect(serialize.reviewDurationSeconds(row)).toBe(252);
+    expect(serialize.reviewJSON(row, []).duration_seconds).toBe(252);
+
+    // No recorded session (human/manual submission, or a pre-#2387 row).
+    expect(
+      serialize.reviewDurationSeconds({ ...row, session_id: null }),
+    ).toBeNull();
+    // A session id that no longer resolves to a row.
+    expect(
+      serialize.reviewDurationSeconds({ ...row, session_id: "sess-gone" }),
+    ).toBeNull();
+    // Submitted before its own session started — unusable, not a negative duration.
+    expect(
+      serialize.reviewDurationSeconds({
+        ...row,
+        created_at: "2026-07-04T23:00:00Z",
+      }),
+    ).toBeNull();
+    // Submitted within the same second the session started. now() has one-second resolution, so
+    // this means "too close to tell", not "took no time" — reporting 0 would render "0s".
+    expect(
+      serialize.reviewDurationSeconds({
+        ...row,
+        created_at: "2026-07-05T00:00:00Z",
+      }),
+    ).toBeNull();
   });
 
   test("reviewResponseJSON keeps its review and optional comment targets", () => {

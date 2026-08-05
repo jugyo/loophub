@@ -1070,9 +1070,35 @@ export interface ReviewWire {
   // The agent/model that produced the review (#1107); null when unattributed.
   model: string | null;
   submitted_at: string;
+  // How long the review took (#2387): the reviewing session's start → this submission. Null when
+  // it cannot be derived — see reviewDurationSeconds.
+  duration_seconds: number | null;
   // Per-criterion rubric grades this review recorded (#1897); empty when it graded no structured
-  // criteria (holistic fallback). The caller joins them — this stays a pure row mapper.
+  // criteria (holistic fallback). The caller joins them rather than reviewJSON.
   ac_results: ReviewAcResultWire[];
+}
+
+// How long the review took (#2387), measured from the start of the session that submitted it
+// (agent_sessions.created_at — the same stable start marker pullWorkDuration anchors to) to the
+// review's own submission. A reviewing session exists to produce its review, so this covers the
+// whole review: reading the diff, exploring the code, grading. It is not split per review if one
+// session ever posts several — the second would report the time since the session began.
+//
+// Returns null when there is nothing to measure — no recorded session (human/manual submission, or
+// a review predating the column), a session row that has since gone, or an unusable pair of
+// timestamps. Callers show nothing in that case rather than 0 or a guess.
+export function reviewDurationSeconds(v: S.ReviewRow): number | null {
+  if (!v.session_id) return null;
+  const session = S.getAgentSession(v.session_id);
+  if (!session) return null;
+  const startedAt = Date.parse(session.created_at);
+  const submittedAt = Date.parse(v.created_at);
+  if (Number.isNaN(startedAt) || Number.isNaN(submittedAt)) return null;
+  const seconds = Math.round((submittedAt - startedAt) / 1000);
+  // Zero is not a measurement: `now()` has one-second resolution, so it means "submitted within
+  // the same second the session was registered", not "took no time" — and a negative span is
+  // simply unusable. Both report unknown, so no caller ever renders "0s" (#2387 AC 3).
+  return seconds > 0 ? seconds : null;
 }
 
 export function reviewJSON(
@@ -1088,6 +1114,7 @@ export function reviewJSON(
     head_sha: v.head_sha ?? null,
     model: v.model ?? null,
     submitted_at: v.created_at,
+    duration_seconds: reviewDurationSeconds(v),
     ac_results: acResults,
   };
 }
