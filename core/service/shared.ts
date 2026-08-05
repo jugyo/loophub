@@ -122,6 +122,16 @@ export function actorFor(sessionId: string | null | undefined): string {
   return S.authorFromSession(sessionId) ?? UNKNOWN_ACTOR;
 }
 
+// Identity for git commits LoopHub creates on a caller's behalf. Unlike `actorFor`, an absent
+// session yields `null` rather than UNKNOWN_ACTOR: a commit records a person, and a human acting
+// through the Web UI is better identified by the repository's own git config than by a placeholder
+// author that names no one (#2389).
+export function gitActorFor(
+  sessionId: string | null | undefined,
+): string | null {
+  return S.authorFromSession(sessionId);
+}
+
 export function commentActor(sessionId: string | null | undefined): {
   actor: string;
   authorType: S.CommentAuthorType;

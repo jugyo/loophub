@@ -702,7 +702,12 @@ export async function mergePull(
   head: string,
   method: PullMergeMethod,
   message: string,
-  actor: string,
+  // Author/committer for the commit this merge creates. A named actor identifies the agent
+  // session that merged; `null` means "nobody in particular", and leaves git's own identity
+  // resolution (repository, then global, then git's auto-detection) in place instead of
+  // stamping a placeholder name into history (#2389). The rebase path always resolves this
+  // way, because `git replay` is not given an identity either.
+  actor: string | null,
   opts: MergeOptions = {},
 ): Promise<MergeResult> {
   const baseSha = await revParse(repoPath, base);
@@ -730,12 +735,17 @@ export async function mergePull(
       return { merged: false, conflict: true };
     const parents =
       method === "merge" ? ["-p", baseSha, "-p", headSha] : ["-p", baseSha];
-    const env = {
-      GIT_AUTHOR_NAME: actor,
-      GIT_AUTHOR_EMAIL: `${actor}@loophub.local`,
-      GIT_COMMITTER_NAME: actor,
-      GIT_COMMITTER_EMAIL: `${actor}@loophub.local`,
-    };
+    // Without an actor the env stays empty, so commit-tree reads user.name / user.email the way
+    // any other git command would. When git cannot determine an identity at all it fails, and the
+    // merge fails visibly rather than falling back to a made-up author.
+    const env: Record<string, string> = actor
+      ? {
+          GIT_AUTHOR_NAME: actor,
+          GIT_AUTHOR_EMAIL: `${actor}@loophub.local`,
+          GIT_COMMITTER_NAME: actor,
+          GIT_COMMITTER_EMAIL: `${actor}@loophub.local`,
+        }
+      : {};
     const commit = await git(
       repoPath,
       ["commit-tree", preview.tree, ...parents, "-m", message],

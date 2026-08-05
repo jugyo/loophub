@@ -432,6 +432,83 @@ test("merge keeps two parents and rebase stays linear", async () => {
   rmSync(rebased.p, { recursive: true, force: true });
 }, 30_000);
 
+// "<author name> <author email>|<committer name> <committer email>" of a commit.
+async function identityOf(repoPath: string, ref: string): Promise<string> {
+  const r = await git(repoPath, [
+    "show",
+    "-s",
+    "--format=%an <%ae>|%cn <%ce>",
+    ref,
+  ]);
+  return r.stdout.trim();
+}
+
+// #2389: a merge with no acting agent session must be authored by the repository's configured
+// user, not by a placeholder identity invented by LoopHub.
+test("merge without an actor takes its identity from git config", async () => {
+  const p = await makeRepo();
+
+  const r = await mergePull(p, "main", "feat", "merge", "feat (#1)", null);
+  expect(r.merged).toBe(true);
+  expect(await identityOf(p, "main")).toBe(
+    "tester <t@t.local>|tester <t@t.local>",
+  );
+
+  rmSync(p, { recursive: true, force: true });
+}, 30_000);
+
+// The contrast: a merge attributed to an agent session still records that agent, so existing
+// history keeps reading the same way.
+test("merge with an actor records the actor as author and committer", async () => {
+  const p = await makeRepo();
+
+  const r = await mergePull(
+    p,
+    "main",
+    "feat",
+    "merge",
+    "feat (#1)",
+    "executor",
+  );
+  expect(r.merged).toBe(true);
+  expect(await identityOf(p, "main")).toBe(
+    "executor <executor@loophub.local>|executor <executor@loophub.local>",
+  );
+
+  rmSync(p, { recursive: true, force: true });
+}, 30_000);
+
+// #2389: when git itself can resolve no identity, the merge fails and the base ref stays put.
+// Failing visibly is the decided behaviour — there is no dummy author to fall back to.
+test("merge without an actor fails when git can resolve no identity", async () => {
+  const p = await makeRepo();
+  // Drop the repository identity and forbid git's user@host auto-detection, with the global and
+  // system files taken out of the picture so the host's own git config cannot supply one.
+  await git(p, ["config", "--unset", "user.name"]);
+  await git(p, ["config", "--unset", "user.email"]);
+  await git(p, ["config", "user.useConfigOnly", "true"]);
+  const globalConfig = process.env.GIT_CONFIG_GLOBAL;
+  const systemConfig = process.env.GIT_CONFIG_SYSTEM;
+  process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+  process.env.GIT_CONFIG_SYSTEM = "/dev/null";
+
+  try {
+    const baseBefore = (await git(p, ["rev-parse", "main"])).stdout.trim();
+    const r = await mergePull(p, "main", "feat", "merge", "feat (#1)", null);
+
+    expect(r.merged).toBe(false);
+    expect((await git(p, ["rev-parse", "main"])).stdout.trim()).toBe(
+      baseBefore,
+    );
+  } finally {
+    if (globalConfig === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+    else process.env.GIT_CONFIG_GLOBAL = globalConfig;
+    if (systemConfig === undefined) delete process.env.GIT_CONFIG_SYSTEM;
+    else process.env.GIT_CONFIG_SYSTEM = systemConfig;
+    rmSync(p, { recursive: true, force: true });
+  }
+}, 30_000);
+
 // diffStat sums numstat over base...head: +/- line totals plus the changed-file
 // count, and counts binary files (numstat "-") as a changed file with 0 lines.
 test("diffStat aggregates additions, deletions and changed files", async () => {

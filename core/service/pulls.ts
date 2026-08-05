@@ -47,6 +47,7 @@ import {
   clampPerPage,
   DEFAULT_LIST_PER_PAGE,
   ensureWritable,
+  gitActorFor,
   issueOr404,
   MAX_LIST_PER_PAGE,
   paginate,
@@ -739,7 +740,9 @@ export const pulls = {
       p.head_ref,
       method,
       message,
-      actor,
+      // Events stay attributed to `actor`; the commit itself takes the merging agent's name only
+      // when one exists, so a human merge is authored by the repository's git config user.
+      gitActorFor(sessionId),
     );
     if (res.conflict) {
       S.emitEvent(r.id, "pull_request.merge_conflict", actor, {
