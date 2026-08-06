@@ -1264,6 +1264,53 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  // #21: drop the notifications.kind SQLite CHECK. Kind validation is code-only
+  // (NOTIFICATION_KINDS / createNotification / service assertKind) so adding a kind no longer
+  // needs a table rebuild. Keep every existing row; only the constraint is removed.
+  // Fresh DBs already create kind without CHECK from core/db.ts and skip when sqlite_master
+  // no longer contains CHECK (kind IN ...).
+  {
+    id: "076-notifications-drop-kind-check",
+    run: (db) => {
+      const table = db
+        .query(
+          `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'notifications'`,
+        )
+        .get() as { sql: string } | null;
+      if (!table?.sql.includes("CHECK (kind IN")) return;
+      db.exec(`
+        ALTER TABLE notifications RENAME TO notifications_legacy;
+        CREATE TABLE notifications (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          repo_id         INTEGER NOT NULL REFERENCES repos(id),
+          kind            TEXT NOT NULL,
+          severity        TEXT NOT NULL DEFAULT 'info'
+                            CHECK (severity IN ('info', 'warning')),
+          title           TEXT NOT NULL,
+          body            TEXT NOT NULL,
+          resource_kind   TEXT NOT NULL CHECK (resource_kind IN ('issue', 'pull', 'repo')),
+          resource_number INTEGER,
+          source_key      TEXT NOT NULL UNIQUE,
+          herdr_pane_id   TEXT,
+          workflow_run_id INTEGER,
+          read_at         TEXT,
+          created_at      TEXT NOT NULL
+        );
+        INSERT INTO notifications
+          (id, repo_id, kind, severity, title, body, resource_kind, resource_number, source_key,
+           herdr_pane_id, workflow_run_id, read_at, created_at)
+        SELECT id, repo_id, kind,
+               COALESCE(severity, 'info'),
+               title, body, resource_kind, resource_number, source_key,
+               herdr_pane_id, workflow_run_id, read_at, created_at
+        FROM notifications_legacy;
+        DROP TABLE notifications_legacy;
+        CREATE INDEX idx_notifications_read_created
+          ON notifications(read_at, created_at, id);
+        CREATE INDEX idx_notifications_repo ON notifications(repo_id, id);
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

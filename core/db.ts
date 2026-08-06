@@ -824,8 +824,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_scheduled_task_runs_fire_key
 CREATE TABLE IF NOT EXISTS notifications (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id        INTEGER NOT NULL REFERENCES repos(id),
-  kind           TEXT NOT NULL
-                   CHECK (kind IN ('merge_ready', 'over_budget', 'human_attention', 'agent_comment')),
+  -- kind allowlist lives in TypeScript (NOTIFICATION_KINDS / createNotification), not SQLite.
+  -- Adding a kind no longer requires a table-rebuild migration.
+  kind           TEXT NOT NULL,
   severity       TEXT NOT NULL DEFAULT 'info'
                    CHECK (severity IN ('info', 'warning')),
   title          TEXT NOT NULL,
