@@ -856,6 +856,12 @@ describe("IssueDetail", () => {
     expect(
       within(block).getByRole("textbox", { name: "New acceptance criterion" }),
     ).toBeTruthy();
+    // #2414: form is relative so the sr-only absolute label cannot expand document scroll.
+    expect(
+      within(block)
+        .getByRole("textbox", { name: "New acceptance criterion" })
+        .closest("form")?.className,
+    ).toContain("relative");
     expect(
       (within(block).getByRole("button", { name: "Add" }) as HTMLButtonElement)
         .disabled,
