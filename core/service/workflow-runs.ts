@@ -18,7 +18,7 @@ import {
 } from "../dev-lock.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
-import { revParse } from "../git.ts";
+import { localBranchRef, revParse } from "../git.ts";
 import { type MergeableState, resolveMergeable } from "../mergeable.ts";
 import { pullShaStatus } from "../pull-status-cache.ts";
 import { runtimePrompt } from "../runtime-args.ts";
@@ -1056,8 +1056,8 @@ async function workflowRunState(
   // populates — issue/PR detail refetches on every event, and merge-tree costs a second per call.
   const [liveHead, liveBase] = pull
     ? await Promise.all([
-        revParse(repo.local_path, pull.head_ref),
-        revParse(repo.local_path, pull.base_ref),
+        revParse(repo.local_path, localBranchRef(pull.head_ref)),
+        revParse(repo.local_path, localBranchRef(pull.base_ref)),
       ])
     : [null, null];
   const currentHead = liveHead ?? pull?.head_sha ?? null;

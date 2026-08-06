@@ -15,6 +15,7 @@ import {
   fileAtRef,
   mergePull as gitMergePull,
   hasEffectiveDiff,
+  localBranchRef,
   type PullMergeMethod,
   pathInDiff,
   remoteUrl,
@@ -205,8 +206,8 @@ export const pulls = {
       : null;
     const head = input.head ?? input.headFromNumber!(reservedNumber!);
     const [headSha, resolvedBaseSha] = await Promise.all([
-      deps.revParse(r.local_path, head),
-      deps.revParse(r.local_path, base),
+      deps.revParse(r.local_path, localBranchRef(head)),
+      deps.revParse(r.local_path, localBranchRef(base)),
     ]);
     const row = db.transaction(() => {
       const created =
@@ -324,7 +325,11 @@ export const pulls = {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
-    return diffFiles(r.local_path, p.base_ref, p.head_ref);
+    return diffFiles(
+      r.local_path,
+      localBranchRef(p.base_ref),
+      localBranchRef(p.head_ref),
+    );
   },
 
   async diff(
@@ -344,7 +349,7 @@ export const pulls = {
       }) ?? r.local_path;
     const [baseSha, headSha] = await Promise.all([
       resolvePullBaseSha(r.local_path, p),
-      revParse(r.local_path, p.head_ref),
+      revParse(r.local_path, localBranchRef(p.head_ref)),
     ]);
     if (!baseSha || !headSha)
       throw new ServiceError(422, "pull request diff is unavailable");
@@ -390,7 +395,14 @@ export const pulls = {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
-    if (!(await commitInRange(r.local_path, p.base_ref, p.head_ref, sha))) {
+    if (
+      !(await commitInRange(
+        r.local_path,
+        localBranchRef(p.base_ref),
+        localBranchRef(p.head_ref),
+        sha,
+      ))
+    ) {
       throw new ServiceError(404, "Not Found");
     }
     return commitDiffFiles(r.local_path, sha);
@@ -409,11 +421,18 @@ export const pulls = {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
-    if (!(await pathInDiff(r.local_path, p.base_ref, p.head_ref, path))) {
+    if (
+      !(await pathInDiff(
+        r.local_path,
+        localBranchRef(p.base_ref),
+        localBranchRef(p.head_ref),
+        path,
+      ))
+    ) {
       throw new ServiceError(404, "Not Found");
     }
     const ref = side === "base" ? p.base_ref : p.head_ref;
-    return fileAtRef(r.local_path, ref, path);
+    return fileAtRef(r.local_path, localBranchRef(ref), path);
   },
 
   // #406: record the GitHub PR a loophub PR was exported to. Originally an internal step of the
@@ -565,7 +584,7 @@ export const pulls = {
     const repoPath = r.local_path;
 
     try {
-      await deps.push(repoPath, head, branch);
+      await deps.push(repoPath, localBranchRef(head), branch);
     } catch (e) {
       throw new ServiceError(
         502,
@@ -600,7 +619,7 @@ export const pulls = {
     // after this export have not yet reached the GitHub branch (head resolves — the push above needed
     // it — but tolerate a null defensively rather than throw after the PR is already created). Read it
     // before the DB phase so the push, `gh` and this git read all stay outside the transaction.
-    const pushedSha = await revParse(repoPath, head);
+    const pushedSha = await revParse(repoPath, localBranchRef(head));
     return db.transaction(() => {
       S.recordGithubPull({
         issueId: row.id,
@@ -681,7 +700,7 @@ export const pulls = {
     const force = input.force === true;
 
     try {
-      await deps.push(repoPath, head, gh.branch, { force });
+      await deps.push(repoPath, localBranchRef(head), gh.branch, { force });
     } catch (e) {
       throw new ServiceError(
         502,
@@ -690,7 +709,7 @@ export const pulls = {
     }
 
     const actor = actorFor(sessionId);
-    const pushedSha = await revParse(repoPath, head);
+    const pushedSha = await revParse(repoPath, localBranchRef(head));
     return db.transaction(() => {
       const rec = pushedSha ? S.setGithubPushed(row.id, pushedSha) : gh;
       S.emitEvent(r.id, "pull_request.github_pr_pushed", actor, {
@@ -725,11 +744,17 @@ export const pulls = {
     // "no commits", it's a broken branch, and should fall through to gitMergePull's own
     // "Merge failed" below rather than report a misleading reason.
     const [headSha, baseSha] = await Promise.all([
-      revParse(r.local_path, p.head_ref),
-      revParse(r.local_path, p.base_ref),
+      revParse(r.local_path, localBranchRef(p.head_ref)),
+      revParse(r.local_path, localBranchRef(p.base_ref)),
     ]);
     if (headSha && baseSha) {
-      if (!(await hasEffectiveDiff(r.local_path, p.base_ref, p.head_ref)))
+      if (
+        !(await hasEffectiveDiff(
+          r.local_path,
+          localBranchRef(p.base_ref),
+          localBranchRef(p.head_ref),
+        ))
+      )
         throw new ServiceError(422, "Pull Request has no commits to merge");
     }
     const actor = actorFor(sessionId);
@@ -864,15 +889,17 @@ export const pulls = {
         : null;
 
     // git facts. Resolve refs first; only fan out to diff/log when both ends exist.
-    const headSha = await revParse(r.local_path, pull.head_ref);
-    const baseSha = await revParse(r.local_path, pull.base_ref);
+    const baseRev = localBranchRef(pull.base_ref);
+    const headRev = localBranchRef(pull.head_ref);
+    const headSha = await revParse(r.local_path, headRev);
+    const baseSha = await revParse(r.local_path, baseRev);
     const canDiff = !!headSha && !!baseSha;
     const [stat, commits, files, commitsAheadCount] = canDiff
       ? await Promise.all([
-          diffStat(r.local_path, pull.base_ref, pull.head_ref),
-          commitLog(r.local_path, pull.base_ref, pull.head_ref),
-          diffFiles(r.local_path, pull.base_ref, pull.head_ref),
-          commitsAhead(r.local_path, pull.base_ref, pull.head_ref),
+          diffStat(r.local_path, baseRev, headRev),
+          commitLog(r.local_path, baseRev, headRev),
+          diffFiles(r.local_path, baseRev, headRev),
+          commitsAhead(r.local_path, baseRev, headRev),
         ])
       : [null, [], [], 0];
 

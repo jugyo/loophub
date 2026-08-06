@@ -68,6 +68,16 @@ function spawnGit(
   });
 }
 
+// Qualify a local branch name for use as a git revision. A bare name goes through git's ambiguous
+// ref resolution (gitrevisions(7)), where `$GIT_DIR/<name>` — and then tags and remote-tracking
+// refs — are consulted before `refs/heads/<name>`: a stray `.git/<branch-name>` file (#12) silently
+// shadows the branch the caller meant and resolves to whatever SHA it holds. The primitives below
+// stay generic (they also take SHAs and already-qualified refs), so callers holding a name they
+// know to be a local branch qualify it here, right before handing it to git.
+export function localBranchRef(name: string): string {
+  return `refs/heads/${name}`;
+}
+
 export async function revParse(
   repoPath: string,
   ref: string,
@@ -695,8 +705,13 @@ export async function mergePull(
   actor: string | null,
   opts: MergeOptions = {},
 ): Promise<MergeResult> {
-  const baseSha = await revParse(repoPath, base);
-  const headSha = await revParse(repoPath, head);
+  // `base`/`head` are local branch names — this function updates `refs/heads/<base>` and compares
+  // `base` against the checked-out branch below — so every revision handed to git is qualified
+  // rather than left to ambiguous ref resolution (#12).
+  const baseRev = localBranchRef(base);
+  const headRev = localBranchRef(head);
+  const baseSha = await revParse(repoPath, baseRev);
+  const headSha = await revParse(repoPath, headRev);
   if (!baseSha || !headSha) return { merged: false };
 
   let newSha: string;
@@ -707,15 +722,15 @@ export async function mergePull(
     const r = await git(repoPath, [
       "replay",
       "--onto",
-      base,
-      `${base}..${head}`,
+      baseRev,
+      `${baseRev}..${headRev}`,
     ]);
     const line = r.stdout.trim().split("\n").pop() || "";
     const parts = line.split(" "); // [update, refs/heads/<head>, <new>, <old>]
     newSha = parts[0] === "update" ? parts[2] : "";
     if (r.code !== 0 || !newSha) return { merged: false, conflict: true };
   } else {
-    const preview = await mergePreview(repoPath, base, head);
+    const preview = await mergePreview(repoPath, baseRev, headRev);
     if (preview.conflict || !preview.tree)
       return { merged: false, conflict: true };
     const parents =

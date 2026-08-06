@@ -20,6 +20,7 @@ import {
   type DiffFile,
   diffFilesBetween,
   fileAtRef,
+  localBranchRef,
   revParse,
 } from "../git.ts";
 import { resolvePullBaseSha } from "../pull-base.ts";
@@ -55,7 +56,7 @@ async function currentPair(
 ): Promise<{ baseSha: string; headSha: string } | null> {
   const [baseSha, headSha] = await Promise.all([
     resolvePullBaseSha(repoPath, pull),
-    revParse(repoPath, pull.head_ref),
+    revParse(repoPath, localBranchRef(pull.head_ref)),
   ]);
   return baseSha && headSha ? { baseSha, headSha } : null;
 }

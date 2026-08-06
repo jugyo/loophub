@@ -1,4 +1,4 @@
-import { revParse } from "./git.ts";
+import { localBranchRef, revParse } from "./git.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import { pullShaStatus } from "./pull-status-cache.ts";
@@ -18,8 +18,8 @@ export async function currentMergeableState(
   pull: S.OpenPullSweepRow,
 ): Promise<MergeableState> {
   const [headSha, baseSha] = await Promise.all([
-    revParse(pull.local_path, pull.head_ref),
-    revParse(pull.local_path, pull.base_ref),
+    revParse(pull.local_path, localBranchRef(pull.head_ref)),
+    revParse(pull.local_path, localBranchRef(pull.base_ref)),
   ]);
   if (!headSha || !baseSha) return "unknown";
 

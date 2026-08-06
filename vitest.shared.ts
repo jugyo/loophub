@@ -41,6 +41,7 @@ export const gitIntegrationTestFiles = [
   "core/issues-service.test.ts",
   "core/notifications-service.test.ts",
   "core/number-worktree-regression.test.ts",
+  "core/pull-ambiguous-ref.test.ts",
   "core/pull-base.test.ts",
   "core/pull-conflict-events.test.ts",
   "core/pull-debug.test.ts",

@@ -1,6 +1,6 @@
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
-import { revParse } from "../git.ts";
+import { localBranchRef, revParse } from "../git.ts";
 import {
   acceptanceCriterionDisplayId,
   type ReviewAcResultWire,
@@ -298,7 +298,9 @@ export const reviews = {
     // SHA explicitly and must keep taking precedence.
     const pull = S.getPull(row.id)!;
     const submissionHeadSha =
-      (await revParse(r.local_path, pull.head_ref)) ?? pull.head_sha ?? null;
+      (await revParse(r.local_path, localBranchRef(pull.head_ref))) ??
+      pull.head_sha ??
+      null;
     const headSha = input.headSha ?? submissionHeadSha;
     // The head SHA read above is the last git call; the review row, its per-criterion grades, its
     // line comments and the submission event all commit together (#1895), so a review never exists

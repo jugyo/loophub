@@ -196,7 +196,8 @@ test("a failed pull ref observation leaves no pull-shaped issue", async () => {
       {
         revParse: async (_path, ref) => {
           expect(database.inTransaction).toBe(false);
-          if (ref.startsWith("loophub/pr-")) {
+          // Refs reach git qualified as refs/heads/<name> (#12).
+          if (ref.startsWith("refs/heads/loophub/pr-")) {
             observedHead = ref;
             throw new Error("injected ref observation failure");
           }
@@ -206,7 +207,7 @@ test("a failed pull ref observation leaves no pull-shaped issue", async () => {
     ),
   ).rejects.toThrowError(/injected ref observation failure/);
 
-  expect(observedHead).toMatch(/^loophub\/pr-\d+$/);
+  expect(observedHead).toMatch(/^refs\/heads\/loophub\/pr-\d+$/);
   expect(pullCreationCounts()).toEqual(before);
 });
 

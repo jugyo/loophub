@@ -364,10 +364,11 @@ test("createGithubPull pushes, creates a Draft PR, and records it (#411)", async
     branch: "feature/export",
   });
 
-  // Pushed the internal head ref under the content-based branch; created with base from the PR.
+  // Pushed the internal head ref — qualified as refs/heads/<name> so an ambiguous bare name can't
+  // shadow the branch (#12) — under the content-based branch; created with base from the PR.
   expect(calls.push).toHaveLength(1);
   expect(calls.push[0]).toMatchObject({
-    head: "feature",
+    head: "refs/heads/feature",
     branch: "feature/export",
   });
   expect(calls.create).toHaveLength(1);
@@ -645,7 +646,7 @@ test("pushGithubPull pushes the head to the recorded branch and updates pushed_s
   // Pushed the internal head ref under the recorded content-based branch (no new gh create), and
   // without force — the plain action never rewrites the GitHub branch (#1861).
   expect(calls.push.at(-1)).toMatchObject({
-    head: "feature",
+    head: "refs/heads/feature",
     branch: "feature/repush",
     force: false,
   });
@@ -706,7 +707,7 @@ test("pushGithubPull force-pushes a rewritten head and updates pushed_sha (#1861
     pushed_sha: amended.head.sha,
   });
   expect(calls.push.at(-1)).toMatchObject({
-    head: "feature",
+    head: "refs/heads/feature",
     branch: "feature/force",
     force: true,
   });
