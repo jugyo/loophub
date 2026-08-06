@@ -179,6 +179,18 @@ function expectUnrelatedHerdrFocus(runtime: {
   );
 }
 
+// After a successful Workflow parent launch the herdr focus should move to the new run
+// (fakeRuntime records any workspace/tab/agent/pane focus as this sentinel).
+function expectWorkflowParentHerdrFocusMoved(runtime: {
+  focusedStatePath: string;
+}): void {
+  expect(JSON.parse(readFileSync(runtime.focusedStatePath, "utf8"))).toEqual({
+    workspace_id: "changed",
+    tab_id: "changed",
+    pane_id: "changed",
+  });
+}
+
 // A fakeRuntime with no `claude` binary, so a test asserts a Codex launch never requires claude.
 function codexOnlyRuntime() {
   const runtime = fakeRuntime();
@@ -1017,16 +1029,17 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     );
     // The label LoopHub identifies the pane by is written onto the pane.
     expect(log).toMatch(/pane rename w1:p2 orchestrator #\d+/);
-    // The empty tab the worktree open seeded is dropped without changing the current focus.
+    // The empty tab the worktree open seeded is dropped; create/open stayed --no-focus, then the
+    // completed parent tab is brought forward.
     expect(log).toMatch(/tab close w1:t1/);
+    expect(log).toContain("tab focus w1:t2");
     expect(log).not.toContain("workspace focus");
-    expect(log).not.toContain("tab focus");
     // #2354: the whole launch is that one typed line — flags, then the prompt read back from the
     // run's prompt file. Nothing is pasted into the agent afterwards.
     expect(log).toContain("'--permission-mode' 'auto'");
     expect(log).toMatch(/"\$\(cat '.+\/parent-prompt\.md'\)"/);
     expect(log).not.toContain("pane send-keys");
-    expectUnrelatedHerdrFocus(runtime);
+    expectWorkflowParentHerdrFocusMoved(runtime);
     expect(started.stderr).toContain("Attach with: herdr session attach");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
@@ -1085,16 +1098,16 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
     expect(log.indexOf("tab create")).toBeLessThan(
       log.indexOf("pane send-text"),
     );
-    // Reusing a workspace does not change the current workspace, tab, or pane focus.
+    // After the parent is running, focus moves to the new tab even when the workspace was reused.
+    expect(log).toContain("tab focus w1:t2");
     expect(log).not.toContain("workspace focus");
-    expect(log).not.toContain("tab focus");
-    expectUnrelatedHerdrFocus(runtime);
+    expectWorkflowParentHerdrFocusMoved(runtime);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
 });
 
-test("workflow start --herdr launches when the reused workspace's new tab id is unavailable", () => {
+test("workflow start --herdr focuses the pane when the reused workspace's new tab id is unavailable", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1108,6 +1121,7 @@ test("workflow start --herdr launches when the reused workspace's new tab id is 
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
   const runtime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
     worktreeOpenJson: REUSE_OPEN_JSON,
     tabCreateJson: JSON.stringify({
       result: { root_pane: { pane_id: "w1:p2" } },
@@ -1127,6 +1141,7 @@ test("workflow start --herdr launches when the reused workspace's new tab id is 
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_FOCUSED_STATE: runtime.focusedStatePath,
         HERDR_LOG: runtime.log,
       },
     );
@@ -1136,14 +1151,17 @@ test("workflow start --herdr launches when the reused workspace's new tab id is 
     expect(log).toMatch(/tab create --workspace w1 /);
     // The pane is what the agent needs; a tab id is not required to complete the launch.
     expect(log).toMatch(/pane send-text w1:p2 /);
+    // Without a tab id, focus falls back to the agent pane.
+    expect(log).toContain("agent focus w1:p2");
     expect(log).not.toContain("tab focus");
     expect(log).not.toContain("workspace focus");
+    expectWorkflowParentHerdrFocusMoved(runtime);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
 });
 
-test("workflow start --herdr preserves focus when worktree placement falls back to a repo-root tab", () => {
+test("workflow start --herdr focuses the fallback repo-root tab when worktree placement fails", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1184,9 +1202,10 @@ test("workflow start --herdr preserves focus when worktree placement falls back 
     const log = readFileSync(runtime.log, "utf8");
     expect(log).toMatch(/tab create /);
     expect(log).not.toContain("tab create --workspace");
+    // Repo-root fallback still brings the parent's tab forward after a successful launch.
+    expect(log).toContain("tab focus w1:t2");
     expect(log).not.toContain("workspace focus");
-    expect(log).not.toContain("tab focus");
-    expectUnrelatedHerdrFocus(runtime);
+    expectWorkflowParentHerdrFocusMoved(runtime);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

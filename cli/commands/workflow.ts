@@ -10,6 +10,7 @@ import {
   agentCommandLine,
   executeHerdrLaunchPlan,
   HERDR_ID,
+  herdrAgentFocusArgv,
   herdrTabFocusArgv,
 } from "../../core/terminal/terminal-launch.ts";
 import {
@@ -274,6 +275,21 @@ async function launchParentHerdr(input: {
       launched_at: launchedAt,
     }),
   );
+  // Create/open stayed `--no-focus` so a half-built launch never steals the operator's view.
+  // Once the Workflow parent is running, bring its tab (or pane) forward so Start workflow —
+  // Web UI and `lh workflow start --herdr` alike — lands on the new run. Best-effort: a failed
+  // focus must not fail a successful launch (or block attach below).
+  if (launched.tabId) {
+    spawnSync("herdr", herdrTabFocusArgv(input.repo, launched.tabId).slice(1), {
+      stdio: "ignore",
+    });
+  } else if (launched.paneId) {
+    spawnSync(
+      "herdr",
+      herdrAgentFocusArgv(input.repo, launched.paneId).slice(1),
+      { stdio: "ignore" },
+    );
+  }
   // The session, not the agent: `herdr agent attach` resolves its target through herdr's agent
   // detection, and the runtime the pane was just told to run has not been detected yet.
   const attachHint = `herdr session attach ${launched.sessionName}`;
@@ -284,14 +300,6 @@ async function launchParentHerdr(input: {
       `Launched Workflow parent in herdr pane ${launched.paneId}. Attach with: ${attachHint}`,
     );
     process.exit(0);
-  }
-  // Bring the launch's own tab forward first so the attach opens on it: the tab was created
-  // `--no-focus` so a background launch never steals focus, but this caller is the human who asked
-  // for it. Best-effort — a failed focus is no reason not to attach.
-  if (launched.tabId) {
-    spawnSync("herdr", herdrTabFocusArgv(input.repo, launched.tabId).slice(1), {
-      stdio: "ignore",
-    });
   }
   const attached = spawnSync(
     "herdr",

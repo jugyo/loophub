@@ -113,7 +113,8 @@ export async function launchAgentInWorktreeHerdr(input: {
 
   // The open seeded a newly created workspace with an empty tab that the launch could not use
   // (`worktree open` takes no `--env`), so drop it once the real tab exists. Creation and launch
-  // stay `--no-focus`: background workflow launches must preserve the operator's current focus.
+  // stay `--no-focus` so a half-built placement never steals the operator's view; the caller
+  // focuses the completed agent pane after this returns.
   if (acquired?.createdWorkspace) {
     if (acquired.seedTabId)
       await runHerdrCmd(herdrTabCloseArgv(repo, acquired.seedTabId));
