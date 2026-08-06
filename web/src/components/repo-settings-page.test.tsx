@@ -99,10 +99,19 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
       branch_exists: true,
     },
   ];
+  let extraPrompt: string | null = null;
   return mockRpcFetch({
     "repos/get": () => repo(initialArchived),
     "repos/mergeMode": () => mergeMode(null),
     "repos/agentConfig": () => agentConfig(),
+    "repos/githubPrExportExtraPrompt": () => ({ extra_prompt: extraPrompt }),
+    "repos/setGithubPrExportExtraPrompt": (p) => {
+      if (patchFails) throw new RpcFault(500, "boom");
+      const raw = p.extra_prompt;
+      extraPrompt =
+        typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+      return { extra_prompt: extraPrompt };
+    },
     "settings/get": () => ({ workflowContractLanguage: "en" }),
     "workflows/list": () => [
       {
@@ -663,6 +672,80 @@ describe("RepoSettingsPage", () => {
       const call = rpcCall("repos/setMergeMode");
       expect(call).toBeTruthy();
       expect(call!.params).toMatchObject({ mode: "github_pr" });
+    });
+  });
+
+  it("saves and previews the Create PR on GitHub additional prompt (#2422)", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/pull-requests");
+    const textarea = (await screen.findByLabelText(
+      "Additional Create PR on GitHub prompt",
+    )) as HTMLTextAreaElement;
+    // Preview is behind a link (same pattern as Workflows' System prompt), not inline.
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Create PR on GitHub prompt preview",
+      }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Preview prompt$/i }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Create PR on GitHub prompt preview",
+    });
+    // Default preview is the template only (sample PR #1).
+    expect(dialog.textContent).toContain(
+      "lh pr create-github-pr 1 --repo me/proj",
+    );
+    expect(dialog.textContent).not.toContain("Prefer type/short-slug");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Close prompt preview" }),
+    );
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Create PR on GitHub prompt preview",
+      }),
+    ).toBeNull();
+
+    fireEvent.change(textarea, {
+      target: { value: "Prefer type/short-slug branch names." },
+    });
+    // Draft is reflected when the preview is reopened before save.
+    fireEvent.click(screen.getByRole("button", { name: /^Preview prompt$/i }));
+    expect(
+      (
+        await screen.findByRole("dialog", {
+          name: "Create PR on GitHub prompt preview",
+        })
+      ).textContent,
+    ).toContain("Prefer type/short-slug branch names.");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close prompt preview" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(
+        rpcCall("repos/setGithubPrExportExtraPrompt")?.params,
+      ).toMatchObject({
+        name: "me/proj",
+        extra_prompt: "Prefer type/short-slug branch names.",
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Clear$/i }));
+    await waitFor(() => {
+      const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+        .map((c) => {
+          try {
+            return JSON.parse(String(c[1]?.body ?? "{}"));
+          } catch {
+            return null;
+          }
+        })
+        .filter((c) => c?.method === "repos/setGithubPrExportExtraPrompt");
+      expect(calls.at(-1)?.params).toMatchObject({
+        name: "me/proj",
+        extra_prompt: null,
+      });
     });
   });
 

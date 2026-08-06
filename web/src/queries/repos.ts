@@ -6,6 +6,7 @@ import {
   createRepo,
   getRepo,
   getRepoAgentConfig,
+  getRepoGithubPrExportExtraPrompt,
   getRepoMergeMode,
   listRepos,
   renameRepo,
@@ -13,6 +14,7 @@ import {
   setRepoArchived,
   setRepoDefaultBranch,
   setRepoFavorite,
+  setRepoGithubPrExportExtraPrompt,
   setRepoMergeMode,
 } from "@/api/client";
 import type { CodingAgent } from "@/api/types";
@@ -183,6 +185,34 @@ export function useSetRepoAgentConfig(owner: string, repo: string) {
     onSuccess: () => {
       qc.invalidateQueries({
         queryKey: queryKeys.repoAgentConfig(full(owner, repo)),
+      });
+    },
+  });
+}
+
+/** Per-repo additional Create PR on GitHub prompt text (#2422). */
+export function useRepoGithubPrExportExtraPrompt(owner: string, repo: string) {
+  return useQuery({
+    queryKey: queryKeys.repoGithubPrExportExtraPrompt(full(owner, repo)),
+    queryFn: () => getRepoGithubPrExportExtraPrompt(owner, repo),
+  });
+}
+
+/**
+ * Set or clear the repo's additional Create PR on GitHub prompt, then invalidate the setting view
+ * used by repo settings and the PR detail Create action (#2422).
+ */
+export function useSetRepoGithubPrExportExtraPrompt(
+  owner: string,
+  repo: string,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (extraPrompt: string | null) =>
+      setRepoGithubPrExportExtraPrompt(owner, repo, extraPrompt),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: queryKeys.repoGithubPrExportExtraPrompt(full(owner, repo)),
       });
     },
   });

@@ -56,6 +56,9 @@ export const queryKeys = {
   // Top-level rather than a child of repo(full): every repo-scoped event invalidates that prefix,
   // but the coding-agent override only changes through repo.agent_config_changed.
   repoAgentConfig: (full: string) => ["repo-agent-config", full] as const,
+  // Top-level for the same reason: only repo.github_pr_export_extra_prompt_changed mutates it (#2422).
+  repoGithubPrExportExtraPrompt: (full: string) =>
+    ["repo-github-pr-export-extra-prompt", full] as const,
   terminalSessions: () => ["terminal", "sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
@@ -337,10 +340,18 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     if (type === "repo.merge_mode_changed" && repo) {
       keys.push([...queryKeys.repoMergeMode(repo)]);
     }
-    if (repo && type !== "repo.agent_config_changed") {
+    if (type === "repo.github_pr_export_extra_prompt_changed" && repo) {
+      keys.push([...queryKeys.repoGithubPrExportExtraPrompt(repo)]);
+    }
+    if (
+      repo &&
+      type !== "repo.agent_config_changed" &&
+      type !== "repo.github_pr_export_extra_prompt_changed"
+    ) {
       // repoJSON is part of every PR debug dump, so repo metadata events change all open debug
       // queries for that repository even though the regular pull detail is unaffected. Agent
-      // config is stored separately and is not part of repoJSON or the PR-scoped event history.
+      // config and the export extra prompt are stored separately and are not part of repoJSON or
+      // the PR-scoped event history.
       keys.push(["pull-debug", repo]);
     }
     const from = payload?.from;

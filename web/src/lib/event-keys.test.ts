@@ -178,6 +178,29 @@ describe("queryKeysForEvent", () => {
     expect(changed).toContainEqual(["repo-merge-mode", "me/proj"]);
   });
 
+  it("refreshes the Create PR on GitHub extra prompt only for its config event (#2422)", () => {
+    const ordinary = queryKeysForEvent(
+      ev({ type: "repo.merge_mode_changed", repo: "me/proj" }),
+    );
+    expect(ordinary).not.toContainEqual([
+      "repo-github-pr-export-extra-prompt",
+      "me/proj",
+    ]);
+
+    const changed = queryKeysForEvent(
+      ev({
+        type: "repo.github_pr_export_extra_prompt_changed",
+        repo: "me/proj",
+      }),
+    );
+    expect(changed).toContainEqual([
+      "repo-github-pr-export-extra-prompt",
+      "me/proj",
+    ]);
+    // Like agent config, this setting is not part of repoJSON / pull-debug dumps.
+    expect(changed).not.toContainEqual(["pull-debug", "me/proj"]);
+  });
+
   it("refreshes pull files only when the git graph changes", () => {
     const metadataUpdated = queryKeysForEvent(
       ev({

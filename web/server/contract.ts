@@ -218,6 +218,32 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.repos.agentConfig(p.name),
   },
+  "repos/githubPrExportExtraPrompt": {
+    description:
+      "Per-repo additional text appended to the Create PR on GitHub agent prompt; null when unset (#2422).",
+    params: params({ name: repo }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.repos.githubPrExportExtraPrompt(p.name),
+  },
+  "repos/setGithubPrExportExtraPrompt": {
+    description:
+      "Set or clear the repo's additional Create PR on GitHub prompt text. Empty string or null clears it (#2422).",
+    params: params(
+      {
+        name: repo,
+        extra_prompt: strOrNull,
+        session_id: sid,
+      },
+      ["name", "extra_prompt"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.repos.setGithubPrExportExtraPrompt(
+        p.name,
+        p.extra_prompt,
+        p.session_id,
+      ),
+  },
 
   // ---- global settings ----
   "settings/get": {

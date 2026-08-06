@@ -325,3 +325,36 @@ test("setAgentConfig rejects an unknown runtime and a non-boolean override (#153
     }),
   ).toThrow(/override must be a boolean/);
 });
+
+// #2422: per-repo additional "Create PR on GitHub" prompt text.
+test("githubPrExportExtraPrompt is null by default and persists set/clear (#2422)", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/export-prompt" });
+
+  expect(svc.repos.githubPrExportExtraPrompt("me/export-prompt")).toEqual({
+    extra_prompt: null,
+  });
+
+  const saved = svc.repos.setGithubPrExportExtraPrompt(
+    "me/export-prompt",
+    "  Prefer type/short-slug.\n",
+  );
+  expect(saved).toEqual({ extra_prompt: "Prefer type/short-slug." });
+  expect(svc.repos.githubPrExportExtraPrompt("me/export-prompt")).toEqual({
+    extra_prompt: "Prefer type/short-slug.",
+  });
+
+  // Empty string clears; other repos stay independent.
+  await svc.repos.create({ path: initGitRepo(), name: "me/export-prompt-b" });
+  svc.repos.setGithubPrExportExtraPrompt(
+    "me/export-prompt-b",
+    "Other repo only",
+  );
+  const cleared = svc.repos.setGithubPrExportExtraPrompt(
+    "me/export-prompt",
+    "",
+  );
+  expect(cleared).toEqual({ extra_prompt: null });
+  expect(svc.repos.githubPrExportExtraPrompt("me/export-prompt-b")).toEqual({
+    extra_prompt: "Other repo only",
+  });
+});

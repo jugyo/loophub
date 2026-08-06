@@ -38,6 +38,7 @@ import type {
   PullUsage,
   Repo,
   RepoAgentConfig,
+  RepoGithubPrExportExtraPrompt,
   RepoMergeMode,
   SearchResult,
   Stats,
@@ -280,6 +281,30 @@ export function setRepoAgentConfig(
     effort: input.effort ?? undefined,
     session_id: sessionId,
   });
+}
+
+// #2422: per-repo additional text for the Create PR on GitHub agent prompt.
+export function getRepoGithubPrExportExtraPrompt(owner: string, repo: string) {
+  return rpc<RepoGithubPrExportExtraPrompt>("repos/githubPrExportExtraPrompt", {
+    name: full(owner, repo),
+  });
+}
+
+// #2422: set or clear the repo's additional Create PR on GitHub prompt. Empty string or null clears.
+export function setRepoGithubPrExportExtraPrompt(
+  owner: string,
+  repo: string,
+  extraPrompt: string | null,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<RepoGithubPrExportExtraPrompt>(
+    "repos/setGithubPrExportExtraPrompt",
+    {
+      name: full(owner, repo),
+      extra_prompt: extraPrompt,
+      session_id: sessionId,
+    },
+  );
 }
 
 export interface WorkflowInput {

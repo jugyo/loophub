@@ -42,6 +42,7 @@ import type {
   RelatedSessionsUsageWire,
   RelatedSessionWire,
   RepoAgentConfigWire,
+  RepoGithubPrExportExtraPromptWire,
   RepoMergeModeWire,
   RepoWire,
   ReviewAcResultWire,
@@ -157,6 +158,9 @@ export type RepoMergeMode = RepoMergeModeWire;
 
 /** Resolved Coding agent override view for the repo settings UI (`repos/agentConfig`, #1532). */
 export type RepoAgentConfig = RepoAgentConfigWire;
+
+/** Per-repo additional Create PR on GitHub prompt (`repos/githubPrExportExtraPrompt`, #2422). */
+export type RepoGithubPrExportExtraPrompt = RepoGithubPrExportExtraPromptWire;
 
 export type TerminalLaunchBackend = TerminalLaunchBackendWire;
 

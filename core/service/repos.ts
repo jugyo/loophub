@@ -21,11 +21,14 @@ import {
 import { CODING_AGENTS, isCodingAgent } from "../runtimes.ts";
 import {
   type RepoAgentConfigWire,
+  type RepoGithubPrExportExtraPromptWire,
   type RepoMergeModeWire,
   repoAgentConfigJSON,
+  repoGithubPrExportExtraPromptJSON,
   repoJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
+import { normalizeGithubPrExportExtraPrompt } from "../workflow/github-pr-export-prompt.ts";
 import { worktreePath } from "../worktree-path.ts";
 import {
   actorFor,
@@ -321,6 +324,39 @@ export const repos = {
   // else the application defaults). Sync: the effective resolution reads config.json, not git.
   agentConfig(name: string): RepoAgentConfigWire {
     return repoAgentConfigJSON(repoOr404(name));
+  },
+
+  // #2422: read the repo's optional additional "Create PR on GitHub" prompt text.
+  githubPrExportExtraPrompt(name: string): RepoGithubPrExportExtraPromptWire {
+    return repoGithubPrExportExtraPromptJSON(repoOr404(name));
+  },
+
+  // #2422: set or clear the repo's additional "Create PR on GitHub" prompt. Empty / null clears so
+  // launches use only the default template. Archived repos stay editable — like setMergeMode, this
+  // is a config preference, not a write to the repo's contents.
+  setGithubPrExportExtraPrompt(
+    name: string,
+    extraPrompt: string | null,
+    sessionId?: string | null,
+  ): RepoGithubPrExportExtraPromptWire {
+    const r = repoOr404(name);
+    if (extraPrompt != null && typeof extraPrompt !== "string") {
+      throw new ServiceError(422, "extra_prompt must be a string or null");
+    }
+    const stored = normalizeGithubPrExportExtraPrompt(extraPrompt);
+    return db.transaction(() => {
+      S.setRepoGithubPrExportExtraPrompt(r.id, stored);
+      S.emitEvent(
+        r.id,
+        "repo.github_pr_export_extra_prompt_changed",
+        actorFor(sessionId),
+        {
+          full_name: r.full_name,
+          has_extra_prompt: stored != null,
+        },
+      );
+      return repoGithubPrExportExtraPromptJSON(repoOr404(name));
+    });
   },
 
   async update(

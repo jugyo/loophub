@@ -88,3 +88,38 @@ test("does not reference the retired lh-create-github-pr skill", () => {
     ).not.toContain("/lh-create-github-pr");
   }
 });
+
+test("appends repository extra prompt after the default template (#2422)", () => {
+  const base = githubPrExportPrompt({
+    repo: "me/proj",
+    prNumber: 9,
+    language: "en",
+  });
+  const withExtra = githubPrExportPrompt({
+    repo: "me/proj",
+    prNumber: 9,
+    language: "en",
+    extraPrompt: "  Prefer type/short-slug branch names.\n  ",
+  });
+  expect(withExtra.startsWith(base)).toBe(true);
+  expect(withExtra).toBe(`${base}\n\nPrefer type/short-slug branch names.`);
+  expect(withExtra).toContain("lh pr create-github-pr 9 --repo me/proj");
+});
+
+test("blank extra prompt leaves the default template unchanged (#2422)", () => {
+  const base = githubPrExportPrompt({
+    repo: "me/proj",
+    prNumber: 2,
+    language: "ja",
+  });
+  for (const extraPrompt of [null, undefined, "", "   \n\t  "]) {
+    expect(
+      githubPrExportPrompt({
+        repo: "me/proj",
+        prNumber: 2,
+        language: "ja",
+        extraPrompt,
+      }),
+    ).toBe(base);
+  }
+});

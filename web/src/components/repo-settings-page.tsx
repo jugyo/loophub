@@ -33,18 +33,22 @@ import {
   useRenameRepo,
   useRepo,
   useRepoAgentConfig,
+  useRepoGithubPrExportExtraPrompt,
   useRepoMergeMode,
   useSetRepoAgentConfig,
   useSetRepoArchived,
   useSetRepoDefaultBranch,
+  useSetRepoGithubPrExportExtraPrompt,
   useSetRepoMergeMode,
 } from "@/queries/repos";
+import { useSettings } from "@/queries/settings";
 import {
   useArchivedSettingsWorkspaces,
   useSettingsWorkspaces,
   useSetWorkspaceArchived,
 } from "@/queries/workspaces";
 import { CODING_AGENTS } from "../../../core/runtimes.ts";
+import { githubPrExportPrompt } from "../../../core/workflow/github-pr-export-prompt.ts";
 
 const MERGE_MODE_LABELS: Record<MergeMode, string> = {
   merge: "Merge",
@@ -188,7 +192,10 @@ export function RepoSettingsPage({
           </>
         ) : null}
         {section === "pull-requests" ? (
-          <MergeModeSection owner={owner} repo={repo} />
+          <>
+            <MergeModeSection owner={owner} repo={repo} />
+            <GithubPrExportExtraPromptSection owner={owner} repo={repo} />
+          </>
         ) : null}
         {section === "coding-agent" ? (
           <AgentConfigSection owner={owner} repo={repo} />
@@ -813,6 +820,209 @@ function MergeModeSection({ owner, repo }: { owner: string; repo: string }) {
         <p className="mt-2 text-sm text-destructive">{String(setMode.error)}</p>
       ) : null}
     </section>
+  );
+}
+
+// #2422: optional per-repo text appended to the default "Create PR on GitHub" agent prompt.
+// Explicit Save/Clear (not save-on-keystroke) because the value is free-form long text. Preview
+// opens via a link into a read-only dialog (same pattern as Workflows' System prompt).
+const PREVIEW_SAMPLE_PR_NUMBER = 1;
+
+// Match the Workflows "System prompt" link: primary text that looks like a link, not a button.
+const promptPreviewLinkClasses =
+  "text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+
+const dialogFocusableSelector =
+  'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';
+
+function trapDialogFocus(
+  event: React.KeyboardEvent<HTMLElement>,
+  dialog: HTMLElement,
+) {
+  if (event.key !== "Tab") return;
+  const focusable = Array.from(
+    dialog.querySelectorAll<HTMLElement>(dialogFocusableSelector),
+  ).filter((element) => !element.closest("[hidden]"));
+  if (focusable.length === 0) return;
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function GithubPrExportExtraPromptSection({
+  owner,
+  repo,
+}: {
+  owner: string;
+  repo: string;
+}) {
+  const { data, isLoading } = useRepoGithubPrExportExtraPrompt(owner, repo);
+  const save = useSetRepoGithubPrExportExtraPrompt(owner, repo);
+  const { data: settings } = useSettings();
+  const saved = data?.extra_prompt ?? "";
+  const [draft, setDraft] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  // While the query is loading, keep the textarea empty rather than flashing a stale draft.
+  const value = draft ?? saved;
+  const dirty = draft !== null && draft !== saved;
+  const disabled = isLoading || save.isPending;
+  const preview = githubPrExportPrompt({
+    repo: `${owner}/${repo}`,
+    prNumber: PREVIEW_SAMPLE_PR_NUMBER,
+    language: settings?.workflowContractLanguage,
+    extraPrompt: value,
+  });
+
+  // Drop local edits once the server value matches them (after a successful save/clear) so the
+  // next remote change from another tab is not masked by a stuck draft.
+  useEffect(() => {
+    if (draft !== null && draft === saved) setDraft(null);
+  }, [draft, saved]);
+
+  return (
+    <section
+      data-debug-component="GithubPrExportExtraPromptSection"
+      className="mt-8"
+    >
+      <div className="flex max-w-2xl items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-medium">
+            Create PR on GitHub — additional prompt
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Optional repository-specific instructions appended to the default
+            Create PR on GitHub agent prompt. Leave empty to use only the
+            default. The default template itself is not editable here.
+          </p>
+        </div>
+        <button
+          type="button"
+          className={cn(promptPreviewLinkClasses, "shrink-0 pt-0.5")}
+          onClick={() => setPreviewOpen(true)}
+        >
+          Preview prompt
+        </button>
+      </div>
+      <label className="mt-3 flex flex-col gap-1 text-sm">
+        <span className="text-xs font-medium text-muted-foreground">
+          Additional prompt
+        </span>
+        <textarea
+          aria-label="Additional Create PR on GitHub prompt"
+          className="min-h-32 w-full max-w-2xl rounded-md border bg-background px-3 py-2 font-mono text-sm disabled:opacity-50"
+          value={value}
+          disabled={disabled}
+          placeholder="e.g. Prefer type/short-slug branch names. Fill the team PR template sections carefully."
+          onChange={(e) => setDraft(e.target.value)}
+        />
+      </label>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          disabled={disabled || !dirty}
+          onClick={() => save.mutate(value)}
+        >
+          {save.isPending ? "Saving…" : "Save"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={disabled || (value === "" && saved === "")}
+          onClick={() => {
+            setDraft("");
+            save.mutate(null);
+          }}
+        >
+          Clear
+        </Button>
+      </div>
+      {save.error ? (
+        <p className="mt-2 text-sm text-destructive">{String(save.error)}</p>
+      ) : null}
+
+      {previewOpen ? (
+        <GithubPrExportPromptPreviewDialog
+          content={preview}
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+// Read-only composed prompt dialog. Mirrors workflows-page SystemPromptDialog chrome so the
+// preview feels the same as opening a workflow system prompt.
+function GithubPrExportPromptPreviewDialog({
+  content,
+  onClose,
+}: {
+  content: string;
+  onClose: () => void;
+}) {
+  const title = "Create PR on GitHub prompt preview";
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const backdropDismiss = useBackdropDismiss(onClose);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    dialogRef.current
+      ?.querySelector<HTMLElement>("[data-dialog-initial-focus]")
+      ?.focus();
+    return () => previouslyFocused?.focus();
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"
+      {...backdropDismiss}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Escape") onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        data-debug-component="GithubPrExportPromptPreviewDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="flex w-full max-w-4xl flex-col rounded-lg border bg-background shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(event) => trapDialogFocus(event, event.currentTarget)}
+      >
+        <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold">{title}</h2>
+            <p className="text-xs text-muted-foreground">
+              Default template plus this repository&apos;s additional prompt,
+              using sample PR #{PREVIEW_SAMPLE_PR_NUMBER}.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Close prompt preview"
+            data-dialog-initial-focus
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </Button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/40 p-4 font-mono text-xs leading-relaxed">
+            {content}
+          </pre>
+        </div>
+      </div>
+    </div>
   );
 }
 

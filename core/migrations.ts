@@ -1348,6 +1348,14 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  // Per-repo additional text appended to the "Create PR on GitHub" agent prompt (#2422). NULL /
+  // empty means the launch uses only the default template in core/workflow/github-pr-export-prompt.ts.
+  addColumn(
+    "078-repos-github-pr-export-extra-prompt",
+    "repos",
+    "github_pr_export_extra_prompt",
+    "TEXT",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

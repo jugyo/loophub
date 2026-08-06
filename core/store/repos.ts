@@ -22,6 +22,9 @@ export interface Repo {
   agent_runtime: string | null;
   agent_model: string | null;
   agent_effort: string | null;
+  // #2422: optional per-repo text appended to the "Create PR on GitHub" agent prompt. NULL/empty
+  // means the launch uses only the default template.
+  github_pr_export_extra_prompt: string | null;
 }
 
 // ---- repos ----
@@ -107,6 +110,18 @@ export function setRepoAgentConfig(
     `UPDATE repos SET agent_override = ?, agent_runtime = ?, agent_model = ?, agent_effort = ? WHERE id = ?`,
     [config.override ? 1 : 0, config.runtime, config.model, config.effort, id],
   );
+}
+
+// #2422: set or clear the repo's additional "Create PR on GitHub" prompt text. `text` of null
+// clears the setting so launches use only the default template.
+export function setRepoGithubPrExportExtraPrompt(
+  id: number,
+  text: string | null,
+) {
+  db.run(`UPDATE repos SET github_pr_export_extra_prompt = ? WHERE id = ?`, [
+    text,
+    id,
+  ]);
 }
 
 export function getRepoById(id: number): Repo | null {

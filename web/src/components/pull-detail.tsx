@@ -78,6 +78,7 @@ import {
   useSetPullCommentArchived,
   useSetPullState,
 } from "@/queries/pulls";
+import { useRepoGithubPrExportExtraPrompt } from "@/queries/repos";
 import { useSettings } from "@/queries/settings";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 import { githubPrExportPendingUntil } from "../../../core/github-pr-export-pending.ts";
@@ -637,6 +638,11 @@ function GithubPrAction({
   const { launchTerminal, launchFailed } = useTerminalLauncher();
   const { showError } = useToast();
   const { data: settings } = useSettings();
+  // #2422: optional per-repo extra text appended after the default export prompt.
+  const { data: extraPromptSetting } = useRepoGithubPrExportExtraPrompt(
+    owner,
+    repo,
+  );
 
   // #848: push local changes to the linked GitHub PR's branch. isPending drives the disabled +
   // spinner state so the click can't fire twice (AC4). #1861: the same mutation force-pushes when
@@ -756,6 +762,7 @@ function GithubPrAction({
             repo: `${owner}/${repo}`,
             prNumber: pull.number,
             language: settings?.workflowContractLanguage,
+            extraPrompt: extraPromptSetting?.extra_prompt ?? null,
           }),
         });
       }}

@@ -188,6 +188,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `repos.create` | procedure | repo、`repo.created` | path / default branch の検証 |
 | `repos.setArchived` / `setFavorite` / `setMergeMode` | procedure | setting、対応する `repo.*`、応答の read | — |
 | `repos.setAgentConfig` | procedure | setting、`repo.agent_config_changed` | 応答の `repoAgentConfigJSON`（`config.json` を読む） |
+| `repos.setGithubPrExportExtraPrompt` | procedure | setting、`repo.github_pr_export_extra_prompt_changed`、応答の read | — |
 | `repos.rename` | procedure | identity row、`repo.renamed` | worktree 一覧、dev lock の scan |
 | `repos.update` | store helper | repo fields、open PR の head SHA | path / branch 検証、SHA read |
 | `repos.remove` | procedure | repo と cascade 対象 row | filesystem は削除しない |

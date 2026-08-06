@@ -4,6 +4,8 @@ export interface GithubPrExportPromptInput {
   repo: string;
   prNumber: number;
   language?: unknown;
+  /** Optional per-repo text appended after the default template (#2422). */
+  extraPrompt?: string | null;
 }
 
 // "Create PR on GitHub" filing instructions injected directly into the launched agent (same
@@ -45,9 +47,37 @@ Steps:
 7. Report the GitHub PR URL and number (Draft) and the pushed branch name, then **stop**. Do not merge, review, or mark the GitHub PR ready.`;
 }
 
+/**
+ * Normalize optional per-repo extra prompt text: trim and treat empty as unset so launches stay on
+ * the default template only.
+ */
+export function normalizeGithubPrExportExtraPrompt(
+  value: string | null | undefined,
+): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * Compose the prompt actually injected into the agent: default template, optionally followed by
+ * the repository's additional instructions (#2422). The extra text is appended, never a replacement.
+ */
+export function composeGithubPrExportPrompt(
+  base: string,
+  extraPrompt?: string | null,
+): string {
+  const extra = normalizeGithubPrExportExtraPrompt(extraPrompt);
+  if (!extra) return base;
+  return `${base}\n\n${extra}`;
+}
+
 /** Return the "Create PR on GitHub" filing prompt, falling back to English for unknown settings. */
 export function githubPrExportPrompt(input: GithubPrExportPromptInput): string {
   const language: WorkflowContractLanguage =
     input.language === "ja" ? "ja" : "en";
-  return render(language, input.repo, input.prNumber);
+  return composeGithubPrExportPrompt(
+    render(language, input.repo, input.prNumber),
+    input.extraPrompt,
+  );
 }

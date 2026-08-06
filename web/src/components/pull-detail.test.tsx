@@ -2220,6 +2220,31 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(opts.prompt).not.toContain("/lh-create-github-pr");
   });
 
+  it("appends the repository extra prompt when Create PR on GitHub launches (#2422)", async () => {
+    renderDetailWithPull(
+      { merge_mode: "github_pr", github_pull: null },
+      {
+        "repos/githubPrExportExtraPrompt": () => ({
+          extra_prompt: "Prefer type/short-slug branch names.",
+        }),
+      },
+    );
+    const button = await screen.findByRole("button", {
+      name: /Create PR on GitHub/i,
+    });
+    // Wait for the extra-prompt query to resolve before launching so the click sees the text.
+    await waitFor(() => {
+      expect(rpcCall("repos/githubPrExportExtraPrompt")).toBeTruthy();
+    });
+    fireEvent.click(button);
+    const opts = launchTerminal.mock.calls[0][0];
+    expect(opts.prompt).toContain("lh pr create-github-pr 30 --repo me/proj");
+    expect(opts.prompt).toContain("Prefer type/short-slug branch names.");
+    expect(opts.prompt.endsWith("Prefer type/short-slug branch names.")).toBe(
+      true,
+    );
+  });
+
   it("drops the Create action once exported and links to GitHub from the sidebar section (#2035)", async () => {
     renderDetailWithPull({
       merge_mode: "github_pr",

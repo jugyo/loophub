@@ -109,6 +109,12 @@ export interface RepoAgentConfigWire {
   };
 }
 
+// #2422: per-repo additional text for the "Create PR on GitHub" agent prompt. Null means unset —
+// launches use only the default template.
+export interface RepoGithubPrExportExtraPromptWire {
+  extra_prompt: string | null;
+}
+
 export interface WorkspaceWire {
   branch: string;
   created_at: string;
@@ -161,6 +167,14 @@ export function effectiveRepoAgentConfigFor(r: S.Repo): EffectiveAgentConfig {
     model: r.agent_model ?? null,
     effort: r.agent_effort ?? null,
   });
+}
+
+export function repoGithubPrExportExtraPromptJSON(
+  r: S.Repo,
+): RepoGithubPrExportExtraPromptWire {
+  const raw = r.github_pr_export_extra_prompt;
+  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  return { extra_prompt: trimmed === "" ? null : trimmed };
 }
 
 export function repoAgentConfigJSON(r: S.Repo): RepoAgentConfigWire {

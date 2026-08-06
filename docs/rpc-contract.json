@@ -346,6 +346,57 @@
       }
     },
     {
+      "name": "repos/githubPrExportExtraPrompt",
+      "description": "Per-repo additional text appended to the Create PR on GitHub agent prompt; null when unset (#2422).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "repos/setGithubPrExportExtraPrompt",
+      "description": "Set or clear the repo's additional Create PR on GitHub prompt text. Empty string or null clears it (#2422).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "extra_prompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "extra_prompt"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "settings/get",
       "description": "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, theme, workflowContractLanguage).",
       "params": {
@@ -1375,26 +1426,39 @@
     },
     {
       "name": "issues/refKinds",
-      "description": "Classify referenced numbers as issue or pull. Numbers absent from the repo are omitted.",
+      "description": "Classify referenced numbers as issue or pull, per repo they point at. Unregistered repos and numbers absent from a repo are omitted.",
       "params": {
         "type": "object",
         "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "numbers": {
+          "targets": {
             "type": "array",
+            "maxItems": 50,
             "items": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "maxItems": 200
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "numbers": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxItems": 200
+                }
+              },
+              "required": [
+                "repo",
+                "numbers"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
-          "repo",
-          "numbers"
+          "targets"
         ],
         "additionalProperties": false
       },
@@ -2533,6 +2597,35 @@
           },
           "force": {
             "type": "boolean"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/unlinkGithubPull",
+      "description": "Remove the GitHub PR link recorded on a loophub PR (#2384), so a wrong link can be corrected or a GitHub PR created again. Only the LoopHub-side link (and its cached GitHub status) is dropped; the GitHub PR itself is untouched. 409 when the PR has no linked GitHub PR.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
           },
           "session_id": {
             "type": "string",

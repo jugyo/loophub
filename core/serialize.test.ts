@@ -535,6 +535,7 @@ describe("pure row -> wire serializers", () => {
       agent_runtime: null,
       agent_model: null,
       agent_effort: null,
+      github_pr_export_extra_prompt: null,
     };
     expect(serialize.repoJSON(repo)).toEqual({
       id: 1,
