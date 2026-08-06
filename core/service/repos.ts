@@ -7,6 +7,7 @@ import {
   branchExists,
   defaultBranch,
   isGitRepo,
+  localBranchRef,
   remoteUrl,
   revParse,
   worktreeListChecked,
@@ -372,7 +373,7 @@ export const repos = {
       for (const p of S.listOpenPullsForRepo(r.id)) {
         headShas.push({
           issueId: p.issue_id,
-          sha: await revParse(resolvedPath, p.head_ref),
+          sha: await revParse(resolvedPath, localBranchRef(p.head_ref)),
         });
       }
     }

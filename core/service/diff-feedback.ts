@@ -20,6 +20,7 @@ import {
   type DiffFile,
   diffFilesBetween,
   fileAtRef,
+  localBranchRef,
   revParse,
 } from "../git.ts";
 import { resolvePullDiffBaseSha } from "../pull-base.ts";
@@ -56,7 +57,7 @@ async function currentPair(
   // Same pair as pulls.diff: live three-dot merge-base + head, not the fork-point base_sha.
   const [baseSha, headSha] = await Promise.all([
     resolvePullDiffBaseSha(repoPath, pull),
-    revParse(repoPath, pull.head_ref),
+    revParse(repoPath, localBranchRef(pull.head_ref)),
   ]);
   return baseSha && headSha ? { baseSha, headSha } : null;
 }

@@ -1,5 +1,5 @@
 import { ServiceError } from "./errors.ts";
-import { git, hasEffectiveDiff, mergePreview } from "./git.ts";
+import { git, hasEffectiveDiff, localBranchRef, mergePreview } from "./git.ts";
 import {
   evaluateWorkflowSteps,
   type WorkflowLatestReviewState,
@@ -41,7 +41,7 @@ async function worktreeHeadOptional(worktree: string): Promise<string | null> {
 
 async function isHeadAheadOfBase(
   worktree: string,
-  baseBranch: string,
+  baseRev: string,
   head: string | null,
 ): Promise<boolean> {
   if (!head) return false;
@@ -49,7 +49,7 @@ async function isHeadAheadOfBase(
     const result = await git(worktree, [
       "rev-list",
       "--count",
-      `${baseBranch}..${head}`,
+      `${baseRev}..${head}`,
     ]);
     return result.code === 0 && Number(result.stdout.trim()) > 0;
   } catch {
@@ -59,20 +59,20 @@ async function isHeadAheadOfBase(
 
 async function conflictsWithBase(
   worktree: string,
-  baseBranch: string,
+  baseRev: string,
   head: string | null,
 ): Promise<boolean> {
   if (!head) return false;
-  return (await mergePreview(worktree, baseBranch, head)).conflict;
+  return (await mergePreview(worktree, baseRev, head)).conflict;
 }
 
 async function hasEffectiveDiffFromBase(
   worktree: string,
-  baseBranch: string,
+  baseRev: string,
   head: string | null,
 ): Promise<boolean> {
   if (!head) return false;
-  return hasEffectiveDiff(worktree, baseBranch, head);
+  return hasEffectiveDiff(worktree, baseRev, head);
 }
 
 export async function isHeadAheadOfReview(
@@ -101,16 +101,19 @@ export async function workflowRunProgress(input: {
   latestReview: WorkflowLatestReviewState | null;
 }): Promise<WorkflowRunProgress> {
   const currentHead = await worktreeHeadOptional(input.worktree);
+  // `baseBranch` is a local branch name; qualify it once so none of the observations below let git
+  // resolve a bare name that a `$GIT_DIR/<name>` file, tag or remote-tracking ref could shadow (#12).
+  const baseRev = localBranchRef(input.baseBranch);
   const [
     headAheadOfBase,
     headAheadOfLatestReview,
     effectiveDiff,
     mergeConflict,
   ] = await Promise.all([
-    isHeadAheadOfBase(input.worktree, input.baseBranch, currentHead),
+    isHeadAheadOfBase(input.worktree, baseRev, currentHead),
     isHeadAheadOfReview(input.worktree, input.latestReview, currentHead),
-    hasEffectiveDiffFromBase(input.worktree, input.baseBranch, currentHead),
-    conflictsWithBase(input.worktree, input.baseBranch, currentHead),
+    hasEffectiveDiffFromBase(input.worktree, baseRev, currentHead),
+    conflictsWithBase(input.worktree, baseRev, currentHead),
   ]);
   return {
     currentHead,
@@ -135,7 +138,13 @@ export async function pinnedBaseSha(
   baseBranch: string,
   headSha: string,
 ): Promise<string> {
-  const result = await git(worktree, ["merge-base", baseBranch, headSha]);
+  // `baseBranch` is a local branch name, so qualify it before git resolves it — a bare name can be
+  // shadowed by a `$GIT_DIR/<name>` file, a tag or a remote-tracking ref (#12).
+  const result = await git(worktree, [
+    "merge-base",
+    localBranchRef(baseBranch),
+    headSha,
+  ]);
   const baseSha = result.stdout.trim();
   if (result.code !== 0 || !baseSha) {
     throw new ServiceError(

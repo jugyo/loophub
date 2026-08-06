@@ -7,6 +7,7 @@
 import {
   commitLog,
   commitsAhead,
+  localBranchRef,
   pushedCommitShas,
   remoteUrl,
   revParse,
@@ -82,8 +83,8 @@ async function pullStatusFields(
 ): Promise<PullStatusFields> {
   const p = S.getPull(row.id)!;
   const [headSha, baseSha, forkBaseSha] = await Promise.all([
-    revParse(repo.local_path, p.head_ref),
-    revParse(repo.local_path, p.base_ref),
+    revParse(repo.local_path, localBranchRef(p.head_ref)),
+    revParse(repo.local_path, localBranchRef(p.base_ref)),
     resolvePullBaseSha(repo.local_path, p),
   ]);
   // Prefer the live Git head for both display state and merge gate. The stored
@@ -362,8 +363,8 @@ export async function pullJSON(
     ? status.headSha && status.baseSha
       ? await commitLog(
           repo.local_path,
-          p.base_ref,
-          p.head_ref,
+          localBranchRef(p.base_ref),
+          localBranchRef(p.head_ref),
           100,
           githubBaseSha ? [githubBaseSha] : [],
         )
@@ -376,8 +377,8 @@ export async function pullJSON(
     mergeFields.github_pull?.pushed_sha
       ? await pushedCommitShas(
           repo.local_path,
-          p.base_ref,
-          p.head_ref,
+          localBranchRef(p.base_ref),
+          localBranchRef(p.head_ref),
           mergeFields.github_pull.pushed_sha,
         )
       : null;

@@ -1,5 +1,5 @@
 import { db } from "./db.ts";
-import { revParse } from "./git.ts";
+import { localBranchRef, revParse } from "./git.ts";
 import * as S from "./store.ts";
 
 // open PR の head ref を走査し、前回記録した sha から動いていれば
@@ -8,7 +8,7 @@ import * as S from "./store.ts";
 export async function sweepPullUpdates(): Promise<any[]> {
   const emitted: any[] = [];
   for (const p of S.openPulls()) {
-    const cur = await revParse(p.local_path, p.head_ref);
+    const cur = await revParse(p.local_path, localBranchRef(p.head_ref));
     if (!cur) continue; // ブランチが見つからない場合はスキップ
     if (!p.head_sha) {
       S.setHeadSha(p.issue_id, cur);
