@@ -408,6 +408,66 @@ test("diff excludes base-side files after merging an advanced base into head", a
   rmSync(plainPath, { recursive: true, force: true });
 });
 
+// #2420: UI Files changed uses pulls.files. When local main lags and the PR merges
+// origin/main, both files() and diff() must drop the remote-only base files.
+test("files and diff exclude origin/main-only files when local base lags", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-files-origin-base-"));
+  const g = (args: string[]) => gitAt(path, args);
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base"]);
+  const localFork = g(["rev-parse", "main"]);
+  g(["checkout", "-qb", "feature"]);
+  writeFileSync(join(path, "feature-only.txt"), "from pr\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "pr change"]);
+  g(["checkout", "-q", "main"]);
+
+  writeFileSync(join(path, "base-only.txt"), "from origin main\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "advance origin/main"]);
+  const originMain = g(["rev-parse", "main"]);
+  g(["update-ref", "refs/remotes/origin/main", originMain]);
+  // Hard-reset local main so the working tree matches the stale tip.
+  g(["reset", "--hard", localFork]);
+
+  g(["checkout", "-q", "feature"]);
+  g([
+    "merge",
+    "-q",
+    "refs/remotes/origin/main",
+    "-m",
+    "merge origin/main into feature",
+  ]);
+  const headSha = g(["rev-parse", "HEAD"]);
+
+  await svc.repos.create({ path, name: "me/files-origin-base" });
+  const pull = await svc.pulls.create("me/files-origin-base", {
+    title: "stale local base",
+    head: "feature",
+    base: "main",
+  });
+
+  const files = await svc.pulls.files("me/files-origin-base", pull.number);
+  expect(files.map((f) => f.headFilename ?? f.filename).sort()).toEqual([
+    "feature-only.txt",
+  ]);
+  expect(
+    files.some((f) => (f.headFilename ?? f.filename) === "base-only.txt"),
+  ).toBe(false);
+
+  const diff = await svc.pulls.diff("me/files-origin-base", pull.number);
+  expect(diff.base_sha).toBe(originMain);
+  expect(diff.head_sha).toBe(headSha);
+  expect(diff.files.map((f) => f.path).sort()).toEqual(["feature-only.txt"]);
+  expect(diff.files.some((f) => f.path === "base-only.txt")).toBe(false);
+
+  rmSync(path, { recursive: true, force: true });
+});
+
 test("commitFiles rejects a SHA outside the pull request's base..head range", async () => {
   await expect(
     svc.pulls.commitFiles("me/commit-files", commitFilesPullNumber, outsideSha),

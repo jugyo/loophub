@@ -325,11 +325,15 @@ export const pulls = {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
-    return diffFiles(
-      r.local_path,
-      localBranchRef(p.base_ref),
-      localBranchRef(p.head_ref),
-    );
+    // Same live three-dot base as pulls.diff (see resolvePullDiffBaseSha). Using base_ref...head
+    // alone misses origin/<base_ref> when the local base branch lags behind a remote merge.
+    const [baseSha, headSha] = await Promise.all([
+      resolvePullDiffBaseSha(r.local_path, p),
+      revParse(r.local_path, localBranchRef(p.head_ref)),
+    ]);
+    if (!baseSha || !headSha)
+      throw new ServiceError(422, "pull request diff is unavailable");
+    return diffFilesBetween(r.local_path, baseSha, headSha);
   },
 
   async diff(
@@ -347,8 +351,10 @@ export const pulls = {
         headRef: p.head_ref,
         prNumber: row.number,
       }) ?? r.local_path;
-    // Live three-dot base (merge-base of base_ref and head), not the stored fork point.
-    // After base advances and is merged into head, fork-point..head includes base-side files.
+    // Live three-dot base (preferred base tip's merge-base with head), not the stored fork
+    // point. After base advances and is merged into head — including via origin/<base_ref>
+    // while the local base branch still lags — fork-point..head / stale-local...head includes
+    // base-side files that are not this PR's changes.
     const [baseSha, headSha] = await Promise.all([
       resolvePullDiffBaseSha(r.local_path, p),
       revParse(r.local_path, localBranchRef(p.head_ref)),

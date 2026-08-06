@@ -182,6 +182,21 @@ export async function mergeBase(
   return r.stdout.trim() || null;
 }
 
+/** True when `ancestor` is an ancestor of `descendant` (inclusive). */
+export async function isAncestor(
+  repoPath: string,
+  ancestor: string,
+  descendant: string,
+): Promise<boolean> {
+  const r = await git(repoPath, [
+    "merge-base",
+    "--is-ancestor",
+    ancestor,
+    descendant,
+  ]);
+  return r.code === 0;
+}
+
 export async function defaultBranch(repoPath: string): Promise<string> {
   // Prefer remote default (origin/HEAD) so feature-branch checkouts do not win at registration.
   const origin = await git(repoPath, [

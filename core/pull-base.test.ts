@@ -141,3 +141,63 @@ test("diff base follows the live merge-base after base is merged into head", asy
 
   rmSync(path, { recursive: true, force: true });
 });
+
+// #2420: Agents often merge origin/<base> while the local base branch still lags. The live
+// three-dot base must follow the remote tip that is already in head, not the stale local tip.
+test("diff base prefers origin/<base> when local base lags after a remote merge", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-diff-origin-base-"));
+  const g = (args: string[]): string => {
+    const result = spawnSync("git", ["-C", path, ...args], {
+      encoding: "utf8",
+    });
+    if (result.status !== 0) throw new Error(result.stderr);
+    return result.stdout.trim();
+  };
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base"]);
+  const localFork = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "-b", "feature"]);
+  writeFileSync(join(path, "feature-only.txt"), "from pr\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "feature"]);
+  g(["checkout", "-q", "main"]);
+
+  // Advance only the remote-tracking base; leave local main at the fork.
+  writeFileSync(join(path, "base-only.txt"), "from origin main\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "advance origin/main with unrelated file"]);
+  const originMain = g(["rev-parse", "main"]);
+  g(["update-ref", "refs/remotes/origin/main", originMain]);
+  // Hard-reset local main so the working tree matches the stale tip.
+  g(["reset", "--hard", localFork]);
+
+  g(["checkout", "-q", "feature"]);
+  g([
+    "merge",
+    "-q",
+    "refs/remotes/origin/main",
+    "-m",
+    "merge origin/main into feature",
+  ]);
+
+  await svc.repos.create({ path, name: "me/diff-origin-base" });
+  const created = await svc.pulls.create("me/diff-origin-base", {
+    title: "origin base lag",
+    head: "feature",
+    base: "main",
+  });
+  const repo = S.getRepo("me", "diff-origin-base")!;
+  const issue = S.getIssue(repo.id, created.number)!;
+  const pull = S.getPull(issue.id)!;
+
+  expect(g(["rev-parse", "main"])).toBe(localFork);
+  expect(g(["rev-parse", "refs/remotes/origin/main"])).toBe(originMain);
+  expect(await pullBase.resolvePullBaseSha(path, pull)).toBe(localFork);
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(originMain);
+
+  rmSync(path, { recursive: true, force: true });
+});
