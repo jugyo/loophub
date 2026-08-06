@@ -1,13 +1,37 @@
 import { db, now } from "../db.ts";
 import type { MergeableState } from "../mergeable.ts";
 
-export type NotificationKind =
-  | "merge_ready"
-  | "over_budget"
-  | "human_attention"
-  | "agent_comment";
+// Single source of truth for notification kinds. TypeScript, store inserts, and service
+// assertKind all derive from this list — SQLite no longer CHECKs kind so new values only need
+// a code change (plus any UI/CLI labels that surface them).
+export const NOTIFICATION_KINDS = [
+  "merge_ready",
+  "over_budget",
+  "human_attention",
+  "agent_comment",
+] as const;
+
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export type NotificationSeverity = "info" | "warning";
 export type NotificationResourceKind = "issue" | "pull" | "repo";
+
+const NOTIFICATION_KIND_SET: ReadonlySet<string> = new Set(NOTIFICATION_KINDS);
+
+export function isNotificationKind(value: unknown): value is NotificationKind {
+  return typeof value === "string" && NOTIFICATION_KIND_SET.has(value);
+}
+
+/** Oxford-comma list used in validation error messages (service + store). */
+export function notificationKindAllowlistMessage(): string {
+  // NOTIFICATION_KINDS is non-empty by construction; slice leaves every entry but the last
+  // joined with commas, then "or <last>" for the same phrasing assertKind always used.
+  return `${NOTIFICATION_KINDS.slice(0, -1).join(", ")}, or ${NOTIFICATION_KINDS[NOTIFICATION_KINDS.length - 1]}`;
+}
+
+export function assertNotificationKind(value: unknown): NotificationKind {
+  if (isNotificationKind(value)) return value;
+  throw new Error(`kind must be ${notificationKindAllowlistMessage()}`);
+}
 
 export interface NotificationInput {
   repoId: number;
@@ -42,6 +66,10 @@ export interface NotificationRow {
 export function createNotification(
   input: NotificationInput,
 ): NotificationRow | null {
+  // Runtime guard for every INSERT path (service CLI, merge-ready sweep, agent comments).
+  // TypeScript already narrows NotificationKind; this covers casts and keeps store/service
+  // on the same allowlist after the SQLite kind CHECK was removed.
+  assertNotificationKind(input.kind);
   const row = db
     .query(
       `INSERT OR IGNORE INTO notifications
