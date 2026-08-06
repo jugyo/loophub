@@ -61,6 +61,7 @@ import { workflowMessages } from "../workflow/messages.ts";
 import {
   inlineText,
   parentUserPrompt,
+  reworkInstruction,
   stepContractForLaunch,
   workflowStepPrompt,
 } from "../workflow/prompts.ts";
@@ -180,7 +181,7 @@ export type WorkflowLaunchStepResult = {
   head_sha?: string;
   base_sha?: string;
   // The ordered herdr calls that place and start the child agent. Structural (not a reference to
-  // HerdrLaunchPlan) because it crosses the JSON-RPC boundary to `lh workflow launch-step`, which
+  // HerdrLaunchPlan) because it crosses the JSON-RPC boundary to `lh workflow launch`, which
   // hands it straight to executeHerdrLaunchPlan.
   herdr: {
     sessionName: string;
@@ -321,6 +322,12 @@ export type WorkflowDeliverResult = {
   pane_id: string;
   session_id: string;
   text: string;
+};
+
+export type WorkflowReworkResult = {
+  run: WorkflowRunUpdateResult["run"];
+  review: number;
+  delivered: WorkflowDeliverResult;
 };
 
 export type WorkflowStepInputResult = {
@@ -990,8 +997,10 @@ async function observeWorkflowRunState(
 }
 
 // A Web surface may increase the limit only where `increaseCostLimitForHuman` would succeed: the run
-// has not ended, is held on the current limit's cost-exceeded event, and still has an interrupted
-// step to resume.
+// has not ended and is held on the current limit's cost-exceeded event. Whether a child is still
+// active is deliberately not part of it: the raise releases the hold, and a hold established while
+// no child could be resolved (`cost-hold` writes it before it resolves the target) would otherwise
+// be one nothing can lift.
 function costLimitIncreaseAvailable(
   repo: S.Repo,
   run: S.WorkflowRunRow,
@@ -1002,7 +1011,6 @@ function costLimitIncreaseAvailable(
     run.needs_human_reason !== null &&
     run.cost_increment_usd !== null &&
     run.cost_limit_usd !== null &&
-    (run.active_step === "execute" || run.active_step === "verify") &&
     S.hasWorkflowRunCostExceededEvent(repo.id, run.id, run.cost_limit_usd)
   );
 }
@@ -1135,6 +1143,9 @@ function updateRunLifecycle(
 
 // Explicit, human-decided budget increase by the run's persisted fixed increment. The guards keep
 // the operation an acknowledgement of one observed cost-exceeded event rather than a blanket raise.
+// Raising the limit is also the human's decision to continue, so it releases the hold `cost-hold`
+// established in the same transaction: a raised limit that still reads as "waiting for a human"
+// would stop the run on a question nobody is left to answer.
 function increaseRunCostLimit(
   repo: S.Repo,
   run: S.WorkflowRunRow,
@@ -1180,10 +1191,9 @@ function increaseRunCostLimit(
         "Workflow cost limit was not increased because its state changed",
       );
     }
-    // The worker turns this event into the parent's next instruction. It carries the interrupted
-    // step so the wake is legible in run history even though reconciliation re-observes the run row. The
-    // raised limit and this wake commit together: a wake without the raise would resume a run that
-    // is still over budget.
+    // The raised limit, the released hold and both events commit together: a raise that left the
+    // hold standing would stop the run on a question nobody is left to answer, and a release
+    // nobody is told about would leave the parent waiting for a ping that never comes.
     S.emitWorkflowEvent(
       repo.id,
       "workflow_run.cost_limit_increased",
@@ -1197,6 +1207,21 @@ function increaseRunCostLimit(
         previous_limit_usd: applied.previous_limit_usd,
         current_limit_usd: applied.current_limit_usd,
       },
+    );
+    updateRunLifecycle(
+      run,
+      {
+        needsHumanReason: null,
+        // Verify must review the current HEAD with a fresh child, so the interrupted verifier is
+        // dropped. Execute continues in the same pane, so its active session is preserved
+        // (omitted from the patch): clearing it made a later observation see no active Execute and
+        // launch a duplicate executor after a cost-hold release (#1872).
+        ...(run.active_step === "verify"
+          ? { activeStep: null, activeSessionId: null }
+          : {}),
+      },
+      "resume_after_human",
+      sessionId,
     );
     return applied;
   });
@@ -1438,42 +1463,8 @@ export const workflowRuns = {
     });
   },
 
-  async advanceToVerify(
-    name: string,
-    input: { run: number },
-    sessionId?: string | null,
-  ): Promise<WorkflowRunUpdateResult> {
-    const { repo, run } = lifecycleRun(name, input.run, sessionId);
-    assertAutomaticProgressAllowed(run);
-    if (run.current_step !== "execute") {
-      throw new ServiceError(
-        409,
-        `Workflow run cannot advance to Verify from ${run.current_step}`,
-      );
-    }
-    const progress = await workflowRunProgress(
-      repo,
-      run,
-      workflowRunEventProjection(run),
-    );
-    if (!progress.steps.execute.complete) {
-      throw new ServiceError(
-        409,
-        `Workflow Execute is incomplete: ${progress.steps.execute.missing.join("; ")}`,
-      );
-    }
-    return updateRunLifecycle(
-      run,
-      {
-        currentStep: "verify",
-        activeStep: null,
-        activeSessionId: null,
-      },
-      "advance_to_verify",
-      sessionId,
-    );
-  },
-
+  // The hold itself, established from inside `cost-hold` and nowhere else: no command hands it to
+  // the parent, and the human releases it by raising the limit (`increaseCostLimitForHuman`).
   awaitHuman(
     name: string,
     input: { run: number; reason: string },
@@ -1492,61 +1483,6 @@ export const workflowRuns = {
       run,
       { needsHumanReason: reason },
       "await_human",
-      sessionId,
-    );
-  },
-
-  async resumeAfterHuman(
-    name: string,
-    input: { run: number; step: string },
-    sessionId?: string | null,
-  ): Promise<WorkflowRunUpdateResult> {
-    const { repo, run } = lifecycleRun(name, input.run, sessionId);
-    assertRunNotEnded(run);
-    if (run.needs_human_reason === null) {
-      throw new ServiceError(409, "Workflow run is not waiting for a human");
-    }
-    if (
-      run.cost_limit_usd !== null &&
-      S.hasWorkflowRunCostExceededEvent(repo.id, run.id, run.cost_limit_usd)
-    ) {
-      throw new ServiceError(
-        409,
-        "Workflow cost limit must be increased before resuming",
-      );
-    }
-    const step = workflowStep(input.step);
-    if (step === "verify") {
-      // Resuming at Verify only needs something to review (head ahead of base) — a human may
-      // deliberately re-verify the same head, so the execute "advanced past review" condition
-      // does not apply here.
-      const progress = await workflowRunProgress(
-        repo,
-        run,
-        workflowRunEventProjection(run),
-      );
-      if (!progress.headAheadOfBase) {
-        throw new ServiceError(
-          409,
-          "Workflow cannot resume at Verify: head equals base",
-        );
-      }
-    }
-    return updateRunLifecycle(
-      run,
-      {
-        currentStep: step,
-        reworkCount: 0,
-        needsHumanReason: null,
-        // Verify must review the current HEAD with a fresh child, so drop the interrupted session.
-        // Execute continues in the same pane, so its active session is preserved (omitted from the
-        // patch): clearing it made `next` see no active Execute and launch a duplicate executor
-        // after a cost-hold resume (#1872).
-        ...(step === "verify"
-          ? { activeStep: null, activeSessionId: null }
-          : {}),
-      },
-      "resume_after_human",
       sessionId,
     );
   },
@@ -1717,17 +1653,8 @@ export const workflowRuns = {
     };
   },
 
-  increaseCostLimit(
-    name: string,
-    input: { run: number; expectedLimitUsd: number },
-    sessionId?: string | null,
-  ): WorkflowRunCostLimitIncreaseResult {
-    const { repo, run } = lifecycleRun(name, input.run, sessionId);
-    return increaseRunCostLimit(repo, run, input, sessionId);
-  },
-
-  // Web entry point for the same explicit increase (#1828). The parent session cannot be the actor
-  // here, so this path authorizes the human web session instead; every state guard is shared.
+  // Raising the limit is a human decision, so the Web session is the only actor for it: there is
+  // no CLI entry point an agent could reach (#1828).
   increaseCostLimitForHuman(
     name: string,
     input: { run: number; expectedLimitUsd: number },
@@ -1737,20 +1664,22 @@ export const workflowRuns = {
       throw new ServiceError(403, "Human Workflow action requires a session");
     }
     const { repo, run } = runInRepo(name, input.run);
-    if (run.active_step !== "execute" && run.active_step !== "verify") {
-      throw new ServiceError(
-        409,
-        "Workflow run has no interrupted step to resume after a cost limit increase",
-      );
-    }
     return increaseRunCostLimit(repo, run, input, sessionId);
   },
 
-  async requestRework(
+  /**
+   * Send the run back to Execute for one round of rework: count it, return the phase, and hand the
+   * review over — one operation, because these three were never useful apart.
+   *
+   * The delivered line is fixed to the review pointer (`orchestrator: address review <id>`), so no
+   * caller gets to summarize or interpret the findings on the way to Execute. The rework limit is
+   * a resource boundary owned by core, so this is also where a run over it is refused.
+   */
+  async rework(
     name: string,
-    input: { run: number },
+    input: { run: number; review: number },
     sessionId?: string | null,
-  ): Promise<WorkflowRunUpdateResult> {
+  ): Promise<WorkflowReworkResult> {
     const { repo, run } = lifecycleRun(name, input.run, sessionId);
     assertAutomaticProgressAllowed(run);
     if (run.current_step !== "verify") {
@@ -1770,10 +1699,19 @@ export const workflowRuns = {
         `Workflow Verify is incomplete: ${progress.steps.verify.missing.join("; ")}`,
       );
     }
-    if (progress.steps.verify.latest_review?.event !== "request_changes") {
+    const latestReview = progress.steps.verify.latest_review;
+    if (latestReview?.event !== "request_changes") {
       throw new ServiceError(
         409,
         "Workflow Verify review does not request changes",
+      );
+    }
+    // The review the run is sent back for is the one Verify just submitted. Accepting any other id
+    // would deliver a pointer to work this rework was never counted against.
+    if (latestReview.id !== input.review) {
+      throw new ServiceError(
+        409,
+        `review ${input.review} is not the run's latest Verify review (${latestReview.id})`,
       );
     }
     if (run.rework_count >= WORKFLOW_REWORK_LIMIT) {
@@ -1781,22 +1719,41 @@ export const workflowRuns = {
     }
     // The Execute child that will address the review is still live in its pane, so hand
     // `active_step` straight back to it instead of clearing it first. Clearing left a window where
-    // `current_step` was already `execute` while `active_step` was null: a worker dispatch landing
-    // in that window reads "Execute has not started" and launches a second Execute child into the
-    // same worktree (#2150). The `deliver` that follows re-activates the same session.
-    const executeSessionId =
-      workflowStepSessionIds(run.step_sessions_json, "execute").at(-1) ?? null;
-    return updateRunLifecycle(
+    // `current_step` was already `execute` while `active_step` was null: an observation landing in
+    // that window reads "Execute has not started" and launches a second Execute child into the
+    // same worktree (#2150). The delivery below re-activates the same session.
+    const executeSessionId = workflowStepSessionIds(
+      run.step_sessions_json,
+      "execute",
+    ).at(-1);
+    // Resolved before anything is written: a rework the run has no Execute child to hand the
+    // review to is refused whole, rather than counted against a delivery that cannot happen.
+    if (!executeSessionId) {
+      throw new ServiceError(
+        404,
+        `No Execute session found for Workflow run #${run.id}`,
+      );
+    }
+    const updated = updateRunLifecycle(
       run,
       {
         currentStep: "execute",
         reworkCount: run.rework_count + 1,
-        activeStep: executeSessionId ? "execute" : null,
+        activeStep: "execute",
         activeSessionId: executeSessionId,
       },
       "request_rework",
       sessionId,
     );
+    // Injection is a pane side effect, so it stays outside the transaction above and after it: a
+    // failed delivery leaves a counted rework and a visible error for a human, never a silently
+    // uncounted one.
+    const delivered = await workflowRuns.deliver(
+      name,
+      { run: run.id, text: reworkInstruction(input.review) },
+      sessionId,
+    );
+    return { run: updated.run, review: input.review, delivered };
   },
 
   async launchStep(
@@ -1824,6 +1781,27 @@ export const workflowRuns = {
     assertParentActor(run, sessionId);
     const step = workflowStep(input.step);
     assertNoLiveExecuteChild(run, step);
+    // Starting a verifier needs something for it to review, and the launch that moves the run out
+    // of Execute carries the fuller condition a separate advance transition used to check: HEAD has
+    // also advanced past the last review. A launch taken while the run is already at Verify is a
+    // deliberate re-verification of the same head, so it only has to have a head to review.
+    if (step === "verify") {
+      const progress = await workflowRunProgress(
+        r,
+        run,
+        workflowRunEventProjection(run),
+      );
+      if (run.current_step === "execute") {
+        if (!progress.steps.execute.complete) {
+          throw new ServiceError(
+            409,
+            `Workflow Execute is incomplete: ${progress.steps.execute.missing.join("; ")}`,
+          );
+        }
+      } else if (!progress.headAheadOfBase) {
+        throw new ServiceError(409, "Workflow cannot verify: head equals base");
+      }
+    }
     const childSessionId = randomUUID();
     const workflow = run.workflow_id
       ? S.getWorkflowById(run.workflow_id)
@@ -1881,7 +1859,7 @@ export const workflowRuns = {
     );
 
     // The step inherits the parent run's runtime and model (#516) so the whole run stays on one
-    // agent; an explicit launch-step --model override still wins when passed.
+    // agent; an explicit launch --model override still wins when passed.
     const runtime = runRuntime(run);
     const model = input.model?.trim() || runModel(run);
     // The positional prompt goes to a file the launch's command line reads back, resolved for this
@@ -2046,7 +2024,12 @@ export const workflowRuns = {
         sessionId,
       );
       if (!withSession) throw new ServiceError(404, "Workflow run not found");
+      // Starting a child is also the record that the run entered that step: `current_step` has no
+      // reader deciding anything from it, it is what the step tracker, the run history and the CLI
+      // display, so the phase is whatever was last launched. Recorded here rather than at launch
+      // so a failed spawn never moves the phase.
       const activated = S.updateWorkflowRun(run.id, {
+        currentStep: step,
         activeStep: step,
         activeSessionId: sessionId,
       });
@@ -2150,9 +2133,10 @@ export const workflowRuns = {
     return { run: run.id, event_id: event.id };
   },
 
-  // The Execute child's escalation declaration mirrors turnDone: it records a run-scoped fact for
-  // the worker to deliver to the parent, but does not mutate lifecycle state. The parent reads the
-  // event reason and applies the existing await-human transition.
+  // The Execute child's escalation declaration mirrors turnDone: it records a run-scoped fact the
+  // parent can read, but does not mutate lifecycle state. The parent reads the event for its
+  // wording and hands it to a human with `escalate-human`, which likewise leaves the run unheld —
+  // the only hold is the one `cost-hold` establishes.
   escalate(
     name: string,
     input: { run: number; reason: string },

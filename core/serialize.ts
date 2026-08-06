@@ -1926,10 +1926,11 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
                 ? "Run needs human"
                 : "Run resumed"
               : transition === "advance_to_verify"
-                ? // The parent only reaches this transition after `advanceToVerify` has confirmed
-                  // Execute complete (HEAD moved, turn declared), so it is the run's record of
-                  // "Execute finished implementing" — named for that rather than for the
-                  // bookkeeping move it performs (#1867).
+                ? // No writer emits this transition any more — launching Verify is what records the
+                  // phase now. Stored rows still carry it, and it was only ever written after
+                  // Execute was confirmed complete (HEAD moved, turn declared), so the label stays
+                  // "Execute finished implementing" rather than the bookkeeping move it performed
+                  // (#1867).
                   "Execute completed"
                 : transition === "request_rework"
                   ? "Run rework requested"

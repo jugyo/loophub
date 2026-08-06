@@ -276,14 +276,11 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["workflow-run"]);
     }
     // #2147: issue rows also embed the run's rework count (issueListItemJSON -> linkedPullDetail),
-    // so the two transitions that change it — request_rework increments, resume_after_human resets
-    // it to zero — have to refresh the issue views the same way a PR change does above. Scoped to
-    // those transitions rather than the whole namespace: the other lifecycle moves leave the count
-    // as it was, and an issue-list refetch pays a git fan-out per row.
-    if (
-      payload?.transition === "request_rework" ||
-      payload?.transition === "resume_after_human"
-    ) {
+    // so the transition that changes it — `request_rework` — has to refresh the issue views the
+    // same way a PR change does above. Scoped to that transition rather than the whole namespace:
+    // every other lifecycle move, releasing a cost hold included, leaves the count as it was, and
+    // an issue-list refetch pays a git fan-out per row.
+    if (payload?.transition === "request_rework") {
       if (repo) {
         keys.push([...queryKeys.issues(repo)]);
         keys.push(["issue", repo]); // prefix: all open issue details for the repo

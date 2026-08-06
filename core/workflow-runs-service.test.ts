@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -12,8 +13,14 @@ import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-workflow-runs-"));
 const REPO_PATH = mkdtempSync(join(tmpdir(), "lh-workflow-runs-repo-"));
+// A rework injects into the Execute pane, so the pane control has a fake herdr to talk to.
+const BIN_PATH = mkdtempSync(join(tmpdir(), "lh-workflow-runs-bin-"));
+const HERDR_LOG = join(HOME, "herdr.log");
+const ORIGINAL_PATH = process.env.PATH;
 process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
+process.env.PATH = `${BIN_PATH}:${ORIGINAL_PATH ?? ""}`;
+process.env.HERDR_TEST_LOG = HERDR_LOG;
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
@@ -93,7 +100,7 @@ function createWorkflowReview(input: {
   headSha: string;
   body: string;
   findings?: number;
-}): void {
+}): number {
   const author = `verifier #${input.runId}-${input.sequence}`;
   const review = S.createReview(
     input.prIssueId,
@@ -110,9 +117,62 @@ function createWorkflowReview(input: {
       body: "needs a fix",
     });
   }
+  return review.id;
+}
+
+// The human who answers a cost hold acts from the Web, so their session is an ordinary browser id.
+const HUMAN_SESSION = "5e55105e-5e55-4e55-8e55-5e555e555e55";
+
+// The hold as a run really carries it: an over-limit observation, the event detection records for
+// it, and the hold `cost-hold` establishes from that event. Returns the limit the hold sits on,
+// which is what the release below has to name.
+function holdOnCost(
+  repoName: string,
+  runId: number,
+  usageSession: string,
+  parentSessionId: string,
+): number {
+  const limitUsd = S.getWorkflowRun(runId)?.cost_limit_usd ?? 0;
+  S.upsertSessionUsage(usageSession, {
+    model: "test",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: limitUsd + 1,
+  });
+  svc.workflowRuns.detectCostExceeded(repoName, {
+    run: runId,
+    usageSession,
+  });
+  svc.workflowRuns.awaitHuman(
+    repoName,
+    { run: runId, reason: `Cost limit exceeded at $${limitUsd}` },
+    parentSessionId,
+  );
+  return limitUsd;
+}
+
+// Raising the limit is the whole release: the human's decision to continue clears the hold in the
+// same transaction, so no other operation follows it.
+function releaseCostHold(repoName: string, runId: number, limitUsd: number) {
+  return svc.workflowRuns.increaseCostLimitForHuman(
+    repoName,
+    { run: runId, expectedLimitUsd: limitUsd },
+    HUMAN_SESSION,
+  );
 }
 
 beforeAll(async () => {
+  const herdr = join(BIN_PATH, "herdr");
+  writeFileSync(
+    herdr,
+    `#!/bin/sh
+printf '%s\\n' "$*" >> "$HERDR_TEST_LOG"
+`,
+  );
+  chmodSync(herdr, 0o755);
+
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@example.local"]);
   git(["config", "user.name", "tester"]);
@@ -126,6 +186,9 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  process.env.PATH = ORIGINAL_PATH;
+  delete process.env.HERDR_TEST_LOG;
+  rmSync(BIN_PATH, { recursive: true, force: true });
   rmSync(HOME, { recursive: true, force: true });
   rmSync(REPO_PATH, { recursive: true, force: true });
 });
@@ -256,7 +319,8 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     result.parent.user_prompt,
   );
 
-  // Escalation blocks automatic progress; an explicit resume releases it with a fresh rework budget.
+  // A hold blocks automatic progress. Releasing it is the human's own operation — raising the cost
+  // limit, covered by its own tests below — so this one clears the row directly and carries on.
   svc.workflowRuns.awaitHuman(
     repo.full_name,
     { run: result.run.id, reason: "rework limit exceeded" },
@@ -269,18 +333,9 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       result.session_id,
     ),
   ).rejects.toMatchObject({ status: 409 });
-  const resumed = await svc.workflowRuns.resumeAfterHuman(
-    repo.full_name,
-    { run: result.run.id, step: "execute" },
-    result.session_id,
-  );
-  expect(resumed.run).toMatchObject({
-    status: "running",
-    needs_human_reason: null,
-    rework_count: 0,
-  });
+  S.updateWorkflowRun(result.run.id, { needsHumanReason: null });
 
-  // launch-step returns pointers (repo/issue/pr), not synthesized input files, and records the
+  // launch returns pointers (repo/issue/pr), not synthesized input files, and records the
   // launched child session on confirm.
   const launched = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -476,6 +531,8 @@ test("start snapshots the contract language for parent and every later step", as
   );
   expect(execute.user_prompt).toContain("## Step prompt（ユーザー設定）");
   expect(execute.user_prompt).toContain("(none - contract に従ってください)");
+  // Starting the verifier is the run's move into Verify, so it needs something to review.
+  commit(started.worktree, "impl.txt", "v1\n");
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "verify" },
@@ -629,6 +686,8 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
   });
   const parentSessionId = "77777777-7777-4777-8777-777777777777";
   const childSessionId = "88888888-8888-4888-8888-888888888888";
+  // Raising the limit is a human operation with no CLI entry point, so the actor is a Web session.
+  const humanSessionId = "99999999-7777-4999-8999-999999999999";
   S.registerAgentSession(parentSessionId, "lh-workflow", parentSessionId);
   S.registerAgentSession(childSessionId, "workflow-step", childSessionId);
   const run = S.createWorkflowRun({
@@ -679,10 +738,10 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
   });
 
   expect(() =>
-    svc.workflowRuns.increaseCostLimit(
+    svc.workflowRuns.increaseCostLimitForHuman(
       repo.full_name,
       { run: run.id, expectedLimitUsd: 2.5 },
-      parentSessionId,
+      humanSessionId,
     ),
   ).toThrow("Workflow run is not waiting for a human");
   svc.workflowRuns.awaitHuman(
@@ -690,25 +749,18 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
     { run: run.id, reason: "Cost limit exceeded" },
     parentSessionId,
   );
-  await expect(
-    svc.workflowRuns.resumeAfterHuman(
-      repo.full_name,
-      { run: run.id, step: "execute" },
-      parentSessionId,
-    ),
-  ).rejects.toThrow("cost limit must be increased");
   expect(() =>
-    svc.workflowRuns.increaseCostLimit(
+    svc.workflowRuns.increaseCostLimitForHuman(
       repo.full_name,
       { run: run.id, expectedLimitUsd: 1 },
-      parentSessionId,
+      humanSessionId,
     ),
   ).toThrow("does not match current limit");
   expect(
-    svc.workflowRuns.increaseCostLimit(
+    svc.workflowRuns.increaseCostLimitForHuman(
       repo.full_name,
       { run: run.id, expectedLimitUsd: 2.5 },
-      parentSessionId,
+      humanSessionId,
     ),
   ).toEqual({
     run: run.id,
@@ -716,27 +768,26 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
     previous_limit_usd: 2.5,
     current_limit_usd: 5,
   });
+  // Raising it again is refused, and now the hold is what refuses: releasing it was part of the
+  // raise, so there is no second decision for the same crossing to make.
   expect(() =>
-    svc.workflowRuns.increaseCostLimit(
+    svc.workflowRuns.increaseCostLimitForHuman(
       repo.full_name,
       { run: run.id, expectedLimitUsd: 2.5 },
-      parentSessionId,
+      humanSessionId,
     ),
-  ).toThrow("does not match current limit");
+  ).toThrow("not waiting for a human");
 
-  const resumed = await svc.workflowRuns.resumeAfterHuman(
-    repo.full_name,
-    { run: run.id, step: "execute" },
-    parentSessionId,
-  );
-  expect(resumed.run.needs_human_reason).toBeNull();
-  // Resuming Execute continues the interrupted executor in the same pane rather than launching a
-  // duplicate (#1872): its active step and session survive the resume.
-  expect(resumed.run).toMatchObject({
+  // The raise is the human's decision to continue, so it releases the hold in the same operation —
+  // nothing else has to resume the run. Execute keeps working in the same pane rather than being
+  // launched a second time (#1872): its active step and session survive the release.
+  const released = S.getWorkflowRun(run.id);
+  expect(released).toMatchObject({
+    needs_human_reason: null,
     active_step: "execute",
     active_session_id: childSessionId,
+    cost_limit_usd: 5,
   });
-  expect(S.getWorkflowRun(run.id)?.cost_limit_usd).toBe(5);
   S.upsertSessionUsage(childSessionId, {
     model: "test",
     input_tokens: 1,
@@ -766,10 +817,10 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
     parentSessionId,
   );
   expect(
-    svc.workflowRuns.increaseCostLimit(
+    svc.workflowRuns.increaseCostLimitForHuman(
       repo.full_name,
       { run: run.id, expectedLimitUsd: 5 },
-      parentSessionId,
+      humanSessionId,
     ),
   ).toMatchObject({ previous_limit_usd: 5, current_limit_usd: 7.5 });
 
@@ -784,29 +835,26 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
     costLimitUsd: 2.5,
     parentSessionId,
   });
+  S.updateWorkflowRun(heldWithoutEvent.id, {
+    activeStep: "execute",
+    activeSessionId: childSessionId,
+  });
   svc.workflowRuns.awaitHuman(
     repo.full_name,
     { run: heldWithoutEvent.id, reason: "Ordinary human hold" },
     parentSessionId,
   );
+  // A hold with no over-limit observation behind it is not one a raise answers, so the refusal
+  // leaves both the limit and the hold exactly as they were.
   expect(() =>
-    svc.workflowRuns.increaseCostLimit(
+    svc.workflowRuns.increaseCostLimitForHuman(
       repo.full_name,
       { run: heldWithoutEvent.id, expectedLimitUsd: 2.5 },
-      parentSessionId,
+      humanSessionId,
     ),
   ).toThrow("no cost exceeded event exists");
   expect(S.getWorkflowRun(heldWithoutEvent.id)).toMatchObject({
-    cost_increment_usd: 2.5,
-    cost_limit_usd: 2.5,
-  });
-  await svc.workflowRuns.resumeAfterHuman(
-    repo.full_name,
-    { run: heldWithoutEvent.id, step: "execute" },
-    parentSessionId,
-  );
-  expect(S.getWorkflowRun(heldWithoutEvent.id)).toMatchObject({
-    needs_human_reason: null,
+    needs_human_reason: "Ordinary human hold",
     cost_increment_usd: 2.5,
     cost_limit_usd: 2.5,
   });
@@ -890,17 +938,14 @@ test("cost exceeded is re-emitted until the run is held or its limit is raised (
     expect(detect()).toEqual({ emitted: false, cost_usd: 3, limit_usd: 2.5 });
     expect(costEvents()).toHaveLength(2);
 
-    // After the increase the run is back under its limit, so detection stops on the cost condition.
-    svc.workflowRuns.increaseCostLimit(
+    // After the increase the run is back under its limit and no longer held, so detection stops on
+    // the cost condition.
+    svc.workflowRuns.increaseCostLimitForHuman(
       repo.full_name,
       { run: run.id, expectedLimitUsd: 2.5 },
-      parentSessionId,
+      "1846c0de-1846-4184-8184-184618461846",
     );
-    await svc.workflowRuns.resumeAfterHuman(
-      repo.full_name,
-      { run: run.id, step: "execute" },
-      parentSessionId,
-    );
+    expect(S.getWorkflowRun(run.id)?.needs_human_reason).toBeNull();
     expect(detect()).toEqual({ emitted: false, cost_usd: 3, limit_usd: 5 });
     expect(costEvents()).toHaveLength(2);
   } finally {
@@ -908,7 +953,7 @@ test("cost exceeded is re-emitted until the run is held or its limit is raised (
   }
 });
 
-test("a Web budget increase wakes the parent to resume the held step (#1828)", async () => {
+test("a Web budget increase raises the limit and releases the hold (#1828)", async () => {
   const repo = S.createRepo("me/workflow-web-budget", REPO_PATH);
   const pull = S.createIssue(repo.id, "pull", "Web budget PR", "", "me");
   S.createPull(pull.id, "web-budget", "main", null);
@@ -994,6 +1039,20 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
     previous_limit_usd: 2.5,
     current_limit_usd: 5,
   });
+  // The raise is itself the human's decision to continue, so the same operation clears the hold —
+  // there is no second step for anyone to run. The interrupted Execute keeps its pane.
+  expect(S.getWorkflowRun(run.id)).toMatchObject({
+    needs_human_reason: null,
+    active_step: "execute",
+    active_session_id: childSessionId,
+  });
+  const releaseEvent = S.eventsForWorkflowRun(repo.id, run.id)
+    .filter((event) => event.type === "workflow_run.updated")
+    .at(-1);
+  expect(JSON.parse(releaseEvent!.payload)).toMatchObject({
+    transition: "resume_after_human",
+    needs_human_reason: null,
+  });
   // The new limit is visible and no longer increasable: the hold now has no matching event.
   expect(
     await svc.workflowRuns.stateForIssue(repo.full_name, {
@@ -1007,7 +1066,7 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
   const increased = S.eventsForWorkflowRun(repo.id, run.id).find(
     (event) => event.type === "workflow_run.cost_limit_increased",
   );
-  // The event names the step the cost hold interrupted, which is the one a parent resumes.
+  // The event names the step the cost hold interrupted, which is the one that carries on.
   expect(JSON.parse(increased!.payload)).toMatchObject({
     id: run.id,
     active_step: "execute",
@@ -1016,11 +1075,77 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
   });
 });
 
+// `cost-hold` writes the hold before it resolves the child to interrupt, and keeps the hold when
+// that resolution fails, so a held run with no active child is a state the product really produces.
+// The raise is the only thing that lifts a hold, so it must not require one.
+test("a hold taken with no active child is still released by a raise", async () => {
+  const repo = S.createRepo("me/workflow-childless-hold", REPO_PATH);
+  const pull = S.createIssue(repo.id, "pull", "Childless hold PR", "", "me");
+  S.createPull(pull.id, "childless-hold", "main", null);
+  const workflow = S.createWorkflow({
+    name: "childless-hold-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parentSessionId = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1";
+  const webSessionId = "c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2";
+  S.registerAgentSession(parentSessionId, "lh-workflow", parentSessionId);
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: pull.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 2.5,
+    costLimitUsd: 2.5,
+    parentSessionId,
+  });
+  // The parent's own usage counts toward the run, so the limit can be crossed with no child at all.
+  S.upsertSessionUsage(parentSessionId, {
+    model: "test",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 3,
+  });
+  svc.workflowRuns.detectCostExceeded(repo.full_name, {
+    run: run.id,
+    usageSession: parentSessionId,
+  });
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: run.id, reason: "Cost limit exceeded" },
+    parentSessionId,
+  );
+  expect(S.getWorkflowRun(run.id)?.active_step).toBeNull();
+
+  // The Web offers the raise here too: a hold nothing can lift would leave closing the PR as the
+  // only way out of the run.
+  expect(
+    await svc.workflowRuns.stateForPull(repo.full_name, { pull: pull.number }),
+  ).toMatchObject({ cost_limit_increase_available: true });
+  expect(
+    svc.workflowRuns.increaseCostLimitForHuman(
+      repo.full_name,
+      { run: run.id, expectedLimitUsd: 2.5 },
+      webSessionId,
+    ),
+  ).toMatchObject({ previous_limit_usd: 2.5, current_limit_usd: 5 });
+  expect(S.getWorkflowRun(run.id)).toMatchObject({
+    needs_human_reason: null,
+    active_step: null,
+    active_session_id: null,
+  });
+});
+
 // #1872: a cost hold's resume must continue the interrupted executor in the same pane. Clearing the
 // active session left the run looking like "Execute not started", spawning a duplicate executor.
 // Verify keeps the opposite rule — a fresh child reviews the current HEAD — so resuming Verify still
 // clears it.
-test("resume continues a held Execute but relaunches Verify (#1872)", async () => {
+test("a released cost hold continues Execute but relaunches Verify (#1872)", async () => {
   const { repo } = freshRepo("me/workflow-resume-active");
   const issue = S.createIssue(
     repo.id,
@@ -1058,35 +1183,27 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     parent,
   );
 
-  // A cost hold interrupts the executor mid-work (no turn done yet). Resuming preserves it.
-  svc.workflowRuns.awaitHuman(
+  // A cost hold interrupts the executor mid-work (no turn done yet). The release preserves it.
+  const executeLimit = holdOnCost(
     repo.full_name,
-    { run: started.run.id, reason: "Cost limit exceeded" },
+    started.run.id,
+    exec.session_id,
     parent,
   );
-  const resumedExecute = await svc.workflowRuns.resumeAfterHuman(
-    repo.full_name,
-    { run: started.run.id, step: "execute" },
-    parent,
-  );
-  expect(resumedExecute.run).toMatchObject({
+  releaseCostHold(repo.full_name, started.run.id, executeLimit);
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
     needs_human_reason: null,
     active_step: "execute",
     active_session_id: exec.session_id,
   });
 
-  // Take the run to Verify with HEAD ahead of base, hold again, then resume at Verify: the
+  // Take the run to Verify with HEAD ahead of base, hold again, then release at Verify: the
   // interrupted verifier is dropped and the parent launches a fresh one for the current HEAD.
   commit(started.worktree, "impl.txt", "v1\n");
   await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
     exec.session_id,
-  );
-  await svc.workflowRuns.advanceToVerify(
-    repo.full_name,
-    { run: started.run.id },
-    parent,
   );
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -1113,9 +1230,10 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     current_step: "verify",
     active_verify_head_sha: verify.head_sha,
   });
-  svc.workflowRuns.awaitHuman(
+  const verifyLimit = holdOnCost(
     repo.full_name,
-    { run: started.run.id, reason: "Cost limit exceeded on Verify" },
+    started.run.id,
+    verify.session_id,
     parent,
   );
   expect(
@@ -1125,16 +1243,65 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
       })
     )?.active_verify_head_sha,
   ).toBeNull();
-  const resumedVerify = await svc.workflowRuns.resumeAfterHuman(
-    repo.full_name,
-    { run: started.run.id, step: "verify" },
-    parent,
-  );
-  expect(resumedVerify.run).toMatchObject({
+  releaseCostHold(repo.full_name, started.run.id, verifyLimit);
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
     needs_human_reason: null,
     active_step: null,
     active_session_id: null,
   });
+}, 30_000);
+
+// A re-verification of the same head is deliberate, but there still has to be a head to review:
+// a worktree rewound to base leaves the verifier an empty diff.
+test("a Verify launch is refused once HEAD is back at base", async () => {
+  const { repo } = freshRepo("me/workflow-verify-empty");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Verify empty",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "verify-empty-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  commit(started.worktree, "impl.txt", "v1\n");
+  const verify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verify.session_id,
+      agentName: verify.agent_name,
+      pointers: verify.pointers,
+      headSha: verify.head_sha,
+    },
+    parent,
+  );
+  expect(S.getWorkflowRun(started.run.id)?.current_step).toBe("verify");
+
+  gitAt(started.worktree, ["reset", "--hard", "main"]);
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "verify" },
+      parent,
+    ),
+  ).rejects.toThrowError(/head equals base/);
 }, 30_000);
 
 test("a grok run's steps launch grok, not claude (#1521)", async () => {
@@ -1297,11 +1464,9 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     awaiting_human: true,
     needs_human_reason: "Waiting for product guidance",
   });
-  await svc.workflowRuns.resumeAfterHuman(
-    repo.full_name,
-    { run: started.run.id, step: "execute" },
-    parent,
-  );
+  // The hold's own release is the human's raise, covered by the cost-limit tests; the rest of this
+  // one is about what the state reports, so it clears the row and moves on.
+  S.updateWorkflowRun(started.run.id, { needsHumanReason: null });
   expect(
     await svc.workflowRuns.state(repo.full_name, { run: started.run.id }),
   ).toMatchObject({ needs_human_reason: null });
@@ -1329,7 +1494,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   );
 
   // A turn-done declaration before any commit is only a timing signal: HEAD has not advanced, so
-  // Execute is not complete and advance-to-verify is refused.
+  // Execute is not complete and the move into Verify — the Verify launch itself — is refused.
   const before = await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
@@ -1344,9 +1509,9 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(status.head_ahead_of_base).toBe(false);
   expect(status.steps.execute.complete).toBe(false);
   await expect(
-    svc.workflowRuns.advanceToVerify(
+    svc.workflowRuns.launchStep(
       repo.full_name,
-      { run: started.run.id },
+      { run: started.run.id, step: "verify" },
       parent,
     ),
   ).rejects.toMatchObject({ status: 409 });
@@ -1408,13 +1573,8 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(status.head_ahead_of_base).toBe(true);
   expect(status.steps.execute.complete).toBe(true);
 
-  await svc.workflowRuns.advanceToVerify(
-    repo.full_name,
-    { run: started.run.id },
-    parent,
-  );
-
-  // Verify submits a passing review pinned to the reviewed head.
+  // Verify submits a passing review pinned to the reviewed head. Launching it is also what records
+  // the run's move into the Verify phase.
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "verify" },
@@ -1739,7 +1899,6 @@ test("a merged PR completes the run and ends cost detection", async () => {
   commit(started.worktree, "impl.txt", "shipped\n");
 
   // An open PR still reconciles toward the goal, so a fresh pass alone leaves the run running.
-  await svc.workflowRuns.advanceToVerify(repo.full_name, { run }, parent);
   createWorkflowReview({
     prIssueId: S.getIssue(repo.id, started.pr.number)!.id,
     runId: run,
@@ -2269,11 +2428,6 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     { run: started.run.id },
     exec.session_id,
   );
-  await svc.workflowRuns.advanceToVerify(
-    repo.full_name,
-    { run: started.run.id },
-    parent,
-  );
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "verify" },
@@ -2404,14 +2558,26 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
     { run: started.run.id },
     exec.session_id,
   );
-  await svc.workflowRuns.advanceToVerify(
+  const verifyA = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: started.run.id },
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verifyA.session_id,
+      agentName: verifyA.agent_name,
+      pointers: verifyA.pointers,
+      headSha: verifyA.head_sha,
+    },
     parent,
   );
 
   // The Verify child submits from a session LoopHub never registered (a child resumed in-pane after a
-  // cost hold never re-runs launch-step / confirm), so its author is `unknown`. The run must still take
+  // cost hold never re-runs launch / confirm), so its author is `unknown`. The run must still take
   // it as its own verdict because it was submitted in the Verify phase.
   const passA = await svc.reviews.create(
     repo.full_name,
@@ -2456,23 +2622,32 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
     headSha: headB,
   });
 
-  // Cost-hold resume path B: await-human, resume back into Execute, commit, then re-advance to Verify.
-  // Before #1873 the advance_to_verify transition was not read as entering the Verify phase, so a pass
-  // submitted right after it was dropped as out-of-band.
-  await svc.workflowRuns.awaitHuman(
+  // Cost-hold release path B: hold the run, let the human's raise release it, commit again, then
+  // start another verifier. Before #1873 the phase move was not read as entering the Verify phase,
+  // so a pass submitted right after it was dropped as out-of-band.
+  const limitUsd = holdOnCost(
     repo.full_name,
-    { run: started.run.id, reason: "cost limit exceeded" },
+    started.run.id,
+    exec.session_id,
     parent,
   );
-  await svc.workflowRuns.resumeAfterHuman(
-    repo.full_name,
-    { run: started.run.id, step: "execute" },
-    parent,
-  );
+  releaseCostHold(repo.full_name, started.run.id, limitUsd);
   const headC = commit(started.worktree, "impl.txt", "v3\n");
-  await svc.workflowRuns.advanceToVerify(
+  const verifyC = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: started.run.id },
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verifyC.session_id,
+      agentName: verifyC.agent_name,
+      pointers: verifyC.pointers,
+      headSha: verifyC.head_sha,
+    },
     parent,
   );
   const passC = await svc.reviews.create(
@@ -2541,11 +2716,6 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     { run: started.run.id },
     exec.session_id,
   );
-  await svc.workflowRuns.advanceToVerify(
-    repo.full_name,
-    { run: started.run.id },
-    parent,
-  );
 
   // Verify requests changes, pinned to headA, with one finding.
   const verify = await svc.workflowRuns.launchStep(
@@ -2585,17 +2755,36 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   });
   const reviewId = rcStatus.steps.verify.latest_review!.id;
 
-  const rework = await svc.workflowRuns.requestRework(
+  // A review that is not the one Verify just submitted is refused rather than counted — asserted
+  // while the run is still at Verify, so the refusal is the review-id check and not the phase one.
+  await expect(
+    svc.workflowRuns.rework(
+      repo.full_name,
+      { run: started.run.id, review: reviewId + 1 },
+      parent,
+    ),
+  ).rejects.toThrowError(/is not the run's latest Verify review/);
+  expect(S.getWorkflowRun(started.run.id)?.rework_count).toBe(0);
+
+  const rework = await svc.workflowRuns.rework(
     repo.full_name,
-    { run: started.run.id },
+    { run: started.run.id, review: reviewId },
     parent,
   );
   expect(rework.run).toMatchObject({
     current_step: "execute",
     rework_count: 1,
   });
-  // The rework goes to the Execute child that is still live in its pane, so `request_rework` hands
-  // `active_step` back to that session in the same update (#2150).
+  // One operation: the count, the phase and the fixed review pointer delivered to the pane.
+  expect(rework.delivered).toMatchObject({
+    session_id: exec.session_id,
+    text: `orchestrator: address review ${reviewId}`,
+  });
+  expect(readFileSync(HERDR_LOG, "utf8")).toContain(
+    `orchestrator: address review ${reviewId}`,
+  );
+  // The rework goes to the Execute child that is still live in its pane, so the same update hands
+  // `active_step` back to that session (#2150).
   expect(S.getWorkflowRun(started.run.id)).toMatchObject({
     active_step: "execute",
     active_session_id: exec.session_id,
@@ -2609,8 +2798,8 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
       parent,
     ),
   ).rejects.toMatchObject({ status: 409 });
-  // The parent may observe between `request_rework` and the delivery to the pane. That
-  // intermediate state must not read as "Execute has not started".
+  // The parent may observe between the phase move and the delivery to the pane. That intermediate
+  // state must not read as "Execute has not started".
   const reworkEvent = S.eventsForWorkflowRun(repo.id, started.run.id).findLast(
     (event) =>
       event.type === "workflow_run.updated" &&
@@ -2639,11 +2828,6 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   });
   // The stale request_changes review no longer blocks execute (head advanced past it).
   expect(reworkedStatus.steps.execute.complete).toBe(true);
-  await svc.workflowRuns.advanceToVerify(
-    repo.full_name,
-    { run: started.run.id },
-    parent,
-  );
   createWorkflowReview({
     prIssueId,
     runId: started.run.id,
@@ -2710,11 +2894,6 @@ test("a turn done after the active Verify reviewed launches a fresh Verify", asy
     repo.full_name,
     { run: started.run.id },
     exec.session_id,
-  );
-  await svc.workflowRuns.advanceToVerify(
-    repo.full_name,
-    { run: started.run.id },
-    parent,
   );
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -2908,29 +3087,70 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
           (JSON.parse(event.payload) as Record<string, unknown>).transition,
       );
 
-  expect("update" in svc.workflowRuns).toBe(false);
-  expect("completeRun" in svc.workflowRuns).toBe(false);
-  // Nothing committed yet: advancing to Verify is illegal (Execute is incomplete).
+  // The lifecycle verbs the parent used to reach for are gone: a launch records the phase, a rework
+  // carries its own delivery, and the human's hold is released by their own Web operation.
+  for (const retired of [
+    "update",
+    "completeRun",
+    "advanceToVerify",
+    "requestRework",
+    "resumeAfterHuman",
+    "increaseCostLimit",
+  ]) {
+    expect(retired in svc.workflowRuns).toBe(false);
+  }
+  // Nothing committed yet: moving into Verify — the Verify launch itself — is illegal (Execute is
+  // incomplete).
   await expect(
-    svc.workflowRuns.advanceToVerify(
+    svc.workflowRuns.launchStep(
       repo.full_name,
-      { run: started.run.id },
+      { run: started.run.id, step: "verify" },
       parent,
     ),
   ).rejects.toMatchObject({ status: 409 });
 
-  const headA = commit(started.worktree, "lifecycle.txt", "implemented\n");
-  await svc.workflowRuns.advanceToVerify(
+  const exec = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: started.run.id },
+    { run: started.run.id, step: "execute" },
     parent,
   );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+  let head = commit(started.worktree, "lifecycle.txt", "implemented\n");
+  const launchVerify = async () => {
+    const verify = await svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "verify" },
+      parent,
+    );
+    confirmStepLaunch(
+      repo.full_name,
+      {
+        run: started.run.id,
+        step: "verify",
+        sessionId: verify.session_id,
+        agentName: verify.agent_name,
+        pointers: verify.pointers,
+        headSha: verify.head_sha,
+      },
+      parent,
+    );
+  };
+  await launchVerify();
 
   // Drive the rework budget to its cap. Each request_changes review is pinned to the current head,
   // and each rework advances the head so the next review is fresh again.
-  let head = headA;
   for (let seq = 1; seq <= 8; seq++) {
-    createWorkflowReview({
+    const reviewId = createWorkflowReview({
       prIssueId,
       runId: started.run.id,
       sequence: seq,
@@ -2939,22 +3159,19 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
       body: `Change ${seq}`,
       findings: 1,
     });
-    const rework = await svc.workflowRuns.requestRework(
+    const rework = await svc.workflowRuns.rework(
       repo.full_name,
-      { run: started.run.id },
+      { run: started.run.id, review: reviewId },
       parent,
     );
     expect(rework.run.rework_count).toBe(seq);
     head = commit(started.worktree, `fix-${seq}.txt`, `v${seq}\n`);
-    await svc.workflowRuns.advanceToVerify(
-      repo.full_name,
-      { run: started.run.id },
-      parent,
-    );
+    await launchVerify();
   }
 
-  // The 9th request_changes exceeds the cap.
-  createWorkflowReview({
+  // The 9th request_changes exceeds the cap, and the refusal is the whole operation: no rework is
+  // counted and nothing is delivered.
+  const overLimitReview = createWorkflowReview({
     prIssueId,
     runId: started.run.id,
     sequence: 9,
@@ -2964,16 +3181,16 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
     findings: 1,
   });
   await expect(
-    svc.workflowRuns.requestRework(
+    svc.workflowRuns.rework(
       repo.full_name,
-      { run: started.run.id },
+      { run: started.run.id, review: overLimitReview },
       parent,
     ),
   ).rejects.toThrowError(/rework limit/);
   expect(S.getWorkflowRun(started.run.id)?.rework_count).toBe(8);
 
-  // A fresh pass verifies the current HEAD without terminating the run (#1513): it stays `running`,
-  // so resume is refused (no human wait). There is no run-stop transition anymore (#1525).
+  // A fresh pass verifies the current HEAD without terminating the run (#1513): it stays `running`.
+  // There is no run-stop transition anymore (#1525).
   createWorkflowReview({
     prIssueId,
     runId: started.run.id,
@@ -2991,22 +3208,13 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
     fresh: true,
     headSha: head,
   });
-  await expect(
-    svc.workflowRuns.resumeAfterHuman(
-      repo.full_name,
-      { run: started.run.id, step: "execute" },
-      parent,
-    ),
-  ).rejects.toMatchObject({ status: 409 });
   expect("stopRun" in svc.workflowRuns).toBe(false);
 
-  expect(lifecycleTransitions()).toEqual([
-    "advance_to_verify",
-    ...Array.from({ length: 8 }, () => [
-      "request_rework",
-      "advance_to_verify",
-    ]).flat(),
-  ]);
+  // Every run-row transition the cap run produced: one rework each round, and the reactivation its
+  // delivery performs on the Execute pane it hands the review to.
+  expect(lifecycleTransitions()).toEqual(
+    Array.from({ length: 8 }, () => ["request_rework", "activate_step"]).flat(),
+  );
 }, 40_000);
 
 test("stateForIssue / stateForPull expose run display state, or null when absent (#1008)", async () => {
@@ -3255,7 +3463,7 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
   ).toBe(secondHead);
 });
 
-test("human lifecycle intents sanitize reasons and authorize explicit resume (#1307)", async () => {
+test("a human hold sanitizes its reason and is authorized like a run update (#1307)", async () => {
   const repo = S.createRepo("me/workflow-hold", REPO_PATH);
   const workflow = S.createWorkflow({
     name: "hold-wf",
@@ -3294,38 +3502,30 @@ test("human lifecycle intents sanitize reasons and authorize explicit resume (#1
       parent,
     ),
   ).toThrowError(/500/);
+
+  // A child session cannot hold a run it does not own.
+  const stranger = "55555555-5555-4555-8555-555555555555";
+  S.registerAgentSession(stranger, "workflow-step", stranger);
+  expect(() =>
+    svc.workflowRuns.awaitHuman(
+      repo.full_name,
+      { run: run.id, reason: "not mine to hold" },
+      stranger,
+    ),
+  ).toThrowError(/parent session/);
+
+  // A human CLI session may, the same way it may cancel a run whose parent died (#1307).
+  const human = "66666666-6666-4666-8666-666666666666";
+  S.registerAgentSession(human, "me", "cli");
   const held = svc.workflowRuns.awaitHuman(
     repo.full_name,
     { run: run.id, reason: "rework limit\nexceeded" },
-    parent,
+    human,
   );
   expect(held.run.needs_human_reason).toBe("rework limit exceeded");
   expect(latestUpdatedPayload().needs_human_reason).toBe(
     "rework limit exceeded",
   );
-
-  const stranger = "55555555-5555-4555-8555-555555555555";
-  S.registerAgentSession(stranger, "workflow-step", stranger);
-  await expect(
-    svc.workflowRuns.resumeAfterHuman(
-      repo.full_name,
-      { run: run.id, step: "execute" },
-      stranger,
-    ),
-  ).rejects.toThrowError(/parent session/);
-  const human = "66666666-6666-4666-8666-666666666666";
-  S.registerAgentSession(human, "me", "cli");
-
-  const resumed = await svc.workflowRuns.resumeAfterHuman(
-    repo.full_name,
-    { run: run.id, step: "execute" },
-    human,
-  );
-  expect(resumed.run).toMatchObject({
-    needs_human_reason: null,
-    rework_count: 0,
-  });
-  expect(latestUpdatedPayload().needs_human_reason).toBeNull();
   expect("needs_human_reason" in latestUpdatedPayload()).toBe(true);
 });
 
@@ -3910,7 +4110,7 @@ test("event rows written before the typed payloads are still observable (#1912)"
   );
 }, 20_000);
 
-test("an observation after a resume reads the cleared hold, not the earlier one (#1912)", async () => {
+test("an observation after a release reads the cleared hold, not the earlier one (#1912)", async () => {
   const { repo } = freshRepo("me/workflow-hold-reread");
   const issue = S.createIssue(
     repo.id,
@@ -3931,26 +4131,40 @@ test("an observation after a resume reads the cleared hold, not the earlier one 
     { issue: issue.number, workflowId: workflow.id },
     parent,
   );
-  svc.workflowRuns.awaitHuman(
-    repo.full_name,
-    { run: started.run.id, reason: "human decision required" },
-    parent,
-  );
-
-  // The human clears the hold. Its `workflow_run.updated` event is the only record that the hold
-  // is gone, so the state read after it must show the run row as that event left it.
-  await svc.workflowRuns.resumeAfterHuman(
+  const exec = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "execute" },
     parent,
   );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+  const limitUsd = holdOnCost(
+    repo.full_name,
+    started.run.id,
+    exec.session_id,
+    parent,
+  );
+
+  // The human clears the hold by raising the limit. Its `workflow_run.updated` event is the only
+  // record that the hold is gone, so the state read after it must show the run row as that event
+  // left it.
+  releaseCostHold(repo.full_name, started.run.id, limitUsd);
 
   const observed = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(observed.awaiting_human).toBe(false);
   expect(observed.needs_human_reason).toBeNull();
-  expect(observed.active_step).toBeNull();
+  expect(observed.active_step).toBe("execute");
 }, 30_000);
 
 test("successive runs on one PR do not blend their review submissions", async () => {

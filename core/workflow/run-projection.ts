@@ -92,6 +92,11 @@ export function projectWorkflowRunEvents(
     } else if (event.type === "workflow_step.launched") {
       if (payload.step === "verify") latestVerifyLaunch = event;
       if (payload.step === "execute") latestExecuteRound = event;
+      // Starting a child is the run's move into that step, so the launch is a phase transition in
+      // its own right — there is no separate advance event to read it from.
+      if (payload.step === "execute" || payload.step === "verify") {
+        phaseTransitions.push({ id: event.id, step: payload.step });
+      }
     } else if (event.type === "workflow_run.updated") {
       if (
         payload.transition === "activate_step" &&

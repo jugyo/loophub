@@ -18,6 +18,17 @@ export function inlineText(value: string): string {
     .trim();
 }
 
+/**
+ * The fixed line a rework hands to Execute.
+ *
+ * It names the review and nothing else: the findings are read from the review itself, so no caller
+ * can summarize or interpret them on the way. Structural text, so it is not localized — the
+ * Execute contract matches this exact form in both languages.
+ */
+export function reworkInstruction(reviewId: number): string {
+  return `orchestrator: address review ${reviewId}`;
+}
+
 export function parentUserPrompt(
   input: {
     runId: number;

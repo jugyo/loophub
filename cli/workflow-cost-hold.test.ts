@@ -26,6 +26,7 @@ const NODE_ARGS = [
 const PARENT_SESSION_ID = "00000000-0000-4000-8000-000000000001";
 
 let S: typeof import("../core/store.ts");
+let svc: typeof import("../core/service.ts");
 let repoId: number;
 let workflowId: number;
 
@@ -165,6 +166,7 @@ function costHoldArgs(input: { run: number }): string[] {
 
 beforeAll(async () => {
   S = await import("../core/store.ts");
+  svc = await import("../core/service.ts");
   const repo = S.createRepo("me/workflow-cost-hold", process.cwd());
   repoId = repo.id;
   workflowId = S.createWorkflow({
@@ -290,30 +292,13 @@ test("a raised limit still holds again while the old limit's leftovers stay iner
   input.reemit();
   expect(runCli(costHoldArgs(input), env).status).toBe(0);
 
-  const increased = runCli([
-    "workflow",
-    "run",
-    "increase-cost-limit",
-    "--repo",
+  // Raising the limit is the human's Web operation — there is no CLI entry point for it — and it
+  // releases the hold in the same transaction.
+  svc.workflowRuns.increaseCostLimitForHuman(
     "me/workflow-cost-hold",
-    "--run",
-    String(input.run),
-    "--expected-limit",
-    "10",
-  ]);
-  expect(increased.status, increased.stderr).toBe(0);
-  const resumed = runCli([
-    "workflow",
-    "run",
-    "resume",
-    "--repo",
-    "me/workflow-cost-hold",
-    "--run",
-    String(input.run),
-    "--step",
-    "execute",
-  ]);
-  expect(resumed.status, resumed.stderr).toBe(0);
+    { run: input.run, expectedLimitUsd: 10 },
+    "0c057e55-0c05-4e55-8e55-0c057e550c05",
+  );
   expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBeNull();
   const resumedLog = readFileSync(input.log, "utf8");
 

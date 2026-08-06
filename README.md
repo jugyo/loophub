@@ -64,7 +64,7 @@ LoopHub 自身はビルド不要の TypeScript だが、**いくつかの外部 
 | **コーディングエージェントの CLI（いずれか 1 つ以上）** | 実際にコードを書く主体 | 下の表を参照 |
 
 herdr が PATH に無い場合、`lh workflow start` は
-`workflow start requires herdr on PATH` で終了する（`lh workflow launch-step` も同様）。
+`workflow start requires herdr on PATH` で終了する（`lh workflow launch` も同様）。
 Web UI の **Start workflow** も同じ経路なので失敗する。issue や PR の作成・閲覧のように
 エージェントを起動しない操作は herdr 無しでも動くが、**エージェントに作業させることはできない**。
 

@@ -47,7 +47,7 @@ function failedResult(
 }
 
 // The child to interrupt is the one the run row records as active — the same target `deliver` and
-// `launch-step` last wrote, and the only one whose pane belongs to this run.
+// `launch` last wrote, and the only one whose pane belongs to this run.
 function activeTarget(run: S.WorkflowRunRow): S.AgentExecutionTargetRow {
   if (!run.active_step || !run.active_session_id) {
     throw new ServiceError(409, `Workflow run #${run.id} has no active child`);
@@ -163,7 +163,7 @@ export const workflowCostHold = {
         subject,
         completed,
         "await-human",
-        `lh workflow run await-human --repo ${name} --run ${run.id}`,
+        "hold the run for a human decision",
         error,
       );
     }

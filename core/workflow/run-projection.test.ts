@@ -65,14 +65,11 @@ test("a review's first and latest submission are kept apart", () => {
   expect(projection.reviewSubmissions.get(9)).toBeUndefined();
 });
 
-test("phase follows current_step and ignores an activate_step reactivation (#1873)", () => {
+test("phase follows launches and current_step, ignoring an activate_step reactivation (#1873)", () => {
   const trail = [
     row("workflow_run.started", { id: 1 }),
-    row("workflow_run.updated", {
-      id: 1,
-      transition: "advance_to_verify",
-      current_step: "verify",
-    }),
+    // Starting the verifier is the move into Verify: no separate advance event carries it.
+    row("workflow_step.launched", { id: 1, step: "verify" }),
     row("workflow_run.updated", {
       id: 1,
       transition: "activate_step",
@@ -80,6 +77,12 @@ test("phase follows current_step and ignores an activate_step reactivation (#187
       active_step: "execute",
     }),
     row("workflow_run.review_submitted", { id: 1, review_id: 3 }),
+    // A rework sends the run back to Execute through the run row instead of a launch.
+    row("workflow_run.updated", {
+      id: 1,
+      transition: "request_rework",
+      current_step: "execute",
+    }),
   ];
   const projection = projectWorkflowRunEvents(trail);
 
@@ -87,6 +90,21 @@ test("phase follows current_step and ignores an activate_step reactivation (#187
   expect(workflowStepPhaseAt(projection, trail[0].id)).toBe("execute");
   expect(workflowStepPhaseAt(projection, trail[1].id)).toBe("verify");
   expect(workflowStepPhaseAt(projection, trail[3].id)).toBe("verify");
+  expect(workflowStepPhaseAt(projection, trail[4].id)).toBe("execute");
+});
+
+// Rows written before the launch carried the phase still read the same way.
+test("a stored advance_to_verify transition still moves the phase", () => {
+  const trail = [
+    row("workflow_run.started", { id: 1 }),
+    row("workflow_run.updated", {
+      id: 1,
+      transition: "advance_to_verify",
+      current_step: "verify",
+    }),
+  ];
+  const projection = projectWorkflowRunEvents(trail);
+  expect(workflowStepPhaseAt(projection, trail[1].id)).toBe("verify");
 });
 
 test("payloads written before the typed shape existed keep their fallbacks", () => {

@@ -25,11 +25,8 @@ export function usage(): void {
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|archive|delete <name> [--repo <owner/name>] [--workflow-id <id>] [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage workflow prompt bundles
   lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok | --cursor] [--model <name>] [--herdr] [--no-launch]   # start a Workflow run (default runtime/model from app settings; agents launch in auto mode)
-  lh workflow run advance-to-verify|request-rework --run <id> [--repo owner/name]
-  lh workflow run activate-step --run <id> --step execute --session <id> [--repo owner/name]
-  lh workflow run await-human --run <id> --reason <text> [--repo owner/name]
-  lh workflow run increase-cost-limit --run <id> --expected-limit <usd> [--repo owner/name]
-  lh workflow run resume --run <id> --step execute|verify [--repo owner/name]
+  lh workflow launch <run> --step execute|verify [--repo owner/name] [--review <id>] [--note <text|->] [--model <name>]   # launch a fresh step child; the launch is also the run's phase record
+  lh workflow rework <run> --review <id> [--repo owner/name] [--json]   # count one rework, return the run to Execute, and deliver 'orchestrator: address review <id>'
   lh workflow turn done [--repo owner/name] [--run <id>]   # (Execute child) declare the turn done — payload-less; the parent observes HEAD/review state
   lh workflow escalate --reason <text> [--repo owner/name] [--run <id>]   # (Execute child) request human guidance; the parent notifies the human and waits for an instruction
   lh workflow deliver --run <id> --text <single-line-instruction> [--repo owner/name] [--json]   # activate and deliver to the latest Execute child pane

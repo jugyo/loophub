@@ -382,7 +382,7 @@ export const methods: Record<string, MethodDef> = {
   },
   "workflowRuns/increaseCostLimit": {
     description:
-      "Increase a cost-held Workflow run's limit by its persisted fixed increment. The emitted event is the human continuation decision the parent resumes from (#1828).",
+      "Increase a cost-held Workflow run's limit by its persisted fixed increment and release the hold in the same transaction. The raise is the human's decision to continue, so nothing else has to resume the run (#1828).",
     params: params(
       {
         repo,

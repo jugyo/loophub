@@ -126,11 +126,11 @@ function preflightParentLaunch(runtime: CodingAgent): void {
 
 function preflightStepLaunch(runtime: CodingAgent): void {
   if (!commandAvailable("herdr")) {
-    fail("workflow launch-step requires herdr on PATH");
+    fail("workflow launch requires herdr on PATH");
   }
   const bin = runtimeBin(runtime);
   if (!commandAvailable(bin)) {
-    fail(`workflow launch-step requires ${bin} on PATH`);
+    fail(`workflow launch requires ${bin} on PATH`);
   }
 }
 
@@ -185,7 +185,7 @@ function parentAgentFlags(input: {
 }
 
 // The parent agent's own pane, which a child step splits so Execute/Verify land beside it in the
-// same tab. herdr exports it into every pane it starts; `lh workflow launch-step` runs inside the
+// same tab. herdr exports it into every pane it starts; `lh workflow launch` runs inside the
 // parent agent's pane, so it inherits the value without being told.
 function inheritedHerdrPaneId(): string | null {
   if (flags["pane-id"] !== undefined) {
@@ -225,15 +225,6 @@ function positiveInt(value: string | undefined, name: string): number {
     fail(`${name} must be a positive integer`);
   }
   return Number(value);
-}
-
-function positiveNumber(value: string | undefined, name: string): number {
-  if (value === undefined) fail(`${name} is required`);
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    fail(`${name} must be a positive number`);
-  }
-  return parsed;
 }
 
 async function launchParentHerdr(input: {
@@ -413,7 +404,7 @@ async function startWorkflow(): Promise<void> {
 }
 
 async function launchStep(): Promise<void> {
-  const runId = positiveInt(flags.run, "--run");
+  const runId = positiveInt(rest[0], "<run>");
   const step = flags.step;
   if (!step) fail("--step is required");
   const repo = await resolveRepo();
@@ -430,10 +421,10 @@ async function launchStep(): Promise<void> {
       : undefined;
   const s = await svc();
   if (flags["no-launch"] === true) {
-    fail("--no-launch is not supported for workflow launch-step");
+    fail("--no-launch is not supported for workflow launch");
   }
   if (flags.json === true) {
-    fail("--json is not supported for workflow launch-step");
+    fail("--json is not supported for workflow launch");
   }
   const tabId = inheritedHerdrTabId();
   const paneId = inheritedHerdrPaneId();
@@ -531,7 +522,7 @@ async function launchStep(): Promise<void> {
   }
   // The child's command is in its pane once the launch succeeds, so persist that truth before
   // ancillary layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
-  // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
+  // unrecorded, and launch never retries automatically (an explicit retry is a new session).
   await confirm(childPaneId);
   if (tabId) {
     try {
@@ -554,82 +545,28 @@ async function launchStep(): Promise<void> {
   }
 }
 
-async function runLifecycle(): Promise<void> {
-  const action = rest[0];
-  const runId = positiveInt(flags.run, "--run");
+// Send the run back to Execute for one round of rework: count it, return the phase, and hand the
+// review over as the fixed `orchestrator: address review <id>` line, in one command.
+async function rework(): Promise<void> {
+  const runId = positiveInt(rest[0], "<run>");
+  const review = positiveInt(flags.review, "--review");
   const repo = await resolveRepo();
-  const sessionId = await writeSession();
-  const service = (await svc()).workflowRuns;
-  if (action === "increase-cost-limit") {
-    const expectedLimitUsd = positiveNumber(
-      flags["expected-limit"],
-      "--expected-limit",
-    );
-    const result = await runOp(() =>
-      service.increaseCostLimit(
-        repo,
-        { run: runId, expectedLimitUsd },
-        sessionId,
-      ),
-    );
-    if (flags.json) out(result);
-    else {
-      console.log(`increased cost limit for Workflow run #${result.run}`);
-      console.log(`previous_limit_usd\t${result.previous_limit_usd}`);
-      console.log(`current_limit_usd\t${result.current_limit_usd}`);
-    }
-    return;
-  }
-  const result = await runOp(() => {
-    if (action === "advance-to-verify") {
-      return service.advanceToVerify(repo, { run: runId }, sessionId);
-    }
-    if (action === "request-rework") {
-      return service.requestRework(repo, { run: runId }, sessionId);
-    }
-    if (action === "activate-step") {
-      if (!flags.step) fail("--step is required");
-      if (!flags.session) fail("--session is required");
-      return service.activateStep(
-        repo,
-        { run: runId, step: flags.step, sessionId: flags.session },
-        sessionId,
-      );
-    }
-    if (action === "await-human") {
-      if (!flags.reason) fail("--reason is required");
-      return service.awaitHuman(
-        repo,
-        { run: runId, reason: flags.reason },
-        sessionId,
-      );
-    }
-    if (action === "resume") {
-      if (!flags.step) fail("--step is required");
-      return service.resumeAfterHuman(
-        repo,
-        { run: runId, step: flags.step },
-        sessionId,
-      );
-    }
-    usage();
-    throw new Error("unreachable");
-  });
+  const result = await runOp(async () =>
+    (await svc()).workflowRuns.rework(
+      repo,
+      { run: runId, review },
+      await writeSession(),
+    ),
+  );
   if (flags.json) out(result);
   else {
-    console.log(`${action} Workflow run #${result.run.id}`);
-    console.log(`status\t${display(result.run.status)}`);
-    console.log(`step\t${display(result.run.current_step)}`);
-    if (result.run.active_step !== null) {
-      console.log(`active_step\t${display(result.run.active_step)}`);
-      console.log(
-        `active_session\t${display(result.run.active_session_id ?? "(unresolved)")}`,
-      );
-    }
+    console.log(
+      `sent Workflow run #${result.run.id} back to Execute for review #${result.review}`,
+    );
     console.log(`rework_count\t${result.run.rework_count}`);
-    if (result.run.needs_human_reason !== null) {
-      console.log(`needs_human\t${display(result.run.needs_human_reason)}`);
-    }
+    console.log(`agent\t${display(result.delivered.agent_name)}`);
+    console.log(`pane\t${display(result.delivered.pane_id)}`);
+    console.log(`text\t${display(result.delivered.text)}`);
   }
 }
 
@@ -1045,10 +982,10 @@ export async function run(): Promise<void> {
     else console.log(`archived workflow "${workflow.name}"`);
   } else if (sub === "start") {
     await startWorkflow();
-  } else if (sub === "launch-step") {
+  } else if (sub === "launch") {
     await launchStep();
-  } else if (sub === "run") {
-    await runLifecycle();
+  } else if (sub === "rework") {
+    await rework();
   } else if (sub === "turn") {
     await turnDone();
   } else if (sub === "escalate") {

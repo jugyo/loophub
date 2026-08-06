@@ -14,7 +14,12 @@ import type { WorkflowStep } from "./compose.ts";
  * readers keep the `typeof` narrowing they already had.
  */
 
-/** The lifecycle move a `workflow_run.updated` event records. */
+/**
+ * The lifecycle move a `workflow_run.updated` event records.
+ *
+ * `advance_to_verify` has no writer left — a Verify launch records the phase itself — but stored
+ * rows carry it, and the history timeline still reads them.
+ */
 export type WorkflowRunTransition =
   | "advance_to_verify"
   | "activate_step"

@@ -109,7 +109,6 @@ export type Flags = {
   note?: string;
   text?: string;
   reason?: string;
-  "expected-limit"?: string;
   "requires-changes"?: string;
   "state-version"?: string;
   review?: string;
@@ -222,7 +221,6 @@ const { values, positionals } = parseArgs({
     note: { type: "string" },
     text: { type: "string" },
     reason: { type: "string" },
-    "expected-limit": { type: "string" },
     "requires-changes": { type: "string" },
     "state-version": { type: "string" },
     review: { type: "string" },

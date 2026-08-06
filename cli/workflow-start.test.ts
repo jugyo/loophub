@@ -560,7 +560,7 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   });
 });
 
-test("workflow launch-step rebuilds only its parent tab as a staged grid", () => {
+test("workflow launch rebuilds only its parent tab as a staged grid", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -629,11 +629,10 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     const launched = run(
       [
         "workflow",
-        "launch-step",
+        "launch",
+        String(body.run.id),
         "--repo",
         REPO,
-        "--run",
-        String(body.run.id),
         "--step",
         "execute",
       ],
@@ -670,14 +669,29 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
 
     // The layout is step-agnostic, and the run now owns a live Execute child, so the launch that
     // exercises the missing-tab-id fallback is a Verify one (#2150).
+    // The Verify launch is also the run's move into the Verify phase, so the worktree needs
+    // something to review before it.
+    writeFileSync(join(body.worktree, "grid-fixture.txt"), "grid\n");
+    expect(
+      spawnSync("git", ["-C", body.worktree, "add", "."], { encoding: "utf8" })
+        .status,
+    ).toBe(0);
+    expect(
+      spawnSync(
+        "git",
+        ["-C", body.worktree, "commit", "-m", "add grid fixture"],
+        {
+          encoding: "utf8",
+        },
+      ).status,
+    ).toBe(0);
     const legacyLaunch = run(
       [
         "workflow",
-        "launch-step",
+        "launch",
+        String(body.run.id),
         "--repo",
         REPO,
-        "--run",
-        String(body.run.id),
         "--step",
         "verify",
       ],
@@ -790,10 +804,24 @@ test("fresh Verify closes the previous Verify pane before launching after rework
       { LOOPHUB_SESSION_ID: sid },
     );
   };
-  const transition = (action: "advance-to-verify" | "request-rework") =>
+  // One command sends the run back to Execute: it counts the rework, returns the phase and injects
+  // the fixed review pointer into the live Execute pane, so it runs against that pane's runtime.
+  const rework = (review: number, runtimeDir: string, log: string) =>
     run(
-      ["workflow", "run", action, "--repo", REPO, "--run", String(body.run.id)],
-      parentEnv,
+      [
+        "workflow",
+        "rework",
+        String(body.run.id),
+        "--repo",
+        REPO,
+        "--review",
+        String(review),
+      ],
+      {
+        ...parentEnv,
+        PATH: `${runtimeDir}:${process.env.PATH}`,
+        HERDR_LOG: log,
+      },
     );
   const launch = (
     step: "execute" | "verify",
@@ -803,11 +831,10 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     run(
       [
         "workflow",
-        "launch-step",
+        "launch",
+        String(body.run.id),
         "--repo",
         REPO,
-        "--run",
-        String(body.run.id),
         "--step",
         step,
       ],
@@ -825,6 +852,15 @@ test("fresh Verify closes the previous Verify pane before launching after rework
       },
     );
 
+  // The Execute child the rework hands the review back to: it has to be live in its own pane before
+  // Verify runs, because one command now counts the rework and injects into that pane.
+  const executeRuntime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
+    tabCreateJson: JSON.stringify({
+      result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } },
+    }),
+    paneListJson: JSON.stringify({ result: { panes: [] } }),
+  });
   const firstRuntime = fakeRuntime({
     focusedState: UNRELATED_HERDR_FOCUS,
     // Every child launched through this runtime lands in pane w1:p3 — the pane the recorded
@@ -851,12 +887,12 @@ test("fresh Verify closes the previous Verify pane before launching after rework
           {
             pane_id: "w1:p2",
             agent: "claude",
-            label: `executor #${body.run.id}-2`,
+            label: `executor #${body.run.id}-1`,
           },
           {
             pane_id: "w1:p3",
             agent: "claude",
-            label: `verifier #${body.run.id}-1`,
+            label: `verifier #${body.run.id}-2`,
           },
           {
             pane_id: "w1:p4",
@@ -881,37 +917,42 @@ test("fresh Verify closes the previous Verify pane before launching after rework
           {
             pane_id: "w1:p6",
             agent: "claude",
-            label: `executor #${body.run.id}-2`,
+            label: `executor #${body.run.id}-1`,
           },
         ],
       },
     }),
   });
   try {
+    const execute = launch("execute", executeRuntime.dir, executeRuntime.log);
+    expect(execute.exitCode, execute.stderr).toBe(0);
+    expect(execute.stdout).toContain(`agent\texecutor #${body.run.id}-1`);
     writeFileSync(fixturePath, "initial\n");
     commitWorktree("add Verify lifecycle fixture");
-    const firstAdvance = transition("advance-to-verify");
-    expect(firstAdvance.exitCode, firstAdvance.stderr).toBe(0);
 
+    // Launching Verify is what records the phase, so there is no separate advance to run first.
     const firstVerify = launch("verify", firstRuntime.dir, firstRuntime.log);
     expect(firstVerify.exitCode, firstVerify.stderr).toBe(0);
-    expect(firstVerify.stdout).toContain(`agent\tverifier #${body.run.id}-1`);
+    expect(firstVerify.stdout).toContain(`agent\tverifier #${body.run.id}-2`);
     expect(readFileSync(firstRuntime.log, "utf8")).not.toContain("pane close");
     expectUnrelatedHerdrFocus(firstRuntime);
 
-    const rcReview = postWorkflowReview(1, "request_changes", headSha());
+    const rcReview = postWorkflowReview(2, "request_changes", headSha());
     expect(rcReview.exitCode, rcReview.stderr).toBe(0);
-    const rework = transition("request-rework");
-    expect(rework.exitCode, rework.stderr).toBe(0);
+    const reviewId = Number(
+      rcReview.stdout.match(/review (\d+) submitted/)?.[1],
+    );
+    expect(Number.isFinite(reviewId)).toBe(true);
+    const reworked = rework(reviewId, executeRuntime.dir, executeRuntime.log);
+    expect(reworked.exitCode, reworked.stderr).toBe(0);
+    // The same Execute child keeps working: the rework injects the fixed pointer into its pane
+    // instead of starting a second executor.
+    expect(readFileSync(executeRuntime.log, "utf8")).toContain(
+      `orchestrator: address review ${reviewId}`,
+    );
 
-    const reworkExecute = launch("execute", firstRuntime.dir, firstRuntime.log);
-    expect(reworkExecute.exitCode, reworkExecute.stderr).toBe(0);
-    expect(reworkExecute.stdout).toContain(`agent\texecutor #${body.run.id}-2`);
-    expectUnrelatedHerdrFocus(firstRuntime);
     writeFileSync(fixturePath, "reworked\n");
     commitWorktree("rework Verify lifecycle fixture");
-    const secondAdvance = transition("advance-to-verify");
-    expect(secondAdvance.exitCode, secondAdvance.stderr).toBe(0);
 
     const freshVerify = launch("verify", freshRuntime.dir, firstRuntime.log);
     expect(freshVerify.exitCode, freshVerify.stderr).toBe(0);
@@ -945,6 +986,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
       `pane rename w1:p5 verifier #${body.run.id}-4`,
     );
   } finally {
+    rmSync(executeRuntime.dir, { recursive: true, force: true });
     rmSync(firstRuntime.dir, { recursive: true, force: true });
     rmSync(freshRuntime.dir, { recursive: true, force: true });
     rmSync(closeFailureRuntime.dir, { recursive: true, force: true });

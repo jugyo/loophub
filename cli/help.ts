@@ -327,11 +327,14 @@ export const commandHelp: readonly CommandHelp[] = [
   { path: ["workflow", "archive"], description: "Archive a workflow." },
   { path: ["workflow", "delete"], description: "Delete a workflow." },
   { path: ["workflow", "start"], description: "Start a workflow run." },
-  { path: ["workflow", "launch-step"], description: "Launch a workflow step." },
-  { path: ["workflow", "run"], description: "Manage a workflow run." },
   {
-    path: ["workflow", "run", "update"],
-    description: "Update a workflow run.",
+    path: ["workflow", "launch"],
+    description: "Launch a workflow step child and record the run's phase.",
+  },
+  {
+    path: ["workflow", "rework"],
+    description:
+      "Send a run back to Execute for one review and hand that review over.",
   },
   {
     path: ["workflow", "turn", "done"],

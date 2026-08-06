@@ -66,11 +66,9 @@ test("contracts preserve the workflow command protocol in both languages", () =>
       "lh events subscribe --repo '<repo>' --target herdr-pane",
       "lh events unsubscribe --subscription <id>",
       "lh workflow state <run> --repo '<repo>' --state-version 1 --json",
-      "lh workflow launch-step --repo '<repo>' --run <run> --step execute",
-      "lh workflow launch-step --repo '<repo>' --run <run> --step verify",
-      "lh workflow run advance-to-verify --repo '<repo>' --run <run>",
-      "lh workflow run request-rework --repo '<repo>' --run <run> --review <id>",
-      "lh workflow run resume --repo '<repo>' --run <run> --step execute",
+      "lh workflow launch <run> --repo '<repo>' --step execute",
+      "lh workflow launch <run> --repo '<repo>' --step verify",
+      "lh workflow rework <run> --repo '<repo>' --review <id>",
       "lh workflow deliver --repo '<repo>' --run <run>",
       "lh workflow cost-hold --repo '<repo>' --run <run>",
       "lh workflow escalate-human --repo '<repo>' --run <run>",
@@ -78,13 +76,15 @@ test("contracts preserve the workflow command protocol in both languages", () =>
       expect(parent).toContain(command);
     }
 
+    // The lifecycle commands the parent no longer has a use for: a launch records the phase, a
+    // rework carries its own delivery, and the hold is released by the human's own Web operation.
     for (const command of [
       "lh workflow next",
       "lh workflow watch",
       "lh workflow parent-ready",
       "lh workflow instruction",
-      "lh workflow run enforce-cost-limit",
-      "lh workflow run increase-cost-limit",
+      "lh workflow launch-step",
+      "lh workflow run ",
       "lh workflow step status",
       "lh subscribe --repo",
     ]) {

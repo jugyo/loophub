@@ -213,9 +213,10 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | procedure | owner | 同一 transaction の DB write | transaction 外 |
 |---|---|---|---|
 | `workflowRuns.start` | procedure | run row、`workflow_run.started` | PR / worktree provision、dev lock、contract file write。parent session 登録は provision 前の独立区間 |
-| `workflowRuns.advanceToVerify` / `awaitHuman` / `resumeAfterHuman` / `activateStep` / `requestRework` | procedure（`updateRunLifecycle`） | run lifecycle fields、`workflow_run.updated` | pane 操作、git SHA read |
-| `workflowRuns.increaseCostLimit` / `increaseCostLimitForHuman` | procedure | limit update、`workflow_run.cost_limit_increased` | — |
-| `workflowRuns.confirmStepLaunch` | procedure | child session、session link、step / active state、handoff、`handoff.recorded`、`workflow_step.launched` | agent は既に spawn 済み |
+| `workflowRuns.awaitHuman` / `activateStep` | procedure（`updateRunLifecycle`） | run lifecycle fields、`workflow_run.updated` | pane 操作、git SHA read |
+| `workflowRuns.rework` | procedure（`updateRunLifecycle`） | rework count、phase、active target、`workflow_run.updated` | verify 完了判定の git read と、固定文の pane 注入（`deliver` へ委譲。注入失敗は数えた rework を残して可視の error になる） |
+| `workflowRuns.increaseCostLimitForHuman` | procedure | limit update、`workflow_run.cost_limit_increased`、hold 解除と `workflow_run.updated`（増額は継続判断そのものなので同じ transaction に置く） | — |
+| `workflowRuns.confirmStepLaunch` | procedure | child session、session link、phase / active state、handoff、`handoff.recorded`、`workflow_step.launched` | agent は既に spawn 済み |
 | `workflowRuns.detectCostExceeded` | store helper | 条件付き `workflow_run.cost_exceeded` | — |
 | `workflowRuns.launchStep` | store helper | child sequence の予約 | worktree / git read、launch plan 作成 |
 | `workflowRuns.turnDone` / `escalate` | store helper | 対応する event | step result / git SHA read |

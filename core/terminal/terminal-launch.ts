@@ -655,7 +655,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
   // in). The command line reads it back instead of carrying it inline — see agentCommandLine.
   userPromptPath: string;
   // The parent run's pane, split to place the child beside it in the same tab. Comes from the
-  // parent agent's own HERDR_PANE_ID (see `lh workflow launch-step`); when absent the child falls
+  // parent agent's own HERDR_PANE_ID (see `lh workflow launch`); when absent the child falls
   // back to its own fresh tab, the same degraded placement the tab-less launch has always had.
   splitPaneId?: string | null;
   model?: string | null;
@@ -727,7 +727,7 @@ export interface HerdrLaunchOutcome {
 
 // Runs a launch plan's steps in order: create the pane, label it, type the command into it. Shared
 // by every launcher (lh-web's terminal.launch, `lh workflow start --herdr`, `lh workflow
-// launch-step`) so the pane-first sequence herdr requires exists once.
+// launch`) so the pane-first sequence herdr requires exists once.
 //
 // The command carries its own prompt, so there is nothing left to deliver once it is typed and no
 // window in which the agent is running but uninstructed (#2354). Writing to a pane whose shell has
