@@ -121,6 +121,7 @@ come from live git or worktree state (`pullJSON`, `issueListItemJSON`, `issueDet
 
 ```sh
 npm install
+npm --prefix web install # installs web/ workspace deps; also run by the root postinstall, but keep it explicit for ignore-scripts=true
 npm test                 # fast tests, including the Web SPA (excludes real-git integration tests)
 npm run test:web         # Web SPA tests only
 npm run test:integration # real-git repository/worktree integration tests

@@ -20,7 +20,8 @@ port — no separate dev server.
 From the repo root:
 
 ```sh
-npm install             # also installs web deps (root postinstall)
+npm install
+npm --prefix web install # also run by the root postinstall; explicit so it works with ignore-scripts=true
 npm run lh-web          # http://localhost:8730 — API + UI + HMR, one process
 ```
 

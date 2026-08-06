@@ -67,7 +67,8 @@ clone から UI を開くまで。
 ```sh
 git clone <this-repo> loophub
 cd loophub
-npm install # web/ の依存も postinstall で入る
+npm install
+npm --prefix web install # web/ の依存も入れる（root の postinstall でも実行されるが、ignore-scripts=true でも効くよう明示する）
 ```
 
 **2. `lh` コマンドを PATH に入れる**

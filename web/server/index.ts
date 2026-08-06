@@ -53,7 +53,7 @@ try {
   vite = await createViteDev(server);
 } catch (err) {
   log.error(
-    "lh-web: failed to start the embedded Vite dev server. Are web deps installed (npm install)?",
+    "lh-web: failed to start the embedded Vite dev server. Are web deps installed (npm --prefix web install)?",
   );
   log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
   process.exit(1);

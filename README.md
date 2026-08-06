@@ -60,7 +60,8 @@ From clone to opening the UI.
 ```sh
 git clone <this-repo> loophub
 cd loophub
-npm install # also installs web/ deps via postinstall
+npm install
+npm --prefix web install # also run by the root postinstall; explicit here so it works with ignore-scripts=true
 ```
 
 **2. Put `lh` on your PATH**
