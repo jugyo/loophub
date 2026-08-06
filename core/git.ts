@@ -641,6 +641,10 @@ export interface MergeResult {
   merged: boolean;
   sha?: string;
   conflict?: boolean;
+  // Why the merge did not happen, when reporting it as a plain conflict would mislead: a rebase
+  // refuses a branch it cannot replay even though nothing conflicts. Callers present it instead of
+  // their own wording, so it reads as a sentence.
+  reason?: string;
 }
 
 // .git/index.lock 競合は IDE/エディタの Git 連携など他プロセスが同じ checkout を
@@ -685,10 +689,94 @@ async function syncPrimaryCheckoutIfOnBase(
   }
 }
 
+// Head's commits cannot be replayed as one line of history: a merge commit's content belongs to
+// two lineages at once, and no replayed commit carries both.
+const UNREPLAYABLE_MERGE =
+  "Rebase cannot replay this branch's merge commits; merge or squash instead";
+
+// Replay head's commits onto base as a linear history. `sha` is the replayed tip, or null with the
+// conflict this hit — `reason` set when nothing actually conflicts and the branch is simply not
+// replayable. No working tree is touched.
+//
+// One `git replay --onto` call used to do this, but replay is EXPERIMENTAL and its interface
+// moved: since git 2.53 it defaults to `--ref-action=update`, updating the replayed refs itself
+// and printing nothing, so the "update <ref> <new> <old>" line this code parsed is gone. The
+// merge then reported a conflict while head's branch had already been rewritten. Older git
+// (before replay existed at all) failed the same path for a different reason. merge-tree and
+// commit-tree — the same plumbing the merge and squash paths use — behave the same way on every
+// git version that LoopHub already requires.
+//
+// Each replayed commit's tree is base's tip merged with that commit, i.e. base plus the changes
+// that commit's own ancestry carries; chaining every commit onto the previous one keeps per-commit
+// diffs intact. Authors are carried over; the committer is left to git's own identity resolution,
+// exactly as replay left it.
+//
+// Merge commits are skipped, which reproduces head only while head's own commits form a single
+// line — including the common shape where head merged base in to stay current. When head merged a
+// side branch, or resolved a merge by hand, the last replayed commit holds one lineage and not the
+// other, so the replayed tip would be a tree head never had. Comparing that tip against the tree a
+// merge of head produces catches exactly those cases, and they are refused rather than landed.
+// This is not a capability lost in the move off replay: replay itself refused every merge-carrying
+// head ("replaying merge commits is not supported yet"). Flattening them the way `git rebase` does
+// needs a per-commit merge base (`merge-tree --merge-base`, git 2.40+), which this path — running
+// on `merge-tree --write-tree` alone since git 2.38 — deliberately does not require.
+async function replayOntoBase(
+  repoPath: string,
+  base: string,
+  baseSha: string,
+  head: string,
+): Promise<{ sha: string | null; reason?: string }> {
+  // Oldest first, parents before children whatever the commit dates say. One call carries every
+  // field a replayed commit needs, so only the merge and the commit itself cost a process.
+  const list = await git(repoPath, [
+    "log",
+    "--reverse",
+    "--topo-order",
+    "--no-merges",
+    "--format=%H%x1f%an%x1f%ae%x1f%aI%x1f%B%x1e",
+    `${base}..${head}`,
+  ]);
+  if (list.code !== 0)
+    throw new Error(
+      `git log failed for ${base}..${head}: ${list.stderr.trim()}`,
+    );
+
+  let onto = baseSha;
+  for (const record of list.stdout.split("\x1e")) {
+    const fields = record.replace(/^\n/, "");
+    if (!fields.trim()) continue;
+    const [sha, name, email, date, body] = fields.split("\x1f");
+    const preview = await mergePreview(repoPath, baseSha, sha);
+    if (preview.conflict || !preview.tree) return { sha: null };
+    const commit = await git(
+      repoPath,
+      ["commit-tree", preview.tree, "-p", onto, "-m", body.replace(/\n+$/, "")],
+      {
+        GIT_AUTHOR_NAME: name,
+        GIT_AUTHOR_EMAIL: email,
+        GIT_AUTHOR_DATE: date,
+      },
+    );
+    const replayed = commit.stdout.trim();
+    if (commit.code !== 0 || !replayed)
+      throw new Error(`git commit-tree failed: ${commit.stderr.trim()}`);
+    onto = replayed;
+  }
+
+  const whole = await mergePreview(repoPath, base, head);
+  if (whole.conflict || !whole.tree) return { sha: null };
+  const tree = await git(repoPath, ["rev-parse", `${onto}^{tree}`]);
+  if (tree.code !== 0)
+    throw new Error(`git rev-parse failed for ${onto}: ${tree.stderr.trim()}`);
+  return tree.stdout.trim() === whole.tree
+    ? { sha: onto }
+    : { sha: null, reason: UNREPLAYABLE_MERGE };
+}
+
 // Advance base ref without touching other worktrees. Primary checkout on base is synced to newSha.
 //   squash => 単一親(base) の 1 コミットに圧縮
 //   merge  => 2親(base, head) のマージコミット
-//   rebase => head の各コミットを base 上に並べ替え (git replay、線形履歴)
+//   rebase => head の各コミットを base 上に並べ替え (線形履歴)
 export type PullMergeMethod = "squash" | "merge" | "rebase";
 
 export async function mergePull(
@@ -701,7 +789,7 @@ export async function mergePull(
   // session that merged; `null` means "nobody in particular", and leaves git's own identity
   // resolution (repository, then global, then git's auto-detection) in place instead of
   // stamping a placeholder name into history (#2389). The rebase path always resolves this
-  // way, because `git replay` is not given an identity either.
+  // way: it keeps each replayed commit's own author and never stamps an actor.
   actor: string | null,
   opts: MergeOptions = {},
 ): Promise<MergeResult> {
@@ -717,18 +805,10 @@ export async function mergePull(
   let newSha: string;
 
   if (method === "rebase") {
-    // git replay は working tree 非接触で「update refs/heads/<head> <new> <old>」を出力。
-    // コンフリクト時は exit!=0 かつ出力なし。
-    const r = await git(repoPath, [
-      "replay",
-      "--onto",
-      baseRev,
-      `${baseRev}..${headRev}`,
-    ]);
-    const line = r.stdout.trim().split("\n").pop() || "";
-    const parts = line.split(" "); // [update, refs/heads/<head>, <new>, <old>]
-    newSha = parts[0] === "update" ? parts[2] : "";
-    if (r.code !== 0 || !newSha) return { merged: false, conflict: true };
+    const replayed = await replayOntoBase(repoPath, baseRev, baseSha, headRev);
+    if (!replayed.sha)
+      return { merged: false, conflict: true, reason: replayed.reason };
+    newSha = replayed.sha;
   } else {
     const preview = await mergePreview(repoPath, baseRev, headRev);
     if (preview.conflict || !preview.tree)

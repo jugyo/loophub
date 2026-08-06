@@ -776,7 +776,9 @@ export const pulls = {
         number: row.number,
         source_payload_version: SOURCE_PAYLOAD_VERSION,
       });
-      throw new ServiceError(409, "Merge conflict");
+      // A rebase can be blocked by history it cannot replay rather than by conflicting content;
+      // saying "Merge conflict" there sends the operator looking for a conflict that is not there.
+      throw new ServiceError(409, res.reason ?? "Merge conflict");
     }
     if (!res.merged) throw new ServiceError(422, "Merge failed");
     // The git merge is done; the PR state, persisted facts and every subscriber write commit

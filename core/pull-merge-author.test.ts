@@ -93,3 +93,35 @@ test("merge() with a session keeps authoring the commit as that session's agent"
     "executor <executor@loophub.local>|executor <executor@loophub.local>",
   );
 });
+
+// A rebase can be blocked by history it cannot replay while nothing conflicts at all, so the 409
+// has to say that instead of sending the operator looking for a conflict.
+test("merge() reports why a rebase could not replay the branch", async () => {
+  git(["checkout", "-q", "-b", "loophub/replay", "main"]);
+  writeFileSync(join(repoPath, "replay.txt"), "replay\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "replay 1"]);
+  git(["checkout", "-q", "-b", "loophub/replay-side", "loophub/replay"]);
+  writeFileSync(join(repoPath, "replay-side.txt"), "side\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "side 1"]);
+  git(["checkout", "-q", "loophub/replay"]);
+  writeFileSync(join(repoPath, "replay2.txt"), "replay 2\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "replay 2"]);
+  // Nothing conflicts: the two sides touch different files.
+  expect(git(["merge", "-m", "merge side", "loophub/replay-side"]).status).toBe(
+    0,
+  );
+  git(["checkout", "-q", "main"]);
+
+  const pr = (await svc.pulls.create(
+    "me/proj",
+    { title: "rebase merge", head: "loophub/replay", base: "main" },
+    undefined,
+  )) as any;
+
+  await expect(
+    svc.pulls.merge("me/proj", pr.number, "rebase", undefined),
+  ).rejects.toThrow(/merge commits/);
+});
