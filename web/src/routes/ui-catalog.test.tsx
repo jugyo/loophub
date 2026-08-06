@@ -147,13 +147,24 @@ describe("UiCatalogPage", () => {
       expect(screen.getByText(/Codex — Default model & effort/)).toBeTruthy();
     });
 
-    it("prototype B model picker still offers Default for model/effort", async () => {
+    it("prototype B is marked selected and drops the Default wording", async () => {
+      renderRoute("/__ui");
+
+      const sectionB = (
+        await screen.findByText("案 B — 全 agent を 1 行テーブルで比較する")
+      ).closest(
+        "[data-debug-component='CodingAgentPrototypeB']",
+      ) as HTMLElement;
+      // Human feedback: "B がいいね。Default という表現はやや confusing なので不要。"
+      expect(sectionB.textContent).toContain("selected");
+      expect(sectionB.textContent).not.toContain("Default");
+    });
+
+    it("prototype D model picker still offers Default for model/effort", async () => {
       renderRoute("/__ui");
 
       fireEvent.pointerDown(
-        await screen.findByRole("button", {
-          name: "Claude Code model (prototype B)",
-        }),
+        await screen.findByRole("button", { name: "Model (prototype D)" }),
       );
       expect(screen.getByRole("menuitem", { name: "Default" })).toBeTruthy();
     });

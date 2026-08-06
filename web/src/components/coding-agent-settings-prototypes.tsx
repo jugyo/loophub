@@ -88,6 +88,7 @@ function FieldDropdown({
   portalContainer,
   onSelect,
   showDefault = true,
+  placeholder = "Default",
 }: {
   ariaLabel: string;
   value: string;
@@ -98,6 +99,9 @@ function FieldDropdown({
   // default") but NOT for agent/runtime — an empty runtime would crash the lookup. Callers that
   // select an enum must turn it off so "" can never reach the handler.
   showDefault?: boolean;
+  // Fallback label for an empty value. Prototype B drops the "Default" wording (human feedback:
+  // confusing there) and shows an en dash instead for agents without an effort.
+  placeholder?: string;
 }) {
   const selected = options.find((o) => o.value === value);
   return (
@@ -111,7 +115,7 @@ function FieldDropdown({
           className="w-full justify-between gap-2 border bg-background px-2.5 text-left font-normal shadow-sm"
         >
           <span className="truncate">
-            {selected ? selected.label : value || "Default"}
+            {selected ? selected.label : value || placeholder}
           </span>
           <ChevronsUpDown
             className="size-3.5 shrink-0 text-muted-foreground"
@@ -231,11 +235,15 @@ function PrototypeCard({
   title,
   intent,
   children,
+  selected = false,
 }: {
   index: string;
   title: string;
   intent: string;
   children: ReactNode;
+  // Marks the direction the human reviewer picked (case B), so the catalog records the decision for
+  // the follow-up implementation issue instead of leaving it only in PR comments.
+  selected?: boolean;
 }) {
   return (
     <section
@@ -249,9 +257,10 @@ function PrototypeCard({
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">{intent}</p>
         </div>
-        <Badge tone="agent" className="shrink-0">
-          prototype
-        </Badge>
+        <div className="flex shrink-0 items-center gap-2">
+          {selected ? <Badge tone="open">selected</Badge> : null}
+          <Badge tone="agent">prototype</Badge>
+        </div>
       </div>
       <div className="rounded-md border bg-background p-4">{children}</div>
     </section>
@@ -375,6 +384,7 @@ function PrototypeBTable({
       index="B"
       title="全 agent を 1 行テーブルで比較する"
       intent="横 1 行 = 1 agent にまとめ、Model / Effort を列として置く。全 agent の設定を一度に比較でき、ネストの折り返しがなくなる。列は必要な分だけ残し、agent が増えても縦に崩れにくい。"
+      selected
     >
       <div className="max-w-xl">
         <p className="text-sm font-medium">Coding agent</p>
@@ -382,9 +392,11 @@ function PrototypeBTable({
           デフォルトはコードを運転する agent の設定です。（mock）
         </p>
         <div className="mt-3 space-y-1.5">
-          {/* header row */}
+          {/* header row — the first column carries no label: the marker itself communicates "default
+              agent", and the word "Default" was dropped per human feedback (confusing in a table
+              where every cell already shows its current value). */}
           <div className="grid grid-cols-[3rem_minmax(0,1fr)_10rem_9rem] items-center gap-3 pr-1 text-xs font-medium text-muted-foreground">
-            <span>Default</span>
+            <span aria-hidden="true" />
             <span>Agent</span>
             <span>Model</span>
             <span>Effort</span>
@@ -415,6 +427,7 @@ function PrototypeBTable({
                     label: m,
                   }))}
                   portalContainer={portalContainer}
+                  showDefault={false}
                   onSelect={(model) =>
                     setCells((c) => ({ ...c, [agent]: { ...c[agent], model } }))
                   }
@@ -427,6 +440,8 @@ function PrototypeBTable({
                     label: e,
                   }))}
                   portalContainer={portalContainer}
+                  showDefault={false}
+                  placeholder="—"
                   onSelect={(effort) =>
                     setCells((c) => ({
                       ...c,
