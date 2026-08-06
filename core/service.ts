@@ -25,7 +25,6 @@ export type { HerdrRepoSessions } from "./service/terminal.ts";
 export { terminal } from "./service/terminal.ts";
 export { workerRuntime } from "./service/worker-runtime.ts";
 export { workflowCostHold } from "./service/workflow-cost-hold.ts";
-export { workflowEffects } from "./service/workflow-effects.ts";
 export { workflowEscalation } from "./service/workflow-escalation.ts";
 export { workflowRuns } from "./service/workflow-runs.ts";
 export { workflows } from "./service/workflows.ts";

@@ -831,32 +831,6 @@ async function escalateHuman(): Promise<void> {
   }
 }
 
-async function effect(): Promise<void> {
-  const action = rest[0];
-  if (action !== "begin" && action !== "complete") usage();
-  const run = positiveInt(flags.run, "--run");
-  const event = positiveInt(flags.event, "--event");
-  if (!flags.effect) fail("--effect is required");
-  const repo = await resolveRepo();
-  const service = (await svc()).workflowEffects;
-  const input = { repo, run, event, effect: flags.effect };
-  const result = await runOp(() =>
-    action === "begin"
-      ? service.beginEffect(input)
-      : service.completeEffect(input),
-  );
-  if (flags.json) out(result);
-  else if (action === "begin") {
-    console.log(
-      result.execute
-        ? `claimed effect ${result.effect} for event #${result.event}`
-        : `${result.status} effect ${result.effect} for event #${result.event}`,
-    );
-  } else {
-    console.log(`completed effect ${result.effect} for event #${result.event}`);
-  }
-}
-
 async function costHold(): Promise<void> {
   const run = positiveInt(flags.run, "--run");
   const repo = await resolveRepo();
@@ -994,8 +968,6 @@ export async function run(): Promise<void> {
     await deliver();
   } else if (sub === "escalate-human") {
     await escalateHuman();
-  } else if (sub === "effect") {
-    await effect();
   } else if (sub === "cost-hold") {
     await costHold();
   } else if (sub === "state") {

@@ -159,25 +159,16 @@ GitHub reference は state の `github_feedback` に content_hash 付きで現�
 累計 cost が `cost_limit_usd` に達した run では、parent は `lh workflow cost-hold --run <run>` を実行する。
 command は run 単位であり event id を取らない —— 累計上限は run 行の `cost_limit_usd`、累計 cost は
 usage、中断対象は run 行の active target から解決する。同じ state を二度読んでも effect が一度きりで
-あることは、判断ではなく `cost.hold` receipt が保証する。
+あることは、判断ではなく command 内の `cost.hold` receipt が保証する。
 
-Esc、pane 通知、Issue comment のような DB transaction 外の side effect は、実行前に durable
-receipt を claim し、成功後に complete する。
+Esc、pane 通知、Issue comment のような DB transaction 外の side effect は、それぞれ専用 command
+（`cost-hold`、`escalate-human`）が内部で durable receipt を claim / complete する。parent が汎用の
+claim / complete を呼ぶ口は無い。receipt が `pending` のまま残った場合は `pending_effect_receipt` が
+非 null になり、parent は再実行せず人間へ曖昧状態を渡す。
 
-```sh
-lh workflow effect begin --repo "$repo" --run "$run" --event "$event" --effect "$key" --json
-lh workflow effect complete --repo "$repo" --run "$run" --event "$event" --effect "$key" --json
-```
-
-`begin` が `execute: true` を返した場合だけ effect を実行する。recovery や意図的な再処理で receipt が `pending`
-なら、effect 済みか否かを自動判定できないため再実行せず、人間へ曖昧状態を可視化する。pending receipt が
-残る場合は人間が recovery の要否を判断する。event 読み取りや待機が失敗した場合も non-zero exit を
-可視化し、retry や fallback delivery は行わない。
-
-receipt の粒度は effect が何に対して一度きりかで決まる。汎用の `effect begin/complete` は event 単位
-だが、`cost-hold` の `cost.hold` は (run, 累計上限) 単位である。同じ上限に対する
-`workflow_run.cost_exceeded` は再送されて複数 event になるのに、要求している中断は 1 回だけだからで
-ある。
+receipt の粒度は effect が何に対して一度きりかで決まる。`cost-hold` の `cost.hold` は
+(run, 累計上限) 単位である。同じ上限に対する `workflow_run.cost_exceeded` は再送されて複数 event
+になるのに、要求している中断は 1 回だけだからである。
 
 integration test は実 git / DB 状態に対する `workflowRuns.state` の観測値を確認する。
 

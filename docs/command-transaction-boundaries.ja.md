@@ -224,7 +224,6 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `workflowRuns.registerParentPane` | procedure | pane row、resource link | — |
 | `workflowEscalation.escalateHuman` | 三段 protocol | escalation event、claim、issue comment と `issue.commented`、complete | — |
 | `workflowCostHold.run` | 三段 protocol | claim、await-human の state と event、complete | herdr list / Escape / pane notification |
-| `workflowWatch.beginEffect` / `completeEffect` | store helper | receipt の claim / complete | wait、source event の選択 |
 
 ### Session / notification / worker sweep
 

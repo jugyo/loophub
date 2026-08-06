@@ -54,7 +54,6 @@ export type Flags = {
   emoji?: string;
   "request-message"?: string;
   event?: string;
-  effect?: string;
   type?: string;
   since?: string;
   order?: string;
@@ -169,7 +168,6 @@ const { values, positionals } = parseArgs({
     emoji: { type: "string" },
     "request-message": { type: "string" },
     event: { type: "string" },
-    effect: { type: "string" },
     type: { type: "string" },
     since: { type: "string" },
     order: { type: "string" },
