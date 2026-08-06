@@ -168,7 +168,7 @@ test("an agent's own comment is not input and wakes nobody", async () => {
   expect(await waitForPaneWrites(2)).toHaveLength(2);
 });
 
-test("a run's own reply to a diff feedback thread is not delivered back to it", async () => {
+test("a run's own reply to a diff feedback thread is still delivered", async () => {
   const { repo, run, pr } = fixture("diff-feedback-echo");
   const child = "00000000-0000-4000-8000-0000000000b1";
   S.registerAgentSession(
@@ -183,22 +183,24 @@ test("a run's own reply to a diff feedback thread is not delivered back to it", 
   );
   S.appendWorkflowRunStepSession(run.id, "execute", child);
 
+  // Delivery does not drop the child's own writing: parent still learns the thread was answered.
+  // Whether there is work left is decided by selection when the parent observes state.
   S.emitEvent(repo.id, "pull_request.diff_feedback_replied", "executor", {
     number: pr.number,
     thread_id: 1,
     reply_message_id: 2,
     session_id: child,
   });
-  expect(await settledPaneWrites()).toEqual([]);
+  expect(await waitForPaneWrites(2)).toHaveLength(2);
 
-  // A human writing in the same thread is ordinary input.
+  // A human writing in the same thread is ordinary input and wakes again.
   S.emitEvent(repo.id, "pull_request.diff_feedback_replied", "me", {
     number: pr.number,
     thread_id: 1,
     reply_message_id: 3,
     session_id: null,
   });
-  expect(await waitForPaneWrites(2)).toHaveLength(2);
+  expect(await waitForPaneWrites(4)).toHaveLength(4);
 });
 
 test("a rolled back write wakes nobody, and a committed one wakes once", async () => {

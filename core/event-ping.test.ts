@@ -16,17 +16,16 @@ test("a run's declarations to its parent ping, and its own lifecycle does not", 
       { kind: "issue", key: "2372" },
       { kind: "pull", key: "2381" },
     ],
-    // Turn done and a submitted review are written by a child session, but they are written *for*
-    // the subscriber to read — excluding them by session would drop the main trigger of progress.
-    echoSessionId: null,
   });
   expect(
     eventPingIntent("pull_request.review_submitted", {
       number: 2381,
       session_id: "verify-session",
       review_id: 7,
-    })?.echoSessionId,
-  ).toBeNull();
+    }),
+  ).toEqual({
+    resources: [{ kind: "pull", key: "2381" }],
+  });
 
   for (const type of [
     "workflow_run.started",
@@ -46,7 +45,7 @@ test("escalation, cost boundaries and external facts ping unconditionally", () =
     ["pull_request.github_feedback", { number: 2381 }],
     ["pull_request.merge_conflict", { number: 2381 }],
   ] as const) {
-    expect(eventPingIntent(type, payload)?.echoSessionId).toBeNull();
+    expect(eventPingIntent(type, payload)).not.toBeNull();
   }
 });
 
@@ -76,7 +75,7 @@ test("a comment pings only when a human wrote it", () => {
   expect(eventPingIntent("issue.commented", { number: 2372 })).toBeNull();
 });
 
-test("diff feedback carries the writing session so the writer is not woken by it", () => {
+test("diff feedback pings from the payload alone, without an own-session filter", () => {
   for (const type of [
     "pull_request.diff_feedback_created",
     "pull_request.diff_feedback_replied",
@@ -85,12 +84,11 @@ test("diff feedback carries the writing session so the writer is not woken by it
       eventPingIntent(type, { number: 2381, session_id: "execute-session" }),
     ).toEqual({
       resources: [{ kind: "pull", key: "2381" }],
-      echoSessionId: "execute-session",
     });
-    // A human writes without a session; there is nobody the reply could echo back to.
-    expect(
-      eventPingIntent(type, { number: 2381, session_id: null })?.echoSessionId,
-    ).toBeNull();
+    // A human write without a session still pings; selection decides what is unanswered.
+    expect(eventPingIntent(type, { number: 2381, session_id: null })).toEqual({
+      resources: [{ kind: "pull", key: "2381" }],
+    });
   }
 });
 

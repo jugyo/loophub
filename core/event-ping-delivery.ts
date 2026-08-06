@@ -2,7 +2,8 @@
 //
 // The routing question is answered from the subscription tables alone — "who subscribed to
 // pull:2381" — never by walking from an event to the runs it might concern. A subscriber declares
-// what it wants to be woken by; this module does not know why.
+// what it wants to be woken by; this module does not know why, and it does not read a subscriber's
+// domain object to decide whether to deliver.
 //
 // Everything here is best-effort. A ping that is not delivered is logged and dropped: there is no
 // retry, no acknowledgement and no queue, because a subscriber reads current state on any later
@@ -14,11 +15,8 @@ import { sendHerdrPrompt } from "./service/herdr-prompt.ts";
 import {
   type EventSubscriberRow,
   listEventSubscribersForResource,
-  listEventSubscriptionResources,
 } from "./store/event-subscriptions.ts";
 import { getRepoById } from "./store/repos.ts";
-import { getWorkflowRun } from "./store/workflows.ts";
-import { isWorkflowRunOwnSession } from "./workflow/source-events.ts";
 
 const HERDR_TIMEOUT_MS = 15_000;
 
@@ -68,22 +66,6 @@ function pingsForIntent(repoId: number, intent: EventPingIntent): EventPing[] {
     }
   }
   return [...pings.values()];
-}
-
-// Whether the write belongs to a Workflow run this subscription registered. A run's Execute answers
-// a diff feedback thread by replying to it, and that thread is also where the run's parent reads
-// unanswered human input — so without this the child's own reply is delivered back to it. The
-// question is asked per subscriber because it is about that subscriber's own writing: the same
-// reply is ordinary input for anyone else.
-function isOwnWriting(
-  subscription: EventSubscriberRow,
-  sessionId: string,
-): boolean {
-  return listEventSubscriptionResources(subscription.id).some((resource) => {
-    if (resource.resource_kind !== "workflow_run") return false;
-    const run = getWorkflowRun(Number(resource.resource_key));
-    return !!run && isWorkflowRunOwnSession(run, sessionId);
-  });
 }
 
 async function deliver(
@@ -139,12 +121,6 @@ export function pingEventSubscribers(
   db.afterCommit(() => {
     try {
       for (const ping of pingsForIntent(repoId, intent)) {
-        if (
-          intent.echoSessionId &&
-          isOwnWriting(ping.subscription, intent.echoSessionId)
-        ) {
-          continue;
-        }
         void deliver(ping, logError);
       }
     } catch (error) {

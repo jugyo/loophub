@@ -2,8 +2,8 @@
 //
 // A ping says "something you subscribed to may have changed" and nothing else, so this module only
 // decides *whether* a row pings and *what identity* the ping carries. It is pure — no database, no
-// I/O — which is why the one condition that needs a row outside the event (the subscriber's own
-// sessions) leaves as part of the intent for the delivery side to answer.
+// I/O. Any secondary condition is answered from the event payload alone (today: only a comment's
+// `author_type`); the delivery side never reads a subscriber's domain object to filter wakes.
 //
 // Missing a ping is not a correctness failure: a subscriber reads current state on any later ping,
 // so a type absent from the tables below simply never wakes anyone on its own.
@@ -21,11 +21,6 @@ export interface EventPingResource {
 export interface EventPingIntent {
   /** The resources the event named; a subscriber to any of them is woken once. */
   resources: EventPingResource[];
-  /**
-   * The session that wrote the row, when a subscriber that owns it must not be woken by its own
-   * writing. Null for every event whose ping is decided by its type alone.
-   */
-  echoSessionId: string | null;
 }
 
 /** What decides, past the event type, whether a row pings. */
@@ -33,13 +28,7 @@ type PingRule =
   /** The type alone decides. */
   | "always"
   /** Human input only: an agent's own posting is a progress note, not an instruction. */
-  | "human_author"
-  /**
-   * Everything except the subscriber's own writing. It applies where a subscriber writes into the
-   * very place it reads its input from — a diff feedback thread — so without it the reply travels
-   * back to the child that wrote it.
-   */
-  | "not_own_session";
+  | "human_author";
 
 /**
  * The run namespace, keyed by type so a new lifecycle event has to declare itself.
@@ -77,8 +66,8 @@ const WORKFLOW_PING_RULES: Record<WorkflowEventType, PingRule | null> = {
 const SOURCE_PING_RULES: Record<string, PingRule> = {
   "issue.commented": "human_author",
   "pull_request.commented": "human_author",
-  "pull_request.diff_feedback_created": "not_own_session",
-  "pull_request.diff_feedback_replied": "not_own_session",
+  "pull_request.diff_feedback_created": "always",
+  "pull_request.diff_feedback_replied": "always",
   "pull_request.review_submitted": "always",
   "pull_request.github_feedback": "always",
   "pull_request.merge_conflict": "always",
@@ -116,12 +105,5 @@ export function eventPingIntent(
   if (rule === "human_author" && fields.author_type !== "human") return null;
   const resources = eventSubjects(type, payload).map(pingResource);
   if (resources.length === 0) return null;
-  const sessionId = fields.session_id;
-  return {
-    resources,
-    echoSessionId:
-      rule === "not_own_session" && typeof sessionId === "string"
-        ? sessionId
-        : null,
-  };
+  return { resources };
 }

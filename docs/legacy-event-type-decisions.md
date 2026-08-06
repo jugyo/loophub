@@ -44,16 +44,14 @@ exercise the saved-row readers; they are not current producers.
 
 - **Producer:** none. Pull request termination now records `workflow_run.closed` where a run event is
   needed, and Workflow instruction delivery observes pull request source events directly.
-- **Readers:** `core/workflow/source-events.ts` recognizes stored merge twins during source-event
-  cutover classification. `core/workflow/event-payloads.ts` retains their typed payload, and
+- **Readers:** `core/workflow/event-payloads.ts` retains their typed payload, and
   `workflowRunHistoryEventJSON` in `core/serialize.ts` retains their dedicated history entry.
 - **Saved rows and UI:** existing Workflow histories still render these rows as "Linked PR merged"
   with notable significance. Removing the dedicated reader would degrade them to the generic
   fallback, while removing twin classification could reinterpret rows encountered by an existing
   run cursor.
 - **Index:** no event-type-specific index exists or is needed for this type.
-- **Tests:** retain the legacy merge fixtures in `core/serialize.test.ts` and the source-event cutover
-  coverage in `core/workflow/source-events.test.ts`.
+- **Tests:** retain the legacy merge fixtures in `core/serialize.test.ts`.
 
 ## `workflow_run.usage_updated`: keep
 
