@@ -8,10 +8,12 @@ import { Check, LayoutTemplate, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
 import type { Workflow, WorkflowContracts } from "@/api/types";
+import { ReadOnlyPromptDialog } from "@/components/read-only-prompt-dialog";
 import { SettingsLayout } from "@/components/settings-header";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
+import { trapDialogFocus } from "@/lib/trap-dialog-focus";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
@@ -50,30 +52,6 @@ type OpenContract = { contractKey: keyof WorkflowContracts; label: string };
 
 const contractLinkClasses =
   "text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
-
-const dialogFocusableSelector =
-  'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';
-
-function trapDialogFocus(
-  event: React.KeyboardEvent<HTMLElement>,
-  dialog: HTMLElement,
-) {
-  if (event.key !== "Tab") return;
-  const focusable = Array.from(
-    dialog.querySelectorAll<HTMLElement>(dialogFocusableSelector),
-  ).filter((element) => !element.closest("[hidden]"));
-  if (focusable.length === 0) return;
-
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
-}
 
 export function WorkflowsPage() {
   const { data: workflows, isLoading, isError } = useWorkflows();
@@ -715,11 +693,15 @@ function WorkflowForm({
       </div>
 
       {openContract ? (
-        <SystemPromptDialog
-          contractLabel={openContract.label}
+        <ReadOnlyPromptDialog
+          title={`${openContract.label} system prompt`}
+          description="Fixed by LoopHub and shown here for reference."
           content={contracts.data?.[openContract.contractKey]}
           loading={contracts.isLoading}
           error={contracts.isError}
+          errorMessage="Failed to load the system prompt."
+          closeAriaLabel="Close system prompt"
+          debugComponent="SystemPromptDialog"
           onClose={() => setOpenContract(null)}
         />
       ) : null}
@@ -742,86 +724,6 @@ function WorkflowForm({
         </div>
       </div>
     </form>
-  );
-}
-
-function SystemPromptDialog({
-  contractLabel,
-  content,
-  loading,
-  error,
-  onClose,
-}: {
-  contractLabel: string;
-  content?: string;
-  loading: boolean;
-  error: boolean;
-  onClose: () => void;
-}) {
-  const title = `${contractLabel} system prompt`;
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const backdropDismiss = useBackdropDismiss(onClose);
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    dialogRef.current
-      ?.querySelector<HTMLElement>("[data-dialog-initial-focus]")
-      ?.focus();
-    return () => previouslyFocused?.focus();
-  }, []);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"
-      {...backdropDismiss}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === "Escape") onClose();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        data-debug-component="SystemPromptDialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="flex w-full max-w-4xl flex-col rounded-lg border bg-background shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(event) => trapDialogFocus(event, event.currentTarget)}
-      >
-        <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
-          <div>
-            <h2 className="text-sm font-semibold">{title}</h2>
-            <p className="text-xs text-muted-foreground">
-              Fixed by LoopHub and shown here for reference.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Close system prompt"
-            data-dialog-initial-focus
-            onClick={onClose}
-          >
-            <X className="size-4" />
-          </Button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : error ? (
-            <p className="text-sm text-destructive">
-              Failed to load the system prompt.
-            </p>
-          ) : (
-            <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/40 p-4 font-mono text-xs leading-relaxed">
-              {content ?? ""}
-            </pre>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }
 

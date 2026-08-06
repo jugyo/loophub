@@ -20,6 +20,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { CodingAgent, MergeMode, Workspace } from "@/api/types";
 import { NewWorkspaceButton } from "@/components/new-workspace-button";
+import { ReadOnlyPromptDialog } from "@/components/read-only-prompt-dialog";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { RepoWorkflowsSection } from "@/components/workflows-page";
 import {
@@ -832,30 +833,6 @@ const PREVIEW_SAMPLE_PR_NUMBER = 1;
 const promptPreviewLinkClasses =
   "text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
-const dialogFocusableSelector =
-  'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';
-
-function trapDialogFocus(
-  event: React.KeyboardEvent<HTMLElement>,
-  dialog: HTMLElement,
-) {
-  if (event.key !== "Tab") return;
-  const focusable = Array.from(
-    dialog.querySelectorAll<HTMLElement>(dialogFocusableSelector),
-  ).filter((element) => !element.closest("[hidden]"));
-  if (focusable.length === 0) return;
-
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
-}
-
 function GithubPrExportExtraPromptSection({
   owner,
   repo,
@@ -948,81 +925,16 @@ function GithubPrExportExtraPromptSection({
       ) : null}
 
       {previewOpen ? (
-        <GithubPrExportPromptPreviewDialog
+        <ReadOnlyPromptDialog
+          title="Create PR on GitHub prompt preview"
+          description={`Default template plus this repository's additional prompt, using sample PR #${PREVIEW_SAMPLE_PR_NUMBER}.`}
           content={preview}
+          closeAriaLabel="Close prompt preview"
+          debugComponent="GithubPrExportPromptPreviewDialog"
           onClose={() => setPreviewOpen(false)}
         />
       ) : null}
     </section>
-  );
-}
-
-// Read-only composed prompt dialog. Mirrors workflows-page SystemPromptDialog chrome so the
-// preview feels the same as opening a workflow system prompt.
-function GithubPrExportPromptPreviewDialog({
-  content,
-  onClose,
-}: {
-  content: string;
-  onClose: () => void;
-}) {
-  const title = "Create PR on GitHub prompt preview";
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const backdropDismiss = useBackdropDismiss(onClose);
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    dialogRef.current
-      ?.querySelector<HTMLElement>("[data-dialog-initial-focus]")
-      ?.focus();
-    return () => previouslyFocused?.focus();
-  }, []);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"
-      {...backdropDismiss}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === "Escape") onClose();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        data-debug-component="GithubPrExportPromptPreviewDialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="flex w-full max-w-4xl flex-col rounded-lg border bg-background shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(event) => trapDialogFocus(event, event.currentTarget)}
-      >
-        <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
-          <div>
-            <h2 className="text-sm font-semibold">{title}</h2>
-            <p className="text-xs text-muted-foreground">
-              Default template plus this repository&apos;s additional prompt,
-              using sample PR #{PREVIEW_SAMPLE_PR_NUMBER}.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Close prompt preview"
-            data-dialog-initial-focus
-            onClick={onClose}
-          >
-            <X className="size-4" />
-          </Button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/40 p-4 font-mono text-xs leading-relaxed">
-            {content}
-          </pre>
-        </div>
-      </div>
-    </div>
   );
 }
 
