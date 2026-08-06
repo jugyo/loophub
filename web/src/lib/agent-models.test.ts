@@ -20,15 +20,10 @@ describe("agent-models", () => {
     }
   });
 
-  it("exposes OpenCode with its registry label and model/effort suggestions", () => {
+  it("exposes OpenCode with its registry label and empty effort suggestions", () => {
     expect(CODING_AGENT_LABELS.opencode).toBe("OpenCode");
     expect(MODEL_SUGGESTIONS.opencode).toContain("opencode/big-pickle");
-    expect(EFFORT_SUGGESTIONS.opencode).toEqual([
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "max",
-    ]);
+    // Interactive TUI has no --variant; Settings/pickers hide the effort ladder.
+    expect(EFFORT_SUGGESTIONS.opencode).toEqual([]);
   });
 });

@@ -26,16 +26,11 @@ test("every runtime defines the auto-approve argv the launch paths append", () =
     bin: "opencode",
     buildFlag: "--opencode",
     defaultModel: "opencode/big-pickle",
+    defaultEffort: "",
+    effortSuggestions: [],
     autoApproveArgs: ["--auto"],
   });
   expect(RUNTIMES.opencode.modelSuggestions.length).toBeGreaterThan(0);
-  expect(RUNTIMES.opencode.effortSuggestions).toEqual([
-    "minimal",
-    "low",
-    "medium",
-    "high",
-    "max",
-  ]);
   expect(CODING_AGENTS).toContain("opencode");
 });
 

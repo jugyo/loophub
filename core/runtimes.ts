@@ -163,9 +163,9 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     // Verified against `opencode models` from OpenCode CLI 1.18.13. `opencode/big-pickle` is the
     // first built-in free model listed by that command.
     defaultModel: "opencode/big-pickle",
-    // `opencode run --variant` is the provider-specific reasoning-effort knob (help examples:
-    // high, max, minimal). The interactive TUI does not document a separate effort flag.
-    defaultEffort: "medium",
+    // No Settings effort ladder: `--variant` is accepted only by `opencode run`, and every
+    // LoopHub launch path uses the interactive TUI (same empty-effort posture as cursor).
+    defaultEffort: "",
     // Subset of `opencode models` (1.18.13): free built-ins plus a few coding-oriented providers.
     modelSuggestions: [
       "opencode/big-pickle",
@@ -177,12 +177,11 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
       "openai/gpt-5.4",
       "openai/gpt-5.3-codex",
     ],
-    // Mirrors `opencode run --variant` help examples, plus the common low/medium scale used by
-    // other runtimes so Settings can offer a familiar ladder.
-    effortSuggestions: ["minimal", "low", "medium", "high", "max"],
+    effortSuggestions: [],
     sandboxCapable: false,
-    // Verified against `opencode --help` / `opencode run --help` (1.18.13): auto-approve permissions
-    // that are not explicitly denied.
+    // Verified against `opencode --help` (1.18.13): auto-approve permissions that are not
+    // explicitly denied. Must stay a flag the interactive TUI accepts — unknown auto-approve
+    // flags exit the agent pane immediately (see grok `#1540`).
     autoApproveArgs: ["--auto"],
   },
 ];

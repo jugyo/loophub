@@ -31,10 +31,11 @@ test("Cursor launch argv disables every interactive approval boundary", () => {
   ]);
 });
 
-test("OpenCode launch argv uses --auto, --model, --variant, and --prompt", () => {
+test("OpenCode launch argv uses --auto, --model, and --prompt (no --variant)", () => {
   const input = {
     runtime: "opencode" as const,
     model: "opencode/big-pickle",
+    // Effort is intentionally ignored: `--variant` is `opencode run`-only and kills the TUI.
     effort: "high",
     prompt: "Implement the change.",
   };
@@ -44,22 +45,19 @@ test("OpenCode launch argv uses --auto, --model, --variant, and --prompt", () =>
     "--auto",
     "--model",
     "opencode/big-pickle",
-    "--variant",
-    "high",
     "--prompt",
   ]);
   expect(buildRuntimeArgs(input)).toEqual([
     "--auto",
     "--model",
     "opencode/big-pickle",
-    "--variant",
-    "high",
     "--prompt",
     "Implement the change.",
   ]);
+  expect(buildRuntimeFlags(input).join(" ")).not.toContain("--variant");
 });
 
-test("OpenCode omits --model/--variant when unset and still takes --prompt", () => {
+test("OpenCode omits --model when unset and still takes --prompt", () => {
   const input = {
     runtime: "opencode" as const,
     prompt: "Create an issue.",

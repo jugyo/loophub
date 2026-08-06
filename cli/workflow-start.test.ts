@@ -111,6 +111,7 @@ function fakeRuntime(
   const codex = join(dir, "codex");
   const grok = join(dir, "grok");
   const cursor = join(dir, "cursor-agent");
+  const opencode = join(dir, "opencode");
   if (focusedState) {
     writeFileSync(focusedStatePath, JSON.stringify(focusedState));
   }
@@ -163,11 +164,16 @@ exit 0
     cursor,
     '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
   );
+  writeFileSync(
+    opencode,
+    '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
+  );
   chmodSync(herdr, 0o755);
   chmodSync(claude, 0o755);
   chmodSync(codex, 0o755);
   chmodSync(grok, 0o755);
   chmodSync(cursor, 0o755);
+  chmodSync(opencode, 0o755);
   return { dir, focusedStatePath, log };
 }
 
@@ -200,6 +206,13 @@ function codexOnlyRuntime() {
 
 // A fakeRuntime with no `claude` binary, so a test asserts a Grok launch never requires claude.
 function grokOnlyRuntime() {
+  const runtime = fakeRuntime();
+  rmSync(join(runtime.dir, "claude"), { force: true });
+  return runtime;
+}
+
+// A fakeRuntime with no `claude` binary, so a test asserts an OpenCode launch never requires claude.
+function opencodeOnlyRuntime() {
   const runtime = fakeRuntime();
   rmSync(join(runtime.dir, "claude"), { force: true });
   return runtime;
@@ -1512,6 +1525,55 @@ test("workflow start --cursor launches Cursor Agent with its verified flags", ()
       workspacePath: canonicalWorktree,
       trustMethod: "cli-flag",
     });
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --opencode launches OpenCode with --auto/--model/--prompt and no --variant", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "OpenCode parent session",
+    "--body",
+    "Do it with OpenCode",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = opencodeOnlyRuntime();
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--opencode",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    // Exit 0 with no `claude` on PATH proves the OpenCode launch never required claude.
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    expect(log).toMatch(/pane send-text \S+ .*\bopencode '/);
+    expect(log).not.toMatch(/pane send-text \S+ .*\bclaude '/);
+    expect(log).toContain("'--model' 'opencode/big-pickle'");
+    expect(log).toContain("--auto");
+    expect(log).toContain("--prompt");
+    // `--variant` is `opencode run`-only; the interactive TUI rejects it and exits immediately.
+    expect(log).not.toContain("--variant");
+    expect(log).not.toContain("--session-id");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

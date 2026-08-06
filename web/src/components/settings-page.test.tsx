@@ -40,7 +40,7 @@ const DEFAULT_AGENT_SETTINGS: Record<CodingAgent, AgentSettingsForTest> = {
   cursor: { model: "auto", effort: "" },
   opencode: {
     model: "opencode/big-pickle",
-    effort: "medium",
+    effort: "",
   },
 };
 
@@ -261,40 +261,44 @@ describe("SettingsPage", () => {
     );
   });
 
-  it("offers OpenCode model×effort combinations from the registry and saves them", async () => {
+  it("offers OpenCode models without an effort ladder (TUI has no --variant)", async () => {
     renderSettings(undefined, "opencode");
     const openCodeDropdown = await modelDropdown("OpenCode");
     await waitFor(() =>
       expect(openCodeDropdown.textContent).toContain(
-        "opencode/big-pickle — medium",
+        "opencode/big-pickle — default",
       ),
     );
     const menu = await openModelDropdown("OpenCode");
     const openCodeOptions = within(menu)
       .getAllByRole("menuitem")
       .map((o) => o.textContent);
+    // Empty effortSuggestions → one option per model with the "default" effort label (like Cursor).
     expect(openCodeOptions).toEqual(
       expect.arrayContaining([
-        "opencode/big-pickle — minimal",
-        "opencode/big-pickle — medium",
-        "opencode/big-pickle — max",
-        "openai/gpt-5.6 — high",
+        "opencode/big-pickle — default",
+        "openai/gpt-5.6 — default",
       ]),
+    );
+    expect(openCodeOptions).not.toEqual(
+      expect.arrayContaining(["opencode/big-pickle — medium"]),
     );
     fireEvent.click(
       within(menu).getByRole("menuitem", {
-        name: "openai/gpt-5.6 — high",
+        name: "openai/gpt-5.6 — default",
       }),
     );
     await waitFor(() =>
       expect(rpcCall("settings/update")?.params).toMatchObject({
         agent: "opencode",
         model: "openai/gpt-5.6",
-        effort: "high",
+        effort: "",
       }),
     );
     await waitFor(() =>
-      expect(openCodeDropdown.textContent).toContain("openai/gpt-5.6 — high"),
+      expect(openCodeDropdown.textContent).toContain(
+        "openai/gpt-5.6 — default",
+      ),
     );
   });
 

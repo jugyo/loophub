@@ -435,12 +435,13 @@ test("buildRuntimeLaunch returns cursor-agent with verified headless flags", () 
   });
 });
 
-test("buildRuntimeLaunch returns opencode with --auto/--model/--variant/--prompt", () => {
+test("buildRuntimeLaunch returns opencode with --auto/--model/--prompt (effort not forwarded)", () => {
   const launch = buildRuntimeLaunch({
     runtime: "opencode",
     sessionId: "sid-1",
     slashCommand: "Create an issue.",
     model: "opencode/big-pickle",
+    // Effort is accepted on the launch path but not forwarded: `--variant` is `opencode run`-only.
     effort: "high",
   });
   expect(launch).toEqual({
@@ -449,12 +450,11 @@ test("buildRuntimeLaunch returns opencode with --auto/--model/--variant/--prompt
       "--auto",
       "--model",
       "opencode/big-pickle",
-      "--variant",
-      "high",
       "--prompt",
       "Create an issue.",
     ],
   });
+  expect(launch.args).not.toContain("--variant");
   expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toMatch(
     /^opencode /,
   );

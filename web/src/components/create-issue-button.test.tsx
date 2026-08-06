@@ -22,7 +22,7 @@ vi.mock("@/queries/settings", () => ({
         cursor: { model: "auto", effort: "" },
         opencode: {
           model: "opencode/big-pickle",
-          effort: "medium",
+          effort: "",
         },
       },
       codingAgent: "claude-code",
@@ -212,7 +212,7 @@ describe("CreateIssueButton", () => {
     });
   });
 
-  it("launches issue creation with OpenCode model and effort", async () => {
+  it("launches issue creation with OpenCode model and empty effort", async () => {
     render(<CreateIssueButton repo="me/proj" />);
 
     fireEvent.pointerDown(
@@ -226,8 +226,7 @@ describe("CreateIssueButton", () => {
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "openai/gpt-5.6" }),
     );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Effort" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "high" }));
+    // OpenCode has no effort ladder (TUI has no --variant); leave effort empty.
     fireEvent.click(
       screen.getByRole("button", { name: "Create with OpenCode" }),
     );
@@ -238,7 +237,8 @@ describe("CreateIssueButton", () => {
       workflow: "issue-create",
       agent: "opencode",
       model: "openai/gpt-5.6",
-      effort: "high",
+      // Empty effort is omitted at the launch boundary (same as Cursor).
+      effort: undefined,
       prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
     });
   });

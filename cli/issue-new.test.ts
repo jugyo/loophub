@@ -290,10 +290,11 @@ test.each([
   } else if (expectedBin === "codex") {
     expect(result.runtimeLog).toContain("arg=model_reasoning_effort=high");
   } else if (expectedBin === "opencode") {
+    // Interactive TUI rejects --variant (opencode run only); effort must not be forwarded.
     expect(result.runtimeLog).toContain("arg=--auto");
-    expect(result.runtimeLog).toContain("arg=--variant");
-    expect(result.runtimeLog).toContain("arg=high");
     expect(result.runtimeLog).toContain("arg=--prompt");
+    expect(result.runtimeLog).not.toContain("arg=--variant");
+    expect(result.runtimeLog).not.toContain("arg=high");
   }
   expect(result.runtimeLog).toContain(
     "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",

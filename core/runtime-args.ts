@@ -50,8 +50,9 @@ export interface RuntimeFlagsInput {
   // `--model <name>` for every runtime (sanitized; omitted when empty).
   model?: string;
   // Reasoning effort. claude: `--effort <level>`; codex: `-c model_reasoning_effort=<level>`;
-  // opencode: `--variant <level>` (provider-specific; documented on `opencode run`);
-  // grok/cursor have no separate effort flag, so it is ignored.
+  // grok/cursor/opencode ignore it: grok has no verified effort flag; cursor encodes effort in the
+  // model id; OpenCode's `--variant` exists only on `opencode run`, not on the interactive TUI that
+  // every LoopHub launch path uses (passing it makes the TUI print help and exit 1).
   effort?: string;
   // claude-only: `--session-id <id>`. Other runtimes correlate through their transcript metadata.
   sessionId?: string;
@@ -95,18 +96,16 @@ export function buildRuntimeFlags(input: RuntimeFlagsInput): string[] {
     return args;
   }
   if (runtime === "opencode") {
-    // OpenCode TUI: `--auto`, `--model`, optional `--variant` (effort), and `--prompt <text>`.
-    // The bare positional is a project path, not a message — so the prompt is a flag value.
-    // End with `--prompt` so agentCommandLine's `"$(cat …)"` becomes that value (same shape as
-    // buildRuntimeArgs, which appends the prompt text after these flags).
+    // OpenCode TUI: `--auto`, `--model`, and `--prompt <text>`. The bare positional is a project
+    // path, not a message — so the prompt is a flag value. End with `--prompt` so
+    // agentCommandLine's `"$(cat …)"` becomes that value (same shape as buildRuntimeArgs, which
+    // appends the prompt text after these flags).
+    //
+    // Do not forward Settings effort as `--variant`: that flag is accepted only by `opencode run`
+    // (1.18.13). The interactive TUI rejects unknown options by printing help and exiting 1, which
+    // is the same class of immediate pane death as grok's old rejected `--force` (#1540).
     const args = runtimeApprovalArgs(runtime);
     args.push(...modelFlag(input.model));
-    if (input.effort) {
-      const e = display(input.effort).trim();
-      // `opencode run --variant` is the documented effort knob (1.18.13). Forwarded for both the
-      // interactive TUI and full argv so Settings effort reaches the CLI when supported.
-      if (e) args.push("--variant", e);
-    }
     args.push("--prompt");
     return args;
   }
