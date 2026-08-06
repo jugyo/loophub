@@ -270,7 +270,15 @@ async function makeDivergedRepo(): Promise<{
   await git(p, ["checkout", "-q", "-b", "feat"]);
   writeFileSync(join(p, "a.txt"), "a\n");
   await git(p, ["add", "-A"]);
-  await git(p, ["commit", "-qm", "feat 1"]);
+  // Authored by someone other than the repo's configured user, so a rebase can be shown to
+  // replay each commit with its own author rather than re-authoring it.
+  await git(p, [
+    "commit",
+    "-qm",
+    "feat 1",
+    "--author",
+    "alice <alice@a.local>",
+  ]);
   writeFileSync(join(p, "b.txt"), "b\n");
   await git(p, ["add", "-A"]);
   await git(p, ["commit", "-qm", "feat 2"]);
@@ -327,6 +335,13 @@ test("squash merge adds one commit whose only parent is base", async () => {
 
 // The contrast that makes the squash assertions meaningful: merge keeps both parents,
 // rebase keeps head's commits as a linear history.
+//
+// #1: the rebase half of this test failed on CI while the merge half passed. mergePull()'s
+// rebase path called EXPERIMENTAL `git replay` and parsed its "update <ref> <new> <old>" line.
+// Since git 2.53 the default is `--ref-action=update`: replay rewrites head itself and prints
+// nothing, so the parser got an empty sha and reported conflict (after head had already moved).
+// Hosts without `git replay` at all failed the same assertion. The path now uses merge-tree +
+// commit-tree (see replayOntoBase in git.ts); the root cause is also recorded on issue #1.
 test("merge keeps two parents and rebase stays linear", async () => {
   const merged = await makeDivergedRepo();
   const mergedCount = await commitCount(merged.p, "main");
@@ -366,6 +381,136 @@ test("merge keeps two parents and rebase stays linear", async () => {
   expect(await commitCount(rebased.p, "main")).toBe(rebasedCount + 2);
   expect(await parentsOf(rebased.p, "main")).not.toContain(rebased.headSha);
   rmSync(rebased.p, { recursive: true, force: true });
+}, 30_000);
+
+// Files a commit changed against its first parent.
+async function changedFilesIn(
+  repoPath: string,
+  ref: string,
+): Promise<string[]> {
+  const r = await git(repoPath, ["show", "--format=", "--name-only", ref]);
+  return r.stdout.trim().split("\n").filter(Boolean);
+}
+
+// Rebase replays head's commits rather than re-authoring them, so each one keeps its author,
+// its message and its own change; only the committer comes from the repository's git config,
+// because the rebase path never stamps the merging actor.
+test("rebase replays each commit with its own author, message and diff", async () => {
+  const { p } = await makeDivergedRepo();
+
+  const r = await mergePull(p, "main", "feat", "rebase", "feat (#1)", "tester");
+  expect(r.merged).toBe(true);
+
+  expect(await identityOf(p, "main~1")).toBe(
+    "alice <alice@a.local>|tester <t@t.local>",
+  );
+  // The merge message belongs to the merge/squash commit; replayed commits keep their own.
+  expect(
+    (await git(p, ["log", "--format=%s", "-2", "main"])).stdout
+      .trim()
+      .split("\n"),
+  ).toEqual(["feat 2", "feat 1"]);
+  expect(await changedFilesIn(p, "main")).toEqual(["b.txt"]);
+  expect(await changedFilesIn(p, "main~1")).toEqual(["a.txt"]);
+
+  rmSync(p, { recursive: true, force: true });
+}, 30_000);
+
+// A rebase that cannot be replayed reports the conflict and leaves both refs untouched —
+// including head's, which `git replay` rewrites on its own since git 2.53.
+test("a conflicting rebase moves neither base nor head", async () => {
+  const p = await makeRepo();
+  writeFileSync(join(p, "f.txt"), "base 2\n");
+  await git(p, ["commit", "-qam", "base 2"]);
+  const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
+  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
+
+  const r = await mergePull(p, "main", "feat", "rebase", "feat (#1)", "tester");
+  expect(r).toEqual({ merged: false, conflict: true });
+  expect((await git(p, ["rev-parse", "main"])).stdout.trim()).toBe(baseSha);
+  expect((await git(p, ["rev-parse", "feat"])).stdout.trim()).toBe(headSha);
+
+  rmSync(p, { recursive: true, force: true });
+}, 30_000);
+
+// Skipping merge commits reproduces head only while its commits form one line. A merge resolved by
+// hand belongs to no replayed commit, so landing that history would put a tree on base that head
+// never had; the rebase refuses instead.
+test("rebase refuses a head whose merge commit resolved a conflict", async () => {
+  const { p, baseSha } = await makeDivergedRepo();
+  await git(p, ["checkout", "-q", "-b", "side", "feat~1"]);
+  writeFileSync(join(p, "g.txt"), "side\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "side 1"]);
+  await git(p, ["checkout", "-q", "feat"]);
+  writeFileSync(join(p, "g.txt"), "feat\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "feat 3"]);
+  expect((await git(p, ["merge", "side"])).code).not.toBe(0);
+  writeFileSync(join(p, "g.txt"), "resolved\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "merge side"]);
+  await git(p, ["checkout", "-q", "main"]);
+  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
+
+  const r = await mergePull(p, "main", "feat", "rebase", "feat (#1)", "tester");
+  expect(r.merged).toBe(false);
+  expect(r.conflict).toBe(true);
+  expect((await git(p, ["rev-parse", "main"])).stdout.trim()).toBe(baseSha);
+  expect((await git(p, ["rev-parse", "feat"])).stdout.trim()).toBe(headSha);
+
+  rmSync(p, { recursive: true, force: true });
+}, 30_000);
+
+// The same limit without a conflict anywhere: each side of the merge carries only its own lineage's
+// changes, so no replayed commit holds both. `git rebase` flattens this; `git replay`, which this
+// path replaced, refused it outright. It is refused here too — with a reason that says so, rather
+// than sending the operator looking for a conflict that does not exist.
+test("rebase refuses a head that merged a side branch, saying why", async () => {
+  const { p, baseSha } = await makeDivergedRepo();
+  await git(p, ["checkout", "-q", "-b", "side", "feat~1"]);
+  writeFileSync(join(p, "h.txt"), "h\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "side 1"]);
+  await git(p, ["checkout", "-q", "feat"]);
+  // Nothing conflicts: the two sides touch different files.
+  expect((await git(p, ["merge", "-m", "merge side", "side"])).code).toBe(0);
+  await git(p, ["checkout", "-q", "main"]);
+  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
+
+  const r = await mergePull(p, "main", "feat", "rebase", "feat (#1)", "tester");
+  expect(r.merged).toBe(false);
+  expect(r.reason).toMatch(/merge commits/);
+  expect((await git(p, ["rev-parse", "main"])).stdout.trim()).toBe(baseSha);
+  expect((await git(p, ["rev-parse", "feat"])).stdout.trim()).toBe(headSha);
+
+  rmSync(p, { recursive: true, force: true });
+}, 30_000);
+
+// The contrast, and the shape an agent's worktree actually produces: head merged base in to stay
+// current. That merge resolved nothing head's own commits do not carry, so it still flattens.
+test("rebase flattens a head that merged base in", async () => {
+  const { p } = await makeDivergedRepo();
+  await git(p, ["checkout", "-q", "feat"]);
+  expect((await git(p, ["merge", "-m", "merge main", "main"])).code).toBe(0);
+  await git(p, ["checkout", "-q", "main"]);
+
+  const r = await mergePull(p, "main", "feat", "rebase", "feat (#1)", "tester");
+  expect(r.merged).toBe(true);
+  expect((await git(p, ["rev-list", "--merges", "main"])).stdout).toBe("");
+  expect(
+    (await git(p, ["log", "--format=%s", "-2", "main"])).stdout
+      .trim()
+      .split("\n"),
+  ).toEqual(["feat 2", "feat 1"]);
+  // base's own change and head's both survive the flattening.
+  expect(
+    (await git(p, ["ls-tree", "--name-only", "main"])).stdout
+      .trim()
+      .split("\n"),
+  ).toEqual(["a.txt", "b.txt", "c.txt", "f.txt"]);
+
+  rmSync(p, { recursive: true, force: true });
 }, 30_000);
 
 // "<author name> <author email>|<committer name> <committer email>" of a commit.
