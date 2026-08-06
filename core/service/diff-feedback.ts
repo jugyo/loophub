@@ -1,3 +1,4 @@
+import { maybeNotifyAgentComment } from "../agent-comment-notifications.ts";
 import { db } from "../db.ts";
 import {
   type DiffLine,
@@ -929,6 +930,15 @@ export const diffFeedback = {
         source_payload_version: SOURCE_PAYLOAD_VERSION,
         ...anchorPayload(created),
       });
+      maybeNotifyAgentComment({
+        repoId: r.id,
+        pullNumber: number,
+        commentId: message.id,
+        authorType,
+        actor,
+        body: input.body,
+        source: "diff",
+      });
       return { thread: created, comment: message };
     });
     return {
@@ -965,6 +975,15 @@ export const diffFeedback = {
         session_id: sessionId ?? null,
         source_payload_version: SOURCE_PAYLOAD_VERSION,
         ...anchorPayload(thread),
+      });
+      maybeNotifyAgentComment({
+        repoId: r.id,
+        pullNumber: number,
+        commentId: message.id,
+        authorType,
+        actor,
+        body,
+        source: "diff",
       });
       return message;
     });

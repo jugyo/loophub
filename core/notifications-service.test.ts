@@ -669,7 +669,25 @@ test("send rejects the retired implementation_done kind", () => {
       body: "Ready for review.",
       resourceKind: "repo",
     }),
-  ).toThrow("kind must be merge_ready, over_budget, or human_attention");
+  ).toThrow(
+    "kind must be merge_ready, over_budget, human_attention, or agent_comment",
+  );
+});
+
+test("send accepts the agent_comment kind", () => {
+  const sent = svc.notifications.send("me/notify", {
+    kind: "agent_comment",
+    title: "Agent comment",
+    body: "CLI-sent agent comment notification.",
+    resourceKind: "pull",
+    resourceNumber: 1,
+    sourceKey: "cli-test:agent-comment",
+  });
+  expect(sent).toMatchObject({
+    kind: "agent_comment",
+    title: "Agent comment",
+    resource: expect.objectContaining({ kind: "pull", number: 1 }),
+  });
 });
 
 test("send enforces bounded title and body lengths", () => {

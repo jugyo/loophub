@@ -21,7 +21,7 @@ export function usage(): void {
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|review-response|close|reopen  [--repo owner/repo]
   lh pr feedback list|create <pr> | pending <pr> --run <id> | view|reply|archive|unarchive <conversation> --pr <pr> | react <message> --pr <pr> --emoji <emoji> [--context <lines>] [--repo owner/repo]
-  lh notification send --kind merge_ready|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
+  lh notification send --kind merge_ready|over_budget|human_attention|agent_comment --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|archive|delete <name> [--repo <owner/name>] [--workflow-id <id>] [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage workflow prompt bundles
   lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok | --cursor] [--model <name>] [--herdr] [--no-launch]   # start a Workflow run (default runtime/model from app settings; agents launch in auto mode)

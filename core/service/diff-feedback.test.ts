@@ -236,6 +236,74 @@ test("an Execute reply answers the comment without waking its own parent", async
   ).toEqual([]);
 });
 
+test("agent diff create and reply notify; human posts do not", async () => {
+  const beforeKeys = new Set(
+    S.listNotifications({ unreadOnly: true })
+      .filter((row) => row.kind === "agent_comment")
+      .map((row) => row.source_key),
+  );
+
+  const humanCreated = await createThread(
+    "Human starts a thread.",
+    HUMAN_SESSION,
+  );
+  const agentCreated = await createThread(
+    "Agent starts a thread.",
+    EXECUTE_SESSION,
+  );
+  const humanReply = await svc.diffFeedback.reply(
+    REPO,
+    prNumber,
+    agentCreated.thread.id,
+    "Human reply stays quiet.",
+    HUMAN_SESSION,
+  );
+  const agentReply = await svc.diffFeedback.reply(
+    REPO,
+    prNumber,
+    humanCreated.thread.id,
+    "Agent reply should notify.",
+    EXECUTE_SESSION,
+  );
+
+  const notifications = S.listNotifications({ unreadOnly: true }).filter(
+    (row) => row.kind === "agent_comment" && !beforeKeys.has(row.source_key),
+  );
+  expect(notifications).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        source_key: `agent-comment:diff:${repoId}:${agentCreated.comment.id}`,
+        body: expect.stringContaining("Agent starts a thread."),
+        resource_number: prNumber,
+      }),
+      expect.objectContaining({
+        source_key: `agent-comment:diff:${repoId}:${agentReply.reply.id}`,
+        body: expect.stringContaining("Agent reply should notify."),
+        resource_number: prNumber,
+      }),
+    ]),
+  );
+  expect(notifications).toHaveLength(2);
+  expect(
+    notifications.some(
+      (row) =>
+        row.source_key ===
+        `agent-comment:diff:${repoId}:${humanCreated.comment.id}`,
+    ),
+  ).toBe(false);
+  expect(
+    notifications.some(
+      (row) =>
+        row.source_key ===
+        `agent-comment:diff:${repoId}:${humanReply.reply.id}`,
+    ),
+  ).toBe(false);
+
+  // Archive fixtures so later pending assertions on the shared PR stay focused.
+  await svc.diffFeedback.archive(REPO, prNumber, humanCreated.thread.id, true);
+  await svc.diffFeedback.archive(REPO, prNumber, agentCreated.thread.id, true);
+});
+
 test("a supported reaction can be added, changed, and removed once per actor", async () => {
   const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
   const message = thread.messages[0];

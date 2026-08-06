@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Info,
+  MessageSquare,
   Terminal,
   X,
 } from "lucide-react";
@@ -35,6 +36,7 @@ function notificationIcon(notification: Notification) {
   if (kind === "merge_ready") return CheckCircle2;
   if (kind === "over_budget") return CircleDollarSign;
   if (kind === "human_attention") return Info;
+  if (kind === "agent_comment") return MessageSquare;
   return AlertTriangle;
 }
 
@@ -46,6 +48,7 @@ function notificationTone(notification: Notification): string {
   if (kind === "merge_ready") return "text-emerald-700 dark:text-emerald-300";
   if (kind === "over_budget") return "text-amber-700 dark:text-amber-300";
   if (kind === "human_attention") return "text-sky-700 dark:text-sky-300";
+  if (kind === "agent_comment") return "text-violet-700 dark:text-violet-300";
   return "text-rose-700 dark:text-rose-300";
 }
 

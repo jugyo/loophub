@@ -70,6 +70,13 @@ test("notification kind migration removes retired alerts and accepts merge-ready
     D.db.run(
       `INSERT INTO notifications
         (repo_id, kind, title, body, resource_kind, source_key, created_at)
+       VALUES (1, 'agent_comment', 'Agent comment', 'Hi', 'pull', 'agent', 't3b')`,
+    ),
+  ).not.toThrow();
+  expect(() =>
+    D.db.run(
+      `INSERT INTO notifications
+        (repo_id, kind, title, body, resource_kind, source_key, created_at)
        VALUES (1, 'implementation_done', 'Old', 'Old', 'repo', 'retired', 't4')`,
     ),
   ).toThrow();
