@@ -1717,7 +1717,11 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    const card = await screen.findByLabelText("Diff thread 1");
+    const section = await screen.findByLabelText("Previous diff threads");
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Previous diff threads" }),
+    );
+    const card = within(section).getByLabelText("Diff thread 1");
     expect(within(card).queryByText("Outdated")).toBeNull();
     expect(within(card).queryByText("RIGHT 1–2")).toBeNull();
     fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
@@ -1947,6 +1951,14 @@ describe("DiffFileDialog", () => {
     });
 
     const section = await screen.findByLabelText("Previous diff threads");
+    const toggle = within(section).getByRole("button", {
+      name: "Previous diff threads",
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(within(section).queryByLabelText("Diff thread 1")).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(within(section).getByLabelText("Diff thread 1")).toBeTruthy();
   });
 
@@ -2985,10 +2997,19 @@ describe("DiffFeedbackHistory", () => {
     );
 
     expect(await screen.findByText("No diff.")).toBeTruthy();
-    const card = await screen.findByLabelText("Diff thread 7");
+    const section = await screen.findByLabelText("Previous diff threads");
+    const toggle = within(section).getByRole("button", {
+      name: "Previous diff threads",
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(within(section).queryByLabelText("Diff thread 7")).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const card = within(section).getByLabelText("Diff thread 7");
     expect(within(card).queryByText("Unavailable")).toBeNull();
     expect(
-      await screen.findByText("This conversation remains visible."),
+      within(card).getByText("This conversation remains visible."),
     ).toBeTruthy();
     expect(list).toHaveBeenCalledWith(
       expect.objectContaining({ orphaned: true }),
@@ -3047,7 +3068,12 @@ describe("DiffFeedbackHistory", () => {
       </QueryClientProvider>,
     );
 
-    const humanThread = await screen.findByLabelText("Diff thread 7");
+    const section = await screen.findByLabelText("Previous diff threads");
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Previous diff threads" }),
+    );
+
+    const humanThread = within(section).getByLabelText("Diff thread 7");
     expect(within(humanThread).getByText("@human")).toBeTruthy();
     expect(within(humanThread).queryByText("Unavailable")).toBeNull();
     fireEvent.click(
@@ -3061,7 +3087,7 @@ describe("DiffFeedbackHistory", () => {
       expect(within(humanThread).queryByText(agentStatus)).toBeNull();
     }
 
-    const agentThread = await screen.findByLabelText("Diff thread 8");
+    const agentThread = within(section).getByLabelText("Diff thread 8");
     expect(within(agentThread).getByText("@executor #12-1")).toBeTruthy();
     expect(within(agentThread).queryByText("Outdated")).toBeNull();
     fireEvent.click(

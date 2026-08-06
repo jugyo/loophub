@@ -3,7 +3,16 @@
 // its own Escape handling, mode switching, per-mode file fetch, and the copy-path resolution for
 // renamed / invisible-character filenames. The Files changed section only picks the open file.
 
-import { Filter, Info, Loader2, Plus, SmilePlus, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Filter,
+  Info,
+  Loader2,
+  Plus,
+  SmilePlus,
+  X,
+} from "lucide-react";
 import {
   Fragment,
   type ReactNode,
@@ -850,10 +859,7 @@ function FileDiffContent({
         )}
       />
       {historicalThreads.length > 0 ? (
-        <section className="m-2 space-y-2" aria-label="Previous diff threads">
-          <h4 className="text-xs font-semibold text-muted-foreground">
-            Previous diff threads
-          </h4>
+        <PreviousDiffThreadsSection className="m-2 space-y-2" heading="h4">
           {historicalThreads.map((thread) => (
             <ThreadCard
               key={thread.id}
@@ -895,7 +901,7 @@ function FileDiffContent({
               }
             />
           ))}
-        </section>
+        </PreviousDiffThreadsSection>
       ) : null}
       {comments.map((c) => (
         <div key={c.id} className="m-2 rounded-md border bg-muted/20 p-2">
@@ -1593,8 +1599,7 @@ export function DiffFeedbackHistory({
   }
   if (historical.length === 0) return null;
   return (
-    <section className="space-y-2" aria-label="Previous diff threads">
-      <h3 className="text-sm font-semibold">Previous diff threads</h3>
+    <PreviousDiffThreadsSection className="space-y-2" heading="h3">
       {historical.map((thread) => (
         <ThreadCard
           key={thread.id}
@@ -1633,6 +1638,38 @@ export function DiffFeedbackHistory({
           }
         />
       ))}
+    </PreviousDiffThreadsSection>
+  );
+}
+
+/** Collapsible wrapper for the Previous diff threads block (collapsed by default). */
+function PreviousDiffThreadsSection({
+  className,
+  heading,
+  children,
+}: {
+  className?: string;
+  heading: "h3" | "h4";
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const headingClassName =
+    heading === "h3"
+      ? "text-sm font-semibold"
+      : "text-xs font-semibold text-muted-foreground";
+  return (
+    <section className={className} aria-label="Previous diff threads">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((shown) => !shown)}
+        className={`flex w-full items-center gap-1 text-left hover:text-foreground ${headingClassName}`}
+      >
+        <Chevron className="size-3.5 shrink-0" aria-hidden="true" />
+        <span>Previous diff threads</span>
+      </button>
+      {expanded ? <div className="space-y-2">{children}</div> : null}
     </section>
   );
 }
