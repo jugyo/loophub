@@ -66,6 +66,7 @@ function pull(partial: Partial<PullRequest> = {}): PullRequest {
     cost_stopped: false,
     merge_mode: "merge",
     github_pull: null,
+    github_pr_export_started_at: null,
     ...partial,
   };
 }

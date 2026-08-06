@@ -80,6 +80,7 @@ import {
 } from "@/queries/pulls";
 import { useSettings } from "@/queries/settings";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
+import { githubPrExportPendingUntil } from "../../../core/github-pr-export-pending.ts";
 import { githubPrExportPrompt } from "../../../core/workflow/github-pr-export-prompt.ts";
 
 const MERGE_METHODS = ["squash", "merge", "rebase"] as const;
@@ -449,9 +450,18 @@ function PullHeader({
         ) : null}
         {/* #406: the repo's effective merge mode picks exactly one write action — the internal Merge
             control, or the GitHub export (Create PR on GitHub / push). The two are mutually
-            exclusive, so a merged PR shows neither extra control beyond Close/Reopen above. */}
+            exclusive, so a merged PR shows neither extra control beyond Close/Reopen above.
+            The export action is keyed by the PR's full identity: one detail route serves every
+            repo, so a client-side navigation reuses it, and without a remount it would carry the
+            previous PR's optimistic "creating" state onto a PR that never started one (#2383). The
+            repo belongs in the key because PR numbers are per repo — two repos both have a #30. */}
         {pull.merge_mode === "github_pr" ? (
-          <GithubPrAction owner={owner} repo={repo} pull={pull} />
+          <GithubPrAction
+            key={`${owner}/${repo}#${pull.number}`}
+            owner={owner}
+            repo={repo}
+            pull={pull}
+          />
         ) : (
           <>
             <select
@@ -591,13 +601,30 @@ function PullInfoSection({
   );
 }
 
+// Whether `until` (epoch ms, 0 meaning "nothing pending") is still in the future, re-rendering once
+// it passes. The answer comes from the clock at render time rather than from a stored "now", so
+// every render — including one caused by a timestamp that arrives already expired — is judged
+// against the real current time; the timer exists only to force the render that ends the state when
+// nothing else would.
+function usePendingUntil(until: number): boolean {
+  const [, setExpiry] = useState(0);
+  useEffect(() => {
+    const remaining = until - Date.now();
+    if (remaining <= 0) return;
+    const timer = setTimeout(() => setExpiry((tick) => tick + 1), remaining);
+    return () => clearTimeout(timer);
+  }, [until]);
+  return until > Date.now();
+}
+
 // #406: GitHub-export write action for a PR whose repo is in 'github_pr' mode. Once the PR has been
 // exported (github_pull present) the Create action disappears and only the push controls remain —
 // this is the double-create guard, so a second export can't be dispatched. The route to the GitHub
 // PR itself lives in the sidebar's GitHub PR section body (#2091), not here. Until exported,
 // "Create PR on GitHub" injects the full export instructions into a launched agent (#1892, same
 // prompt-injection approach as New issue), which generates a branch/title/description in the target
-// PR's language and opens the GitHub Draft PR via `lh pr create-github-pr`.
+// PR's language and opens the GitHub Draft PR via `lh pr create-github-pr`. That agent runs well
+// after the launch RPC returns, so the button holds a loading state for the whole export (#2383).
 function GithubPrAction({
   owner,
   repo,
@@ -607,7 +634,7 @@ function GithubPrAction({
   repo: string;
   pull: PullRequest;
 }) {
-  const { launchTerminal } = useTerminalLauncher();
+  const { launchTerminal, launchFailed } = useTerminalLauncher();
   const { showError } = useToast();
   const { data: settings } = useSettings();
 
@@ -625,6 +652,30 @@ function GithubPrAction({
           ),
         ),
     });
+
+  // #2383: Create is a fire-and-forget launch — the GitHub PR appears later, when the agent records
+  // it — so the button drives its loading state off "an export is running" rather than a mutation's
+  // isPending. The server reports the start of an export it hasn't seen finish; `clickedAt` covers
+  // the launch RPC itself, before that start has made it back through the events poll, so the button
+  // never flickers back to unpressed between the click and the server agreeing. Both are timestamps
+  // fed through the same TTL, so whichever is later wins and neither can stick forever.
+  const [clickedAt, setClickedAt] = useState<string | null>(null);
+  const exportPendingUntil = Math.max(
+    githubPrExportPendingUntil(pull.github_pr_export_started_at) ?? 0,
+    githubPrExportPendingUntil(clickedAt) ?? 0,
+  );
+  const isCreating = usePendingUntil(exportPendingUntil);
+  // The optimistic timestamp is only a stand-in until the server has its own account of this
+  // export, so drop it as soon as one arrives: the server reports the start itself, or a GitHub PR
+  // lands. Both are what makes the server's answer authoritative again — otherwise unlinking that
+  // GitHub PR (#2384) to export a second time brings back a Create button that claims to be working
+  // on a click that is long over. A rejected launch is the third way the click stops standing for
+  // anything: no agent started, so the operator can retry immediately instead of sitting out the
+  // TTL — the failure is already on screen in its own dialog.
+  useEffect(() => {
+    if (launchFailed || pull.github_pull || pull.github_pr_export_started_at)
+      setClickedAt(null);
+  }, [launchFailed, pull.github_pull, pull.github_pr_export_started_at]);
 
   const gh = pull.github_pull;
   if (gh) {
@@ -688,8 +739,14 @@ function GithubPrAction({
   if (pull.state !== "open" || pull.merged) return null;
   return (
     <Button
-      title="Create a PR on GitHub from this branch by launching an agent with the export instructions"
-      onClick={() =>
+      disabled={isCreating}
+      title={
+        isCreating
+          ? "An agent is creating the GitHub PR; the action returns if it doesn't land"
+          : "Create a PR on GitHub from this branch by launching an agent with the export instructions"
+      }
+      onClick={() => {
+        setClickedAt(new Date().toISOString());
         launchTerminal({
           repo: `${owner}/${repo}`,
           label: `PR #${pull.number} - ${pull.title}`,
@@ -700,11 +757,15 @@ function GithubPrAction({
             prNumber: pull.number,
             language: settings?.workflowContractLanguage,
           }),
-        })
-      }
+        });
+      }}
     >
-      <Github className="size-4" />
-      Create PR on GitHub
+      {isCreating ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : (
+        <Github className="size-4" />
+      )}
+      {isCreating ? "Creating…" : "Create PR on GitHub"}
     </Button>
   );
 }

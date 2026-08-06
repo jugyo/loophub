@@ -228,7 +228,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | notification の signal backfill | procedure | generated notification、`notification.created`、source cursor | — |
 | `scheduledTasks.create` / `update` / `delete` | procedure | task row、対応する `scheduled_task.*` | — |
 | `scheduledTasks.run` / `sweep` | 二段 protocol | run claim、finish result | herdr launch |
-| `terminal.launch` | procedure | pane row と claim | herdr spawn、workspace / tab / pane 操作 |
+| `terminal.launch` | procedure | pane row と claim、`pull_request.github_pr_export_started`（launch 成功後） | herdr spawn、workspace / tab / pane 操作 |
 | `terminal.cleanupClosedIssuePanes` | store helper（`releaseHerdrPaneClaimsForResource`）+ pane ごとの二段 protocol | claim の解放と close 候補の確定 | pane ごとの herdr close。close 後の `markHerdrPaneClosed` は次の DB 区間 |
 | `terminal.cleanupClosedPullDevAgents` | store helper | `agent_session.killed` | herdr の session / agent list と workspace close |
 | `closeManagedHerdrPaneIfUnclaimed` | store helper | `markHerdrPaneClosed` | foreground process の kill と herdr pane close |

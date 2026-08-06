@@ -165,17 +165,27 @@ async function pullStatusFields(
 interface PullMergeFields {
   merge_mode: MergeMode;
   github_pull: GithubPullWire | null;
+  github_pr_export_started_at: string | null;
 }
 
 async function pullMergeFields(
   repo: S.Repo,
-  rowId: number,
+  row: S.IssueRow,
 ): Promise<PullMergeFields> {
   const merge_mode = effectiveMergeMode(
     repo.merge_mode,
     isGithubRemoteUrl(await remoteUrl(repo.local_path)),
   );
-  return { merge_mode, github_pull: githubPullJSON(S.getGithubPull(rowId)) };
+  // #2383: both fields are projections of the one export record, so they cannot contradict each
+  // other — a linked export reports its GitHub PR and no start; one still in flight reports its
+  // start and no GitHub PR. How long a start still counts as in progress is the UI's question.
+  const record = S.getGithubPrExport(row.id);
+  return {
+    merge_mode,
+    github_pull: record?.status === "linked" ? githubPullJSON(record) : null,
+    github_pr_export_started_at:
+      record?.status === "creating" ? record.created_at : null,
+  };
 }
 
 // Issue list item with its linked PR enriched with status (working / review /
@@ -354,7 +364,7 @@ export async function pullJSON(
 ): Promise<PullWire> {
   const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
-  const mergeFields = await pullMergeFields(repo, row.id);
+  const mergeFields = await pullMergeFields(repo, row);
   const githubBaseSha =
     opts.withCommits && mergeFields.github_pull
       ? await revParse(repo.local_path, `refs/remotes/origin/${p.base_ref}`)
@@ -434,6 +444,7 @@ export async function pullJSON(
     // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
     merge_mode: mergeFields.merge_mode,
     github_pull: mergeFields.github_pull,
+    github_pr_export_started_at: mergeFields.github_pr_export_started_at,
     ...(commitsWithPushState !== undefined
       ? { commits: commitsWithPushState }
       : {}),

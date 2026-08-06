@@ -16,6 +16,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type {
@@ -27,12 +28,21 @@ import type {
   PullReview,
 } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
+import { GITHUB_PR_EXPORT_PENDING_TTL_MS } from "../../../core/github-pr-export-pending.ts";
 
 // GitHub export launches through the terminal backend abstraction; stub it so the component tree
 // renders without a TerminalProvider.
-const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
+// `launchState.failed` stands in for the launch mutation's isError: the real hook flips it when the
+// RPC rejects, and a test flips it from inside launchTerminal to play out a rejected launch (#2383).
+const { launchTerminal, launchState } = vi.hoisted(() => ({
+  launchTerminal: vi.fn(),
+  launchState: { failed: false },
+}));
 vi.mock("@/components/terminal-controller", () => ({
-  useTerminalLauncher: () => ({ launchTerminal }),
+  useTerminalLauncher: () => ({
+    launchTerminal,
+    launchFailed: launchState.failed,
+  }),
 }));
 
 import { PullDetail } from "./pull-detail";
@@ -43,7 +53,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
-  launchTerminal.mockClear();
+  launchTerminal.mockReset();
+  launchState.failed = false;
 });
 
 const pull: PullRequest = {
@@ -86,6 +97,7 @@ const pull: PullRequest = {
   cost_stopped: false,
   merge_mode: "merge",
   github_pull: null,
+  github_pr_export_started_at: null,
   commits: [
     {
       sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -2109,15 +2121,18 @@ describe("PullDetail", () => {
 });
 
 // #406: the PR-detail write action follows the PR's effective merge_mode. Render with an overridden
-// pull so we can exercise each mode without touching the shared fixture.
+// pull so we can exercise each mode without touching the shared fixture. A function override is
+// re-read on every fetch, so a test can change what the server reports and refetch (#2383).
 function renderDetailWithPull(
-  override: Partial<PullRequest>,
+  override: Partial<PullRequest> | (() => Partial<PullRequest>),
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
+  const current = () =>
+    typeof override === "function" ? override() : override;
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({
-      "pulls/get": () => ({ ...pull, ...override }),
+      "pulls/get": () => ({ ...pull, ...current() }),
       "pulls/files": () => files,
       "reviews/list": () => reviews,
       "reviews/listComments": () => lineComments,
@@ -2154,11 +2169,14 @@ function renderDetailWithPull(
     routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+    queryClient,
+  };
 }
 
 function linkedGithubPull(pushedSha: string | null) {
@@ -2215,6 +2233,278 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(
       screen.queryByRole("button", { name: /Create PR on GitHub/i }),
     ).toBeNull();
+  });
+
+  // #2383: the export runs in a launched agent, so the button has to report progress itself —
+  // otherwise it snaps back to looking unpressed and invites a second launch.
+  it("goes into a loading state on click and stays there until the export lands", async () => {
+    renderDetailWithPull({
+      merge_mode: "github_pr",
+      github_pull: null,
+      github_pr_export_started_at: null,
+    });
+    const button = (await screen.findByRole("button", {
+      name: /Create PR on GitHub/i,
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    fireEvent.click(button);
+
+    const creating = (await screen.findByRole("button", {
+      name: /Creating…/i,
+    })) as HTMLButtonElement;
+    expect(creating.disabled).toBe(true);
+    expect(
+      screen.queryByRole("button", { name: /Create PR on GitHub/i }),
+    ).toBeNull();
+    // A second click can't dispatch another export.
+    fireEvent.click(creating);
+    expect(launchTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the loading state on load for an export already running", async () => {
+    renderDetailWithPull({
+      merge_mode: "github_pr",
+      github_pull: null,
+      github_pr_export_started_at: new Date().toISOString(),
+    });
+    const creating = (await screen.findByRole("button", {
+      name: /Creating…/i,
+    })) as HTMLButtonElement;
+    expect(creating.disabled).toBe(true);
+  });
+
+  it("leaves the loading state behind once the GitHub PR is recorded", async () => {
+    renderDetailWithPull({
+      merge_mode: "github_pr",
+      github_pull: linkedGithubPull(null),
+      github_pr_export_started_at: new Date().toISOString(),
+    });
+    // github_pull present means the export landed: the action row is the push control again, with
+    // no in-progress Create button left over.
+    await screen.findByRole("button", { name: /Push to GitHub/i });
+    expect(screen.queryByRole("button", { name: /Creating…/i })).toBeNull();
+  });
+
+  // Unlinking is how an operator asks to export again (#2384), and it patches the cached PR in
+  // place rather than remounting the action — so the click that started the export it just dropped
+  // must not be what the returning Create button reports on.
+  it("returns a clickable Create button after the export lands and is unlinked", async () => {
+    let override: Partial<PullRequest> = {
+      merge_mode: "github_pr",
+      github_pull: null,
+      github_pr_export_started_at: null,
+    };
+    const { queryClient } = renderDetailWithPull(() => override);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Create PR on GitHub/i }),
+    );
+    await screen.findByRole("button", { name: /Creating…/i });
+
+    // The export lands.
+    override = { ...override, github_pull: linkedGithubPull(null) };
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await screen.findByRole("button", { name: /Push to GitHub/i });
+
+    // The operator unlinks it to export again. The server reports no outstanding export.
+    override = {
+      ...override,
+      title: "Unlinked to export again",
+      github_pull: null,
+    };
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await screen.findByRole("heading", {
+      name: "Unlinked to export again",
+      level: 1,
+    });
+
+    const again = screen.getByRole("button", {
+      name: /Create PR on GitHub/i,
+    }) as HTMLButtonElement;
+    expect(again.disabled).toBe(false);
+  });
+
+  // Nothing writes back a *failed* export, so the loading state is bounded by a TTL instead of
+  // hanging forever on an agent that died.
+  it("returns to a clickable button when the export never lands", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderDetailWithPull({
+      merge_mode: "github_pr",
+      github_pull: null,
+      github_pr_export_started_at: new Date().toISOString(),
+    });
+    await screen.findByRole("button", { name: /Creating…/i });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(GITHUB_PR_EXPORT_PENDING_TTL_MS + 1000);
+    });
+
+    const button = (await screen.findByRole("button", {
+      name: /Create PR on GitHub/i,
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+  });
+
+  // A start can arrive already expired — the events poll pauses while the tab is hidden, so the
+  // first payload after it comes back can describe an export that ran out long ago. The button must
+  // judge it against the current clock, not against whenever the page happened to mount.
+  it("ignores a start that is already past its TTL when it arrives", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const mountedAt = Date.now();
+    let override: Partial<PullRequest> = {
+      merge_mode: "github_pr",
+      github_pull: null,
+      github_pr_export_started_at: null,
+    };
+    const { queryClient } = renderDetailWithPull(() => override);
+    const button = (await screen.findByRole("button", {
+      name: /Create PR on GitHub/i,
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    // The export started shortly before the page mounted and has since run out; the payload only
+    // reaches the page now. Its expiry is still after the mount, so a mount-time clock would call it
+    // in progress with no timer left to ever end it. The title changes with it, so the assertion
+    // below can only run once this payload has actually reached the page.
+    override = {
+      ...override,
+      title: "Export that ran out",
+      github_pr_export_started_at: new Date(
+        mountedAt - GITHUB_PR_EXPORT_PENDING_TTL_MS + 60_000,
+      ).toISOString(),
+    };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(GITHUB_PR_EXPORT_PENDING_TTL_MS);
+      await queryClient.invalidateQueries();
+    });
+    await screen.findByRole("heading", {
+      name: "Export that ran out",
+      level: 1,
+    });
+
+    const stillClickable = screen.getByRole("button", {
+      name: /Create PR on GitHub/i,
+    }) as HTMLButtonElement;
+    expect(stillClickable.disabled).toBe(false);
+  });
+
+  // The optimistic half of the loading state is local to the button, and the detail route is reused
+  // across a client-side navigation — so it has to be tied to the PR it was started for.
+  // Both shapes matter: one detail route serves every repo, and PR numbers are per repo, so
+  // "another PR" can differ by number, by repo, or both.
+  it.each([
+    ["another PR in the same repo", { repo: "proj", number: 31 }],
+    ["the same PR number in another repo", { repo: "other", number: 30 }],
+  ] as const)("does not carry the loading state onto %s", async (_case, other) => {
+    const started = { repo: "proj", number: 30 };
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": (params: any) => ({
+          ...pull,
+          number: params.number,
+          title: `${params.repo} PR ${params.number}`,
+          merge_mode: "github_pr",
+          github_pull: null,
+          github_pr_export_started_at: null,
+        }),
+        "pulls/files": () => files,
+        "reviews/list": () => reviews,
+        "reviews/listComments": () => lineComments,
+        "comments/list": () => comments,
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    function SwitchingDetail() {
+      const [showOther, setShowOther] = useState(true);
+      const shown = showOther ? other : started;
+      return (
+        <>
+          <button type="button" onClick={() => setShowOther((v) => !v)}>
+            open the other PR
+          </button>
+          <PullDetail owner="me" repo={shown.repo} number={shown.number} />
+        </>
+      );
+    }
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <SwitchingDetail />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    // `pulls/get` is called with the full "owner/name", which is what the stub echoes into the title.
+    const heading = (pr: { repo: string; number: number }) =>
+      `me/${pr.repo} PR ${pr.number}`;
+
+    // Visit the other PR first so its detail is cached: coming back to it renders straight from the
+    // cache with no loading gap, which is exactly when the route is reused rather than remounted.
+    await screen.findByRole("heading", { name: heading(other), level: 1 });
+    fireEvent.click(screen.getByRole("button", { name: /open the other PR/i }));
+    await screen.findByRole("heading", { name: heading(started), level: 1 });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Create PR on GitHub/i }),
+    );
+    await screen.findByRole("button", { name: /Creating…/i });
+
+    fireEvent.click(screen.getByRole("button", { name: /open the other PR/i }));
+
+    await screen.findByRole("heading", { name: heading(other), level: 1 });
+    const button = (await screen.findByRole("button", {
+      name: /Create PR on GitHub/i,
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+  });
+
+  // A launch the server refused started no agent, so there is nothing to wait for: the operator must
+  // be able to retry right away rather than sit out the TTL.
+  it("drops the loading state when the launch itself fails", async () => {
+    launchTerminal.mockImplementation(() => {
+      launchState.failed = true;
+    });
+    renderDetailWithPull({
+      merge_mode: "github_pr",
+      github_pull: null,
+      github_pr_export_started_at: null,
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Create PR on GitHub/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        (
+          screen.getByRole("button", {
+            name: /Create PR on GitHub/i,
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false);
+    });
+    expect(screen.queryByRole("button", { name: /Creating…/i })).toBeNull();
   });
 
   it.each([

@@ -1,17 +1,41 @@
 import { db, now } from "../db.ts";
 
-export interface GithubPull {
+// #2383: a loophub PR's GitHub export, whatever stage it is at — one row carrying both the GitHub
+// PR and how far the export got. `status` is the lifecycle ('creating' -> 'linked'; unlinking
+// deletes the row). Modelled as a union on that status so the link columns are only reachable on the
+// stage that has them, which mirrors the table's own CHECK: a reader that has a linked export never
+// has to consider a half-filled link, and one holding an export in flight cannot read a GitHub PR
+// number out of it.
+interface GithubPrExportFields {
   issue_id: number;
-  number: number;
-  url: string;
   branch: string | null;
   created_by: string | null;
+  // When the export began — the launch for a row opened by the Create action, or the recording
+  // itself for a link recorded without one.
   created_at: string;
   github_merged: number;
   github_merged_at: string | null;
   // #848: the loophub head SHA last pushed to the GitHub branch, or null if never pushed from here.
   pushed_sha: string | null;
 }
+
+/** An export whose agent has not recorded a GitHub PR yet. */
+export interface GithubPrExportCreating extends GithubPrExportFields {
+  status: "creating";
+  number: null;
+  url: null;
+  linked_at: null;
+}
+
+/** A GitHub export that reached 'linked' — the recorded GitHub PR. */
+export interface GithubPull extends GithubPrExportFields {
+  status: "linked";
+  number: number;
+  url: string;
+  linked_at: string;
+}
+
+export type GithubPrExport = GithubPrExportCreating | GithubPull;
 
 export interface GithubIssue {
   issue_id: number;
@@ -24,18 +48,58 @@ export interface GithubIssue {
 }
 
 // ---- github links ----
-// #406: the GitHub PR a loophub PR was exported to, or null. Keyed by the PR's issues row id.
-export function getGithubPull(issueId: number): GithubPull | null {
+// #2383: a loophub PR's GitHub export at whatever stage it is at, or null when it has none. This is
+// the whole model — "is an export running?" and "which GitHub PR is linked?" are both answered from
+// this one row, so the two can never disagree.
+export function getGithubPrExport(issueId: number): GithubPrExport | null {
   return (
     (db
       .query(`SELECT * FROM github_pulls WHERE issue_id = ?`)
+      .get(issueId) as GithubPrExport) ?? null
+  );
+}
+
+// #406: the GitHub PR a loophub PR was exported to, or null. Keyed by the PR's issues row id. An
+// export still in flight is deliberately *not* a link: it identifies no GitHub PR yet, so every
+// caller asking "does this PR have a GitHub PR?" — the double-create guard, the push controls, the
+// status panel — reads null until one exists.
+export function getGithubPull(issueId: number): GithubPull | null {
+  return (
+    (db
+      .query(
+        `SELECT * FROM github_pulls WHERE issue_id = ? AND status = 'linked'`,
+      )
       .get(issueId) as GithubPull) ?? null
   );
 }
 
+// #2383: open the export record when the Create action's agent is launched, so "an export is
+// running" is persisted rather than inferred. A relaunch restarts the record's clock — the newest
+// attempt is the one in flight, and without this a retry after an export that died would inherit
+// the dead one's start and read as expired the moment the page reloads. A row that already reached
+// 'linked' is a recorded GitHub PR and is left alone: the DO UPDATE's WHERE is what keeps a stray
+// launch from reverting a real link to "creating".
+export function beginGithubPrExport(input: {
+  issueId: number;
+  createdBy?: string | null;
+}): GithubPrExport {
+  db.run(
+    `INSERT INTO github_pulls (issue_id, status, created_by, created_at)
+     VALUES (?, 'creating', ?, ?)
+     ON CONFLICT(issue_id) DO UPDATE SET
+       created_by = excluded.created_by,
+       created_at = excluded.created_at
+     WHERE github_pulls.status = 'creating'`,
+    [input.issueId, input.createdBy ?? null, now()],
+  );
+  return getGithubPrExport(input.issueId) as GithubPrExport;
+}
+
 // #406: record (or replace) the GitHub PR for a loophub PR. Idempotent on issue_id — re-recording
-// overwrites, so a re-run of the export skill updates the link rather than erroring. created_at is
-// preserved on overwrite (the link's first-seen time) while the rest is refreshed.
+// overwrites, so a re-run of the export skill updates the link rather than erroring, and the row a
+// launch opened as 'creating' is completed in place. created_at is preserved on overwrite (when the
+// export began) while the rest is refreshed; linked_at moves to now because that is when this link
+// was recorded.
 export function recordGithubPull(input: {
   issueId: number;
   number: number;
@@ -44,15 +108,19 @@ export function recordGithubPull(input: {
   createdBy?: string | null;
 }): GithubPull {
   const { issueId, number, url, branch, createdBy } = input;
+  const t = now();
   return db
     .query(
-      `INSERT INTO github_pulls (issue_id, number, url, branch, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO github_pulls
+         (issue_id, status, number, url, branch, created_by, created_at, linked_at)
+       VALUES (?, 'linked', ?, ?, ?, ?, ?, ?)
        ON CONFLICT(issue_id) DO UPDATE SET
+         status = 'linked',
          number = excluded.number,
          url = excluded.url,
          branch = excluded.branch,
-         created_by = excluded.created_by
+         created_by = excluded.created_by,
+         linked_at = excluded.linked_at
        RETURNING *`,
     )
     .get(
@@ -61,7 +129,8 @@ export function recordGithubPull(input: {
       url,
       branch ?? null,
       createdBy ?? null,
-      now(),
+      t,
+      t,
     ) as GithubPull;
 }
 
@@ -115,7 +184,8 @@ export function activeWorkflowGithubPullLinks(): WorkflowGithubPullSyncRow[] {
            AND candidate.status = 'running'
          ORDER BY candidate.id DESC LIMIT 1
        )
-       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
+       WHERE gp.status = 'linked'
+         AND i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
          AND p.archived_at IS NULL AND r.archived = 0
          AND wr.parent_session_id IS NOT NULL
        ORDER BY i.repo_id, i.number`,
@@ -190,7 +260,8 @@ export function unmergedGithubPullLinks(): GithubPullSyncRow[] {
        JOIN issues i ON i.id = gp.issue_id
        JOIN pulls p ON p.issue_id = gp.issue_id
        JOIN repos r ON r.id = i.repo_id
-       WHERE gp.github_merged = 0 AND i.kind = 'pull' AND i.state = 'open'
+       WHERE gp.status = 'linked' AND gp.github_merged = 0
+         AND i.kind = 'pull' AND i.state = 'open'
          AND p.merged = 0 AND p.archived_at IS NULL AND r.archived = 0`,
     )
     .all() as GithubPullSyncRow[];

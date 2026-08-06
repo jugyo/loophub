@@ -11,6 +11,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
+let db: typeof import("./db.ts").db;
 let repoPath: string;
 
 function git(args: string[]) {
@@ -36,6 +37,7 @@ async function openPull(issue?: number): Promise<number> {
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
+  ({ db } = await import("./db.ts"));
   repoPath = mkdtempSync(join(tmpdir(), "lh-ghpr-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -115,6 +117,99 @@ test("recordGithubPull links a GitHub PR and pull detail exposes it (#406)", asy
   expect(rec2.number).toBe(43);
   const after2 = (await svc.pulls.get("me/proj", number)) as any;
   expect(after2.github_pull.number).toBe(43);
+});
+
+// #2383: the export record is one row that carries both the link and how far the export got, so the
+// PR detail's two projections of it can never contradict each other.
+test("pull detail reports an export in flight, and only that (#2383)", async () => {
+  const number = await openPull();
+  const repo = S.getRepo("me", "proj")!;
+  const pullId = S.getIssue(repo.id, number)!.id;
+  const detail = () => svc.pulls.get("me/proj", number) as Promise<any>;
+
+  const before = await detail();
+  expect(before.github_pr_export_started_at).toBeNull();
+  expect(before.github_pull).toBeNull();
+
+  S.beginGithubPrExport({ issueId: pullId });
+  const started = await detail();
+  expect(started.github_pr_export_started_at).not.toBeNull();
+  // An export in flight identifies no GitHub PR yet, so it must not read as a link.
+  expect(started.github_pull).toBeNull();
+
+  // Another PR's export must not leak into this one.
+  const other = await openPull();
+  expect((await detail()).number).toBe(number);
+  const otherDetail = (await svc.pulls.get("me/proj", other)) as any;
+  expect(otherDetail.github_pr_export_started_at).toBeNull();
+});
+
+// The record moves through its whole lifecycle in place: recording the GitHub PR completes the row
+// the launch opened, and unlinking removes it so the operator can export again (#2384).
+test("the export record carries the PR from creating to linked and back (#2383)", async () => {
+  const number = await openPull();
+  const repo = S.getRepo("me", "proj")!;
+  const pullId = S.getIssue(repo.id, number)!.id;
+  const detail = () => svc.pulls.get("me/proj", number) as Promise<any>;
+
+  S.beginGithubPrExport({ issueId: pullId });
+  const startedAt = S.getGithubPrExport(pullId)!.created_at;
+
+  // The export landed: same row, now a link — and no longer in flight.
+  svc.pulls.recordGithubPull("me/proj", number, {
+    github_number: 42,
+    url: "https://github.com/me/proj/pull/42",
+    branch: "feature/feat",
+  });
+  const linked = await detail();
+  expect(linked.github_pr_export_started_at).toBeNull();
+  expect(linked.github_pull).toMatchObject({ number: 42 });
+  // created_at still marks when the export began; the link's own time is separate.
+  const record = S.getGithubPrExport(pullId)!;
+  expect(record.status).toBe("linked");
+  expect(record.created_at).toBe(startedAt);
+  expect(record.linked_at).not.toBeNull();
+
+  // Unlinking drops the record entirely, so the Create action returns clickable.
+  svc.pulls.unlinkGithubPull("me/proj", number);
+  expect(S.getGithubPrExport(pullId)).toBeNull();
+  const unlinked = await detail();
+  expect(unlinked.github_pull).toBeNull();
+  expect(unlinked.github_pr_export_started_at).toBeNull();
+
+  // A fresh export after all that is in flight again.
+  S.beginGithubPrExport({ issueId: pullId });
+  expect((await detail()).github_pr_export_started_at).not.toBeNull();
+});
+
+// Relaunching restarts the record's clock, but a recorded link is never reverted to "creating".
+test("beginGithubPrExport restarts an export in flight and leaves a link alone (#2383)", async () => {
+  const number = await openPull();
+  const repo = S.getRepo("me", "proj")!;
+  const pullId = S.getIssue(repo.id, number)!.id;
+
+  // A record left behind by an export that died must not make the retry look already expired, so
+  // the newest launch is the one the start reports.
+  S.beginGithubPrExport({ issueId: pullId });
+  db.run(`UPDATE github_pulls SET created_at = ? WHERE issue_id = ?`, [
+    "2020-01-01T00:00:00Z",
+    pullId,
+  ]);
+  const relaunched = S.beginGithubPrExport({ issueId: pullId });
+  expect(relaunched.status).toBe("creating");
+  expect(Date.parse(relaunched.created_at)).toBeGreaterThan(
+    Date.parse("2020-01-01T00:00:00Z"),
+  );
+
+  // Once linked, a stray launch must not revert the row — the GitHub PR stays recorded.
+  svc.pulls.recordGithubPull("me/proj", number, {
+    github_number: 7,
+    url: "https://github.com/me/proj/pull/7",
+  });
+  expect(S.beginGithubPrExport({ issueId: pullId })).toMatchObject({
+    status: "linked",
+    number: 7,
+  });
 });
 
 test("markGithubMerged completes the PR and linked issue at the detected time", async () => {

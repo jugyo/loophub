@@ -743,6 +743,25 @@ export const terminal = {
         session: plan.sessionName,
       });
     }
+    // #2383: open this PR's GitHub export record, so the PR detail can render "Create PR on GitHub"
+    // as in-progress until the export lands instead of snapping back to a button that looks
+    // unpressed. Recorded only after the launch succeeded — a failed launch throws above and leaves
+    // the button clickable. The row is the same one the GitHub PR is eventually recorded into, so
+    // completion needs no separate release; unlinking (#2384) deletes it. A dead agent leaves the
+    // row 'creating' forever, which is bounded for display only
+    // (core/github-pr-export-pending.ts) rather than by a cleanup nobody can run correctly.
+    const exportedPr =
+      input.workflow === "github-pr-export" && input.prNumber != null
+        ? S.getIssue(r.id, input.prNumber)
+        : null;
+    if (exportedPr?.kind === "pull") {
+      db.transaction(() => {
+        S.beginGithubPrExport({ issueId: exportedPr.id, createdBy: "loophub" });
+        S.emitEvent(r.id, "pull_request.github_pr_export_started", "loophub", {
+          number: exportedPr.number,
+        });
+      });
+    }
     if (issueCreateLaunchId != null && outcome.paneId) {
       const registeredPane = db.transaction(() =>
         S.upsertIssueHerdrPane({

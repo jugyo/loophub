@@ -660,19 +660,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_handoffs_issue_seq ON handoffs(issue_id, s
 CREATE INDEX IF NOT EXISTS idx_handoffs_issue   ON handoffs(issue_id);
 CREATE INDEX IF NOT EXISTS idx_handoffs_session ON handoffs(session_id);
 
--- The GitHub PR a loophub PR was exported to (#406). A loophub PR can have at most one GitHub PR,
--- so this is a 1:1 side table keyed by the PR's issues row id (pulls.issue_id). Kept out of the
--- pulls table because it is a distinct concept (an external artifact, populated asynchronously by
--- the export skill) and most PRs never have one. The branch column records the GitHub-side branch
--- the skill pushed (deliberately unrelated to the internal loophub branch); created_by is the actor
--- that recorded it. Presence of a row is what flips the PR-detail button from Create to View PR.
+-- A loophub PR's GitHub export (#406, #2383): both the GitHub PR it was exported to and how far
+-- that export got. A loophub PR can have at most one, so this is a 1:1 side table keyed by the PR's
+-- issues row id (pulls.issue_id). Kept out of the pulls table because it is a distinct concept (an
+-- external artifact, produced asynchronously by a launched agent) and most PRs never have one.
+--
+-- The row exists from the moment the export starts, not from the moment it lands, so "an export is
+-- running" is a fact this table holds rather than something each reader reconstructs from event
+-- history. status is the whole lifecycle:
+--   'creating' -- an agent was launched and has not recorded a GitHub PR yet; number/url are null
+--   'linked'   -- the GitHub PR exists; number/url/branch describe it
+-- Unlinking (#2384) deletes the row, which is what lets an operator ask for a second export. There
+-- is deliberately no 'failed': nothing observes an agent that dies, so a stuck 'creating' row is
+-- bounded for display only (core/github-pr-export-pending.ts) rather than by a state nobody writes.
+--
+-- created_at is when the export began (or when the link was recorded, for a link recorded without
+-- one); linked_at is when it became 'linked'. The CHECK is the model's own invariant: a linked row
+-- always identifies a GitHub PR, so no reader has to handle a half-filled link. The branch column
+-- records the GitHub-side branch the agent pushed (deliberately unrelated to the internal loophub
+-- branch); created_by is the actor that recorded it.
 CREATE TABLE IF NOT EXISTS github_pulls (
   issue_id    INTEGER PRIMARY KEY REFERENCES issues(id),
-  number      INTEGER NOT NULL,
-  url         TEXT NOT NULL,
+  status      TEXT NOT NULL CHECK (status IN ('creating', 'linked')),
+  number      INTEGER,
+  url         TEXT,
   branch      TEXT,
   created_by  TEXT,
-  created_at  TEXT NOT NULL
+  created_at  TEXT NOT NULL,
+  linked_at   TEXT,
+  CHECK (status = 'creating' OR (number IS NOT NULL AND url IS NOT NULL))
 );
 
 -- The GitHub issue a loophub issue was imported from (#614). Deliberately MANY-to-ONE, not 1:1 like

@@ -573,6 +573,63 @@ describe("terminal.launch github-pr-export focus preservation", () => {
     ).toBe(false);
     expect(herdr.focus).toEqual(focusBefore);
   });
+
+  // #2383: the launch is the only moment anything knows an export started — the agent works
+  // asynchronously afterwards — so a successful launch opens the export record the PR detail reads
+  // its in-progress button state from.
+  test("opens the export record on a successful launch", async () => {
+    const pullNumber = createPull();
+    const repo = S.getRepo("me", "proj")!;
+    const pullId = S.getIssue(repo.id, pullNumber)!.id;
+    expect(S.getGithubPrExport(pullId)).toBeNull();
+    herdr.script.push(
+      exitWith(1), // worktree open (falls back to a repo-root tab)
+      exitWith(0, LAUNCH_TAB_JSON), // launch tab
+      exitWith(0), // pane rename
+      exitWith(0), // the launch command, typed into the pane
+    );
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "github-pr-export",
+      prNumber: pullNumber,
+      label: "Create PR on GitHub",
+      prompt: "Create the pull request.",
+    });
+
+    // The record is the same row the GitHub PR is eventually written into, so it does not read as a
+    // link yet — only as an export in flight.
+    expect(S.getGithubPrExport(pullId)).toMatchObject({
+      status: "creating",
+      number: null,
+      url: null,
+    });
+    expect(S.getGithubPull(pullId)).toBeNull();
+  });
+
+  // A launch that never started an agent must leave the button clickable rather than spinning
+  // against an export that does not exist.
+  test("records nothing when the launch itself fails", async () => {
+    const pullNumber = createPull();
+    const repo = S.getRepo("me", "proj")!;
+    const pullId = S.getIssue(repo.id, pullNumber)!.id;
+    herdr.script.push(
+      exitWith(1), // worktree open (falls back to a repo-root tab)
+      exitWith(1), // launch tab — the launch fails here
+    );
+
+    await expect(
+      svc.terminal.launch({
+        repo: "me/proj",
+        workflow: "github-pr-export",
+        prNumber: pullNumber,
+        label: "Create PR on GitHub",
+        prompt: "Create the pull request.",
+      }),
+    ).rejects.toMatchObject({ status: 500 });
+
+    expect(S.getGithubPrExport(pullId)).toBeNull();
+  });
 });
 
 describe("terminal.launch dedicated workspace orchestration for New Issue", () => {

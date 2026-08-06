@@ -95,7 +95,18 @@ export function TerminalControllerProvider({
   );
 }
 
-export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
+// `launchFailed` reports that this consumer's most recent launch was rejected (#2383). The error
+// itself is already surfaced by the dialog; callers that put a button into an optimistic
+// "working…" state on click need the failure too, so they can drop it instead of leaving a
+// disabled button behind for an agent that never started. Scoped per call site: each
+// useTerminalLauncher() owns its own mutation, so one surface's failure never disables another's.
+// It covers rejected launches only — the argument checks below report through the toast and return
+// without dispatching one, so they never raise this flag. Callers that can actually reach those
+// (they pass a repo/workflow that may be missing) need their own handling for that path.
+export function useTerminalLauncher(): {
+  launchTerminal: OpenTerminal;
+  launchFailed: boolean;
+} {
   const ctx = useContext(TerminalControllerContext);
   const launch = useLaunchTerminalWorkflow();
   const { showError } = useToast();
@@ -137,7 +148,7 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
     },
     [ctx, launch, showError],
   );
-  return { launchTerminal };
+  return { launchTerminal, launchFailed: launch.isError };
 }
 
 // Overlay dialog shown for a failed Herdr launch (#483), in place of the generic toast.

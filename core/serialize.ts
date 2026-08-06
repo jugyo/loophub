@@ -582,6 +582,9 @@ export interface GithubPullWire {
   url: string;
   branch: string | null;
   created_by: string | null;
+  // When this link was recorded. Sourced from the export record's linked_at, not its created_at:
+  // since #2383 the record is opened when the export *starts*, and this field has always meant the
+  // link's own first-seen time.
   created_at: string;
   // Whether lh-worker's polling (github-merge-sync.ts) has detected this GitHub PR as merged,
   // and when. The detail view keeps displaying this status after the manual merge action retires.
@@ -601,7 +604,7 @@ export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null {
     url: g.url,
     branch: g.branch ?? null,
     created_by: g.created_by ?? null,
-    created_at: g.created_at,
+    created_at: g.linked_at,
     github_merged: !!g.github_merged,
     github_merged_at: g.github_merged_at ?? null,
     pushed_sha: g.pushed_sha ?? null,
@@ -2279,6 +2282,12 @@ export interface PullWire {
   // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
   merge_mode: MergeMode;
   github_pull: GithubPullWire | null;
+  // #2383: when this PR's in-flight GitHub export began, or null when none is in flight. Both this
+  // and `github_pull` project the same export record, so exactly one of them can be set: a record
+  // still 'creating' has no GitHub PR to report, and one that reached 'linked' is no longer
+  // starting. The detail's Create action renders it as in-progress for as long as it counts as
+  // running.
+  github_pr_export_started_at: string | null;
   // Detail-only: commits on head not reachable from base (base..head), newest first. Omitted from
   // list responses so their bounded pagination does not add one git log per row.
   commits?: PullCommitWire[];

@@ -456,6 +456,66 @@ test("the cache-read rate migration tolerates a database that holds only one rat
   empty.close();
 });
 
+test("the GitHub export status migration keeps every existing link as a linked export", () => {
+  // Rebuilding github_pulls is what makes number/url nullable, so the risk is losing rows or their
+  // bolted-on columns. Every pre-existing row is a recorded link by definition, so it must come out
+  // 'linked' with its link intact and linked_at seeded from created_at.
+  const db = new DatabaseSync(join(HOME, "legacy-github-pulls.db"));
+  db.exec(`
+    CREATE TABLE issues (id INTEGER PRIMARY KEY AUTOINCREMENT);
+    INSERT INTO issues (id) VALUES (10);
+    CREATE TABLE github_pulls (
+      issue_id    INTEGER PRIMARY KEY REFERENCES issues(id),
+      number      INTEGER NOT NULL,
+      url         TEXT NOT NULL,
+      branch      TEXT,
+      created_by  TEXT,
+      created_at  TEXT NOT NULL,
+      github_merged INTEGER NOT NULL DEFAULT 0,
+      github_merged_at TEXT,
+      pushed_sha  TEXT
+    );
+    INSERT INTO github_pulls
+      (issue_id, number, url, branch, created_by, created_at, github_merged, github_merged_at,
+       pushed_sha)
+    VALUES (10, 42, 'https://github.com/me/proj/pull/42', 'feat/x', 'agent', 't5', 1, 't6', 'abc');
+  `);
+  const migration = M.MIGRATIONS.find(
+    (candidate) => candidate.id === "077-github-pulls-export-status",
+  );
+  if (!migration) throw new Error("github export status migration not found");
+  const adapter = {
+    exec: db.exec.bind(db),
+    query: db.prepare.bind(db),
+    run: (sql: string, params: unknown[] = []) =>
+      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+  } as unknown as Parameters<(typeof migration)["run"]>[0];
+
+  migration.run(adapter);
+  expect(db.prepare("SELECT * FROM github_pulls").all()).toEqual([
+    {
+      issue_id: 10,
+      status: "linked",
+      number: 42,
+      url: "https://github.com/me/proj/pull/42",
+      branch: "feat/x",
+      created_by: "agent",
+      created_at: "t5",
+      linked_at: "t5",
+      github_merged: 1,
+      github_merged_at: "t6",
+      pushed_sha: "abc",
+    },
+  ]);
+
+  // Re-running is a no-op rather than a second rebuild that would wipe the table.
+  migration.run(adapter);
+  expect(
+    db.prepare("SELECT COUNT(*) AS count FROM github_pulls").get(),
+  ).toEqual({ count: 1 });
+  db.close();
+});
+
 test("the Workflow end migration freezes the best available terminal timestamp", () => {
   const db = new DatabaseSync(join(HOME, "legacy-workflow-ended-at.db"));
   db.exec(`

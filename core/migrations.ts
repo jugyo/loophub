@@ -1311,6 +1311,43 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  // github_pulls now carries the export's status, not just its result (#2383): the row is created
+  // when the export starts and only identifies a GitHub PR once one exists. That makes number/url
+  // nullable and adds a CHECK, neither of which SQLite can alter in place, so the table is rebuilt.
+  // Every existing row is a recorded link by definition, so it migrates to 'linked' with linked_at
+  // taken from created_at — the closest thing those rows have to a "when did it become linked".
+  // The columns earlier migrations bolted on (044, 045) are carried across explicitly; this step
+  // runs after them, so the table always has them by the time it is rebuilt.
+  {
+    id: "077-github-pulls-export-status",
+    run: (db) => {
+      if (columnExists(db, "github_pulls", "status")) return;
+      db.exec(`
+        ALTER TABLE github_pulls RENAME TO github_pulls_legacy;
+        CREATE TABLE github_pulls (
+          issue_id         INTEGER PRIMARY KEY REFERENCES issues(id),
+          status           TEXT NOT NULL CHECK (status IN ('creating', 'linked')),
+          number           INTEGER,
+          url              TEXT,
+          branch           TEXT,
+          created_by       TEXT,
+          created_at       TEXT NOT NULL,
+          linked_at        TEXT,
+          github_merged    INTEGER NOT NULL DEFAULT 0,
+          github_merged_at TEXT,
+          pushed_sha       TEXT,
+          CHECK (status = 'creating' OR (number IS NOT NULL AND url IS NOT NULL))
+        );
+        INSERT INTO github_pulls
+          (issue_id, status, number, url, branch, created_by, created_at, linked_at,
+           github_merged, github_merged_at, pushed_sha)
+        SELECT issue_id, 'linked', number, url, branch, created_by, created_at, created_at,
+               github_merged, github_merged_at, pushed_sha
+        FROM github_pulls_legacy;
+        DROP TABLE github_pulls_legacy;
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

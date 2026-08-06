@@ -706,11 +706,13 @@ describe("pure row -> wire serializers", () => {
   test("githubPullJSON maps a linked GitHub PR and passes null through", () => {
     const row: GithubPull = {
       issue_id: 3,
+      status: "linked",
       number: 99,
       url: "https://github.com/acme/app/pull/99",
       branch: "loophub/pr-3",
       created_by: "agent",
       created_at: "2026-07-06T00:00:00Z",
+      linked_at: "2026-07-07T12:00:00Z",
       github_merged: 1,
       github_merged_at: "2026-07-07T00:00:00Z",
       pushed_sha: "abc123",
@@ -720,7 +722,9 @@ describe("pure row -> wire serializers", () => {
       url: "https://github.com/acme/app/pull/99",
       branch: "loophub/pr-3",
       created_by: "agent",
-      created_at: "2026-07-06T00:00:00Z",
+      // The wire's created_at is when the *link* was recorded, so it follows linked_at rather than
+      // the record's own created_at (which is when the export began).
+      created_at: "2026-07-07T12:00:00Z",
       github_merged: true,
       github_merged_at: "2026-07-07T00:00:00Z",
       pushed_sha: "abc123",
