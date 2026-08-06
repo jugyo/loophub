@@ -175,8 +175,16 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
         ) {
           keys.push([...queryKeys.githubPrStatus(repo, pullNumber)]);
         }
+        // Workflow tracker Done is the PR's merge-ready fact (mergeable clean), not a run
+        // lifecycle field. Review pass / head advance / conflict / close change that fact via
+        // pull_request.* only — reviews no longer twin a workflow_run.review_submitted — so the
+        // issue-list mini tracker (and any other mounted useWorkflowRunForPull) must refetch here
+        // or Done stays stale while Merge ready / mergeable badges already update (#37).
+        keys.push([...queryKeys.workflowRunForPull(repo, pullNumber)]);
       } else {
         keys.push(["pull", repo]);
+        // No PR number on the event: refresh every mounted pull-scoped run state for the repo.
+        keys.push(["workflow-run", "pull", repo]);
       }
       if (gitGraphChanged) {
         keys.push([...queryKeys.workspaces(repo)]);
@@ -208,6 +216,8 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       ) {
         keys.push(["github-pr-status"]);
       }
+      // Repo-less pull events still need the Done tracker to drop its stale merge-ready signal.
+      keys.push(["workflow-run", "pull"]);
     }
     // Issue rows embed their linked PR's live status (mergeable/conflict, working,
     // review state, diff totals) via issueListItemJSON, so a PR change must also

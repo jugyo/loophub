@@ -84,6 +84,51 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["workspaces", "me/proj"]);
   });
 
+  // #37: Done on the issue-list mini tracker is derived from the PR's mergeable state via
+  // useWorkflowRunForPull. Review submissions (and other PR-graph changes) only emit
+  // pull_request.* now, so those events must invalidate the run-state query or the tracker
+  // keeps a stale Done while Merge ready already reflects clean.
+  it("refreshes the PR's workflow run state on pull_request events that affect Done (#37)", () => {
+    const reviewed = queryKeysForEvent(
+      ev({
+        type: "pull_request.review_submitted",
+        repo: "me/proj",
+        payload: { number: 13, comments: 0 },
+      }),
+    );
+    expect(reviewed).toContainEqual(["workflow-run", "pull", "me/proj", 13]);
+
+    const headUpdated = queryKeysForEvent(
+      ev({
+        type: "pull_request.updated",
+        repo: "me/proj",
+        payload: { number: 13, sha: "abc123" },
+      }),
+    );
+    expect(headUpdated).toContainEqual(["workflow-run", "pull", "me/proj", 13]);
+
+    const conflicted = queryKeysForEvent(
+      ev({
+        type: "pull_request.merge_conflict",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(conflicted).toContainEqual(["workflow-run", "pull", "me/proj", 13]);
+  });
+
+  it("falls back to the pull-scoped workflow-run prefix when a pull_request event lacks a number (#37)", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "pull_request.updated",
+        repo: "me/proj",
+        payload: { sha: "abc123" },
+      }),
+    );
+    expect(keys).toContainEqual(["workflow-run", "pull", "me/proj"]);
+    expect(keys).not.toContainEqual(["workflow-run", "pull", "me/proj", 13]);
+  });
+
   it("falls back to broad issue keys for a repo-less pull_request event (#324)", () => {
     const keys = queryKeysForEvent(
       ev({
@@ -95,6 +140,8 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["issues"]);
     expect(keys).toContainEqual(["issue"]);
     expect(keys).toContainEqual(["workspaces"]);
+    // Repo-less events still refresh Done via the pull-scoped workflow-run prefix (#37).
+    expect(keys).toContainEqual(["workflow-run", "pull"]);
   });
 
   it("maps agent_session events to agent-sessions", () => {
