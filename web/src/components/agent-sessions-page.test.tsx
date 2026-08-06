@@ -330,6 +330,40 @@ describe("AgentSessionsPage", () => {
     expect(screen.getByLabelText("Jul 9 Claude Code: $0.01")).toBeTruthy();
   });
 
+  it("labels OpenCode sessions from the runtime registry", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-09T13:00:00Z").getTime(),
+    );
+    renderPage([
+      {
+        id: "today-opencode",
+        agent: "workflow-step",
+        session: "today-opencode",
+        runtime: "opencode",
+        created_at: "2026-07-09T08:00:00Z",
+        updated_at: "2026-07-09T09:00:00Z",
+        usage: [
+          {
+            session_id: "today-opencode",
+            model: "opencode/big-pickle",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.02,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T09:00:00Z",
+          },
+        ],
+      },
+    ]);
+
+    expect(await screen.findByText("today-opencode")).toBeTruthy();
+    expect(screen.getAllByText("OpenCode").length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole("button", { name: "By agent" }));
+    expect(screen.getByLabelText("Jul 9 OpenCode: $0.02")).toBeTruthy();
+  });
+
   it("filters by preset range and switches granularity and chart mode", async () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-07-09T13:00:00Z").getTime(),

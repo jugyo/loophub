@@ -383,6 +383,29 @@ test("settings.update accepts Cursor's empty effort with a model selection", () 
   svc.settings.update({ agent: "cursor", model: "auto", effort: "" });
 });
 
+test("settings.update accepts OpenCode as an agent-scoped and default coding agent", () => {
+  svc.settings.update({
+    agent: "opencode",
+    model: "openai/gpt-5.6",
+    effort: "high",
+  });
+  svc.settings.update({ codingAgent: "opencode" });
+  const got = svc.settings.get();
+  expect(got.codingAgent).toBe("opencode");
+  expect(got.agents.opencode).toEqual({
+    model: "openai/gpt-5.6",
+    effort: "high",
+  });
+
+  // Restore defaults so later tests see the untouched baseline.
+  svc.settings.update({
+    agent: "opencode",
+    model: "opencode/big-pickle",
+    effort: "medium",
+  });
+  svc.settings.update({ codingAgent: "claude-code" });
+});
+
 test("settings.update omitting codingAgent preserves the persisted value (#516)", () => {
   svc.settings.update({ codingAgent: "codex" });
   svc.settings.update({});

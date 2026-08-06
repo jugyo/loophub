@@ -199,6 +199,24 @@ describe("SettingsPage", () => {
     expect(
       within(group).getByRole("radio", { name: "Cursor Agent" }),
     ).toBeTruthy();
+    expect(within(group).getByRole("radio", { name: "OpenCode" })).toBeTruthy();
+  });
+
+  it("lists every registry runtime in coding-agent order", async () => {
+    renderSettings();
+    const group = await screen.findByRole("radiogroup", {
+      name: /^coding agent$/i,
+    });
+    const labels = within(group)
+      .getAllByRole("radio")
+      .map((option) => option.textContent?.trim());
+    expect(labels).toEqual([
+      "Claude Code",
+      "Codex",
+      "Grok Build",
+      "Cursor Agent",
+      "OpenCode",
+    ]);
   });
 
   it("switches the coding agent and persists via settings/update", async () => {
@@ -219,6 +237,64 @@ describe("SettingsPage", () => {
     });
     await waitFor(() =>
       expect(codexOption.getAttribute("aria-checked")).toBe("true"),
+    );
+  });
+
+  it("switches the coding agent to OpenCode and persists via settings/update", async () => {
+    renderSettings(undefined, "claude-code");
+    const group = await screen.findByRole("radiogroup", {
+      name: /^coding agent$/i,
+    });
+    const openCodeOption = within(group).getByRole("radio", {
+      name: "OpenCode",
+    }) as HTMLButtonElement;
+    await waitFor(() => expect(openCodeOption.disabled).toBe(false));
+    fireEvent.click(openCodeOption);
+
+    await waitFor(() => {
+      expect(rpcCall("settings/update")?.params).toMatchObject({
+        codingAgent: "opencode",
+      });
+    });
+    await waitFor(() =>
+      expect(openCodeOption.getAttribute("aria-checked")).toBe("true"),
+    );
+  });
+
+  it("offers OpenCode model×effort combinations from the registry and saves them", async () => {
+    renderSettings(undefined, "opencode");
+    const openCodeDropdown = await modelDropdown("OpenCode");
+    await waitFor(() =>
+      expect(openCodeDropdown.textContent).toContain(
+        "opencode/big-pickle — medium",
+      ),
+    );
+    const menu = await openModelDropdown("OpenCode");
+    const openCodeOptions = within(menu)
+      .getAllByRole("menuitem")
+      .map((o) => o.textContent);
+    expect(openCodeOptions).toEqual(
+      expect.arrayContaining([
+        "opencode/big-pickle — minimal",
+        "opencode/big-pickle — medium",
+        "opencode/big-pickle — max",
+        "openai/gpt-5.6 — high",
+      ]),
+    );
+    fireEvent.click(
+      within(menu).getByRole("menuitem", {
+        name: "openai/gpt-5.6 — high",
+      }),
+    );
+    await waitFor(() =>
+      expect(rpcCall("settings/update")?.params).toMatchObject({
+        agent: "opencode",
+        model: "openai/gpt-5.6",
+        effort: "high",
+      }),
+    );
+    await waitFor(() =>
+      expect(openCodeDropdown.textContent).toContain("openai/gpt-5.6 — high"),
     );
   });
 

@@ -3,6 +3,7 @@
 // language-neutral surface — clients (S4) are written against these schemas and never
 // import core types. The dispatcher (rpc.ts) compiles the params schemas with ajv and
 // validates incoming params before calling the handler.
+import { CODING_AGENTS } from "../../core/runtimes.ts";
 import * as svc from "../../core/service.ts";
 import { THEME_IDS } from "../../core/theme.ts";
 import { log } from "./logger.ts";
@@ -12,6 +13,9 @@ export const PROTOCOL_VERSION = "2026-08-02";
 export const SERVER_INFO = { name: "loophub", version: "0.0.0" } as const;
 
 // ---- reusable schema fragments ----
+// Derived from the runtime registry so a new CodingAgent (e.g. OpenCode) is accepted on the
+// wire without re-listing ids in every method schema.
+const codingAgentEnum = { enum: [...CODING_AGENTS] } as const;
 const str = { type: "string" } as const;
 const strNonEmpty = { type: "string", minLength: 1 } as const;
 const sid = { type: "string", minLength: 1 } as const;
@@ -191,9 +195,7 @@ export const methods: Record<string, MethodDef> = {
       {
         name: repo,
         override: { type: "boolean" },
-        runtime: {
-          enum: ["claude-code", "codex", "grok", "cursor", "opencode"],
-        },
+        runtime: codingAgentEnum,
         model: strOrNull,
         effort: strOrNull,
         session_id: sid,
@@ -259,14 +261,12 @@ export const methods: Record<string, MethodDef> = {
     description:
       "Update instance-level settings. model/effort require agent; theme and workflowContractLanguage are DB-backed.",
     params: params({
-      agent: { enum: ["claude-code", "codex", "grok", "cursor", "opencode"] },
+      agent: codingAgentEnum,
       model: strNonEmpty,
       // Cursor has no independent effort setting and persists the empty string as its canonical
       // value. Runtime-specific validation remains in the settings service.
       effort: str,
-      codingAgent: {
-        enum: ["claude-code", "codex", "grok", "cursor", "opencode"],
-      },
+      codingAgent: codingAgentEnum,
       devCostLimitUsd,
       theme: { enum: THEME_IDS },
       workflowContractLanguage: { enum: ["en", "ja"] },
@@ -474,7 +474,7 @@ export const methods: Record<string, MethodDef> = {
         prompt: str,
         // One-shot launch overrides (#1275/#1534): force the runtime / model / effort for New
         // issue, or runtime / model for Start workflow, without changing persisted settings.
-        agent: { enum: ["claude-code", "codex", "grok", "cursor", "opencode"] },
+        agent: codingAgentEnum,
         model: str,
         effort: str,
       },

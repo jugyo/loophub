@@ -14,6 +14,7 @@ import {
   MODEL_SUGGESTIONS,
 } from "@/lib/agent-models";
 import { cn } from "@/lib/utils";
+import { CODING_AGENTS } from "../../../core/runtimes.ts";
 
 // Shared one-shot runtime/model/effort picker for launches such as New issue. It starts from
 // the caller's defaults (repo effective config for New issue, #1534) but only returns the
@@ -53,35 +54,33 @@ export function AgentModelPicker({
     <div data-debug-component="AgentModelPicker">
       <p className="mb-1 text-xs font-medium text-muted-foreground">Agent</p>
       <div className="mb-3 flex gap-1">
-        {(Object.keys(CODING_AGENT_LABELS) as CodingAgent[]).map(
-          (candidate) => {
-            const active = agent === candidate;
-            return (
-              <button
-                key={candidate}
-                type="button"
-                aria-pressed={active}
-                className={cn(
-                  "flex-1 rounded-md border px-2 py-1.5 text-sm",
-                  active
-                    ? "border-primary bg-primary/10 font-medium"
-                    : "hover:bg-accent hover:text-accent-foreground",
-                )}
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  selectAgent(candidate);
-                }}
-              >
-                {CODING_AGENT_LABELS[candidate]}
-              </button>
-            );
-          },
-        )}
+        {CODING_AGENTS.map((candidate) => {
+          const active = agent === candidate;
+          return (
+            <button
+              key={candidate}
+              type="button"
+              aria-pressed={active}
+              className={cn(
+                "flex-1 rounded-md border px-2 py-1.5 text-sm",
+                active
+                  ? "border-primary bg-primary/10 font-medium"
+                  : "hover:bg-accent hover:text-accent-foreground",
+              )}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                selectAgent(candidate);
+              }}
+            >
+              {CODING_AGENT_LABELS[candidate]}
+            </button>
+          );
+        })}
       </div>
 
       <p className="mb-1 block text-xs font-medium text-muted-foreground">

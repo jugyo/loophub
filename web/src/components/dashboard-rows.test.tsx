@@ -1225,4 +1225,26 @@ describe("linked PR agent metadata (#842)", () => {
     expect(await screen.findByText("Codex")).toBeTruthy();
     expect(screen.queryByText(/unknown/i)).toBeNull();
   });
+
+  it("labels an OpenCode runtime from the registry", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({
+              number: 12,
+              agent_runtime: "opencode",
+              agent_model: "opencode/big-pickle",
+            }),
+          ],
+        })}
+      />,
+    );
+
+    expect(
+      await screen.findByText("OpenCode · opencode/big-pickle"),
+    ).toBeTruthy();
+  });
 });

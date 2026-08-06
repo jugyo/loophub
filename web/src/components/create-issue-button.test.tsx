@@ -19,6 +19,11 @@ vi.mock("@/queries/settings", () => ({
         "claude-code": { model: "opus", effort: "medium" },
         codex: { model: "gpt-5.5", effort: "medium" },
         grok: { model: "grok-code-fast-1", effort: "medium" },
+        cursor: { model: "auto", effort: "" },
+        opencode: {
+          model: "opencode/big-pickle",
+          effort: "medium",
+        },
       },
       codingAgent: "claude-code",
       workflowContractLanguage,
@@ -203,6 +208,37 @@ describe("CreateIssueButton", () => {
       agent: "claude-code",
       model: "vendor/custom-preview",
       effort: "medium",
+      prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
+    });
+  });
+
+  it("launches issue creation with OpenCode model and effort", async () => {
+    render(<CreateIssueButton repo="me/proj" />);
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", {
+        name: "Choose agent and model",
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "OpenCode" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "openai/gpt-5.6" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Effort" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "high" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create with OpenCode" }),
+    );
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
+      workflow: "issue-create",
+      agent: "opencode",
+      model: "openai/gpt-5.6",
+      effort: "high",
       prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
     });
   });
