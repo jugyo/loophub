@@ -151,6 +151,7 @@ test("workspaces.listUnmerged selects active existing non-default branches ahead
   git(["commit", "-qm", "second workspace commit"]);
   git(["checkout", "-q", "main"]);
 
+  // Regular merge: workspace commits become ancestors of main (rev-list count is 0).
   svc.workspaces.create("me/proj", { branch: "merged/already" });
   git(["checkout", "-q", "merged/already"]);
   writeFileSync(join(repoPath, "merged.txt"), "merged\n");
@@ -158,6 +159,66 @@ test("workspaces.listUnmerged selects active existing non-default branches ahead
   git(["commit", "-qm", "merged workspace commit"]);
   git(["checkout", "-q", "main"]);
   git(["merge", "--no-ff", "-qm", "merge workspace", "merged/already"]);
+
+  // Squash merge of multiple commits: ancestry still reports commits ahead, but
+  // default's tree already includes the same content, so listUnmerged must hide it.
+  svc.workspaces.create("me/proj", { branch: "merged/squash" });
+  git(["checkout", "-q", "merged/squash"]);
+  writeFileSync(join(repoPath, "squash1.txt"), "squash1\n");
+  git(["add", "squash1.txt"]);
+  git(["commit", "-qm", "squash workspace commit 1"]);
+  writeFileSync(join(repoPath, "squash2.txt"), "squash2\n");
+  git(["add", "squash2.txt"]);
+  git(["commit", "-qm", "squash workspace commit 2"]);
+  git(["checkout", "-q", "main"]);
+  expect(git(["merge", "--squash", "merged/squash"]).status).toBe(0);
+  expect(git(["commit", "-qm", "squash merge workspace"]).status).toBe(0);
+  // Sanity: ancestry still sees unique SHAs on the workspace tip.
+  expect(
+    Number(
+      git(["rev-list", "--count", "refs/heads/main..refs/heads/merged/squash"])
+        .stdout,
+    ),
+  ).toBeGreaterThan(0);
+
+  // Squash-landed work plus a later default rewrite of a shared file: merge-tree
+  // conflicts, but there is no net-new workspace content — hide it (opencode-shaped).
+  writeFileSync(join(repoPath, "README.md"), "base readme\n");
+  git(["add", "README.md"]);
+  git(["commit", "-qm", "add readme base"]);
+  svc.workspaces.create("me/proj", { branch: "merged/stale-conflict" });
+  git(["checkout", "-q", "merged/stale-conflict"]);
+  writeFileSync(join(repoPath, "landed.txt"), "landed\n");
+  git(["add", "landed.txt"]);
+  git(["commit", "-qm", "landed feature"]);
+  writeFileSync(join(repoPath, "README.md"), "workspace readme\n");
+  git(["add", "README.md"]);
+  git(["commit", "-qm", "workspace readme edit"]);
+  git(["checkout", "-q", "main"]);
+  expect(git(["merge", "--squash", "merged/stale-conflict"]).status).toBe(0);
+  expect(git(["commit", "-qm", "squash stale-conflict workspace"]).status).toBe(
+    0,
+  );
+  writeFileSync(join(repoPath, "README.md"), "main readme rewrite\n");
+  git(["add", "README.md"]);
+  git(["commit", "-qm", "main rewrites readme after squash"]);
+  expect(
+    git([
+      "merge-tree",
+      "--write-tree",
+      "refs/heads/main",
+      "refs/heads/merged/stale-conflict",
+    ]).status,
+  ).not.toBe(0);
+
+  // Same conflict shape, but the workspace still has a unique file → keep listing it.
+  svc.workspaces.create("me/proj", { branch: "unmerged/conflict-plus" });
+  git(["branch", "-f", "unmerged/conflict-plus", "merged/stale-conflict"]);
+  git(["checkout", "-q", "unmerged/conflict-plus"]);
+  writeFileSync(join(repoPath, "still-open.txt"), "still open\n");
+  git(["add", "still-open.txt"]);
+  git(["commit", "-qm", "unique leftover work"]);
+  git(["checkout", "-q", "main"]);
 
   svc.workspaces.create("me/proj", { branch: "missing/ahead" });
   git(["branch", "-D", "missing/ahead"]);
@@ -181,6 +242,11 @@ test("workspaces.listUnmerged selects active existing non-default branches ahead
     }),
     expect.objectContaining({
       branch: "unmerged/second",
+      archived_at: null,
+      branch_exists: true,
+    }),
+    expect.objectContaining({
+      branch: "unmerged/conflict-plus",
       archived_at: null,
       branch_exists: true,
     }),
