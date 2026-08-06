@@ -516,11 +516,11 @@ function PullInfoRow({
   );
 }
 
-// The PR's basics at the top of the sidebar (#2406): where it is checked out, which branches it
-// moves between, the head commit, and the issue it belongs to. Every value comes from the PR itself,
-// so the section never loads or fails on its own. The head→base row and the linked issue also appear
-// in the header; the duplication is accepted so the sidebar answers "where am I working on this?"
-// without scrolling back up.
+// The PR's basics at the top of the sidebar (#2406, slimmed by #2435): worktree path, the
+// head→base branch pair, and the linked issue. Every value comes from the PR itself, so the
+// section never loads or fails on its own. The branch pair and the linked issue also appear in the
+// header; the duplication is accepted so the sidebar answers "where am I working on this?" without
+// scrolling back up.
 function PullInfoSection({
   owner,
   repo,
@@ -554,27 +554,25 @@ function PullInfoSection({
             <span className="text-muted-foreground">Unavailable</span>
           )}
         </PullInfoRow>
-        <PullInfoRow label="Head branch">
-          <div className="flex items-start gap-1">
-            <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
-              {pull.head.ref}
+        <PullInfoRow label="Branch">
+          <div className="flex min-w-0 flex-wrap items-start gap-x-1 gap-y-1">
+            <div className="flex min-w-0 max-w-full items-start gap-1">
+              <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
+                {pull.head.ref}
+              </code>
+              <CopyButton
+                value={pull.head.ref}
+                label="Copy head branch"
+                className="size-6"
+              />
+            </div>
+            <span className="shrink-0 self-center text-muted-foreground">
+              →
+            </span>
+            <code className="inline-block max-w-full break-all rounded bg-muted px-1.5 py-1 text-xs">
+              {pull.base.ref}
             </code>
-            <CopyButton
-              value={pull.head.ref}
-              label="Copy head branch"
-              className="size-6"
-            />
           </div>
-        </PullInfoRow>
-        <PullInfoRow label="Base branch">
-          <code className="inline-block max-w-full break-all rounded bg-muted px-1.5 py-1 text-xs">
-            {pull.base.ref}
-          </code>
-        </PullInfoRow>
-        <PullInfoRow label="Head SHA">
-          <code className="inline-block rounded bg-muted px-1.5 py-1 text-xs">
-            {pull.head.sha.slice(0, 7)}
-          </code>
         </PullInfoRow>
         {linked ? (
           <PullInfoRow label="Linked issue">

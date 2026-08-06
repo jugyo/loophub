@@ -998,8 +998,8 @@ describe("PullDetail", () => {
     );
   });
 
-  // #2406: the sidebar's first section carries the PR basics — worktree, branches, head SHA, and
-  // the linked issue — so they are readable without scrolling back to the header.
+  // #2406 / #2435: the sidebar's first section carries Worktree, Branch (head→base), and Linked
+  // issue only — no Head SHA and no separate Head/Base rows.
   it("shows the PR basics in the sidebar with copy actions for the worktree path and head branch", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
@@ -1011,10 +1011,17 @@ describe("PullDetail", () => {
     const section = (
       await screen.findByRole("heading", { name: "PR details" })
     ).closest("section")!;
+    expect(within(section).getByText("Worktree")).toBeTruthy();
+    expect(within(section).getByText("Branch")).toBeTruthy();
+    expect(within(section).getByText("Linked issue")).toBeTruthy();
+    expect(within(section).queryByText("Head branch")).toBeNull();
+    expect(within(section).queryByText("Base branch")).toBeNull();
+    expect(within(section).queryByText("Head SHA")).toBeNull();
     expect(within(section).getByText(worktreePath)).toBeTruthy();
     expect(within(section).getByText("issue-153")).toBeTruthy();
     expect(within(section).getByText("main")).toBeTruthy();
-    expect(within(section).getByText("aaa")).toBeTruthy();
+    expect(within(section).getByText("→")).toBeTruthy();
+    expect(within(section).queryByText("aaa")).toBeNull();
     expect(within(section).getByRole("link", { name: "#153" })).toBeTruthy();
     expect(
       within(section).getByText("ui2: PR list + detail + merged"),
@@ -1045,6 +1052,7 @@ describe("PullDetail", () => {
     expect(
       within(section).queryByRole("button", { name: "Copy worktree path" }),
     ).toBeNull();
+    expect(within(section).getByText("Branch")).toBeTruthy();
     expect(within(section).getByText("issue-153")).toBeTruthy();
     expect(within(section).getByText("main")).toBeTruthy();
   });
@@ -1056,6 +1064,7 @@ describe("PullDetail", () => {
       await screen.findByRole("heading", { name: "PR details" })
     ).closest("section")!;
     expect(within(section).queryByText("Linked issue")).toBeNull();
+    expect(within(section).getByText("Branch")).toBeTruthy();
     expect(within(section).getByText("issue-153")).toBeTruthy();
     expect(within(section).getByText("main")).toBeTruthy();
   });
