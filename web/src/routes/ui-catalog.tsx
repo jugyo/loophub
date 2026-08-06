@@ -2,6 +2,7 @@ import { createRoute } from "@tanstack/react-router";
 import { Check, GitPullRequest, Moon, Palette, Play, Sun } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
+import { CodingAgentSettingsPrototypes } from "@/components/coding-agent-settings-prototypes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -220,6 +221,8 @@ function UiCatalogPage() {
             </div>
           </aside>
         </section>
+
+        <CodingAgentSettingsPrototypes portalContainer={portalContainer} />
       </main>
     </div>
   );
