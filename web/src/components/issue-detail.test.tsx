@@ -133,6 +133,7 @@ function mockFetch(
 function renderDetail(
   getIssue?: () => Issue,
   extraHandlers: Record<string, (params: any) => unknown> = {},
+  initialEntries: string[] = ["/"],
 ) {
   vi.stubGlobal("fetch", mockFetch(getIssue, extraHandlers));
   const queryClient = new QueryClient({
@@ -177,7 +178,7 @@ function renderDetail(
       issuesRoute,
       repoRoute,
     ]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    history: createMemoryHistory({ initialEntries }),
   });
   const rendered = render(
     <QueryClientProvider client={queryClient}>
@@ -370,6 +371,7 @@ describe("IssueDetail", () => {
     const textarea = await screen.findByLabelText("Add a comment");
     const commentsSection = textarea.closest("section");
 
+    expect(commentsSection?.id).toBe("comments");
     expect(commentsSection?.className).toContain("pb-6");
     expect(commentsSection?.textContent).toContain("Looks good.");
   });
@@ -1415,5 +1417,36 @@ describe("IssueDetail", () => {
     expect(rpcCall("workflows/list")?.params).toMatchObject({
       applicable_to_repo: "me/proj",
     });
+  });
+});
+
+// An IssueRow's comment count links here with the `#comments` hash. The section only exists once
+// the page's data has loaded, so the page brings it into view itself (parity with #2394 on PRs).
+describe("IssueDetail — #comments landing", () => {
+  async function commentsSection() {
+    const textarea = await screen.findByLabelText("Add a comment");
+    return textarea.closest("section");
+  }
+
+  it("scrolls the Comments section into view when the page opens on #comments", async () => {
+    const scrollIntoView = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    renderDetail(undefined, {}, ["/#comments"]);
+
+    const section = await commentsSection();
+    expect(section?.id).toBe("comments");
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView.mock.instances[0]).toBe(section);
+  });
+
+  it("leaves the page where it is without the hash", async () => {
+    const scrollIntoView = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    renderDetail();
+
+    await commentsSection();
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });

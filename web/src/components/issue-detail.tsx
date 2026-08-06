@@ -3,7 +3,7 @@
 // — comment posting and close/reopen. Body and comments are stored as plain
 // Markdown and rendered as GFM via <Markdown>.
 
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Loader2,
   MoreHorizontal,
@@ -69,6 +69,14 @@ export function IssueDetail({
   const issueQuery = useIssue(owner, repo, number, false);
   const commentsQuery = useIssueComments(owner, repo, number, false);
   const titleRef = useRef<HTMLDivElement>(null);
+  const commentsSectionRef = useRef<HTMLElement>(null);
+  // An IssueRow's comment count links here with the `#comments` hash, but this section only
+  // exists once the page's data has loaded — by then the router has already looked for the anchor
+  // and found nothing. Scroll to it when it first exists (parity with PullCommentList / #2394).
+  const hash = useRouterState({ select: (state) => state.location.hash });
+  useEffect(() => {
+    if (hash === "comments") commentsSectionRef.current?.scrollIntoView();
+  }, [hash, pageQuery.isLoading, issueQuery.data]);
 
   if (pageQuery.isLoading) {
     return (
@@ -115,6 +123,8 @@ export function IssueDetail({
         <IssueHerdrSection owner={owner} repo={repo} issue={issue} />
 
         <section
+          ref={commentsSectionRef}
+          id="comments"
           data-debug-component="IssueDiscussion"
           className="flex flex-col gap-6 pb-6"
         >
