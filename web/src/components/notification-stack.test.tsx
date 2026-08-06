@@ -212,6 +212,7 @@ describe("NotificationStack", () => {
       makeNotification(1, { kind: "merge_ready" }),
       makeNotification(2, { kind: "over_budget", severity: "warning" }),
       makeNotification(3, { kind: "human_attention" }),
+      makeNotification(4, { kind: "agent_comment" }),
     ];
 
     renderStack();
@@ -240,6 +241,10 @@ describe("NotificationStack", () => {
     expect(humanAttention.getAttribute("class")).toContain("text-sky-700");
     expect(humanAttention.classList).not.toContain("lucide-triangle-alert");
     expect(humanAttention.getAttribute("class")).not.toContain("text-rose-700");
+
+    const agentComment = iconFor(4);
+    expect(agentComment.classList).toContain("lucide-message-square");
+    expect(agentComment.getAttribute("class")).toContain("text-violet-700");
   });
 
   it("reveals the next older unread notification after closing a newer one", async () => {

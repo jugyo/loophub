@@ -1,3 +1,4 @@
+import { maybeNotifyAgentComment } from "../agent-comment-notifications.ts";
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import { commentJSON } from "../serialize.ts";
@@ -188,6 +189,17 @@ function createPullComment(
       author_type: authorType,
       source_payload_version: SOURCE_PAYLOAD_VERSION,
       ...(sessionId ? { session_id: sessionId } : {}),
+    });
+    // Workflow-agent posts surface in the notification center so a supervising human notices
+    // without opening the PR timeline. Human and system posts stay silent.
+    maybeNotifyAgentComment({
+      repoId: repo.id,
+      pullNumber: row.number,
+      commentId: m.id,
+      authorType,
+      actor,
+      body,
+      source: "pr",
     });
     return commentWire(m);
   });

@@ -1216,6 +1216,54 @@ export const MIGRATIONS: Migration[] = [
     "session_id",
     "TEXT REFERENCES agent_sessions(id)",
   ),
+  // #16: agent-authored PR comments / diff-feedback messages create `agent_comment` notifications.
+  // Existing DBs still have the old kind CHECK without that value, so INSERT would fail until the
+  // constraint is widened. SQLite cannot ALTER CHECK in place, so rebuild the small derived table
+  // once and keep every current kind's rows. Fresh DBs already create the widened CHECK from
+  // core/db.ts and skip this step when sqlite_master already mentions agent_comment.
+  {
+    id: "075-notifications-agent-comment-kind",
+    run: (db) => {
+      const table = db
+        .query(
+          `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'notifications'`,
+        )
+        .get() as { sql: string } | null;
+      if (!table || table.sql.includes("'agent_comment'")) return;
+      db.exec(`
+        ALTER TABLE notifications RENAME TO notifications_legacy;
+        CREATE TABLE notifications (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          repo_id         INTEGER NOT NULL REFERENCES repos(id),
+          kind            TEXT NOT NULL
+                            CHECK (kind IN ('merge_ready', 'over_budget', 'human_attention', 'agent_comment')),
+          severity        TEXT NOT NULL DEFAULT 'info'
+                            CHECK (severity IN ('info', 'warning')),
+          title           TEXT NOT NULL,
+          body            TEXT NOT NULL,
+          resource_kind   TEXT NOT NULL CHECK (resource_kind IN ('issue', 'pull', 'repo')),
+          resource_number INTEGER,
+          source_key      TEXT NOT NULL UNIQUE,
+          herdr_pane_id   TEXT,
+          workflow_run_id INTEGER,
+          read_at         TEXT,
+          created_at      TEXT NOT NULL
+        );
+        INSERT INTO notifications
+          (id, repo_id, kind, severity, title, body, resource_kind, resource_number, source_key,
+           herdr_pane_id, workflow_run_id, read_at, created_at)
+        SELECT id, repo_id, kind,
+               COALESCE(severity, 'info'),
+               title, body, resource_kind, resource_number, source_key,
+               herdr_pane_id, workflow_run_id, read_at, created_at
+        FROM notifications_legacy;
+        DROP TABLE notifications_legacy;
+        CREATE INDEX idx_notifications_read_created
+          ON notifications(read_at, created_at, id);
+        CREATE INDEX idx_notifications_repo ON notifications(repo_id, id);
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

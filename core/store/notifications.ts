@@ -4,7 +4,8 @@ import type { MergeableState } from "../mergeable.ts";
 export type NotificationKind =
   | "merge_ready"
   | "over_budget"
-  | "human_attention";
+  | "human_attention"
+  | "agent_comment";
 export type NotificationSeverity = "info" | "warning";
 export type NotificationResourceKind = "issue" | "pull" | "repo";
 

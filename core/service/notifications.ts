@@ -55,13 +55,14 @@ function assertKind(kind: unknown): S.NotificationKind {
   if (
     kind === "merge_ready" ||
     kind === "over_budget" ||
-    kind === "human_attention"
+    kind === "human_attention" ||
+    kind === "agent_comment"
   ) {
     return kind;
   }
   throw new ServiceError(
     422,
-    "kind must be merge_ready, over_budget, or human_attention",
+    "kind must be merge_ready, over_budget, human_attention, or agent_comment",
   );
 }
 

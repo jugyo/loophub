@@ -159,6 +159,63 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
   expect(detail.comment_list).toEqual([human, agent, system]);
 });
 
+test("agent PR comments create a notification; human and system posts do not", () => {
+  const before = store.listNotifications({ unreadOnly: true }).length;
+  const human = svc.comments.createHumanForPull(
+    repoName,
+    prNumber,
+    "Human feedback should stay quiet.",
+  );
+  const agent = svc.comments.createForPull(
+    repoName,
+    prNumber,
+    "Agent reply should notify.",
+    agentSession,
+  );
+  const system = svc.comments.createForPull(
+    repoName,
+    prNumber,
+    "System note should stay quiet.",
+  );
+
+  const notifications = store
+    .listNotifications({ unreadOnly: true })
+    .filter((row) => row.kind === "agent_comment");
+  expect(notifications.length).toBe(before + 1);
+  const created = notifications.find(
+    (row) => row.source_key === `agent-comment:pr:${repoId}:${agent.id}`,
+  );
+  expect(created).toMatchObject({
+    kind: "agent_comment",
+    title: "Agent comment",
+    body: expect.stringContaining("Agent reply should notify."),
+    resource_kind: "pull",
+    resource_number: prNumber,
+  });
+  expect(
+    notifications.some(
+      (row) => row.source_key === `agent-comment:pr:${repoId}:${human.id}`,
+    ),
+  ).toBe(false);
+  expect(
+    notifications.some(
+      (row) => row.source_key === `agent-comment:pr:${repoId}:${system.id}`,
+    ),
+  ).toBe(false);
+
+  // Re-inserting the same source key is a no-op (dedupe via UNIQUE source_key).
+  const again = store.createNotification({
+    repoId,
+    kind: "agent_comment",
+    title: "Agent comment",
+    body: "duplicate",
+    resourceKind: "pull",
+    resourceNumber: prNumber,
+    sourceKey: `agent-comment:pr:${repoId}:${agent.id}`,
+  });
+  expect(again).toBeNull();
+});
+
 test("a supported PR comment reaction can be added, changed, and removed", () => {
   const comment = svc.comments.createHumanForPull(
     repoName,
