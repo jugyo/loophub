@@ -19,6 +19,8 @@ export interface SessionUsageSyncOptions {
   codexSessionsDir?: string;
   grokSessionsDir?: string;
   cursorProjectsDir?: string;
+  /** Path to OpenCode's opencode.db (default ~/.local/share/opencode/opencode.db). */
+  opencodeDbPath?: string;
 }
 
 /**

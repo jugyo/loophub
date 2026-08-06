@@ -3,6 +3,7 @@ import { claudeUsageSync } from "./claude.ts";
 import { codexUsageSync } from "./codex.ts";
 import { cursorUsageSync } from "./cursor.ts";
 import { grokUsageSync } from "./grok.ts";
+import { opencodeUsageSync } from "./opencode.ts";
 import type {
   SessionUsageSyncCohort,
   SessionUsageSyncModule,
@@ -25,6 +26,7 @@ const MODULES: SessionUsageSyncModule[] = [
   cursorUsageSync,
   codexUsageSync,
   grokUsageSync,
+  opencodeUsageSync,
   claudeUsageSync,
 ];
 

@@ -5,11 +5,17 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type * as SqliteNS from "node:sqlite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 // Type-only: erased at compile time, so it cannot import core/db.ts before the env vars above.
 import type { SessionUsageSyncCohort } from "./index.ts";
+
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof SqliteNS;
 
 // Isolate the DB before any core module runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-usage-sync-"));
@@ -365,6 +371,170 @@ test("the executor rolls back every plan in a cohort when one of them fails", ()
   ).toThrow("Session usage changed during sync");
 
   expect(S.listSessionUsage(written.id)).toEqual([]);
+});
+
+test("the OpenCode module aggregates worktree sessions and leaves unknown models unpriced", () => {
+  const repo = createRepoWithPath("me/opencode-usage");
+  const owner = registerSession("opencode");
+  const peer = registerSession("opencode", { kind: "workflow-step" });
+  const pr = createPullFor(repo, owner.id);
+  S.linkSession(owner.id, pr.id);
+  S.linkSession(peer.id, pr.id);
+  S.upsertSessionUsage(peer.id, {
+    model: "stale",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 1,
+    cost_usd: null,
+  });
+
+  const cwd = worktreeCwd(repo.full_name, pr.number);
+  mkdirSync(cwd, { recursive: true });
+  const dbPath = join(
+    mkdtempSync(join(tmpdir(), "lh-opencode-sync-")),
+    "opencode.db",
+  );
+  const db = new DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT,
+      directory TEXT NOT NULL,
+      model TEXT,
+      tokens_input INTEGER DEFAULT 0 NOT NULL,
+      tokens_output INTEGER DEFAULT 0 NOT NULL,
+      tokens_reasoning INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      data TEXT NOT NULL
+    );
+  `);
+  db.prepare(
+    `INSERT INTO session (
+      id, parent_id, directory, model,
+      tokens_input, tokens_output, tokens_reasoning,
+      tokens_cache_read, tokens_cache_write, time_created, time_updated
+    ) VALUES (?, NULL, ?, ?, 0, 0, 0, 0, 0, 1, 2)`,
+  ).run(
+    "ses_root",
+    cwd,
+    JSON.stringify({ id: "claude-sonnet-4-6", providerID: "anthropic" }),
+  );
+  db.prepare(
+    `INSERT INTO session (
+      id, parent_id, directory, model,
+      tokens_input, tokens_output, tokens_reasoning,
+      tokens_cache_read, tokens_cache_write, time_created, time_updated
+    ) VALUES (?, ?, ?, ?, 0, 0, 0, 0, 0, 3, 4)`,
+  ).run(
+    "ses_child",
+    "ses_root",
+    cwd,
+    JSON.stringify({ id: "big-pickle", providerID: "opencode" }),
+  );
+  db.prepare(
+    `INSERT INTO message (id, session_id, time_created, time_updated, data)
+     VALUES (?, ?, 5, 5, ?)`,
+  ).run(
+    "msg_root",
+    "ses_root",
+    JSON.stringify({
+      role: "assistant",
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-6",
+      tokens: {
+        input: 100,
+        output: 10,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    }),
+  );
+  db.prepare(
+    `INSERT INTO message (id, session_id, time_created, time_updated, data)
+     VALUES (?, ?, 6, 6, ?)`,
+  ).run(
+    "msg_child",
+    "ses_child",
+    JSON.stringify({
+      role: "assistant",
+      providerID: "opencode",
+      modelID: "big-pickle",
+      tokens: {
+        input: 50,
+        output: 5,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    }),
+  );
+  db.close();
+
+  const cohorts = sync.planSessionUsageSync([owner, peer], {
+    opencodeDbPath: dbPath,
+  });
+  const ownerPlan = planFor(cohorts, owner.id);
+  expect(ownerPlan.clearUsageFor).toEqual([peer.id]);
+  expect(ownerPlan.usage).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        model: "anthropic/claude-sonnet-4-6",
+        input_tokens: 100,
+        cost_usd: expect.any(Number),
+      }),
+      expect.objectContaining({
+        model: "opencode/big-pickle",
+        input_tokens: 50,
+        cost_usd: null,
+      }),
+    ]),
+  );
+  expect(ownerPlan.subagents?.rows).toMatchObject([
+    {
+      source_id: "ses_child",
+      parent_source_id: "ses_root",
+      model: "opencode/big-pickle",
+      cost_usd: null,
+    },
+  ]);
+  expect(planFor(cohorts, peer.id)).toMatchObject({
+    resetUsage: true,
+    report: { status: "skipped" },
+  });
+
+  sync.applySessionUsageSync(cohorts);
+  const stored = S.listSessionUsage(owner.id);
+  expect(stored).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        model: "anthropic/claude-sonnet-4-6",
+        input_tokens: 100,
+      }),
+      expect.objectContaining({
+        model: "opencode/big-pickle",
+        input_tokens: 50,
+        cost_usd: null,
+      }),
+    ]),
+  );
+  expect(
+    stored.find((row) => row.model === "anthropic/claude-sonnet-4-6")?.cost_usd,
+  ).not.toBeNull();
+  expect(S.listSessionUsage(peer.id)).toEqual([]);
+  expect(S.listSessionSubagentUsage(owner.id)).toMatchObject([
+    { source_id: "ses_child", kind: "opencode-child-session" },
+  ]);
+
+  rmSync(dbPath, { force: true });
 });
 
 test("the executor refuses a plan whose expected usage moved on", () => {

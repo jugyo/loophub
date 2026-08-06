@@ -124,6 +124,37 @@ test("priceForModel prices known Grok models and leaves unknown Grok models null
   ).toBeNull();
 });
 
+test("OpenCode provider/model ids price known models and leave free/unknown models null", () => {
+  // OpenCode records models as provider/model; pricing matches on the model id substring.
+  expect(priceForModel("anthropic/claude-sonnet-4-6")).toMatchObject({
+    input: 3,
+    output: 15,
+  });
+  expect(
+    priceForModel("amazon-bedrock/us.anthropic.claude-sonnet-4-6"),
+  ).toMatchObject({
+    input: 3,
+    output: 15,
+  });
+  expect(priceForModel("opencode/big-pickle")).toBeNull();
+  expect(
+    calculateCostUsd("opencode/big-pickle", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1_000_000,
+    }),
+  ).toBeNull();
+  expect(
+    calculateCostUsd("anthropic/claude-sonnet-4-6", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1_000_000,
+    }),
+  ).toBeCloseTo(18);
+});
+
 test("Cursor usage keeps ambiguous Auto and unknown slugs unpriced", () => {
   expect(priceForModel("cursor:auto")).toBeNull();
   expect(

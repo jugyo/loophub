@@ -6,8 +6,10 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type * as SqliteNS from "node:sqlite";
 import { expect, test } from "vitest";
 import {
   aggregateUsage,
@@ -16,6 +18,7 @@ import {
   encodeCursorProjectCwd,
   findCodexRollouts,
   findCursorTranscripts,
+  findOpencodeSessions,
   parseClaudeSubagentJsonl,
   parseClaudeUsageJsonl,
   parseCodexRolloutJsonl,
@@ -24,6 +27,123 @@ import {
   parseGrokUpdatesJsonl,
   priceForModel,
 } from "./session-usage.ts";
+
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof SqliteNS;
+
+function writeOpencodeFixtureDb(
+  dbPath: string,
+  sessions: Array<{
+    id: string;
+    directory: string;
+    parentId?: string | null;
+    model?: { providerID: string; id: string } | null;
+    tokens?: {
+      input: number;
+      output: number;
+      reasoning?: number;
+      cacheRead?: number;
+      cacheWrite?: number;
+    };
+    messages?: Array<{
+      id: string;
+      role: "user" | "assistant";
+      providerID?: string;
+      modelID?: string;
+      tokens?: {
+        input: number;
+        output: number;
+        reasoning?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+      };
+    }>;
+  }>,
+) {
+  const db = new DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT,
+      directory TEXT NOT NULL,
+      model TEXT,
+      tokens_input INTEGER DEFAULT 0 NOT NULL,
+      tokens_output INTEGER DEFAULT 0 NOT NULL,
+      tokens_reasoning INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      data TEXT NOT NULL
+    );
+  `);
+  const insertSession = db.prepare(
+    `INSERT INTO session (
+      id, parent_id, directory, model,
+      tokens_input, tokens_output, tokens_reasoning,
+      tokens_cache_read, tokens_cache_write, time_created, time_updated
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const insertMessage = db.prepare(
+    `INSERT INTO message (id, session_id, time_created, time_updated, data)
+     VALUES (?, ?, ?, ?, ?)`,
+  );
+  let t = 1_700_000_000_000;
+  for (const session of sessions) {
+    const tokens = session.tokens ?? {
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    };
+    insertSession.run(
+      session.id,
+      session.parentId ?? null,
+      session.directory,
+      session.model ? JSON.stringify(session.model) : null,
+      tokens.input,
+      tokens.output,
+      tokens.reasoning ?? 0,
+      tokens.cacheRead ?? 0,
+      tokens.cacheWrite ?? 0,
+      t,
+      t + 1,
+    );
+    for (const message of session.messages ?? []) {
+      t += 1;
+      const data =
+        message.role === "assistant"
+          ? {
+              role: "assistant",
+              providerID: message.providerID,
+              modelID: message.modelID,
+              tokens: message.tokens
+                ? {
+                    input: message.tokens.input,
+                    output: message.tokens.output,
+                    reasoning: message.tokens.reasoning ?? 0,
+                    cache: {
+                      read: message.tokens.cacheRead ?? 0,
+                      write: message.tokens.cacheWrite ?? 0,
+                    },
+                  }
+                : undefined,
+            }
+          : { role: "user" };
+      insertMessage.run(message.id, session.id, t, t, JSON.stringify(data));
+    }
+    t += 10;
+  }
+  db.close();
+}
 
 test("parseCursorHeadlessResult reads the structured chat identifier", () => {
   expect(
@@ -411,6 +531,110 @@ test("aggregateUsage computes known model cost and leaves unknown models null", 
   expect(unknown.cost_usd).toBeNull();
   expect(unknown.context_usage_percent).toBeNull();
   expect(calculateCostUsd("future-model", sonnet)).toBeNull();
+});
+
+test("findOpencodeSessions reads message usage by worktree directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "lh-opencode-"));
+  const dbPath = join(root, "opencode.db");
+  const cwd = join(root, "worktree");
+  mkdirSync(cwd);
+
+  writeOpencodeFixtureDb(dbPath, [
+    {
+      id: "ses_known",
+      directory: cwd,
+      messages: [
+        { id: "msg_user", role: "user" },
+        {
+          id: "msg_assistant",
+          role: "assistant",
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4-6",
+          tokens: {
+            input: 100,
+            output: 20,
+            reasoning: 5,
+            cacheRead: 40,
+            cacheWrite: 10,
+          },
+        },
+      ],
+    },
+    {
+      id: "ses_other_cwd",
+      directory: join(root, "other"),
+      messages: [
+        {
+          id: "msg_other",
+          role: "assistant",
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4-6",
+          tokens: { input: 999, output: 1 },
+        },
+      ],
+    },
+  ]);
+
+  const found = findOpencodeSessions({ cwd, dbPath });
+  expect(found).toHaveLength(1);
+  expect(found[0]).toMatchObject({
+    sessionId: "ses_known",
+    parentSessionId: null,
+    entries: [
+      {
+        message_id: "msg_assistant",
+        model: "anthropic/claude-sonnet-4-6",
+        input_tokens: 100,
+        cache_creation_input_tokens: 10,
+        cache_read_input_tokens: 40,
+        // reasoning is folded into output_tokens
+        output_tokens: 25,
+      },
+    ],
+  });
+  expect(aggregateUsage(found[0].entries)[0].cost_usd).not.toBeNull();
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("findOpencodeSessions falls back to session totals and leaves unknown models unpriced", () => {
+  const root = mkdtempSync(join(tmpdir(), "lh-opencode-unknown-"));
+  const dbPath = join(root, "opencode.db");
+  const cwd = join(root, "worktree");
+  mkdirSync(cwd);
+
+  writeOpencodeFixtureDb(dbPath, [
+    {
+      id: "ses_unknown",
+      directory: cwd,
+      model: { providerID: "opencode", id: "big-pickle" },
+      tokens: {
+        input: 200,
+        output: 30,
+        reasoning: 10,
+        cacheRead: 50,
+        cacheWrite: 5,
+      },
+      messages: [{ id: "msg_user_only", role: "user" }],
+    },
+  ]);
+
+  const found = findOpencodeSessions({ cwd, dbPath });
+  expect(found).toHaveLength(1);
+  expect(found[0].entries).toEqual([
+    {
+      message_id: "opencode-session:ses_unknown",
+      model: "opencode/big-pickle",
+      input_tokens: 200,
+      cache_creation_input_tokens: 5,
+      cache_read_input_tokens: 50,
+      output_tokens: 40,
+    },
+  ]);
+  expect(aggregateUsage(found[0].entries)[0].cost_usd).toBeNull();
+  expect(priceForModel("opencode/big-pickle")).toBeNull();
+
+  rmSync(root, { recursive: true, force: true });
 });
 
 test("aggregateUsage drops all-zero model totals", () => {

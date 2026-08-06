@@ -6,9 +6,18 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import type * as SqliteNS from "node:sqlite";
 import { calculateCostUsd } from "./pricing.ts";
+
+// OpenCode stores session usage in its own SQLite DB. Load node:sqlite the same way
+// core/db.ts does so bundler transformers do not try to resolve the experimental
+// specifier as a package.
+const { DatabaseSync: OpencodeDatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof SqliteNS;
 
 // The model pricing catalog lives in ./pricing.ts (SSOT for per-model rates).
 // Re-exported here so existing importers keep resolving these from
@@ -688,6 +697,15 @@ export function defaultCursorProjectsDir(): string {
   return join(homedir(), ".cursor", "projects");
 }
 
+// OpenCode 1.18.x persists sessions in a single SQLite database under the XDG data
+// home (default ~/.local/share/opencode/opencode.db). Token totals live on both the
+// session row and assistant message JSON; model ids are provider/model pairs.
+export function defaultOpencodeDbPath(): string {
+  const dataHome =
+    process.env.XDG_DATA_HOME?.trim() || join(homedir(), ".local", "share");
+  return join(dataHome, "opencode", "opencode.db");
+}
+
 export function encodeCursorProjectCwd(cwd: string): string {
   return cwd
     .replace(/^[\\/]+/, "")
@@ -704,6 +722,13 @@ export function encodeGrokSessionCwd(cwd: string): string {
 
 export interface GrokSessionCandidate extends TranscriptCandidate {
   sessionId: string;
+  entries: UsageEntry[];
+}
+
+export interface OpencodeSessionCandidate extends TranscriptCandidate {
+  sessionId: string;
+  parentSessionId: string | null;
+  directory: string;
   entries: UsageEntry[];
 }
 
@@ -1128,4 +1153,204 @@ export function findCursorTranscripts(input: {
     });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+// Locate OpenCode sessions that ran in a worktree cwd. OpenCode does not accept a
+// LoopHub session id and writes one shared SQLite DB, so correlation is by the
+// session.directory column (same cwd approach as Codex/Grok).
+export function findOpencodeSessions(input: {
+  cwd: string;
+  dbPath?: string;
+}): OpencodeSessionCandidate[] {
+  const dbPath = input.dbPath ?? defaultOpencodeDbPath();
+  if (!input.cwd || !existsSync(dbPath)) return [];
+
+  const directories = opencodeDirectoryCandidates(input.cwd);
+  if (directories.length === 0) return [];
+
+  let db: SqliteNS.DatabaseSync;
+  try {
+    db = new OpencodeDatabaseSync(dbPath, { readOnly: true });
+  } catch {
+    return [];
+  }
+
+  try {
+    const st = statSync(dbPath);
+    const placeholders = directories.map(() => "?").join(", ");
+    const sessionRows = db
+      .prepare(
+        `SELECT id, parent_id, directory, model,
+                tokens_input, tokens_output, tokens_reasoning,
+                tokens_cache_read, tokens_cache_write, time_updated
+         FROM session
+         WHERE directory IN (${placeholders})`,
+      )
+      .all(...directories) as unknown as OpencodeSessionRow[];
+
+    const messageStmt = db.prepare(
+      `SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created, id`,
+    );
+
+    const out: OpencodeSessionCandidate[] = [];
+    for (const row of sessionRows) {
+      if (typeof row.id !== "string" || !row.id) continue;
+      const messageRows = messageStmt.all(row.id) as unknown as {
+        id: string;
+        data: string;
+      }[];
+      const messageEntries = messageRows.flatMap((message) =>
+        parseOpencodeMessageUsage(message.id, message.data),
+      );
+      const entries =
+        messageEntries.length > 0
+          ? messageEntries
+          : sessionLevelOpencodeEntries(row);
+      if (entries.length === 0) continue;
+      out.push({
+        path: `${dbPath}#${row.id}`,
+        size: st.size,
+        mtimeMs:
+          typeof row.time_updated === "number" &&
+          Number.isFinite(row.time_updated)
+            ? row.time_updated
+            : st.mtimeMs,
+        sessionId: row.id,
+        parentSessionId:
+          typeof row.parent_id === "string" && row.parent_id
+            ? row.parent_id
+            : null,
+        directory: typeof row.directory === "string" ? row.directory : "",
+        entries,
+      });
+    }
+    return out.sort((a, b) => a.sessionId.localeCompare(b.sessionId));
+  } catch {
+    return [];
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // ignore close failures on a read-only handle
+    }
+  }
+}
+
+interface OpencodeSessionRow {
+  id: string;
+  parent_id: string | null;
+  directory: string | null;
+  model: string | null;
+  tokens_input: number | null;
+  tokens_output: number | null;
+  tokens_reasoning: number | null;
+  tokens_cache_read: number | null;
+  tokens_cache_write: number | null;
+  time_updated: number | null;
+}
+
+function opencodeDirectoryCandidates(cwd: string): string[] {
+  const out = new Set<string>();
+  out.add(cwd);
+  try {
+    if (existsSync(cwd)) out.add(realpathSync(cwd));
+  } catch {
+    // keep the caller-supplied cwd even when realpath fails
+  }
+  return [...out].filter(Boolean);
+}
+
+function parseOpencodeMessageUsage(
+  messageId: string,
+  raw: string,
+): UsageEntry[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  const data = objectValue(parsed);
+  if (!data) return [];
+  // Only assistant turns carry billed token counters.
+  if (stringValue(data.role) !== "assistant") return [];
+
+  const model = opencodeModelName(
+    stringValue(data.providerID) ?? stringValue(data.providerId),
+    stringValue(data.modelID) ?? stringValue(data.modelId),
+    data.model,
+  );
+  if (!model) return [];
+
+  const tokens = objectValue(data.tokens);
+  if (!tokens) return [];
+  const cache = objectValue(tokens.cache);
+  const usage: TokenUsage = {
+    input_tokens: tokenCount(tokens.input),
+    cache_creation_input_tokens: tokenCount(cache?.write),
+    cache_read_input_tokens: tokenCount(cache?.read),
+    // OpenCode tracks reasoning separately; LoopHub has no reasoning bucket, so
+    // fold it into output so totals stay visible without inventing a new field.
+    output_tokens: tokenCount(tokens.output) + tokenCount(tokens.reasoning),
+  };
+  if (!hasTokenUsage(usage)) return [];
+  return [{ message_id: messageId, model, ...usage }];
+}
+
+function sessionLevelOpencodeEntries(row: OpencodeSessionRow): UsageEntry[] {
+  const model = opencodeModelFromSessionColumn(row.model);
+  if (!model) return [];
+  const usage: TokenUsage = {
+    input_tokens: tokenCount(row.tokens_input),
+    cache_creation_input_tokens: tokenCount(row.tokens_cache_write),
+    cache_read_input_tokens: tokenCount(row.tokens_cache_read),
+    output_tokens:
+      tokenCount(row.tokens_output) + tokenCount(row.tokens_reasoning),
+  };
+  if (!hasTokenUsage(usage)) return [];
+  return [{ message_id: `opencode-session:${row.id}`, model, ...usage }];
+}
+
+function opencodeModelFromSessionColumn(raw: string | null): string | null {
+  if (!raw) return null;
+  let parsed: unknown = raw;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Some builds may store a plain "provider/model" string.
+    return raw.includes("/") ? raw : null;
+  }
+  const model = objectValue(parsed);
+  if (!model) return typeof parsed === "string" ? parsed : null;
+  return opencodeModelName(
+    stringValue(model.providerID) ?? stringValue(model.providerId),
+    stringValue(model.id) ??
+      stringValue(model.modelID) ??
+      stringValue(model.modelId),
+    null,
+  );
+}
+
+// Prefer the OpenCode CLI form provider/model so multi-provider sessions stay distinct
+// and priceForModel can still match known model id substrings.
+function opencodeModelName(
+  providerId: string | null,
+  modelId: string | null,
+  modelField: unknown,
+): string | null {
+  if (modelId && providerId) return `${providerId}/${modelId}`;
+  if (modelId) return modelId;
+  const nested = objectValue(modelField);
+  if (nested) {
+    const nestedProvider =
+      stringValue(nested.providerID) ?? stringValue(nested.providerId);
+    const nestedModel =
+      stringValue(nested.modelID) ??
+      stringValue(nested.modelId) ??
+      stringValue(nested.id);
+    if (nestedModel && nestedProvider)
+      return `${nestedProvider}/${nestedModel}`;
+    if (nestedModel) return nestedModel;
+  }
+  return stringValue(modelField);
 }
