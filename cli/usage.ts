@@ -34,7 +34,6 @@ export function usage(): void {
   lh workflow cost-hold --repo owner/name --run <id> [--json]   # hold a run that is over its cost limit, interrupt its active pane, and notify the child exactly once
   lh workflow state <run> [--repo owner/name] [--state-version <n>] [--json]   # read the run's complete current state in one call: run row, commit, review, comment, diff feedback, GitHub feedback revisions, PR lifecycle, holds
   lh workflow step input <run> <step> [--repo owner/name] [--note <text|->] [--review <id>]   # dry-run the composed contract + input pointers + prompt for a step (no launch)
-  lh workflow step status <run> [--repo owner/name] [--json]   # same observation as lh workflow state, kept while callers move over
   lh handoff record --phase <p> --dir <down|up> (--pr <m> | --issue <n>) (--body <text|-> | --src <ref> [--hash <sha>]) [--from <r>] [--to <r>] [--summary <text>] [--model <m>] [--cost <json>]   # record an orchestrator<->subagent handoff (PR + session)
   lh handoff list [--pr <m>] [--issue <n>] [--session <id>] [--json]   # list handoffs for a ref, chronological
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR

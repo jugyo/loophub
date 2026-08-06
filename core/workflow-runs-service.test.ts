@@ -1501,7 +1501,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     exec.session_id,
   );
   expect(before.event_id).toBeGreaterThan(0);
-  let status = await svc.workflowRuns.status(repo.full_name, {
+  let status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.last_turn_done_at).not.toBeNull();
@@ -1529,7 +1529,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     parent,
   );
   expect(
-    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+    await svc.workflowRuns.state(repo.full_name, { run: started.run.id }),
   ).toMatchObject({ turn_done_for_active_execute: false });
   // `turnDone` reads the worktree HEAD before it records the declaration, so the event only exists
   // once the call settles. Observing without awaiting it left the assertion below racing the emit.
@@ -1539,7 +1539,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     exec.session_id,
   );
   expect(
-    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+    await svc.workflowRuns.state(repo.full_name, { run: started.run.id }),
   ).toMatchObject({
     turn_done_for_active_execute: true,
     head_ahead_of_base: false,
@@ -1558,7 +1558,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   );
   const headA = commit(started.worktree, "impl.txt", "done\n");
   expect(
-    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+    await svc.workflowRuns.state(repo.full_name, { run: started.run.id }),
   ).toMatchObject({ turn_done_for_active_execute: false });
 
   // Execute declares the new turn done. Now HEAD is ahead of base.
@@ -1567,7 +1567,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     { run: started.run.id },
     exec.session_id,
   );
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.head_ahead_of_base).toBe(true);
@@ -1632,7 +1632,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     source_payload_version: 1,
   });
 
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.steps.verify.complete).toBe(true);
@@ -1653,7 +1653,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     "The PR-wide gate is blocked.",
     headA,
   );
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.steps.verify.complete).toBe(true);
@@ -1677,7 +1677,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
       JSON.parse(event.payload).review_id === newerPassReview.id,
   );
   expect(newerReviewEvent).toBeDefined();
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.steps.verify.latest_review).toMatchObject({
@@ -1759,7 +1759,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   S.updateIssue(prIssueId, {
     body: `Updated evidence after Verify passed.\n\n${attachment.markdown}\n`,
   });
-  let continuing = await svc.workflowRuns.status(repo.full_name, {
+  let continuing = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(continuing.pr_closed).toBe(false);
@@ -1777,7 +1777,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     { run: started.run.id },
     exec.session_id,
   );
-  const staleStatus = await svc.workflowRuns.status(repo.full_name, {
+  const staleStatus = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(staleStatus.head_sha).toBe(headB);
@@ -1803,7 +1803,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     headSha: headB,
     body: "Additional work passes.",
   });
-  continuing = await svc.workflowRuns.status(repo.full_name, {
+  continuing = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(continuing.pr_closed).toBe(false);
@@ -2168,7 +2168,7 @@ test("an ended run refuses lifecycle progress and withholds the cost-limit incre
   ).toThrowError(/has ended/);
 }, 20_000);
 
-test("step status exposes hold, rework, pending effects, and unaddressed out-of-band reviews", async () => {
+test("state exposes hold, rework, pending effects, and unaddressed out-of-band reviews", async () => {
   const { repo } = freshRepo("me/workflow-observed-state");
   const issue = S.createIssue(
     repo.id,
@@ -2207,7 +2207,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     parent,
   );
 
-  let status = await svc.workflowRuns.status(repo.full_name, {
+  let status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status).toMatchObject({
@@ -2223,7 +2223,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     (event) => event.type.startsWith("workflow_run."),
   )!;
   S.beginWorkflowEventEffect(started.run.id, runEvent.id, "notify-observer");
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.pending_effect_receipt).toMatchObject({
@@ -2271,7 +2271,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     body: "Run-owned review stays on the Verify path.",
   });
 
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.pending_effect_receipt).toBeNull();
@@ -2294,13 +2294,13 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     { run: started.run.id },
     exec.session_id,
   );
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.unaddressed_out_of_band_reviews).toHaveLength(2);
 
   commit(started.worktree, "feedback.txt", "addressed\n");
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.unaddressed_out_of_band_reviews).toHaveLength(2);
@@ -2309,7 +2309,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     { run: started.run.id },
     exec.session_id,
   );
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.unaddressed_out_of_band_reviews).toEqual([]);
@@ -2329,7 +2329,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     id: started.run.id,
     review_id: legacyFeedback.id,
   });
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.unaddressed_out_of_band_reviews).toEqual([
@@ -2341,7 +2341,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     { run: started.run.id },
     exec.session_id,
   );
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.unaddressed_out_of_band_reviews).toEqual([]);
@@ -2350,7 +2350,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     needsHumanReason: "waiting for guidance",
     reworkCount: 2,
   });
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status).toMatchObject({
@@ -2414,7 +2414,7 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     "unregistered-observer",
   );
   expect(S.listReviews(prIssueId).at(-1)?.author).toBe("unknown");
-  let status = await svc.workflowRuns.status(repo.full_name, {
+  let status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.steps.verify.latest_review).toBeNull();
@@ -2459,7 +2459,7 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     "unregistered-verifier",
   );
   expect(S.listReviews(prIssueId).at(-1)?.author).toBe("unknown");
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.steps.verify.complete).toBe(true);
@@ -2500,7 +2500,7 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     },
     "human-reviewer-session",
   );
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.steps.verify.complete).toBe(true);
@@ -2585,7 +2585,7 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
     { event: "PASS", headSha: headA, body: "v1 passes." },
     "unregistered-verify-a",
   );
-  let status = await svc.workflowRuns.status(repo.full_name, {
+  let status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.steps.verify.complete).toBe(true);
@@ -2611,7 +2611,7 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
     { event: "PASS", headSha: headB, body: "v2 passes." },
     "unregistered-verify-b",
   );
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.steps.verify.complete).toBe(true);
@@ -2656,7 +2656,7 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
     { event: "PASS", headSha: headC, body: "v3 passes." },
     "unregistered-verify-c",
   );
-  status = await svc.workflowRuns.status(repo.full_name, {
+  status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.steps.verify.complete).toBe(true);
@@ -2746,7 +2746,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     },
     verify.session_id,
   );
-  const rcStatus = await svc.workflowRuns.status(repo.full_name, {
+  const rcStatus = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(rcStatus.steps.verify.latest_review).toMatchObject({
@@ -2823,7 +2823,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     { run: started.run.id },
     exec.session_id,
   );
-  const reworkedStatus = await svc.workflowRuns.status(repo.full_name, {
+  const reworkedStatus = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   // The stale request_changes review no longer blocks execute (head advanced past it).
@@ -2838,7 +2838,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   });
   // The fresh pass verifies the reworked HEAD without terminating the run: the PR stays open and
   // the parent keeps observing (#1513 — no run-complete path).
-  const reworked = await svc.workflowRuns.status(repo.full_name, {
+  const reworked = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(reworked.pr_closed).toBe(false);
@@ -2915,7 +2915,7 @@ test("a turn done after the active Verify reviewed launches a fresh Verify", asy
 
   // The verifier launched for this turn done has not reported yet, so waiting is still right.
   expect(
-    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+    await svc.workflowRuns.state(repo.full_name, { run: started.run.id }),
   ).toMatchObject({
     turn_done_for_active_execute: true,
     verify_launched_after_turn_done: true,
@@ -2940,7 +2940,7 @@ test("a turn done after the active Verify reviewed launches a fresh Verify", asy
     { run: started.run.id },
     exec.session_id,
   );
-  const status = await svc.workflowRuns.status(repo.full_name, {
+  const status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status).toMatchObject({
@@ -3199,7 +3199,7 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
     headSha: head,
     body: "All criteria pass.",
   });
-  const passed = await svc.workflowRuns.status(repo.full_name, {
+  const passed = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(passed.pr_closed).toBe(false);
@@ -4048,9 +4048,6 @@ test("one state observation loads the run's event trail once (#1912)", async () 
     // Every observation in one read shares the single trail the call loaded.
     await svc.workflowRuns.state(repo.full_name, { run: started.run.id });
     expect(loads).toHaveBeenCalledTimes(1);
-    loads.mockClear();
-    await svc.workflowRuns.status(repo.full_name, { run: started.run.id });
-    expect(loads).toHaveBeenCalledTimes(1);
   } finally {
     loads.mockRestore();
   }
@@ -4091,7 +4088,7 @@ test("event rows written before the typed payloads are still observable (#1912)"
     id: started.run.id,
   });
 
-  const status = await svc.workflowRuns.status(repo.full_name, {
+  const status = await svc.workflowRuns.state(repo.full_name, {
     run: started.run.id,
   });
   expect(status.last_turn_done_at).not.toBeNull();
@@ -4389,11 +4386,6 @@ test("state reports every area of the run in one read", async () => {
   });
   expect(state.rework_limit).toBeGreaterThan(0);
   expect(state.total_cost.cost_status).toBeTruthy();
-
-  // `workflow step status` is retained during the migration and reports the same observation.
-  expect(
-    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
-  ).toEqual(state);
 }, 20_000);
 
 test("state refuses a wire version it does not produce", async () => {

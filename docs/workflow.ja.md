@@ -258,7 +258,7 @@ run の current step は `execute | verify` のみで、新しい run は `curre
 | Execute | commits + 通常の PR body / attachment / comment 操作 | HEAD が base より先行し、最新 review が指す SHA より前進している |
 | Verify | head SHA に pin された PR review | 最新 review が current HEAD に pin されている（fresh） |
 
-`lh workflow step status <run> --json` は観測結果を返す: current HEAD、HEAD が base より先行しているか、
+`lh workflow state <run> --json` は観測結果を返す: current HEAD、HEAD が base より先行しているか、
 最新 turn-done 宣言の時刻、各 step の状態（Verify は最新 workflow review の id / event / **fresh**）。
 これが遷移判断の唯一の根拠である。
 
@@ -325,13 +325,13 @@ hold を維持する。
 同じ edge の再処理で暗黙 retry や通知の重複を行わない。
 
 これらの wake はいずれも真実を代替しない timing signal である。親は wake の後に
-`lh workflow step status`、PR review、または参照された GitHub API resource から domain state を再観測して
+`lh workflow state`、PR review、または参照された GitHub API resource から domain state を再観測して
 判断する。review の verdict や feedback 本文を通知 payload の複製で判断しない。idle 検知は完了推定に
 一切使わない。
 
 ## 7. 親の遷移
 
-| From | 観測条件（step status） | Action |
+| From | 観測条件（workflow state） | Action |
 |---|---|---|
 | start | HEAD も review も無く Execute も起動していない | Execute を launch |
 | Execute | HEAD が base より先行し、最新 review より前進 | Verify を fresh launch（起動が phase の記録でもある） |
@@ -407,7 +407,6 @@ lh workflow turn done [--run <id>]          # Execute child がターン完了�
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
 lh workflow escalate-human --reason <text> [--run <id>] [--issue <n>] # Issue comment を冪等に記録
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
-lh workflow step status <run> --json        # lh workflow state と同じ観測。呼び手の移行中だけ残す
 ```
 
 `lh workflow step output` は廃止した。Verify の出力は `lh pr review --commit <sha>`
@@ -425,6 +424,7 @@ lh workflow step status <run> --json        # lh workflow state と同じ観測�
   Workflow 専用の語彙として残るのは **input**（起動時に子へ渡すポインタ群）のみである。
 - `lh workflow next` は廃止した。親が判断を取りに行く経路（`--watch` を含む）は無い。進行判断は親が
   `lh workflow state` で読んだ現在の事実から行う。
+- `lh workflow step status` は廃止した。同じ観測は `lh workflow state` だけが返す。
 - `lh workflow parent-ready` は廃止した。「この pane を読める」の宣言は `lh events subscribe` による購読の
   登録が兼ねる。
 - `lh workflow instruction` と worker の instruction 配送・action 生成は廃止した。人間の直接指示は parent
@@ -483,7 +483,7 @@ lh workflow step status <run> --json        # lh workflow state と同じ観測�
   増額後の新しい上限を超えた場合は別の上限なので改めて hold し、改めて確認する。
 - fresh pass 後の追加 Execute では `current_step: verify` を維持しつつ
   `active_step: execute` / 当該 session を記録し、コスト超過時に verifier ではなく executor を止める。
-- コスト続行確認は同じ run・累計上限につき yes / no を一度だけ表示し、yes は step status 再確認後、
+- コスト続行確認は同じ run・累計上限につき yes / no を一度だけ表示し、yes は workflow state 再確認後、
   期待する現在上限を指定した専用操作で固定増分 `B` だけ増額してから再開する（Verify は fresh child）。重複操作や古い event、
   通常 hold に対する増額は非0で拒否され、通常 resume は上限を変えない。no は増額も自動進行もせず、
   操作・確認失敗は可視な error として残る。

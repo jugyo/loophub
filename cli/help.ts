@@ -354,15 +354,11 @@ export const commandHelp: readonly CommandHelp[] = [
   },
   {
     path: ["workflow", "step"],
-    description: "Preview a workflow step input or observe step status.",
+    description: "Preview a workflow step input.",
   },
   {
     path: ["workflow", "step", "input"],
     description: "Preview a workflow step input.",
-  },
-  {
-    path: ["workflow", "step", "status"],
-    description: "Show workflow step completion status.",
   },
 ];
 

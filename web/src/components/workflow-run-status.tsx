@@ -3,7 +3,7 @@
 // tracker), and rework count / limit. The run row is the display-state source (workflow design:
 // CLI / UI) —
 // this deliberately does not re-derive step-completion truth (that stays with
-// `workflow step status` — HEAD vs the pinned Verify review).
+// `workflow state` — HEAD vs the pinned Verify review).
 //
 // - needs human (#1307): a run with `needs_human_reason` set is waiting for an explicit human
 //   instruction. Surfaces that reason (plus the latest Verify review summary when present) and

@@ -316,7 +316,7 @@ export const reviews = {
       // The review row remains the sole verdict source. This event is the reliable observation
       // trigger for a Workflow parent, independent of whether the Verify child later manages to
       // declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human FEEDBACK)
-      // review straight to Execute, since it will not appear in the run's own step status, and
+      // review straight to Execute, since it will not appear in the run's own state, and
       // `submission_head_sha` is the boundary an unaddressed review is measured from.
       S.emitEvent(r.id, "pull_request.review_submitted", actor, {
         number: row.number,

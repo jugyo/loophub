@@ -804,10 +804,10 @@ function latestRunComment(issueId: number): WorkflowRunStateCommentWire | null {
 /**
  * The complete current state of a Workflow run, observed in one pass.
  *
- * This is the single read model behind `workflow state`, `workflow step status` and the issue / PR
- * run display: one shape means a reader never has to work out which of two observations it is
- * holding. It is a module function rather than a procedure body so `next` can observe on the same
- * projection it used to resolve its wake event, instead of re-loading the run's trail.
+ * This is the single read model behind `workflow state` and the issue / PR run display: one shape
+ * means a reader never has to work out which of two observations it is holding. It is a module
+ * function rather than a procedure body so callers can observe on the same projection they used to
+ * resolve a wake event, instead of re-loading the run's trail.
  *
  * The issue and PR are the ones pinned on the run row, resolved regardless of their own state: a
  * closed or merged PR still reports its own state, and a later attempt's PR on the same issue is
@@ -2078,7 +2078,7 @@ export const workflowRuns = {
 
   // The Execute child's payload-less turn-done declaration. It is a timing signal only: the
   // engine records the fact as an event, and the parent then observes HEAD / review state (via
-  // its event cursor and step status) before deciding any transition. The declaration never
+  // its event cursor and `workflow state`) before deciding any transition. The declaration never
   // carries content and never substitutes for domain truth.
   async turnDone(
     name: string,
@@ -2283,16 +2283,6 @@ export const workflowRuns = {
       );
     }
     return observeWorkflowRunState(r, run, workflowRunEventProjection(run));
-  },
-
-  // Retained alongside `state` while the parent is migrated onto it (#2370); both report the same
-  // observation.
-  async status(
-    name: string,
-    input: { run: number },
-    sessionId?: string | null,
-  ): Promise<WorkflowRunStateWire> {
-    return workflowRuns.state(name, { run: input.run }, sessionId);
   },
 
   // The run display on issue / PR detail reads the same state the parent decides from, so a field
