@@ -488,7 +488,6 @@ export function LinkedPullSummaryRow({
   repo,
   pull,
   className,
-  showTitle = false,
   dimInactive = false,
   popoverTrigger = "row",
 }: {
@@ -496,7 +495,6 @@ export function LinkedPullSummaryRow({
   repo: string;
   pull: LinkedPull;
   className?: string;
-  showTitle?: boolean;
   /** Dim merged and closed PRs when this row is rendered in an issue list. */
   dimInactive?: boolean;
   /** Limit hover activation to the PR link while keeping the row as the popover boundary. */
@@ -563,16 +561,6 @@ export function LinkedPullSummaryRow({
         >
           PR #{pull.number}
         </Link>
-        {showTitle ? (
-          <Link
-            to="/r/$owner/$repo/pulls/$number"
-            params={{ owner, repo, number: String(pull.number) }}
-            className="min-w-0 flex-1 truncate text-foreground hover:underline"
-            title={pull.title}
-          >
-            {pull.title}
-          </Link>
-        ) : null}
         {costStopped ? (
           <span
             className={cn(OVER_BUDGET_BADGE, COST_STOPPED_TEXT)}

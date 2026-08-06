@@ -208,11 +208,10 @@ describe("IssueDetail", () => {
     expect(
       screen.getByLabelText("Linked PR #30: ui2: issue detail PR"),
     ).toBeTruthy();
+    // Match Issue list: no inline PR title on the linked-PR row (#32).
     expect(
-      screen
-        .getByRole("link", { name: "ui2: issue detail PR" })
-        .getAttribute("href"),
-    ).toBe("/r/me/proj/pulls/30");
+      screen.queryByRole("link", { name: "ui2: issue detail PR" }),
+    ).toBeNull();
     expect(screen.queryByText("Workflow run")).toBeNull();
   });
 
@@ -596,11 +595,10 @@ describe("IssueDetail", () => {
         screen.getByLabelText("Linked PR #31: current attempt"),
       ).queryByRole("button", { name: "Close" }),
     ).toBeNull();
-    expect(
-      screen
-        .getByRole("link", { name: "current attempt" })
-        .getAttribute("href"),
-    ).toBe("/r/me/proj/pulls/31");
+    // Match Issue list: linked-PR rows omit the PR title link (#32).
+    expect(screen.queryByRole("link", { name: "current attempt" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "merged attempt" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "closed attempt" })).toBeNull();
     expect(screen.queryByText(/Discard/)).toBeNull();
   });
 
@@ -796,7 +794,7 @@ describe("IssueDetail", () => {
     ).toBeTruthy();
   });
 
-  it("keeps inactive and active linked PRs at normal opacity", async () => {
+  it("dims inactive linked PRs but keeps active linked PRs opaque", async () => {
     renderDetail(() => ({
       ...issue,
       linked_pull_requests: [
@@ -811,12 +809,41 @@ describe("IssueDetail", () => {
       ],
     }));
 
-    const activeRow = await screen.findByLabelText(
+    // Dim lives on the content wrapper (not the row) so PullPopover stays opaque (#32).
+    const activeContent = (
+      await screen.findByLabelText("Linked PR #30: ui2: issue detail PR")
+    ).querySelector("[data-linked-pull-content]");
+    const inactiveContent = screen
+      .getByLabelText("Linked PR #29: merged attempt")
+      .querySelector("[data-linked-pull-content]");
+    expect(activeContent?.className).not.toContain("opacity-45");
+    expect(inactiveContent?.className).toContain("opacity-45");
+  });
+
+  it("opens the PullPopover from the PR link only, not the whole row", async () => {
+    renderDetail();
+    const row = await screen.findByLabelText(
       "Linked PR #30: ui2: issue detail PR",
     );
-    const inactiveRow = screen.getByLabelText("Linked PR #29: merged attempt");
-    expect(activeRow.className).not.toContain("opacity-45");
-    expect(inactiveRow.className).not.toContain("opacity-45");
+    const link = screen.getByRole("link", { name: "PR #30" });
+    expect(row.className).not.toContain("hover:bg-");
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.mouseEnter(row);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS * 2);
+    });
+    expect(
+      document.querySelector('[data-debug-component="PullPopover"]'),
+    ).toBeNull();
+
+    fireEvent.mouseEnter(link);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    expect(
+      document.querySelector('[data-debug-component="PullPopover"]'),
+    ).toBeTruthy();
   });
 
   it("shows no Herdr badge on the linked-PR row when no herdr session runs the PR", async () => {

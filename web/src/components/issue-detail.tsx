@@ -435,11 +435,11 @@ function AcceptanceCriteria({
 // PR(s) at a glance (#269). Rendered as its own section under the issue header
 // (not inside it) so it reads as a related entity — not part of the issue body,
 // and not a target of the issue's Close/Build actions. A labelled heading makes
-// that boundary explicit. Each row is a toned `PR #n` link pill + a status word
-// + a visible PR title link. Renders nothing when no PR is linked. Multiple
-// linked PRs stack vertically. The issue page keeps this intentionally limited
-// to identity, state, and navigation; review and lifecycle actions belong on
-// the PR detail page.
+// that boundary explicit. Each row matches the Issue list LinkedPullSummaryRow
+// (PR number link, workflow progress, metadata; no inline title). Renders
+// nothing when no PR is linked. Multiple linked PRs stack vertically. The issue
+// page keeps this intentionally limited to identity, state, and navigation;
+// review and lifecycle actions belong on the PR detail page.
 function LinkedPullSummary({
   owner,
   repo,
@@ -644,7 +644,9 @@ function LinkedPullSummaryRowWithUsage({
       owner={owner}
       repo={repo}
       pull={usage ? { ...pull, ...usage } : pull}
-      showTitle
+      // Match Issue list (IssueRow): dim merged/closed, popover on PR link only.
+      dimInactive
+      popoverTrigger="pull-link"
     />
   );
 }
