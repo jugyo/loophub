@@ -159,11 +159,12 @@ function renderInRouter(
     routeTree: rootRoute.addChildren([indexRoute, detailRoute, pullRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...rendered, router };
 }
 
 function makePull(overrides: Partial<LinkedPull> = {}): LinkedPull {
@@ -264,6 +265,28 @@ describe("IssueRow", () => {
     expect(count.nextElementSibling).toBeNull();
   });
 
+  // The count is the way in to what was said — same link shape as the linked-PR CommentCount (#2394).
+  it("links the comment count to the issue's Comments section", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ comments: 3 })} />,
+    );
+
+    const link = await screen.findByRole("link", { name: "3 comments" });
+    expect(link.getAttribute("href")).toBe("/r/me/proj/issues/1#comments");
+  });
+
+  it("navigates to the issue's Comments section when the count is clicked", async () => {
+    const { router } = renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ comments: 1 })} />,
+    );
+    const link = await screen.findByRole("link", { name: "1 comment" });
+    await act(async () => {
+      fireEvent.click(link, { button: 0 });
+    });
+    expect(router.state.location.pathname).toBe("/r/me/proj/issues/1");
+    expect(router.state.location.hash).toBe("comments");
+  });
+
   it("does not show a comment count when the issue has no comments", async () => {
     renderInRouter(
       <IssueRow owner="me" repo="proj" issue={makeIssue({ comments: 0 })} />,
@@ -271,6 +294,7 @@ describe("IssueRow", () => {
 
     expect(await screen.findByText("Example issue")).toBeTruthy();
     expect(screen.queryByLabelText(/comments?$/)).toBeNull();
+    expect(screen.queryByRole("link", { name: /comment/ })).toBeNull();
   });
 
   it("shows the workspace above the issue title", async () => {

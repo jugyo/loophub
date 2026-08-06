@@ -100,16 +100,32 @@ function RowLabels({
   );
 }
 
-function IssueCommentCount({ count }: { count: number }) {
+// Comment count at the right of an IssueRow. When there are comments, the count is the way in —
+// it links to the issue's Comments section so reading them is one click from the list (parity with
+// the linked-PR CommentCount on #2394). Zero stays hidden so empty rows spend no width on it.
+function IssueCommentCount({
+  owner,
+  repo,
+  number,
+  count,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  count: number;
+}) {
   if (count === 0) return null;
   return (
-    <span
+    <Link
+      to="/r/$owner/$repo/issues/$number"
+      params={{ owner, repo, number: String(number) }}
+      hash="comments"
       aria-label={`${count} ${count === 1 ? "comment" : "comments"}`}
-      className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground/70 tabular-nums"
+      className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs tabular-nums text-muted-foreground/70 hover:text-foreground hover:underline"
     >
       <MessageSquare aria-hidden="true" className="size-3" />
       {count}
-    </span>
+    </Link>
   );
 }
 
@@ -319,7 +335,12 @@ export function IssueRow({
         <span className="w-16 shrink-0 truncate text-right text-xs text-muted-foreground">
           {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
         </span>
-        <IssueCommentCount count={issue.comments} />
+        <IssueCommentCount
+          owner={owner}
+          repo={repo}
+          number={issue.number}
+          count={issue.comments}
+        />
       </div>
       {pulls.length > 0 ? (
         // Own column so the gap between stacked PRs is a touch wider than the
