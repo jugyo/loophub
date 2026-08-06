@@ -1,4 +1,6 @@
 import { execFile, spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cachedGitResult } from "./git-cache.ts";
 
 export const sleep = (ms: number): Promise<void> =>
@@ -75,6 +77,7 @@ function spawnGit(
 // stay generic (they also take SHAs and already-qualified refs), so callers holding a name they
 // know to be a local branch qualify it here, right before handing it to git.
 export function localBranchRef(name: string): string {
+  if (name.startsWith("refs/heads/")) return name;
   return `refs/heads/${name}`;
 }
 
@@ -85,6 +88,88 @@ export async function revParse(
   const r = await git(repoPath, ["rev-parse", "--verify", "--quiet", ref]);
   const sha = r.stdout.trim();
   return sha || null;
+}
+
+// Human-facing diagnosis when a local branch tip cannot be resolved for merge plumbing.
+// Surfaces collision candidates (`$GIT_DIR/<name>` pseudo-refs, `refs/heads/<name>`, tags) and a
+// fix hint so operators can recover (#39 AC: not only throw, but say what collided and how to fix).
+export async function describeUnresolvedRevision(
+  repoPath: string,
+  rev: string,
+): Promise<string> {
+  const lines: string[] = [`could not resolve revision '${rev}'`];
+  const bare = bareRevisionName(rev);
+  if (!bare) return lines.join("\n");
+
+  const candidates: string[] = [];
+  try {
+    const commonDir = await gitCommonDir(repoPath);
+    const pseudoPath = join(commonDir, bare);
+    if (existsSync(pseudoPath)) {
+      let preview = "";
+      try {
+        preview = readFileSync(pseudoPath, "utf8").trim().slice(0, 40);
+      } catch {
+        // unreadable pseudo-ref still counts as a collision candidate
+      }
+      candidates.push(
+        preview
+          ? `$GIT_DIR/${bare} (stray file, content ${preview})`
+          : `$GIT_DIR/${bare} (stray file)`,
+      );
+    }
+  } catch {
+    // common-dir lookup can fail for non-repos; still report heads/tags below
+  }
+
+  const headSha = await revParse(repoPath, `refs/heads/${bare}`);
+  if (headSha) candidates.push(`refs/heads/${bare} → ${headSha}`);
+  const tagSha = await revParse(repoPath, `refs/tags/${bare}`);
+  if (tagSha) candidates.push(`refs/tags/${bare} → ${tagSha}`);
+
+  if (candidates.length > 0) {
+    lines.push("candidates:");
+    for (const c of candidates) lines.push(`  - ${c}`);
+  }
+  lines.push(
+    `hint: pass refs/heads/${bare} (or its commit SHA), or remove a stray $GIT_DIR/${bare} file if it is not a real ref`,
+  );
+  return lines.join("\n");
+}
+
+// Symbolic / special revisions that live as `$GIT_DIR/<name>` for real, not as collision
+// pseudo-refs. Diagnosing them as "stray files" would point operators at HEAD itself.
+const SPECIAL_REVISIONS = new Set([
+  "HEAD",
+  "FETCH_HEAD",
+  "ORIG_HEAD",
+  "MERGE_HEAD",
+  "CHERRY_PICK_HEAD",
+  "REBASE_HEAD",
+  "REVERT_HEAD",
+  "AUTO_MERGE",
+]);
+
+// Bare branch-ish name for collision diagnosis. Full SHAs and non-heads refs stay opaque.
+// Branch names may contain `/` (e.g. loophub/pr-1); reject only empty tokens, NULs, absolute
+// paths, and `..` so diagnosis never probes outside `$GIT_DIR`.
+function bareRevisionName(rev: string): string | null {
+  if (/^[0-9a-f]{40,64}$/i.test(rev)) return null;
+  if (rev.startsWith("refs/heads/")) {
+    const name = rev.slice("refs/heads/".length);
+    return name &&
+      !name.includes("\0") &&
+      !name.includes("..") &&
+      !name.startsWith("/")
+      ? name
+      : null;
+  }
+  if (rev.startsWith("refs/")) return null;
+  if (!rev || rev.includes("\0") || rev.startsWith("/") || rev.includes("..")) {
+    return null;
+  }
+  if (SPECIAL_REVISIONS.has(rev)) return null;
+  return rev;
 }
 
 export async function mergeBase(
@@ -620,6 +705,11 @@ export interface MergePreview {
 }
 
 // merge-tree でコンフリクト判定 + 結果ツリー算出（作業ツリー非接触）
+//
+// Callers that hold local branch names should pass `localBranchRef(name)` (or a resolved SHA)
+// rather than a bare name: git's ambiguous-ref chain prefers `$GIT_DIR/<name>` over
+// `refs/heads/<name>`, and a stray file there makes merge-tree fail with "refname is ambiguous"
+// (#12 / #39).
 export async function mergePreview(
   repoPath: string,
   base: string,

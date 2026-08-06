@@ -10,6 +10,8 @@ import {
   worktreeHead,
 } from "./workflow-run-progress.ts";
 
+// spawnSync is used only for the #39 repro guard (bare merge-tree must still fail under git).
+
 // The module is a set of near-pure git observations over a worktree; it never touches the store, so
 // these tests need only a throwaway git repo, not an isolated LOOPHUB_HOME/DB.
 
@@ -167,12 +169,57 @@ test("workflowRunProgress does not treat rewound or diverged HEAD as ahead of a 
   expect(diverged.steps.execute.complete).toBe(false);
 });
 
-test("workflowRunProgress keeps a merge-tree failure visible", async () => {
+test("workflowRunProgress keeps an unresolvable base visible with collision hints (#39 AC-3)", async () => {
+  // Stray pseudo-ref with no real branch: error must name candidates and a fix, not only "missing".
+  writeFileSync(join(REPO, ".git", "missing-base"), `${"0".repeat(40)}\n`);
   await expect(
     workflowRunProgress({
       worktree: REPO,
       baseBranch: "missing-base",
       latestReview: null,
     }),
-  ).rejects.toThrow("git merge-tree failed");
+  ).rejects.toSatisfy(
+    (e) =>
+      isServiceError(e) &&
+      e.status === 422 &&
+      /could not resolve Workflow base branch 'missing-base'/.test(e.message) &&
+      /\$GIT_DIR\/missing-base/.test(e.message) &&
+      /hint: pass refs\/heads\/missing-base/.test(e.message),
+  );
+});
+
+// #39: a stray `$GIT_DIR/<base>` file makes bare `git merge-tree <base> <head>` fail with
+// "refname is ambiguous". Progress must still complete when `refs/heads/<base>` is a real branch.
+test("workflowRunProgress tolerates a shadowing $GIT_DIR/<base> pseudo-ref (#39)", async () => {
+  gitAt(["checkout", "-q", "main"]);
+  gitAt(["branch", "-f", "opencode", "main"]);
+  gitAt(["checkout", "-q", "-b", "feature-over-opencode"]);
+  const head = commit("over-opencode.txt", "work\n");
+  writeFileSync(join(REPO, ".git", "opencode"), `${"0".repeat(40)}\n`);
+
+  // Guard: bare name is still ambiguous for git itself.
+  const bare = spawnSync(
+    "git",
+    ["-C", REPO, "merge-tree", "--write-tree", "opencode", head],
+    {
+      encoding: "utf8",
+    },
+  );
+  expect(bare.status).not.toBe(0);
+  expect(bare.stderr).toMatch(/ambiguous/i);
+
+  const progress = await workflowRunProgress({
+    worktree: REPO,
+    baseBranch: "opencode",
+    latestReview: null,
+  });
+  expect(progress.currentHead).toBe(head);
+  expect(progress.headAheadOfBase).toBe(true);
+  expect(progress.hasEffectiveDiff).toBe(true);
+  expect(progress.mergeConflict).toBe(false);
+  expect(progress.steps.execute.complete).toBe(true);
+
+  expect(await pinnedBaseSha(REPO, "opencode", head)).toMatch(/^[0-9a-f]{40}$/);
+
+  gitAt(["checkout", "-q", "main"]);
 });

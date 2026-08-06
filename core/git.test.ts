@@ -13,6 +13,7 @@ import {
   commitInRange,
   commitLog,
   commitsAhead,
+  describeUnresolvedRevision,
   diffFiles,
   diffFilesBetween,
   diffStat,
@@ -20,7 +21,9 @@ import {
   git,
   hasEffectiveDiff,
   isIndexLockError,
+  localBranchRef,
   mergeBase,
+  mergePreview,
   mergePull,
   pathInDiff,
   pushedCommitShas,
@@ -1048,5 +1051,46 @@ test("every SHA-resolved query these helpers ask is served from the cache", asyn
   const warm = await traceGitCommands(ask);
   expect(warm.commands).toEqual([]);
 
+  rmSync(p, { recursive: true, force: true });
+});
+
+// #39: bare branch names can be shadowed by `$GIT_DIR/<name>`; merge-tree then fails with
+// "refname is ambiguous". Qualified refs still merge.
+test("mergePreview accepts a disambiguated base under a shadowing $GIT_DIR file (#39)", async () => {
+  const p = await makeRepo();
+  await git(p, ["branch", "opencode", "main"]);
+  await git(p, ["checkout", "-q", "-b", "feature"]);
+  writeFileSync(join(p, "f.txt"), "feature\n");
+  await git(p, ["commit", "-qam", "feature"]);
+  writeFileSync(join(p, ".git", "opencode"), `${"0".repeat(40)}\n`);
+
+  await expect(mergePreview(p, "opencode", "feature")).rejects.toThrow(
+    /ambiguous|not something we can merge/i,
+  );
+
+  const qualified = await mergePreview(
+    p,
+    localBranchRef("opencode"),
+    localBranchRef("feature"),
+  );
+  expect(qualified.conflict).toBe(false);
+  expect(qualified.tree).toMatch(/^[0-9a-f]{40,64}$/);
+
+  expect(localBranchRef("opencode")).toBe("refs/heads/opencode");
+  expect(localBranchRef("refs/heads/opencode")).toBe("refs/heads/opencode");
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+// #39 AC-3: unresolved ref errors name collision candidates and a recommended fix.
+test("describeUnresolvedRevision lists $GIT_DIR collision candidates and a fix hint (#39)", async () => {
+  const p = await makeRepo();
+  writeFileSync(join(p, ".git", "ghost-base"), `${"0".repeat(40)}\n`);
+  const diagnosis = await describeUnresolvedRevision(
+    p,
+    "refs/heads/ghost-base",
+  );
+  expect(diagnosis).toMatch(/\$GIT_DIR\/ghost-base/);
+  expect(diagnosis).toMatch(/hint: pass refs\/heads\/ghost-base/);
   rmSync(p, { recursive: true, force: true });
 });

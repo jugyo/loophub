@@ -1,5 +1,12 @@
 import { ServiceError } from "./errors.ts";
-import { git, hasEffectiveDiff, localBranchRef, mergePreview } from "./git.ts";
+import {
+  describeUnresolvedRevision,
+  git,
+  hasEffectiveDiff,
+  localBranchRef,
+  mergePreview,
+  revParse,
+} from "./git.ts";
 import {
   evaluateWorkflowSteps,
   type WorkflowLatestReviewState,
@@ -101,9 +108,13 @@ export async function workflowRunProgress(input: {
   latestReview: WorkflowLatestReviewState | null;
 }): Promise<WorkflowRunProgress> {
   const currentHead = await worktreeHeadOptional(input.worktree);
-  // `baseBranch` is a local branch name; qualify it once so none of the observations below let git
-  // resolve a bare name that a `$GIT_DIR/<name>` file, tag or remote-tracking ref could shadow (#12).
-  const baseRev = localBranchRef(input.baseBranch);
+  // Base is only needed when HEAD is known. Unprovisioned PR worktrees (no checkout yet) skip
+  // git base resolution entirely — same as the head-null short-circuits below. When HEAD exists,
+  // resolve `refs/heads/<base>` to a SHA so merge-tree / range math never see a bare name that
+  // `$GIT_DIR/<name>` can shadow (#12 / #39).
+  const baseRev = currentHead
+    ? await resolveLocalBaseSha(input.worktree, input.baseBranch)
+    : localBranchRef(input.baseBranch);
   const [
     headAheadOfBase,
     headAheadOfLatestReview,
@@ -138,13 +149,9 @@ export async function pinnedBaseSha(
   baseBranch: string,
   headSha: string,
 ): Promise<string> {
-  // `baseBranch` is a local branch name, so qualify it before git resolves it — a bare name can be
-  // shadowed by a `$GIT_DIR/<name>` file, a tag or a remote-tracking ref (#12).
-  const result = await git(worktree, [
-    "merge-base",
-    localBranchRef(baseBranch),
-    headSha,
-  ]);
+  // Resolve via `refs/heads/<name>` first so a `$GIT_DIR/<name>` pseudo-ref cannot win (#12 / #39).
+  const baseTip = await resolveLocalBaseSha(worktree, baseBranch);
+  const result = await git(worktree, ["merge-base", baseTip, headSha]);
   const baseSha = result.stdout.trim();
   if (result.code !== 0 || !baseSha) {
     throw new ServiceError(
@@ -153,4 +160,21 @@ export async function pinnedBaseSha(
     );
   }
   return baseSha;
+}
+
+// Disambiguate a local branch name to the commit at `refs/heads/<name>`. Never falls through to
+// git's bare-name resolution (which prefers a stray `$GIT_DIR/<name>` file over the branch).
+// On failure, include collision candidates and a fix hint (#39 AC-3) — not a bare "not found".
+async function resolveLocalBaseSha(
+  worktree: string,
+  baseBranch: string,
+): Promise<string> {
+  const baseRef = localBranchRef(baseBranch);
+  const sha = await revParse(worktree, baseRef);
+  if (sha) return sha;
+  const diagnosis = await describeUnresolvedRevision(worktree, baseRef);
+  throw new ServiceError(
+    422,
+    `could not resolve Workflow base branch '${baseBranch}':\n${diagnosis}`,
+  );
 }
