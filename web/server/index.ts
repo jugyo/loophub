@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
 // `lh-web` entry point: start the lh-web HTTP process. Runs only while in use (no daemon).
-//   lh-web [--port <n>] [--debug]
+//   lh-web [--port <n>] [--debug] [--no-open]
 //   (port: default 8730 or LOOPHUB_PORT)
 // One command, one port: this process serves the JSON-RPC API and the SPA
 // (with HMR) by embedding Vite in middleware mode — no separate dev server. Resident
@@ -11,6 +11,7 @@ import { LH_WEB_HELP, type LhWebArgs, parseLhWebArgs } from "./args.ts";
 import { createViteDev, type ViteDev } from "./dev.ts";
 import { createLhWebServer } from "./http.ts";
 import { log } from "./logger.ts";
+import { openBrowser } from "./open-browser.ts";
 import { setWebRuntimeConfig } from "./runtime-config.ts";
 
 let args: LhWebArgs;
@@ -74,7 +75,10 @@ server.on("error", (error) => {
 
 server.listen(port, host, () => {
   const shown = host === "127.0.0.1" ? "localhost" : host;
-  log.info(`lh-web listening on http://${shown}:${port}  (API + UI + HMR)`);
+  const url = `http://${shown}:${port}`;
+  log.info(`lh-web listening on ${url}  (API + UI + HMR)`);
+  // Open the same URL that was just logged, so the browser and the log never disagree.
+  if (args.open) openBrowser(url, log.warn);
 });
 
 let isShuttingDown = false;
