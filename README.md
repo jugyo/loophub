@@ -60,14 +60,14 @@ From clone to opening the UI.
 ```sh
 git clone <this-repo> loophub
 cd loophub
-npm install          # also installs web/ deps via postinstall
+npm install # also installs web/ deps via postinstall
 ```
 
 **2. Put `lh` on your PATH**
 
 ```sh
 npm link
-lh info                           # OK if baseUrl / home / dbPath print
+lh info # OK if baseUrl / home / dbPath print
 ```
 
 **3. Register the repository you want to manage**
@@ -79,7 +79,7 @@ lh repo add ~/work/my-project --name me/my-project
 **4. Open the UI**
 
 ```sh
-npm run serve        # http://localhost:8730 — lh-web + lh-worker
+npm run serve # http://localhost:8730 — lh-web + lh-worker
 ```
 
 Create issues and start workflows from the UI. Process variants, CLI commands, and data paths are under [Processes, CLI, and data](#processes-cli-and-data).
@@ -98,10 +98,10 @@ The default bind address is therefore loopback only (`127.0.0.1`).
 ### Processes
 
 ```sh
-npm run serve                   # lh-web + lh-worker together
-npm run serve:debug             # same, with the component debug UI enabled
-npm run lh-web                  # http://localhost:8730 — API + UI + HMR in one process
-npm run lh-worker               # tail events and run per-repo automation
+npm run serve # lh-web + lh-worker together
+npm run serve:debug # same, with the component debug UI enabled
+npm run lh-web # http://localhost:8730 — API + UI + HMR in one process
+npm run lh-worker # tail events and run per-repo automation
 ```
 
 Output is prefixed with `[web]` / `[worker]`. If either process under `serve` exits, the other stops and `serve` exits. `Ctrl-C` stops both.

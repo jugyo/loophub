@@ -67,14 +67,14 @@ clone から UI を開くまで。
 ```sh
 git clone <this-repo> loophub
 cd loophub
-npm install          # web/ の依存も postinstall で入る
+npm install # web/ の依存も postinstall で入る
 ```
 
 **2. `lh` コマンドを PATH に入れる**
 
 ```sh
 npm link
-lh info                           # baseUrl / home / dbPath が出れば OK
+lh info # baseUrl / home / dbPath が出れば OK
 ```
 
 **3. 管理したいリポジトリを登録する**
@@ -86,7 +86,7 @@ lh repo add ~/work/my-project --name me/my-project
 **4. UI を開く**
 
 ```sh
-npm run serve        # http://localhost:8730 — lh-web + lh-worker
+npm run serve # http://localhost:8730 — lh-web + lh-worker
 ```
 
 issue の作成や workflow の開始は UI から行う。プロセスの起動バリエーション、CLI、データの置き場所は [Processes, CLI, and data](#processes-cli-and-data) を参照。
@@ -107,10 +107,10 @@ LoopHub は**自分のマシンで自分だけが使うローカルツール**�
 ### Processes
 
 ```sh
-npm run serve                   # lh-web + lh-worker をまとめて起動
-npm run serve:debug             # コンポーネントデバッグ UI を有効にして両プロセスを起動
-npm run lh-web                  # http://localhost:8730 — API + UI + HMR を 1 プロセスで
-npm run lh-worker               # events を tail してリポジトリの自動化を実行
+npm run serve # lh-web + lh-worker をまとめて起動
+npm run serve:debug # コンポーネントデバッグ UI を有効にして両プロセスを起動
+npm run lh-web # http://localhost:8730 — API + UI + HMR を 1 プロセスで
+npm run lh-worker # events を tail してリポジトリの自動化を実行
 ```
 
 出力には `[web]` / `[worker]` のプレフィックスが付く。`serve` のどちらか一方が終了すると、
