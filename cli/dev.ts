@@ -104,6 +104,7 @@ export function resolveDevRuntime(flags: {
   codex?: boolean;
   grok?: boolean;
   cursor?: boolean;
+  opencode?: boolean;
   defaultRuntime?: DevRuntime;
 }): DevRuntime {
   const passed: Record<CodingAgent, boolean | undefined> = {
@@ -111,6 +112,7 @@ export function resolveDevRuntime(flags: {
     codex: flags.codex,
     grok: flags.grok,
     cursor: flags.cursor,
+    opencode: flags.opencode,
   };
   const selected = CODING_AGENTS.filter((id) => passed[id]);
   if (selected.length > 1) {

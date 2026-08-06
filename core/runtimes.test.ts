@@ -22,6 +22,21 @@ test("every runtime defines the auto-approve argv the launch paths append", () =
     autoApproveArgs: ["--force", "--sandbox", "disabled", "--approve-mcps"],
   });
   expect(CODING_AGENTS).toContain("cursor");
+  expect(RUNTIMES.opencode).toMatchObject({
+    bin: "opencode",
+    buildFlag: "--opencode",
+    defaultModel: "opencode/big-pickle",
+    autoApproveArgs: ["--auto"],
+  });
+  expect(RUNTIMES.opencode.modelSuggestions.length).toBeGreaterThan(0);
+  expect(RUNTIMES.opencode.effortSuggestions).toEqual([
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "max",
+  ]);
+  expect(CODING_AGENTS).toContain("opencode");
 });
 
 test("runtime definitions do not expose a session resume capability", () => {

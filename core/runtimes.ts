@@ -1,6 +1,6 @@
-// Single registry (SSOT) for coding runtimes: claude-code (default), codex, grok, and cursor.
-// Every runtime-specific fact that was previously duplicated across core/config.ts, cli/dev.ts,
-// cli/args.ts, core/service/{terminal,settings}.ts, and the web (agent-models.ts /
+// Single registry (SSOT) for coding runtimes: claude-code (default), codex, grok, cursor, and
+// opencode. Every runtime-specific fact that was previously duplicated across core/config.ts,
+// cli/dev.ts, cli/args.ts, core/service/{terminal,settings}.ts, and the web (agent-models.ts /
 // settings-page.tsx / linked-pull-summary.tsx / agent-sessions-page.tsx) lives here once, so adding
 // a runtime is (close to) adding one entry below.
 //
@@ -12,10 +12,20 @@
 
 // Which coding agent launches use. The runtime id doubles as the persisted `codingAgent`
 // config value and the `runtime` recorded on a session.
-export type CodingAgent = "claude-code" | "codex" | "grok" | "cursor";
+export type CodingAgent =
+  | "claude-code"
+  | "codex"
+  | "grok"
+  | "cursor"
+  | "opencode";
 
-// The runtime binary spawned for each runtime (`claude` / `codex` / `grok`).
-export type RuntimeBin = "claude" | "codex" | "grok" | "cursor-agent";
+// The runtime binary spawned for each runtime (`claude` / `codex` / `grok` / …).
+export type RuntimeBin =
+  | "claude"
+  | "codex"
+  | "grok"
+  | "cursor-agent"
+  | "opencode";
 
 // One runtime's complete definition. Everything a caller needs to know about a runtime is a field
 // here — no branch keyed on the id belongs anywhere else.
@@ -44,7 +54,7 @@ export interface RuntimeDefinition {
   // grok's are TENTATIVE — grok has no verified user-facing reasoning-effort scale here.
   effortSuggestions: string[];
   // Whether the `--sandbox`/`--allow` managed-settings launch options apply to this runtime. Only
-  // claude has that concept; codex/grok don't, and the CLI rejects the `--sandbox`/`--allow`
+  // claude has that concept; other runtimes don't, and the CLI rejects the `--sandbox`/`--allow`
   // combination for them up front.
   sandboxCapable: boolean;
   // The argv fragment that runs this runtime without approval prompts or sandbox restrictions.
@@ -144,6 +154,36 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     // Cursor exposes command approval, sandbox override, and MCP approval as independent controls.
     // Headless launches add --print/--trust together at the full-argv boundary in runtime-args.ts.
     autoApproveArgs: ["--force", "--sandbox", "disabled", "--approve-mcps"],
+  },
+  {
+    id: "opencode",
+    bin: "opencode",
+    label: "OpenCode",
+    buildFlag: "--opencode",
+    // Verified against `opencode models` from OpenCode CLI 1.18.13. `opencode/big-pickle` is the
+    // first built-in free model listed by that command.
+    defaultModel: "opencode/big-pickle",
+    // `opencode run --variant` is the provider-specific reasoning-effort knob (help examples:
+    // high, max, minimal). The interactive TUI does not document a separate effort flag.
+    defaultEffort: "medium",
+    // Subset of `opencode models` (1.18.13): free built-ins plus a few coding-oriented providers.
+    modelSuggestions: [
+      "opencode/big-pickle",
+      "opencode/deepseek-v4-flash-free",
+      "opencode-go/kimi-k2.7-code",
+      "opencode-go/grok-4.5",
+      "openai/gpt-5.6",
+      "openai/gpt-5.5",
+      "openai/gpt-5.4",
+      "openai/gpt-5.3-codex",
+    ],
+    // Mirrors `opencode run --variant` help examples, plus the common low/medium scale used by
+    // other runtimes so Settings can offer a familiar ladder.
+    effortSuggestions: ["minimal", "low", "medium", "high", "max"],
+    sandboxCapable: false,
+    // Verified against `opencode --help` / `opencode run --help` (1.18.13): auto-approve permissions
+    // that are not explicitly denied.
+    autoApproveArgs: ["--auto"],
   },
 ];
 

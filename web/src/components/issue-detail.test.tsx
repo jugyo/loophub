@@ -120,6 +120,10 @@ function mockFetch(
         },
         grok: { model: "grok-4.5", effort: "medium" },
         cursor: { model: "auto", effort: "" },
+        opencode: {
+          model: "opencode/big-pickle",
+          effort: "medium",
+        },
       },
       codingAgent: "claude-code",
     }),

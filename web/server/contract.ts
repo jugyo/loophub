@@ -191,7 +191,9 @@ export const methods: Record<string, MethodDef> = {
       {
         name: repo,
         override: { type: "boolean" },
-        runtime: { enum: ["claude-code", "codex", "grok", "cursor"] },
+        runtime: {
+          enum: ["claude-code", "codex", "grok", "cursor", "opencode"],
+        },
         model: strOrNull,
         effort: strOrNull,
         session_id: sid,
@@ -257,12 +259,14 @@ export const methods: Record<string, MethodDef> = {
     description:
       "Update instance-level settings. model/effort require agent; theme and workflowContractLanguage are DB-backed.",
     params: params({
-      agent: { enum: ["claude-code", "codex", "grok", "cursor"] },
+      agent: { enum: ["claude-code", "codex", "grok", "cursor", "opencode"] },
       model: strNonEmpty,
       // Cursor has no independent effort setting and persists the empty string as its canonical
       // value. Runtime-specific validation remains in the settings service.
       effort: str,
-      codingAgent: { enum: ["claude-code", "codex", "grok", "cursor"] },
+      codingAgent: {
+        enum: ["claude-code", "codex", "grok", "cursor", "opencode"],
+      },
       devCostLimitUsd,
       theme: { enum: THEME_IDS },
       workflowContractLanguage: { enum: ["en", "ja"] },
@@ -470,7 +474,7 @@ export const methods: Record<string, MethodDef> = {
         prompt: str,
         // One-shot launch overrides (#1275/#1534): force the runtime / model / effort for New
         // issue, or runtime / model for Start workflow, without changing persisted settings.
-        agent: { enum: ["claude-code", "codex", "grok", "cursor"] },
+        agent: { enum: ["claude-code", "codex", "grok", "cursor", "opencode"] },
         model: str,
         effort: str,
       },

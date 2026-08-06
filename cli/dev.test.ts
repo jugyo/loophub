@@ -252,6 +252,14 @@ test("resolveDevRuntime selects cursor and keeps runtime flags mutually exclusiv
   );
 });
 
+test("resolveDevRuntime selects opencode and keeps runtime flags mutually exclusive", () => {
+  expect(resolveDevRuntime({ opencode: true })).toBe("opencode");
+  expect(resolveDevRuntime({ defaultRuntime: "opencode" })).toBe("opencode");
+  expect(() => resolveDevRuntime({ opencode: true, grok: true })).toThrow(
+    /mutually exclusive/,
+  );
+});
+
 test("buildCodexArgs always adds --dangerously-bypass-approvals-and-sandbox", () => {
   expect(
     buildCodexArgs({
@@ -425,6 +433,31 @@ test("buildRuntimeLaunch returns cursor-agent with verified headless flags", () 
       "Create an issue.",
     ],
   });
+});
+
+test("buildRuntimeLaunch returns opencode with --auto/--model/--variant/--prompt", () => {
+  const launch = buildRuntimeLaunch({
+    runtime: "opencode",
+    sessionId: "sid-1",
+    slashCommand: "Create an issue.",
+    model: "opencode/big-pickle",
+    effort: "high",
+  });
+  expect(launch).toEqual({
+    bin: "opencode",
+    args: [
+      "--auto",
+      "--model",
+      "opencode/big-pickle",
+      "--variant",
+      "high",
+      "--prompt",
+      "Create an issue.",
+    ],
+  });
+  expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toMatch(
+    /^opencode /,
+  );
 });
 
 // ---- spawn command line (pure) ----

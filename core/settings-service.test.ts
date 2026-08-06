@@ -31,6 +31,10 @@ test("settings.get defaults to the model/effort for every agent and claude-code"
         effort: "medium",
       },
       cursor: { model: "auto", effort: "" },
+      opencode: {
+        model: "opencode/big-pickle",
+        effort: "medium",
+      },
       grok: {
         model: "grok-code-fast-1",
         effort: "medium",
@@ -86,6 +90,10 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
         effort: "medium",
       },
       cursor: { model: "auto", effort: "" },
+      opencode: {
+        model: "opencode/big-pickle",
+        effort: "medium",
+      },
       grok: {
         model: "grok-code-fast-1",
         effort: "medium",
@@ -120,6 +128,10 @@ test("settings.update sets one agent's model without disturbing another's (#594)
         effort: "medium",
       },
       cursor: { model: "auto", effort: "" },
+      opencode: {
+        model: "opencode/big-pickle",
+        effort: "medium",
+      },
       grok: {
         model: "grok-code-fast-1",
         effort: "medium",
@@ -167,6 +179,10 @@ test("settings.update omitting model preserves the persisted value (#594)", () =
         effort: "medium",
       },
       cursor: { model: "auto", effort: "" },
+      opencode: {
+        model: "opencode/big-pickle",
+        effort: "medium",
+      },
       grok: {
         model: "grok-code-fast-1",
         effort: "medium",
@@ -194,6 +210,10 @@ test("settings.update persists a per-agent effort and is reflected by settings.g
         effort: "medium",
       },
       cursor: { model: "auto", effort: "" },
+      opencode: {
+        model: "opencode/big-pickle",
+        effort: "medium",
+      },
       grok: {
         model: "grok-code-fast-1",
         effort: "medium",
@@ -226,6 +246,10 @@ test("settings.update sets one agent's effort without disturbing another's (#682
       },
       codex: { model: "gpt-5.6-sol", effort: "low" },
       cursor: { model: "auto", effort: "" },
+      opencode: {
+        model: "opencode/big-pickle",
+        effort: "medium",
+      },
       grok: {
         model: "grok-code-fast-1",
         effort: "medium",
@@ -273,6 +297,10 @@ test("settings.update omitting effort preserves the persisted value (#682)", () 
         effort: "medium",
       },
       cursor: { model: "auto", effort: "" },
+      opencode: {
+        model: "opencode/big-pickle",
+        effort: "medium",
+      },
       grok: {
         model: "grok-code-fast-1",
         effort: "medium",
@@ -300,6 +328,10 @@ test("settings.update persists codingAgent and is reflected by settings.get (#51
         effort: "medium",
       },
       cursor: { model: "auto", effort: "" },
+      opencode: {
+        model: "opencode/big-pickle",
+        effort: "medium",
+      },
       grok: {
         model: "grok-code-fast-1",
         effort: "medium",
@@ -365,6 +397,10 @@ test("settings.update omitting codingAgent preserves the persisted value (#516)"
         effort: "medium",
       },
       cursor: { model: "auto", effort: "" },
+      opencode: {
+        model: "opencode/big-pickle",
+        effort: "medium",
+      },
       grok: {
         model: "grok-code-fast-1",
         effort: "medium",

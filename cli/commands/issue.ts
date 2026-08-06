@@ -40,6 +40,7 @@ export async function run(): Promise<void> {
         codex: flags.codex === true,
         grok: flags.grok === true,
         cursor: flags.cursor === true,
+        opencode: flags.opencode === true,
       });
     } catch (e: any) {
       fail(e.message);
@@ -119,6 +120,7 @@ export async function run(): Promise<void> {
       codex: flags.codex === true,
       grok: flags.grok === true,
       cursor: flags.cursor === true,
+      opencode: flags.opencode === true,
       defaultRuntime: agentCfg.effective.runtime,
     });
     const model =

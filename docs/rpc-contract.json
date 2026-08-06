@@ -295,7 +295,8 @@
               "claude-code",
               "codex",
               "grok",
-              "cursor"
+              "cursor",
+              "opencode"
             ]
           },
           "model": {
@@ -420,7 +421,8 @@
               "claude-code",
               "codex",
               "grok",
-              "cursor"
+              "cursor",
+              "opencode"
             ]
           },
           "model": {
@@ -435,7 +437,8 @@
               "claude-code",
               "codex",
               "grok",
-              "cursor"
+              "cursor",
+              "opencode"
             ]
           },
           "devCostLimitUsd": {
@@ -912,7 +915,8 @@
               "claude-code",
               "codex",
               "grok",
-              "cursor"
+              "cursor",
+              "opencode"
             ]
           },
           "model": {

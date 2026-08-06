@@ -50,6 +50,7 @@ export interface RuntimeFlagsInput {
   // `--model <name>` for every runtime (sanitized; omitted when empty).
   model?: string;
   // Reasoning effort. claude: `--effort <level>`; codex: `-c model_reasoning_effort=<level>`;
+  // opencode: `--variant <level>` (provider-specific; documented on `opencode run`);
   // grok/cursor have no separate effort flag, so it is ignored.
   effort?: string;
   // claude-only: `--session-id <id>`. Other runtimes correlate through their transcript metadata.
@@ -91,6 +92,22 @@ export function buildRuntimeFlags(input: RuntimeFlagsInput): string[] {
       const e = display(input.effort).trim();
       if (e) args.push("-c", `model_reasoning_effort=${e}`);
     }
+    return args;
+  }
+  if (runtime === "opencode") {
+    // OpenCode TUI: `--auto`, `--model`, optional `--variant` (effort), and `--prompt <text>`.
+    // The bare positional is a project path, not a message — so the prompt is a flag value.
+    // End with `--prompt` so agentCommandLine's `"$(cat …)"` becomes that value (same shape as
+    // buildRuntimeArgs, which appends the prompt text after these flags).
+    const args = runtimeApprovalArgs(runtime);
+    args.push(...modelFlag(input.model));
+    if (input.effort) {
+      const e = display(input.effort).trim();
+      // `opencode run --variant` is the documented effort knob (1.18.13). Forwarded for both the
+      // interactive TUI and full argv so Settings effort reaches the CLI when supported.
+      if (e) args.push("--variant", e);
+    }
+    args.push("--prompt");
     return args;
   }
   if (runtime === "grok" || runtime === "cursor") {

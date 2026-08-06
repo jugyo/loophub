@@ -38,6 +38,10 @@ const DEFAULT_AGENT_SETTINGS: Record<CodingAgent, AgentSettingsForTest> = {
     effort: "medium",
   },
   cursor: { model: "auto", effort: "" },
+  opencode: {
+    model: "opencode/big-pickle",
+    effort: "medium",
+  },
 };
 
 function mockFetch(

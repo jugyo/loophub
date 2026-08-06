@@ -315,7 +315,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --cursor] [--model <name>] [--herdr] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --cursor | --opencode] [--model <name>] [--herdr] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -346,6 +346,7 @@ async function startWorkflow(): Promise<void> {
     codex: flags.codex === true,
     grok: flags.grok === true,
     cursor: flags.cursor === true,
+    opencode: flags.opencode === true,
     defaultRuntime: agentCfg.effective.runtime,
   });
   const sessionId = requestedSessionId();

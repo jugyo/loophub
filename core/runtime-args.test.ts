@@ -30,3 +30,44 @@ test("Cursor launch argv disables every interactive approval boundary", () => {
     "Implement the change.",
   ]);
 });
+
+test("OpenCode launch argv uses --auto, --model, --variant, and --prompt", () => {
+  const input = {
+    runtime: "opencode" as const,
+    model: "opencode/big-pickle",
+    effort: "high",
+    prompt: "Implement the change.",
+  };
+
+  // Flags end with --prompt so herdr's agentCommandLine `"$(cat …)"` becomes the value.
+  expect(buildRuntimeFlags(input)).toEqual([
+    "--auto",
+    "--model",
+    "opencode/big-pickle",
+    "--variant",
+    "high",
+    "--prompt",
+  ]);
+  expect(buildRuntimeArgs(input)).toEqual([
+    "--auto",
+    "--model",
+    "opencode/big-pickle",
+    "--variant",
+    "high",
+    "--prompt",
+    "Implement the change.",
+  ]);
+});
+
+test("OpenCode omits --model/--variant when unset and still takes --prompt", () => {
+  const input = {
+    runtime: "opencode" as const,
+    prompt: "Create an issue.",
+  };
+  expect(buildRuntimeFlags(input)).toEqual(["--auto", "--prompt"]);
+  expect(buildRuntimeArgs(input)).toEqual([
+    "--auto",
+    "--prompt",
+    "Create an issue.",
+  ]);
+});

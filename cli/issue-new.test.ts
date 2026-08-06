@@ -152,7 +152,7 @@ if [ "$(basename "$0")" = "cursor-agent" ]; then
 fi
 exit 0
 `;
-  for (const bin of ["claude", "codex", "grok", "cursor-agent"]) {
+  for (const bin of ["claude", "codex", "grok", "cursor-agent", "opencode"]) {
     const path = join(runtimeDir, bin);
     writeFileSync(path, runtime);
     chmodSync(path, 0o755);
@@ -274,6 +274,7 @@ test.each([
   ["--codex", "codex", "codex", "claude-code"],
   ["--grok", "grok", "grok", "claude-code"],
   ["--cursor", "cursor-agent", "cursor", "claude-code"],
+  ["--opencode", "opencode", "opencode", "claude-code"],
 ])("issue new forwards %s and --model to the final %s launch boundary", (flag, expectedBin, expectedRuntime, configuredAgent) => {
   writeConfig({ codingAgent: configuredAgent });
   const model = `${expectedRuntime}-custom-model`;
@@ -288,6 +289,11 @@ test.each([
     expect(result.runtimeLog).toContain("arg=high");
   } else if (expectedBin === "codex") {
     expect(result.runtimeLog).toContain("arg=model_reasoning_effort=high");
+  } else if (expectedBin === "opencode") {
+    expect(result.runtimeLog).toContain("arg=--auto");
+    expect(result.runtimeLog).toContain("arg=--variant");
+    expect(result.runtimeLog).toContain("arg=high");
+    expect(result.runtimeLog).toContain("arg=--prompt");
   }
   expect(result.runtimeLog).toContain(
     "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",
