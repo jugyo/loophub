@@ -30,7 +30,11 @@ import {
   MODEL_SUGGESTIONS,
 } from "@/lib/agent-models";
 import { cn } from "@/lib/utils";
-import { CODING_AGENTS, RUNTIMES } from "../../../core/runtimes.ts";
+import {
+  CODING_AGENTS,
+  isCodingAgent,
+  RUNTIMES,
+} from "../../../core/runtimes.ts";
 
 // The persisted "didn't set it" value for model/effort. Mirrors the real settings semantics: empty
 // string means "use the runtime's default" (stored as null core-side, rendered as "" on the wire).
@@ -83,12 +87,17 @@ function FieldDropdown({
   options,
   portalContainer,
   onSelect,
+  showDefault = true,
 }: {
   ariaLabel: string;
   value: string;
   options: { value: string; label: string }[];
   portalContainer: HTMLElement | null;
   onSelect: (value: string) => void;
+  // Whether the "Default" (empty) item is offered. Meaningful for model/effort ("use the runtime's
+  // default") but NOT for agent/runtime — an empty runtime would crash the lookup. Callers that
+  // select an enum must turn it off so "" can never reach the handler.
+  showDefault?: boolean;
 }) {
   const selected = options.find((o) => o.value === value);
   return (
@@ -115,17 +124,19 @@ function FieldDropdown({
         portalContainer={portalContainer}
         className="max-h-[min(20rem,calc(100vh-5rem))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-48 overflow-y-auto"
       >
-        <DropdownMenuItem
-          onSelect={() => onSelect(EMPTY)}
-          aria-current={value === EMPTY ? "true" : undefined}
-          className={cn(
-            "justify-between",
-            value === EMPTY && "bg-accent text-accent-foreground",
-          )}
-        >
-          <span>Default</span>
-          {value === EMPTY ? <DropdownMenuItemIndicator /> : null}
-        </DropdownMenuItem>
+        {showDefault ? (
+          <DropdownMenuItem
+            onSelect={() => onSelect(EMPTY)}
+            aria-current={value === EMPTY ? "true" : undefined}
+            className={cn(
+              "justify-between",
+              value === EMPTY && "bg-accent text-accent-foreground",
+            )}
+          >
+            <span>Default</span>
+            {value === EMPTY ? <DropdownMenuItemIndicator /> : null}
+          </DropdownMenuItem>
+        ) : null}
         {options.map((o) => {
           const selectedOpt = value === o.value;
           return (
@@ -443,9 +454,12 @@ function PrototypeCDropdown({
   const [agent, setAgent] = useState<CodingAgent>("claude-code");
   const [value, setValue] = useState(() => agentDefault("claude-code"));
 
-  function selectAgent(next: CodingAgent) {
-    setAgent(next);
-    setValue(agentDefault(next));
+  // Guard against an empty/unknown value reaching RUNTIMES[""] (the agent dropdown no longer offers
+  // "Default", but a stray "" must resolve to a real runtime instead of crashing the catalog).
+  function selectAgent(next: string) {
+    const resolved: CodingAgent = isCodingAgent(next) ? next : "claude-code";
+    setAgent(resolved);
+    setValue(agentDefault(resolved));
   }
 
   const agentOptions = CODING_AGENTS.map((a) => ({
@@ -470,6 +484,7 @@ function PrototypeCDropdown({
             options={agentOptions}
             portalContainer={portalContainer}
             onSelect={selectAgent}
+            showDefault={false}
           />
         </label>
         <div className="mt-4 border-l-2 pl-4">
@@ -508,9 +523,10 @@ function PrototypeDRepoOverride({
     label: CODING_AGENT_LABELS[a],
   }));
 
-  function selectRuntime(next: CodingAgent) {
-    setRuntime(next);
-    setValue(agentDefault(next));
+  function selectRuntime(next: string) {
+    const resolved: CodingAgent = isCodingAgent(next) ? next : "claude-code";
+    setRuntime(resolved);
+    setValue(agentDefault(resolved));
   }
 
   return (
@@ -575,6 +591,7 @@ function PrototypeDRepoOverride({
                 options={runtimeOptions}
                 portalContainer={portalContainer}
                 onSelect={selectRuntime}
+                showDefault={false}
               />
               <FieldDropdown
                 ariaLabel="Model (prototype D)"

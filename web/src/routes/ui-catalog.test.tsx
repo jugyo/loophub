@@ -130,5 +130,32 @@ describe("UiCatalogPage", () => {
       expect(opencodeDefault.innerHTML).toContain("bg-primary");
       expect(claudeDefault.innerHTML).not.toContain("bg-primary");
     });
+
+    it("prototype C agent picker offers no Default item and never crashes", async () => {
+      renderRoute("/__ui");
+
+      fireEvent.pointerDown(
+        await screen.findByRole("button", {
+          name: "Default coding agent (prototype C)",
+        }),
+      );
+      // Selecting an empty "Default" used to pass "" → RUNTIMES[""] and crash the catalog (review #40).
+      // The agent picker must not offer it; model/effort keeps "Default" meaning "runtime default".
+      expect(screen.queryByRole("menuitem", { name: "Default" })).toBeNull();
+
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Codex" }));
+      expect(screen.getByText(/Codex — Default model & effort/)).toBeTruthy();
+    });
+
+    it("prototype B model picker still offers Default for model/effort", async () => {
+      renderRoute("/__ui");
+
+      fireEvent.pointerDown(
+        await screen.findByRole("button", {
+          name: "Claude Code model (prototype B)",
+        }),
+      );
+      expect(screen.getByRole("menuitem", { name: "Default" })).toBeTruthy();
+    });
   });
 });
