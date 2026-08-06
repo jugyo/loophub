@@ -22,6 +22,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuItemIndicator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -636,6 +639,125 @@ function PrototypeDRepoOverride({
   );
 }
 
+// 案 E (two-stage model → effort picker): a dedicated dropdown for the model/effort pair. The first
+// stage lists the models; hovering a model opens its effort submenu to the right, so a valid pair is
+// chosen without scrolling a long flat "model — effort" list. Designed to fit the Model cell of 案 B;
+// effortless agents (cursor, opencode) offer the model as a plain selectable item.
+function PrototypeENestedDropdown({
+  portalContainer,
+}: {
+  portalContainer: HTMLElement | null;
+}) {
+  // Fixed demo agent: the card explores the two-stage control itself, so it always edits one runtime
+  // rather than also demoing the agent switch (案 C / 案 D already cover that).
+  const agent: CodingAgent = "claude-code";
+  const [value, setValue] = useState(() => agentDefault(agent));
+
+  const efforts = EFFORT_SUGGESTIONS[agent];
+
+  return (
+    <PrototypeCard
+      index="E"
+      title="二段階の model → effort ドロップダウン"
+      intent="model を選ぶと右に effort のメニューが出る二段構造。全 model×effort の組み合わせをフラットに並べず選択を 2 ステップに絞り込む。案 B のセルに収まる model/effort 専用コントロールの試作。"
+    >
+      <div className="max-w-md">
+        <p className="text-xs font-medium text-muted-foreground">
+          Model &amp; effort — {CODING_AGENT_LABELS[agent]}
+        </p>
+        <div className="mt-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                aria-label="Model and effort (prototype E)"
+                title={comboLabel(value.model, value.effort)}
+                className="w-full justify-between border bg-background px-3 text-left font-normal shadow-sm"
+              >
+                <span className="min-w-0 truncate">
+                  {comboLabel(value.model, value.effort)}
+                </span>
+                <ChevronsUpDown
+                  className="size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              portalContainer={portalContainer}
+              className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-64"
+            >
+              {MODEL_SUGGESTIONS[agent].map((model) => {
+                const modelSelected = value.model === model;
+                if (efforts.length === 0) {
+                  // No effort ladder (cursor, opencode): the model row selects the pair directly.
+                  return (
+                    <DropdownMenuItem
+                      key={model}
+                      onSelect={() => setValue({ model, effort: "" })}
+                      aria-current={modelSelected ? "true" : undefined}
+                      className={cn(
+                        "justify-between",
+                        modelSelected && "bg-accent text-accent-foreground",
+                      )}
+                    >
+                      <span className="min-w-0 truncate">{model}</span>
+                      {modelSelected ? <DropdownMenuItemIndicator /> : null}
+                    </DropdownMenuItem>
+                  );
+                }
+                return (
+                  <DropdownMenuSub key={model}>
+                    <DropdownMenuSubTrigger
+                      aria-current={modelSelected ? "true" : undefined}
+                      className={cn(
+                        "justify-between",
+                        modelSelected && "bg-accent text-accent-foreground",
+                      )}
+                    >
+                      <span className="min-w-0 truncate">{model}</span>
+                      {modelSelected ? <DropdownMenuItemIndicator /> : null}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent
+                      portalContainer={portalContainer}
+                      className="max-h-[min(20rem,calc(100vh-5rem))] min-w-40 overflow-y-auto"
+                    >
+                      {efforts.map((effort) => {
+                        const selected =
+                          value.model === model && value.effort === effort;
+                        return (
+                          <DropdownMenuItem
+                            key={effort}
+                            onSelect={() => setValue({ model, effort })}
+                            aria-current={selected ? "true" : undefined}
+                            className={cn(
+                              "justify-between",
+                              selected && "bg-accent text-accent-foreground",
+                            )}
+                          >
+                            <span className="min-w-0 truncate">{effort}</span>
+                            {selected ? <DropdownMenuItemIndicator /> : null}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          model をホバーすると右側に effort
+          のメニューが開きます（mock）。表のセルにそのまま入る幅で描画しています。
+        </p>
+      </div>
+    </PrototypeCard>
+  );
+}
+
 export function CodingAgentSettingsPrototypes({
   portalContainer,
 }: {
@@ -657,8 +779,7 @@ export function CodingAgentSettingsPrototypes({
         <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
           アプリケーション Settings の Coding agent
           ブロックに対する比較用プロトタイプです。「縦に長い radio + ネストした
-          model/effort」をどう情報設計し直すかを、最低 2 案で確認します（この
-          run
+          model/effort」をどう情報設計し直すかを、複数案で確認します（この run
           の成果物は仮説の提示に留まり、本実装の選定とは結びつけません）。各案は操作できる状態そのままで、永続化や
           RPC は行いません。
         </p>
@@ -667,6 +788,7 @@ export function CodingAgentSettingsPrototypes({
       <PrototypeBTable portalContainer={portalContainer} />
       <PrototypeCDropdown portalContainer={portalContainer} />
       <PrototypeDRepoOverride portalContainer={portalContainer} />
+      <PrototypeENestedDropdown portalContainer={portalContainer} />
     </section>
   );
 }

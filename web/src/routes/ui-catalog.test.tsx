@@ -96,6 +96,7 @@ describe("UiCatalogPage", () => {
         "全 agent を 1 行テーブルで比較する",
         "select 1 つにまとめる",
         "repo override も同じテーブル言語に",
+        "二段階の model → effort ドロップダウン",
       ]) {
         expect(
           screen.getByRole("heading", { name: new RegExp(title) }),
@@ -167,6 +168,28 @@ describe("UiCatalogPage", () => {
         await screen.findByRole("button", { name: "Model (prototype D)" }),
       );
       expect(screen.getByRole("menuitem", { name: "Default" })).toBeTruthy();
+    });
+
+    it("prototype E picks model then effort via the nested submenu", async () => {
+      renderRoute("/__ui");
+
+      const trigger = await screen.findByRole("button", {
+        name: "Model and effort (prototype E)",
+      });
+      fireEvent.pointerDown(trigger);
+
+      // Stage 1: the model menu lists each model.
+      const sonnet = await screen.findByRole("menuitem", { name: "sonnet" });
+      expect(sonnet).toBeTruthy();
+
+      // Stage 2: hovering/focusing a model opens its effort submenu to the right.
+      fireEvent.keyDown(sonnet, { key: "ArrowRight" });
+      const high = await screen.findByRole("menuitem", { name: "high" });
+      expect(high).toBeTruthy();
+      fireEvent.click(high);
+
+      // The trigger reflects the chosen pair.
+      expect(trigger.textContent).toContain("sonnet — high");
     });
   });
 });
