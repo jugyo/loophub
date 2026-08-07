@@ -667,6 +667,22 @@ describe("PullCommitsSection", () => {
     expect(within(rows[1]).getByText("Pushed")).toBeTruthy();
   });
 
+  // #2442: the badge is filled, not the muted outline the rest of the row uses, so the push
+  // boundary is visible while scanning the list.
+  it("gives the Pushed badge the filled tone", () => {
+    renderSection({
+      commits: [
+        { ...commits![0], pushed_to_github: true },
+        { ...commits![1], pushed_to_github: false },
+      ],
+      showGithubPushState: true,
+    });
+
+    const badge = screen.getByText("Pushed").closest("span")!;
+    expect(badge.className).toContain("bg-sky-700");
+    expect(badge.className).not.toContain("text-muted-foreground");
+  });
+
   // Commits are newest first, so only the topmost pushed row is labeled: the ones below it are
   // pushed too, and repeating the badge there says nothing new (#2039).
   it("marks only the latest pushed commit when several commits are pushed", () => {

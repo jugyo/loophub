@@ -29,6 +29,11 @@ const badgeVariants = cva(
           "border-amber-500/60 text-amber-700 dark:text-amber-300",
         unknown: "border-border text-muted-foreground",
         agent: "border-primary-border bg-primary-subtle text-link",
+        // #2442: the GitHub push boundary is what you scan the commit list for, so it is the one
+        // filled badge among the outlined ones around it — visible at a glance without borrowing a
+        // hue that already means something else (green passed / red changes / indigo working).
+        pushed:
+          "border-transparent bg-sky-700 text-white dark:bg-sky-400 dark:text-sky-950",
       },
     },
     defaultVariants: { tone: "closed" },

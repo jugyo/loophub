@@ -30,7 +30,9 @@ export type BadgeTone =
   | "cost-stopped"
   | "unknown"
   // Violet tone, used by the related-sessions "dev" and handoff "code" badges.
-  | "agent";
+  | "agent"
+  // Filled sky tone, used by the commit list's "Pushed" badge (#2442).
+  | "pushed";
 
 export interface Badge {
   tone: BadgeTone;

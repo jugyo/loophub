@@ -144,7 +144,7 @@ export function PullCommitsSection({
                   ) : null}
                   {commit.sha === latestPushedSha ? (
                     <Badge
-                      tone="unknown"
+                      tone="pushed"
                       title="Pushed to GitHub"
                       className="shrink-0 gap-1"
                     >
