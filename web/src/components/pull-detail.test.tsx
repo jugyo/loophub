@@ -358,6 +358,9 @@ describe("PullDetail", () => {
     expect(
       within(fileDialog).getByRole("button", { name: "Split" }),
     ).toBeTruthy();
+    // #2451: review line comments have no place in the diff view — the Reviews timeline below is
+    // their only view, so the dialog shows diff feedback threads alone.
+    expect(within(fileDialog).queryByText("nice constant")).toBeNull();
     const reviewedCommit = screen
       .getByRole("button", {
         name: "View changes in aaaaaaa: Latest change",

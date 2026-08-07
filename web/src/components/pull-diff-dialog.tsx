@@ -1,7 +1,8 @@
 // PR-detail diff dialog: the full-size modal opened from a file summary row, showing one file's
-// diff with line comments plus Raw and (for Markdown) Base/Head rendered previews. The dialog owns
-// its own Escape handling, mode switching, per-mode file fetch, and the copy-path resolution for
-// renamed / invisible-character filenames. The Files changed section only picks the open file.
+// diff with its diff feedback threads plus Raw and (for Markdown) Base/Head rendered previews. The
+// dialog owns its own Escape handling, mode switching, per-mode file fetch, and the copy-path
+// resolution for renamed / invisible-character filenames. The Files changed section only picks the
+// open file. Review line comments are not shown here — the Reviews timeline is their only view.
 
 import {
   ChevronDown,
@@ -22,12 +23,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type {
-  DiffFeedbackThread,
-  PullDiff,
-  PullFile,
-  PullLineComment,
-} from "@/api/types";
+import type { DiffFeedbackThread, PullDiff, PullFile } from "@/api/types";
 import {
   ArchivedComment,
   CommentActionsMenu,
@@ -205,7 +201,6 @@ export function DiffFileDialog({
   number,
   files,
   file,
-  comments,
   commentCounts = {},
   onSelectFile,
   onClose,
@@ -215,7 +210,6 @@ export function DiffFileDialog({
   number: number;
   files: PullFile[];
   file: PullFile;
-  comments: PullLineComment[];
   commentCounts?: Readonly<Record<string, number>>;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
@@ -528,7 +522,6 @@ export function DiffFileDialog({
               repo={repo}
               number={number}
               file={file}
-              comments={comments}
               mode={mode}
               diffViewMode={diffViewMode}
               ignoreWhitespace={ignoreWhitespace}
@@ -701,7 +694,6 @@ function FileDiffContent({
   repo,
   number,
   file,
-  comments,
   mode,
   diffViewMode,
   ignoreWhitespace,
@@ -710,7 +702,6 @@ function FileDiffContent({
   repo: string;
   number: number;
   file: PullFile;
-  comments: PullLineComment[];
   mode: DiffDialogMode;
   diffViewMode: DiffViewMode;
   ignoreWhitespace: boolean;
@@ -903,25 +894,6 @@ function FileDiffContent({
           ))}
         </PreviousDiffThreadsSection>
       ) : null}
-      {comments.map((c) => (
-        <div key={c.id} className="m-2 rounded-md border bg-muted/20 p-2">
-          <div className="mb-1 flex min-w-0 items-start gap-2">
-            <CommentMetadata
-              author={c.user.login}
-              authorType={c.author_type}
-              createdAt={c.created_at}
-              id={c.id}
-              className="flex-1"
-            />
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {c.path}:{c.line ?? "?"}
-            </span>
-          </div>
-          <Markdown owner={owner} repo={repo}>
-            {c.body}
-          </Markdown>
-        </div>
-      ))}
     </div>
   );
 }

@@ -13,11 +13,7 @@ import {
 import postcss from "postcss";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault } from "@/api/rpc-mock";
-import type {
-  DiffFeedbackThread,
-  PullFile,
-  PullLineComment,
-} from "@/api/types";
+import type { DiffFeedbackThread, PullFile } from "@/api/types";
 
 import { DiffFeedbackHistory, DiffFileDialog } from "./pull-diff-dialog";
 
@@ -81,20 +77,6 @@ function stableDiff() {
   };
 }
 
-const lineComments: PullLineComment[] = [
-  {
-    id: 1,
-    pull_request_review_id: 1,
-    user: { login: "design-bot" },
-    author_type: "agent",
-    path: "web/src/a.ts",
-    line: 1,
-    side: "RIGHT",
-    body: "nice constant",
-    created_at: "2026-06-18T11:30:00Z",
-  },
-];
-
 function feedbackThread(
   patch: Partial<DiffFeedbackThread> = {},
 ): DiffFeedbackThread {
@@ -157,14 +139,12 @@ function feedbackThread(
 function renderDialog({
   file: dialogFile = file,
   files,
-  comments = [],
   onSelectFile = () => {},
   onClose = () => {},
   handlers = {},
 }: {
   file?: PullFile;
   files?: PullFile[];
-  comments?: PullLineComment[];
   onSelectFile?: (filename: string) => void;
   onClose?: () => void;
   handlers?: Record<string, (params: any) => unknown>;
@@ -181,7 +161,6 @@ function renderDialog({
         number={30}
         files={files ?? [dialogFile]}
         file={dialogFile}
-        comments={comments}
         onSelectFile={onSelectFile}
         onClose={onClose}
       />
@@ -310,8 +289,8 @@ describe("DiffFileDialog", () => {
     );
   });
 
-  it("renders the diff with its line comments", () => {
-    renderDialog({ comments: lineComments });
+  it("renders the diff", () => {
+    renderDialog();
 
     const dialog = screen.getByRole("dialog", {
       name: /Diff for web\/src\/a\.ts/i,
@@ -330,15 +309,6 @@ describe("DiffFileDialog", () => {
         .getByRole("button", { name: "Unified" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(within(dialog).getAllByText("nice constant").length).toBeGreaterThan(
-      0,
-    );
-    expect(within(dialog).getByLabelText("Comment ID 1").textContent).toBe(
-      "#1",
-    );
-    expect(within(dialog).getAllByLabelText("AI agent").length).toBeGreaterThan(
-      0,
-    );
   });
 
   it("shows consistent diff feedback metadata without obscuring the comment body", async () => {
@@ -970,7 +940,6 @@ describe("DiffFileDialog", () => {
           number={30}
           files={[file, secondFile]}
           file={secondFile}
-          comments={[]}
           hasPreviousFile
           hasNextFile={false}
           onPreviousFile={() => {}}
@@ -2249,7 +2218,6 @@ describe("DiffFileDialog", () => {
           number={30}
           files={[{ ...file, filename: "web/src/b.ts" }]}
           file={{ ...file, filename: "web/src/b.ts" }}
-          comments={[]}
           onSelectFile={() => {}}
           onClose={() => {}}
         />
@@ -2710,7 +2678,6 @@ describe("DiffFileDialog", () => {
           number={30}
           files={[{ ...file, filename: "web/src/a.ts" }]}
           file={{ ...file, filename: "web/src/a.ts" }}
-          comments={[]}
           onSelectFile={() => {}}
           onClose={() => {}}
         />
@@ -2729,7 +2696,6 @@ describe("DiffFileDialog", () => {
           number={30}
           files={[mdFile]}
           file={mdFile}
-          comments={[]}
           onSelectFile={() => {}}
           onClose={() => {}}
         />

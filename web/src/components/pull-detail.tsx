@@ -1,6 +1,7 @@
 // PR detail view (/r/:owner/:repo/pulls/:number). v1 parity: title, body,
 // state + review badges, head→base, the linked issue (bidirectional with the
-// issue's linked PR), the commit/review timeline, the file diff with line comments,
+// issue's linked PR), the commit/review timeline, the file diff with its diff
+// feedback threads (review line comments show in the timeline only, not the diff),
 // issue comments, plus the write operations — merge (when PASSED) and close/reopen
 // (when not merged).
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
@@ -21,7 +22,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
+import type { PullFile, PullRequest } from "@/api/types";
 import {
   ArchivedComment,
   CommentActionsMenu,
@@ -192,7 +193,6 @@ export function PullDetail({
               repo={repo}
               number={number}
               files={filesQuery.data}
-              lineComments={lineCommentsQuery.data}
               isLoading={false}
               isError={false}
             />
@@ -792,7 +792,6 @@ function FilesChanged({
   repo,
   number,
   files,
-  lineComments,
   isLoading,
   isError,
 }: {
@@ -800,7 +799,6 @@ function FilesChanged({
   repo: string;
   number: number;
   files: PullFile[] | undefined;
-  lineComments: PullLineComment[] | undefined;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -811,12 +809,6 @@ function FilesChanged({
     if (openFilename && files && !openFile) setOpenFilename(null);
   }, [files, openFile, openFilename]);
 
-  const byFile = new Map<string, PullLineComment[]>();
-  for (const comment of lineComments ?? []) {
-    const list = byFile.get(comment.path) ?? [];
-    list.push(comment);
-    byFile.set(comment.path, list);
-  }
   const commentCounts = feedback.data?.comment_counts ?? {};
 
   const totalAdditions =
@@ -879,7 +871,6 @@ function FilesChanged({
               number={number}
               files={files}
               file={openFile}
-              comments={byFile.get(openFile.filename) ?? []}
               commentCounts={commentCounts}
               onSelectFile={setOpenFilename}
               onClose={() => setOpenFilename(null)}
