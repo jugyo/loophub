@@ -626,7 +626,7 @@ describe("pull review state", () => {
   // The CLI's human session (agent "me") is persistent — one row per LOOPHUB_HOME, reused by every
   // human write — so its start is when the home was created, not when a review began. A human
   // review must therefore record no session at all, or it would report the home's age as its
-  // duration. This is the default path for `lh pr review` without an explicit session.
+  // duration. This is the default path for `lh pr review submit` without an explicit session.
   test("records no session for a human review, so it reports no duration", async () => {
     const pr = await svc.pulls.create(
       "me/proj",

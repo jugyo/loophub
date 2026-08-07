@@ -313,10 +313,11 @@ export async function run(): Promise<void> {
     if (!flags.json)
       console.log(`pushed to GitHub PR #${g.number} branch ${g.branch}`);
   } else if (sub === "review") {
-    if (rest[0] === "view") {
+    const [action, numberText] = rest;
+    if (action === "view") {
       if (!flags.review) fail("--review is required");
       const detail = await runOp(() =>
-        s.reviews.get(repo, Number(rest[1]), Number(flags.review)),
+        s.reviews.get(repo, Number(numberText), Number(flags.review)),
       );
       out(detail);
       if (!flags.json) {
@@ -332,6 +333,10 @@ export async function run(): Promise<void> {
       }
       return;
     }
+    // Writing a review takes the explicit `submit` verb (#2458). `review` also owns the read-only
+    // `view`, so a verb-less `lh pr review <pr>` reads like a listing; it used to register an empty
+    // COMMENT review instead. Print usage and exit non-zero rather than write.
+    if (action !== "submit") usage();
     // Two-channel review inputs (#1895): `--comments` (line comments) and `--ac-results` (per-
     // criterion grades). Each is inline JSON or a file path — stdin (`-`) is gone, so the two
     // channels never contend for it.
@@ -344,7 +349,7 @@ export async function run(): Promise<void> {
     const res = await runOp(async () =>
       s.reviews.create(
         repo,
-        Number(rest[0]),
+        Number(numberText),
         {
           event: (flags.event || "comment").toUpperCase(),
           body: flags.body || "",

@@ -116,10 +116,9 @@ describe("--help", () => {
       options: ["--repo <owner/name>", "--json", "--help"],
     },
     {
-      args: ["pr", "review", "--help"],
-      usage: "lh pr review <number> [options]",
+      args: ["pr", "review", "submit", "--help"],
+      usage: "lh pr review submit <number> [options]",
       options: [
-        "--review <id>",
         "--event <verdict>",
         "--body <text>",
         "--commit <sha>",
@@ -171,6 +170,19 @@ describe("--help", () => {
     expect(result.stdout).toContain(usage);
     expect(result.stdout).toContain("Options:");
     for (const option of options) expect(result.stdout).toContain(option);
+    expect(existsSync(join(home, "loophub.db"))).toBe(false);
+  });
+
+  // #2458: the review group writes only through `submit`, so its help points at both verbs rather
+  // than documenting a verb-less form that no longer submits anything.
+  test("points pr review help at its submit and view subcommands", () => {
+    const result = lh(["pr", "review", "--help"]);
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain("lh pr review submit <number> [options]");
+    expect(result.stdout).toContain(
+      "lh pr review view <number> --review <id> [options]",
+    );
     expect(existsSync(join(home, "loophub.db"))).toBe(false);
   });
 

@@ -67,7 +67,7 @@ section.
 Submit exactly one review, pinned to the reviewed head:
 
 ```
-lh pr review <pr> --repo '<repo>' --commit <head sha> \
+lh pr review submit <pr> --repo '<repo>' --commit <head sha> \
   --event pass|request_changes --body '<why>' \
   [--comments <json|file>] [--ac-results <json|file>]
 ```

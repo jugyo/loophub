@@ -64,11 +64,11 @@ export function usage(): void {
     lh pr comment react 12 --pr 3 --emoji "👀"
     lh notification send --repo me/proj --kind human_attention --title "Needs review" --body "PR is ready" --resource pull:3
     lh pr merge 3 --method squash
-    lh pr review 3 --event request_changes --body "please fix" --comments review.json
-    lh pr review 3 --event pass --body "no issues found" --commit <head sha>
+    lh pr review submit 3 --event request_changes --body "please fix" --comments review.json
+    lh pr review submit 3 --event pass --body "no issues found" --commit <head sha>
     lh pr review view 3 --review 7 --json
-    lh pr review 3 --comments '[{"path":"a.txt","line":2,"body":"typo"}]'   # inline JSON or a file path
-    lh pr review 3 --event pass --body "all criteria met" --ac-results '[{"criterion_id":"1-1","verdict":"pass","note":""}]'
+    lh pr review submit 3 --comments '[{"path":"a.txt","line":2,"body":"typo"}]'   # inline JSON or a file path
+    lh pr review submit 3 --event pass --body "all criteria met" --ac-results '[{"criterion_id":"1-1","verdict":"pass","note":""}]'
     lh pr review-response add 3 --review 7 [--review-comment 9] --body "addressed in the latest commit"
     lh pr review-response list 3 --review 7 --json
     lh pr feedback create 3 --base-sha <sha> --head-sha <sha> --path a.txt --side RIGHT --start-line 2 --end-line 2 --body "why?"

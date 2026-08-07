@@ -87,11 +87,17 @@ Options:
 const PR_REVIEW_DETAILS = `
 
 Usage:
-  lh pr review <number> [options]
+  lh pr review submit <number> [options]
   lh pr review view <number> --review <id> [options]
 
+A review is written only by submit; lh pr review <number> on its own writes nothing.`;
+
+const PR_REVIEW_SUBMIT_DETAILS = `
+
+Usage:
+  lh pr review submit <number> [options]
+
 Options:
-  --review <id>          Target review (required for view).
   --event <verdict>       Review verdict: comment (default), pass, or request_changes.
   --body <text>           Review summary.
   --commit <sha>          Pin the review to this head commit (defaults to the current PR head).
@@ -102,7 +108,7 @@ Options:
   --model <name>          Record the model that produced the review.
   --repo <owner/name>     Repository (defaults to the repository at the current path).
   --session-id <uuid>     Attribute the review to a registered agent session.
-  --json                  Print the submitted review or review detail as JSON.
+  --json                  Print the submitted review as JSON.
   --help                  Show this help without changing the database.`;
 
 const PR_REVIEW_VIEW_DETAILS = `
@@ -240,8 +246,13 @@ export const commandHelp: readonly CommandHelp[] = [
   },
   {
     path: ["pr", "review"],
-    description: "Submit a pull request review.",
+    description: "Submit or read pull request reviews.",
     details: PR_REVIEW_DETAILS,
+  },
+  {
+    path: ["pr", "review", "submit"],
+    description: "Submit a pull request review.",
+    details: PR_REVIEW_SUBMIT_DETAILS,
   },
   {
     path: ["pr", "review", "view"],

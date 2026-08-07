@@ -134,6 +134,31 @@ test("lh pr close / reopen report the transition and the no-op", () => {
   expect(JSON.parse(reopened.stdout)).toMatchObject({ number, state: "open" });
 });
 
+// #2458: `review` also owns the read-only `view`, so a verb-less `lh pr review <pr>` reads like a
+// listing. It used to register an empty COMMENT review, and reviews cannot be deleted.
+test("lh pr review without a verb writes nothing and exits non-zero", () => {
+  const number = createPull("feature-review-verb");
+  const verbless = lh(["pr", "review", String(number), "--repo", "me/proj"]);
+  expect(verbless.exitCode).not.toBe(0);
+  expect(verbless.stdout).toContain("lh pr review submit");
+
+  const events = lh([
+    "events",
+    "--repo",
+    "me/proj",
+    "--type",
+    "pull_request.review_submitted",
+    "--json",
+  ]);
+  expect(events.exitCode, events.stderr).toBe(0);
+  expect(
+    JSON.parse(events.stdout).filter(
+      (event: { payload: { number: number } }) =>
+        event.payload.number === number,
+    ),
+  ).toHaveLength(0);
+});
+
 // #1896: `pass` means every criterion passed, so a failing grade beside it contradicts the verdict.
 // The submission is still recorded — the inconsistency surfaces as a warning a human can act on.
 test("lh pr review soft-warns a pass contradicted by a failing grade", () => {
@@ -173,6 +198,7 @@ test("lh pr review soft-warns a pass contradicted by a failing grade", () => {
   const review = lh([
     "pr",
     "review",
+    "submit",
     String(number),
     "--repo",
     "me/proj",
@@ -198,6 +224,7 @@ test("lh pr review soft-warns a pass contradicted by a failing grade", () => {
   const internalIdReview = lh([
     "pr",
     "review",
+    "submit",
     String(number),
     "--repo",
     "me/proj",
@@ -217,6 +244,7 @@ test("lh pr review view reads comments and review-response stays linked", () => 
   const reviewed = lh([
     "pr",
     "review",
+    "submit",
     String(number),
     "--repo",
     "me/proj",

@@ -250,7 +250,7 @@ commit せず turn done してよい（親は HEAD 不変なら既存 pass を�
 launch 時に (issue 参照, base SHA, head SHA) を受け取り、`git diff <base>..<head>` を自分で計算して
 その固定 diff だけをレビューする。レビュー範囲をその diff から拡張せず、PR body・実装者の説明は
 読まない（PR 番号は review の提出先としてのみ与えられる）。source は編集せず、必要なテストは実行できる。
-出力は `lh pr review --commit <head sha>` による、head SHA に pin された PR review
+出力は `lh pr review submit --commit <head sha>` による、head SHA に pin された PR review
 （pass / request_changes）のみ。毎回 fresh session で起動される。
 
 ### 3.4 非対称性は意図的な設計判断
@@ -429,7 +429,7 @@ lh workflow step input <run> <step>         # 合成した contract + input ポ�
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測
 ```
 
-`lh workflow step output` は廃止した。Verify の出力は `lh pr review --commit <sha>`
+`lh workflow step output` は廃止した。Verify の出力は `lh pr review submit --commit <sha>`
 を用いる。
 
 ### `lh workflow start` の herdr セッション

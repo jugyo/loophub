@@ -129,7 +129,7 @@ test("contracts preserve the workflow command protocol in both languages", () =>
     expect(verify).toContain("git diff <base sha>...<head sha>");
     expect(verify).toContain("lh issue view <n> --repo '<repo>' --json");
     expect(verify).toMatch(
-      /lh pr review <pr>[\s\S]*--repo '<repo>'[\s\S]*--commit <head sha>[\s\S]*--event pass\|request_changes/u,
+      /lh pr review submit <pr>[\s\S]*--repo '<repo>'[\s\S]*--commit <head sha>[\s\S]*--event pass\|request_changes/u,
     );
     expect(verify).toContain("--ac-results <json|file>");
     expect(verify).not.toContain("lh pr view");
