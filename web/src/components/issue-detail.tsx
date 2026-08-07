@@ -20,6 +20,7 @@ import {
   useState,
 } from "react";
 import type { Issue, IssueComment, LinkedPull } from "@/api/types";
+import { CommentActionsMenu } from "@/components/comment-archive";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
 import {
   DetailHeaderTitle,
@@ -692,14 +693,20 @@ function CommentList({
           data-debug-component="IssueComment"
           className="rounded-md border p-3"
         >
-          <header className="mb-1 text-sm font-medium">
-            <CommentAuthorLabel
-              author={c.user.login}
-              authorType={c.author_type}
-            />{" "}
-            <span className="text-xs font-normal text-muted-foreground">
-              {relativeTime(c.created_at)}
+          <header className="mb-1 flex items-start justify-between gap-2 text-sm font-medium">
+            <span className="min-w-0">
+              <CommentAuthorLabel
+                author={c.user.login}
+                authorType={c.author_type}
+              />{" "}
+              <span className="text-xs font-normal text-muted-foreground">
+                {relativeTime(c.created_at)}
+              </span>
             </span>
+            <CommentActionsMenu
+              label={`Actions for issue comment ${c.id}`}
+              copyMarkdown={c.body}
+            />
           </header>
           <Markdown owner={owner} repo={repo}>
             {c.body}

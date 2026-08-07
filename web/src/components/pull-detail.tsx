@@ -979,6 +979,7 @@ function CommentList({
           const menu = (
             <CommentActionsMenu
               label={`Actions for PR comment ${c.id}`}
+              copyMarkdown={c.body}
               archived={archived}
               busy={archive.isPending}
               onArchived={(next) =>

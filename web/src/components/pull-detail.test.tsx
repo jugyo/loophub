@@ -835,6 +835,23 @@ describe("PullDetail", () => {
     );
   });
 
+  it("copies a PR comment's markdown from its three dots menu", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    renderDetail();
+
+    fireEvent.pointerDown(
+      await screen.findByLabelText("Actions for PR comment 9"),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Copy as Markdown" }),
+    );
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Thanks!"));
+  });
+
   it("collapses an archived PR comment and expands it on demand", async () => {
     const archive = vi.fn(() => ({ ...comments[0], archived_at: null }));
     renderDetail({

@@ -1713,6 +1713,10 @@ function ThreadCard({
   const menu = (
     <CommentActionsMenu
       label={`Actions for diff thread ${thread.id}`}
+      copyMarkdown={thread.messages
+        .map((message) => message.body)
+        .filter((body) => body !== "")
+        .join("\n\n")}
       archived={archived}
       busy={archiveBusy}
       onArchived={onArchived}

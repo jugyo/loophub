@@ -35,6 +35,7 @@ import { IssueDetail } from "./issue-detail";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   launchTerminal.mockClear();
 });
@@ -377,6 +378,23 @@ describe("IssueDetail", () => {
     expect(commentsSection?.id).toBe("comments");
     expect(commentsSection?.className).toContain("pb-6");
     expect(commentsSection?.textContent).toContain("Looks good.");
+  });
+
+  it("copies an issue comment's markdown from its three dots menu", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    renderDetail();
+
+    fireEvent.pointerDown(
+      await screen.findByLabelText("Actions for issue comment 1"),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Copy as Markdown" }),
+    );
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Looks good."));
   });
 
   // #2151: documents (not just pasted images) can be attached from the UI.
@@ -1207,7 +1225,7 @@ describe("IssueDetail", () => {
     )) as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "Nice work" } });
 
-    const button = screen.getByRole("button", { name: /comment/i });
+    const button = screen.getByRole("button", { name: "Comment" });
     fireEvent.click(button);
 
     await waitFor(() => {

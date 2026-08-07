@@ -1,6 +1,7 @@
 // Archiving a comment (#2346) keeps it and collapses it: a settled exchange stops crowding the
-// discussion without any history being deleted. Shared by the PR page's top-level comments and the
-// diff view's conversations so both carry the same affordance and the same collapsed shape.
+// discussion without any history being deleted. Shared by the issue/PR pages' top-level comments and
+// the diff view's conversations so both carry the same affordance and the same collapsed shape. The
+// same top-right menu also carries a "Copy as Markdown" action (#73).
 
 import { ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -12,17 +13,30 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-/** The three dots menu at a comment's top right, carrying its archive action. */
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Clipboard API unavailable (insecure context / denied). Fail silently,
+    // mirroring CopyButton.
+  }
+}
+
+/** The three dots menu at a comment's top right. Archive is optional (issue
+ * comments don't archive); `copyMarkdown` adds a "Copy as Markdown" item that
+ * puts the comment body on the clipboard. */
 export function CommentActionsMenu({
   label,
+  copyMarkdown,
   archived,
   busy,
   onArchived,
 }: {
   label: string;
-  archived: boolean;
-  busy: boolean;
-  onArchived: (archived: boolean) => void;
+  copyMarkdown?: string;
+  archived?: boolean;
+  busy?: boolean;
+  onArchived?: (archived: boolean) => void;
 }) {
   return (
     <DropdownMenu>
@@ -38,12 +52,19 @@ export function CommentActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          disabled={busy}
-          onSelect={() => onArchived(!archived)}
-        >
-          {archived ? "Unarchive" : "Archive"}
-        </DropdownMenuItem>
+        {copyMarkdown != null ? (
+          <DropdownMenuItem onSelect={() => void copyText(copyMarkdown)}>
+            Copy as Markdown
+          </DropdownMenuItem>
+        ) : null}
+        {onArchived != null ? (
+          <DropdownMenuItem
+            disabled={busy}
+            onSelect={() => onArchived(!archived)}
+          >
+            {archived ? "Unarchive" : "Archive"}
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

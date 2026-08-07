@@ -1855,6 +1855,41 @@ describe("DiffFileDialog", () => {
     );
   });
 
+  it("copies a diff thread's markdown from its three dots menu", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", {
+        name: "Actions for diff thread 1",
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Copy as Markdown" }),
+    );
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("Please revisit this range."),
+    );
+  });
+
   it("collapses an archived conversation and expands it on demand", async () => {
     const archive = vi.fn(() => ({}));
     renderDialog({
