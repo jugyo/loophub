@@ -52,6 +52,12 @@ export interface WorkflowRunProjection {
   turnDones: WorkflowRunEvent[];
   /** The run's latest turn-done declaration, or null when Execute never made one. */
   latestTurnDone: WorkflowRunEvent | null;
+  /**
+   * Every Verify launch, oldest first. A run can end up with more than one live Verify child —
+   * Execute committing again while one is running makes the engine launch a fresh one rather than
+   * wait (#1857) — so discarding the stale ones needs them all, not just the latest.
+   */
+  verifyLaunches: WorkflowRunEvent[];
   /** The latest Verify launch, used to tell whether it could have seen a given turn done. */
   latestVerifyLaunch: WorkflowRunEvent | null;
   /**
@@ -75,7 +81,7 @@ export function projectWorkflowRunEvents(
   const turnDones: WorkflowRunEvent[] = [];
   const reviewSubmissions = new Map<number, WorkflowReviewSubmission>();
   const phaseTransitions: { id: number; step: WorkflowStep }[] = [];
-  let latestVerifyLaunch: WorkflowRunEvent | null = null;
+  const verifyLaunches: WorkflowRunEvent[] = [];
   let latestExecuteRound: WorkflowRunEvent | null = null;
 
   for (const row of rows) {
@@ -90,7 +96,7 @@ export function projectWorkflowRunEvents(
     if (event.type === "workflow_run.turn_done") {
       turnDones.push(event);
     } else if (event.type === "workflow_step.launched") {
-      if (payload.step === "verify") latestVerifyLaunch = event;
+      if (payload.step === "verify") verifyLaunches.push(event);
       if (payload.step === "execute") latestExecuteRound = event;
     } else if (event.type === "workflow_run.updated") {
       if (
@@ -131,7 +137,8 @@ export function projectWorkflowRunEvents(
     events,
     turnDones,
     latestTurnDone: turnDones.at(-1) ?? null,
-    latestVerifyLaunch,
+    verifyLaunches,
+    latestVerifyLaunch: verifyLaunches.at(-1) ?? null,
     latestExecuteRound,
     reviewSubmissions,
     phaseTransitions,

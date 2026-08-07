@@ -449,13 +449,20 @@ async function launchStep(): Promise<void> {
   // Preflight the runtime the run resolved (#516) — claude-code needs `claude`, codex needs `codex`.
   preflightStepLaunch(result.runtime);
   if (result.step === "verify") {
-    await runOp(() =>
-      s.workflowRuns.closePreviousVerifyAgent(
+    // This launch is the moment an older Verify child is known to be reviewing a HEAD the run has
+    // moved past — stop it here rather than pay for a review the freshness check will ignore (#61).
+    const stale = await runOp(() =>
+      s.workflowRuns.discardStaleVerifyChildren(
         repo,
         { run: result.run.id },
         actorSessionId,
       ),
     );
+    for (const discarded of stale.discarded) {
+      console.log(
+        `discarded\t${display(discarded.agent_name ?? discarded.session_id)}`,
+      );
+    }
   }
   console.log(
     `launched Workflow ${result.step} step for run #${result.run.id}`,

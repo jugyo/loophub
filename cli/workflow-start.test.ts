@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -169,6 +169,14 @@ case " $command " in
   *" pane split "*) printf '%s' '${paneSplitJson}'; exit 0 ;;
   *" pane zoom "*) change_focus; exit 0 ;;
   *" pane move "*) change_focus_without_no_focus; exit 0 ;;
+  *" pane process-info "*)
+    # The pid a discard signals, per pane. Written by the caller so a test can offer a process group
+    # it owns instead of an arbitrary one; no file for the pane means herdr cannot report it, which
+    # is the "that pane is already gone" path.
+    pid_file="$HERDR_PROCESS_INFO_PID_DIR/$4"
+    if [ -z "$HERDR_PROCESS_INFO_PID_DIR" ] || [ ! -f "$pid_file" ]; then exit 1; fi
+    printf '{"result":{"process_info":{"foreground_process_group_id":%s}}}' "$(cat "$pid_file")"
+    exit 0 ;;
   *" pane close "*) change_focus_if_closing pane_id "$3"; exit ${paneCloseExit} ;;
   *" tab close "*) change_focus_if_closing tab_id "$3"; exit 0 ;;
   *" tab create "*) change_focus_without_no_focus; printf '%s' '${tabCreateJson}'; exit 0 ;;
@@ -769,7 +777,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
   }
 });
 
-test("fresh Verify closes the previous Verify pane before launching after rework", () => {
+test("fresh Verify discards the verifier left on the old HEAD before launching", async () => {
   const issueOut = run([
     "issue",
     "create",
@@ -778,7 +786,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     "--title",
     "Fresh Verify lifecycle",
     "--body",
-    "Close the previous Verify pane before re-verification",
+    "Discard the stale Verify child before re-verification",
   ]);
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
@@ -861,6 +869,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     step: "execute" | "verify",
     runtimeDir: string,
     log: string,
+    processInfoPidDir?: string,
   ) =>
     run(
       [
@@ -884,13 +893,43 @@ test("fresh Verify closes the previous Verify pane before launching after rework
         // Blank so this test's children fall back to their own tab. Left unset, the *test runner's*
         // own herdr pane would leak in and every child would split it.
         HERDR_PANE_ID: "",
+        HERDR_PROCESS_INFO_PID_DIR: processInfoPidDir ?? "",
       },
     );
+  // A process group this test owns, standing in for a stale verifier's agent: the discard signals
+  // whatever pid `pane process-info` reports, so it must never be an arbitrary one on the host.
+  // `detached` gives it its own group, which is what the negated-pid signal targets.
+  const victims: ReturnType<typeof spawn>[] = [];
+  const spawnVictim = (paneId: string) => {
+    // Outlives the guard below by a wide margin, so a victim that is still alive when the guard
+    // fires really was not signalled — rather than having simply run out its own sleep.
+    const victim = spawn("sh", ["-c", "exec sleep 300"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    victims.push(victim);
+    if (!victim.pid) throw new Error("failed to spawn the victim process");
+    writeFileSync(join(pidDir, paneId), String(victim.pid));
+    // Resolved from the exit event rather than probed with signal 0: a killed child stays a
+    // reapable zombie until this process collects it, and a zombie still answers that probe.
+    // The guard only turns a hang into a readable assertion, so it is generous: the `lh` subprocess
+    // it waits on can take tens of seconds on a loaded host.
+    return Promise.race([
+      new Promise<string>((resolve) => {
+        victim.once("exit", (_code, signal) => resolve(signal ?? "exited"));
+      }),
+      new Promise<string>((resolve) =>
+        setTimeout(() => resolve("still running"), 60_000),
+      ),
+    ]);
+  };
+
+  const pidDir = mkdtempSync(join(tmpdir(), "lh-verify-lifecycle-pids-"));
 
   const firstRuntime = fakeRuntime({
     focusedState: UNRELATED_HERDR_FOCUS,
     // Every child launched through this runtime lands in pane w1:p3 — the pane the recorded
-    // execution target points at, and so the one a later Verify closes.
+    // execution target points at, and so the one a later Verify discards.
     tabCreateJson: JSON.stringify({
       result: { tab: { tab_id: "w1:t3" }, root_pane: { pane_id: "w1:p3" } },
     }),
@@ -975,43 +1014,77 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     const secondAdvance = transition("advance-to-verify");
     expect(secondAdvance.exitCode, secondAdvance.stderr).toBe(0);
 
-    const freshVerify = launch("verify", freshRuntime.dir, firstRuntime.log);
+    // HEAD has moved past what verifier #1 was launched to review, so the fresh launch discards it.
+    const staleExit = spawnVictim("w1:p3");
+    const freshVerify = launch(
+      "verify",
+      freshRuntime.dir,
+      firstRuntime.log,
+      pidDir,
+    );
     expect(freshVerify.exitCode, freshVerify.stderr).toBe(0);
     expect(freshVerify.stdout).toContain(`agent\tverifier #${body.run.id}-3`);
+    // Named by the same `verifier #<run>-<seq>` label the launch lines use, so the pane reads as
+    // one story rather than pairing a fresh agent name with a bare session id.
+    expect(freshVerify.stdout).toContain(
+      `discarded\tverifier #${body.run.id}-1`,
+    );
     expectUnrelatedHerdrFocus(freshRuntime);
+    expect(await staleExit).toBe("SIGKILL");
     const log = readFileSync(firstRuntime.log, "utf8");
+    // The pane's foreground process is signalled first; `pane close` only tidies the empty pane
+    // away afterwards, because herdr refuses that close on a worktree-linked pane (#805).
+    const killIndex = log.indexOf("pane process-info --pane w1:p3");
     const closeIndex = log.indexOf("pane close w1:p3");
     // The herdr agent name is a slug since 0.7.5; the run-scoped wording lives on the pane label.
     const freshStartIndex = log.indexOf(
       `pane rename w1:p5 verifier #${body.run.id}-3`,
     );
-    expect(closeIndex).toBeGreaterThan(-1);
+    expect(killIndex).toBeGreaterThan(-1);
+    expect(closeIndex).toBeGreaterThan(killIndex);
     expect(freshStartIndex).toBeGreaterThan(closeIndex);
-    expect(log).not.toContain("pane close w1:p1");
-    expect(log).not.toContain("pane close w1:p2");
-    expect(log).not.toContain("pane close w1:p4");
+    // Only this run's stale verifier is a target. The parent's pane, another run's verifier and a
+    // pane no child of this run was launched into are neither signalled nor closed.
+    for (const pane of ["w1:p1", "w1:p2", "w1:p4"]) {
+      expect(log).not.toContain(`pane close ${pane}`);
+      expect(log).not.toContain(`pane process-info --pane ${pane}`);
+    }
 
+    // Discarding is an optimization, so herdr refusing the tidy-up close must not fail the launch
+    // the run needs: the stale verifier's process is dead either way (#61).
+    writeFileSync(fixturePath, "reworked again\n");
+    commitWorktree("advance past the fresh verifier's HEAD");
     const beforeFailedClose = log.length;
+    // Only the verifier launched for the previous HEAD still has a pane: verifier #1's is gone by
+    // now, which is the discard failure this asserts alongside the refused close.
+    rmSync(join(pidDir, "w1:p3"));
+    const refusedExit = spawnVictim("w1:p5");
     const failedClose = launch(
       "verify",
       closeFailureRuntime.dir,
       firstRuntime.log,
+      pidDir,
     );
-    expect(failedClose.exitCode).not.toBe(0);
-    expect(failedClose.stderr).toContain("Herdr exited with status 42");
+    expect(failedClose.exitCode, failedClose.stderr).toBe(0);
+    expect(await refusedExit).toBe("SIGKILL");
     const failedCloseLog = readFileSync(firstRuntime.log, "utf8").slice(
       beforeFailedClose,
     );
+    expect(failedCloseLog).toContain("pane process-info --pane w1:p5");
     expect(failedCloseLog).toContain("pane close w1:p5");
-    expect(failedCloseLog).not.toContain(
-      `pane rename w1:p5 verifier #${body.run.id}-4`,
-    );
+    // The launch itself went through: the fresh verifier was still started and named.
+    expect(failedCloseLog).toContain(`verifier #${body.run.id}-4`);
   } finally {
+    for (const victim of victims) victim.kill("SIGKILL");
+    rmSync(pidDir, { recursive: true, force: true });
     rmSync(firstRuntime.dir, { recursive: true, force: true });
     rmSync(freshRuntime.dir, { recursive: true, force: true });
     rmSync(closeFailureRuntime.dir, { recursive: true, force: true });
   }
-});
+  // Four `lh` subprocesses, each spawning git and the fake herdr. Unlike this file's synchronous
+  // tests, which block the event loop and so never let Vitest's 5s default fire, this one awaits a
+  // real signal — it needs a timeout that matches the work it actually does.
+}, 120_000);
 
 test("workflow start --herdr opens the PR worktree workspace and starts the parent in its tab", () => {
   const issueOut = run([

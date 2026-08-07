@@ -42,6 +42,23 @@ test("turn done, verify launch and execute round resolve to the latest of each",
   expect(projection.latestExecuteRound?.id).toBe(trail[4].id);
 });
 
+// Discarding stale verifiers needs every Verify child a run has launched, not only the newest —
+// a run can have more than one alive at once (#1857).
+test("every verify launch is kept, oldest first, with the latest also exposed alone", () => {
+  const trail = [
+    row("workflow_step.launched", { id: 1, step: "verify", head_sha: "aaa" }),
+    row("workflow_step.launched", { id: 1, step: "execute", head_sha: null }),
+    row("workflow_step.launched", { id: 1, step: "verify", head_sha: "bbb" }),
+  ];
+  const projection = projectWorkflowRunEvents(trail);
+
+  expect(projection.verifyLaunches.map((event) => event.id)).toEqual([
+    trail[0].id,
+    trail[2].id,
+  ]);
+  expect(projection.latestVerifyLaunch?.id).toBe(trail[2].id);
+});
+
 test("a review's first and latest submission are kept apart", () => {
   const trail = [
     row("workflow_run.review_submitted", {
@@ -111,6 +128,7 @@ test("payloads written before the typed shape existed keep their fallbacks", () 
   expect(projection.events[1].payload).toEqual({});
   // A launch without `step` starts no round, an update with an unrecognized `current_step` moves no
   // phase, and a submission without `review_id` is not indexed.
+  expect(projection.verifyLaunches).toEqual([]);
   expect(projection.latestVerifyLaunch).toBeNull();
   expect(projection.latestExecuteRound).toBeNull();
   expect(projection.phaseTransitions).toEqual([]);

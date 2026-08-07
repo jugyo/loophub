@@ -4442,3 +4442,256 @@ test("successive runs on one PR do not blend their review submissions", async ()
     secondReview,
   ]);
 }, 20_000);
+
+// #61: a Verify child is pinned at launch to the head SHA it reviews, so once Execute commits
+// again it is reviewing a diff that no longer exists — its eventual review is discarded by the
+// freshness check anyway. Launching the fresh Verify is the moment that becomes known, so the
+// stale child's pane process is killed there instead of being paid for to the end.
+test("launching a fresh Verify discards only the verifiers left on an older HEAD", async () => {
+  const { repo } = freshRepo("me/workflow-discard-stale-verify");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Discard stale verify",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "discard-stale-verify-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "c6c6c6c6-c6c6-4c6c-8c6c-c6c6c6c6c6c6";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+  commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  const stale = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: stale.session_id,
+      agentName: stale.agent_name,
+      pointers: stale.pointers,
+      headSha: stale.head_sha,
+    },
+    parent,
+  );
+
+  const bin = mkdtempSync(join(tmpdir(), "lh-discard-stale-verify-herdr-"));
+  const log = join(bin, "calls.log");
+  writeFileSync(
+    join(bin, "herdr"),
+    [
+      "#!/bin/sh",
+      `printf '%s\\n' "$*" >> '${log}'`,
+      `if [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":999999}}}'; exit 0; fi`,
+      "exit 0",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "herdr"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${bin}:${originalPath}`;
+  // Mocked rather than left to hit the real OS: the fake herdr's foreground_process_group_id is a
+  // placeholder, not a pid this test owns, so signaling it for real could kill something else.
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+  try {
+    // Execute commits again while that verifier is still working: its reviewed HEAD is now old.
+    commit(started.worktree, "impl.txt", "v2\n");
+    await expect(
+      svc.workflowRuns.discardStaleVerifyChildren(
+        repo.full_name,
+        { run: started.run.id },
+        parent,
+      ),
+    ).resolves.toEqual({
+      run: started.run.id,
+      // Named by the agent label the run's panes and output use, not by the bare session id.
+      discarded: [
+        { session_id: stale.session_id, agent_name: stale.agent_name },
+      ],
+    });
+    expect(killSpy).toHaveBeenCalledWith(-999999, "SIGKILL");
+    const calls = readFileSync(log, "utf8");
+    expect(calls).toContain(`pane process-info --pane p-${stale.session_id}`);
+    // Best-effort tidy-up of the now-empty pane follows the kill.
+    expect(calls).toContain(`pane close p-${stale.session_id}`);
+    // The Execute child shares the run but is not a verifier on an old HEAD — it is never touched.
+    expect(calls).not.toContain(`p-${exec.session_id}`);
+
+    // A verifier launched for the current HEAD is doing exactly the work the run waits for: a
+    // later discard pass leaves it running and still names only the stale one.
+    const fresh = await svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "verify" },
+      parent,
+    );
+    confirmStepLaunch(
+      repo.full_name,
+      {
+        run: started.run.id,
+        step: "verify",
+        sessionId: fresh.session_id,
+        agentName: fresh.agent_name,
+        pointers: fresh.pointers,
+        headSha: fresh.head_sha,
+      },
+      parent,
+    );
+    writeFileSync(log, "");
+    expect(
+      (
+        await svc.workflowRuns.discardStaleVerifyChildren(
+          repo.full_name,
+          { run: started.run.id },
+          parent,
+        )
+      ).discarded,
+    ).toEqual([{ session_id: stale.session_id, agent_name: stale.agent_name }]);
+    expect(readFileSync(log, "utf8")).not.toContain(`p-${fresh.session_id}`);
+  } finally {
+    killSpy.mockRestore();
+    process.env.PATH = originalPath;
+  }
+}, 30_000);
+
+// The discard is an optimization, never a correctness premise: herdr refusing the kill (or the
+// pane being gone already) must leave the run exactly as it was, with the stale review still
+// ignored by the freshness check rather than the launch failing.
+test("a refused discard reports nothing discarded instead of failing the Verify launch", async () => {
+  const { repo } = freshRepo("me/workflow-discard-refused");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Discard refused",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "discard-refused-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c8c8";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+  commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  const stale = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: stale.session_id,
+      agentName: stale.agent_name,
+      pointers: stale.pointers,
+      headSha: stale.head_sha,
+    },
+    parent,
+  );
+
+  const bin = mkdtempSync(join(tmpdir(), "lh-discard-refused-herdr-"));
+  writeFileSync(
+    join(bin, "herdr"),
+    [
+      "#!/bin/sh",
+      `printf '%s' '{"error":{"code":"not_found"}}'`,
+      "exit 1",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "herdr"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${bin}:${originalPath}`;
+  try {
+    // The #1857 shape: Execute commits and declares another turn done while a verifier launched
+    // for the previous HEAD is still running, so the engine wants a fresh Verify.
+    commit(started.worktree, "impl.txt", "v2\n");
+    await svc.workflowRuns.turnDone(
+      repo.full_name,
+      { run: started.run.id },
+      exec.session_id,
+    );
+    await expect(
+      svc.workflowRuns.discardStaleVerifyChildren(
+        repo.full_name,
+        { run: started.run.id },
+        parent,
+      ),
+    ).resolves.toEqual({ run: started.run.id, discarded: [] });
+    // The run is untouched: it still wants a fresh Verify for the new HEAD.
+    expect(
+      await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+    ).toMatchObject({ action: "launch_verify" });
+  } finally {
+    process.env.PATH = originalPath;
+  }
+}, 30_000);

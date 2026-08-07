@@ -36,7 +36,11 @@ import {
   workflowRunStateJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
-import { buildWorkflowStepHerdrLaunchPlan } from "../terminal/terminal-launch.ts";
+import { killPaneForegroundProcess } from "../terminal/herdr-cleanup.ts";
+import {
+  buildWorkflowStepHerdrLaunchPlan,
+  HERDR_ID,
+} from "../terminal/terminal-launch.ts";
 import {
   composeWorkflowLaunchPrompt,
   renderWorkflowContract,
@@ -90,6 +94,7 @@ import {
   type WorkflowSubjectEventRole,
   type WorkflowTwinSourceRef,
 } from "../workflow/source-events.ts";
+import { staleVerifyChildSessions } from "../workflow/stale-verify.ts";
 import {
   type WorkflowLatestReviewState,
   workflowDone,
@@ -321,6 +326,50 @@ function executionTarget(row: S.AgentExecutionTargetRow): AgentExecutionTarget {
     targetId: row.target_id,
     context: row.context,
   };
+}
+
+export type WorkflowDiscardStaleVerifyResult = {
+  run: number;
+  /**
+   * The Verify children whose pane process was actually signalled, each carrying the
+   * `verifier #<run>-<seq>` label the rest of LoopHub names an agent by — a bare session id says
+   * nothing to whoever is watching the run.
+   */
+  discarded: { session_id: string; agent_name: string | null }[];
+};
+
+// Discard one Verify child: SIGKILL the foreground process group behind its pane, then tidy the
+// now-empty pane away. `pane close` alone cannot do the first part — herdr refuses it with
+// `confirmation_required` whenever the pane is the last one in a worktree-linked workspace (#805),
+// which is the shape every Workflow step pane has — so this reuses the kill path the sidebar's kill
+// button already goes through. Unlike that button, nothing here is user-initiated: a child whose
+// pane is already gone, or whose kill herdr refuses, keeps running at worst, and its stale review
+// stays ignored, so failures are reported as "not discarded" rather than raised.
+async function discardVerifyChild(
+  repo: S.Repo,
+  sessionId: string,
+): Promise<boolean> {
+  const target = S.getAgentExecutionTarget(sessionId);
+  if (target?.provider !== "herdr") return false;
+  if (!HERDR_ID.test(target.target_id)) return false;
+  try {
+    await killPaneForegroundProcess(
+      repo,
+      target.target_id,
+      target.context ?? undefined,
+    );
+  } catch {
+    return false;
+  }
+  try {
+    await agentControl(repo.local_path, executionTarget(target)).close(
+      executionTarget(target),
+    );
+  } catch {
+    // Best-effort tidy-up: the process is already dead, so a refused close only leaves an empty
+    // pane behind — it must not undo the discard that already happened.
+  }
+  return true;
 }
 
 export type WorkflowTurnDoneResult = {
@@ -2027,11 +2076,16 @@ export const workflowRuns = {
     };
   },
 
-  async closePreviousVerifyAgent(
+  // Stop the Verify children left reviewing a HEAD the run has already moved past — called when a
+  // fresh Verify is launched, which is the moment that fact becomes known (#61). Such a child
+  // reviews a diff that no longer exists and submits a review pinned to the old SHA, which
+  // `reviewIsFresh` discards anyway, so this is an optimization and never a correctness premise:
+  // every discard failure is swallowed, and a survivor is simply ignored as before.
+  async discardStaleVerifyChildren(
     name: string,
     input: { run: number },
     sessionId: string | null | undefined,
-  ): Promise<void> {
+  ): Promise<WorkflowDiscardStaleVerifyResult> {
     const r = repoOr404(name);
     ensureWritable(r);
     const run = workflowRunOr404(input.run);
@@ -2041,16 +2095,31 @@ export const workflowRuns = {
     assertAutomaticProgressAllowed(run);
     assertParentActor(run, sessionId);
 
-    const previousSession = workflowStepSessionIds(
-      run.step_sessions_json,
-      "verify",
-    ).at(-1);
-    if (!previousSession) return;
-    const target = S.getAgentExecutionTarget(previousSession);
-    if (!target) return;
-    await agentControl(r.local_path, executionTarget(target)).close(
-      executionTarget(target),
+    const prIssue = issueOr404(r, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull)
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    const currentHead = await worktreeHead(
+      workflowRunWorktree({
+        repo: r,
+        prNumber: run.pr_number,
+        headRef: pull.head_ref,
+      }),
     );
+    const stale = staleVerifyChildSessions(
+      workflowRunEventProjection(run).verifyLaunches,
+      currentHead,
+    );
+    const discarded: WorkflowDiscardStaleVerifyResult["discarded"] = [];
+    for (const child of stale) {
+      if (await discardVerifyChild(r, child)) {
+        discarded.push({
+          session_id: child,
+          agent_name: S.getAgentSession(child)?.name ?? null,
+        });
+      }
+    }
+    return { run: run.id, discarded };
   },
 
   confirmStepLaunch(
