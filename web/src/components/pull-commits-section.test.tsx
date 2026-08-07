@@ -69,7 +69,7 @@ function renderSection({
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({
-      "pulls/commitFiles": () => files,
+      "repos/commitFiles": () => files,
       "workflowRuns/stateForPull": () => null,
       ...handlers,
     }),
@@ -744,7 +744,7 @@ describe("PullCommitsSection", () => {
     ];
     renderSection({
       handlers: {
-        "pulls/commitFiles": (params) =>
+        "repos/commitFiles": (params) =>
           params.sha === commits![0].sha ? files : earlierFiles,
       },
     });
@@ -761,9 +761,8 @@ describe("PullCommitsSection", () => {
     expect(within(latestDialog).getByText("aaaaaaa")).toBeTruthy();
     expect(within(latestDialog).getByText("Latest change")).toBeTruthy();
     expect(await within(latestDialog).findByText("+const x = 1;")).toBeTruthy();
-    expect(rpcCall("pulls/commitFiles")?.params).toEqual({
+    expect(rpcCall("repos/commitFiles")?.params).toEqual({
       repo: "me/proj",
-      number: 30,
       sha: commits![0].sha,
     });
 
@@ -794,7 +793,7 @@ describe("PullCommitsSection", () => {
     const pending = new Promise<PullFile[]>((resolve) => {
       resolveFiles = resolve;
     });
-    renderSection({ handlers: { "pulls/commitFiles": () => pending } });
+    renderSection({ handlers: { "repos/commitFiles": () => pending } });
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -816,7 +815,7 @@ describe("PullCommitsSection", () => {
   it("shows commit diff retrieval failures in the dialog", async () => {
     renderSection({
       handlers: {
-        "pulls/commitFiles": () => {
+        "repos/commitFiles": () => {
           throw new RpcFault(500, "simulated commit diff failure");
         },
       },

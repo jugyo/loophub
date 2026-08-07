@@ -1128,16 +1128,12 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
-  "pulls/commitFiles": {
+  "repos/commitFiles": {
     description:
-      "List files changed by one commit in a pull request, compared with its first parent.",
-    params: params({ repo, number: positiveInt, sha: strNonEmpty }, [
-      "repo",
-      "number",
-      "sha",
-    ]),
+      "List files changed by one repository commit, compared with its first parent.",
+    params: params({ repo, sha: strNonEmpty }, ["repo", "sha"]),
     result: anyArray,
-    handler: (p) => svc.pulls.commitFiles(p.repo, p.number, p.sha),
+    handler: (p) => svc.repos.commitFiles(p.repo, p.sha),
   },
   "pulls/fileAtRef": {
     description:

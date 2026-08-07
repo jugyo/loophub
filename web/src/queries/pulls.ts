@@ -19,9 +19,9 @@ import {
   getPullDiff,
   getPullFileAtRef,
   getPullUsage,
+  listCommitFiles,
   listDiffFeedback,
   listPullComments,
-  listPullCommitFiles,
   listPullFiles,
   listPullReviews,
   markGithubMerged,
@@ -407,20 +407,11 @@ export function useSetDiffFeedbackArchived(
   });
 }
 
-/** One PR commit's changed files, compared with its first parent. */
-export function usePullCommitFiles(
-  owner: string,
-  repo: string,
-  number: number,
-  sha: string,
-) {
+/** One repository commit's changed files, compared with its first parent. */
+export function useCommitFiles(owner: string, repo: string, sha: string) {
   return useQuery({
-    queryKey: [
-      ...queryKeys.pull(full(owner, repo), number),
-      "commitFiles",
-      sha,
-    ],
-    queryFn: () => listPullCommitFiles(owner, repo, number, sha),
+    queryKey: ["repo", full(owner, repo), "commitFiles", sha],
+    queryFn: () => listCommitFiles(owner, repo, sha),
   });
 }
 

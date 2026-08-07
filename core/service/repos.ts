@@ -5,6 +5,7 @@ import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import {
   branchExists,
+  commitDiffFiles,
   defaultBranch,
   isGitRepo,
   localBranchRef,
@@ -41,6 +42,12 @@ export type { Repo } from "../store.ts";
 
 // ===== repos =====
 export const repos = {
+  async commitFiles(name: string, sha: string) {
+    if (!/^[0-9a-f]{40}$/i.test(sha)) throw new ServiceError(404, "Not Found");
+    const r = repoOr404(name);
+    return commitDiffFiles(r.local_path, sha);
+  },
+
   // Thin lookups (by id / by "owner/name") for callers outside core/ that only need the raw row,
   // such as lh-worker event dispatch, which must not import core/store directly.
   getById(id: number): S.Repo | null {
