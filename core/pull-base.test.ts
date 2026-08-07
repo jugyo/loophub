@@ -201,3 +201,106 @@ test("diff base prefers origin/<base> when local base lags after a remote merge"
 
   rmSync(path, { recursive: true, force: true });
 });
+
+// #2444: rebasing the base branch rewrites the commits head forked from, so the live merge-base
+// falls back to a commit from before the rewrite. The diff must stay anchored at the recorded
+// fork point, which head still contains.
+test("diff base keeps the fork point after the base branch is rebased", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-diff-rebased-base-"));
+  const g = (args: string[]): string => {
+    const result = spawnSync("git", ["-C", path, ...args], {
+      encoding: "utf8",
+    });
+    if (result.status !== 0) throw new Error(result.stderr);
+    return result.stdout.trim();
+  };
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "root"]);
+  const root = g(["rev-parse", "main"]);
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base work"]);
+  const localFork = g(["rev-parse", "main"]);
+
+  g(["checkout", "-q", "-b", "feature"]);
+  writeFileSync(join(path, "feature-only.txt"), "from pr\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "feature"]);
+  g(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path, name: "me/diff-rebased-base" });
+  const created = await svc.pulls.create("me/diff-rebased-base", {
+    title: "rebased base",
+    head: "feature",
+    base: "main",
+  });
+  const repo = S.getRepo("me", "diff-rebased-base")!;
+  const issue = S.getIssue(repo.id, created.number)!;
+  const pull = S.getPull(issue.id)!;
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(localFork);
+
+  // Rewrite "base work" so main no longer contains the fork point.
+  g(["reset", "--hard", "-q", root]);
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base work, rewritten"]);
+  expect(g(["merge-base", "main", "feature"])).toBe(root);
+
+  expect(await pullBase.resolvePullBaseSha(path, pull)).toBe(localFork);
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(localFork);
+
+  rmSync(path, { recursive: true, force: true });
+});
+
+// A head that was itself rebased no longer contains the recorded fork point, so it must not win
+// over the live merge-base — diffing from a commit outside head would report base-side changes.
+test("diff base ignores a fork point the head branch no longer contains", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-diff-rebased-head-"));
+  const g = (args: string[]): string => {
+    const result = spawnSync("git", ["-C", path, ...args], {
+      encoding: "utf8",
+    });
+    if (result.status !== 0) throw new Error(result.stderr);
+    return result.stdout.trim();
+  };
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "root"]);
+  const localFork = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "-b", "feature"]);
+  writeFileSync(join(path, "feature-only.txt"), "from pr\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "feature"]);
+  g(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path, name: "me/diff-rebased-head" });
+  const created = await svc.pulls.create("me/diff-rebased-head", {
+    title: "rebased head",
+    head: "feature",
+    base: "main",
+  });
+  const repo = S.getRepo("me", "diff-rebased-head")!;
+  const issue = S.getIssue(repo.id, created.number)!;
+  const pull = S.getPull(issue.id)!;
+
+  // Advance main, then rebase feature onto it: the fork point leaves head's history.
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "advance main"]);
+  const advancedMain = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "feature"]);
+  g(["rebase", "-q", "main"]);
+  g(["checkout", "-q", "main"]);
+
+  expect(pull.base_sha).toBe(localFork);
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(advancedMain);
+
+  rmSync(path, { recursive: true, force: true });
+});

@@ -468,6 +468,54 @@ test("files and diff exclude origin/main-only files when local base lags", async
   rmSync(path, { recursive: true, force: true });
 });
 
+// #2444: rebasing the base branch rewrites the commits head forked from, so they stop being
+// reachable from the base tip. Files changed and Commits must keep showing only the PR's own work.
+test("files and commits exclude base-side work after the base branch is rebased", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-rebased-base-"));
+  const g = (args: string[]) => gitAt(path, args);
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "root"]);
+  const root = g(["rev-parse", "main"]);
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base work"]);
+  g(["checkout", "-qb", "feature"]);
+  writeFileSync(join(path, "feature-only.txt"), "from pr\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "pr change"]);
+  g(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path, name: "me/rebased-base" });
+  const pull = await svc.pulls.create("me/rebased-base", {
+    title: "rebased base",
+    head: "feature",
+    base: "main",
+  });
+
+  // Rewrite "base work" so main no longer contains the commit feature forked from.
+  g(["reset", "--hard", "-q", root]);
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base work, rewritten"]);
+  expect(g(["merge-base", "main", "feature"])).toBe(root);
+
+  const files = await svc.pulls.files("me/rebased-base", pull.number);
+  expect(files.map((f) => f.headFilename ?? f.filename)).toEqual([
+    "feature-only.txt",
+  ]);
+
+  const detail = await svc.pulls.get("me/rebased-base", pull.number);
+  expect(detail.commits?.map((commit) => commit.subject)).toEqual([
+    "pr change",
+  ]);
+
+  rmSync(path, { recursive: true, force: true });
+});
+
 test("commitFiles rejects a SHA outside the pull request's base..head range", async () => {
   await expect(
     svc.pulls.commitFiles("me/commit-files", commitFilesPullNumber, outsideSha),

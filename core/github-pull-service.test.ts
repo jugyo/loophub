@@ -307,7 +307,7 @@ test("markGithubMerged rejects PRs without an eligible detected merge", async ()
   );
 });
 
-test("linked GitHub PR commits exclude the remote base history", async () => {
+test("commits exclude the remote base history with or without a GitHub link", async () => {
   const number = await openPull();
   const featureSha = git(["rev-parse", "feature"]).stdout.trim();
 
@@ -324,11 +324,16 @@ test("linked GitHub PR commits exclude the remote base history", async () => {
     const mergeSha = git(["rev-parse", "HEAD"]).stdout.trim();
     git(["checkout", "-q", "main"]);
 
+    // #2444: the commit list resolves its base the same way Files changed does, so a base commit
+    // head merged from origin/main is already excluded before any GitHub PR is recorded — the two
+    // sections no longer disagree about what belongs to the PR.
     const localOnly = (await svc.pulls.get("me/proj", number)) as any;
-    const localOnlyShas = localOnly.commits.map((commit: any) => commit.sha);
-    expect(localOnlyShas).toHaveLength(3);
-    expect(localOnlyShas).toEqual(
-      expect.arrayContaining([mergeSha, remoteBaseSha, featureSha]),
+    expect(localOnly.commits.map((commit: any) => commit.sha)).toEqual([
+      mergeSha,
+      featureSha,
+    ]);
+    expect(localOnly.commits.map((commit: any) => commit.sha)).not.toContain(
+      remoteBaseSha,
     );
 
     svc.pulls.recordGithubPull("me/proj", number, {

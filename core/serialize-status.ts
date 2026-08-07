@@ -17,7 +17,7 @@ import type { MergeMode } from "./merge-mode.ts";
 import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
-import { resolvePullBaseSha } from "./pull-base.ts";
+import { resolvePullBaseSha, resolvePullDiffBaseSha } from "./pull-base.ts";
 import { pullShaStatus } from "./pull-status-cache.ts";
 import {
   existingPullWorktreePath,
@@ -369,11 +369,18 @@ export async function pullJSON(
     opts.withCommits && mergeFields.github_pull
       ? await revParse(repo.local_path, `refs/remotes/origin/${p.base_ref}`)
       : null;
+  // #2444: list the commits from the same base the Files-changed diff uses, not the base branch
+  // tip. `head --not <base tip>` re-lists the commits head forked from once the base branch is
+  // rebased, because the rewrite makes them unreachable from that tip again. Resolved here rather
+  // than in pullStatusFields so only PR detail (withCommits) pays for the extra git lookups.
+  const commitBaseSha = opts.withCommits
+    ? await resolvePullDiffBaseSha(repo.local_path, p)
+    : null;
   const commits = opts.withCommits
-    ? status.headSha && status.baseSha
+    ? status.headSha && commitBaseSha
       ? await commitLog(
           repo.local_path,
-          localBranchRef(p.base_ref),
+          commitBaseSha,
           localBranchRef(p.head_ref),
           100,
           githubBaseSha ? [githubBaseSha] : [],
@@ -383,11 +390,11 @@ export async function pullJSON(
   const pushedShas =
     commits !== undefined &&
     status.headSha &&
-    status.baseSha &&
+    commitBaseSha &&
     mergeFields.github_pull?.pushed_sha
       ? await pushedCommitShas(
           repo.local_path,
-          localBranchRef(p.base_ref),
+          commitBaseSha,
           localBranchRef(p.head_ref),
           mergeFields.github_pull.pushed_sha,
         )
