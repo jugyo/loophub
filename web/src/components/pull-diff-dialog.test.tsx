@@ -735,6 +735,10 @@ describe("DiffFileDialog", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ body: "Keyboard feedback" }),
     );
+    // #2456: posted as the supervising human, not as an unregistered browser session.
+    expect(create).toHaveBeenCalledWith(
+      expect.not.objectContaining({ session_id: expect.anything() }),
+    );
     expect(screen.getAllByText("Keyboard feedback")).toHaveLength(1);
     expect(screen.queryByLabelText("Diff comment")).toBeNull();
 
@@ -879,6 +883,10 @@ describe("DiffFileDialog", () => {
         thread_id: 1,
         body: "Keyboard reply",
       }),
+    );
+    // #2456: posted as the supervising human, not as an unregistered browser session.
+    expect(reply).toHaveBeenCalledWith(
+      expect.not.objectContaining({ session_id: expect.anything() }),
     );
     expect(await screen.findByText("Keyboard reply")).toBeTruthy();
   });

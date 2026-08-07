@@ -2233,7 +2233,7 @@
     },
     {
       "name": "diffFeedback/create",
-      "description": "Create a diff-anchored feedback thread.",
+      "description": "Create a human diff-anchored feedback thread.",
       "params": {
         "type": "object",
         "properties": {
@@ -2274,10 +2274,6 @@
           "body": {
             "type": "string",
             "minLength": 1
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
           }
         },
         "required": [
@@ -2299,7 +2295,7 @@
     },
     {
       "name": "diffFeedback/reply",
-      "description": "Reply in a diff feedback conversation.",
+      "description": "Add a human reply to a diff feedback conversation.",
       "params": {
         "type": "object",
         "properties": {
@@ -2316,10 +2312,6 @@
             "minimum": 1
           },
           "body": {
-            "type": "string",
-            "minLength": 1
-          },
-          "session_id": {
             "type": "string",
             "minLength": 1
           }

@@ -952,7 +952,6 @@ export function createDiffFeedback(
     end_line: number;
     body: string;
   },
-  sessionId: string = getSessionId(),
 ) {
   return rpc<{ thread: DiffFeedbackThread; comment: DiffFeedbackMessage }>(
     "diffFeedback/create",
@@ -960,7 +959,6 @@ export function createDiffFeedback(
       repo: full(owner, repo),
       number,
       ...input,
-      session_id: sessionId,
     },
   );
 }
@@ -971,7 +969,6 @@ export function replyDiffFeedback(
   number: number,
   threadId: number,
   body: string,
-  sessionId: string = getSessionId(),
 ) {
   return rpc<{ thread: DiffFeedbackThread; reply: DiffFeedbackMessage }>(
     "diffFeedback/reply",
@@ -980,7 +977,6 @@ export function replyDiffFeedback(
       number,
       thread_id: threadId,
       body,
-      session_id: sessionId,
     },
   );
 }

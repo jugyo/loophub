@@ -1038,7 +1038,7 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.diffFeedback.get(p.repo, p.number, p.thread_id),
   },
   "diffFeedback/create": {
-    description: "Create a diff-anchored feedback thread.",
+    description: "Create a human diff-anchored feedback thread.",
     params: params(
       {
         repo,
@@ -1050,7 +1050,6 @@ export const methods: Record<string, MethodDef> = {
         start_line: positiveInt,
         end_line: positiveInt,
         body: strNonEmpty,
-        session_id: sid,
       },
       [
         "repo",
@@ -1066,42 +1065,30 @@ export const methods: Record<string, MethodDef> = {
     ),
     result: anyObject,
     handler: (p) =>
-      svc.diffFeedback.create(
-        p.repo,
-        p.number,
-        {
-          baseSha: p.base_sha,
-          headSha: p.head_sha,
-          path: p.path,
-          side: p.side,
-          startLine: p.start_line,
-          endLine: p.end_line,
-          body: p.body,
-        },
-        p.session_id,
-      ),
+      svc.diffFeedback.createHuman(p.repo, p.number, {
+        baseSha: p.base_sha,
+        headSha: p.head_sha,
+        path: p.path,
+        side: p.side,
+        startLine: p.start_line,
+        endLine: p.end_line,
+        body: p.body,
+      }),
   },
   "diffFeedback/reply": {
-    description: "Reply in a diff feedback conversation.",
+    description: "Add a human reply to a diff feedback conversation.",
     params: params(
       {
         repo,
         number: positiveInt,
         thread_id: positiveInt,
         body: strNonEmpty,
-        session_id: sid,
       },
       ["repo", "number", "thread_id", "body"],
     ),
     result: anyObject,
     handler: (p) =>
-      svc.diffFeedback.reply(
-        p.repo,
-        p.number,
-        p.thread_id,
-        p.body,
-        p.session_id,
-      ),
+      svc.diffFeedback.replyHuman(p.repo, p.number, p.thread_id, p.body),
   },
   "diffFeedback/archive": {
     description:

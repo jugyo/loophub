@@ -821,132 +821,20 @@ export const diffFeedback = {
   async create(
     name: string,
     number: number,
-    input: {
-      baseSha: string;
-      headSha: string;
-      path: string;
-      side: string;
-      startLine: number;
-      endLine: number;
-      body: string;
-    },
+    input: DiffFeedbackInput,
     sessionId?: string | null,
   ) {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const row = issueOr404(r, number, "pull");
-    const pull = S.getPull(row.id)!;
-    if (!FULL_SHA.test(input.baseSha) || !FULL_SHA.test(input.headSha))
-      throw new ServiceError(
-        422,
-        "base-sha and head-sha must be full commit SHAs",
-      );
-    if (input.side !== "LEFT" && input.side !== "RIGHT")
-      throw new ServiceError(422, "side must be LEFT or RIGHT");
-    if (!input.path || !input.body)
-      throw new ServiceError(422, "path and body are required");
-    const pair = await currentPair(r.local_path, pull);
-    if (
-      !pair ||
-      pair.baseSha !== input.baseSha ||
-      pair.headSha !== input.headSha
-    )
-      throw new ServiceError(409, "pull request diff has changed");
-    const files = await diffFilesBetween(
-      r.local_path,
-      input.baseSha,
-      input.headSha,
-    );
-    const file = fileForAnchor(files, {
-      base_sha: input.baseSha,
-      head_sha: input.headSha,
-      path: input.path,
-      side: input.side,
-    });
-    const lines = file ? parsePatchWithCoordinates(file.patch) : null;
-    if (
-      !file ||
-      !lines ||
-      !linesForAnchor(lines, {
-        side: input.side,
-        startLine: input.startLine,
-        endLine: input.endLine,
-      })
-    )
-      throw new ServiceError(
-        422,
-        "anchor does not resolve to selectable diff lines",
-      );
-    const { actor, authorType } = commentActor(sessionId);
-    const path = file.headFilename ?? file.filename;
-    const originalPath = file.previousFilename ?? null;
-    // The anchor is resolved from the diff above; only the thread, its first message and the event
-    // are transactional.
-    const { thread, comment } = db.transaction(() => {
-      const created = S.createDiffFeedbackThread({
-        issueId: row.id,
-        prNumber: number,
-        baseSha: input.baseSha,
-        headSha: input.headSha,
-        path,
-        originalPath,
-        side: input.side,
-        startLine: input.startLine,
-        endLine: input.endLine,
-        actor,
-        authorType,
-      });
-      const resolvedAnchor = {
-        path: created.path,
-        original_path: created.original_path,
-        side: created.side as DiffSide,
-        start_line: created.start_line,
-        end_line: created.end_line,
-      };
-      S.upsertDiffFeedbackLocation({
-        thread_id: created.id,
-        base_sha: input.baseSha,
-        head_sha: input.headSha,
-        resolved_anchor_json: JSON.stringify(resolvedAnchor),
-        freshness: "current",
-        outdated_reason: null,
-        placement: "inline",
-        original_context_json: JSON.stringify(
-          contextJSON(lines, anchorOf(created), DEFAULT_CONTEXT_RADIUS),
-        ),
-      });
-      const message = S.createDiffFeedbackMessage(
-        created.id,
-        actor,
-        input.body,
-        authorType,
-      );
-      // `session_id` travels so a Workflow run can tell a comment written by one of its own
-      // children from one it has to hand to Execute. The comment itself stays canonical in the DB,
-      // which Execute reads back with `lh pr feedback`.
-      S.emitEvent(r.id, "pull_request.diff_feedback_created", actor, {
-        number,
-        thread_id: created.id,
-        comment_id: message.id,
-        session_id: sessionId ?? null,
-        source_payload_version: SOURCE_PAYLOAD_VERSION,
-        ...anchorPayload(created),
-      });
-      maybeNotifyAgentComment({
-        repoId: r.id,
-        pullNumber: number,
-        commentId: message.id,
-        authorType,
-        actor,
-        body: input.body,
-        source: "diff",
-      });
-      return { thread: created, comment: message };
-    });
-    return {
-      thread: await threadJSON(r.local_path, pull, thread),
-      comment: diffFeedbackMessageJSON(comment),
-    };
+    return createThread(name, number, input, sessionAuthor(sessionId));
+  },
+
+  // The Web UI posts on behalf of the supervising human without registering a session, which
+  // `commentActor()` would attribute to the unnamed system actor. Record the human directly, the
+  // way `comments.createHumanForPull` does for pull request comments (#2456).
+  // Rows written before this are left as they are, so a conversation can mix `@unknown` with
+  // `@human`: the actor they were saved under also names genuine system posts, so nothing is left
+  // to tell the two apart by — the same call `web/src/lib/comment-author.ts` makes for #2129.
+  async createHuman(name: string, number: number, input: DiffFeedbackInput) {
+    return createThread(name, number, input, HUMAN_AUTHOR);
   },
 
   async reply(
@@ -956,43 +844,23 @@ export const diffFeedback = {
     body: string,
     sessionId?: string | null,
   ) {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const row = issueOr404(r, number, "pull");
-    const pull = S.getPull(row.id)!;
-    const thread = threadForPull(row.id, threadId);
-    if (!body) throw new ServiceError(422, "body is required");
-    const { actor, authorType } = commentActor(sessionId);
-    const reply = db.transaction(() => {
-      const message = S.createDiffFeedbackMessage(
-        thread.id,
-        actor,
-        body,
-        authorType,
-      );
-      S.emitEvent(r.id, "pull_request.diff_feedback_replied", actor, {
-        number,
-        thread_id: thread.id,
-        reply_message_id: message.id,
-        session_id: sessionId ?? null,
-        source_payload_version: SOURCE_PAYLOAD_VERSION,
-        ...anchorPayload(thread),
-      });
-      maybeNotifyAgentComment({
-        repoId: r.id,
-        pullNumber: number,
-        commentId: message.id,
-        authorType,
-        actor,
-        body,
-        source: "diff",
-      });
-      return message;
-    });
-    return {
-      thread: await threadJSON(r.local_path, pull, thread),
-      reply: diffFeedbackMessageJSON(reply),
-    };
+    return replyToThread(
+      name,
+      number,
+      threadId,
+      body,
+      sessionAuthor(sessionId),
+    );
+  },
+
+  /** Reply recorded as the supervising human, the way `createHuman` records a new conversation. */
+  async replyHuman(
+    name: string,
+    number: number,
+    threadId: number,
+    body: string,
+  ) {
+    return replyToThread(name, number, threadId, body, HUMAN_AUTHOR);
   },
 
   /**
@@ -1044,3 +912,196 @@ export const diffFeedback = {
     });
   },
 };
+
+interface DiffFeedbackInput {
+  baseSha: string;
+  headSha: string;
+  path: string;
+  side: string;
+  startLine: number;
+  endLine: number;
+  body: string;
+}
+
+// Who a diff conversation records as its author, plus the session the post came from — the event
+// carries it so a Workflow run can tell its own children's posts from one it has to hand back.
+interface DiffFeedbackAuthor {
+  actor: string;
+  authorType: S.CommentAuthorType;
+  sessionId: string | null;
+}
+
+const HUMAN_AUTHOR: DiffFeedbackAuthor = {
+  actor: "me",
+  authorType: "human",
+  sessionId: null,
+};
+
+function sessionAuthor(sessionId?: string | null): DiffFeedbackAuthor {
+  return { ...commentActor(sessionId), sessionId: sessionId ?? null };
+}
+
+async function createThread(
+  name: string,
+  number: number,
+  input: DiffFeedbackInput,
+  author: DiffFeedbackAuthor,
+) {
+  const r = repoOr404(name);
+  ensureWritable(r);
+  const row = issueOr404(r, number, "pull");
+  const pull = S.getPull(row.id)!;
+  if (!FULL_SHA.test(input.baseSha) || !FULL_SHA.test(input.headSha))
+    throw new ServiceError(
+      422,
+      "base-sha and head-sha must be full commit SHAs",
+    );
+  if (input.side !== "LEFT" && input.side !== "RIGHT")
+    throw new ServiceError(422, "side must be LEFT or RIGHT");
+  if (!input.path || !input.body)
+    throw new ServiceError(422, "path and body are required");
+  const pair = await currentPair(r.local_path, pull);
+  if (!pair || pair.baseSha !== input.baseSha || pair.headSha !== input.headSha)
+    throw new ServiceError(409, "pull request diff has changed");
+  const files = await diffFilesBetween(
+    r.local_path,
+    input.baseSha,
+    input.headSha,
+  );
+  const file = fileForAnchor(files, {
+    base_sha: input.baseSha,
+    head_sha: input.headSha,
+    path: input.path,
+    side: input.side,
+  });
+  const lines = file ? parsePatchWithCoordinates(file.patch) : null;
+  if (
+    !file ||
+    !lines ||
+    !linesForAnchor(lines, {
+      side: input.side,
+      startLine: input.startLine,
+      endLine: input.endLine,
+    })
+  )
+    throw new ServiceError(
+      422,
+      "anchor does not resolve to selectable diff lines",
+    );
+  const { actor, authorType } = author;
+  const path = file.headFilename ?? file.filename;
+  const originalPath = file.previousFilename ?? null;
+  // The anchor is resolved from the diff above; only the thread, its first message and the event
+  // are transactional.
+  const { thread, comment } = db.transaction(() => {
+    const created = S.createDiffFeedbackThread({
+      issueId: row.id,
+      prNumber: number,
+      baseSha: input.baseSha,
+      headSha: input.headSha,
+      path,
+      originalPath,
+      side: input.side,
+      startLine: input.startLine,
+      endLine: input.endLine,
+      actor,
+      authorType,
+    });
+    const resolvedAnchor = {
+      path: created.path,
+      original_path: created.original_path,
+      side: created.side as DiffSide,
+      start_line: created.start_line,
+      end_line: created.end_line,
+    };
+    S.upsertDiffFeedbackLocation({
+      thread_id: created.id,
+      base_sha: input.baseSha,
+      head_sha: input.headSha,
+      resolved_anchor_json: JSON.stringify(resolvedAnchor),
+      freshness: "current",
+      outdated_reason: null,
+      placement: "inline",
+      original_context_json: JSON.stringify(
+        contextJSON(lines, anchorOf(created), DEFAULT_CONTEXT_RADIUS),
+      ),
+    });
+    const message = S.createDiffFeedbackMessage(
+      created.id,
+      actor,
+      input.body,
+      authorType,
+    );
+    // `session_id` travels so a Workflow run can tell a comment written by one of its own
+    // children from one it has to hand to Execute. The comment itself stays canonical in the DB,
+    // which Execute reads back with `lh pr feedback`.
+    S.emitEvent(r.id, "pull_request.diff_feedback_created", actor, {
+      number,
+      thread_id: created.id,
+      comment_id: message.id,
+      session_id: author.sessionId,
+      source_payload_version: SOURCE_PAYLOAD_VERSION,
+      ...anchorPayload(created),
+    });
+    maybeNotifyAgentComment({
+      repoId: r.id,
+      pullNumber: number,
+      commentId: message.id,
+      authorType,
+      actor,
+      body: input.body,
+      source: "diff",
+    });
+    return { thread: created, comment: message };
+  });
+  return {
+    thread: await threadJSON(r.local_path, pull, thread),
+    comment: diffFeedbackMessageJSON(comment),
+  };
+}
+
+async function replyToThread(
+  name: string,
+  number: number,
+  threadId: number,
+  body: string,
+  author: DiffFeedbackAuthor,
+) {
+  const r = repoOr404(name);
+  ensureWritable(r);
+  const row = issueOr404(r, number, "pull");
+  const pull = S.getPull(row.id)!;
+  const thread = threadForPull(row.id, threadId);
+  if (!body) throw new ServiceError(422, "body is required");
+  const { actor, authorType } = author;
+  const reply = db.transaction(() => {
+    const message = S.createDiffFeedbackMessage(
+      thread.id,
+      actor,
+      body,
+      authorType,
+    );
+    S.emitEvent(r.id, "pull_request.diff_feedback_replied", actor, {
+      number,
+      thread_id: thread.id,
+      reply_message_id: message.id,
+      session_id: author.sessionId,
+      source_payload_version: SOURCE_PAYLOAD_VERSION,
+      ...anchorPayload(thread),
+    });
+    maybeNotifyAgentComment({
+      repoId: r.id,
+      pullNumber: number,
+      commentId: message.id,
+      authorType,
+      actor,
+      body,
+      source: "diff",
+    });
+    return message;
+  });
+  return {
+    thread: await threadJSON(r.local_path, pull, thread),
+    reply: diffFeedbackMessageJSON(reply),
+  };
+}

@@ -32,7 +32,7 @@ function git(args: string[]): string {
   return result.stdout.trim();
 }
 
-function createThread(body: string, sessionId: string = HUMAN_SESSION) {
+function createThread(body: string, sessionId: string | null = HUMAN_SESSION) {
   return svc.diffFeedback.create(
     REPO,
     prNumber,
@@ -302,6 +302,60 @@ test("agent diff create and reply notify; human posts do not", async () => {
   // Archive fixtures so later pending assertions on the shared PR stay focused.
   await svc.diffFeedback.archive(REPO, prNumber, humanCreated.thread.id, true);
   await svc.diffFeedback.archive(REPO, prNumber, agentCreated.thread.id, true);
+});
+
+// #2456: the Web UI posts on behalf of the supervising human without registering a session, so its
+// conversations have to be recorded as human rather than as the unnamed system actor.
+test("classifies diff commenters, including a human posting without a session", async () => {
+  const human = await svc.diffFeedback.createHuman(REPO, prNumber, {
+    baseSha,
+    headSha,
+    path: "a.txt",
+    side: "RIGHT",
+    startLine: 2,
+    endLine: 2,
+    body: "Human starts a thread from the diff view.",
+  });
+  // The post carries no session id, so the run still reads it as input to hand back to Execute.
+  expect(await nextForLatestSource()).toMatchObject({
+    action: "deliver",
+    delivery_reason: "diff_feedback",
+    thread_id: human.thread.id,
+    comment_id: human.comment.id,
+  });
+
+  const agent = await createThread("Agent starts a thread.", EXECUTE_SESSION);
+  const system = await createThread("Unattributed thread.", null);
+  const humanReply = await svc.diffFeedback.replyHuman(
+    REPO,
+    prNumber,
+    agent.thread.id,
+    "Human replies from the diff view.",
+  );
+
+  expect(human.thread).toMatchObject({
+    created_by: "me",
+    created_by_type: "human",
+  });
+  expect([
+    human.comment.author_type,
+    agent.comment.author_type,
+    system.comment.author_type,
+  ]).toEqual(["human", "agent", "system"]);
+  expect([
+    human.comment.author,
+    agent.comment.author,
+    system.comment.author,
+  ]).toEqual(["me", "executor #1-1", "unknown"]);
+  expect(humanReply.reply).toMatchObject({
+    author: "me",
+    author_type: "human",
+  });
+
+  // Archive fixtures so later pending assertions on the shared PR stay focused.
+  for (const thread of [human.thread, agent.thread, system.thread]) {
+    await svc.diffFeedback.archive(REPO, prNumber, thread.id, true);
+  }
 });
 
 test("a supported reaction can be added, changed, and removed once per actor", async () => {
