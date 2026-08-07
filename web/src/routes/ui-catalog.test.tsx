@@ -178,18 +178,18 @@ describe("UiCatalogPage", () => {
       });
       fireEvent.pointerDown(trigger);
 
-      // Stage 1: the model menu lists each model.
-      const sonnet = await screen.findByRole("menuitem", { name: "sonnet" });
+      // Stage 1: the model menu lists each model by its display label.
+      const sonnet = await screen.findByRole("menuitem", { name: "Sonnet" });
       expect(sonnet).toBeTruthy();
 
       // Stage 2: hovering/focusing a model opens its effort submenu to the right.
       fireEvent.keyDown(sonnet, { key: "ArrowRight" });
-      const high = await screen.findByRole("menuitem", { name: "high" });
+      const high = await screen.findByRole("menuitem", { name: "High" });
       expect(high).toBeTruthy();
       fireEvent.click(high);
 
-      // The trigger reflects the chosen pair.
-      expect(trigger.textContent).toContain("sonnet — high");
+      // The trigger reflects the chosen pair by its display labels.
+      expect(trigger.textContent).toContain("Sonnet — High");
     });
   });
 });

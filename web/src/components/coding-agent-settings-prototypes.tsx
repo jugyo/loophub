@@ -56,9 +56,40 @@ function comboValue(model: string, effort: string): string {
 
 function comboLabel(model: string, effort: string): string {
   if (!model && !effort) return "Default";
-  if (!model) return `Default — ${effort}`;
-  if (!effort) return `${model} — default`;
-  return `${model} — ${effort}`;
+  if (!model) return `Default — ${effortDisplay(effort)}`;
+  if (!effort) return `${modelDisplay(model)} — default`;
+  return `${modelDisplay(model)} — ${effortDisplay(effort)}`;
+}
+
+// Display labels for model / effort identifiers, matching what the runtime ships (raw strings on the
+// wire) against a friendlier name for review. Falls back to the raw value so unknown entries stay
+// visible inside the throwaway catalog mock.
+const MODEL_DISPLAY_LABELS: Record<string, string> = {
+  opus: "Opus",
+  sonnet: "Sonnet",
+  haiku: "Haiku",
+  "claude-opus-5": "Claude Opus 5",
+  "claude-opus-4-8": "Claude Opus 4.8",
+  "claude-sonnet-5": "Claude Sonnet 5",
+  "claude-fable-5": "Claude Fable 5",
+  "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
+};
+
+const EFFORT_DISPLAY_LABELS: Record<string, string> = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+};
+
+function modelDisplay(model: string): string {
+  return MODEL_DISPLAY_LABELS[model] ?? model;
+}
+
+function effortDisplay(effort: string): string {
+  return EFFORT_DISPLAY_LABELS[effort] ?? effort;
 }
 
 // The full model × effort option set for an agent (the same combos the real Settings picker uses), so
@@ -427,7 +458,7 @@ function PrototypeBTable({
                   value={cells[agent].model}
                   options={MODEL_SUGGESTIONS[agent].map((m) => ({
                     value: m,
-                    label: m,
+                    label: modelDisplay(m),
                   }))}
                   portalContainer={portalContainer}
                   showDefault={false}
@@ -440,7 +471,7 @@ function PrototypeBTable({
                   value={cells[agent].effort}
                   options={EFFORT_SUGGESTIONS[agent].map((e) => ({
                     value: e,
-                    label: e,
+                    label: effortDisplay(e),
                   }))}
                   portalContainer={portalContainer}
                   showDefault={false}
@@ -585,8 +616,8 @@ function PrototypeDRepoOverride({
                   <span>{o.label}</span>
                   {active ? (
                     <span className="text-xs text-muted-foreground">
-                      effective — {runtime} · {value.model} ·{" "}
-                      {value.effort || "default"}
+                      effective — {runtime} · {modelDisplay(value.model)} ·{" "}
+                      {effortDisplay(value.effort) || "default"}
                     </span>
                   ) : null}
                 </span>
@@ -616,7 +647,7 @@ function PrototypeDRepoOverride({
                 value={value.model}
                 options={MODEL_SUGGESTIONS[runtime].map((m) => ({
                   value: m,
-                  label: m,
+                  label: modelDisplay(m),
                 }))}
                 portalContainer={portalContainer}
                 onSelect={(model) => setValue((v) => ({ ...v, model }))}
@@ -626,7 +657,7 @@ function PrototypeDRepoOverride({
                 value={value.effort}
                 options={EFFORT_SUGGESTIONS[runtime].map((e) => ({
                   value: e,
-                  label: e,
+                  label: effortDisplay(e),
                 }))}
                 portalContainer={portalContainer}
                 onSelect={(effort) => setValue((v) => ({ ...v, effort }))}
@@ -687,7 +718,7 @@ function PrototypeENestedDropdown({
             <DropdownMenuContent
               align="start"
               portalContainer={portalContainer}
-              className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-64"
+              className="min-w-56"
             >
               {MODEL_SUGGESTIONS[agent].map((model) => {
                 const modelSelected = value.model === model;
@@ -703,7 +734,9 @@ function PrototypeENestedDropdown({
                         modelSelected && "bg-accent text-accent-foreground",
                       )}
                     >
-                      <span className="min-w-0 truncate">{model}</span>
+                      <span className="min-w-0 truncate">
+                        {modelDisplay(model)}
+                      </span>
                       {modelSelected ? <DropdownMenuItemIndicator /> : null}
                     </DropdownMenuItem>
                   );
@@ -717,7 +750,9 @@ function PrototypeENestedDropdown({
                         modelSelected && "bg-accent text-accent-foreground",
                       )}
                     >
-                      <span className="min-w-0 truncate">{model}</span>
+                      <span className="min-w-0 truncate">
+                        {modelDisplay(model)}
+                      </span>
                       {modelSelected ? <DropdownMenuItemIndicator /> : null}
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent
@@ -737,7 +772,9 @@ function PrototypeENestedDropdown({
                               selected && "bg-accent text-accent-foreground",
                             )}
                           >
-                            <span className="min-w-0 truncate">{effort}</span>
+                            <span className="min-w-0 truncate">
+                              {effortDisplay(effort)}
+                            </span>
                             {selected ? <DropdownMenuItemIndicator /> : null}
                           </DropdownMenuItem>
                         );
