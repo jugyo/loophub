@@ -44,6 +44,7 @@ import {
   DiffFeedbackHistory,
   DiffFileDialog,
 } from "@/components/pull-diff-dialog";
+import { PullSectionTabs } from "@/components/pull-section-tabs";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
@@ -169,6 +170,11 @@ export function PullDetail({
               pull={pull}
               titleRef={titleRef}
             />
+            {/* Section tabs (#59) sit under the PR's title and status and above everything they
+                navigate, so they own the top of the scrollport once the page scrolls; each section
+                below carries the id they link to. */}
+            <PullSectionTabs titleRef={titleRef} />
+            <PullBody owner={owner} repo={repo} pull={pull} />
 
             <PullCommitsSection
               owner={owner}
@@ -288,6 +294,11 @@ function WorkflowRunSection({
   );
 }
 
+// Which PR this is and where it stands: the title and the status badges, nothing else. It sits
+// above the section tabs (#59) — the tabs navigate what is being said about the PR, not the
+// identity of the PR itself — and is what the Overview tab returns to, so the anchor sits here
+// rather than on the description below the bar. Authorship, the head→base pair and the linked
+// issue used to repeat here; they now live once, in the sidebar's PR details.
 function PullHeader({
   owner,
   repo,
@@ -300,39 +311,16 @@ function PullHeader({
   titleRef: RefObject<HTMLDivElement | null>;
 }) {
   const navigate = useNavigate();
-  const merge = useMergePull(owner, repo, pull.number);
-  const markGithubMerged = useMarkGithubMerged(owner, repo, pull.number);
-  const setState = useSetPullState(owner, repo, pull.number);
-  const { showError } = useToast();
   usePageTitle([`${owner}/${repo}`, `PR #${pull.number}`, pull.title]);
-  const [method, setMethod] = useState<MergeMethod>("squash");
-  const [isMergeLoading, startMergeLoading] = useFixedLoading();
-  // The fixed loading window is a UX minimum, not a substitute for the real request: once it
-  // elapses the button must stay disabled/spinning until the mutation itself settles, so a
-  // slow merge can't be double-submitted (#560).
-  const isMerging = isMergeLoading || merge.isPending;
 
   const badges = pullDetailBadges(pull);
-  const linked = pull.linked_issue;
-  const isWorkflowAuthor = /^Workflow #\d+\b/.test(pull.user.login);
-
-  const canAct = pull.state === "open" && !pull.merged;
-  const canMarkGithubMerged =
-    canAct &&
-    !!pull.github_pull?.github_merged &&
-    !!pull.github_pull.github_merged_at;
-  // `clean` is the canonical merge-ready state: it already requires a commit, a passing current
-  // review, and a conflict-free merge. Agent activity is operational status, not a merge gate.
-  const canMerge = canAct && pull.mergeable_state === "clean";
-  const mergeBlockedReason =
-    pull.mergeable_state === "conflict"
-      ? "Cannot merge: this PR has conflicts with the base branch."
-      : pull.mergeable_state === "no_commits"
-        ? "Cannot merge: this PR has no commits."
-        : undefined;
 
   return (
-    <div data-debug-component="PullHeader" className="flex flex-col gap-3">
+    <div
+      id="overview"
+      data-debug-component="PullHeader"
+      className="flex scroll-mt-11 flex-col gap-3"
+    >
       <div className="flex items-start justify-between gap-2">
         <DetailHeaderTitle
           kind="PR"
@@ -357,55 +345,57 @@ function PullHeader({
           </Badge>
         ))}
       </div>
+    </div>
+  );
+}
 
-      <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-        <div>
-          {isWorkflowAuthor ? null : <>@{pull.user.login} · </>}opened{" "}
-          {relativeTime(pull.created_at)} · wants to merge{" "}
-          <span className="inline-flex items-center gap-1 align-middle">
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">
-              {pull.head.ref}
-            </code>
-            <CopyButton
-              value={pull.head.ref}
-              label={`Copy branch name: ${pull.head.ref}`}
-              className="size-6"
-            />
-          </span>{" "}
-          →{" "}
-          <span className="inline-flex items-center gap-1 align-middle">
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">
-              {pull.base.ref}
-            </code>
-            <CopyButton
-              value={pull.base.ref}
-              label={`Copy branch name: ${pull.base.ref}`}
-              className="size-6"
-            />
-          </span>
-        </div>
-        <a
-          href="#comments"
-          className="shrink-0 underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          Comments ({pull.comments})
-        </a>
-      </div>
+// The PR's description and the write actions that settle it (close/reopen, merge or the GitHub
+// export). It reads as the first thing under the section tabs, the way the commit list and the
+// diff read under theirs.
+function PullBody({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+}) {
+  const merge = useMergePull(owner, repo, pull.number);
+  const markGithubMerged = useMarkGithubMerged(owner, repo, pull.number);
+  const setState = useSetPullState(owner, repo, pull.number);
+  const { showError } = useToast();
+  const [method, setMethod] = useState<MergeMethod>("squash");
+  const [isMergeLoading, startMergeLoading] = useFixedLoading();
+  // The fixed loading window is a UX minimum, not a substitute for the real request: once it
+  // elapses the button must stay disabled/spinning until the mutation itself settles, so a
+  // slow merge can't be double-submitted (#560).
+  const isMerging = isMergeLoading || merge.isPending;
 
-      {linked ? (
-        <div className="text-sm text-muted-foreground">
-          Linked issue:{" "}
-          <Link
-            to="/r/$owner/$repo/issues/$number"
-            params={{ owner, repo, number: String(linked.number) }}
-            className="font-medium text-foreground hover:underline"
-          >
-            #{linked.number}
-          </Link>{" "}
-          ({linked.state}) — {linked.title}
-        </div>
-      ) : null}
+  const canAct = pull.state === "open" && !pull.merged;
+  const canMarkGithubMerged =
+    canAct &&
+    !!pull.github_pull?.github_merged &&
+    !!pull.github_pull.github_merged_at;
+  // `clean` is the canonical merge-ready state: it already requires a commit, a passing current
+  // review, and a conflict-free merge. Agent activity is operational status, not a merge gate.
+  const canMerge = canAct && pull.mergeable_state === "clean";
+  const mergeBlockedReason =
+    pull.mergeable_state === "conflict"
+      ? "Cannot merge: this PR has conflicts with the base branch."
+      : pull.mergeable_state === "no_commits"
+        ? "Cannot merge: this PR has no commits."
+        : undefined;
 
+  return (
+    // The tabs' Overview covers this block as well as the header above the bar (#59), so it is
+    // watched by the scrollspy — but the anchor the tab links to stays the header, which is where
+    // Overview means "back to the top".
+    <div
+      id="pull-body"
+      data-debug-component="PullBody"
+      className="flex flex-col gap-3"
+    >
       <div className="rounded-md border bg-muted/30">
         {pull.body ? (
           <Markdown owner={owner} repo={repo} className="p-4">
@@ -517,10 +507,9 @@ function PullInfoRow({
 }
 
 // The PR's basics at the top of the sidebar (#2406, slimmed by #2435): worktree path, the
-// head→base branch pair, and the linked issue. Every value comes from the PR itself, so the
-// section never loads or fails on its own. The branch pair and the linked issue also appear in the
-// header; the duplication is accepted so the sidebar answers "where am I working on this?" without
-// scrolling back up.
+// head→base branch pair, the linked issue, and who opened it when (#59 — the header above the
+// section tabs is down to the title and its status, so this is now the one place these live).
+// Every value comes from the PR itself, so the section never loads or fails on its own.
 function PullInfoSection({
   owner,
   repo,
@@ -531,6 +520,7 @@ function PullInfoSection({
   pull: PullRequest;
 }) {
   const linked = pull.linked_issue;
+  const isWorkflowAuthor = /^Workflow #\d+\b/.test(pull.user.login);
   return (
     <section
       data-debug-component="PullInfoSection"
@@ -569,9 +559,18 @@ function PullInfoSection({
             <span className="shrink-0 self-center text-muted-foreground">
               →
             </span>
-            <code className="inline-block max-w-full break-all rounded bg-muted px-1.5 py-1 text-xs">
-              {pull.base.ref}
-            </code>
+            {/* The base is copyable too (#1908), symmetrically with the head — the header pair
+                that used to carry both copy actions is gone. */}
+            <div className="flex min-w-0 max-w-full items-start gap-1">
+              <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
+                {pull.base.ref}
+              </code>
+              <CopyButton
+                value={pull.base.ref}
+                label="Copy base branch"
+                className="size-6"
+              />
+            </div>
           </div>
         </PullInfoRow>
         {linked ? (
@@ -595,6 +594,19 @@ function PullInfoSection({
             </div>
           </PullInfoRow>
         ) : null}
+        <PullInfoRow label="Opened">
+          {/* A Workflow-generated author is the workflow itself, not a person to credit, so it is
+              left out the way the header used to leave it out. */}
+          <span className="text-muted-foreground">
+            {isWorkflowAuthor ? null : (
+              <>
+                <span className="text-foreground">@{pull.user.login}</span>
+                {" · "}
+              </>
+            )}
+            {relativeTime(pull.created_at)}
+          </span>
+        </PullInfoRow>
       </dl>
     </section>
   );
@@ -814,8 +826,9 @@ function FilesChanged({
 
   return (
     <section
+      id="files-changed"
       data-debug-component="FilesChanged"
-      className="flex flex-col gap-3"
+      className="flex scroll-mt-11 flex-col gap-3"
     >
       <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
         Files changed{files ? ` (${files.length})` : ""}
@@ -958,7 +971,7 @@ function CommentList({
       ref={sectionRef}
       id="comments"
       data-debug-component="PullCommentList"
-      className="flex flex-col gap-3 pb-6"
+      className="flex scroll-mt-11 flex-col gap-3 pb-6"
     >
       <h2 className="text-lg font-semibold">
         Comments ({comments?.length ?? 0})

@@ -69,9 +69,12 @@ export function PullCommitsSection({
     commentsByReview.set(comment.pull_request_review_id, list);
   }
   return (
+    // `commits` is the PR page's section anchor (#59); scroll-mt-11 clears the tab bar it is
+    // reached from, on top of the scrollport's own sticky-header padding.
     <section
+      id="commits"
       data-debug-component="PullCommitsSection"
-      className="flex flex-col gap-3"
+      className="flex scroll-mt-11 flex-col gap-3"
     >
       <h2 className="text-lg font-semibold">Commits ({commits.length})</h2>
       {isReviewsLoading ? (

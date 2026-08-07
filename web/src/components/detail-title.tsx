@@ -101,8 +101,11 @@ export function DetailStickyHeader({
  * app scrolls inside <main>, whose overflow already clips the observed element,
  * so the intersection reflects the scroll position without threading the
  * scroll container's ref through every detail page.
+ *
+ * Exported for other bars that stack under this one (pull-section-tabs.tsx), so
+ * they switch on the same title as the header rather than a second guess at it.
  */
-function useScrolledPast(ref: RefObject<HTMLElement | null>): boolean {
+export function useScrolledPast(ref: RefObject<HTMLElement | null>): boolean {
   const [scrolledPast, setScrolledPast] = useState(false);
   useEffect(() => {
     const target = ref.current;

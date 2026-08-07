@@ -337,12 +337,12 @@ describe("PullDetail", () => {
     const { container } = renderDetail();
 
     expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
-    // Branch names are scoped to the header: the sidebar's PR details section shows them too.
-    const header = container.querySelector<HTMLElement>(
-      '[data-debug-component="PullHeader"]',
+    // Branch names are scoped to the sidebar's PR details section, the one place they appear (#59).
+    const details = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullInfoSection"]',
     )!;
-    expect(within(header).getByText("issue-153")).toBeTruthy();
-    expect(within(header).getByText("main")).toBeTruthy();
+    expect(within(details).getByText("issue-153")).toBeTruthy();
+    expect(within(details).getByText("main")).toBeTruthy();
     expect(screen.getByText("Render diff, reviews, comments.")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Develop" })).toBeNull();
 
@@ -385,21 +385,23 @@ describe("PullDetail", () => {
     expect(screen.getByText("Thanks!")).toBeTruthy();
 
     // Bidirectional link back to the issue this PR closes.
-    const linked = within(header).getByText("#153").closest("a");
+    const linked = within(details).getByText("#153").closest("a");
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
-  it("links the PR header to the comments section", async () => {
+  // #59: the header's own "Comments (n)" link is gone — the Comments tab is the same in-page
+  // anchor, and the section heading below it still carries the count.
+  it("links to the comments section from the tabs instead of the header", async () => {
     const { container } = renderDetail({
       "pulls/get": () => ({ ...pull, comments: 3 }),
     });
 
-    const commentsLink = await screen.findByRole("link", {
-      name: "Comments (3)",
-    });
-    expect(commentsLink.getAttribute("href")).toBe("#comments");
-    act(() => commentsLink.focus());
-    expect(document.activeElement).toBe(commentsLink);
+    await screen.findByText("ui2: PR detail");
+    expect(screen.queryByRole("link", { name: "Comments (3)" })).toBeNull();
+    const commentsTab = screen.getByRole("link", { name: "Comments" });
+    expect(commentsTab.getAttribute("href")).toBe("#comments");
+    act(() => commentsTab.focus());
+    expect(document.activeElement).toBe(commentsTab);
     expect(
       container.querySelector('[data-debug-component="PullCommentList"]')?.id,
     ).toBe("comments");
@@ -894,6 +896,7 @@ describe("PullDetail", () => {
     for (const name of [
       "PullDetail",
       "PullHeader",
+      "PullBody",
       "PullCommitsSection",
       "PullCommitRow",
       "FilesChanged",
@@ -903,6 +906,50 @@ describe("PullDetail", () => {
       "PullInfoSection",
     ]) {
       expect(names.has(name)).toBe(true);
+    }
+  });
+
+  // #59: the section tabs are in-page anchors, so every section they link to keeps its place on
+  // the one page — following a tab moves the scroll position and nothing else.
+  it("puts the tabs under the PR header, anchored to sections that all stay rendered", async () => {
+    const { container } = renderDetail();
+
+    await screen.findByText("ui2: PR detail");
+    const mainContent = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullMainContent"]',
+    );
+    const tabs = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullSectionTabs"]',
+    );
+    // The content stack runs header → tabs → the sections the tabs navigate, so the PR's title and
+    // status stay above the bar and everything it links to stays below it.
+    expect(
+      Array.from(
+        mainContent?.lastElementChild?.children ?? [],
+        (child) => (child as HTMLElement).dataset.debugComponent,
+      ).slice(0, 3),
+    ).toEqual(["PullHeader", "PullSectionTabs", "PullBody"]);
+    expect(
+      Array.from(tabs?.querySelectorAll("a") ?? [], (link) => [
+        link.textContent,
+        link.getAttribute("href"),
+      ]),
+    ).toEqual([
+      ["Overview", "#overview"],
+      ["Commits", "#commits"],
+      ["Files changed", "#files-changed"],
+      ["Comments", "#comments"],
+    ]);
+    for (const [id, component] of [
+      ["overview", "PullHeader"],
+      ["commits", "PullCommitsSection"],
+      ["files-changed", "FilesChanged"],
+      ["comments", "PullCommentList"],
+    ]) {
+      const section = container.querySelector<HTMLElement>(`#${id}`);
+      expect(section?.dataset.debugComponent).toBe(component);
+      // Anchored sections land below the tab bar as well as the sticky header.
+      expect(section?.className).toContain("scroll-mt-11");
     }
   });
 
@@ -941,14 +988,36 @@ describe("PullDetail", () => {
     expect(sidebar?.parentElement?.className).toContain("lg:items-start");
   });
 
-  it("shows a regular PR author in the header", async () => {
-    renderDetail();
+  // #59: the header above the section tabs is the title and its status only — authorship, the
+  // branch pair and the linked issue are the sidebar's job now, so they read once per page.
+  it("keeps the header to the title and status, with the basics only in the sidebar", async () => {
+    const { container } = renderDetail();
 
-    expect(await screen.findByText(/@impl-bot · opened/)).toBeTruthy();
+    await screen.findByText("ui2: PR detail");
+    const header = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullHeader"]',
+    )!;
+    expect(within(header).getByRole("heading", { level: 1 })).toBeTruthy();
+    expect(within(header).getByText("mergeable")).toBeTruthy();
+    expect(within(header).queryByText(/opened/)).toBeNull();
+    expect(within(header).queryByText(/wants to merge/)).toBeNull();
+    expect(within(header).queryByText(/Linked issue/)).toBeNull();
+    expect(within(header).queryByText("issue-153")).toBeNull();
+    expect(within(header).queryByText("main")).toBeNull();
   });
 
-  it("hides a Workflow-generated PR author without removing other header details", async () => {
-    const { container } = renderDetail({
+  it("shows a regular PR author with the opened time in the sidebar", async () => {
+    renderDetail();
+
+    const section = (
+      await screen.findByRole("heading", { name: "PR details" })
+    ).closest("section")!;
+    expect(within(section).getByText("Opened")).toBeTruthy();
+    expect(within(section).getByText("@impl-bot")).toBeTruthy();
+  });
+
+  it("hides a Workflow-generated PR author without removing the opened time", async () => {
+    renderDetail({
       "pulls/get": () => ({
         ...pull,
         user: { login: "Workflow #153 ui2: PR detail" },
@@ -957,12 +1026,12 @@ describe("PullDetail", () => {
 
     await screen.findByText("ui2: PR detail");
     expect(screen.queryByText(/@Workflow #153/)).toBeNull();
-    expect(screen.getByText(/opened .* · wants to merge/)).toBeTruthy();
-    const header = container.querySelector<HTMLElement>(
-      '[data-debug-component="PullHeader"]',
-    )!;
-    expect(within(header).getByText("issue-153")).toBeTruthy();
-    expect(within(header).getByText("main")).toBeTruthy();
+    const section = screen
+      .getByRole("heading", { name: "PR details" })
+      .closest("section")!;
+    expect(within(section).getByText("Opened")).toBeTruthy();
+    expect(within(section).getByText("issue-153")).toBeTruthy();
+    expect(within(section).getByText("main")).toBeTruthy();
   });
 
   // #863: a cost-stopped PR shows an "over budget" badge in the PR-detail header.
@@ -980,33 +1049,16 @@ describe("PullDetail", () => {
     expect(screen.queryByText("over budget")).toBeNull();
   });
 
-  it("copies the head branch from the PR header with visible feedback", async () => {
+  // #1908, moved to the sidebar with the header's branch pair (#59): the base branch stays
+  // copyable, symmetrically with the head branch.
+  it("copies the base branch from the sidebar with visible feedback", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
     renderDetail();
 
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Copy branch name: issue-153",
-      }),
-    );
-
-    expect(writeText).toHaveBeenCalledWith("issue-153");
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy(),
-    );
-  });
-
-  // #1908: the base branch is copyable too, symmetrically with the head branch.
-  it("copies the base branch from the PR header with visible feedback", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
-
-    renderDetail();
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Copy branch name: main" }),
+      await screen.findByRole("button", { name: "Copy base branch" }),
     );
 
     expect(writeText).toHaveBeenCalledWith("main");
