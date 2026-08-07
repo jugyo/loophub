@@ -223,7 +223,7 @@ export function DiffFileDialog({
   const [standardMode, setStandardMode] =
     useState<StandardDiffDialogMode>("diff");
   const [markdownMode, setMarkdownMode] = useState<DiffDialogMode>("diff");
-  const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("split");
+  const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("unified");
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [showFileFilters, setShowFileFilters] = useState(false);
   const [includePattern, setIncludePattern] = useState("");

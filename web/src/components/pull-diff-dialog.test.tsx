@@ -327,7 +327,7 @@ describe("DiffFileDialog", () => {
     expect(within(dialog).getByLabelText("New line 1")).toBeTruthy();
     expect(
       within(dialog)
-        .getByRole("button", { name: "Split" })
+        .getByRole("button", { name: "Unified" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
     expect(within(dialog).getAllByText("nice constant").length).toBeGreaterThan(
@@ -384,7 +384,7 @@ describe("DiffFileDialog", () => {
     expect(within(thread).getByText("Please revisit this range.")).toBeTruthy();
   });
 
-  it("starts in split view and switches to unified view", () => {
+  it("starts in unified view and switches to split view", () => {
     const splitFile: PullFile = {
       ...file,
       additions: 2,
@@ -392,6 +392,23 @@ describe("DiffFileDialog", () => {
         "@@ -1,2 +1,3 @@\n-const x = 0;\n+const x = 1;\n+const y = 2;\n keep",
     };
     const { container } = renderDialog({ file: splitFile });
+
+    expect(
+      screen
+        .getByRole("button", { name: "Unified" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    const unifiedLine = screen.getByText("const x = 1;").closest("td");
+    expect(unifiedLine?.classList).toContain("whitespace-pre-wrap");
+    expect(unifiedLine?.classList).toContain("break-words");
+    const unifiedTable = unifiedLine?.closest("table");
+    expect(unifiedTable?.classList).toContain("table-fixed");
+    expect(unifiedTable?.querySelectorAll("colgroup col")).toHaveLength(3);
+    expect(unifiedTable?.parentElement?.classList).not.toContain(
+      "overflow-x-auto",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
 
     expect(
       screen
@@ -420,42 +437,25 @@ describe("DiffFileDialog", () => {
     expect(
       container.querySelectorAll('[data-line-kind="context"]'),
     ).toHaveLength(2);
-
-    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
-
-    expect(
-      screen
-        .getByRole("button", { name: "Unified" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
-    const unifiedLine = screen.getByText("const x = 1;").closest("td");
-    expect(unifiedLine?.classList).toContain("whitespace-pre-wrap");
-    expect(unifiedLine?.classList).toContain("break-words");
-    const unifiedTable = unifiedLine?.closest("table");
-    expect(unifiedTable?.classList).toContain("table-fixed");
-    expect(unifiedTable?.querySelectorAll("colgroup col")).toHaveLength(3);
-    expect(unifiedTable?.parentElement?.classList).not.toContain(
-      "overflow-x-auto",
-    );
   });
 
   it("keeps line numbers on the first line of wrapped rows in both views", () => {
     renderDialog();
-
-    const splitNumber = screen.getByLabelText("Old line 1");
-    expect(splitNumber.classList).toContain("align-top");
-    expect(splitNumber.nextElementSibling?.classList).toContain("align-top");
-
-    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
 
     const unifiedNumber = screen.getByLabelText("Old line 1");
     expect(unifiedNumber.classList).toContain("align-top");
     expect(screen.getByText("const x = 1;").closest("td")?.classList).toContain(
       "align-top",
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+
+    const splitNumber = screen.getByLabelText("Old line 1");
+    expect(splitNumber.classList).toContain("align-top");
+    expect(splitNumber.nextElementSibling?.classList).toContain("align-top");
   });
 
-  it("ignores whitespace-only changes in split and unified views, then restores them", async () => {
+  it("ignores whitespace-only changes in unified and split views, then restores them", async () => {
     const fullPatch =
       "@@ -1,3 +1,3 @@\n-const first = 1;\n+  const first = 1;\n-const second = 2;\n+const second = 3;\n keep";
     const ignoredPatch =
@@ -497,7 +497,7 @@ describe("DiffFileDialog", () => {
     expect(screen.getByText("const second = 2;")).toBeTruthy();
     expect(screen.getByText("const second = 3;")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
     expect(screen.queryByText("const first = 1;")).toBeNull();
     expect(screen.getByText("const second = 3;")).toBeTruthy();
 
@@ -542,7 +542,7 @@ describe("DiffFileDialog", () => {
     expect(screen.getAllByText("const value = 1;")).toHaveLength(2);
   });
 
-  it("keeps a range selection and its thread across split and unified views", async () => {
+  it("keeps a range selection and its thread across unified and split views", async () => {
     const create = vi.fn(() => ({
       thread: {
         id: 9,
@@ -618,22 +618,6 @@ describe("DiffFileDialog", () => {
 
     await dragLines("New line 1", "New line 2");
     expect(screen.getByText("RIGHT 1–2")).toBeTruthy();
-    const splitComposerRow = screen
-      .getByLabelText("Diff comment")
-      .closest("tr");
-    expect(splitComposerRow?.hasAttribute("data-diff-comment-row")).toBe(true);
-    expect(splitComposerRow?.children).toHaveLength(2);
-    expect(splitComposerRow?.previousElementSibling?.textContent).toContain(
-      "new two",
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
-
-    await dragLines("New line 1", "New line 2");
-
-    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
-    expect(screen.getByText("RIGHT 1–2")).toBeTruthy();
     const unifiedComposerRow = screen
       .getByLabelText("Diff comment")
       .closest("tr");
@@ -659,6 +643,22 @@ describe("DiffFileDialog", () => {
     expect(
       unifiedComposerRow?.closest("table")?.parentElement?.classList,
     ).toContain("[container-type:inline-size]");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+
+    await dragLines("New line 1", "New line 2");
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(screen.getByText("RIGHT 1–2")).toBeTruthy();
+    const splitComposerRow = screen
+      .getByLabelText("Diff comment")
+      .closest("tr");
+    expect(splitComposerRow?.hasAttribute("data-diff-comment-row")).toBe(true);
+    expect(splitComposerRow?.children).toHaveLength(2);
+    expect(splitComposerRow?.previousElementSibling?.textContent).toContain(
+      "new two",
+    );
 
     fireEvent.change(screen.getByLabelText("Diff comment"), {
       target: { value: "Please keep these together" },
@@ -1055,6 +1055,8 @@ describe("DiffFileDialog", () => {
       },
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+
     await dragLines("Old line 1", "Old line 2");
     expect(screen.getByText("LEFT 1–2")).toBeTruthy();
     expect(screen.getByLabelText("Old line 2").dataset.selected).toBe("true");
@@ -1249,6 +1251,8 @@ describe("DiffFileDialog", () => {
         "diffFeedback/reply": reply,
       },
     });
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
 
     expect(await screen.findAllByLabelText("Diff thread 1")).toHaveLength(1);
     expect(
@@ -1523,9 +1527,12 @@ describe("DiffFileDialog", () => {
       },
     });
 
-    const leftCell = (await screen.findByLabelText("Diff thread 1")).closest(
-      "td",
-    ) as HTMLTableCellElement;
+    await screen.findByLabelText("Diff thread 1");
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+
+    const leftCell = screen
+      .getByLabelText("Diff thread 1")
+      .closest("td") as HTMLTableCellElement;
     const rightCell = screen
       .getByLabelText("Diff thread 2")
       .closest("td") as HTMLTableCellElement;
@@ -2011,7 +2018,7 @@ describe("DiffFileDialog", () => {
     );
     const scroller = content?.parentElement;
     const rightPane = scroller?.parentElement;
-    expect(screen.getAllByText("line 100")).toHaveLength(2);
+    expect(screen.getByText("line 100")).toBeTruthy();
     expect(scroller?.classList).toContain("overflow-auto");
     expect(rightPane?.classList).toContain("min-h-0");
   });
