@@ -417,7 +417,7 @@ function PrototypeBTable({
     <PrototypeCard
       index="B"
       title="全 agent を 1 行テーブルで比較する"
-      intent="横 1 行 = 1 agent にまとめ、Model / Effort を列として置く。全 agent の設定を一度に比較でき、ネストの折り返しがなくなる。列は必要な分だけ残し、agent が増えても縦に崩れにくい。"
+      intent="横 1 行 = 1 agent にまとめ、Model / Effort を列として置く。全 agent の設定を一度に比較でき、ネストの折り返しがなくなる。列は必要な分だけ残し、agent が増えても縦に崩れにくい。ドロップダウンは案 D と揃えた single-field 方式（model / effort を別々の 1 列 dropdown で選ぶ）を採用。"
       selected
     >
       <div className="max-w-xl">
