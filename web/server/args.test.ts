@@ -6,19 +6,8 @@ describe("parseLhWebArgs", () => {
     expect(parseLhWebArgs([], {})).toEqual({
       port: 8730,
       debug: false,
-      open: true,
       help: false,
     });
-  });
-
-  it("suppresses the browser with --no-open", () => {
-    expect(parseLhWebArgs(["--no-open"], {}).open).toBe(false);
-  });
-
-  it("lets LOOPHUB_OPEN turn the browser off by default", () => {
-    expect(parseLhWebArgs([], { LOOPHUB_OPEN: "0" }).open).toBe(false);
-    expect(parseLhWebArgs([], { LOOPHUB_OPEN: "false" }).open).toBe(false);
-    expect(parseLhWebArgs([], { LOOPHUB_OPEN: "1" }).open).toBe(true);
   });
 
   it("enables Web UI debugging controls without changing other options", () => {
@@ -31,7 +20,6 @@ describe("parseLhWebArgs", () => {
   it("documents supported flags in help", () => {
     expect(parseLhWebArgs(["--help"], {}).help).toBe(true);
     expect(LH_WEB_HELP).toContain("--debug");
-    expect(LH_WEB_HELP).toContain("--no-open");
   });
 
   it("rejects unknown and invalid options", () => {
@@ -43,5 +31,6 @@ describe("parseLhWebArgs", () => {
       "unknown option: --poll-ms",
     );
     expect(() => parseLhWebArgs(["--port"], {})).toThrow("positive number");
+    expect(() => parseLhWebArgs(["--no-open"], {})).toThrow("unknown option");
   });
 });
