@@ -93,6 +93,7 @@ function renderTabs() {
   );
   const scroller = container.querySelector("main");
   return {
+    container,
     unmount,
     bar: () =>
       container.querySelector('[data-debug-component="PullSectionTabs"]'),
@@ -133,6 +134,48 @@ describe("PullSectionTabs", () => {
       ["Files changed", "#files-changed"],
       ["Comments", "#comments"],
     ]);
+  });
+
+  it("smoothly scrolls to the selected section without changing the anchor", () => {
+    stubIntersectionObserver();
+    const { container } = renderTabs();
+    const target = container.querySelector("#commits");
+    if (!target) throw new Error("commits section not found");
+    const scrollIntoView = vi.fn();
+    target.scrollIntoView = scrollIntoView;
+
+    fireEvent.click(screen.getByRole("link", { name: "Commits" }));
+
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: "smooth",
+      block: "start",
+    });
+  });
+
+  it.each([
+    ["Alt", { altKey: true }],
+    ["Ctrl", { ctrlKey: true }],
+    ["Meta", { metaKey: true }],
+    ["Shift", { shiftKey: true }],
+    ["middle", { button: 1 }],
+  ])("keeps native anchor behavior for %s-clicks", (_name, options) => {
+    stubIntersectionObserver();
+    const { container } = renderTabs();
+    const target = container.querySelector("#commits");
+    if (!target) throw new Error("commits section not found");
+    const scrollIntoView = vi.fn();
+    target.scrollIntoView = scrollIntoView;
+    const link = screen.getByRole("link", { name: "Commits" });
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      ...options,
+    });
+
+    link.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
   it("starts on Overview before anything has scrolled", () => {

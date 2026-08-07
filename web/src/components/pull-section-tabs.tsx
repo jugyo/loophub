@@ -82,6 +82,22 @@ export function PullSectionTabs({
         <a
           key={section.id}
           href={`#${section.id}`}
+          onClick={(event) => {
+            if (
+              event.button !== 0 ||
+              event.altKey ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.shiftKey
+            ) {
+              return;
+            }
+            event.preventDefault();
+            document.getElementById(section.id)?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          }}
           // "location" rather than "page": the tabs mark a place within this page, not a route.
           aria-current={active === section.id ? "location" : undefined}
           className={cn(
