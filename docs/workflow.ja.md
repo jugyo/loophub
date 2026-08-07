@@ -432,6 +432,14 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
 `lh workflow step output` は廃止した。Verify の出力は `lh pr review --commit <sha>`
 を用いる。
 
+### `lh workflow start` の herdr セッション
+
+`lh workflow start`（Web の **Start workflow** が spawn する `--herdr` 経路を含む）で parent を
+herdr に起動するとき、対象リポジトリの herdr セッションが未起動なら、まず headless の herdr server
+を起動してから workflow を実行する（#50）。セッションが既に起動していればそれを再利用する。herdr
+の binary 欠如・タイムアウト・`session list` の失敗など、セッションの状態確認や起動に失敗した場合は
+workflow を開始せず明示的なエラーで終了する（失敗を黙って握りつぶさない）。
+
 ## 9. 廃止と移行
 
 - `execution-report` / `verdict` の型・validation・placement・placement claim・retry、および PR body /

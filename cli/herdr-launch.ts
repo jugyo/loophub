@@ -1,11 +1,17 @@
 import { spawnSync } from "node:child_process";
 import {
+  isHerdrExitError,
+  startHerdrSession,
+} from "../core/service/herdr-runner.ts";
+import { parseHerdrSessionListIfValid } from "../core/terminal/herdr-status.ts";
+import {
   acquireHerdrWorktreeWorkspace,
   buildHerdrLaunchPlan,
   executeHerdrLaunchPlan,
   type HerdrCmdRunner,
   type HerdrLaunchRunner,
   herdrCommandLine,
+  herdrSessionName,
   herdrTabCloseArgv,
   herdrWorkspaceCloseArgv,
   type TerminalLaunchRepo,
@@ -31,10 +37,50 @@ export interface HerdrLaunchResult {
   tabId: string | null;
 }
 
+// Workflow parents always launch into a herdr session, but the session may not be running yet — a
+// cold machine, or Web's Start workflow spawning `lh workflow start --herdr` on a host that has
+// never opened one. The launch calls below would then all fail against a missing session, so start
+// its server headless first via the same core helper the New Issue flow uses (#50). A session that
+// is already running is reused untouched; only a genuinely absent one triggers a start. Failures to
+// determine or establish the session stay visible (they must not degrade into a confusing
+// "could not create the agent's pane" later), so this throws HerdrLaunchError on every failure path.
+async function ensureHerdrSessionRunning(
+  repo: TerminalLaunchRepo,
+  runHerdrCmd: HerdrCmdRunner,
+): Promise<void> {
+  const sessionName = herdrSessionName(repo);
+  const listed = await runHerdrCmd(["herdr", "session", "list", "--json"], {
+    captureStdout: true,
+  });
+  if (!listed.ok) {
+    throw new HerdrLaunchError("herdr failed to list running sessions");
+  }
+  const running = parseHerdrSessionListIfValid(listed.stdout);
+  if (running === null) {
+    throw new HerdrLaunchError(
+      "herdr session list returned an invalid response",
+    );
+  }
+  if (running.includes(sessionName)) return;
+  try {
+    await startHerdrSession(sessionName, repo.local_path);
+  } catch (error) {
+    const detail = isHerdrExitError(error)
+      ? `: herdr exited with status ${error.exitStatus}`
+      : error instanceof Error
+        ? `: ${error.message}`
+        : "";
+    throw new HerdrLaunchError(
+      `failed to start headless herdr session ${sessionName}${detail}`,
+    );
+  }
+}
+
 // Opens (or reuses) the target worktree's own herdr workspace and starts the agent in a fresh tab
 // there, instead of splitting whatever pane is currently focused (#674, #873). `lh workflow start
-// --herdr` calls this so a Workflow parent lands in the target worktree's own workspace.
-// When the worktree open can't be resolved (herdr not running, worktree_not_found, …) it falls back
+// --herdr` calls this so a Workflow parent lands in the target worktree's own workspace. When the
+// session is not running it is started headless first via ensureHerdrSessionRunning (#50); when the
+// worktree open can't be resolved (herdr not running, worktree_not_found, …) it falls back
 // to a plain repo-root tab. On any failure to start the agent it cleans up the tab/workspace it
 // created and throws HerdrLaunchError with a reproduce hint.
 export async function launchAgentInWorktreeHerdr(input: {
@@ -77,6 +123,10 @@ export async function launchAgentInWorktreeHerdr(input: {
       ok: !proc.error && proc.signal == null && (proc.status ?? 0) === 0,
     };
   };
+
+  // The worktree-open and every launch step below run over the repo session's socket, so that
+  // session must be live first. When it is not, start its server headless before anything else.
+  await ensureHerdrSessionRunning(repo, runHerdrCmd);
 
   const acquired = await acquireHerdrWorktreeWorkspace(
     repo,

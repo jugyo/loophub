@@ -13,6 +13,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { herdrSessionName } from "../core/terminal/terminal-launch.ts";
 
 const CLI = join(import.meta.dirname, "index.ts");
 const REQUIRE = createRequire(import.meta.url);
@@ -81,6 +82,11 @@ function git(args: string[], path = REPO_PATH): void {
 // call that types the launch command into the pane, leaving the earlier open/create succeeding —
 // the shape a real failed parent launch takes after its workspace was already created.
 //
+// It also emulates the launch's session bookkeeping: `workflow start` first consults
+// `herdr session list` to decide whether the repo session is running; `sessionRunning` selects
+// whether that list reports it (default reuses it, `false` leaves it absent so a headless
+// `herdr --session <n> server` is spawned), and `sessionListExit` makes the list call itself fail.
+//
 // Neither `pane send-text` nor `pane split` moves herdr's focus (verified against the real CLI:
 // `pane split` focuses only with an explicit `--focus`), so neither changes the focused state here.
 function fakeRuntime(
@@ -92,6 +98,8 @@ function fakeRuntime(
     worktreeOpenJson?: string;
     tabCreateJson?: string;
     paneSplitJson?: string;
+    sessionRunning?: boolean;
+    sessionListExit?: number;
   } = {},
 ) {
   const {
@@ -102,6 +110,8 @@ function fakeRuntime(
     worktreeOpenJson = "",
     tabCreateJson = REUSE_TAB_JSON,
     paneSplitJson = '{"result":{"pane":{"pane_id":"w1:p4"}}}',
+    sessionRunning = true,
+    sessionListExit = 0,
   } = opts;
   const dir = mkdtempSync(join(tmpdir(), "lh-workflow-runtime-"));
   const log = join(dir, "herdr.log");
@@ -112,6 +122,10 @@ function fakeRuntime(
   const grok = join(dir, "grok");
   const cursor = join(dir, "cursor-agent");
   const opencode = join(dir, "opencode");
+  const sessionName = herdrSessionName({
+    full_name: REPO,
+    local_path: REPO_PATH,
+  });
   if (focusedState) {
     writeFileSync(focusedStatePath, JSON.stringify(focusedState));
   }
@@ -120,7 +134,8 @@ function fakeRuntime(
     `#!/bin/sh
 if [ "$1" = "--version" ]; then exit 0; fi
 printf '%s\\n' "$*" >> "$HERDR_LOG"
-if [ "$1" = "--session" ]; then shift 2; fi
+session_name="${sessionName}"
+if [ "$1" = "--session" ]; then session_name="$2"; shift 2; fi
 command="$*"
 change_focus() {
   if [ -n "$HERDR_FOCUSED_STATE" ]; then
@@ -140,6 +155,15 @@ change_focus_if_closing() {
   fi
 }
 case " $command " in
+  *" session list "*)
+    if [ ${sessionListExit} -ne 0 ]; then exit ${sessionListExit}; fi
+    if [ "${sessionRunning}" = 'true' ]; then
+      printf '{"sessions":[{"name":"%s","running":true}]}' "$session_name"
+    else
+      printf '{"sessions":[]}'
+    fi
+    exit 0 ;;
+  *" server "*) printf 'herdr server running; you can use any herdr CLI command'; sleep 1; exit 0 ;;
   *" worktree open "*) change_focus_without_no_focus; printf '%s' '${worktreeOpenJson}'; exit 0 ;;
   *" pane list "*) printf '%s' '${paneListJson}'; exit 0 ;;
   *" pane split "*) printf '%s' '${paneSplitJson}'; exit 0 ;;
@@ -1054,6 +1078,157 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     expect(log).not.toContain("pane send-keys");
     expectWorkflowParentHerdrFocusMoved(runtime);
     expect(started.stderr).toContain("Attach with: herdr session attach");
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --herdr starts a headless herdr server when the session is not running", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Headless session parent",
+    "--body",
+    "Do it",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime({
+    sessionRunning: false,
+    worktreeOpenJson: FRESH_OPEN_JSON,
+  });
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    // The absent session is detected first, then its server is started headless before the
+    // worktree launch runs — the order the orchestration needs (the launch calls all run over
+    // the session's socket).
+    const sessionListIndex = log.indexOf("session list");
+    const serverMatch = /--session me-workflow-start-[a-f0-9]{8} server/.exec(
+      log,
+    );
+    expect(log).toMatch(/session list --json/);
+    expect(serverMatch).not.toBeNull();
+    expect(serverMatch!.index).toBeGreaterThan(sessionListIndex);
+    // The workflow proceeds on the freshly started session: the worktree workspace opens and the
+    // parent launches in it.
+    expect(log).toMatch(/worktree open --cwd .+ --path .+/);
+    expect(log).toMatch(/pane send-text \S+ .*claude /);
+    expect(started.stderr).toContain("Attach with: herdr session attach");
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --herdr reuses a running herdr session without starting a server", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Running session parent",
+    "--body",
+    "Do it",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime({
+    worktreeOpenJson: FRESH_OPEN_JSON,
+  });
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    // The session is reported as running, so no headless server is started and the launch reuses
+    // the existing session untouched.
+    expect(log).toMatch(/session list --json/);
+    expect(log).not.toMatch(/--session me-workflow-start-[a-f0-9]{8} server/);
+    expect(log).toMatch(/worktree open --cwd .+ --path .+/);
+    expect(log).toMatch(/pane send-text \S+ .*claude /);
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --herdr surfaces a session-list failure instead of launching", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Session list failure parent",
+    "--body",
+    "Do it",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime({
+    sessionListExit: 3,
+    worktreeOpenJson: FRESH_OPEN_JSON,
+  });
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode).not.toBe(0);
+    expect(started.stderr).toContain("herdr failed to list running sessions");
+    // The failure aborts before any launch step — no server, no worktree open, no agent start.
+    const log = readFileSync(runtime.log, "utf8");
+    expect(log).toMatch(/session list --json/);
+    expect(log).not.toContain("worktree open");
+    expect(log).not.toContain("pane send-text");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
