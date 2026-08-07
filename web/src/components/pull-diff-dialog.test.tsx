@@ -1992,6 +1992,43 @@ describe("DiffFileDialog", () => {
     expect(rightPane?.classList).toContain("min-h-0");
   });
 
+  it("resets the diff scroll position only when the open file changes", () => {
+    const secondFile = { ...file, filename: "web/src/b.ts" };
+    const files = [file, secondFile];
+    const showFile = (openFile: PullFile) => (
+      <QueryClientProvider client={new QueryClient()}>
+        <DiffFileDialog
+          owner="me"
+          repo="proj"
+          number={30}
+          files={files}
+          file={openFile}
+          onSelectFile={() => {}}
+          onClose={() => {}}
+        />
+      </QueryClientProvider>
+    );
+    const view = renderDialog({ file, files });
+    const scroller = () =>
+      (
+        view.container.querySelector(
+          '[data-debug-component="FileDiffContent"]',
+        ) as HTMLElement
+      ).parentElement as HTMLElement;
+
+    const scrolled = scroller();
+    scrolled.scrollTop = 400;
+    scrolled.scrollLeft = 120;
+    view.rerender(showFile(file));
+    expect(scroller()).toBe(scrolled);
+    expect(scrolled.scrollTop).toBe(400);
+    expect(scrolled.scrollLeft).toBe(120);
+
+    view.rerender(showFile(secondFile));
+    expect(scroller().scrollTop).toBe(0);
+    expect(scroller().scrollLeft).toBe(0);
+  });
+
   it("keeps replacements paired when no-newline markers separate them", () => {
     renderDialog({
       file: {

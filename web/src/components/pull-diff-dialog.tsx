@@ -230,7 +230,8 @@ export function DiffFileDialog({
     startWidth: number;
   } | null>(null);
   const backdropDismiss = useBackdropDismiss(onClose);
-  const copyPath = visibleCopyPath(copyFilename(file));
+  const path = copyFilename(file);
+  const copyPath = visibleCopyPath(path);
   const isMarkdown =
     MARKDOWN_FILENAME.test(file.filename) && !isSyntheticRenameFilename(file);
   const mode = isMarkdown ? markdownMode : standardMode;
@@ -515,9 +516,11 @@ export function DiffFileDialog({
               </Button>
             </div>
           </header>
-          <div className="min-w-0 flex-1 overflow-auto">
+          {/* Keying the scrolling element on the open file gives every file a fresh scroll box, so
+              a diff opens at its first line instead of inheriting the previous file's offset. */}
+          <div key={path} className="min-w-0 flex-1 overflow-auto">
             <FileDiffContent
-              key={`${copyFilename(file)}:${ignoreWhitespace}`}
+              key={`${path}:${ignoreWhitespace}`}
               owner={owner}
               repo={repo}
               number={number}
