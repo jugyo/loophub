@@ -43,6 +43,7 @@ export interface RpcCallOutcome {
   method: string;
   outcome: "success" | "error";
   batchIndex?: number;
+  durationMs: number;
 }
 export type RpcCallObserver = (call: RpcCallOutcome) => void;
 
@@ -50,11 +51,13 @@ function observeRpcCall(
   observer: RpcCallObserver | undefined,
   method: string,
   outcome: "success" | "error",
+  durationMs: number,
   batchIndex?: number,
 ): void {
   observer?.({
     method,
     outcome,
+    durationMs,
     ...(batchIndex === undefined ? {} : { batchIndex }),
   });
 }
@@ -103,14 +106,16 @@ async function dispatchOne(
   ) {
     return fail(null, INVALID_REQUEST, "Invalid Request");
   }
+  const start = process.hrtime.bigint();
   const isNotification = !("id" in req);
   const id = (req.id ?? null) as Id;
+  const elapsed = () => Number(process.hrtime.bigint() - start) / 1e6;
 
   const def = Object.hasOwn(methods, req.method)
     ? methods[req.method]
     : undefined;
   if (!def) {
-    observeRpcCall(observer, req.method, "error", batchIndex);
+    observeRpcCall(observer, req.method, "error", elapsed(), batchIndex);
     return isNotification
       ? null
       : fail(id, METHOD_NOT_FOUND, `Method not found: ${req.method}`);
@@ -118,7 +123,7 @@ async function dispatchOne(
 
   const params = req.params ?? {};
   if (!isPlainObject(params)) {
-    observeRpcCall(observer, req.method, "error", batchIndex);
+    observeRpcCall(observer, req.method, "error", elapsed(), batchIndex);
     return isNotification
       ? null
       : fail(id, INVALID_PARAMS, "params must be an object");
@@ -130,7 +135,7 @@ async function dispatchOne(
       path: e.instancePath || "/",
       message: e.message ?? "invalid",
     }));
-    observeRpcCall(observer, req.method, "error", batchIndex);
+    observeRpcCall(observer, req.method, "error", elapsed(), batchIndex);
     return isNotification
       ? null
       : fail(id, INVALID_PARAMS, "Invalid params", data);
@@ -140,10 +145,10 @@ async function dispatchOne(
     const result = await def.handler(params);
     // Record the human action after it completes, so only performed actions are logged.
     logHumanAction(req.method, params);
-    observeRpcCall(observer, req.method, "success", batchIndex);
+    observeRpcCall(observer, req.method, "success", elapsed(), batchIndex);
     return isNotification ? null : ok(id, result ?? null);
   } catch (e: any) {
-    observeRpcCall(observer, req.method, "error", batchIndex);
+    observeRpcCall(observer, req.method, "error", elapsed(), batchIndex);
     if (isNotification) return null;
     if (isServiceError(e))
       return fail(id, APP_ERROR, e.message, { status: e.status, ...e.data });

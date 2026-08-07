@@ -176,9 +176,15 @@ test("POST /rpc logs each outcome only when debug logging is enabled", async () 
     expect(debugLogs).toHaveLength(3);
     expect(debugLogs).toEqual(
       expect.arrayContaining([
-        'rpc method="initialize" outcome=success batch_index=0',
-        'rpc method="initialize" outcome=success batch_index=1',
-        'rpc method="missing/method" outcome=error batch_index=2',
+        expect.stringMatching(
+          /^rpc method="initialize" outcome=success duration=[0-9.]+ms batch_index=0$/,
+        ),
+        expect.stringMatching(
+          /^rpc method="initialize" outcome=success duration=[0-9.]+ms batch_index=1$/,
+        ),
+        expect.stringMatching(
+          /^rpc method="missing\/method" outcome=error duration=[0-9.]+ms batch_index=2$/,
+        ),
       ]),
     );
     expect(debugLogs.join(" ")).not.toContain("sensitive-param");
@@ -232,9 +238,15 @@ test("POST /rpc logs inherited object names as unknown methods", async () => {
     expect(debugLogs).toHaveLength(3);
     expect(debugLogs).toEqual(
       expect.arrayContaining([
-        'rpc method="__proto__" outcome=error',
-        'rpc method="initialize" outcome=success batch_index=0',
-        'rpc method="__proto__" outcome=error batch_index=1',
+        expect.stringMatching(
+          /^rpc method="__proto__" outcome=error duration=[0-9.]+ms$/,
+        ),
+        expect.stringMatching(
+          /^rpc method="initialize" outcome=success duration=[0-9.]+ms batch_index=0$/,
+        ),
+        expect.stringMatching(
+          /^rpc method="__proto__" outcome=error duration=[0-9.]+ms batch_index=1$/,
+        ),
       ]),
     );
   } finally {
@@ -327,7 +339,11 @@ test("POST /rpc replaces an oversized serialized response with an error", async 
         message: "Response too large",
       },
     });
-    expect(debugLogs).toEqual(['rpc method="issues/get" outcome=error']);
+    expect(debugLogs).toEqual([
+      expect.stringMatching(
+        /^rpc method="issues\/get" outcome=error duration=\d+\.\d+ms$/,
+      ),
+    ]);
   } finally {
     await new Promise<void>((resolve) => debugServer.close(() => resolve()));
   }

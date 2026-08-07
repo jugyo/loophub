@@ -104,7 +104,7 @@ function logRpcCalls(
     const batch =
       call.batchIndex === undefined ? "" : ` batch_index=${call.batchIndex}`;
     logger(
-      `rpc method=${JSON.stringify(call.method)} outcome=${outcome}${batch}`,
+      `rpc method=${JSON.stringify(call.method)} outcome=${outcome} duration=${call.durationMs.toFixed(2)}ms${batch}`,
     );
   }
 }
