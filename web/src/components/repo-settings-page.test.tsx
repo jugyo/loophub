@@ -129,6 +129,20 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
         },
       },
     ],
+    "workflows/create": () => ({
+      id: 45,
+      name: "Build",
+      description: "Build a feature",
+      execute_prompt: "",
+      verify_prompt: "",
+      archived_at: null,
+      created_at: "2026-08-03T00:00:00Z",
+      updated_at: "2026-08-03T00:00:00Z",
+      scope: {
+        kind: "repository",
+        repo: { id: 1, owner: "me", name: "proj" },
+      },
+    }),
     "terminal/launch": () => ({ ok: true }),
     "repos/setArchived": (p) => {
       if (patchFails) throw new RpcFault(500, "boom");
@@ -334,6 +348,28 @@ describe("RepoSettingsPage", () => {
     expect(
       (rpcCall("terminal/launch")?.params as { prompt: string }).prompt,
     ).toContain("--repo me/proj");
+  });
+
+  it("creates a repository-scoped workflow from a template", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/workflows");
+
+    await screen.findByRole("heading", { name: "Workflows" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create workflow from template" }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Create workflow from template",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create Build workflow" }),
+    );
+
+    await waitFor(() =>
+      expect(rpcCall("workflows/create")?.params).toMatchObject({
+        name: "Build",
+        repo: "me/proj",
+      }),
+    );
   });
 
   it("restores a directly addressed settings section", async () => {

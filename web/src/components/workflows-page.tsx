@@ -105,7 +105,10 @@ export function RepoWorkflowsSection({
   });
   return (
     <section className="mt-6">
-      <NewWorkflowButton repo={fullName} />
+      <div className="flex flex-wrap items-center gap-2">
+        <NewWorkflowButton repo={fullName} />
+        <TemplateWorkflowButton repo={fullName} />
+      </div>
       <div className="mt-6 flex flex-col gap-3">
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
@@ -164,7 +167,7 @@ function NewWorkflowButton({ repo }: { repo?: string }) {
 // Create workflow from template (#2396): the fast path for an instance with no workflows yet. It
 // copies a starter template's name, description, and step prompts into a normal workflow, so the
 // result is edited and archived like a hand-written one and keeps no reference to its template.
-function TemplateWorkflowButton() {
+function TemplateWorkflowButton({ repo }: { repo?: string }) {
   const [picking, setPicking] = useState(false);
 
   return (
@@ -174,13 +177,19 @@ function TemplateWorkflowButton() {
         Create workflow from template
       </Button>
       {picking ? (
-        <TemplatePickerDialog onClose={() => setPicking(false)} />
+        <TemplatePickerDialog repo={repo} onClose={() => setPicking(false)} />
       ) : null}
     </>
   );
 }
 
-function TemplatePickerDialog({ onClose }: { onClose: () => void }) {
+function TemplatePickerDialog({
+  repo,
+  onClose,
+}: {
+  repo?: string;
+  onClose: () => void;
+}) {
   const create = useCreateWorkflow();
   const { data: settings } = useSettings();
   // A template's prose follows the workflow contract language, so the created workflow reads in
@@ -209,6 +218,7 @@ function TemplatePickerDialog({ onClose }: { onClose: () => void }) {
         description: template.description,
         execute_prompt: template.execute_prompt,
         verify_prompt: template.verify_prompt,
+        repo,
       });
     } catch {
       return; // surfaced via create.error below
