@@ -651,10 +651,45 @@ describe("IssueList", () => {
     fireEvent.pointerDown(
       screen.getByRole("button", { name: "Workspace filter" }),
     );
-    fireEvent.click(await screen.findByRole("button", { name: /new/i }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "New workspace" }),
+    );
     expect(
       await screen.findByRole("dialog", { name: "New workspace" }),
     ).toBeTruthy();
+  });
+
+  it("keeps the New workspace dialog open when clicking into the form", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [],
+        "issues/list": () => [issue({ number: 1, title: "Default issue" })],
+      }),
+    );
+
+    renderIssueList(
+      <IssueList owner="me" repo="proj" showWorkspaceFilter />,
+      "/r/me/proj",
+    );
+
+    await screen.findByText("Default issue");
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Workspace filter" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "New workspace" }),
+    );
+    const input = await screen.findByLabelText("Branch name");
+
+    fireEvent.pointerDown(input);
+    fireEvent.click(input);
+
+    expect(
+      await screen.findByRole("dialog", { name: "New workspace" }),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Branch name")).toBeTruthy();
   });
 
   it("shows unmerged workspaces above the issue list on the repo top", async () => {

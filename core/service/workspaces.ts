@@ -275,17 +275,15 @@ export const workspaces = {
     if (S.getWorkspace(r.id, branch)) {
       throw new ServiceError(422, `workspace already registered: ${branch}`);
     }
-    if (localBranchExists(r.local_path, branch)) {
-      throw new ServiceError(422, `workspace branch already exists: ${branch}`);
-    }
-
+    // An existing branch is registered as-is; only a missing branch is created
+    // from the default branch. The git side happens first, and only the registry
+    // row and its event are transactional.
     ensureLocalBranchFromDefault(
       r.local_path,
       branch,
       r.default_branch,
       "workspace branch",
     );
-    // The branch is created in git first; only the registry row and its event are transactional.
     const workspace = db.transaction(() => {
       const created = S.createWorkspace(r.id, branch);
       S.emitEvent(r.id, "workspace.created", actorFor(sessionId), { branch });

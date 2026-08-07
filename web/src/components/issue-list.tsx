@@ -160,6 +160,7 @@ export function IssueList({
     [state, labels, showWorkspaceFilter, workspaceParam],
   );
   const [draftLabels, setDraftLabels] = useState(labelsParam ?? "");
+  const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
   const query = useIssueListPage(owner, repo, filters, {
     includeLabels: labelFilterMode === "select",
     includeUnmergedWorkspaces: showWorkspaceFilter,
@@ -251,70 +252,81 @@ export function IssueList({
         className="flex flex-wrap items-start gap-2"
       >
         {showWorkspaceFilter ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="secondary"
-                aria-label="Workspace filter"
-                className="h-9 min-w-40 justify-between gap-2 border bg-background px-3 font-normal shadow-sm"
-                disabled={query.isLoading}
-              >
-                <span className="truncate">
-                  {workspaceParam ?? "All workspaces"}
-                </span>
-                <ChevronsUpDown
-                  className="size-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-56">
-              <DropdownMenuLabel>Filter by workspace</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {query.isError ? (
-                <DropdownMenuItem disabled>
-                  Failed to load workspaces
-                </DropdownMenuItem>
-              ) : (
-                // All (undefined) + the implicit default branch + each active
-                // workspace, archived excluded. The default branch stands for
-                // unassigned issues too.
-                [
-                  undefined,
-                  defaultBranch,
-                  ...activeWorkspaces
-                    .map((workspace) => workspace.branch)
-                    .filter((branch) => branch !== defaultBranch),
-                ].map((branch) => (
-                  <DropdownMenuItem
-                    key={branch ?? "all"}
-                    onSelect={() =>
-                      navigate({
-                        to: "/r/$owner/$repo",
-                        params: { owner, repo },
-                        search: {
-                          labels: labels || undefined,
-                          state: state === "open" ? undefined : state,
-                          workspace: branch,
-                        },
-                      })
-                    }
-                  >
-                    {branch ?? "All"}
-                    {branch === defaultBranch ? " (default)" : ""}
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  aria-label="Workspace filter"
+                  className="h-9 min-w-40 justify-between gap-2 border bg-background px-3 font-normal shadow-sm"
+                  disabled={query.isLoading}
+                >
+                  <span className="truncate">
+                    {workspaceParam ?? "All workspaces"}
+                  </span>
+                  <ChevronsUpDown
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-56">
+                <DropdownMenuLabel>Filter by workspace</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {query.isError ? (
+                  <DropdownMenuItem disabled>
+                    Failed to load workspaces
                   </DropdownMenuItem>
-                ))
-              )}
-              <DropdownMenuSeparator />
-              {/* New workspace lives inside the filter now that the standalone
-                  picker is gone (#1511); the modal stays mounted with the open
-                  menu, so a click here opens it without closing the dropdown. */}
-              <div className="flex justify-end px-1 py-0.5">
-                <NewWorkspaceButton owner={owner} repo={repo} size="sm" />
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                ) : (
+                  // All (undefined) + the implicit default branch + each active
+                  // workspace, archived excluded. The default branch stands for
+                  // unassigned issues too.
+                  [
+                    undefined,
+                    defaultBranch,
+                    ...activeWorkspaces
+                      .map((workspace) => workspace.branch)
+                      .filter((branch) => branch !== defaultBranch),
+                  ].map((branch) => (
+                    <DropdownMenuItem
+                      key={branch ?? "all"}
+                      onSelect={() =>
+                        navigate({
+                          to: "/r/$owner/$repo",
+                          params: { owner, repo },
+                          search: {
+                            labels: labels || undefined,
+                            state: state === "open" ? undefined : state,
+                            workspace: branch,
+                          },
+                        })
+                      }
+                    >
+                      {branch ?? "All"}
+                      {branch === defaultBranch ? " (default)" : ""}
+                    </DropdownMenuItem>
+                  ))
+                )}
+                <DropdownMenuSeparator />
+                {/* The legacy "+ New" trigger lived inside the menu, but the
+                  dialog it opened was then trapped in the menu's focus scope
+                  (#67): the body is pointer-locked and focus cannot reach the
+                  form, so it closed the moment you clicked inside. The dialog
+                  is instead controlled from this item and rendered as a sibling
+                  below the dropdown, outside the menu's focus scope. */}
+                <DropdownMenuItem onSelect={() => setNewWorkspaceOpen(true)}>
+                  New workspace
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <NewWorkspaceButton
+              owner={owner}
+              repo={repo}
+              open={newWorkspaceOpen}
+              onOpenChange={setNewWorkspaceOpen}
+            />
+          </>
         ) : null}
         <div
           role="tablist"

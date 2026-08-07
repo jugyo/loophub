@@ -97,16 +97,36 @@ test("workspaces.create rejects a registered branch with 422", () => {
   );
 });
 
-test("workspaces.create rejects an existing unregistered branch with 422", () => {
+test("workspaces.create registers an existing unregistered branch without recreating it", () => {
   git(["branch", "existing/branch", "main"]);
+  const existingHead = git(["rev-parse", "refs/heads/existing/branch"]).stdout;
 
-  expect422(
-    () => svc.workspaces.create("me/proj", { branch: "existing/branch" }),
-    /workspace branch already exists/,
+  const workspace = svc.workspaces.create(
+    "me/proj",
+    { branch: "existing/branch" },
+    "session-1",
+  );
+
+  expect(workspace).toMatchObject({
+    branch: "existing/branch",
+    archived_at: null,
+    branch_exists: true,
+  });
+  // The branch is left untouched, not recreated from the default branch tip.
+  expect(git(["rev-parse", "refs/heads/existing/branch"]).stdout).toBe(
+    existingHead,
   );
 
   const repo = S.getRepo("me", "proj");
-  expect(S.getWorkspace(repo?.id ?? 0, "existing/branch")).toBeNull();
+  expect(S.getWorkspace(repo?.id ?? 0, "existing/branch")).toMatchObject({
+    branch: "existing/branch",
+  });
+  const event = S.listEvents(0, repo?.id ?? null, 100).find(
+    (candidate) =>
+      candidate.type === "workspace.created" &&
+      JSON.parse(candidate.payload).branch === "existing/branch",
+  );
+  expect(event).toBeTruthy();
 });
 
 test("workspaces.create reports git failures as 422", () => {
