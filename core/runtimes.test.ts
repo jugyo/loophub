@@ -5,6 +5,16 @@ test("Claude Code suggests the fable model", () => {
   expect(RUNTIMES["claude-code"].modelSuggestions).toContain("claude-fable-5");
 });
 
+test("OpenCode suggests OpenCode Go models under opencode-go/* ids (#69)", () => {
+  const suggestions = RUNTIMES.opencode.modelSuggestions;
+  expect(suggestions).toContain("opencode-go/deepseek-v4-flash");
+  expect(suggestions).toContain("opencode-go/kimi-k2.7-code");
+  expect(suggestions).toContain("opencode-go/grok-4.5");
+  // Existing non-OpenCode Go defaults stay selectable (#69).
+  expect(suggestions).toContain("opencode/big-pickle");
+  expect(suggestions).toContain("opencode/deepseek-v4-flash-free");
+});
+
 test("every runtime defines the auto-approve argv the launch paths append", () => {
   expect(RUNTIMES["claude-code"].autoApproveArgs).toEqual([
     "--permission-mode",

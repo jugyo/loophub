@@ -167,11 +167,20 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     // LoopHub launch path uses the interactive TUI (same empty-effort posture as cursor).
     defaultEffort: "",
     // Subset of `opencode models` (1.18.13): free built-ins plus a few coding-oriented providers.
+    // OpenCode Go models are exposed through their `opencode-go/*` ids so they can be selected directly
+    // (#69); the two already present (kimi-k2.7-code, grok-4.5) are kept, and other majors added.
     modelSuggestions: [
       "opencode/big-pickle",
       "opencode/deepseek-v4-flash-free",
-      "opencode-go/kimi-k2.7-code",
+      "opencode-go/deepseek-v4-flash",
+      "opencode-go/deepseek-v4-pro",
+      "opencode-go/glm-5.2",
+      "opencode-go/gpt-5.6-luna",
       "opencode-go/grok-4.5",
+      "opencode-go/kimi-k2.7-code",
+      "opencode-go/kimi-k3",
+      "opencode-go/mimo-v2.5-pro",
+      "opencode-go/qwen3.7-max",
       "openai/gpt-5.6",
       "openai/gpt-5.5",
       "openai/gpt-5.4",
