@@ -192,11 +192,7 @@ test("Verify keeps structured rubric grading and verdict aggregation together", 
   const contracts = [
     {
       text: workflowContracts("en").verify,
-      bodyBoundary: [
-        "structured `acceptance_criteria`",
-        "body's `## Acceptance criteria` markdown",
-        "Ignore",
-      ],
+      rubricSource: ["structured `acceptance_criteria`", "lh issue view <n>"],
       gradeShape: [
         "--ac-results",
         '"criterion_id": "42-1"',
@@ -212,11 +208,7 @@ test("Verify keeps structured rubric grading and verdict aggregation together", 
     },
     {
       text: workflowContracts("ja").verify,
-      bodyBoundary: [
-        "構造化 `acceptance_criteria`",
-        "body の `## Acceptance criteria` markdown",
-        "参照しません",
-      ],
+      rubricSource: ["構造化 `acceptance_criteria`", "lh issue view <n>"],
       gradeShape: [
         "--ac-results",
         '"criterion_id": "42-1"',
@@ -233,8 +225,8 @@ test("Verify keeps structured rubric grading and verdict aggregation together", 
     },
   ];
 
-  for (const { text, bodyBoundary, gradeShape, aggregation } of contracts) {
-    expectParagraphWithMarkers(text, bodyBoundary);
+  for (const { text, rubricSource, gradeShape, aggregation } of contracts) {
+    expectParagraphWithMarkers(text, rubricSource);
     expectParagraphWithMarkers(text, gradeShape);
     expectParagraphWithMarkers(text, aggregation);
   }

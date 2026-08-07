@@ -24,8 +24,7 @@ launch prompt では review 提出先としてのみ PR 番号も渡されます
 ## rubric の採点
 
 rubric は issue の構造化 `acceptance_criteria` — `lh issue view <n> --json` が返す enabled な criterion
-です。body の `## Acceptance criteria` markdown は存在しても参照しません。採点対象は構造化 criterion
-だけです。
+です。
 
 enabled な criterion を 1 件ずつ、固定 diff に対して独立に `pass` / `fail` で採点します。fail の
 criterion には actionable な説明を `note` に残します。

@@ -25,8 +25,7 @@ session, messages beginning with `orchestrator:` are instructions from the workf
 ## Grade the rubric
 
 The rubric is the issue's structured `acceptance_criteria` — the enabled ones carried by
-`lh issue view <n> --json`. Ignore the body's `## Acceptance criteria` markdown even when it is
-present; only the structured criteria are graded.
+`lh issue view <n> --json`.
 
 Grade every enabled criterion independently against the fixed diff as `pass` or `fail`, and give a
 failing criterion an actionable explanation in its `note`.

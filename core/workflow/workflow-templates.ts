@@ -31,9 +31,7 @@ Cover the change with tests at the layer the repository already tests, and run i
 For a change with a visible surface, exercise it yourself instead of reasoning about it: run the affected screen or command, capture the result, and attach the evidence to the PR. When no capture path is available, say so explicitly and record the alternative verification you ran.
 
 Write the deliverable for the people who will read it later. Keep run, session, and workspace identifiers out of the code, documentation, commit messages, and PR body.`,
-    verify_prompt: `Run the repository's standard test and lint commands. When something fails, report the exact command and its output rather than a summary of it.
-
-Judge the fixed diff on two axes. First, acceptance behavior: take each enabled criterion and check the normal path, the boundaries, the failure path, and the user-visible result. Second, correctness and regression: check the change against the repository's existing contracts, types, invariants, and state transitions, and look for broken error paths, backward incompatibility, data loss, and behavior that used to work.
+    verify_prompt: `Judge the fixed diff on two axes. First, acceptance behavior: take each enabled criterion and check the normal path, the boundaries, the failure path, and the user-visible result. Second, correctness and regression: check the change against the repository's existing contracts, types, invariants, and state transitions, and look for broken error paths, backward incompatibility, data loss, and behavior that used to work.
 
 If the runtime offers child agents, you may split those two axes across them; give each child the issue, the base and head SHAs, its axis, and the criteria it owns, and validate what it returns before you rely on it. Do not retry a child that failed — record that it did not finish and cover its axis yourself. Without child agents, do both yourself.
 
@@ -137,9 +135,7 @@ repository が既にテストしている層で変更をテストで覆い、com
 利用者から見える変更では、推論で済ませず自分で動かしてください。該当する画面やコマンドを実行し、結果を取得して PR に添付します。取得手段が無い場合は、その事実を明記したうえで、代わりに行った検証を記録してください。
 
 成果物は後から読む人のために書いてください。run、session、workspace の識別子を、コード、ドキュメント、commit message、PR body に書き込まないでください。`,
-    verify_prompt: `repository の標準の test コマンドと lint コマンドを実行してください。失敗があれば要約ではなく、実行したコマンドとその出力をそのまま添えて報告してください。
-
-固定された diff を 2 つの観点で評価してください。1 つ目は acceptance behavior で、enabled な criterion を 1 件ずつ取り上げ、正常系、境界値、失敗時、利用者から見える結果を確認します。2 つ目は correctness / regression で、repository の既存 contract、型、不変条件、状態遷移との整合を確認し、error path の破壊、後方互換性、データ損失、これまで動いていた挙動の回帰を探します。
+    verify_prompt: `固定された diff を 2 つの観点で評価してください。1 つ目は acceptance behavior で、enabled な criterion を 1 件ずつ取り上げ、正常系、境界値、失敗時、利用者から見える結果を確認します。2 つ目は correctness / regression で、repository の既存 contract、型、不変条件、状態遷移との整合を確認し、error path の破壊、後方互換性、データ損失、これまで動いていた挙動の回帰を探します。
 
 runtime が child agent を提供する場合は、この 2 観点を分担させても構いません。各 child には issue、base SHA、head SHA、担当観点、担当する criteria を明示し、返ってきた内容は自分で検証してから採用してください。失敗した child を自動 retry しないでください。完了しなかった事実を記録し、その観点は自分で確認します。child agent が無い場合は両方を自分で行ってください。
 
