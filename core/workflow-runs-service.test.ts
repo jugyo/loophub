@@ -1264,6 +1264,14 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     status: "running",
     current_step: "verify",
     active_verify_head_sha: verify.head_sha,
+    active_verify_started_at: S.eventsForWorkflowRun(
+      repo.id,
+      started.run.id,
+    ).find(
+      (event) =>
+        event.type === "workflow_step.launched" &&
+        JSON.parse(event.payload).step === "verify",
+    )?.created_at,
   });
   svc.workflowRuns.awaitHuman(
     repo.full_name,
@@ -1276,6 +1284,13 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
         pull: started.pr.number,
       })
     )?.active_verify_head_sha,
+  ).toBeNull();
+  expect(
+    (
+      await svc.workflowRuns.stateForPull(repo.full_name, {
+        pull: started.pr.number,
+      })
+    )?.active_verify_started_at,
   ).toBeNull();
   const resumedVerify = await svc.workflowRuns.resumeAfterHuman(
     repo.full_name,

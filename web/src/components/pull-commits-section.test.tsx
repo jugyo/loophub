@@ -146,6 +146,71 @@ describe("PullCommitsSection", () => {
     expect(screen.queryByText("Reviewing")).toBeNull();
   });
 
+  // An active Verify owns the row mid-review (#90): the "Not reviewed" placeholder would contradict
+  // the Reviewing badge beside it, so it stays hidden until the row has a review to summarize.
+  it("keeps Not reviewed off a commit an active Verify is reviewing", async () => {
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          active_verify_head_sha: commits![1].sha,
+          active_verify_started_at: null,
+        }),
+      },
+    });
+
+    const reviewing = await screen.findByText("Reviewing");
+    const targetedCommit = screen
+      .getByRole("button", {
+        name: "View changes in bbbbbbb: Earlier change",
+      })
+      .closest("li")!;
+    expect(targetedCommit.contains(reviewing)).toBe(true);
+    expect(within(targetedCommit).queryByText("Not reviewed")).toBeNull();
+  });
+
+  // The Reviewing badge ages a live Verify from its launch event's created_at, not the run row's
+  // updated_at which advances on every event (#90). The elapsed text ticks while the row is shown.
+  it("shows how long an active Verify has been reviewing, from its launch time", async () => {
+    const now = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date("2026-06-18T12:05:00Z").getTime());
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          active_verify_head_sha: commits![1].sha,
+          active_verify_started_at: "2026-06-18T12:03:12Z",
+        }),
+      },
+    });
+
+    const badge = await screen.findByText(/Reviewing/);
+    expect(badge.textContent).toContain("1m 48s");
+    expect(badge.querySelector("span")?.title).toBe("Reviewing for 108s");
+
+    now.mockReturnValue(new Date("2026-06-18T12:05:30Z").getTime());
+    await waitFor(
+      () =>
+        expect(screen.getByText(/Reviewing/).textContent).toContain("2m 18s"),
+      { timeout: 2000 },
+    );
+  });
+
+  // Legacy run state carries no Verify launch time (#90): the badge keeps its plain Reviewing look
+  // rather than inventing a duration.
+  it("keeps the plain Reviewing badge when the Verify launch time is missing", async () => {
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          active_verify_head_sha: commits![1].sha,
+          active_verify_started_at: null,
+        }),
+      },
+    });
+
+    const badge = await screen.findByText("Reviewing");
+    expect(badge.textContent).toBe("Reviewing");
+  });
+
   it("keeps Reviewing beside review status and the Pushed badge", async () => {
     const pushedCommits = commits!.map((commit, index) => ({
       ...commit,

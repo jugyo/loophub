@@ -125,6 +125,7 @@ export function PullCommitsSection({
                       reviews={commitReviews}
                       commentsByReview={commentsByReview}
                       label={`${shortSha}: ${commit.subject}`}
+                      suppressNotReviewed={isReviewing}
                       onOpen={() =>
                         setSelectedReviewGroup({
                           label: `${shortSha}: ${commit.subject}`,
@@ -134,12 +135,9 @@ export function PullCommitsSection({
                     />
                   ) : null}
                   {isReviewing ? (
-                    <Badge
-                      tone="working"
-                      className="shrink-0 animate-[linked-pull-pulse_2.4s_ease-out_infinite]"
-                    >
-                      Reviewing
-                    </Badge>
+                    <ReviewingBadge
+                      startedAt={workflowRun?.active_verify_started_at ?? null}
+                    />
                   ) : null}
                   {commit.sha === latestPushedSha ? (
                     <Badge
@@ -210,14 +208,20 @@ function CommitReviewStatus({
   reviews,
   commentsByReview,
   label,
+  suppressNotReviewed,
   onOpen,
 }: {
   reviews: PullReview[];
   commentsByReview: Map<number, PullLineComment[]>;
   label: string;
+  // An active Verify means the commit is mid-review (#90): the "Not reviewed" placeholder would
+  // contradict the Reviewing badge beside it, so it is suppressed until the row has a review to
+  // summarize.
+  suppressNotReviewed: boolean;
   onOpen: () => void;
 }) {
   if (reviews.length === 0) {
+    if (suppressNotReviewed) return null;
     return (
       <span className="shrink-0 text-xs text-muted-foreground">
         Not reviewed
@@ -245,6 +249,44 @@ function CommitReviewStatus({
         </span>
       ) : null}
     </button>
+  );
+}
+
+// The commit an active Verify is reviewing (#90). Rides a live 1s tick so the elapsed time keeps
+// counting while the row is on screen; the wire's `active_verify_started_at` is the launch event's
+// `created_at`, so a review's age is measured from when Verify started, not from `updated_at`.
+// A missing start time (legacy run state) keeps the plain Reviewing badge without any elapsed text.
+function ReviewingBadge({ startedAt }: { startedAt: string | null }) {
+  const startedAtMs = startedAt ? new Date(startedAt).getTime() : Number.NaN;
+  const running = Number.isFinite(startedAtMs);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
+  const elapsedSeconds =
+    running && nowMs >= startedAtMs
+      ? Math.round((nowMs - startedAtMs) / 1000)
+      : null;
+  return (
+    <Badge
+      tone="working"
+      className="shrink-0 animate-[linked-pull-pulse_2.4s_ease-out_infinite]"
+    >
+      Reviewing
+      {elapsedSeconds !== null ? (
+        <span
+          className="font-normal"
+          title={`Reviewing for ${elapsedSeconds}s`}
+        >
+          {" · "}
+          {formatDuration(elapsedSeconds)}
+        </span>
+      ) : null}
+    </Badge>
   );
 }
 
