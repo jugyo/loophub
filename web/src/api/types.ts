@@ -44,6 +44,7 @@ import type {
   RepoAgentConfigWire,
   RepoGithubPrExportExtraPromptWire,
   RepoMergeModeWire,
+  RepoOriginSyncWire,
   RepoWire,
   ReviewAcResultWire,
   ReviewCommentWire,
@@ -155,6 +156,9 @@ export type { MergeMode };
 
 /** Resolved merge-mode view for the repo settings UI (`repos/mergeMode`, #406). */
 export type RepoMergeMode = RepoMergeModeWire;
+
+/** Origin sync state for the repo-top sidebar (`repos/originSync`, #71). */
+export type RepoOriginSync = RepoOriginSyncWire;
 
 /** Resolved Coding agent override view for the repo settings UI (`repos/agentConfig`, #1532). */
 export type RepoAgentConfig = RepoAgentConfigWire;

@@ -4,11 +4,14 @@ import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
 import {
+  aheadBehind,
   branchExists,
   commitDiffFiles,
+  currentBranch,
   defaultBranch,
   isGitRepo,
   localBranchRef,
+  pullFastForward,
   remoteUrl,
   revParse,
   worktreeListChecked,
@@ -24,6 +27,7 @@ import {
   type RepoAgentConfigWire,
   type RepoGithubPrExportExtraPromptWire,
   type RepoMergeModeWire,
+  type RepoOriginSyncWire,
   repoAgentConfigJSON,
   repoGithubPrExportExtraPromptJSON,
   repoJSON,
@@ -39,6 +43,29 @@ import {
 } from "./shared.ts";
 
 export type { Repo } from "../store.ts";
+
+// #71: read the checkout's standing against origin from local refs only. No fetch happens here —
+// opening the repo page must not wait on the network — so the counts are as fresh as the last
+// fetch/pull. `repos.pullFromOrigin` is what contacts origin, and it returns this same view once
+// the pull has updated `refs/remotes/origin/<branch>`.
+async function originSyncOf(r: S.Repo): Promise<RepoOriginSyncWire> {
+  if (!(await remoteUrl(r.local_path)))
+    return { has_origin: false, branch: null, ahead: null, behind: null };
+  const branch = await currentBranch(r.local_path);
+  const counts = branch
+    ? await aheadBehind(
+        r.local_path,
+        localBranchRef(branch),
+        `refs/remotes/origin/${branch}`,
+      )
+    : null;
+  return {
+    has_origin: true,
+    branch,
+    ahead: counts?.ahead ?? null,
+    behind: counts?.behind ?? null,
+  };
+}
 
 // ===== repos =====
 export const repos = {
@@ -270,6 +297,36 @@ export const repos = {
       has_github_remote,
       effective: effectiveMergeMode(r.merge_mode, has_github_remote),
     };
+  },
+
+  // #71: origin sync state for the repo-top sidebar — whether the repo has an origin at all, the
+  // checked-out branch, and how far it is ahead of / behind `origin/<branch>`.
+  async originSync(name: string): Promise<RepoOriginSyncWire> {
+    return originSyncOf(repoOr404(name));
+  },
+
+  // #71: `git pull --ff-only origin <branch>` in the registered checkout, answering with the
+  // refreshed sync state. Every way this can fail — no origin, a detached HEAD, a diverged or
+  // dirty branch, an unreachable remote — is reported with git's own message rather than retried
+  // or worked around: the operator sees what git said and decides what to do next.
+  async pullFromOrigin(name: string): Promise<RepoOriginSyncWire> {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    if (!(await remoteUrl(r.local_path)))
+      throw new ServiceError(422, "no origin remote is configured");
+    const branch = await currentBranch(r.local_path);
+    if (!branch)
+      throw new ServiceError(422, "cannot pull while HEAD is detached");
+    const pulled = await pullFastForward(r.local_path, branch);
+    if (pulled.code !== 0) {
+      const detail =
+        pulled.stderr.trim() || pulled.stdout.trim() || "unknown error";
+      throw new ServiceError(
+        422,
+        `git pull --ff-only origin ${branch} failed: ${detail}`,
+      );
+    }
+    return originSyncOf(r);
   },
 
   // #1532: set (or clear) the repo's Coding agent override. `override` toggles whether the repo's

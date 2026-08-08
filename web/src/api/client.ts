@@ -42,6 +42,7 @@ import type {
   RepoAgentConfig,
   RepoGithubPrExportExtraPrompt,
   RepoMergeMode,
+  RepoOriginSync,
   SearchResult,
   Stats,
   TerminalLaunchResult,
@@ -272,6 +273,19 @@ export function setRepoMergeMode(
     name: full(owner, repo),
     mode,
     session_id: sessionId,
+  });
+}
+
+// #71: how the repo's checkout stands against origin, for the repo-top sidebar. Local refs only —
+// this call does not contact origin.
+export function getRepoOriginSync(owner: string, repo: string) {
+  return rpc<RepoOriginSync>("repos/originSync", { name: full(owner, repo) });
+}
+
+// #71: fast-forward the repo's checkout from origin, answering with the refreshed sync state.
+export function pullRepoFromOrigin(owner: string, repo: string) {
+  return rpc<RepoOriginSync>("repos/pullFromOrigin", {
+    name: full(owner, repo),
   });
 }
 

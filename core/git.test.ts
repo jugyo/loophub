@@ -9,9 +9,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
+  aheadBehind,
   commitDiffFiles,
   commitLog,
   commitsAhead,
+  currentBranch,
   describeUnresolvedRevision,
   diffFiles,
   diffFilesBetween,
@@ -25,6 +27,7 @@ import {
   mergePreview,
   mergePull,
   pathInDiff,
+  pullFastForward,
   pushedCommitShas,
   sleep,
   worktreeAdd,
@@ -1091,4 +1094,91 @@ test("describeUnresolvedRevision lists $GIT_DIR collision candidates and a fix h
   expect(diagnosis).toMatch(/\$GIT_DIR\/ghost-base/);
   expect(diagnosis).toMatch(/hint: pass refs\/heads\/ghost-base/);
   rmSync(p, { recursive: true, force: true });
+});
+
+// #71: a clone with an origin reports its branch, and the ahead/behind pair counts each side of
+// the merge base with `origin/<branch>`.
+test("currentBranch and aheadBehind describe a clone's standing against origin (#71)", async () => {
+  const upstream = await makeRepo();
+  const clonePath = join(upstream, "..", `clone-${upstream.split("/").pop()}`);
+  await git(upstream, ["clone", "-q", upstream, clonePath]);
+  await git(clonePath, ["config", "user.email", "t@t.local"]);
+  await git(clonePath, ["config", "user.name", "tester"]);
+
+  expect(await currentBranch(clonePath)).toBe("main");
+  expect(
+    await aheadBehind(clonePath, "refs/heads/main", "refs/remotes/origin/main"),
+  ).toEqual({
+    ahead: 0,
+    behind: 0,
+  });
+
+  // One commit on each side: the clone is 1 ahead, and 1 behind once it learns of upstream's.
+  writeFileSync(join(clonePath, "local.txt"), "local\n");
+  await git(clonePath, ["add", "-A"]);
+  await git(clonePath, ["commit", "-qm", "local"]);
+  writeFileSync(join(upstream, "remote.txt"), "remote\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "remote"]);
+  await git(clonePath, ["fetch", "-q", "origin"]);
+
+  expect(
+    await aheadBehind(clonePath, "refs/heads/main", "refs/remotes/origin/main"),
+  ).toEqual({
+    ahead: 1,
+    behind: 1,
+  });
+
+  // A detached HEAD has no branch, and a missing remote-tracking ref has no counts to report.
+  await git(clonePath, ["checkout", "-q", "--detach", "HEAD"]);
+  expect(await currentBranch(clonePath)).toBeNull();
+  expect(
+    await aheadBehind(
+      clonePath,
+      "refs/heads/main",
+      "refs/remotes/origin/never-pushed",
+    ),
+  ).toBeNull();
+
+  rmSync(upstream, { recursive: true, force: true });
+  rmSync(clonePath, { recursive: true, force: true });
+});
+
+// #71: the Pull button's primitive fast-forwards from origin, and refuses — with git's own message
+// — once the local branch has commits of its own.
+test("pullFastForward fast-forwards from origin and refuses a diverged branch (#71)", async () => {
+  const upstream = await makeRepo();
+  const clonePath = join(upstream, "..", `ff-${upstream.split("/").pop()}`);
+  await git(upstream, ["clone", "-q", upstream, clonePath]);
+  await git(clonePath, ["config", "user.email", "t@t.local"]);
+  await git(clonePath, ["config", "user.name", "tester"]);
+
+  writeFileSync(join(upstream, "remote.txt"), "remote\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "remote"]);
+
+  const pulled = await pullFastForward(clonePath, "main");
+  expect(pulled.code).toBe(0);
+  expect(existsSync(join(clonePath, "remote.txt"))).toBe(true);
+  expect(
+    await aheadBehind(clonePath, "refs/heads/main", "refs/remotes/origin/main"),
+  ).toEqual({
+    ahead: 0,
+    behind: 0,
+  });
+
+  // Diverge: a commit on each side, so no fast-forward exists.
+  writeFileSync(join(clonePath, "local.txt"), "local\n");
+  await git(clonePath, ["add", "-A"]);
+  await git(clonePath, ["commit", "-qm", "local"]);
+  writeFileSync(join(upstream, "remote2.txt"), "remote2\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "remote2"]);
+
+  const refused = await pullFastForward(clonePath, "main");
+  expect(refused.code).not.toBe(0);
+  expect(`${refused.stderr}${refused.stdout}`).toMatch(/fast-forward/i);
+
+  rmSync(upstream, { recursive: true, force: true });
+  rmSync(clonePath, { recursive: true, force: true });
 });
