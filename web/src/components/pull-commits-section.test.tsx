@@ -631,7 +631,7 @@ describe("PullCommitsSection", () => {
     expect(screen.queryByText("No reviews.")).toBeNull();
   });
 
-  it("renders commit metadata newest first", () => {
+  it("renders commit metadata oldest first", () => {
     renderSection();
 
     const section = screen
@@ -640,24 +640,24 @@ describe("PullCommitsSection", () => {
     const rows = within(section).getAllByRole("listitem");
 
     expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toContain("aaaaaaa");
-    expect(rows[0].textContent).toContain("Latest change");
-    expect(rows[0].textContent).toContain("Alice");
-    expect(rows[1].textContent).toContain("bbbbbbb");
-    expect(rows[1].textContent).toContain("Earlier change");
-    expect(rows[1].textContent).toContain("Bob");
+    expect(rows[0].textContent).toContain("bbbbbbb");
+    expect(rows[0].textContent).toContain("Earlier change");
+    expect(rows[0].textContent).toContain("Bob");
+    expect(rows[1].textContent).toContain("aaaaaaa");
+    expect(rows[1].textContent).toContain("Latest change");
+    expect(rows[1].textContent).toContain("Alice");
     expect(
       within(rows[0])
         .getByText(/ago|just now/)
         .closest("time")?.dateTime,
-    ).toBe("2026-06-18T12:00:00Z");
+    ).toBe("2026-06-17T12:00:00Z");
   });
 
   it("marks only confirmed pushed commits when push state is shown", () => {
     renderSection({
       commits: [
-        { ...commits![0], pushed_to_github: false },
-        { ...commits![1], pushed_to_github: true },
+        { ...commits![0], pushed_to_github: true },
+        { ...commits![1], pushed_to_github: false },
       ],
       showGithubPushState: true,
     });
@@ -683,7 +683,7 @@ describe("PullCommitsSection", () => {
     expect(badge.className).not.toContain("text-muted-foreground");
   });
 
-  // Commits are newest first, so only the topmost pushed row is labeled: the ones below it are
+  // Commits are oldest first, so only the latest pushed row is labeled: the ones before it are
   // pushed too, and repeating the badge there says nothing new (#2039).
   it("marks only the latest pushed commit when several commits are pushed", () => {
     renderSection({

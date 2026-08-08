@@ -1,4 +1,4 @@
-// PR-detail commit/review timeline: commits stay newest first, and each row owns the reviews made
+// PR-detail commit/review timeline: commits are displayed oldest first, and each row owns the reviews made
 // against that exact SHA. Reviews without a listed commit are omitted from the PR page.
 // Commit selection, per-commit diff loading, and the GitHub push badge stay inside this component.
 //
@@ -53,11 +53,12 @@ export function PullCommitsSection({
   const [selectedReviewGroup, setSelectedReviewGroup] =
     useState<SelectedReviewGroup | null>(null);
   const workflowRun = useWorkflowRunForPull(owner, repo, number).data;
-  // Commits are newest first, so the topmost pushed one marks how far the GitHub branch reaches:
-  // everything below it is pushed as well, and repeating the badge on those rows says nothing new
-  // (#2039).
+  const orderedCommits = [...commits].reverse();
+  // The latest pushed commit marks how far the GitHub branch reaches: everything before it is pushed
+  // as well, and repeating the badge on those rows says nothing new (#2039).
   const latestPushedSha = showGithubPushState
-    ? (commits.find((commit) => commit.pushed_to_github)?.sha ?? null)
+    ? (orderedCommits.findLast((commit) => commit.pushed_to_github)?.sha ??
+      null)
     : null;
   const commentsByReview = new Map<number, PullLineComment[]>();
   for (const comment of lineComments) {
@@ -88,7 +89,7 @@ export function PullCommitsSection({
         <p className="text-sm text-muted-foreground">No commits.</p>
       ) : (
         <ul className="divide-y overflow-hidden rounded-md border">
-          {commits.map((commit) => {
+          {orderedCommits.map((commit) => {
             const commitReviews = reviews.filter(
               (review) => review.head_sha === commit.sha,
             );
