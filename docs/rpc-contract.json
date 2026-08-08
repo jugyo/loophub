@@ -2402,18 +2402,14 @@
       }
     },
     {
-      "name": "pulls/commitFiles",
-      "description": "List files changed by one commit in a pull request, compared with its first parent.",
+      "name": "repos/commitFiles",
+      "description": "List files changed by one repository commit, compared with its first parent.",
       "params": {
         "type": "object",
         "properties": {
           "repo": {
             "type": "string",
             "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
           },
           "sha": {
             "type": "string",
@@ -2422,7 +2418,6 @@
         },
         "required": [
           "repo",
-          "number",
           "sha"
         ],
         "additionalProperties": false

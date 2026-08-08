@@ -89,6 +89,7 @@ const CACHEABLE_SUBCOMMANDS = new Map<string, Map<string, FlagValue>>([
     new Map<string, FlagValue>([
       ["--count", "none"],
       ["--not", "none"],
+      ["--parents", "none"],
     ]),
   ],
   ["show", new Map<string, FlagValue>()],

@@ -1013,15 +1013,9 @@ export function reactToDiffFeedback(
   });
 }
 
-export function listPullCommitFiles(
-  owner: string,
-  repo: string,
-  number: number,
-  sha: string,
-) {
-  return rpc<PullFile[]>("pulls/commitFiles", {
+export function listCommitFiles(owner: string, repo: string, sha: string) {
+  return rpc<PullFile[]>("repos/commitFiles", {
     repo: full(owner, repo),
-    number,
     sha,
   });
 }

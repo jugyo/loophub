@@ -10,7 +10,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   commitDiffFiles,
-  commitInRange,
   commitLog,
   commitsAhead,
   describeUnresolvedRevision,
@@ -1039,7 +1038,6 @@ test("every SHA-resolved query these helpers ask is served from the cache", asyn
     await hasEffectiveDiff(p, baseSha, headSha);
     await commitLog(p, baseSha, headSha);
     await commitsAhead(p, baseSha, headSha);
-    await commitInRange(p, baseSha, headSha, headSha);
     await pushedCommitShas(p, baseSha, headSha, headSha);
     await mergeBase(p, baseSha, headSha);
     await fileAtRef(p, headSha, "f.txt");

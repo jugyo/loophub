@@ -1,4 +1,4 @@
-// PR-detail commit/review timeline: commits stay newest first, and each row owns the reviews made
+// PR-detail commit/review timeline: commits are displayed oldest first, and each row owns the reviews made
 // against that exact SHA. Reviews without a listed commit are omitted from the PR page.
 // Commit selection, per-commit diff loading, and the GitHub push badge stay inside this component.
 //
@@ -12,8 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PullLineComment, PullRequest, PullReview } from "@/api/types";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
 import { CommentMetadata } from "@/components/comment-metadata";
-import { DiffLines } from "@/components/diff-lines";
-import { DiffStat } from "@/components/diff-stat";
+import { CommitDiffDialog } from "@/components/commit-diff-dialog";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +20,6 @@ import type { BadgeTone } from "@/lib/badges";
 import { hasMarkdownImage } from "@/lib/markdown-images";
 import { formatDuration, relativeTime } from "@/lib/time";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
-import { usePullCommitFiles } from "@/queries/pulls";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 
 type PullCommit = NonNullable<PullRequest["commits"]>[number];
@@ -55,11 +53,12 @@ export function PullCommitsSection({
   const [selectedReviewGroup, setSelectedReviewGroup] =
     useState<SelectedReviewGroup | null>(null);
   const workflowRun = useWorkflowRunForPull(owner, repo, number).data;
-  // Commits are newest first, so the topmost pushed one marks how far the GitHub branch reaches:
-  // everything below it is pushed as well, and repeating the badge on those rows says nothing new
-  // (#2039).
+  const orderedCommits = [...commits].reverse();
+  // The latest pushed commit marks how far the GitHub branch reaches: everything before it is pushed
+  // as well, and repeating the badge on those rows says nothing new (#2039).
   const latestPushedSha = showGithubPushState
-    ? (commits.find((commit) => commit.pushed_to_github)?.sha ?? null)
+    ? (orderedCommits.findLast((commit) => commit.pushed_to_github)?.sha ??
+      null)
     : null;
   const commentsByReview = new Map<number, PullLineComment[]>();
   for (const comment of lineComments) {
@@ -90,7 +89,7 @@ export function PullCommitsSection({
         <p className="text-sm text-muted-foreground">No commits.</p>
       ) : (
         <ul className="divide-y overflow-hidden rounded-md border">
-          {commits.map((commit) => {
+          {orderedCommits.map((commit) => {
             const commitReviews = reviews.filter(
               (review) => review.head_sha === commit.sha,
             );
@@ -126,6 +125,7 @@ export function PullCommitsSection({
                       reviews={commitReviews}
                       commentsByReview={commentsByReview}
                       label={`${shortSha}: ${commit.subject}`}
+                      suppressNotReviewed={isReviewing}
                       onOpen={() =>
                         setSelectedReviewGroup({
                           label: `${shortSha}: ${commit.subject}`,
@@ -135,12 +135,9 @@ export function PullCommitsSection({
                     />
                   ) : null}
                   {isReviewing ? (
-                    <Badge
-                      tone="working"
-                      className="shrink-0 animate-[linked-pull-pulse_2.4s_ease-out_infinite]"
-                    >
-                      Reviewing
-                    </Badge>
+                    <ReviewingBadge
+                      startedAt={workflowRun?.active_verify_started_at ?? null}
+                    />
                   ) : null}
                   {commit.sha === latestPushedSha ? (
                     <Badge
@@ -162,8 +159,8 @@ export function PullCommitsSection({
         <CommitDiffDialog
           owner={owner}
           repo={repo}
-          number={number}
-          commit={selectedCommit}
+          sha={selectedCommit.sha}
+          subject={selectedCommit.subject}
           onClose={() => setSelectedCommit(null)}
         />
       ) : null}
@@ -211,14 +208,20 @@ function CommitReviewStatus({
   reviews,
   commentsByReview,
   label,
+  suppressNotReviewed,
   onOpen,
 }: {
   reviews: PullReview[];
   commentsByReview: Map<number, PullLineComment[]>;
   label: string;
+  // An active Verify means the commit is mid-review (#90): the "Not reviewed" placeholder would
+  // contradict the Reviewing badge beside it, so it is suppressed until the row has a review to
+  // summarize.
+  suppressNotReviewed: boolean;
   onOpen: () => void;
 }) {
   if (reviews.length === 0) {
+    if (suppressNotReviewed) return null;
     return (
       <span className="shrink-0 text-xs text-muted-foreground">
         Not reviewed
@@ -246,6 +249,44 @@ function CommitReviewStatus({
         </span>
       ) : null}
     </button>
+  );
+}
+
+// The commit an active Verify is reviewing (#90). Rides a live 1s tick so the elapsed time keeps
+// counting while the row is on screen; the wire's `active_verify_started_at` is the launch event's
+// `created_at`, so a review's age is measured from when Verify started, not from `updated_at`.
+// A missing start time (legacy run state) keeps the plain Reviewing badge without any elapsed text.
+function ReviewingBadge({ startedAt }: { startedAt: string | null }) {
+  const startedAtMs = startedAt ? new Date(startedAt).getTime() : Number.NaN;
+  const running = Number.isFinite(startedAtMs);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
+  const elapsedSeconds =
+    running && nowMs >= startedAtMs
+      ? Math.round((nowMs - startedAtMs) / 1000)
+      : null;
+  return (
+    <Badge
+      tone="working"
+      className="shrink-0 animate-[linked-pull-pulse_2.4s_ease-out_infinite]"
+    >
+      Reviewing
+      {elapsedSeconds !== null ? (
+        <span
+          className="font-normal"
+          title={`Reviewing for ${elapsedSeconds}s`}
+        >
+          {" · "}
+          {formatDuration(elapsedSeconds)}
+        </span>
+      ) : null}
+    </Badge>
   );
 }
 
@@ -529,111 +570,5 @@ function ReviewAcGrades({ review }: { review: PullReview }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-function CommitDiffDialog({
-  owner,
-  repo,
-  number,
-  commit,
-  onClose,
-}: {
-  owner: string;
-  repo: string;
-  number: number;
-  commit: PullCommit;
-  onClose: () => void;
-}) {
-  const filesQuery = usePullCommitFiles(owner, repo, number, commit.sha);
-  const shortSha = commit.sha.slice(0, 7);
-  const backdropDismiss = useBackdropDismiss(onClose);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4"
-      {...backdropDismiss}
-    >
-      <div
-        data-debug-component="CommitDiffDialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Changes in ${shortSha}: ${commit.subject}`}
-        className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-md border bg-background shadow-lg"
-      >
-        <header className="flex items-start justify-between gap-3 border-b px-3 py-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-xs">
-              {shortSha}
-            </code>
-            <h3 className="truncate text-sm font-semibold">{commit.subject}</h3>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-label="Close commit diff"
-            className="h-7 w-7 shrink-0 p-0"
-            onClick={onClose}
-          >
-            <X className="size-4" />
-          </Button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-auto">
-          {filesQuery.isLoading ? (
-            <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Loading commit diff…
-            </div>
-          ) : filesQuery.isError ? (
-            <div className="m-4 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
-              Failed to load commit diff.
-              {filesQuery.error instanceof Error
-                ? ` ${filesQuery.error.message}`
-                : null}
-            </div>
-          ) : !filesQuery.data || filesQuery.data.length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground">
-              No changes in this commit.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-3 p-3">
-              {filesQuery.data.map((file) => (
-                <article
-                  key={file.filename}
-                  data-debug-component="CommitDiffFile"
-                  className="overflow-hidden rounded-md border"
-                >
-                  <header className="flex items-center justify-between gap-3 bg-muted/40 px-3 py-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">
-                        {file.filename}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {file.status}
-                      </div>
-                    </div>
-                    <DiffStat
-                      additions={file.additions}
-                      deletions={file.deletions}
-                      className="text-xs"
-                    />
-                  </header>
-                  <div className="border-t">
-                    <DiffLines patch={file.patch} />
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }

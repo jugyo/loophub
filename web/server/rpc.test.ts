@@ -564,18 +564,17 @@ test("issues/create accepts an explicit null target_branch", async () => {
   expect(created.result.target_branch).toBeNull();
 });
 
-test("pulls/commitFiles routes the PR number and selected SHA", async () => {
-  const commitFiles = vi.spyOn(svc.pulls, "commitFiles").mockResolvedValue([]);
+test("repos/commitFiles routes the selected SHA", async () => {
+  const commitFiles = vi.spyOn(svc.repos, "commitFiles").mockResolvedValue([]);
   const sha = "a".repeat(40);
   try {
-    const response: any = await call("pulls/commitFiles", {
+    const response: any = await call("repos/commitFiles", {
       repo: "me/proj",
-      number: 17,
       sha,
     });
 
     expect(response.result).toEqual([]);
-    expect(commitFiles).toHaveBeenCalledWith("me/proj", 17, sha);
+    expect(commitFiles).toHaveBeenCalledWith("me/proj", sha);
   } finally {
     commitFiles.mockRestore();
   }

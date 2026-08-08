@@ -5,8 +5,6 @@ import { publish } from "../domain-events.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
 import {
-  commitDiffFiles,
-  commitInRange,
   commitLog,
   commitsAhead,
   diffFiles,
@@ -397,23 +395,6 @@ export const pulls = {
         };
       }),
     };
-  },
-
-  async commitFiles(name: string, number: number, sha: string) {
-    const r = repoOr404(name);
-    const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id)!;
-    if (
-      !(await commitInRange(
-        r.local_path,
-        localBranchRef(p.base_ref),
-        localBranchRef(p.head_ref),
-        sha,
-      ))
-    ) {
-      throw new ServiceError(404, "Not Found");
-    }
-    return commitDiffFiles(r.local_path, sha);
   },
 
   // Whole-file content of a changed file at the PR's base or head commit (#435), for the

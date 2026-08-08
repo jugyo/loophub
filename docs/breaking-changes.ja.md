@@ -1,5 +1,13 @@
 # Breaking changes
 
+## 2026-08-07: commit 差分 RPC の PR 非依存化
+
+Issue #2467 で commit 差分取得の公開 interface を変更した。
+
+- `pulls/commitFiles` は削除され、`repos/commitFiles` に置き換えられた。パラメータは `repo` と full 40-hex の `sha` で、PR 番号を必要としない。
+- PR の `base..head` 外にある commit も差分を取得できる。`main` や `HEAD` などの ref 名は受け付けない。
+- 最初の commit は空 tree との差分として取得される。
+
 ## 2026-07-11: event delivery interface の整理
 
 Issue #1191 で次の公開 interface を削除した。

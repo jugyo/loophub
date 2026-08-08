@@ -60,7 +60,8 @@ Every delivered result includes `instructions`, the complete procedure for its a
 - `after` says whether to wait for another delivered instruction or stop.
 
 Run each command once. Keep a non-zero action error and any completed prior command visible, do not retry or add recovery,
-and ask a human how to proceed. For delivery text, write one concrete single-line instruction from the returned reason and
-observed source. For review rework, the returned command already contains the exact `orchestrator: address review <id>`
+and ask a human how to proceed. For delivery text, write one concrete single-line instruction only from the returned reason and
+observed source. Do not add procedures not grounded in either reason or observed; in particular, the parent must not instruct
+the child to push, merge, or write to a remote. For review rework, the returned command already contains the exact `orchestrator: address review <id>`
 message; do not summarize or interpret the findings. Cost hold and escalation commands own their receipts and human
 notifications; never raise the cost limit or merge on the parent's behalf.

@@ -39,8 +39,14 @@ const DEFAULT_AGENT_SETTINGS: Record<
 function renderSettings(
   initialCodingAgent: CodingAgent = "claude-code",
   initialDevCostLimitUsd = 10,
+  agentOverrides: Partial<
+    Record<CodingAgent, { model: string; effort: string }>
+  > = {},
 ) {
-  const agents = structuredClone(DEFAULT_AGENT_SETTINGS);
+  const agents = {
+    ...structuredClone(DEFAULT_AGENT_SETTINGS),
+    ...agentOverrides,
+  };
   let codingAgent = initialCodingAgent;
   let devCostLimitUsd = initialDevCostLimitUsd;
   vi.stubGlobal(
@@ -120,13 +126,34 @@ describe("SettingsPage", () => {
     expect(within(group).getAllByRole("radio")).toHaveLength(5);
     expect(within(group).getByText("Claude Code")).toBeTruthy();
     expect(within(group).getByText("OpenCode")).toBeTruthy();
-    expect(
-      within(group).getByLabelText("Cursor Agent effort not supported")
-        .textContent,
-    ).toBe("—");
-    expect(
-      within(group).getByLabelText("OpenCode effort not supported").textContent,
-    ).toBe("—");
+    expect(within(group).queryByText("—")).toBeNull();
+  });
+
+  it("shows the saved model and effort on the closed dropdown", async () => {
+    renderSettings();
+    const trigger = await screen.findByRole("button", {
+      name: "Claude Code model",
+    });
+    expect(trigger.textContent).toContain("Opus · Medium");
+    expect(trigger.getAttribute("title")).toBe("Opus · Medium");
+  });
+
+  it("omits the effort when it is unset or the agent has no effort levels", async () => {
+    renderSettings("claude-code", 10, {
+      "claude-code": { model: "opus", effort: "" },
+      cursor: { model: "auto", effort: "high" },
+    });
+    const withoutEffort = await screen.findByRole("button", {
+      name: "Claude Code model",
+    });
+    expect(withoutEffort.textContent).toBe("Opus");
+    expect(withoutEffort.getAttribute("title")).toBe("Opus");
+    // Cursor Agent offers no effort levels, so a stale saved value stays hidden.
+    const unsupported = screen.getByRole("button", {
+      name: "Cursor Agent model",
+    });
+    expect(unsupported.textContent).toBe("Auto");
+    expect(unsupported.getAttribute("title")).toBe("Auto");
   });
 
   it("marks and persists the default agent", async () => {

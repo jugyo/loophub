@@ -69,7 +69,7 @@ function renderSection({
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({
-      "pulls/commitFiles": () => files,
+      "repos/commitFiles": () => files,
       "workflowRuns/stateForPull": () => null,
       ...handlers,
     }),
@@ -144,6 +144,71 @@ describe("PullCommitsSection", () => {
       expect(rpcCall("workflowRuns/stateForPull")).toBeTruthy(),
     );
     expect(screen.queryByText("Reviewing")).toBeNull();
+  });
+
+  // An active Verify owns the row mid-review (#90): the "Not reviewed" placeholder would contradict
+  // the Reviewing badge beside it, so it stays hidden until the row has a review to summarize.
+  it("keeps Not reviewed off a commit an active Verify is reviewing", async () => {
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          active_verify_head_sha: commits![1].sha,
+          active_verify_started_at: null,
+        }),
+      },
+    });
+
+    const reviewing = await screen.findByText("Reviewing");
+    const targetedCommit = screen
+      .getByRole("button", {
+        name: "View changes in bbbbbbb: Earlier change",
+      })
+      .closest("li")!;
+    expect(targetedCommit.contains(reviewing)).toBe(true);
+    expect(within(targetedCommit).queryByText("Not reviewed")).toBeNull();
+  });
+
+  // The Reviewing badge ages a live Verify from its launch event's created_at, not the run row's
+  // updated_at which advances on every event (#90). The elapsed text ticks while the row is shown.
+  it("shows how long an active Verify has been reviewing, from its launch time", async () => {
+    const now = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date("2026-06-18T12:05:00Z").getTime());
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          active_verify_head_sha: commits![1].sha,
+          active_verify_started_at: "2026-06-18T12:03:12Z",
+        }),
+      },
+    });
+
+    const badge = await screen.findByText(/Reviewing/);
+    expect(badge.textContent).toContain("1m 48s");
+    expect(badge.querySelector("span")?.title).toBe("Reviewing for 108s");
+
+    now.mockReturnValue(new Date("2026-06-18T12:05:30Z").getTime());
+    await waitFor(
+      () =>
+        expect(screen.getByText(/Reviewing/).textContent).toContain("2m 18s"),
+      { timeout: 2000 },
+    );
+  });
+
+  // Legacy run state carries no Verify launch time (#90): the badge keeps its plain Reviewing look
+  // rather than inventing a duration.
+  it("keeps the plain Reviewing badge when the Verify launch time is missing", async () => {
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          active_verify_head_sha: commits![1].sha,
+          active_verify_started_at: null,
+        }),
+      },
+    });
+
+    const badge = await screen.findByText("Reviewing");
+    expect(badge.textContent).toBe("Reviewing");
   });
 
   it("keeps Reviewing beside review status and the Pushed badge", async () => {
@@ -631,7 +696,7 @@ describe("PullCommitsSection", () => {
     expect(screen.queryByText("No reviews.")).toBeNull();
   });
 
-  it("renders commit metadata newest first", () => {
+  it("renders commit metadata oldest first", () => {
     renderSection();
 
     const section = screen
@@ -640,24 +705,24 @@ describe("PullCommitsSection", () => {
     const rows = within(section).getAllByRole("listitem");
 
     expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toContain("aaaaaaa");
-    expect(rows[0].textContent).toContain("Latest change");
-    expect(rows[0].textContent).toContain("Alice");
-    expect(rows[1].textContent).toContain("bbbbbbb");
-    expect(rows[1].textContent).toContain("Earlier change");
-    expect(rows[1].textContent).toContain("Bob");
+    expect(rows[0].textContent).toContain("bbbbbbb");
+    expect(rows[0].textContent).toContain("Earlier change");
+    expect(rows[0].textContent).toContain("Bob");
+    expect(rows[1].textContent).toContain("aaaaaaa");
+    expect(rows[1].textContent).toContain("Latest change");
+    expect(rows[1].textContent).toContain("Alice");
     expect(
       within(rows[0])
         .getByText(/ago|just now/)
         .closest("time")?.dateTime,
-    ).toBe("2026-06-18T12:00:00Z");
+    ).toBe("2026-06-17T12:00:00Z");
   });
 
   it("marks only confirmed pushed commits when push state is shown", () => {
     renderSection({
       commits: [
-        { ...commits![0], pushed_to_github: false },
-        { ...commits![1], pushed_to_github: true },
+        { ...commits![0], pushed_to_github: true },
+        { ...commits![1], pushed_to_github: false },
       ],
       showGithubPushState: true,
     });
@@ -683,7 +748,7 @@ describe("PullCommitsSection", () => {
     expect(badge.className).not.toContain("text-muted-foreground");
   });
 
-  // Commits are newest first, so only the topmost pushed row is labeled: the ones below it are
+  // Commits are oldest first, so only the latest pushed row is labeled: the ones before it are
   // pushed too, and repeating the badge there says nothing new (#2039).
   it("marks only the latest pushed commit when several commits are pushed", () => {
     renderSection({
@@ -744,7 +809,7 @@ describe("PullCommitsSection", () => {
     ];
     renderSection({
       handlers: {
-        "pulls/commitFiles": (params) =>
+        "repos/commitFiles": (params) =>
           params.sha === commits![0].sha ? files : earlierFiles,
       },
     });
@@ -761,9 +826,8 @@ describe("PullCommitsSection", () => {
     expect(within(latestDialog).getByText("aaaaaaa")).toBeTruthy();
     expect(within(latestDialog).getByText("Latest change")).toBeTruthy();
     expect(await within(latestDialog).findByText("+const x = 1;")).toBeTruthy();
-    expect(rpcCall("pulls/commitFiles")?.params).toEqual({
+    expect(rpcCall("repos/commitFiles")?.params).toEqual({
       repo: "me/proj",
-      number: 30,
       sha: commits![0].sha,
     });
 
@@ -794,7 +858,7 @@ describe("PullCommitsSection", () => {
     const pending = new Promise<PullFile[]>((resolve) => {
       resolveFiles = resolve;
     });
-    renderSection({ handlers: { "pulls/commitFiles": () => pending } });
+    renderSection({ handlers: { "repos/commitFiles": () => pending } });
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -816,7 +880,7 @@ describe("PullCommitsSection", () => {
   it("shows commit diff retrieval failures in the dialog", async () => {
     renderSection({
       handlers: {
-        "pulls/commitFiles": () => {
+        "repos/commitFiles": () => {
           throw new RpcFault(500, "simulated commit diff failure");
         },
       },

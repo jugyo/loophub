@@ -61,6 +61,7 @@ prompt に重複して持たない。parent 自身の判断は untrusted な参�
 
 各 command は 1 回だけ実行する。action の非 0 error と、それ以前に完了した command を可視のまま保持し、
 retry や recovery を追加せず、人間に進め方を確認する。delivery text は、返された reason と observed source
-から具体的な 1 行の指示を書く。review rework では返却 command が正確な
+だけから具体的な 1 行の指示を書く。reason や observed に由来しない手順を追加してはならず、特に
+parent は child に push、merge、remote への書き込みを指示しない。review rework では返却 command が正確な
 `orchestrator: address review <id>` を既に含むため、finding を要約・解釈しない。cost hold と escalation の
 command が receipt と人間への通知を管理する。parent の判断で cost limit を増額したり merge したりしない。

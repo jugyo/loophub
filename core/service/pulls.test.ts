@@ -261,12 +261,8 @@ exec "${realGit}" "$@"
   }
 });
 
-test("commitFiles returns the selected PR commit's parent diff", async () => {
-  const files = await svc.pulls.commitFiles(
-    "me/commit-files",
-    commitFilesPullNumber,
-    featureSha,
-  );
+test("repos/commitFiles returns a commit's parent diff", async () => {
+  const files = await svc.repos.commitFiles("me/commit-files", featureSha);
 
   expect(files).toEqual([
     {
@@ -516,19 +512,19 @@ test("files and commits exclude base-side work after the base branch is rebased"
   rmSync(path, { recursive: true, force: true });
 });
 
-test("commitFiles rejects a SHA outside the pull request's base..head range", async () => {
+test("repos/commitFiles returns commits outside a pull request", async () => {
+  const files = await svc.repos.commitFiles("me/commit-files", outsideSha);
+  expect(files).toHaveLength(1);
+  expect(files[0].filename).toBe("outside.txt");
+});
+
+test("repos/commitFiles rejects an arbitrary ref instead of resolving it", async () => {
   await expect(
-    svc.pulls.commitFiles("me/commit-files", commitFilesPullNumber, outsideSha),
+    svc.repos.commitFiles("me/commit-files", "main"),
   ).rejects.toMatchObject({ status: 404, message: "Not Found" });
 });
 
-test("commitFiles rejects an arbitrary ref instead of resolving it", async () => {
-  await expect(
-    svc.pulls.commitFiles("me/commit-files", commitFilesPullNumber, "main"),
-  ).rejects.toMatchObject({ status: 404, message: "Not Found" });
-});
-
-test("commitFiles surfaces a git diff failure", async () => {
+test("repos/commitFiles surfaces a git diff failure", async () => {
   const bin = mkdtempSync(join(HOME, "commit-diff-bin-"));
   const fakeGit = join(bin, "git");
   const realGit = spawnSync("which", ["git"], {
@@ -555,15 +551,27 @@ exec "${realGit}" "$@"
 
   try {
     await expect(
-      svc.pulls.commitFiles(
-        "me/commit-files",
-        commitFilesPullNumber,
-        featureSha,
-      ),
+      svc.repos.commitFiles("me/commit-files", featureSha),
     ).rejects.toThrow(/simulated git diff failure/);
   } finally {
     process.env.PATH = originalPath;
   }
+});
+
+test("repos/commitFiles returns the diff for an initial commit", async () => {
+  const initialSha = gitAt(commitFilesRepoPath, [
+    "rev-list",
+    "--max-parents=0",
+    "main",
+  ]);
+  const files = await svc.repos.commitFiles("me/commit-files", initialSha);
+  expect(files).toEqual([
+    expect.objectContaining({
+      filename: "a.txt",
+      status: "added",
+      patch: expect.stringContaining("+before"),
+    }),
+  ]);
 });
 
 // #2263: the usage totals used to be readable only through the PR / issue detail payloads, whose

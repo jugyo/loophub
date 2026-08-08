@@ -89,6 +89,12 @@ function AgentModelDropdown({
     : effort
       ? [effort, ...effortSuggestions]
       : effortSuggestions;
+  // Summarize the saved selection on the closed trigger (#100) so model and effort are both
+  // readable without opening the submenu. Agents whose registry entry offers no effort levels
+  // never save one, so they show the model alone instead of an empty separator.
+  const modelText = model ? displayValue(model) : "Default";
+  const effortText =
+    effortSuggestions.length > 0 && effort ? displayValue(effort) : "";
 
   return (
     <DropdownMenu>
@@ -97,12 +103,15 @@ function AgentModelDropdown({
           type="button"
           variant="secondary"
           aria-label={`${agentLabel} model`}
-          title={model ? displayValue(model) : "Default"}
+          title={effortText ? `${modelText} · ${effortText}` : modelText}
           disabled={disabled || saving}
           className="min-w-44 justify-between border bg-background px-3 text-left font-normal shadow-sm"
         >
           <span className="min-w-0 truncate">
-            {model ? displayValue(model) : "Default"}
+            {modelText}
+            {effortText ? (
+              <span className="text-muted-foreground"> · {effortText}</span>
+            ) : null}
           </span>
           <ChevronsUpDown
             className="size-4 shrink-0 text-muted-foreground"
@@ -243,14 +252,6 @@ export function SettingsPage() {
                       })
                     }
                   />
-                  {EFFORT_SUGGESTIONS[agentOption.value].length === 0 ? (
-                    <span
-                      aria-label={`${agentOption.label} effort not supported`}
-                      className="shrink-0 text-muted-foreground"
-                    >
-                      —
-                    </span>
-                  ) : null}
                 </div>
               );
             })}

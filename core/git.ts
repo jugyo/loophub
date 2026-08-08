@@ -290,6 +290,8 @@ const STATUS_MAP: Record<string, string> = {
   T: "changed",
 };
 
+const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
 // head に固有の差分（merge-base からの変更）= base...head
 export async function diffFiles(
   repoPath: string,
@@ -315,23 +317,11 @@ export async function commitDiffFiles(
   repoPath: string,
   sha: string,
 ): Promise<DiffFile[]> {
-  return diffFilesForRevisions(repoPath, [`${sha}^`, sha]);
-}
-
-/** Whether an exact full commit SHA belongs to base..head. */
-export async function commitInRange(
-  repoPath: string,
-  base: string,
-  head: string,
-  sha: string,
-): Promise<boolean> {
-  if (!/^[0-9a-f]{40}$/i.test(sha)) return false;
-  const commits = await git(repoPath, ["rev-list", `${base}..${head}`]);
-  assertGitSuccess(commits, "git rev-list failed");
-  const normalizedSha = sha.toLowerCase();
-  return commits.stdout
-    .split("\n")
-    .some((commit) => commit.trim().toLowerCase() === normalizedSha);
+  const commit = await git(repoPath, ["rev-list", "--parents", sha]);
+  assertGitSuccess(commit, "git rev-list failed");
+  const [, parent] = commit.stdout.trim().split(/\s+/);
+  const base = parent ?? EMPTY_TREE_SHA;
+  return diffFilesForRevisions(repoPath, [base, sha]);
 }
 
 async function diffFilesForRevisions(

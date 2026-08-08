@@ -1539,6 +1539,10 @@ export interface WorkflowRunStateWire {
   status: string; // running | completed (closed PR); legacy rows may read 'stopped' or 'blocked'
   current_step: string; // execute | verify
   active_verify_head_sha: string | null;
+  // When the active Verify launch began, read from its `workflow_step.launched` event's
+  // `created_at` (#90). Present together with `active_verify_head_sha`; the Web derives the
+  // elapsed reviewing time from it instead of `updated_at`, which advances on every event.
+  active_verify_started_at: string | null;
   rework_count: number;
   rework_limit: number;
   cost_increment_usd: number;
@@ -1619,6 +1623,7 @@ export function workflowRunStateJSON(input: {
   costLimitUsd: number;
   costLimitIncreaseAvailable: boolean;
   activeVerifyHeadSha: string | null;
+  activeVerifyStartedAt: string | null;
   done: boolean;
   mergeConflict: boolean;
 }): WorkflowRunStateWire {
@@ -1630,6 +1635,7 @@ export function workflowRunStateJSON(input: {
     status: run.status,
     current_step: run.current_step,
     active_verify_head_sha: input.activeVerifyHeadSha,
+    active_verify_started_at: input.activeVerifyStartedAt,
     rework_count: run.rework_count,
     rework_limit: input.reworkLimit,
     cost_increment_usd: input.costIncrementUsd,

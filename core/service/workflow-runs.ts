@@ -1151,6 +1151,11 @@ async function workflowRunState(
     verifyLaunch !== null &&
     (latestReviewSubmission === undefined ||
       latestReviewSubmission.id < verifyLaunch.id);
+  const verifyActive =
+    run.status === "running" &&
+    run.needs_human_reason === null &&
+    run.active_step === "verify" &&
+    verifyLaunchPending;
   return workflowRunStateJSON({
     run,
     workflowName,
@@ -1160,13 +1165,13 @@ async function workflowRunState(
     costIncrementUsd: incrementUsd,
     costLimitUsd: limitUsd,
     costLimitIncreaseAvailable: costLimitIncreaseAvailable(repo, run),
-    activeVerifyHeadSha:
-      run.status === "running" &&
-      run.needs_human_reason === null &&
-      run.active_step === "verify" &&
-      verifyLaunchPending
-        ? verifyHeadSha
-        : null,
+    activeVerifyHeadSha: verifyActive ? verifyHeadSha : null,
+    // The launch event's `created_at` is the Verify start, not the run row's `updated_at`, which
+    // advances on every event (#90). Carried only while the verify is active, so the Web can show
+    // how long this review has been running.
+    activeVerifyStartedAt: verifyActive
+      ? (verifyLaunch?.created_at ?? null)
+      : null,
     done: workflowDone({
       mergeableState,
       prClosed: prIssue?.state === "closed",
