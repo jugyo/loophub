@@ -2003,9 +2003,12 @@ function MarkdownPreviewPane({
 }) {
   const file = usePullFileAtRef(owner, repo, number, path, side, true);
   return (
+    // The pane scrolls itself rather than leaning on the dialog's shared
+    // scroller, so the scrollbar belongs to the element that carries the
+    // preview's own palette.
     <div
       data-debug-component="MarkdownPreviewPane"
-      className="markdown-diff-preview px-3 py-8"
+      className="markdown-diff-preview h-full overflow-y-auto px-3 py-8"
     >
       {file.isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
