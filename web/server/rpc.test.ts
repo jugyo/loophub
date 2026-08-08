@@ -151,12 +151,10 @@ test("page data routes return complete initial screen result sets", async () => 
     perPage: 21,
     lookahead: true,
     includeLabels: true,
-    includeUnmergedWorkspaces: true,
   });
   expect(issueList.result).toMatchObject({
     repo: { full_name: "me/proj" },
     workspaces: expect.any(Array),
-    unmerged_workspaces: expect.any(Array),
     labels: expect.any(Array),
   });
   expect(issueList.result.issues[0].number).toBe(1);

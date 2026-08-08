@@ -1177,9 +1177,6 @@
           },
           "includeLabels": {
             "type": "boolean"
-          },
-          "includeUnmergedWorkspaces": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -1219,26 +1216,6 @@
     {
       "name": "workspaces/list",
       "description": "List registered workspaces in a repository.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "array"
-      }
-    },
-    {
-      "name": "workspaces/listUnmerged",
-      "description": "List active workspaces with commits not merged into the default branch.",
       "params": {
         "type": "object",
         "properties": {
