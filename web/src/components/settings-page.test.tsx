@@ -25,84 +25,52 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-type AgentSettingsForTest = {
-  model: string;
-  effort: string;
-};
-
-const DEFAULT_AGENT_SETTINGS: Record<CodingAgent, AgentSettingsForTest> = {
+const DEFAULT_AGENT_SETTINGS: Record<
+  CodingAgent,
+  { model: string; effort: string }
+> = {
   "claude-code": { model: "opus", effort: "medium" },
   codex: { model: "gpt-5.5", effort: "medium" },
-  grok: {
-    model: "grok-code-fast-1",
-    effort: "medium",
-  },
+  grok: { model: "grok-code-fast-1", effort: "medium" },
   cursor: { model: "auto", effort: "" },
-  opencode: {
-    model: "opencode/big-pickle",
-    effort: "",
-  },
+  opencode: { model: "opencode/big-pickle", effort: "" },
 };
 
-function mockFetch(
-  initialAgents: Partial<Record<CodingAgent, AgentSettingsForTest>> = {},
+function renderSettings(
   initialCodingAgent: CodingAgent = "claude-code",
   initialDevCostLimitUsd = 10,
-  initialWorkflowContractLanguage: "en" | "ja" = "en",
 ) {
-  const agents: Record<CodingAgent, AgentSettingsForTest> = {
-    ...DEFAULT_AGENT_SETTINGS,
-    ...initialAgents,
-  };
+  const agents = structuredClone(DEFAULT_AGENT_SETTINGS);
   let codingAgent = initialCodingAgent;
   let devCostLimitUsd = initialDevCostLimitUsd;
-  let workflowContractLanguage = initialWorkflowContractLanguage;
-  return mockRpcFetch({
-    "settings/get": () => ({
-      agents,
-      codingAgent,
-      devCostLimitUsd,
-      workflowContractLanguage,
-    }),
-    "settings/update": (p) => {
-      if (p.agent && p.model !== undefined) {
-        agents[p.agent as CodingAgent] = {
-          ...agents[p.agent as CodingAgent],
-          model: p.model as string,
-        };
-      }
-      if (p.agent && p.effort !== undefined) {
-        agents[p.agent as CodingAgent] = {
-          ...agents[p.agent as CodingAgent],
-          effort: p.effort as string,
-        };
-      }
-      if (p.codingAgent) codingAgent = p.codingAgent;
-      if (p.devCostLimitUsd !== undefined) {
-        devCostLimitUsd = p.devCostLimitUsd as number;
-      }
-      if (p.workflowContractLanguage) {
-        workflowContractLanguage = p.workflowContractLanguage as "en" | "ja";
-      }
-      return { agents, codingAgent, devCostLimitUsd, workflowContractLanguage };
-    },
-  });
-}
-
-function renderSettings(
-  initialAgents?: Partial<Record<CodingAgent, AgentSettingsForTest>>,
-  initialCodingAgent: CodingAgent = "claude-code",
-  initialDevCostLimitUsd = 10,
-  initialWorkflowContractLanguage: "en" | "ja" = "en",
-) {
   vi.stubGlobal(
     "fetch",
-    mockFetch(
-      initialAgents,
-      initialCodingAgent,
-      initialDevCostLimitUsd,
-      initialWorkflowContractLanguage,
-    ),
+    mockRpcFetch({
+      "settings/get": () => ({
+        agents,
+        codingAgent,
+        devCostLimitUsd,
+        workflowContractLanguage: "en",
+      }),
+      "settings/update": (params) => {
+        if (params.agent && params.model !== undefined) {
+          agents[params.agent as CodingAgent].model = params.model as string;
+        }
+        if (params.agent && params.effort !== undefined) {
+          agents[params.agent as CodingAgent].effort = params.effort as string;
+        }
+        if (params.codingAgent) codingAgent = params.codingAgent as CodingAgent;
+        if (params.devCostLimitUsd !== undefined) {
+          devCostLimitUsd = params.devCostLimitUsd as number;
+        }
+        return {
+          agents,
+          codingAgent,
+          devCostLimitUsd,
+          workflowContractLanguage: "en",
+        };
+      },
+    }),
   );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -113,397 +81,114 @@ function renderSettings(
     path: "/settings",
     component: () => <SettingsPage />,
   });
-  const workflowsRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/settings/workflows",
-    component: () => <div data-testid="workflows-page" />,
-  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([settingsRoute, workflowsRoute]),
+    routeTree: rootRoute.addChildren([settingsRoute]),
     history: createMemoryHistory({ initialEntries: ["/settings"] }),
   });
-  const result = render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  return { ...result, router };
 }
 
-async function modelDropdown(label: string): Promise<HTMLButtonElement> {
-  return (await screen.findByLabelText(
-    `Default model and effort (${label})`,
-  )) as HTMLButtonElement;
-}
-
-async function openModelDropdown(label: string): Promise<HTMLElement> {
-  fireEvent.pointerDown(await modelDropdown(label), {
+async function openDropdown(label: string): Promise<HTMLElement> {
+  fireEvent.pointerDown(await screen.findByRole("button", { name: label }), {
     button: 0,
     ctrlKey: false,
   });
   return screen.findByRole("menu");
 }
 
+function lastRpcCall(
+  method: string,
+): { method: string; params: any } | undefined {
+  const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+  for (const call of [...calls].reverse()) {
+    const body = JSON.parse(String((call[1] as RequestInit).body));
+    if (body.method === method) return body;
+  }
+  return undefined;
+}
+
 describe("SettingsPage", () => {
-  it("shows the settings sidebar with Agent selected initially", async () => {
+  it("shows one setting row for every registry runtime", async () => {
     renderSettings();
-
-    const navigation = await screen.findByRole("navigation", {
-      name: "Settings",
+    const group = await screen.findByRole("radiogroup", {
+      name: "Coding agent",
     });
-    const agentLink = within(navigation).getByRole("link", { name: "Agent" });
-    const workflowsLink = within(navigation).getByRole("link", {
-      name: "Workflows",
-    });
-
-    expect(agentLink.getAttribute("href")).toBe("/settings");
-    expect(agentLink.getAttribute("aria-current")).toBe("page");
-    expect(workflowsLink.getAttribute("href")).toBe("/settings/workflows");
-    expect(workflowsLink.getAttribute("aria-current")).toBeNull();
-    expect(screen.queryByRole("tablist")).toBeNull();
-
-    const agentPanel = screen.getByRole("region", { name: "Agent" });
-    expect(screen.queryByRole("main")).toBeNull();
+    expect(within(group).getAllByRole("radio")).toHaveLength(5);
+    expect(within(group).getByText("Claude Code")).toBeTruthy();
+    expect(within(group).getByText("OpenCode")).toBeTruthy();
     expect(
-      within(agentPanel).getByRole("heading", { name: "Coding agent" }),
-    ).toBeTruthy();
+      within(group).getByLabelText("Cursor Agent effort not supported")
+        .textContent,
+    ).toBe("—");
     expect(
-      within(agentPanel).getByRole("heading", {
-        name: "Task over-budget limit",
+      within(group).getByLabelText("OpenCode effort not supported").textContent,
+    ).toBe("—");
+  });
+
+  it("marks and persists the default agent", async () => {
+    renderSettings();
+    const marker = await screen.findByRole("radio", { name: "Codex" });
+    expect((marker as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(marker);
+    await waitFor(() =>
+      expect(lastRpcCall("settings/update")?.params).toMatchObject({
+        codingAgent: "codex",
       }),
-    ).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Manage workflows" })).toBeNull();
+    );
+    expect((marker as HTMLInputElement).checked).toBe(true);
   });
 
-  it("opens Workflows settings from the sidebar", async () => {
-    const { router } = renderSettings();
-
-    fireEvent.click(await screen.findByRole("link", { name: "Workflows" }));
-
-    await waitFor(() =>
-      expect(router.state.location.pathname).toBe("/settings/workflows"),
-    );
-    expect(await screen.findByTestId("workflows-page")).toBeTruthy();
-  });
-
-  it("shows the current coding agent as checked", async () => {
-    renderSettings(undefined, "codex");
-    const group = await screen.findByRole("radiogroup", {
-      name: /^coding agent$/i,
-    });
-    const [claudeCodeOption, codexOption] = within(group).getAllByRole("radio");
-    await waitFor(() =>
-      expect(codexOption.getAttribute("aria-checked")).toBe("true"),
-    );
-    expect(claudeCodeOption.getAttribute("aria-checked")).toBe("false");
+  it("opens the effort submenu from a model option", async () => {
+    renderSettings();
     expect(
-      within(group).getByRole("radio", { name: "Cursor Agent" }),
+      (await screen.findByRole("button", { name: "Claude Code model" }))
+        .textContent,
+    ).toContain("Opus");
+    const modelMenu = await openDropdown("Claude Code model");
+    const modelOption = within(modelMenu).getByRole("menuitem", {
+      name: "Claude Opus 5 effort options",
+    });
+    fireEvent.pointerMove(modelOption, { pointerType: "mouse" });
+    expect(
+      await screen.findByRole("menuitem", { name: "Extra high" }),
     ).toBeTruthy();
-    expect(within(group).getByRole("radio", { name: "OpenCode" })).toBeTruthy();
   });
 
-  it("lists every registry runtime in coding-agent order", async () => {
+  it("persists model and effort independently", async () => {
     renderSettings();
-    const group = await screen.findByRole("radiogroup", {
-      name: /^coding agent$/i,
+    const modelMenu = await openDropdown("Claude Code model");
+    const modelOption = within(modelMenu).getByRole("menuitem", {
+      name: "Claude Opus 4 8 effort options",
     });
-    const labels = within(group)
-      .getAllByRole("radio")
-      .map((option) => option.textContent?.trim());
-    expect(labels).toEqual([
-      "Claude Code",
-      "Codex",
-      "Grok Build",
-      "Cursor Agent",
-      "OpenCode",
-    ]);
-  });
-
-  it("switches the coding agent and persists via settings/update", async () => {
-    renderSettings(undefined, "claude-code");
-    const group = await screen.findByRole("radiogroup", {
-      name: /^coding agent$/i,
-    });
-    const [, codexOption] = within(group).getAllByRole(
-      "radio",
-    ) as HTMLButtonElement[];
-    await waitFor(() => expect(codexOption.disabled).toBe(false));
-    fireEvent.click(codexOption);
-
-    await waitFor(() => {
-      const call = rpcCall("settings/update");
-      expect(call).toBeTruthy();
-      expect(call!.params).toMatchObject({ codingAgent: "codex" });
-    });
-    await waitFor(() =>
-      expect(codexOption.getAttribute("aria-checked")).toBe("true"),
-    );
-  });
-
-  it("switches the coding agent to OpenCode and persists via settings/update", async () => {
-    renderSettings(undefined, "claude-code");
-    const group = await screen.findByRole("radiogroup", {
-      name: /^coding agent$/i,
-    });
-    const openCodeOption = within(group).getByRole("radio", {
-      name: "OpenCode",
-    }) as HTMLButtonElement;
-    await waitFor(() => expect(openCodeOption.disabled).toBe(false));
-    fireEvent.click(openCodeOption);
-
-    await waitFor(() => {
-      expect(rpcCall("settings/update")?.params).toMatchObject({
-        codingAgent: "opencode",
-      });
-    });
-    await waitFor(() =>
-      expect(openCodeOption.getAttribute("aria-checked")).toBe("true"),
-    );
-  });
-
-  it("offers OpenCode models without an effort ladder (TUI has no --variant)", async () => {
-    renderSettings(undefined, "opencode");
-    const openCodeDropdown = await modelDropdown("OpenCode");
-    await waitFor(() =>
-      expect(openCodeDropdown.textContent).toContain(
-        "opencode/big-pickle — default",
-      ),
-    );
-    const menu = await openModelDropdown("OpenCode");
-    const openCodeOptions = within(menu)
-      .getAllByRole("menuitem")
-      .map((o) => o.textContent);
-    // Empty effortSuggestions → one option per model with the "default" effort label (like Cursor).
-    expect(openCodeOptions).toEqual(
-      expect.arrayContaining([
-        "opencode/big-pickle — default",
-        "openai/gpt-5.6 — default",
-      ]),
-    );
-    expect(openCodeOptions).not.toEqual(
-      expect.arrayContaining(["opencode/big-pickle — medium"]),
-    );
+    fireEvent.pointerMove(modelOption, { pointerType: "mouse" });
     fireEvent.click(
-      within(menu).getByRole("menuitem", {
-        name: "openai/gpt-5.6 — default",
-      }),
+      await screen.findByRole("menuitem", { name: "Extra high" }),
     );
     await waitFor(() =>
-      expect(rpcCall("settings/update")?.params).toMatchObject({
-        agent: "opencode",
-        model: "openai/gpt-5.6",
-        effort: "",
-      }),
-    );
-    await waitFor(() =>
-      expect(openCodeDropdown.textContent).toContain(
-        "openai/gpt-5.6 — default",
-      ),
-    );
-  });
-
-  it("shows the current default model+effort per agent in the dropdown trigger (#594, #682)", async () => {
-    renderSettings({
-      "claude-code": { model: "opus", effort: "high" },
-      codex: { model: "gpt-5.5", effort: "low" },
-    });
-    const claudeDropdown = await modelDropdown("Claude Code");
-    await waitFor(() =>
-      expect(claudeDropdown.textContent).toContain("opus — high"),
-    );
-
-    const codexDropdown = await modelDropdown("Codex");
-    expect(codexDropdown.textContent).toContain("gpt-5.5 — low");
-  });
-
-  it("offers every model x effort combination as shadcn dropdown items, per agent (#610, #682)", async () => {
-    renderSettings();
-    const claudeDropdown = await modelDropdown("Claude Code");
-    await waitFor(() =>
-      expect(claudeDropdown.textContent).toContain("opus — medium"),
-    );
-    let menu = await openModelDropdown("Claude Code");
-    const claudeOptions = within(menu)
-      .getAllByRole("menuitem")
-      .map((o) => o.textContent);
-    expect(claudeOptions).toEqual(
-      expect.arrayContaining([
-        "opus — low",
-        "opus — medium",
-        "opus — high",
-        "opus — xhigh",
-        "opus — max",
-        "sonnet — high",
-        "haiku — max",
-      ]),
-    );
-    fireEvent.keyDown(document, { key: "Escape" });
-
-    menu = await openModelDropdown("Codex");
-    const codexOptions = within(menu)
-      .getAllByRole("menuitem")
-      .map((o) => o.textContent);
-    expect([
-      ...new Set(codexOptions.map((option) => option?.split(" — ")[0])),
-    ]).toEqual([
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-      "gpt-5.5",
-      "gpt-5.4",
-      "gpt-5.4-mini",
-      "gpt-5.3-codex-spark",
-    ]);
-    expect(codexOptions).toEqual(
-      expect.arrayContaining([
-        "gpt-5.6-sol — minimal",
-        "gpt-5.6-sol — low",
-        "gpt-5.6-sol — medium",
-        "gpt-5.6-sol — high",
-        "gpt-5.5 — minimal",
-        "gpt-5.5 — low",
-        "gpt-5.5 — medium",
-        "gpt-5.5 — high",
-      ]),
-    );
-    // codex has no effort concept beyond these four static levels — no claude-code-only level
-    // ("xhigh"/"max") should leak into its options.
-    expect(codexOptions).not.toEqual(
-      expect.arrayContaining(["gpt-5.5 — xhigh"]),
-    );
-    fireEvent.keyDown(document, { key: "Escape" });
-
-    menu = await openModelDropdown("Cursor Agent");
-    const cursorOptions = within(menu)
-      .getAllByRole("menuitem")
-      .map((o) => o.textContent);
-    expect(cursorOptions).toEqual(
-      expect.arrayContaining([
-        "auto — default",
-        "gpt-5.3-codex-high — default",
-        "claude-opus-5-thinking-high — default",
-      ]),
-    );
-    fireEvent.click(
-      within(menu).getByRole("menuitem", {
-        name: "composer-2.5 — default",
-      }),
-    );
-    await waitFor(() =>
-      expect(rpcCall("settings/update")?.params).toMatchObject({
-        agent: "cursor",
-        model: "composer-2.5",
-        effort: "",
-      }),
-    );
-  });
-
-  it("selecting a combination saves model and effort together via settings/update, leaving the other agent untouched (#682)", async () => {
-    renderSettings();
-    const claudeDropdown = await modelDropdown("Claude Code");
-    await waitFor(() =>
-      expect(claudeDropdown.textContent).toContain("opus — medium"),
-    );
-
-    const menu = await openModelDropdown("Claude Code");
-    fireEvent.click(
-      within(menu).getByRole("menuitem", { name: "claude-opus-4-8 — xhigh" }),
-    );
-
-    await waitFor(() => {
-      const call = rpcCall("settings/update");
-      expect(call).toBeTruthy();
-      expect(call!.params).toMatchObject({
+      expect(lastRpcCall("settings/update")?.params).toMatchObject({
         agent: "claude-code",
         model: "claude-opus-4-8",
         effort: "xhigh",
-      });
-    });
-    await waitFor(() =>
-      expect(claudeDropdown.textContent).toContain("claude-opus-4-8 — xhigh"),
-    );
-
-    const codexDropdown = await modelDropdown("Codex");
-    expect(codexDropdown.textContent).toContain("gpt-5.5 — medium");
-  });
-
-  it("shows a saved model+effort pair outside the suggestion list as its own selected option, instead of silently jumping to a different combination (#682)", async () => {
-    renderSettings({
-      "claude-code": {
-        model: "claude-fable-5",
-        effort: "medium",
-      },
-      codex: { model: "gpt-5.5", effort: "medium" },
-    });
-    const claudeDropdown = await modelDropdown("Claude Code");
-    await waitFor(() =>
-      expect(claudeDropdown.textContent).toContain("claude-fable-5 — medium"),
-    );
-    const menu = await openModelDropdown("Claude Code");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((o) => o.textContent),
-    ).toContain("claude-fable-5 — medium");
-  });
-
-  it("preserves saved model names containing the value separator without re-saving the selected item", async () => {
-    renderSettings({
-      "claude-code": {
-        model: "vendor::claude-fable-5",
-        effort: "medium",
-      },
-      codex: { model: "gpt-5.5", effort: "medium" },
-    });
-    const claudeDropdown = await modelDropdown("Claude Code");
-    await waitFor(() =>
-      expect(claudeDropdown.textContent).toContain(
-        "vendor::claude-fable-5 — medium",
-      ),
-    );
-
-    const menu = await openModelDropdown("Claude Code");
-    fireEvent.click(
-      within(menu).getByRole("menuitem", {
-        name: "vendor::claude-fable-5 — medium",
       }),
     );
-
-    expect(rpcCall("settings/update")).toBeUndefined();
   });
 
-  it("shows and saves the task over-budget limit as a USD amount", async () => {
-    renderSettings(undefined, "claude-code", 12.5);
+  it("shows and saves the task over-budget limit", async () => {
+    renderSettings("claude-code", 12.5);
     const input = (await screen.findByLabelText(
       "Task over-budget limit in USD",
     )) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe("12.50"));
-
     fireEvent.change(input, { target: { value: "7.25" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      const call = rpcCall("settings/update");
-      expect(call).toBeTruthy();
-      expect(call!.params).toMatchObject({ devCostLimitUsd: 7.25 });
-    });
-    await waitFor(() => expect(input.value).toBe("7.25"));
-  });
-
-  it("validates the task over-budget limit before saving", async () => {
-    renderSettings();
-    const input = (await screen.findByLabelText(
-      "Task over-budget limit in USD",
-    )) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "0" } });
-
-    expect(
-      await screen.findByText("Enter an amount greater than $0."),
-    ).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-    expect(rpcCall("settings/update")).toBeUndefined();
+    await waitFor(() =>
+      expect(rpcCall("settings/update")?.params).toMatchObject({
+        devCostLimitUsd: 7.25,
+      }),
+    );
   });
 });

@@ -1,16 +1,19 @@
 // Instance-level settings (#474) — the first entry point for global config.json settings, as
 // opposed to the per-repo settings screen (see repo-settings-page.tsx's MergeModeSection).
 
-import { Check, ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CodingAgent } from "@/api/types";
 import { SettingsLayout } from "@/components/settings-header";
-import { Button, disabledButtonStateClasses } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuItemIndicator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -32,19 +35,12 @@ const CODING_AGENT_OPTIONS: {
   label: CODING_AGENT_LABELS[value],
 }));
 
-// Serializes a model+effort pair into one <select> option value. "::" is safe as a separator:
-// no entry in MODEL_SUGGESTIONS/EFFORT_SUGGESTIONS contains it.
-function comboValue(model: string, effort: string): string {
-  return `${model}::${effort}`;
-}
-
-function parseComboValue(value: string): { model: string; effort: string } {
-  const separator = value.lastIndexOf("::");
-  if (separator === -1) return { model: value, effort: "" };
-  return {
-    model: value.slice(0, separator),
-    effort: value.slice(separator + 2),
-  };
+function displayValue(value: string): string {
+  if (value === "xhigh") return "Extra high";
+  return value
+    .replace(/[/_-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+    .replace(/^Gpt\b/, "GPT");
 }
 
 function moneyInputValue(value: number): string {
@@ -66,21 +62,8 @@ function validateDevCostLimit(value: string): string | null {
   return null;
 }
 
-// A single agent's "Default model & effort" picker (#594, #610, #682). Options are the full
-// model x effort combination, so a selection always saves a valid pair and an invalid combination
-// can never be chosen. If the currently persisted pair isn't one of the combinations (e.g. a model
-// saved before effort existed, or a value typed via the old free-text field), it's injected as an
-// extra leading option so the picker still reflects the real saved state instead of silently jumping
-// to something else (#682 AC: "existing settings select the right combination").
-function modelEffortLabel(model: string, effort: string): string {
-  if (!model && !effort) return "Select model & effort";
-  if (!model) return `Default — ${effort}`;
-  if (!effort) return `${model} — default`;
-  return `${model} — ${effort}`;
-}
-
-function AgentModelEffortDropdown({
-  label,
+function AgentModelDropdown({
+  agentLabel,
   model,
   effort,
   modelSuggestions,
@@ -89,7 +72,7 @@ function AgentModelEffortDropdown({
   saving,
   onSave,
 }: {
-  label: string;
+  agentLabel: string;
   model: string;
   effort: string;
   modelSuggestions: string[];
@@ -98,15 +81,14 @@ function AgentModelEffortDropdown({
   saving: boolean;
   onSave: (model: string, effort: string) => void;
 }) {
-  const efforts = effortSuggestions.length > 0 ? effortSuggestions : [""];
-  const combos = modelSuggestions.flatMap((m) =>
-    efforts.map((e) => ({ model: m, effort: e })),
-  );
-  const currentValue = comboValue(model, effort);
-  const hasCurrent = combos.some(
-    (c) => comboValue(c.model, c.effort) === currentValue,
-  );
-  const options = hasCurrent ? combos : [{ model, effort }, ...combos];
+  const models = modelSuggestions.includes(model)
+    ? modelSuggestions
+    : [model, ...modelSuggestions];
+  const efforts = effortSuggestions.includes(effort)
+    ? effortSuggestions
+    : effort
+      ? [effort, ...effortSuggestions]
+      : effortSuggestions;
 
   return (
     <DropdownMenu>
@@ -114,13 +96,13 @@ function AgentModelEffortDropdown({
         <Button
           type="button"
           variant="secondary"
-          aria-label={`Default model and effort (${label})`}
-          title={modelEffortLabel(model, effort)}
+          aria-label={`${agentLabel} model`}
+          title={model ? displayValue(model) : "Default"}
           disabled={disabled || saving}
-          className="w-full max-w-md justify-between border bg-background px-3 text-left font-normal shadow-sm"
+          className="min-w-44 justify-between border bg-background px-3 text-left font-normal shadow-sm"
         >
           <span className="min-w-0 truncate">
-            {modelEffortLabel(model, effort)}
+            {model ? displayValue(model) : "Default"}
           </span>
           <ChevronsUpDown
             className="size-4 shrink-0 text-muted-foreground"
@@ -130,30 +112,60 @@ function AgentModelEffortDropdown({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="max-h-[min(24rem,calc(100vh-5rem))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-72 overflow-y-auto"
+        className="max-h-[min(24rem,calc(100vh-5rem))] min-w-56 overflow-y-auto"
       >
-        {options.map((o) => {
-          const value = comboValue(o.model, o.effort);
-          const selected = value === currentValue;
+        {models.map((candidate) => {
+          const selectedModel = candidate === model;
+          if (effortSuggestions.length === 0) {
+            return (
+              <DropdownMenuItem
+                key={candidate || "__default__"}
+                onSelect={() => onSave(candidate, "")}
+                aria-current={selectedModel ? "true" : undefined}
+                className={cn(
+                  "justify-between",
+                  selectedModel && "bg-accent text-accent-foreground",
+                )}
+              >
+                <span className="min-w-0 truncate">
+                  {candidate ? displayValue(candidate) : "Default"}
+                </span>
+                {selectedModel ? <DropdownMenuItemIndicator /> : null}
+              </DropdownMenuItem>
+            );
+          }
           return (
-            <DropdownMenuItem
-              key={value}
-              onSelect={() => {
-                if (selected) return;
-                const { model: m, effort: ef } = parseComboValue(value);
-                onSave(m, ef);
-              }}
-              aria-current={selected ? "true" : undefined}
-              className={cn(
-                "justify-between",
-                selected && "bg-accent text-accent-foreground",
-              )}
-            >
-              <span className="min-w-0 truncate">
-                {modelEffortLabel(o.model, o.effort)}
-              </span>
-              {selected ? <DropdownMenuItemIndicator /> : null}
-            </DropdownMenuItem>
+            <DropdownMenuSub key={candidate || "__default__"}>
+              <DropdownMenuSubTrigger
+                aria-label={`${candidate ? displayValue(candidate) : "Default"} effort options`}
+                className={cn(
+                  selectedModel && "bg-accent text-accent-foreground",
+                )}
+              >
+                <span className="min-w-0 truncate">
+                  {candidate ? displayValue(candidate) : "Default"}
+                </span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-[min(24rem,calc(100vh-5rem))] min-w-40 overflow-y-auto">
+                {efforts.map((candidateEffort) => {
+                  const selected = selectedModel && candidateEffort === effort;
+                  return (
+                    <DropdownMenuItem
+                      key={candidateEffort}
+                      onSelect={() => onSave(candidate, candidateEffort)}
+                      aria-current={selected ? "true" : undefined}
+                      className={cn(
+                        "justify-between",
+                        selected && "bg-accent text-accent-foreground",
+                      )}
+                    >
+                      {displayValue(candidateEffort)}
+                      {selected ? <DropdownMenuItemIndicator /> : null}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           );
         })}
       </DropdownMenuContent>
@@ -190,68 +202,55 @@ export function SettingsPage() {
           <div
             role="radiogroup"
             aria-label="Coding agent"
-            className="mt-3 max-w-md rounded-md border"
+            className="mt-3 max-w-2xl rounded-md border"
           >
-            {CODING_AGENT_OPTIONS.map((o) => {
-              const active = codingAgent === o.value;
-              return (
-                <button
-                  key={o.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  disabled={isLoading || update.isPending}
-                  className={cn(
-                    "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
-                    disabledButtonStateClasses,
-                  )}
-                  onClick={() => {
-                    if (active) return;
-                    update.mutate({ codingAgent: o.value });
-                  }}
-                >
-                  <Check
-                    className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
-                    aria-hidden="true"
-                  />
-                  <span>{o.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Child settings, one block per agent, indented under the agent
-            selection above instead of living in a separate flat section. */}
-          <div className="mt-3 max-w-md border-l-2 pl-4">
-            {CODING_AGENT_OPTIONS.map((agentOption, i) => {
+            {CODING_AGENT_OPTIONS.map((agentOption) => {
               const model = data?.agents?.[agentOption.value]?.model ?? "";
               const effort = data?.agents?.[agentOption.value]?.effort ?? "";
               return (
                 <div
                   key={agentOption.value}
-                  className={i > 0 ? "mt-4" : undefined}
+                  className="flex items-center gap-4 border-b px-3 py-3 last:border-b-0"
                 >
-                  <h3 className="text-xs font-medium text-muted-foreground">
-                    {agentOption.label} — Default model & effort
-                  </h3>
-                  <div className="mt-1 max-w-sm">
-                    <AgentModelEffortDropdown
-                      label={agentOption.label}
-                      model={model}
-                      effort={effort}
-                      modelSuggestions={MODEL_SUGGESTIONS[agentOption.value]}
-                      effortSuggestions={EFFORT_SUGGESTIONS[agentOption.value]}
-                      disabled={isLoading}
-                      saving={update.isPending}
-                      onSave={(m, ef) =>
-                        update.mutate({
-                          agent: agentOption.value,
-                          model: m,
-                          effort: ef,
-                        })
-                      }
-                    />
-                  </div>
+                  <input
+                    type="radio"
+                    name="coding-agent"
+                    value={agentOption.value}
+                    aria-label={agentOption.label}
+                    checked={codingAgent === agentOption.value}
+                    disabled={isLoading || update.isPending}
+                    className="size-4 accent-primary"
+                    onChange={() =>
+                      update.mutate({ codingAgent: agentOption.value })
+                    }
+                  />
+                  <span className="w-32 shrink-0 font-medium">
+                    {agentOption.label}
+                  </span>
+                  <AgentModelDropdown
+                    agentLabel={agentOption.label}
+                    model={model}
+                    effort={effort}
+                    modelSuggestions={MODEL_SUGGESTIONS[agentOption.value]}
+                    effortSuggestions={EFFORT_SUGGESTIONS[agentOption.value]}
+                    disabled={isLoading}
+                    saving={update.isPending}
+                    onSave={(selectedModel, selectedEffort) =>
+                      update.mutate({
+                        agent: agentOption.value,
+                        model: selectedModel,
+                        effort: selectedEffort,
+                      })
+                    }
+                  />
+                  {EFFORT_SUGGESTIONS[agentOption.value].length === 0 ? (
+                    <span
+                      aria-label={`${agentOption.label} effort not supported`}
+                      className="shrink-0 text-muted-foreground"
+                    >
+                      —
+                    </span>
+                  ) : null}
                 </div>
               );
             })}
