@@ -847,6 +847,7 @@ test("fresh Verify discards the verifier left on the old HEAD before launching",
       [
         "pr",
         "review",
+        "submit",
         String(body.pr.number),
         "--repo",
         REPO,
