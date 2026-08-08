@@ -41,10 +41,12 @@ run が子を起動するとき、その argv とプロンプトを決める値�
 1. **途中で動作条件を変えられない。** `workflow_runs.model` を書き換える経路は CLI にも RPC にも無い。
    `launch-step --model` は 1 回の起動限りの override で、run には残らない。model を変えたければ run を
    作り直すしかない。
-2. **effort が子に届いていない。** Settings は per-agent の reasoning effort（#682）を持ち、
-   `buildRuntimeFlags()` は `--effort` / `-c model_reasoning_effort=` を組み立てられるのに、
-   `parentAgentFlags()` も `buildWorkflowStepHerdrLaunchPlan()` も `effort` を渡していない。workflow で
-   起動した子は常に runtime 既定の effort で動く。
+2. **effort が子に届いていない。** Settings は per-agent の reasoning effort（#682）を持ち、#101 以降は
+   Coding agent ドロップダウンが保存済みの model と effort を並べて表示する。`buildRuntimeFlags()` も
+   `--effort` / `-c model_reasoning_effort=` を組み立てられる。それでも `parentAgentFlags()` と
+   `buildWorkflowStepHerdrLaunchPlan()` はどちらも `effort` を渡していないため、workflow で起動した子は
+   常に runtime 既定の effort で動く。**設定画面に表示されている値が workflow では効かない**という、
+   最も気づきにくい種類の齟齬になっている。
 3. **step prompt が global で、走行中の run に巻き添えが出る。** `launchStep()` は毎回 `workflows` 行を
    読み直すため、prompt を編集すると「編集後に起動する全 run の全 step」に効く。逆に「この run だけ
    Verify を厳しくする」はできない。
