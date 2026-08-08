@@ -4,6 +4,11 @@ import type { PropsWithChildren } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LoopEvent } from "@/api/types";
 import { eventSubjects } from "../../../core/event-subjects.ts";
+import {
+  clearDebugLog,
+  getDebugLogSnapshot,
+  subscribeDebugLog,
+} from "./debug-log";
 import { useLoopHubEvents } from "./use-loophub-events";
 
 function ev(id: number, type = "issue.updated"): LoopEvent {
@@ -59,6 +64,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();
+  clearDebugLog();
 });
 
 describe("useLoopHubEvents", () => {
@@ -307,6 +313,39 @@ describe("useLoopHubEvents", () => {
         queryKey: ["workspaces", "me/proj"],
       }),
     );
+  });
+
+  it("records received events and their invalidated keys into the debug log", async () => {
+    warmCursor(1);
+    const unsubscribe = subscribeDebugLog(() => {});
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([ev(7, "issue.commented")]))
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient();
+
+    render(<HookHarness />, { wrapper: wrapper(client) });
+
+    await vi.waitFor(() => {
+      const snapshot = getDebugLogSnapshot();
+      expect(snapshot.events).toHaveLength(1);
+      expect(snapshot.invalidations).toHaveLength(1);
+    });
+
+    const { events, invalidations } = getDebugLogSnapshot();
+    expect(events[0]).toMatchObject({ eventId: 7, type: "issue.commented" });
+    expect(invalidations[0]).toMatchObject({
+      eventId: 7,
+      eventType: "issue.commented",
+    });
+    expect(invalidations[0].keys).toEqual(
+      expect.arrayContaining([
+        ["issues", "me/proj"],
+        ["issue", "me/proj", 3],
+      ]),
+    );
+    unsubscribe();
   });
 
   it("continues polling after an empty response using the saved cursor", async () => {

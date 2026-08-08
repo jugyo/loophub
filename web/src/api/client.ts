@@ -5,6 +5,8 @@
 // always served same-origin by its own lh-web (issue #1669), so requests are same-origin
 // ("" base); there is no separate-backend override.
 
+import { recordRpc } from "@/lib/debug-log";
+import { errorMessage } from "@/lib/error-message";
 import { getSessionId } from "@/lib/session";
 import type {
   AcceptanceCriterionDetail,
@@ -115,22 +117,40 @@ export async function rpc<T>(
   method: string,
   params: Record<string, unknown> = {},
 ): Promise<T> {
-  const res = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
-  });
-  if (!res.ok) throw new ApiError(res.status, res.statusText);
-  const body = (await res.json()) as { result?: T; error?: RpcError };
-  if (body.error) {
-    const { status: _status, ...data } = body.error.data ?? {};
-    throw new ApiError(
-      statusFromError(body.error),
-      body.error.message,
-      Object.keys(data).length > 0 ? data : undefined,
-    );
+  const startedAt = performance.now();
+  try {
+    const res = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
+    });
+    if (!res.ok) throw new ApiError(res.status, res.statusText);
+    const body = (await res.json()) as { result?: T; error?: RpcError };
+    if (body.error) {
+      const { status: _status, ...data } = body.error.data ?? {};
+      throw new ApiError(
+        statusFromError(body.error),
+        body.error.message,
+        Object.keys(data).length > 0 ? data : undefined,
+      );
+    }
+    recordRpc({
+      method,
+      params,
+      durationMs: performance.now() - startedAt,
+      ok: true,
+    });
+    return body.result as T;
+  } catch (error) {
+    recordRpc({
+      method,
+      params,
+      durationMs: performance.now() - startedAt,
+      ok: false,
+      error: errorMessage(error),
+    });
+    throw error;
   }
-  return body.result as T;
 }
 
 export function getWebConfig() {

@@ -1,3 +1,4 @@
+import { DebugPanel } from "@/components/debug-panel";
 import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import { formatCost } from "@/lib/session-usage";
 import { useCurrentRepo } from "@/lib/use-current-repo";
@@ -82,6 +83,7 @@ export function AppStatusbar() {
           </div>
         ))}
       </dl>
+      <DebugPanel />
     </footer>
   );
 }
