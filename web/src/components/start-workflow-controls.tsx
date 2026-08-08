@@ -8,10 +8,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { WorkerLaunchUnavailable } from "@/components/worker-compatibility-warning";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
+import { useRepoAgentConfig } from "@/queries/repos";
 import { useWorkerLaunchGate } from "@/queries/worker-status";
 import { useWorkflows } from "@/queries/workflows";
 
@@ -32,6 +34,11 @@ export function StartWorkflowControls({
   const { data: workflows, isLoading } = useWorkflows({
     applicableToRepo: fullRepo,
   });
+  // The workflow picker starts a run with the repo's effective Coding agent config
+  // (override on → repo values, off → application Settings defaults), so surface the
+  // resolved runtime/model/effort in the menu the launch is triggered from (#96).
+  const { data: agentConfig } = useRepoAgentConfig(owner, repo);
+  const effective = agentConfig?.effective;
   const { canStartWorkflow, showRemediation } = useWorkerLaunchGate();
   const [isLaunching, startLaunching] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -114,6 +121,14 @@ export function StartWorkflowControls({
             No saved workflows — set one up in Settings
           </DropdownMenuItem>
         )}
+        {effective ? (
+          <>
+            <DropdownMenuSeparator />
+            <p className="px-1.5 py-1 text-right text-xs leading-relaxed text-muted-foreground">
+              {effective.runtime} · {effective.model} · {effective.effort}
+            </p>
+          </>
+        ) : null}
       </DropdownMenuContent>
       {showRemediation ? <WorkerLaunchUnavailable compact={compact} /> : null}
     </DropdownMenu>
