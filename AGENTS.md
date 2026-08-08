@@ -130,7 +130,11 @@ npm run test:watch       # watch fast tests
 npm run typecheck        # tsc --noEmit (uses the local typescript; avoids npx)
 npm run lint             # biome check (lint + format check; no writes)
 npm run format           # biome format --write (apply formatting)
+npm run contract         # regenerate docs/rpc-contract.json from web/server/contract.ts
 ```
+
+`docs/rpc-contract.json` is a tracked generated file: adding or changing a JSON-RPC method in
+`web/server/contract.ts` means running `npm run contract` and committing the result alongside it.
 
 Lint/format use [Biome](https://biomejs.dev). Config is `biome.json`; the linter is a
 minimal recommended set (type-aware checks stay with `npm run typecheck`).

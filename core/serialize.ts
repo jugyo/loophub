@@ -91,6 +91,18 @@ export interface RepoMergeModeWire {
   effective: MergeMode;
 }
 
+// #71: how the registered checkout stands against its `origin` remote, for the repo-top sidebar.
+// `has_origin` false means the repo has no origin at all and the sidebar hides the sync UI.
+// `branch` is null on a detached HEAD; `ahead`/`behind` are null when the branch has no
+// `origin/<branch>` yet (never pushed), which is not the same as being level with it. The counts
+// come from the remote-tracking ref as it stands locally — reading them does not contact origin.
+export interface RepoOriginSyncWire {
+  has_origin: boolean;
+  branch: string | null;
+  ahead: number | null;
+  behind: number | null;
+}
+
 // #1532: resolved per-repo Coding agent override for the repo settings UI — the raw stored setting
 // (toggle + runtime/model/effort as entered) and the effective config the run launches with (repo
 // override when on, else the application defaults). Same "raw stored vs resolved effective" shape as

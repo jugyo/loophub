@@ -54,13 +54,15 @@ describe("repository search route placement", () => {
     ).toEqual({});
   });
 
-  it("shows the search row on the repository top", async () => {
+  it("shows the search row and the sidebar on the repository top", async () => {
     renderRoute("/r/me/proj");
     expect(
       await screen.findByRole("button", {
         name: "Search issues",
       }),
     ).toBeTruthy();
+    // The sidebar (#71) sits beside the issue list; its origin section loads on its own.
+    expect(await screen.findByText("Origin")).toBeTruthy();
     // The standalone workspace picker was removed (#1511); New workspace now
     // lives inside the IssueList workspace filter dropdown.
     expect(screen.queryByRole("button", { name: "Workspaces" })).toBeNull();

@@ -226,6 +226,53 @@ export async function remoteUrl(
   return r.stdout.trim() || null;
 }
 
+// Short name of the checked-out branch, or null on a detached HEAD. Callers that compare a checkout
+// against a remote (#71) have nothing to compare in the detached case, so they report "no branch"
+// rather than guessing one from the commit.
+export async function currentBranch(repoPath: string): Promise<string | null> {
+  const r = await git(repoPath, ["symbolic-ref", "--short", "-q", "HEAD"]);
+  if (r.code !== 0) return null;
+  return r.stdout.trim() || null;
+}
+
+export interface AheadBehind {
+  ahead: number; // commits on `ref` that `upstream` does not have
+  behind: number; // commits on `upstream` that `ref` does not have
+}
+
+// The ahead/behind pair `git status` reports for a tracking branch, counted from the merge base of
+// `ref` and `upstream`. Null when either revision cannot be resolved — a branch that was never
+// pushed has no `refs/remotes/<remote>/<branch>` — so callers can distinguish "no counts to show"
+// from a genuine 0/0.
+export async function aheadBehind(
+  repoPath: string,
+  ref: string,
+  upstream: string,
+): Promise<AheadBehind | null> {
+  const r = await git(repoPath, [
+    "rev-list",
+    "--left-right",
+    "--count",
+    `${upstream}...${ref}`,
+  ]);
+  if (r.code !== 0) return null;
+  const [behind, ahead] = r.stdout.trim().split(/\s+/).map(Number);
+  if (!Number.isInteger(ahead) || !Number.isInteger(behind)) return null;
+  return { ahead, behind };
+}
+
+// `git pull --ff-only <remote> <branch>` in a checkout. Fast-forward only on purpose: when the
+// local branch has diverged, git refuses with its own message instead of writing a merge commit
+// into the human's checkout, and the caller surfaces that message. The remote and branch are named
+// explicitly so a branch without tracking configuration still pulls the branch being displayed.
+export async function pullFastForward(
+  repoPath: string,
+  branch: string,
+  remote = "origin",
+): Promise<GitResult> {
+  return git(repoPath, ["pull", "--ff-only", remote, branch]);
+}
+
 export async function isGitRepo(repoPath: string): Promise<boolean> {
   const r = await git(repoPath, ["rev-parse", "--git-dir"]);
   return r.code === 0;
