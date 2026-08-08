@@ -43,7 +43,12 @@ export interface RpcCallOutcome {
   method: string;
   outcome: "success" | "error";
   batchIndex?: number;
-  durationMs: number;
+  // Time from the HTTP request's receipt to the moment this call's handler started —
+  // i.e. everything that isn't this call's own work (event-loop contention from other
+  // RPCs, body read, validation).
+  queueMs: number;
+  // Time spent inside this call's own handler.
+  handlerMs: number;
 }
 export type RpcCallObserver = (call: RpcCallOutcome) => void;
 
@@ -51,13 +56,15 @@ function observeRpcCall(
   observer: RpcCallObserver | undefined,
   method: string,
   outcome: "success" | "error",
-  durationMs: number,
+  queueMs: number,
+  handlerMs: number,
   batchIndex?: number,
 ): void {
   observer?.({
     method,
     outcome,
-    durationMs,
+    queueMs,
+    handlerMs,
     ...(batchIndex === undefined ? {} : { batchIndex }),
   });
 }
@@ -93,9 +100,17 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+function msBetween(from: bigint, to: bigint): number {
+  return Number(to - from) / 1e6;
+}
+
 // Returns a response, or null for a valid notification (request without `id`).
+// `receivedAt` is the HTTP request's receipt time (before this call's own work, and
+// possibly before other calls in the same batch); it lets queueMs measure time spent
+// waiting rather than this call's own processing.
 async function dispatchOne(
   req: unknown,
+  receivedAt: bigint,
   observer?: RpcCallObserver,
   batchIndex?: number,
 ): Promise<RpcResponse | null> {
@@ -106,16 +121,23 @@ async function dispatchOne(
   ) {
     return fail(null, INVALID_REQUEST, "Invalid Request");
   }
-  const start = process.hrtime.bigint();
   const isNotification = !("id" in req);
   const id = (req.id ?? null) as Id;
-  const elapsed = () => Number(process.hrtime.bigint() - start) / 1e6;
+  // Before the handler starts, all elapsed time is queueing — there is no handler work yet.
+  const queueMsSoFar = () => msBetween(receivedAt, process.hrtime.bigint());
 
   const def = Object.hasOwn(methods, req.method)
     ? methods[req.method]
     : undefined;
   if (!def) {
-    observeRpcCall(observer, req.method, "error", elapsed(), batchIndex);
+    observeRpcCall(
+      observer,
+      req.method,
+      "error",
+      queueMsSoFar(),
+      0,
+      batchIndex,
+    );
     return isNotification
       ? null
       : fail(id, METHOD_NOT_FOUND, `Method not found: ${req.method}`);
@@ -123,7 +145,14 @@ async function dispatchOne(
 
   const params = req.params ?? {};
   if (!isPlainObject(params)) {
-    observeRpcCall(observer, req.method, "error", elapsed(), batchIndex);
+    observeRpcCall(
+      observer,
+      req.method,
+      "error",
+      queueMsSoFar(),
+      0,
+      batchIndex,
+    );
     return isNotification
       ? null
       : fail(id, INVALID_PARAMS, "params must be an object");
@@ -135,20 +164,44 @@ async function dispatchOne(
       path: e.instancePath || "/",
       message: e.message ?? "invalid",
     }));
-    observeRpcCall(observer, req.method, "error", elapsed(), batchIndex);
+    observeRpcCall(
+      observer,
+      req.method,
+      "error",
+      queueMsSoFar(),
+      0,
+      batchIndex,
+    );
     return isNotification
       ? null
       : fail(id, INVALID_PARAMS, "Invalid params", data);
   }
 
+  const handlerStart = process.hrtime.bigint();
   try {
     const result = await def.handler(params);
+    const handlerEnd = process.hrtime.bigint();
     // Record the human action after it completes, so only performed actions are logged.
     logHumanAction(req.method, params);
-    observeRpcCall(observer, req.method, "success", elapsed(), batchIndex);
+    observeRpcCall(
+      observer,
+      req.method,
+      "success",
+      msBetween(receivedAt, handlerStart),
+      msBetween(handlerStart, handlerEnd),
+      batchIndex,
+    );
     return isNotification ? null : ok(id, result ?? null);
   } catch (e: any) {
-    observeRpcCall(observer, req.method, "error", elapsed(), batchIndex);
+    const handlerEnd = process.hrtime.bigint();
+    observeRpcCall(
+      observer,
+      req.method,
+      "error",
+      msBetween(receivedAt, handlerStart),
+      msBetween(handlerStart, handlerEnd),
+      batchIndex,
+    );
     if (isNotification) return null;
     if (isServiceError(e))
       return fail(id, APP_ERROR, e.message, { status: e.status, ...e.data });
@@ -158,9 +211,13 @@ async function dispatchOne(
 
 // Dispatch a parsed JSON-RPC payload. Single -> one response (or null for a notification);
 // batch array -> array of responses (notifications omitted); empty batch -> Invalid Request.
+// `receivedAt` should be the HTTP request's receipt time, threaded down from the caller
+// (dispatchOne's queueMs is measured from it); it defaults to "now" for callers that don't
+// track a separate receipt time, so queueMs then reflects only this function's own overhead.
 export async function dispatch(
   payload: unknown,
   observer?: RpcCallObserver,
+  receivedAt: bigint = process.hrtime.bigint(),
 ): Promise<RpcResponse | RpcResponse[] | null> {
   if (Array.isArray(payload)) {
     if (payload.length === 0)
@@ -172,11 +229,13 @@ export async function dispatch(
         `Batch too large (max ${MAX_RPC_BATCH_SIZE} requests)`,
       );
     const responses = await Promise.all(
-      payload.map((request, index) => dispatchOne(request, observer, index)),
+      payload.map((request, index) =>
+        dispatchOne(request, receivedAt, observer, index),
+      ),
     );
     return responses.filter((r): r is RpcResponse => r !== null);
   }
-  return dispatchOne(payload, observer);
+  return dispatchOne(payload, receivedAt, observer);
 }
 
 // Parse a raw JSON string then dispatch. Use this at the HTTP boundary (S3) so a parse
@@ -184,6 +243,7 @@ export async function dispatch(
 export async function dispatchRaw(
   raw: string,
   observer?: RpcCallObserver,
+  receivedAt: bigint = process.hrtime.bigint(),
 ): Promise<RpcResponse | RpcResponse[] | null> {
   let payload: unknown;
   try {
@@ -191,7 +251,7 @@ export async function dispatchRaw(
   } catch {
     return fail(null, PARSE_ERROR, "Parse error");
   }
-  return dispatch(payload, observer);
+  return dispatch(payload, observer, receivedAt);
 }
 
 export const ERROR_CODES = {
