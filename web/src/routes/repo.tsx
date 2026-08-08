@@ -1,5 +1,6 @@
 import { createRoute } from "@tanstack/react-router";
 import { IssueList } from "@/components/issue-list";
+import { RepoSidebar } from "@/components/repo-sidebar";
 import { RepositorySearch } from "@/components/repository-search";
 import { usePageTitle } from "@/lib/page-title";
 import { rootRoute } from "./root";
@@ -9,19 +10,32 @@ export function RepoPage() {
   const { labels, state, workspace } = repoRoute.useSearch();
   usePageTitle([`${owner}/${repo}`, "Issues"]);
   return (
-    <div data-debug-component="RepoPage" className="space-y-4">
-      <div className="mx-auto flex max-w-content items-center justify-end gap-3">
-        <RepositorySearch owner={owner} repo={repo} />
+    // Two columns, like the PR detail (#346): the issue list on the left and the repo sidebar
+    // (#71) on the right, from the top. Below `lg` the sidebar wraps under the list, and the page
+    // only widens past `max-w-content` while the two actually sit side by side.
+    <div
+      data-debug-component="RepoPage"
+      className="mx-auto max-w-content lg:max-w-content-wide"
+    >
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div className="min-w-0 flex-1 space-y-4">
+          {/* Same `mx-auto max-w-content` cap as the IssueList below it, so the search row keeps
+              lining up with the list once the column widens for the sidebar. */}
+          <div className="mx-auto flex w-full max-w-content items-center justify-end gap-3">
+            <RepositorySearch owner={owner} repo={repo} />
+          </div>
+          <IssueList
+            owner={owner}
+            repo={repo}
+            labelsParam={labels}
+            stateParam={state}
+            workspaceParam={workspace}
+            labelFilterMode="select"
+            showWorkspaceFilter
+          />
+        </div>
+        <RepoSidebar owner={owner} repo={repo} />
       </div>
-      <IssueList
-        owner={owner}
-        repo={repo}
-        labelsParam={labels}
-        stateParam={state}
-        workspaceParam={workspace}
-        labelFilterMode="select"
-        showWorkspaceFilter
-      />
     </div>
   );
 }

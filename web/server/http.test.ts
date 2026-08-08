@@ -177,13 +177,13 @@ test("POST /rpc logs each outcome only when debug logging is enabled", async () 
     expect(debugLogs).toEqual(
       expect.arrayContaining([
         expect.stringMatching(
-          /^rpc method="initialize" outcome=success duration=[0-9.]+ms batch_index=0$/,
+          /^rpc method="initialize" outcome=success queue_ms=[0-9.]+ handler_ms=[0-9.]+ batch_index=0$/,
         ),
         expect.stringMatching(
-          /^rpc method="initialize" outcome=success duration=[0-9.]+ms batch_index=1$/,
+          /^rpc method="initialize" outcome=success queue_ms=[0-9.]+ handler_ms=[0-9.]+ batch_index=1$/,
         ),
         expect.stringMatching(
-          /^rpc method="missing\/method" outcome=error duration=[0-9.]+ms batch_index=2$/,
+          /^rpc method="missing\/method" outcome=error queue_ms=[0-9.]+ handler_ms=[0-9.]+ batch_index=2$/,
         ),
       ]),
     );
@@ -239,13 +239,13 @@ test("POST /rpc logs inherited object names as unknown methods", async () => {
     expect(debugLogs).toEqual(
       expect.arrayContaining([
         expect.stringMatching(
-          /^rpc method="__proto__" outcome=error duration=[0-9.]+ms$/,
+          /^rpc method="__proto__" outcome=error queue_ms=[0-9.]+ handler_ms=[0-9.]+$/,
         ),
         expect.stringMatching(
-          /^rpc method="initialize" outcome=success duration=[0-9.]+ms batch_index=0$/,
+          /^rpc method="initialize" outcome=success queue_ms=[0-9.]+ handler_ms=[0-9.]+ batch_index=0$/,
         ),
         expect.stringMatching(
-          /^rpc method="__proto__" outcome=error duration=[0-9.]+ms batch_index=1$/,
+          /^rpc method="__proto__" outcome=error queue_ms=[0-9.]+ handler_ms=[0-9.]+ batch_index=1$/,
         ),
       ]),
     );
@@ -341,7 +341,7 @@ test("POST /rpc replaces an oversized serialized response with an error", async 
     });
     expect(debugLogs).toEqual([
       expect.stringMatching(
-        /^rpc method="issues\/get" outcome=error duration=\d+\.\d+ms$/,
+        /^rpc method="issues\/get" outcome=error queue_ms=\d+\.\d+ handler_ms=\d+\.\d+$/,
       ),
     ]);
   } finally {

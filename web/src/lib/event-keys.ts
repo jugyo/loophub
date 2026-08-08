@@ -59,6 +59,9 @@ export const queryKeys = {
   // Top-level for the same reason: only repo.github_pr_export_extra_prompt_changed mutates it (#2422).
   repoGithubPrExportExtraPrompt: (full: string) =>
     ["repo-github-pr-export-extra-prompt", full] as const,
+  // Top-level too (#71): the repo's standing against origin follows the checkout's branch tip, not
+  // the repo row, and the only event that moves that tip is a merge landing on the base branch.
+  repoOriginSync: (full: string) => ["repo-origin-sync", full] as const,
   terminalSessions: () => ["terminal", "sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
@@ -192,12 +195,19 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       if (gitGraphChanged) {
         keys.push([...queryKeys.workspaces(repo)]);
       }
+      // A merge advances the base branch in the primary checkout, so the repo-top sidebar is now
+      // one commit further ahead of origin than it says (#71). Only the merge does this: a PR head
+      // moving (pull_request.updated) leaves the checked-out branch where it was.
+      if (type === "pull_request.merged") {
+        keys.push([...queryKeys.repoOriginSync(repo)]);
+      }
     } else {
       keys.push(["pulls"]);
       keys.push(["pull"]);
       keys.push(["pull-debug"]);
       if (gitGraphChanged) keys.push(["workspaces"]);
       if (gitGraphChanged) keys.push(["pull-files"]);
+      if (type === "pull_request.merged") keys.push(["repo-origin-sync"]);
       if (
         type === "pull_request.commented" ||
         type === "pull_request.comment_reaction_changed"

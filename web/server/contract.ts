@@ -188,6 +188,20 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.repos.mergeMode(p.name),
   },
+  "repos/originSync": {
+    description:
+      "How the repo's checkout stands against origin: origin presence, the checked-out branch, and its ahead/behind counts against origin/<branch>. Reads local refs only — it does not fetch (#71).",
+    params: params({ name: repo }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.repos.originSync(p.name),
+  },
+  "repos/pullFromOrigin": {
+    description:
+      "Run `git pull --ff-only origin <branch>` in the repo's checkout and return the refreshed origin sync state (#71).",
+    params: params({ name: repo }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.repos.pullFromOrigin(p.name),
+  },
   "repos/setAgentConfig": {
     description:
       "Set the repo's Coding agent override: toggle plus runtime/model/effort, or falls back to app defaults when off (#1532).",
@@ -614,7 +628,6 @@ export const methods: Record<string, MethodDef> = {
         page: positiveInt,
         perPage: positiveInt,
         includeLabels: { type: "boolean" },
-        includeUnmergedWorkspaces: { type: "boolean" },
       },
       ["repo"],
     ),
@@ -628,7 +641,6 @@ export const methods: Record<string, MethodDef> = {
         page: p.page,
         perPage: p.perPage,
         includeLabels: p.includeLabels,
-        includeUnmergedWorkspaces: p.includeUnmergedWorkspaces,
       }),
   },
   "search/query": {
@@ -642,13 +654,6 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo }, ["repo"]),
     result: anyArray,
     handler: (p) => svc.workspaces.list(p.repo),
-  },
-  "workspaces/listUnmerged": {
-    description:
-      "List active workspaces with commits not merged into the default branch.",
-    params: params({ repo }, ["repo"]),
-    result: anyArray,
-    handler: (p) => svc.workspaces.listUnmerged(p.repo),
   },
   "workspaces/listArchived": {
     description: "List archived workspaces in a repository.",

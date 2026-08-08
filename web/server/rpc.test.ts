@@ -151,12 +151,10 @@ test("page data routes return complete initial screen result sets", async () => 
     perPage: 21,
     lookahead: true,
     includeLabels: true,
-    includeUnmergedWorkspaces: true,
   });
   expect(issueList.result).toMatchObject({
     repo: { full_name: "me/proj" },
     workspaces: expect.any(Array),
-    unmerged_workspaces: expect.any(Array),
     labels: expect.any(Array),
   });
   expect(issueList.result.issues[0].number).toBe(1);
@@ -955,4 +953,32 @@ test("settings RPC accepts Cursor's canonical empty effort", async () => {
 test("dispatchRaw turns invalid JSON into -32700", async () => {
   const r: any = await dispatchRaw("{not json");
   expect(r.error.code).toBe(ERROR_CODES.PARSE_ERROR);
+});
+
+test("queueMs is near zero for a solo call with no queueing delay", async () => {
+  const calls: any[] = [];
+  const r: any = await dispatch(
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    (call) => calls.push(call),
+  );
+  expect(r.result.serverInfo.name).toBe("loophub");
+  expect(calls).toHaveLength(1);
+  expect(calls[0].queueMs).toBeGreaterThanOrEqual(0);
+  expect(calls[0].queueMs).toBeLessThan(20);
+});
+
+test("queueMs reflects time elapsed before dispatch, separately from handlerMs", async () => {
+  const calls: any[] = [];
+  const simulatedQueueMs = 300;
+  const receivedAt = process.hrtime.bigint() - BigInt(simulatedQueueMs * 1e6);
+  const r: any = await dispatch(
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    (call) => calls.push(call),
+    receivedAt,
+  );
+  expect(r.result.serverInfo.name).toBe("loophub");
+  expect(calls).toHaveLength(1);
+  expect(calls[0].queueMs).toBeGreaterThanOrEqual(simulatedQueueMs);
+  expect(calls[0].queueMs).toBeLessThan(simulatedQueueMs + 50);
+  expect(calls[0].handlerMs).toBeLessThan(20);
 });

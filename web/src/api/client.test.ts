@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  clearDebugLog,
+  getDebugLogSnapshot,
+  subscribeDebugLog,
+} from "@/lib/debug-log";
+import {
   ApiError,
   archiveWorkflow,
   createRepo,
@@ -22,6 +27,7 @@ import {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  clearDebugLog();
 });
 
 function mockRpc(result: unknown) {
@@ -119,6 +125,50 @@ describe("rpc", () => {
       status: 502,
     });
     expect(new ApiError(404, "x")).toBeInstanceOf(Error);
+  });
+
+  it("records the method, params, and duration into the debug log", async () => {
+    const unsubscribe = subscribeDebugLog(() => {});
+    const fetchMock = mockRpc({ ok: true });
+    await rpc<{ ok: boolean }>("repos/list", { archived: "active" });
+
+    const { rpcs } = getDebugLogSnapshot();
+    expect(rpcs).toHaveLength(1);
+    expect(rpcs[0]).toMatchObject({
+      method: "repos/list",
+      params: { archived: "active" },
+      ok: true,
+    });
+    expect(rpcs[0].durationMs).toBeGreaterThanOrEqual(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it("records a failed call with its error message", async () => {
+    const unsubscribe = subscribeDebugLog(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            error: { code: -32601, message: "Method not found" },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    await expect(rpc("nope/nowhere")).rejects.toMatchObject({ status: 404 });
+
+    const { rpcs } = getDebugLogSnapshot();
+    expect(rpcs).toHaveLength(1);
+    expect(rpcs[0]).toMatchObject({
+      method: "nope/nowhere",
+      ok: false,
+      error: "Method not found",
+    });
+    unsubscribe();
   });
 });
 
@@ -251,7 +301,7 @@ describe("typed methods translate to contract params", () => {
       "me",
       "proj",
       "state=all&labels=bug,ui&workspace=feature/a&page=2&per_page=21&lookahead=true",
-      { includeLabels: true, includeUnmergedWorkspaces: true },
+      { includeLabels: true },
     );
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "pageData/issueList",
@@ -264,7 +314,6 @@ describe("typed methods translate to contract params", () => {
         perPage: 21,
         lookahead: true,
         includeLabels: true,
-        includeUnmergedWorkspaces: true,
       },
     });
 

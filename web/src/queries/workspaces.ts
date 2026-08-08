@@ -4,7 +4,6 @@ import {
   listArchivedSettingsWorkspaces,
   listArchivedWorkspaces,
   listSettingsWorkspaces,
-  listUnmergedWorkspaces,
   listWorkspaces,
   setWorkspaceArchived,
 } from "@/api/client";
@@ -21,18 +20,6 @@ export function workspaceQueryOptions(owner: string, repo: string) {
 
 export function useWorkspaces(owner: string, repo: string) {
   return useQuery(workspaceQueryOptions(owner, repo));
-}
-
-export function useUnmergedWorkspaces(
-  owner: string,
-  repo: string,
-  enabled = true,
-) {
-  return useQuery({
-    queryKey: [...queryKeys.workspaces(full(owner, repo)), "unmerged"],
-    queryFn: () => listUnmergedWorkspaces(owner, repo),
-    enabled,
-  });
 }
 
 export function useArchivedWorkspaces(owner: string, repo: string) {

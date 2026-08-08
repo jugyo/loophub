@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -357,4 +363,117 @@ test("githubPrExportExtraPrompt is null by default and persists set/clear (#2422
   expect(svc.repos.githubPrExportExtraPrompt("me/export-prompt-b")).toEqual({
     extra_prompt: "Other repo only",
   });
+});
+
+// #71: a checkout cloned from an origin reports its branch and its ahead/behind pair, and
+// pullFromOrigin fast-forwards it.
+test("originSync reports the checkout's standing against origin, pullFromOrigin advances it (#71)", async () => {
+  const upstream = initGitRepo();
+  await git(upstream, ["config", "user.email", "t@t.local"]);
+  await git(upstream, ["config", "user.name", "tester"]);
+  writeFileSync(join(upstream, "f.txt"), "base\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "base"]);
+
+  const clonePath = join(HOME, "origin-sync-clone");
+  await git(upstream, ["clone", "-q", upstream, clonePath]);
+  await svc.repos.create({ path: clonePath, name: "me/origin-sync" });
+
+  expect(await svc.repos.originSync("me/origin-sync")).toEqual({
+    has_origin: true,
+    branch: "main",
+    ahead: 0,
+    behind: 0,
+  });
+
+  writeFileSync(join(upstream, "next.txt"), "next\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "next"]);
+  await git(clonePath, ["fetch", "-q", "origin"]);
+  expect(await svc.repos.originSync("me/origin-sync")).toMatchObject({
+    ahead: 0,
+    behind: 1,
+  });
+
+  expect(await svc.repos.pullFromOrigin("me/origin-sync")).toEqual({
+    has_origin: true,
+    branch: "main",
+    ahead: 0,
+    behind: 0,
+  });
+  expect(existsSync(join(clonePath, "next.txt"))).toBe(true);
+});
+
+// #71: without an origin there is nothing to sync — the repo top hides the section rather than
+// offering a Pull that could only fail, and the procedure says why.
+test("originSync reports no origin, and pullFromOrigin refuses without one (#71)", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/no-origin" });
+
+  expect(await svc.repos.originSync("me/no-origin")).toEqual({
+    has_origin: false,
+    branch: null,
+    ahead: null,
+    behind: null,
+  });
+  await expect(svc.repos.pullFromOrigin("me/no-origin")).rejects.toThrow(
+    /no origin remote is configured/,
+  );
+});
+
+// #71: a diverged branch has no fast-forward; git's own message is what the operator sees.
+test("pullFromOrigin surfaces git's message when the branch has diverged (#71)", async () => {
+  const upstream = initGitRepo();
+  await git(upstream, ["config", "user.email", "t@t.local"]);
+  await git(upstream, ["config", "user.name", "tester"]);
+  writeFileSync(join(upstream, "f.txt"), "base\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "base"]);
+
+  const clonePath = join(HOME, "diverged-clone");
+  await git(upstream, ["clone", "-q", upstream, clonePath]);
+  await git(clonePath, ["config", "user.email", "t@t.local"]);
+  await git(clonePath, ["config", "user.name", "tester"]);
+  await svc.repos.create({ path: clonePath, name: "me/diverged" });
+
+  writeFileSync(join(clonePath, "local.txt"), "local\n");
+  await git(clonePath, ["add", "-A"]);
+  await git(clonePath, ["commit", "-qm", "local"]);
+  writeFileSync(join(upstream, "remote.txt"), "remote\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "remote"]);
+
+  await expect(svc.repos.pullFromOrigin("me/diverged")).rejects.toThrow(
+    /git pull --ff-only origin main failed/,
+  );
+
+  // The local commit is still the branch tip: the refused pull changed nothing.
+  expect(await svc.repos.originSync("me/diverged")).toMatchObject({
+    branch: "main",
+    ahead: 1,
+  });
+});
+
+// #71: a detached HEAD has no branch to compare or pull into.
+test("originSync reports a detached HEAD, and pullFromOrigin refuses it (#71)", async () => {
+  const upstream = initGitRepo();
+  await git(upstream, ["config", "user.email", "t@t.local"]);
+  await git(upstream, ["config", "user.name", "tester"]);
+  writeFileSync(join(upstream, "f.txt"), "base\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "base"]);
+
+  const clonePath = join(HOME, "detached-clone");
+  await git(upstream, ["clone", "-q", upstream, clonePath]);
+  await git(clonePath, ["checkout", "-q", "--detach", "HEAD"]);
+  await svc.repos.create({ path: clonePath, name: "me/detached" });
+
+  expect(await svc.repos.originSync("me/detached")).toEqual({
+    has_origin: true,
+    branch: null,
+    ahead: null,
+    behind: null,
+  });
+  await expect(svc.repos.pullFromOrigin("me/detached")).rejects.toThrow(
+    /HEAD is detached/,
+  );
 });

@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { CodingAgent, GlobalSettings, RepoAgentConfig } from "@/api/types";
 import { SettingsPage } from "@/components/settings-page";
+import { WebConfigProvider } from "@/lib/web-config";
 import { AppStatusbar } from "./app-statusbar";
 
 afterEach(() => {
@@ -304,6 +305,49 @@ describe("AppStatusbar", () => {
       expect(statusValue(statusbar, "Effort")).toBe("high");
     });
     expect(statusValue(statusbar, "Cost limit / session")).toBe("$12.50");
+  });
+
+  it("hosts the debug panel toggle inside the status bar when --debug is on", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "settings/get": () => structuredClone(DEFAULT_SETTINGS),
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({
+      component: () => <AppStatusbar />,
+    });
+    const homeRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([homeRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WebConfigProvider config={{ debug: true }}>
+          <RouterProvider router={router} />
+        </WebConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    const statusbar = await screen.findByRole("contentinfo", {
+      name: "Application status",
+    });
+    const toggle = within(statusbar).getByRole("button", {
+      name: "Debug panel",
+    });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(toggle);
+    expect(within(statusbar).getByTestId("debug-log-panel")).toBeTruthy();
   });
 
   it("keeps application Coding agent settings on pages that are not repo-scoped (#1536)", async () => {

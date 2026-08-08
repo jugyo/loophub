@@ -2608,6 +2608,40 @@ describe("DiffFileDialog", () => {
     expect(await within(dialog).findByText("# new")).toBeTruthy();
   });
 
+  it("lets a long Markdown preview scroll inside its own pane", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-# old\n+# new\n",
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/fileAtRef": () => ({
+          status: "ok",
+          content: `# Title\n\n${Array.from(
+            { length: 200 },
+            (_, index) => `Paragraph ${index + 1}.`,
+          ).join("\n\n")}\n`,
+        }),
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Head" }));
+
+    const heading = await screen.findByRole("heading", { name: "Title" });
+    const pane = heading.closest(
+      '[data-debug-component="MarkdownPreviewPane"]',
+    );
+    // The pane, not the dialog's shared scroller, owns the scrollbar so it
+    // renders with the preview's own palette.
+    expect(pane?.classList).toContain("overflow-y-auto");
+    expect(pane?.classList).toContain("h-full");
+    expect(pane?.parentElement?.classList).toContain("overflow-auto");
+  });
+
   it("renders GFM elements inside the diff preview typeset", async () => {
     const mdFile: PullFile = {
       filename: "README.md",

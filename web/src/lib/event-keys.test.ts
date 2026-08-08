@@ -55,6 +55,28 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["workspaces", "me/proj"]);
   });
 
+  // #71: a merge advances the base branch in the primary checkout, so the repo-top sidebar's
+  // ahead count is stale. A PR head moving leaves the checked-out branch alone.
+  it("refreshes the repo origin sync only when a merge moves the checkout's branch", () => {
+    const merged = queryKeysForEvent(
+      ev({
+        type: "pull_request.merged",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(merged).toContainEqual(["repo-origin-sync", "me/proj"]);
+
+    const updated = queryKeysForEvent(
+      ev({
+        type: "pull_request.updated",
+        repo: "me/proj",
+        payload: { number: 13, sha: "a".repeat(40) },
+      }),
+    );
+    expect(updated).not.toContainEqual(["repo-origin-sync", "me/proj"]);
+  });
+
   it("maps a global terminal.sessions_updated event to the terminal sessions query (#1665)", () => {
     const keys = queryKeysForEvent(ev({ type: "terminal.sessions_updated" }));
     expect(keys).toContainEqual(["terminal", "sessions"]);

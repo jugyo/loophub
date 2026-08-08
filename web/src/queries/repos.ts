@@ -8,7 +8,9 @@ import {
   getRepoAgentConfig,
   getRepoGithubPrExportExtraPrompt,
   getRepoMergeMode,
+  getRepoOriginSync,
   listRepos,
+  pullRepoFromOrigin,
   renameRepo,
   setRepoAgentConfig,
   setRepoArchived,
@@ -150,6 +152,32 @@ export function useSetRepoMergeMode(owner: string, repo: string) {
       });
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: ["pull"] });
+      qc.invalidateQueries({ queryKey: queryKeys.pulls(full(owner, repo)) });
+    },
+  });
+}
+
+/** How the repo's checkout stands against origin, for the repo-top sidebar (#71). */
+export function useRepoOriginSync(owner: string, repo: string) {
+  return useQuery({
+    queryKey: queryKeys.repoOriginSync(full(owner, repo)),
+    queryFn: () => getRepoOriginSync(owner, repo),
+  });
+}
+
+/**
+ * Fast-forward the repo's checkout from origin (#71). The mutation already answers with the
+ * refreshed sync state, so it seeds the query cache directly instead of round-tripping for it.
+ * The pull moves the checkout's branch, which is what the issue list groups by and what a PR's
+ * base is measured against, so those refetch too.
+ */
+export function usePullRepoFromOrigin(owner: string, repo: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => pullRepoFromOrigin(owner, repo),
+    onSuccess: (sync) => {
+      qc.setQueryData(queryKeys.repoOriginSync(full(owner, repo)), sync);
+      qc.invalidateQueries({ queryKey: queryKeys.issues(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: queryKeys.pulls(full(owner, repo)) });
     },
   });

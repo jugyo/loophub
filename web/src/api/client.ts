@@ -5,6 +5,8 @@
 // always served same-origin by its own lh-web (issue #1669), so requests are same-origin
 // ("" base); there is no separate-backend override.
 
+import { recordRpc } from "@/lib/debug-log";
+import { errorMessage } from "@/lib/error-message";
 import { getSessionId } from "@/lib/session";
 import type {
   AcceptanceCriterionDetail,
@@ -40,6 +42,7 @@ import type {
   RepoAgentConfig,
   RepoGithubPrExportExtraPrompt,
   RepoMergeMode,
+  RepoOriginSync,
   SearchResult,
   Stats,
   TerminalLaunchResult,
@@ -115,22 +118,40 @@ export async function rpc<T>(
   method: string,
   params: Record<string, unknown> = {},
 ): Promise<T> {
-  const res = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
-  });
-  if (!res.ok) throw new ApiError(res.status, res.statusText);
-  const body = (await res.json()) as { result?: T; error?: RpcError };
-  if (body.error) {
-    const { status: _status, ...data } = body.error.data ?? {};
-    throw new ApiError(
-      statusFromError(body.error),
-      body.error.message,
-      Object.keys(data).length > 0 ? data : undefined,
-    );
+  const startedAt = performance.now();
+  try {
+    const res = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
+    });
+    if (!res.ok) throw new ApiError(res.status, res.statusText);
+    const body = (await res.json()) as { result?: T; error?: RpcError };
+    if (body.error) {
+      const { status: _status, ...data } = body.error.data ?? {};
+      throw new ApiError(
+        statusFromError(body.error),
+        body.error.message,
+        Object.keys(data).length > 0 ? data : undefined,
+      );
+    }
+    recordRpc({
+      method,
+      params,
+      durationMs: performance.now() - startedAt,
+      ok: true,
+    });
+    return body.result as T;
+  } catch (error) {
+    recordRpc({
+      method,
+      params,
+      durationMs: performance.now() - startedAt,
+      ok: false,
+      error: errorMessage(error),
+    });
+    throw error;
   }
-  return body.result as T;
 }
 
 export function getWebConfig() {
@@ -252,6 +273,19 @@ export function setRepoMergeMode(
     name: full(owner, repo),
     mode,
     session_id: sessionId,
+  });
+}
+
+// #71: how the repo's checkout stands against origin, for the repo-top sidebar. Local refs only —
+// this call does not contact origin.
+export function getRepoOriginSync(owner: string, repo: string) {
+  return rpc<RepoOriginSync>("repos/originSync", { name: full(owner, repo) });
+}
+
+// #71: fast-forward the repo's checkout from origin, answering with the refreshed sync state.
+export function pullRepoFromOrigin(owner: string, repo: string) {
+  return rpc<RepoOriginSync>("repos/pullFromOrigin", {
+    name: full(owner, repo),
   });
 }
 
@@ -571,7 +605,6 @@ export function getIssueListPage(
   query = "",
   options: {
     includeLabels?: boolean;
-    includeUnmergedWorkspaces?: boolean;
   } = {},
 ) {
   const sp = new URLSearchParams(query);
@@ -587,7 +620,6 @@ export function getIssueListPage(
       perPage: sp.get("per_page") ? Number(sp.get("per_page")) : undefined,
       page: sp.get("page") ? Number(sp.get("page")) : undefined,
       includeLabels: options.includeLabels || undefined,
-      includeUnmergedWorkspaces: options.includeUnmergedWorkspaces || undefined,
     }),
   );
 }
@@ -605,12 +637,6 @@ export function searchIssuesAndPulls(
 
 export function listWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/list", { repo: full(owner, repo) });
-}
-
-export function listUnmergedWorkspaces(owner: string, repo: string) {
-  return rpc<Workspace[]>("workspaces/listUnmerged", {
-    repo: full(owner, repo),
-  });
 }
 
 export function listArchivedWorkspaces(owner: string, repo: string) {

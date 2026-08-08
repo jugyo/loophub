@@ -190,6 +190,18 @@
   background-color: var(--markdown-diff-background);
 }
 
+/* Chromium ignores every ::-webkit-scrollbar rule on a scroller that sets a
+   non-auto scrollbar-color, and the standard scrollbar it falls back to is a
+   macOS overlay that reserves no space and fades out — so a long preview kept
+   no visible scrollbar. Dropping the app-wide scrollbar-color here restores
+   the custom scrollbar, which then reads the palette above. Firefox has no
+   ::-webkit-scrollbar, so it keeps the themed standard scrollbar. */
+@supports selector(::-webkit-scrollbar) {
+  .markdown-diff-preview {
+    scrollbar-color: auto;
+  }
+}
+
 .dark .markdown-diff-preview {
   --markdown-diff-background: #0d1117;
   --markdown-diff-foreground: #f0f6fc;

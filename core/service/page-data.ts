@@ -22,30 +22,26 @@ export const pageData = {
       page?: number;
       perPage?: number;
       includeLabels?: boolean;
-      includeUnmergedWorkspaces?: boolean;
     } = {},
   ): Promise<IssueListPageWire> {
-    const [issueRows, repo, workspaceRows, unmergedWorkspaces, labelRows] =
-      await Promise.all([
-        issues.list(name, {
-          kind: "issue",
-          state: opts.state,
-          labels: opts.labels,
-          workspace: opts.workspace,
-          lookahead: opts.lookahead,
-          page: opts.page,
-          perPage: opts.perPage,
-        }),
-        repos.get(name),
-        workspaces.list(name),
-        opts.includeUnmergedWorkspaces ? workspaces.listUnmerged(name) : [],
-        opts.includeLabels ? labels.list(name) : [],
-      ]);
+    const [issueRows, repo, workspaceRows, labelRows] = await Promise.all([
+      issues.list(name, {
+        kind: "issue",
+        state: opts.state,
+        labels: opts.labels,
+        workspace: opts.workspace,
+        lookahead: opts.lookahead,
+        page: opts.page,
+        perPage: opts.perPage,
+      }),
+      repos.get(name),
+      workspaces.list(name),
+      opts.includeLabels ? labels.list(name) : [],
+    ]);
     return {
       issues: issueRows,
       repo,
       workspaces: workspaceRows,
-      unmerged_workspaces: unmergedWorkspaces,
       labels: labelRows,
     };
   },
