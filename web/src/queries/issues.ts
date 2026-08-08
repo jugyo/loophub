@@ -61,7 +61,6 @@ export function useIssueListPage(
   filters: IssueListFilters,
   options: {
     includeLabels?: boolean;
-    includeUnmergedWorkspaces?: boolean;
   } = {},
 ) {
   return useInfiniteQuery({

@@ -571,7 +571,6 @@ export function getIssueListPage(
   query = "",
   options: {
     includeLabels?: boolean;
-    includeUnmergedWorkspaces?: boolean;
   } = {},
 ) {
   const sp = new URLSearchParams(query);
@@ -587,7 +586,6 @@ export function getIssueListPage(
       perPage: sp.get("per_page") ? Number(sp.get("per_page")) : undefined,
       page: sp.get("page") ? Number(sp.get("page")) : undefined,
       includeLabels: options.includeLabels || undefined,
-      includeUnmergedWorkspaces: options.includeUnmergedWorkspaces || undefined,
     }),
   );
 }
@@ -605,12 +603,6 @@ export function searchIssuesAndPulls(
 
 export function listWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/list", { repo: full(owner, repo) });
-}
-
-export function listUnmergedWorkspaces(owner: string, repo: string) {
-  return rpc<Workspace[]>("workspaces/listUnmerged", {
-    repo: full(owner, repo),
-  });
 }
 
 export function listArchivedWorkspaces(owner: string, repo: string) {

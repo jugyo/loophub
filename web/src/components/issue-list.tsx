@@ -163,7 +163,6 @@ export function IssueList({
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
   const query = useIssueListPage(owner, repo, filters, {
     includeLabels: labelFilterMode === "select",
-    includeUnmergedWorkspaces: showWorkspaceFilter,
   });
   const navigate = useNavigate();
   const allVisibleIssues = useMemo(() => {
@@ -176,7 +175,6 @@ export function IssueList({
   const activeWorkspaces = workspaces.filter(
     (workspace) => workspace.archived_at === null,
   );
-  const unmergedWorkspaces = pageData?.unmerged_workspaces ?? [];
   const visibleIssues = allVisibleIssues;
   const issueSections = useMemo(
     () => composeIssueSections(visibleIssues, defaultBranch, workspaces),
@@ -478,33 +476,6 @@ export function IssueList({
           targetBranch={showWorkspaceFilter ? workspaceParam : undefined}
         />
       </div>
-
-      {showWorkspaceFilter && unmergedWorkspaces.length > 0 ? (
-        <div
-          data-debug-component="UnmergedWorkspaces"
-          className="flex items-center gap-2 px-1 text-xs text-muted-foreground"
-        >
-          <span>Unmerged workspaces:</span>
-          <ul className="flex flex-wrap items-center gap-1.5">
-            {unmergedWorkspaces.map((workspace) => (
-              <li key={workspace.branch}>
-                <Link
-                  to="/r/$owner/$repo"
-                  params={{ owner, repo }}
-                  search={{
-                    labels: labels || undefined,
-                    state: state === "open" ? undefined : state,
-                    workspace: workspace.branch,
-                  }}
-                  className="block rounded border bg-muted/30 px-1.5 py-0.5 font-mono text-foreground/70 hover:bg-muted hover:text-foreground"
-                >
-                  {workspace.branch}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
 
       {query.isLoading ? (
         <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">

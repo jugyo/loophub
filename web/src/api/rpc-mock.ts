@@ -31,11 +31,6 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
             workspaces: handlers["workspaces/list"]
               ? await handlers["workspaces/list"](pageParams)
               : [],
-            unmerged_workspaces:
-              pageParams.includeUnmergedWorkspaces &&
-              handlers["workspaces/listUnmerged"]
-                ? await handlers["workspaces/listUnmerged"](pageParams)
-                : [],
             labels:
               pageParams.includeLabels && handlers["labels/list"]
                 ? await handlers["labels/list"](pageParams)

@@ -2323,7 +2323,6 @@ export interface IssueListPageWire {
   issues: IssueWire[];
   repo: RepoWire;
   workspaces: WorkspaceWire[];
-  unmerged_workspaces: WorkspaceWire[];
   labels: LabelWire[];
 }
 

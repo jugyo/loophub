@@ -251,7 +251,7 @@ describe("typed methods translate to contract params", () => {
       "me",
       "proj",
       "state=all&labels=bug,ui&workspace=feature/a&page=2&per_page=21&lookahead=true",
-      { includeLabels: true, includeUnmergedWorkspaces: true },
+      { includeLabels: true },
     );
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "pageData/issueList",
@@ -264,7 +264,6 @@ describe("typed methods translate to contract params", () => {
         perPage: 21,
         lookahead: true,
         includeLabels: true,
-        includeUnmergedWorkspaces: true,
       },
     });
 
