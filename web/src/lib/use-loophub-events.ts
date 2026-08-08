@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { listEvents } from "@/api/client";
 import type { LoopEvent } from "@/api/types";
+import { recordEvents, recordInvalidation } from "@/lib/debug-log";
 import { queryKeys, queryKeysForEvent } from "@/lib/event-keys";
 import { getLastEventId, rememberEventId, setLastEventId } from "@/lib/session";
 
@@ -26,10 +27,13 @@ function applyLoopHubEvents(
       continue;
     }
     rememberEventId(event.id);
-    for (const queryKey of queryKeysForEvent(event)) {
+    const keys = queryKeysForEvent(event);
+    recordInvalidation(event, keys);
+    for (const queryKey of keys) {
       queryKeys.set(JSON.stringify(queryKey), queryKey);
     }
   }
+  if (events.length > 0) recordEvents(events);
   for (const queryKey of queryKeys.values()) {
     void queryClient.invalidateQueries({ queryKey });
   }
