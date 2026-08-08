@@ -84,6 +84,76 @@ Options:
   --kind <kind>         Session kind such as dev, review, or issue-create.
   --help                Show this help without changing the database.`;
 
+const PR_VIEW_DETAILS = `
+
+Usage:
+  lh pr view <number> [options]
+
+Options:
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --json                Print the pull request, comments, commits, and linked issue as JSON.
+  --help                Show this help without reading the database.`;
+
+const PR_UPDATE_DETAILS = `
+
+Usage:
+  lh pr update <number> [options]
+
+Options:
+  --title <text>        New pull request title.
+  --body <text>         New Markdown body.
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --session-id <uuid>   Attribute the update to a registered agent session.
+  --json                Print the updated pull request as JSON.
+  --help                Show this help without changing the database.
+
+Constraints:
+  At least one of --title and --body is required.`;
+
+const PR_COMMENT_DETAILS = `
+
+Usage:
+  lh pr comment <number> --body <text> [options]
+  lh pr comment react <comment> --pr <number> --emoji <emoji> [options]
+
+Options:
+  --body <text>         Comment body.
+  --pr <number>         Target pull request (required for react).
+  --emoji <emoji>       Reaction emoji (required for react).
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --session-id <uuid>   Attribute the comment to a registered agent session.
+  --json                Print the created comment or reaction as JSON.
+  --help                Show this help without changing the database.`;
+
+const PR_FEEDBACK_DETAILS = `
+
+Usage:
+  lh pr feedback list <number> [options]
+  lh pr feedback pending <number> --run <id> [options]
+  lh pr feedback create <number> --path <path> --side LEFT|RIGHT
+    --start-line <n> --end-line <n> --body <text> [options]
+  lh pr feedback view <conversation> --pr <number> [options]
+  lh pr feedback reply <conversation> --pr <number> --body <text> [options]
+  lh pr feedback archive|unarchive <conversation> --pr <number> [options]
+  lh pr feedback react <message> --pr <number> --emoji <emoji> [options]
+
+Options:
+  --pr <number>         Target pull request (required by the conversation-scoped actions).
+  --run <id>            Workflow run whose unanswered conversations pending returns.
+  --body <text>         Comment body for create and reply.
+  --base-sha <sha>      Base commit the anchor was taken against (create).
+  --head-sha <sha>      Head commit the anchor was taken against (create).
+  --path <path>         Anchored file path (create).
+  --side <LEFT|RIGHT>   Anchored diff side (create).
+  --start-line <n>      First anchored line (create).
+  --end-line <n>        Last anchored line (create).
+  --emoji <emoji>       Reaction emoji (react).
+  --context <lines>     Diff context radius around the anchor.
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --session-id <uuid>   Attribute the write to a registered agent session.
+  --json                Print the conversation or conversation list as JSON.
+  --help                Show this help without changing the database.`;
+
 const PR_REVIEW_DETAILS = `
 
 Usage:
@@ -136,6 +206,41 @@ Options:
   --session-id <uuid>    Attribute the response to a registered agent session.
   --json                 Print the response or response list as JSON.
   --help                 Show this help without changing the database.`;
+
+const WORKFLOW_PARENT_READY_DETAILS = `
+
+Usage:
+  lh workflow parent-ready <run> [options]
+
+Options:
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --json                Print the ready signal and any instruction it releases as JSON.
+  --help                Show this help without changing the database.`;
+
+const WORKFLOW_TURN_DONE_DETAILS = `
+
+Usage:
+  lh workflow turn done [options]
+
+Options:
+  --run <id>            Workflow run (defaults to LOOPHUB_WORKFLOW_RUN).
+  --repo <owner/name>   Repository (defaults to LOOPHUB_WORKFLOW_REPO, then the current path).
+  --session-id <uuid>   Attribute the declaration to a registered agent session.
+  --json                Print the recorded turn as JSON.
+  --help                Show this help without changing the database.`;
+
+const WORKFLOW_ESCALATE_DETAILS = `
+
+Usage:
+  lh workflow escalate --reason <text> [options]
+
+Options:
+  --reason <text>       Short summary of what the child needs from a human (required).
+  --run <id>            Workflow run (defaults to LOOPHUB_WORKFLOW_RUN).
+  --repo <owner/name>   Repository (defaults to LOOPHUB_WORKFLOW_REPO, then the current path).
+  --session-id <uuid>   Attribute the escalation to a registered agent session.
+  --json                Print the recorded escalation as JSON.
+  --help                Show this help without changing the database.`;
 
 const WORKFLOW_INSTRUCTION_DETAILS = `
 
@@ -226,11 +331,28 @@ export const commandHelp: readonly CommandHelp[] = [
   { path: ["attachment", "add"], description: "Upload attachment files." },
   { path: ["pr"], description: "Manage pull requests." },
   { path: ["pr", "list"], description: "List pull requests." },
-  { path: ["pr", "view"], description: "Show a pull request." },
+  {
+    path: ["pr", "view"],
+    description: "Show a pull request.",
+    details: PR_VIEW_DETAILS,
+  },
   { path: ["pr", "diff"], description: "Show a pull request diff." },
   { path: ["pr", "create"], description: "Create a pull request." },
-  { path: ["pr", "update"], description: "Update a pull request." },
-  { path: ["pr", "comment"], description: "Comment on a pull request." },
+  {
+    path: ["pr", "update"],
+    description: "Update a pull request.",
+    details: PR_UPDATE_DETAILS,
+  },
+  {
+    path: ["pr", "comment"],
+    description: "Comment on a pull request.",
+    details: PR_COMMENT_DETAILS,
+  },
+  {
+    path: ["pr", "feedback"],
+    description: "Manage pull request diff feedback conversations.",
+    details: PR_FEEDBACK_DETAILS,
+  },
   { path: ["pr", "merge"], description: "Merge a pull request." },
   {
     path: ["pr", "record-github-pr"],
@@ -328,12 +450,19 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Update a workflow run.",
   },
   {
+    path: ["workflow", "parent-ready"],
+    description: "Declare the parent agent is up and reads its pane.",
+    details: WORKFLOW_PARENT_READY_DETAILS,
+  },
+  {
     path: ["workflow", "turn", "done"],
     description: "Declare an Execute turn done (payload-less).",
+    details: WORKFLOW_TURN_DONE_DETAILS,
   },
   {
     path: ["workflow", "escalate"],
     description: "Declare that an Execute child needs human guidance.",
+    details: WORKFLOW_ESCALATE_DETAILS,
   },
   {
     path: ["workflow", "deliver"],
@@ -363,7 +492,9 @@ export const commandHelp: readonly CommandHelp[] = [
   },
 ];
 
-export function printCommandHelp(positionals: readonly string[]): boolean {
+export function resolveCommandHelp(
+  positionals: readonly string[],
+): CommandHelp | undefined {
   const isPrefix = ({ path }: CommandHelp) =>
     path.every((part, index) => positionals[index] === part);
   const hasChildren = ({ path }: CommandHelp) =>
@@ -372,13 +503,18 @@ export function printCommandHelp(positionals: readonly string[]): boolean {
         candidate.length > path.length &&
         path.every((part, index) => candidate[index] === part),
     );
-  const match =
+  return (
     commandHelp.find(
       (entry) => entry.path.length === positionals.length && isPrefix(entry),
     ) ??
     [...commandHelp]
       .sort((a, b) => b.path.length - a.path.length)
-      .find((entry) => isPrefix(entry) && !hasChildren(entry));
+      .find((entry) => isPrefix(entry) && !hasChildren(entry))
+  );
+}
+
+export function printCommandHelp(positionals: readonly string[]): boolean {
+  const match = resolveCommandHelp(positionals);
   if (!match) return false;
 
   console.log(

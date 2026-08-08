@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     environment: "happy-dom",
     globals: true,
+    setupFiles: ["./test-setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
     // These are CPU-bound happy-dom render tests. Left uncapped, Vitest spawns one
     // worker per core minus one, saturating every core at once and spiking CPU on
