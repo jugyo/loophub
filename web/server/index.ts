@@ -4,7 +4,8 @@
 //   (port: default 8730 or LOOPHUB_PORT)
 // One command, one port: this process serves the JSON-RPC API and the SPA
 // (with HMR) by embedding Vite in middleware mode — no separate dev server. Resident
-// maintenance loops run in lh-worker.
+// maintenance loops run in lh-worker, including Notification Center generation (#118): without
+// lh-worker running, lh-web alone will not produce new notifications.
 
 import { configureSlowOperationLogging } from "../../core/slow-operation.ts";
 import { LH_WEB_HELP, type LhWebArgs, parseLhWebArgs } from "./args.ts";

@@ -73,8 +73,15 @@ core/    Pure domain library (Node): db, config, store, git, events, links, watc
 cli/     `lh` command — commands/ grouped by noun; imports core directly, no HTTP
 web/     `lh-web` process: core + JSON-RPC 2.0, plus the SPA
 worker/  `lh-worker` resident process: tails shared events, runs per-repo workflow.yml,
-         and owns maintenance sweep loops (PR sweep, usage, GitHub merge sync, cost stop)
+         and owns maintenance sweep loops (PR sweep, Notification Center generation, usage,
+         GitHub merge sync, cost stop)
 ```
+
+Notification Center entries (merge-ready, over-budget, human-attention, etc.) are generated only
+by `lh-worker`'s pull sweep (`notifications.sweep`, #118) — `lh-web` alone does not generate them,
+so a repo needs `lh-worker` running for new notifications to appear. This is accepted rather than
+given a fallback, per the design principle above; the existing worker heartbeat/compatibility
+warning is the operator-facing signal that `lh-worker` needs attention.
 
 ### Responsibility split (core vs cli)
 

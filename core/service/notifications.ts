@@ -1,6 +1,9 @@
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
-import { sweepMergeReadyNotifications } from "../merge-ready-notifications.ts";
+import {
+  type MergeReadyNotificationSweepResult,
+  sweepMergeReadyNotifications,
+} from "../merge-ready-notifications.ts";
 import { notificationJSON } from "../serialize.ts";
 import * as S from "../store.ts";
 import {
@@ -105,10 +108,11 @@ function assertResourceNumber(
 
 // The generated notifications and the cursor that says they were generated advance together: a
 // cursor moved without its notifications would silently drop them.
-function backfillFromSignals(): void {
-  db.transaction(() => {
+function backfillFromSignals(): number {
+  return db.transaction(() => {
     const cursors = S.notificationSourceCursors();
     const highWatermarks = S.notificationSourceHighWatermarks();
+    let created = 0;
     for (const signal of S.listNotificationSignalRows(
       cursors,
       highWatermarks,
@@ -127,6 +131,7 @@ function backfillFromSignals(): void {
         createdAt: signal.created_at,
       });
       if (row) {
+        created += 1;
         S.emitEvent(row.repo_id, "notification.created", "loophub", {
           id: row.id,
           kind: row.kind,
@@ -135,12 +140,22 @@ function backfillFromSignals(): void {
       }
     }
     S.advanceNotificationSourceCursors(highWatermarks);
+    return created;
   });
 }
 
-async function refreshGeneratedNotifications(): Promise<void> {
-  await sweepMergeReadyNotifications();
-  backfillFromSignals();
+export interface NotificationSweepResult {
+  mergeReady: MergeReadyNotificationSweepResult;
+  backfilled: number;
+}
+
+// Resident worker entry point (#118): both notification generators used to run on every
+// notifications.list / unreadCount / readAll call, making the read path pay their git cost. The
+// worker's pull sweep now owns generation on its own cadence; the read path is a pure DB read.
+async function sweepGeneratedNotifications(): Promise<NotificationSweepResult> {
+  const mergeReady = await sweepMergeReadyNotifications();
+  const backfilled = backfillFromSignals();
+  return { mergeReady, backfilled };
 }
 
 export const notifications = {
@@ -199,7 +214,6 @@ export const notifications = {
   async list(
     opts: { limit?: number; unreadOnly?: boolean } = {},
   ): Promise<any[]> {
-    await refreshGeneratedNotifications();
     const limit = opts.unreadOnly
       ? undefined
       : clampPerPage(opts.limit, 50, MAX_LIST_PER_PAGE);
@@ -209,7 +223,6 @@ export const notifications = {
   },
 
   async unreadCount(): Promise<{ count: number }> {
-    await refreshGeneratedNotifications();
     return { count: S.unreadNotificationCount() };
   },
 
@@ -231,9 +244,6 @@ export const notifications = {
   },
 
   async readAll(sessionId?: string | null): Promise<{ count: number }> {
-    // The refresh above runs git/GitHub-derived readiness checks, so it stays outside; the mark-read
-    // sweep and the events announcing it are transactional.
-    await refreshGeneratedNotifications();
     const actor = actorFor(sessionId);
     return db.transaction(() => {
       const rows = S.markAllNotificationsRead();
@@ -245,5 +255,6 @@ export const notifications = {
     });
   },
 
+  sweep: sweepGeneratedNotifications,
   sweepMergeReady: sweepMergeReadyNotifications,
 };

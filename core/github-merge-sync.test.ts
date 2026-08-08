@@ -118,6 +118,9 @@ test("a detected GitHub merge creates one close-required notification without ch
     title: "Keep open until the user closes the PR",
   });
   const { number } = await openGithubLinkedPull(401, linkedIssue.number);
+  // Settle whatever the merge-ready sweep would generate for other PRs in this shared repo first,
+  // so only the github_merged signal notification below is counted against the baseline.
+  await svc.notifications.sweep();
   const beforeUnread = (await svc.notifications.unreadCount()).count;
   const { deps, calls } = fakeDeps({
     "https://github.com/me/proj/pull/401": {
@@ -129,6 +132,7 @@ test("a detected GitHub merge creates one close-required notification without ch
 
   await sync.syncGithubMergeStatus(deps);
 
+  await svc.notifications.sweep();
   const firstList = await svc.notifications.list({ limit: 100 });
   const matching = firstList.filter(
     (notification: any) =>
@@ -154,6 +158,7 @@ test("a detected GitHub merge creates one close-required notification without ch
 
   expect(await sync.syncGithubMergeStatus(deps)).toHaveLength(0);
   expect(calls).toHaveLength(1);
+  await svc.notifications.sweep();
   const secondList = await svc.notifications.list({ limit: 100 });
   expect(
     secondList.filter(

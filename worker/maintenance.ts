@@ -223,6 +223,15 @@ export function startWorkerHeartbeat(
 // Auto-fire pull_request.updated by sweeping open PR head SHAs on the resident worker
 // process. The sweep writes pull_request.updated rows straight to the shared DB for Web UI and
 // worker polling. Unchanged PRs are a no-op, and manual `lh sync` / `sync/run` remain available.
+// #118: this tick also owns Notification Center generation (merge-ready + signal backfill), moved
+// here from the read path (notifications.list / unreadCount / readAll) so those stay pure DB reads.
+// Trade-off accepted: a generation failure here is caught and logged like every other sweep in
+// this file, not surfaced as an RPC error to an open tab the way the removed read-path call used
+// to (for sweepMergeReadyNotifications the read path was only one of two callers pre-#118 — this
+// worker tick already ran it independently and already swallowed its errors this way). Operators
+// diagnose a stuck generator from worker logs ("lh-worker: pull sweep failed ..."), same as every
+// other resident sweep; building a dedicated RPC-visible error channel for this one generator
+// would be inconsistent with how the rest of this file already handles sweep failures.
 export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
   let stopped = false;
   let running = false;
@@ -233,10 +242,11 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
     const startedAt = logLoopStarted("pull sweep");
     try {
       const emitted = await sweepPullUpdates();
-      const mergeReady = await notifications.sweepMergeReady();
+      const notificationSweep = await notifications.sweep();
       logLoopCompleted("pull sweep", startedAt, {
         emitted_events: emitted.length,
-        created_notifications: mergeReady.created.length,
+        created_notifications: notificationSweep.mergeReady.created.length,
+        backfilled_notifications: notificationSweep.backfilled,
       });
     } catch (err) {
       logLoopFailed("pull sweep", startedAt, err);
