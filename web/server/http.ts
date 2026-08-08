@@ -104,7 +104,7 @@ function logRpcCalls(
     const batch =
       call.batchIndex === undefined ? "" : ` batch_index=${call.batchIndex}`;
     logger(
-      `rpc method=${JSON.stringify(call.method)} outcome=${outcome} duration=${call.durationMs.toFixed(2)}ms${batch}`,
+      `rpc method=${JSON.stringify(call.method)} outcome=${outcome} queue_ms=${call.queueMs.toFixed(2)} handler_ms=${call.handlerMs.toFixed(2)}${batch}`,
     );
   }
 }
@@ -244,6 +244,7 @@ function handleAttachmentGet(res: ServerResponse, url: URL): void {
 async function handleRpc(
   req: IncomingMessage,
   res: ServerResponse,
+  receivedAt: bigint,
   rpcLogger?: RpcLogger,
 ): Promise<void> {
   const body = await readBinaryBody(req, MAX_RPC_REQUEST_BYTES);
@@ -255,6 +256,7 @@ async function handleRpc(
   const response = await dispatchRaw(
     body.data.toString("utf8"),
     rpcLogger ? (call) => calls.push(call) : undefined,
+    receivedAt,
   );
   if (response === null) {
     logRpcCalls(rpcLogger, calls);
@@ -320,6 +322,9 @@ export function handleRequest(
   serveStatic: StaticHandler,
   rpcLogger?: RpcLogger,
 ): void {
+  // Captured as early as possible so queue_ms covers time this request spent waiting
+  // behind other work on the event loop, not just this handler's own processing.
+  const receivedAt = process.hrtime.bigint();
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname === "/rpc" && req.method === "POST") {
     if (!isJsonRequest(req)) {
@@ -333,7 +338,7 @@ export function handleRequest(
       sendJson(res, 403, { error: "Forbidden" });
       return;
     }
-    handleRpc(req, res, rpcLogger).catch(() => {
+    handleRpc(req, res, receivedAt, rpcLogger).catch(() => {
       if (!res.headersSent)
         res.writeHead(500, {
           "content-type": "application/json; charset=utf-8",
