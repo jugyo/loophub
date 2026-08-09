@@ -26,9 +26,9 @@ run が子を起動するとき、その argv とプロンプトを決める値�
 | effort | **どこからも渡っていない**（後述 1.2） | — |
 | contract 言語 | `workflow_runs.contract_language` | run 開始時 |
 | step prompt | `workflows.execute_prompt` / `workflows.verify_prompt` | **子の launch のたびに live 読み取り** |
-| contract 本文 | `core/workflow/contracts/{parent,execute,verify}.{md,ja.md}` | ビルド時（LoopHub 所有） |
+| contract 本文 | `core/workflow/contracts/{parent,execute,verify}.{md,ja.md}` | ソース固定（LoopHub 所有。実行時の設定では変わらない） |
 | cost 上限 | `workflow_runs.cost_increment_usd` / `cost_limit_usd`（開始時に `devCostLimitUsd()` から pin） | run 開始時 |
-| rework 上限 | `WORKFLOW_REWORK_LIMIT`（module 定数 8） | ビルド時 |
+| rework 上限 | `WORKFLOW_REWORK_LIMIT`（module 定数 8） | ソース固定 |
 | branch（head / base） | `pulls.head_ref` / `pulls.base_ref` | PR 作成時 |
 | worktree path | 保存せず `resolveWorktreeIdentity(head_ref, pr_number)` + `worktreeRoot()` から毎回導出 | 参照のたび |
 
@@ -239,20 +239,33 @@ $LOOPHUB_HOME/runs/workflow/<runId>/
 
 ### 5.2 manifest schema（v1）
 
+run 開始直後の状態。3 つの agent には同じ値が入る（§5.3「初期値の決め方」）。
+
 ```jsonc
 {
   "manifest_version": 1,
   "contract_language": "ja",
   "agents": {
-    "parent":  { "runtime": "claude-code", "model": "opus",           "effort": "medium" },
-    "execute": { "runtime": "claude-code", "model": "claude-opus-5",  "effort": "high"   },
-    "verify":  { "runtime": "claude-code", "model": "claude-opus-5",  "effort": "medium" }
+    "parent":  { "runtime": "claude-code", "model": "opus", "effort": "medium" },
+    "execute": { "runtime": "claude-code", "model": "opus", "effort": "medium" },
+    "verify":  { "runtime": "claude-code", "model": "opus", "effort": "medium" }
   },
   "prompts": {
     "execute": "execute-step-prompt.md",
     "verify":  "verify-step-prompt.md"
   }
 }
+```
+
+人間が編集して agent ごとに変えた例。Execute だけ effort を上げ、Verify に別 model を指定している。
+`runtime` は v1 では 3 つとも同値である必要がある（§10-2）。
+
+```jsonc
+  "agents": {
+    "parent":  { "runtime": "claude-code", "model": "opus",          "effort": "medium" },
+    "execute": { "runtime": "claude-code", "model": "opus",          "effort": "high"   },
+    "verify":  { "runtime": "claude-code", "model": "claude-opus-5", "effort": "medium" }
+  }
 ```
 
 **全フィールドが編集可能な動作条件である。** 読み取り専用フィールドも、どの run のものかを示す同定情報も
@@ -380,14 +393,34 @@ $EDITOR "$(lh workflow manifest path 56 --repo jugyo/loophub)"
 
 | 変えたもの | 効き始める瞬間 |
 |---|---|
-| `agents.verify.model` / `.effort` | 次の Verify child の launch |
-| `agents.execute.model` / `.effort` | 次の **fresh** Execute launch。注入（`lh workflow deliver`）で継続する既存 Execute session には効かない |
+| `agents.verify.model` / `.effort` | 次の Verify child の launch。Verify は毎回 fresh child なので、次の検証から確実に効く |
+| `agents.execute.model` / `.effort` | 次の **fresh** Execute launch。ただし走行中の run でそれが起きる保証は無い（下記） |
 | `prompts.execute` の中身 | 同上 |
 | `agents.parent.*` | 現在の run では効かない（parent は run 開始時に 1 度だけ起動する） |
 
-Execute は「rework / 継続作業は同じ session を優先する」設計（#1556）なので、model を変えても既存の
-Execute pane はそのまま動き続ける。実際に切り替えたい人間は、その Execute child を止めてから
-`launch-step --step execute` で起こし直す。この非対称性は隠さず、`manifest show` の出力と本書に明記する。
+#### Execute だけは走行中に差し替えられない
+
+Verify と違い、**Execute の変更を走行中の run に確実に効かせる手段は現状無い。** これは manifest 設計の
+制約ではなく、既存の Execute session 再利用の仕組みから来る。理由は 3 つ重なっている。
+
+1. Execute は「rework / 継続作業は同じ session を優先する」設計（#1556）なので、通常の rework は
+   `lh workflow deliver` による既存 session への注入で進み、新しい child が起動しない。
+2. `lh workflow launch-step` は `assertParentActor()` を通り、run の `parent_session_id` 以外からは
+   403 になる。CLI は `writeSession()` → `ensureHumanSession()` で human session を使うため、**人間が
+   直接叩く経路は存在しない**（run state 更新系が human session を明示的に許す `assertRunUpdateActor()`
+   との対比から、この制限は意図的なもの）。
+3. 仮に親が起こし直しても、Execute child のプロセスを止めただけでは `active_step` /
+   `active_session_id` は残る。これらを NULL にするのは `advanceToVerify()` と Verify での
+   `resumeAfterHuman()` だけで、child の死では clear されない。さらに `requestRework()` は child の生死に
+   関わらず最新の Execute session へ両列を向け直す（#2150 の二重起動対策）。したがって
+   `launch-step --step execute` は `assertNoLiveExecuteChild()` の 409 で弾かれる。
+
+結果として、run が最初の Execute child を持って以降、fresh Execute が起きる窓は「`advanceToVerify()` が
+active を clear した直後に親が Verify ではなく Execute を起こす」場合だけで、通常の進行では発生しない。
+
+**確実に新しい configuration で Execute を動かしたければ、新しい run を開始する。** この非対称性は隠さず、
+`manifest show` の出力と本書に明記する。既存 run の Execute を差し替える経路を持つべきかどうかは
+§10-7 の未解決論点として残す。
 
 書き込み用の CLI subcommand（`manifest set` 等）は v1 では作らない。人間が editor で JSON と markdown を
 直接編集するのが最も単純で、追加の API 面を持たずに済む。必要が確認できてから足す。
@@ -556,6 +589,22 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 6. **`prompts` に parent を足すか。** 現在 parent の振る舞いは contract のみで決まり、ユーザー設定可能な
    parent prompt は存在しない。manifest がその器を持つべきかは、workflow 設計 §1 の前提（設定できるのは
    step prompt だけ）と直接ぶつかる。
+7. **走行中の run で Execute の configuration を差し替える経路を持つべきか。** §5.5 のとおり、現状その
+   手段は無い。`launch-step` は parent 限定（`assertParentActor()`）で人間の入口が無く、child を止めても
+   `active_step` / `active_session_id` が残り、`requestRework()` が rework のたびにそれを最新 Execute
+   session へ向け直すためである。G2 を Execute についても満たすなら、次のいずれかが要る。
+
+   - **人間が Execute child を明示的に終了できる操作**（active 2 列の clear を含む）。ただし
+     `assertNoLiveExecuteChild()` は #2150 の二重起動を防ぐために入った guard なので、緩めるのではなく
+     「終了を宣言してから起こし直す」形にしないと、防いだはずの二重起動が戻る。
+   - **注入で configuration を変える**。model / effort は起動時 flag なので注入では変えられず、prompt
+     しか届かない。半分しか解けない。
+   - **現状を仕様として受け入れる**。「Execute を変えたければ新しい run を開始する」で運用上足りるなら、
+     操作を増やさないほうが「人間が回復できる失敗に自動機構を足さない」原則には沿う。
+
+   本設計は 3 番目（受け入れ）を v1 の立場とし、経路の新設は manifest とは独立に判断すべき論点として
+   切り出す。manifest 側は「次の launch から効く」という意味論を持つだけで、いつ launch が起きるかは
+   既存の workflow 進行が決めているからである。
 
 ---
 
@@ -585,6 +634,13 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
   argv は変わらない。
 - `agents.execute.effort` を編集しても、`lh workflow deliver` で継続する既存 Execute session には効かず、
   次の fresh Execute launch から効く。
+- 走行中の run で `agents.execute.*` を編集した人間が、その run の Execute を差し替える手段を持たないこと
+  を確認する（§5.5）。具体的には、human session からの `lh workflow launch-step --step execute` が
+  403 で、`active_step: execute` を持つ run に対する parent からの同 command が 409 で、いずれも
+  可視エラーとして返る。Execute child のプロセスを止めても `active_step` / `active_session_id` は
+  変わらない。
+- 同じ編集が **Verify には効く** —— `agents.verify.model` / `.effort` の編集後に起動した fresh Verify
+  child の argv に新しい値が現れる。この非対称性が `manifest show` の出力からも読み取れる。
 - `execute-step-prompt.md` を編集すると次の Execute 起動プロンプトに反映され、**同じ workflow を使う別 run**
   には影響しない。
 - 逆に `lh workflow update` で workflow 定義の prompt を変えても、既に開始済みの run の launch には効かない。
