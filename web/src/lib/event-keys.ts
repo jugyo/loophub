@@ -305,22 +305,22 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     } else {
       keys.push(["workflow-run"]);
     }
+    // #112: the issue *list* carries the run's display state now — pageData/issueList selects it
+    // and seeds the per-PR key its rows read, so those rows' queries are disabled and refreshing
+    // that key alone would move nothing there. Only the list is folded this way: the issue-detail
+    // and dashboard rows still fetch per PR and are covered by the key pushed above, so this stays
+    // as narrow as the fold, and an issue-list refetch's per-row git fan-out (#2147) is paid once
+    // per event rather than on three views.
+    keys.push(repo ? [...queryKeys.issues(repo)] : ["issues"]);
     // #2147: issue rows also embed the run's rework count (issueListItemJSON -> linkedPullDetail),
     // so the two transitions that change it — request_rework increments, resume_after_human resets
-    // it to zero — have to refresh the issue views the same way a PR change does above. Scoped to
-    // those transitions rather than the whole namespace: the other lifecycle moves leave the count
-    // as it was, and an issue-list refetch pays a git fan-out per row.
+    // it to zero — refresh the detail and dashboard views too. Scoped to those transitions rather
+    // than the whole namespace: the other lifecycle moves leave the count as it was.
     if (
       payload?.transition === "request_rework" ||
       payload?.transition === "resume_after_human"
     ) {
-      if (repo) {
-        keys.push([...queryKeys.issues(repo)]);
-        keys.push(["issue", repo]); // prefix: all open issue details for the repo
-      } else {
-        keys.push(["issues"]);
-        keys.push(["issue"]);
-      }
+      keys.push(repo ? ["issue", repo] : ["issue"]); // prefix: open issue details
       keys.push([...queryKeys.dashboard()]);
     }
   } else if (type.startsWith("notification.")) {

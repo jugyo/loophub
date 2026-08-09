@@ -504,6 +504,7 @@ export function IssueList({
               {visibleIssues.map((issue) => (
                 <li key={issue.number}>
                   <IssueRow
+                    workflowRunSeeded
                     owner={owner}
                     repo={repo}
                     issue={issue}
@@ -553,6 +554,7 @@ export function IssueList({
                     {section.issues.map((issue) => (
                       <li key={issue.number}>
                         <IssueRow
+                          workflowRunSeeded
                           owner={owner}
                           repo={repo}
                           issue={issue}

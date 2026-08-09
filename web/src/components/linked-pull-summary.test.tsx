@@ -165,6 +165,12 @@ function renderRowWithRun(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  // #112: a list row no longer fetches its own run state — pageData/issueList seeds this key and
+  // the row's query is disabled. Stand in for that seed, the way useIssueListPage does.
+  queryClient.setQueryData(
+    ["workflow-run", "pull", "me/proj", pullOverrides.number ?? 10],
+    run,
+  );
   const rootRoute = createRootRoute({ component: Outlet });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -193,6 +199,7 @@ function renderRowWithRun(
       </QueryClientProvider>,
     ),
     router,
+    queryClient,
   };
 }
 
@@ -723,6 +730,9 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
   });
 
   it("restores needs human when the reason changes after an increase", async () => {
+    // This row is not seeded by a page, so it keeps fetching its own state: the increase
+    // invalidates its key and the next fetch carries the new hold. That is still the path a
+    // detail-screen row takes, so drive it rather than writing the cache by hand.
     let increased = false;
     renderRowWithRun(
       held,

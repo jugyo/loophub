@@ -244,6 +244,7 @@ export function IssueRow({
   showCreatedAt = false,
   labelState,
   labelWorkspaceFilter,
+  workflowRunSeeded = false,
 }: {
   owner: string;
   repo: string;
@@ -260,6 +261,8 @@ export function IssueRow({
   labelState?: IssueListFilters["state"];
   /** Preserves the repo-top workspace filter when a label chip is clicked (#1494). */
   labelWorkspaceFilter?: string;
+  /** The list this row belongs to already seeded its PRs' run state (#112). */
+  workflowRunSeeded?: boolean;
 }) {
   const popover = useHoverPopover();
   // Usually 0–1 linked PRs; when more than one exists they stack vertically, one
@@ -355,6 +358,7 @@ export function IssueRow({
               className="pl-7 pr-0"
               dimInactive
               popoverTrigger="pull-link"
+              workflowRunSeeded={workflowRunSeeded}
             />
           ))}
         </div>

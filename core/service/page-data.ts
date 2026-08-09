@@ -11,6 +11,7 @@ import { pullDiffFiles, pulls } from "./pulls.ts";
 import { repos } from "./repos.ts";
 import { reviews } from "./reviews.ts";
 import { actorFor } from "./shared.ts";
+import { workflowRuns } from "./workflow-runs.ts";
 import { workspaces } from "./workspaces.ts";
 
 export const pageData = {
@@ -40,11 +41,27 @@ export const pageData = {
       workspaces.list(name),
       opts.includeLabels ? labels.list(name) : [],
     ]);
+    // #112: the mini tracker on each linked-PR sub-row needs the run's display state. Selecting it
+    // with the page keeps a Workflow event to one refetch — asking per row put one request per row
+    // on lh-web's single event loop, and every workflow_run.* / workflow_step.* event invalidated
+    // all of them at once. The rows already resolved these PRs' refs for their own status, so the
+    // SHA-keyed fan-out behind this is a cache hit (core/pull-status-cache.ts).
+    const linkedPulls = issueRows.flatMap((issue) =>
+      // Same fallback the row renderer uses (web/src/components/dashboard-rows.tsx): a response
+      // shape carrying only the singular field still gets its row seeded.
+      (
+        issue.linked_pull_requests ??
+        (issue.linked_pull_request ? [issue.linked_pull_request] : [])
+      ).map((pull) => pull.number),
+    );
     return {
       issues: issueRows,
       repo,
       workspaces: workspaceRows,
       labels: labelRows,
+      workflow_runs: await workflowRuns.statesForPulls(name, {
+        pulls: linkedPulls,
+      }),
     };
   },
 

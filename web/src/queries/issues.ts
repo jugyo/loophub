@@ -63,6 +63,7 @@ export function useIssueListPage(
     includeLabels?: boolean;
   } = {},
 ) {
+  const qc = useQueryClient();
   return useInfiniteQuery({
     queryKey: [
       ...queryKeys.issues(full(owner, repo)),
@@ -71,7 +72,7 @@ export function useIssueListPage(
       options,
     ],
     initialPageParam: 1,
-    queryFn: ({ pageParam }) => {
+    queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({
         kind: "issue",
         state: filters.state,
@@ -82,7 +83,33 @@ export function useIssueListPage(
       const labels = filters.labels.trim();
       if (labels) params.set("labels", labels);
       if (filters.workspace) params.set("workspace", filters.workspace);
-      return getIssueListPage(owner, repo, params.toString(), options);
+      const data = await getIssueListPage(
+        owner,
+        repo,
+        params.toString(),
+        options,
+      );
+      // Seed through the same key factory the row's tracker reads (#112), the way
+      // usePullDetailPage seeds its sections. Every PR the page rendered gets an entry so a row
+      // whose PR has no run resolves to null instead of staying pending forever; its disabled hook
+      // then answers from this one fetch.
+      const repoFull = full(owner, repo);
+      const runByPull = new Map(
+        data.workflow_runs.map((run) => [run.pr_number, run]),
+      );
+      for (const issue of data.issues) {
+        // Same fallback the row renderer uses, so a row drawn from the singular field is seeded too.
+        const pulls =
+          issue.linked_pull_requests ??
+          (issue.linked_pull_request ? [issue.linked_pull_request] : []);
+        for (const pull of pulls) {
+          qc.setQueryData(
+            queryKeys.workflowRunForPull(repoFull, pull.number),
+            runByPull.get(pull.number) ?? null,
+          );
+        }
+      }
+      return data;
     },
     getNextPageParam: (_lastPage, allPages) =>
       hasMoreIssuePages(allPages) ? allPages.length + 1 : undefined,

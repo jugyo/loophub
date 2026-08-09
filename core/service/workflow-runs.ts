@@ -1068,6 +1068,22 @@ async function observeWorkflowRunStatus(
   };
 }
 
+/**
+ * Reads each distinct ref once for as long as it is held. `rev-parse` is deliberately uncacheable
+ * (core/git-cache.ts) because it reports where a ref is right now, so one lookup per ref is the
+ * most sharing that stays live — and the rows of one page share a base branch (#112).
+ */
+type RefResolver = (ref: string) => Promise<string | null>;
+
+function refResolver(repoPath: string): RefResolver {
+  const resolved = new Map<string, Promise<string | null>>();
+  return (ref) => {
+    const pending = resolved.get(ref) ?? revParse(repoPath, ref);
+    resolved.set(ref, pending);
+    return pending;
+  };
+}
+
 // Build the issue / PR detail display state (#1008). Lifecycle fields come from the run row, while
 // Done and verification freshness are observed from the PR's live head and pinned review so Web
 // and `workflow step status` share the same domain meaning. `latest_review` gives the
@@ -1075,6 +1091,7 @@ async function observeWorkflowRunStatus(
 async function workflowRunState(
   repo: S.Repo,
   run: S.WorkflowRunRow,
+  resolveRef: RefResolver = refResolver(repo.local_path),
 ): Promise<WorkflowRunStateWire> {
   const workflowName = run.workflow_id
     ? (S.getWorkflowById(run.workflow_id)?.name ?? null)
@@ -1105,8 +1122,8 @@ async function workflowRunState(
   // populates — issue/PR detail refetches on every event, and merge-tree costs a second per call.
   const [liveHead, liveBase] = pull
     ? await Promise.all([
-        revParse(repo.local_path, localBranchRef(pull.head_ref)),
-        revParse(repo.local_path, localBranchRef(pull.base_ref)),
+        resolveRef(localBranchRef(pull.head_ref)),
+        resolveRef(localBranchRef(pull.base_ref)),
       ])
     : [null, null];
   const currentHead = liveHead ?? pull?.head_sha ?? null;
@@ -2589,6 +2606,30 @@ export const workflowRuns = {
     const r = repoOr404(name);
     const run = S.latestWorkflowRunForPull(r.id, input.pull);
     return run ? await workflowRunState(r, run) : null;
+  },
+
+  /**
+   * The same display state for the PRs one issue-list page shows (#112). Selected with the page
+   * (see service/page-data.ts) so a Workflow event refreshes one request rather than one per row.
+   * PRs with no run are left out — the caller knows which numbers it asked about.
+   *
+   * Deliberately not a JSON-RPC method: the page is the unit the Web fetches, so exposing a second
+   * way to ask the same question would split the convention `pageData/*` establishes.
+   */
+  async statesForPulls(
+    name: string,
+    input: { pulls: number[] },
+  ): Promise<WorkflowRunStateWire[]> {
+    const r = repoOr404(name);
+    // The rows of one page share a base branch, and `rev-parse` is deliberately uncacheable
+    // (core/git-cache.ts), so resolve each distinct ref once for the whole page.
+    const resolveRef = refResolver(r.local_path);
+    const runs = [...new Set(input.pulls)]
+      .map((pull) => S.latestWorkflowRunForPull(r.id, pull))
+      .filter((run): run is S.WorkflowRunRow => run !== null);
+    return await Promise.all(
+      runs.map((run) => workflowRunState(r, run, resolveRef)),
+    );
   },
 
   // On-demand audit history for the PR detail dialog. It reads the same observation trail the run

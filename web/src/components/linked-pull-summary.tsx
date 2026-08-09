@@ -364,6 +364,7 @@ function WorkflowMiniProgress({
   herdrUnavailable,
   onStageInteract,
   showWorkflowNode = false,
+  workflowRunSeeded = false,
 }: {
   owner: string;
   repo: string;
@@ -372,8 +373,14 @@ function WorkflowMiniProgress({
   herdrUnavailable?: boolean;
   onStageInteract?: () => void;
   showWorkflowNode?: boolean;
+  workflowRunSeeded?: boolean;
 }) {
-  const { data: state } = useWorkflowRunForPull(owner, repo, pull.number);
+  const { data: state } = useWorkflowRunForPull(
+    owner,
+    repo,
+    pull.number,
+    !workflowRunSeeded,
+  );
   const [acknowledgedCostHold, setAcknowledgedCostHold] =
     useState<AcknowledgedCostHold | null>(null);
   useEffect(() => {
@@ -490,11 +497,18 @@ export function LinkedPullSummaryRow({
   className,
   dimInactive = false,
   popoverTrigger = "row",
+  workflowRunSeeded = false,
 }: {
   owner: string;
   repo: string;
   pull: LinkedPull;
   className?: string;
+  /**
+   * The row's Workflow run state already arrived with the page and was seeded into its query key
+   * (#112), so the tracker reads it from cache instead of fetching per row. Surfaces that fetch
+   * their rows one at a time leave this off and keep the per-PR request.
+   */
+  workflowRunSeeded?: boolean;
   /** Dim merged and closed PRs when this row is rendered in an issue list. */
   dimInactive?: boolean;
   /** Limit hover activation to the PR link while keeping the row as the popover boundary. */
@@ -578,6 +592,7 @@ export function LinkedPullSummaryRow({
           herdrUnavailable={herdrSessionsError}
           onStageInteract={popover.close}
           showWorkflowNode
+          workflowRunSeeded={workflowRunSeeded}
         />
         {/* Keep the GitHub link on the row's right side without making it the rightmost item; the
             existing agent and usage metadata continues to close the row. */}

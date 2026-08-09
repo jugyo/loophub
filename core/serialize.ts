@@ -2336,6 +2336,14 @@ export interface IssueListPageWire {
   repo: RepoWire;
   workspaces: WorkspaceWire[];
   labels: LabelWire[];
+  /**
+   * Display state of the Workflow run linked to each PR the rows above show, for the mini tracker
+   * on the row (#112). Selected with the page rather than per row so one event does not fan out
+   * into one request per row; each entry names its PR in `pr_number`, and a PR with no run is
+   * simply absent. Same shape the per-PR `workflowRuns/stateForPull` returns, so the client seeds
+   * that query's cache with these and the row reads them from there.
+   */
+  workflow_runs: WorkflowRunStateWire[];
 }
 
 /** Data selected together for the issue-detail screen. */

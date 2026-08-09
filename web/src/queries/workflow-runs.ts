@@ -18,11 +18,16 @@ export function useWorkflowRunForPull(
   owner: string,
   repo: string,
   number: number,
+  // #112: an issue-list row passes false. Its state arrives with the page (pageData/issueList seeds
+  // this key), so fetching per row would put one request per row on lh-web at once — which is what
+  // folding it into the page removed. Detail screens, which ask about one PR, keep fetching.
+  enabled = true,
 ) {
   const full = `${owner}/${repo}`;
   return useQuery({
     queryKey: queryKeys.workflowRunForPull(full, number),
     queryFn: () => getWorkflowRunStateForPull(full, number),
+    enabled,
   });
 }
 
@@ -45,10 +50,16 @@ export function useIncreaseWorkflowRunCostLimit(
       run: number;
       expectedLimitUsd: number;
     }) => increaseWorkflowRunCostLimit(full, run, expectedLimitUsd),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.workflowRunForPull(full, pull),
-      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.workflowRunForPull(full, pull),
+        }),
+        // #112: on a list row that key is seeded by pageData/issueList and its query is disabled,
+        // so the refetch that actually clears the hold is the page's.
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues(full) }),
+      ]);
+    },
   });
 }
 
