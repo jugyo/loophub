@@ -4,11 +4,14 @@ import type {
   PullDetailPageWire,
 } from "../serialize.ts";
 import { comments } from "./comments.ts";
+import { diffFeedbackForDiff } from "./diff-feedback.ts";
 import { issues } from "./issues.ts";
 import { labels } from "./labels.ts";
-import { pulls } from "./pulls.ts";
+import { pullDiffFiles, pulls } from "./pulls.ts";
 import { repos } from "./repos.ts";
 import { reviews } from "./reviews.ts";
+import { actorFor } from "./shared.ts";
+import { workflowRuns } from "./workflow-runs.ts";
 import { workspaces } from "./workspaces.ts";
 
 export const pageData = {
@@ -38,11 +41,27 @@ export const pageData = {
       workspaces.list(name),
       opts.includeLabels ? labels.list(name) : [],
     ]);
+    // #112: the mini tracker on each linked-PR sub-row needs the run's display state. Selecting it
+    // with the page keeps a Workflow event to one refetch — asking per row put one request per row
+    // on lh-web's single event loop, and every workflow_run.* / workflow_step.* event invalidated
+    // all of them at once. The rows already resolved these PRs' refs for their own status, so the
+    // SHA-keyed fan-out behind this is a cache hit (core/pull-status-cache.ts).
+    const linkedPulls = issueRows.flatMap((issue) =>
+      // Same fallback the row renderer uses (web/src/components/dashboard-rows.tsx): a response
+      // shape carrying only the singular field still gets its row seeded.
+      (
+        issue.linked_pull_requests ??
+        (issue.linked_pull_request ? [issue.linked_pull_request] : [])
+      ).map((pull) => pull.number),
+    );
     return {
       issues: issueRows,
       repo,
       workspaces: workspaceRows,
       labels: labelRows,
+      workflow_runs: await workflowRuns.statesForPulls(name, {
+        pulls: linkedPulls,
+      }),
     };
   },
 
@@ -74,22 +93,42 @@ export const pageData = {
     name: string,
     number: number,
     actor?: string,
+    sessionId?: string | null,
   ): Promise<PullDetailPageWire> {
-    const [pull, files, reviewRows, lineComments, commentRows] =
-      await Promise.all([
-        pulls.get(name, number, { withComments: false }),
-        pulls.files(name, number),
-        reviews.list(name, number),
-        reviews.listComments(name, number),
-        comments.list(name, number, actor),
-      ]);
+    // Everything on this screen that depends on the PR's live diff base — Files changed, the
+    // commit list on the PR row, and the diff feedback anchors — sits on the same base, so
+    // resolve it once here and hand it to the rest (#123). The resolution is the request's one
+    // uncacheable git cost: its operands are ref names, so the git-command cache cannot help.
+    const diff = await pullDiffFiles(name, number);
+    const [pull, reviewRows, lineComments, commentRows] = await Promise.all([
+      pulls.get(name, number, {
+        withComments: false,
+        diffBaseShas: diff.baseShas,
+      }),
+      reviews.list(name, number),
+      reviews.listComments(name, number),
+      comments.list(name, number, actor),
+    ]);
     pull.comment_list = commentRows;
+    // Read the threads as the caller, not as the page: `diffFeedback/list` resolves its actor
+    // from the session, and a mismatch would show a reader their own reactions as unreacted.
+    const orphaned = diffFeedbackForDiff(
+      name,
+      number,
+      diff,
+      { orphaned: true },
+      actorFor(sessionId),
+    );
     return {
       pull,
-      files,
+      files: diff.files,
       reviews: reviewRows,
       line_comments: lineComments,
       comments: commentRows,
+      diff_feedback: {
+        comment_counts: orphaned.comment_counts,
+        orphaned_threads: orphaned.threads,
+      },
     };
   },
 };

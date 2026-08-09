@@ -725,6 +725,23 @@ describe("queryKeysForEvent", () => {
       "me/proj",
       13,
     ]);
-    expect(otherTransition).not.toContainEqual(["issues", "me/proj"]);
+    // #112: every lifecycle transition now refreshes the issue views, not only the two that move
+    // the rework count. The rows carry the run's display state (pageData/issueList selects it and
+    // seeds the per-PR key), so the tracker advances only when the page is refetched.
+    expect(otherTransition).toContainEqual(["issues", "me/proj"]);
+  });
+
+  // #112: the row's tracker reads a key the page seeds and its own query is disabled, so a step
+  // event that refreshed only that key would leave the tracker on the previous step.
+  it("refreshes the issue views for a workflow step event (#112)", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "workflow_step.launched",
+        repo: "me/proj",
+        payload: { id: 7, issue_number: 12, pr_number: 13, step: "verify" },
+      }),
+    );
+    expect(keys).toContainEqual(["issues", "me/proj"]);
+    expect(keys).toContainEqual(["workflow-run", "pull", "me/proj", 13]);
   });
 });

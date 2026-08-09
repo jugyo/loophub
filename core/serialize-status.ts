@@ -17,7 +17,7 @@ import type { MergeMode } from "./merge-mode.ts";
 import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
-import { resolvePullBaseSha, resolvePullDiffBaseSha } from "./pull-base.ts";
+import { resolvePullBaseSha, resolvePullDiffBaseShas } from "./pull-base.ts";
 import { pullShaStatus } from "./pull-status-cache.ts";
 import {
   existingPullWorktreePath,
@@ -360,6 +360,14 @@ export async function pullJSON(
     withCommits?: boolean;
     withRelatedSessions?: boolean;
     withComments?: boolean;
+    /**
+     * The PR's live diff base, when the caller has already resolved it. Resolving it costs a
+     * `rev-parse`/`merge-base` fan-out that the git-command cache cannot serve (ref-name
+     * operands), so a caller that needs the same base for something else — `pageData.pullDetail`,
+     * which also diffs Files changed from it — passes its own instead of paying twice (#123).
+     * The whole candidate list, preferred base first: the commit list excludes all of them (#98).
+     */
+    diffBaseShas?: string[];
   } = {},
 ): Promise<PullWire> {
   const p = S.getPull(row.id)!;
@@ -373,17 +381,28 @@ export async function pullJSON(
   // tip. `head --not <base tip>` re-lists the commits head forked from once the base branch is
   // rebased, because the rewrite makes them unreachable from that tip again. Resolved here rather
   // than in pullStatusFields so only PR detail (withCommits) pays for the extra git lookups.
-  const commitBaseSha = opts.withCommits
-    ? await resolvePullDiffBaseSha(repo.local_path, p)
-    : null;
+  // #98: exclude every base view we can name, not just the preferred one — after a rewrite head
+  // can hold two mutually unrelated views of the base branch, and excluding one still lists the
+  // other's commits as this PR's. Naming them is not enough on its own: a long-lived PR merges
+  // the base repeatedly, and each pre-rewrite view it absorbed is unreachable from today's base
+  // tip, so firstParentOnly drops whatever arrived through a merge instead of enumerating it.
+  const commitBaseShas = opts.withCommits
+    ? (opts.diffBaseShas ?? (await resolvePullDiffBaseShas(repo.local_path, p)))
+    : [];
+  const commitBaseSha = commitBaseShas[0] ?? null;
   const commits = opts.withCommits
     ? status.headSha && commitBaseSha
       ? await commitLog(
           repo.local_path,
           commitBaseSha,
           localBranchRef(p.head_ref),
-          100,
-          githubBaseSha ? [githubBaseSha] : [],
+          {
+            additionalBases: [
+              ...commitBaseShas.slice(1),
+              ...(githubBaseSha ? [githubBaseSha] : []),
+            ],
+            firstParentOnly: true,
+          },
         )
       : []
     : undefined;

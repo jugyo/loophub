@@ -103,6 +103,10 @@ function mockFetch(
         ...criterion,
         enabled: true,
       })),
+    "repos/agentConfig": () => ({
+      setting: { override: false, runtime: null, model: null, effort: null },
+      effective: { runtime: "claude-code", model: "opus", effort: "medium" },
+    }),
     ...extraHandlers,
     "issues/get": getIssue,
     "comments/list": () => comments,
@@ -127,10 +131,6 @@ function mockFetch(
         },
       },
       codingAgent: "claude-code",
-    }),
-    "repos/agentConfig": () => ({
-      setting: { override: false, runtime: null, model: null, effort: null },
-      effective: { runtime: "claude-code", model: "opus", effort: "medium" },
     }),
   });
 }
@@ -1466,6 +1466,83 @@ describe("IssueDetail", () => {
     expect(rpcCall("workflows/list")?.params).toMatchObject({
       applicable_to_repo: "me/proj",
     });
+  });
+
+  // #96: launching uses the repo effective Coding agent config (override on → repo values,
+  // off → Settings defaults), so the picker surfaces the resolved runtime/model/effort as a
+  // muted footer instead of letting the run start blind.
+  it("shows the effective Coding agent config as a muted footer in the workflow menu", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr, {
+      "workflows/list": () => [
+        {
+          id: 9,
+          name: "Standard",
+          description: "Implement the issue, then verify the result.",
+          scope: { kind: "global" },
+        },
+      ],
+    });
+
+    const button = await screen.findByRole("button", {
+      name: "Start workflow",
+    });
+    fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
+    await screen.findByRole("menuitem", {
+      name: /Standard Implement the issue, then verify the result./,
+    });
+
+    const footer = screen.getByText("claude-code · opus · medium");
+    expect(footer.className).toContain("text-muted-foreground");
+    expect(footer.className).toContain("text-xs");
+    expect(footer.className).toContain("text-right");
+    expect(footer.className).toContain("px-1.5");
+    expect(footer.className).toContain("py-1");
+  });
+
+  // #96: the effective config is fetched independently of the workflow list; while it is still
+  // loading (or fails) the menu must render and launch as before, just without the footer.
+  it("keeps the workflow menu launching while the effective config is loading", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr, {
+      "repos/agentConfig": () => new Promise(() => {}),
+      "workflows/list": () => [
+        {
+          id: 9,
+          name: "Standard",
+          scope: { kind: "global" },
+        },
+      ],
+    });
+
+    const button = await screen.findByRole("button", {
+      name: "Start workflow",
+    });
+    fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
+    const standard = await screen.findByRole("menuitem", { name: "Standard" });
+    expect(screen.queryByText(/claude-code · opus · medium/)).toBeNull();
+
+    fireEvent.click(standard);
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ workflowId: 9 }),
+    );
+  });
+
+  // #96: with no saved workflows the empty state still shows the effective config so the
+  // launch context stays visible, and the dropdown keeps working.
+  it("shows the effective config footer with no saved workflows", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr, { "workflows/list": () => [] });
+
+    const button = await screen.findByRole("button", {
+      name: "Start workflow",
+    });
+    fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
+
+    expect(
+      await screen.findByText("No saved workflows — set one up in Settings"),
+    ).toBeTruthy();
+    expect(screen.getByText("claude-code · opus · medium")).toBeTruthy();
   });
 });
 

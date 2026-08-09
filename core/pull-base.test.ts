@@ -256,6 +256,78 @@ test("diff base keeps the fork point after the base branch is rebased", async ()
   rmSync(path, { recursive: true, force: true });
 });
 
+// #98: when head merges the base branch after it was rewritten, head holds both the fork point
+// and its rewritten twin, and neither is an ancestor of the other. Excluding only one of them
+// leaves the other line's commits in the PR's commit list, so both must be reported. The single
+// diff base stays the tip-based twin: it is what the base branch itself says head has integrated,
+// and falling back to the pre-rewrite fork point would list the base-side files again.
+test("diff base reports both the fork point and its rewritten twin, tip-based first", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-diff-merged-rewrite-"));
+  const g = (args: string[]): string => {
+    const result = spawnSync("git", ["-C", path, ...args], {
+      encoding: "utf8",
+    });
+    if (result.status !== 0) throw new Error(result.stderr);
+    return result.stdout.trim();
+  };
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "root"]);
+  const root = g(["rev-parse", "main"]);
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base work"]);
+  const localFork = g(["rev-parse", "main"]);
+
+  g(["checkout", "-q", "-b", "feature"]);
+  writeFileSync(join(path, "feature-only.txt"), "from pr\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "feature"]);
+  g(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path, name: "me/diff-merged-rewrite" });
+  const created = await svc.pulls.create("me/diff-merged-rewrite", {
+    title: "merged rewritten base",
+    head: "feature",
+    base: "main",
+  });
+  const repo = S.getRepo("me", "diff-merged-rewrite")!;
+  const issue = S.getIssue(repo.id, created.number)!;
+  const pull = S.getPull(issue.id)!;
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(localFork);
+
+  // Rewrite "base work" — carrying an extra base-side file, so the two bases differ as trees and
+  // the choice between them is observable — then merge the rewritten main into head.
+  g(["reset", "--hard", "-q", root]);
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  writeFileSync(join(path, "base-extra.txt"), "also from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base work, rewritten"]);
+  const rewrittenFork = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "feature"]);
+  g(["merge", "-q", "main", "-m", "merge rewritten main into feature"]);
+  g(["checkout", "-q", "main"]);
+
+  // The tip-based merge-base is now the rewritten twin, unrelated to the fork point.
+  expect(g(["merge-base", "main", "feature"])).toBe(rewrittenFork);
+  expect(rewrittenFork).not.toBe(localFork);
+  // Their own merge-base is a third, older commit, so neither contains the other.
+  expect(g(["merge-base", localFork, rewrittenFork])).toBe(root);
+
+  // Both are reported so the commit list can exclude either line; the tip-based twin leads, so
+  // the Files-changed diff does not fall back behind the rewrite.
+  expect(await pullBase.resolvePullDiffBaseShas(path, pull)).toEqual([
+    rewrittenFork,
+    localFork,
+  ]);
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(rewrittenFork);
+
+  rmSync(path, { recursive: true, force: true });
+});
+
 // A head that was itself rebased no longer contains the recorded fork point, so it must not win
 // over the live merge-base — diffing from a commit outside head would report base-side changes.
 test("diff base ignores a fork point the head branch no longer contains", async () => {

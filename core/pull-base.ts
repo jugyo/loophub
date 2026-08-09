@@ -34,11 +34,34 @@ export function resolvePullBaseSha(
 //
 // Among the candidates we keep the one that is a descendant of the others — i.e. the newest base
 // commit already integrated into head (or the sole common ancestor when the remote tip has not
-// been merged yet).
+// been merged yet). When no candidate dominates, the fold keeps the tip-based one: it is the base
+// branch's own view of what head has integrated, which is what a three-dot diff against the
+// current base tip means. Preferring the fork point there instead would drag the diff back to
+// before the rewrite and list the base-side files again (#98).
 export async function resolvePullDiffBaseSha(
   repoPath: string,
   pull: Pick<PullRow, "base_sha" | "base_ref" | "head_ref">,
 ): Promise<string | null> {
+  return (await resolvePullDiffBaseShas(repoPath, pull))[0] ?? null;
+}
+
+// The base views we can name from the refs and the recorded fork point, preferred diff base first.
+//
+// A single base is enough for the two-endpoint Files-changed diff, but not for the commit list:
+// `git log <head> --not <base>` re-lists everything the chosen base cannot reach. When the base
+// branch is rewritten and head then merges the rewritten line, head holds both the fork point and
+// its rewritten twin and neither is an ancestor of the other (#98) — whichever one wins the fold,
+// the other line's commits show up as this PR's own. `--not` is a set operation, so passing all of
+// them fixes that without disturbing which one won the fold.
+//
+// This names the base views that still have a ref or a stored SHA, not every base view head
+// absorbed: a PR that merged the base before an earlier rewrite holds a view nothing points at
+// any more. The commit list closes that gap by walking first parents (see commitLog), so this
+// list does not have to be exhaustive.
+export async function resolvePullDiffBaseShas(
+  repoPath: string,
+  pull: Pick<PullRow, "base_sha" | "base_ref" | "head_ref">,
+): Promise<string[]> {
   const head = localBranchRef(pull.head_ref);
   const tips = [
     localBranchRef(pull.base_ref),
@@ -48,11 +71,15 @@ export async function resolvePullDiffBaseSha(
   for (const tip of tips) {
     if (!(await revParse(repoPath, tip))) continue;
     const mb = await mergeBase(repoPath, tip, head);
-    if (mb) candidates.push(mb);
+    if (mb && !candidates.includes(mb)) candidates.push(mb);
   }
   // Only while head still contains it: a rebased head, or one reset before the fork point, has
   // left the recorded base behind, and diffing from it would report base-side changes again.
-  if (pull.base_sha && (await isAncestor(repoPath, pull.base_sha, head))) {
+  if (
+    pull.base_sha &&
+    !candidates.includes(pull.base_sha) &&
+    (await isAncestor(repoPath, pull.base_sha, head))
+  ) {
     candidates.push(pull.base_sha);
   }
   let best: string | null = null;
@@ -64,5 +91,6 @@ export async function resolvePullDiffBaseSha(
       best = candidate;
     }
   }
-  return best;
+  if (best === null) return [];
+  return [best, ...candidates.filter((sha) => sha !== best)];
 }

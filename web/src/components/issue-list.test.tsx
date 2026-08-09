@@ -1001,3 +1001,78 @@ describe("IssueList", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 });
+
+// #112: the run state each row's mini tracker shows arrives with the page. A workflow event used to
+// invalidate every row's own query at once, putting one request per row on lh-web's single event
+// loop; now the page carries them and the rows read what it seeded.
+describe("IssueList workflow run state (#112)", () => {
+  const runFor = (number: number) => ({
+    id: number,
+    workflow_id: 1,
+    workflow_name: "standard",
+    status: "running",
+    current_step: "execute",
+    rework_count: 0,
+    rework_limit: 8,
+    cost_increment_usd: 10,
+    cost_limit_usd: 10,
+    cost_limit_increase_available: false,
+    needs_human_reason: null,
+    issue_number: number,
+    pr_number: number * 10,
+    created_at: "2026-07-17T00:00:00Z",
+    updated_at: "2026-07-17T00:00:00Z",
+    ended_at: null,
+    latest_review: null,
+    verification_status: "unverified",
+    done: false,
+    merge_conflict: false,
+  });
+
+  function rowsWithRuns(count: number) {
+    return Array.from({ length: count }, (_value, index) => {
+      const number = index + 1;
+      const pull = { ...linkedPull(), number: number * 10 };
+      return issue({
+        number,
+        title: `Issue ${number}`,
+        linked_pull_request: pull,
+        linked_pull_requests: [pull],
+      });
+    });
+  }
+
+  it("renders every row's tracker without a request per row", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => rowsWithRuns(3),
+        "workflowRuns/stateForPull": (params) => runFor(params.number / 10),
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    // One tracker per row, all fed by the single page request.
+    expect((await screen.findAllByLabelText("Workflow")).length).toBe(3);
+    expect(rpcCalls("pageData/issueList").length).toBe(1);
+    expect(rpcCalls("workflowRuns/stateForPull").length).toBe(0);
+  });
+
+  it("leaves a row without a run showing no tracker", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => rowsWithRuns(2),
+        // Only the first PR has a run; the second must resolve to null rather than stay pending.
+        "workflowRuns/stateForPull": (params) =>
+          params.number === 10 ? runFor(1) : null,
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect((await screen.findAllByLabelText("Workflow")).length).toBe(1);
+    expect(rpcCalls("workflowRuns/stateForPull").length).toBe(0);
+  });
+});

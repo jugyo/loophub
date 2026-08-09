@@ -3573,6 +3573,69 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   expect(completed?.ended_at).toBe(completedRun?.ended_at);
 });
 
+test("statesForPulls answers a page's PRs exactly as the per-PR lookup does (#112)", async () => {
+  const repo = S.createRepo("me/workflow-page-state", REPO_PATH);
+  const workflow = S.createWorkflow({
+    name: "page-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  git(["checkout", "-q", "main"]);
+  const withRuns: number[] = [];
+  // Two PRs with a run and, between them, one without — the shape a page of rows has.
+  for (const index of [0, 1]) {
+    const issue = S.createIssue(repo.id, "issue", `Page ${index}`, "", "me");
+    const prIssue = S.createIssue(
+      repo.id,
+      "pull",
+      `Page PR ${index}`,
+      "",
+      "me",
+    );
+    const branch = `page-head-${index}`;
+    git(["checkout", "-q", "-b", branch, "main"]);
+    const head = commit(REPO_PATH, `page-${index}.txt`, `page ${index}\n`);
+    git(["checkout", "-q", "main"]);
+    S.createPull(prIssue.id, branch, "main", head, issue.id);
+    S.createWorkflowRun({
+      workflowId: workflow.id,
+      repoId: repo.id,
+      issueNumber: issue.number,
+      prNumber: prIssue.number,
+      status: "running",
+      currentStep: "execute",
+      costIncrementUsd: 10,
+      costLimitUsd: 10,
+      parentSessionId: `6666666${index}-6666-4666-8666-666666666666`,
+    });
+    withRuns.push(prIssue.number);
+  }
+  const issueNoRun = S.createIssue(repo.id, "issue", "Page none", "", "me");
+  const prNoRun = S.createIssue(repo.id, "pull", "Page PR none", "", "me");
+  S.createPull(prNoRun.id, "page-head-none", "main", null, issueNoRun.id);
+
+  const pulls = [withRuns[0], prNoRun.number, withRuns[1], withRuns[0]];
+  const states = await svc.workflowRuns.statesForPulls(repo.full_name, {
+    pulls,
+  });
+
+  // A PR with no run is left out, and a repeated number is answered once.
+  expect(states.map((state) => state.pr_number)).toEqual(withRuns);
+  // Each entry matches what the per-PR lookup the rows used to make would have returned, so
+  // folding the state into the page cannot drift from the RPC the detail screens still use.
+  for (const state of states) {
+    expect(state).toEqual(
+      await svc.workflowRuns.stateForPull(repo.full_name, {
+        pull: state.pr_number,
+      }),
+    );
+  }
+  expect(
+    await svc.workflowRuns.statesForPulls(repo.full_name, { pulls: [] }),
+  ).toEqual([]);
+});
+
 test("stateForPull exposes only a Verify launch that has not submitted its review", async () => {
   const repo = S.createRepo("me/workflow-active-verify", REPO_PATH);
   const issue = S.createIssue(

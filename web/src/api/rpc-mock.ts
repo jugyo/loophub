@@ -23,19 +23,41 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
       });
     const pageDataHandler =
       method === "pageData/issueList" && handlers["issues/list"]
-        ? async (pageParams: any) => ({
-            issues: await handlers["issues/list"](pageParams),
-            repo: handlers["repos/get"]
-              ? await handlers["repos/get"](pageParams)
-              : { default_branch: "main" },
-            workspaces: handlers["workspaces/list"]
-              ? await handlers["workspaces/list"](pageParams)
-              : [],
-            labels:
-              pageParams.includeLabels && handlers["labels/list"]
-                ? await handlers["labels/list"](pageParams)
+        ? async (pageParams: any) => {
+            // One call per page, so a handler that counts its invocations sees what the server does.
+            const issues = (await handlers["issues/list"](pageParams)) as {
+              linked_pull_requests?: { number: number }[];
+            }[];
+            return {
+              issues,
+              repo: handlers["repos/get"]
+                ? await handlers["repos/get"](pageParams)
+                : { default_branch: "main" },
+              workspaces: handlers["workspaces/list"]
+                ? await handlers["workspaces/list"](pageParams)
                 : [],
-          })
+              labels:
+                pageParams.includeLabels && handlers["labels/list"]
+                  ? await handlers["labels/list"](pageParams)
+                  : [],
+              // #112: the page carries each row's workflow run state. Derive it from the per-PR
+              // handler a test already declares so rendering rows does not mean mocking both.
+              workflow_runs: handlers["workflowRuns/stateForPull"]
+                ? (
+                    await Promise.all(
+                      issues.flatMap((issue) =>
+                        (issue.linked_pull_requests ?? []).map((pull) =>
+                          handlers["workflowRuns/stateForPull"]({
+                            ...pageParams,
+                            number: pull.number,
+                          }),
+                        ),
+                      ),
+                    )
+                  ).filter(Boolean)
+                : [],
+            };
+          }
         : method === "pageData/issueDetail" && handlers["issues/get"]
           ? async (pageParams: any) => {
               const issue: any = await handlers["issues/get"](pageParams);
@@ -56,6 +78,14 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                 const comments = handlers["comments/list"]
                   ? await handlers["comments/list"](pageParams)
                   : [];
+                // The page carries the diff feedback it renders itself, which the server derives
+                // from the orphaned scope of the same list call (#123).
+                const feedback: any = handlers["diffFeedback/list"]
+                  ? await handlers["diffFeedback/list"]({
+                      ...pageParams,
+                      scope: { orphaned: true },
+                    })
+                  : null;
                 return {
                   pull: { ...pull, comment_list: comments },
                   comments,
@@ -68,6 +98,10 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                   line_comments: handlers["reviews/listComments"]
                     ? await handlers["reviews/listComments"](pageParams)
                     : [],
+                  diff_feedback: {
+                    comment_counts: feedback?.comment_counts ?? {},
+                    orphaned_threads: feedback?.threads ?? [],
+                  },
                 };
               }
             : undefined;

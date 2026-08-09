@@ -2016,6 +2016,10 @@
           "number": {
             "type": "integer",
             "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [

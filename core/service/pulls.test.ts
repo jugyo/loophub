@@ -512,6 +512,117 @@ test("files and commits exclude base-side work after the base branch is rebased"
   rmSync(path, { recursive: true, force: true });
 });
 
+// #98: merging the rewritten base branch back into head leaves head holding two mutually
+// unrelated views of the base branch. Excluding only the preferred one still lists the other
+// view's commits as this PR's, so Commits must exclude every base commit head contains. Files
+// changed keeps using the single tip-based base: anchoring it at the pre-rewrite fork point
+// instead would report the whole rewritten base line as this PR's work.
+test("commits and files exclude base-side work after head merges a rewritten base branch", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-merged-rewrite-"));
+  const g = (args: string[]) => gitAt(path, args);
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "root"]);
+  const root = g(["rev-parse", "main"]);
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base work"]);
+  g(["checkout", "-qb", "feature"]);
+  writeFileSync(join(path, "feature-only.txt"), "from pr\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "pr change"]);
+  g(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path, name: "me/merged-rewrite" });
+  const pull = await svc.pulls.create("me/merged-rewrite", {
+    title: "merged rewritten base",
+    head: "feature",
+    base: "main",
+  });
+
+  // Rewrite "base work" so it also brings a base-side file the fork point does not have, then
+  // merge the rewritten main back into head. The extra file is what makes the two candidate
+  // bases differ as trees, so Files changed can tell which one the diff is anchored at.
+  g(["reset", "--hard", "-q", root]);
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  writeFileSync(join(path, "base-extra.txt"), "also from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base work, rewritten"]);
+  g(["checkout", "-q", "feature"]);
+  g(["merge", "-q", "main", "-m", "merge rewritten main into feature"]);
+  g(["checkout", "-q", "main"]);
+
+  const detail = await svc.pulls.get("me/merged-rewrite", pull.number);
+  expect(detail.commits?.map((commit) => commit.subject)).toEqual([
+    "merge rewritten main into feature",
+    "pr change",
+  ]);
+
+  const files = await svc.pulls.files("me/merged-rewrite", pull.number);
+  expect(files.map((f) => f.headFilename ?? f.filename)).toEqual([
+    "feature-only.txt",
+  ]);
+
+  rmSync(path, { recursive: true, force: true });
+});
+
+// #98: a long-lived PR merges the base repeatedly, and each rewrite strands the view head
+// absorbed last time — unreachable from today's base tip and from the recorded fork point alike,
+// so no fixed set of `--not` bases can name them all. Commits must stay on the PR's own line.
+test("commits exclude base-side work across repeated base rewrites and merges", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-repeated-rewrite-"));
+  const g = (args: string[]) => gitAt(path, args);
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "root"]);
+  const root = g(["rev-parse", "main"]);
+  g(["checkout", "-qb", "feature"]);
+  writeFileSync(join(path, "feature-only.txt"), "from pr\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "pr change"]);
+  g(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path, name: "me/repeated-rewrite" });
+  const pull = await svc.pulls.create("me/repeated-rewrite", {
+    title: "repeated rewrites",
+    head: "feature",
+    base: "main",
+  });
+
+  // Two rounds of "base grows, head merges it, base is then rewritten". After the second
+  // rewrite neither absorbed view is reachable from the base tip any more.
+  for (const round of ["first", "second"]) {
+    g(["checkout", "-q", "main"]);
+    g(["reset", "--hard", "-q", root]);
+    writeFileSync(join(path, `base-${round}.txt`), `${round} base work\n`);
+    g(["add", "-A"]);
+    g(["commit", "-qm", `base work (${round})`]);
+    g(["checkout", "-q", "feature"]);
+    g(["merge", "-q", "main", "-m", `merge ${round} main into feature`]);
+  }
+  // A final rewrite leaves the base tip unrelated to both absorbed views.
+  g(["checkout", "-q", "main"]);
+  g(["reset", "--hard", "-q", root]);
+  writeFileSync(join(path, "base-final.txt"), "final base work\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base work (final)"]);
+
+  const detail = await svc.pulls.get("me/repeated-rewrite", pull.number);
+  expect(detail.commits?.map((commit) => commit.subject)).toEqual([
+    "merge second main into feature",
+    "merge first main into feature",
+    "pr change",
+  ]);
+
+  rmSync(path, { recursive: true, force: true });
+});
+
 test("repos/commitFiles returns commits outside a pull request", async () => {
   const files = await svc.repos.commitFiles("me/commit-files", outsideSha);
   expect(files).toHaveLength(1);

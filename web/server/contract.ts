@@ -942,9 +942,15 @@ export const methods: Record<string, MethodDef> = {
   },
   "pageData/pullDetail": {
     description: "Get all initial data for one pull-request detail screen.",
-    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    // session_id names the reader for the diff feedback this page carries, the same way
+    // diffFeedback/list does — without it a reader's own reactions come back unreacted.
+    params: params({ repo, number: positiveInt, session_id: sid }, [
+      "repo",
+      "number",
+    ]),
     result: anyObject,
-    handler: (p) => svc.pageData.pullDetail(p.repo, p.number, "me"),
+    handler: (p) =>
+      svc.pageData.pullDetail(p.repo, p.number, "me", p.session_id),
   },
   "pulls/update": {
     description: "Edit a pull request's title/body/state.",

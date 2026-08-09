@@ -164,7 +164,7 @@ function renderInRouter(
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  return { ...rendered, router };
+  return { ...rendered, router, queryClient };
 }
 
 function makePull(overrides: Partial<LinkedPull> = {}): LinkedPull {
@@ -467,32 +467,33 @@ describe("IssueRow", () => {
 // #1828: a cost-held run can be given more budget straight from the issue list.
 describe("IssueRow workflow budget (#1828)", () => {
   it("increases a held run's budget without leaving the list", async () => {
-    renderInRouter(
+    const heldRun = {
+      id: 4,
+      workflow_id: 1,
+      workflow_name: "standard",
+      status: "running",
+      current_step: "execute",
+      rework_count: 0,
+      rework_limit: 8,
+      cost_increment_usd: 10,
+      cost_limit_usd: 20,
+      cost_limit_increase_available: true,
+      needs_human_reason: "Cost limit exceeded",
+      issue_number: 1,
+      pr_number: 10,
+      created_at: "2026-07-17T00:00:00Z",
+      updated_at: "2026-07-17T00:00:00Z",
+      latest_review: null,
+      verification_status: "unverified",
+    };
+    const { queryClient } = renderInRouter(
       <IssueRow
         owner="me"
         repo="proj"
         issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+        workflowRunSeeded
       />,
       {
-        "workflowRuns/stateForPull": () => ({
-          id: 4,
-          workflow_id: 1,
-          workflow_name: "standard",
-          status: "running",
-          current_step: "execute",
-          rework_count: 0,
-          rework_limit: 8,
-          cost_increment_usd: 10,
-          cost_limit_usd: 20,
-          cost_limit_increase_available: true,
-          needs_human_reason: "Cost limit exceeded",
-          issue_number: 1,
-          pr_number: 10,
-          created_at: "2026-07-17T00:00:00Z",
-          updated_at: "2026-07-17T00:00:00Z",
-          latest_review: null,
-          verification_status: "unverified",
-        }),
         "workflowRuns/increaseCostLimit": () => ({
           run: 4,
           increment_usd: 10,
@@ -501,6 +502,8 @@ describe("IssueRow workflow budget (#1828)", () => {
         }),
       },
     );
+    // #112: a list row reads the state pageData/issueList seeds; its own query is disabled.
+    queryClient.setQueryData(["workflow-run", "pull", "me/proj", 10], heldRun);
 
     // #1906: the row carries only the badge; the question opens from it.
     fireEvent.focus(await screen.findByText("over budget"));

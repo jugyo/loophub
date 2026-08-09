@@ -15,6 +15,7 @@ import {
   useIssueDetailPage,
 } from "./issues";
 import {
+  useDiffFeedback,
   usePull,
   usePullComments,
   usePullDetailPage,
@@ -44,6 +45,10 @@ describe("usePullDetailPage", () => {
       reviews: [{ id: 11, state: "PASS" }],
       line_comments: [{ id: 22, path: "core/db.ts" }],
       comments: [{ id: 33, body: "looks good" }],
+      diff_feedback: {
+        comment_counts: { "core/db.ts": 3 },
+        orphaned_threads: [{ id: 44, pr_number: 7 }],
+      },
     };
     vi.stubGlobal("fetch", mockRpcFetch({ "pageData/pullDetail": () => page }));
 
@@ -54,6 +59,14 @@ describe("usePullDetailPage", () => {
       reviews: usePullReviews("me", "proj", 7, false),
       lineComments: usePullComments("me", "proj", 7, false),
       comments: useIssueComments("me", "proj", 7, false),
+      // The previous-threads list on the PR detail screen reads this scope (#123).
+      orphanedFeedback: useDiffFeedback(
+        "me",
+        "proj",
+        7,
+        { orphaned: true },
+        false,
+      ),
     }));
 
     await waitFor(() => expect(result.current.page.isSuccess).toBe(true));
@@ -64,6 +77,10 @@ describe("usePullDetailPage", () => {
     expect(result.current.reviews.data).toEqual(page.reviews);
     expect(result.current.lineComments.data).toEqual(page.line_comments);
     expect(result.current.comments.data).toEqual(page.comments);
+    expect(result.current.orphanedFeedback.data).toEqual({
+      threads: page.diff_feedback.orphaned_threads,
+      comment_counts: page.diff_feedback.comment_counts,
+    });
   });
 });
 

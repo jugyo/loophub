@@ -65,7 +65,6 @@ import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
 import {
-  useDiffFeedback,
   useGithubPrStatus,
   useMarkGithubMerged,
   useMergePull,
@@ -193,6 +192,7 @@ export function PullDetail({
               repo={repo}
               number={number}
               files={filesQuery.data}
+              commentCounts={pageQuery.data?.diff_feedback.comment_counts ?? {}}
               isLoading={false}
               isError={false}
             />
@@ -792,6 +792,7 @@ function FilesChanged({
   repo,
   number,
   files,
+  commentCounts,
   isLoading,
   isError,
 }: {
@@ -799,17 +800,16 @@ function FilesChanged({
   repo: string;
   number: number;
   files: PullFile[] | undefined;
+  /** Per-file diff feedback counts, from the same page query that produced `files` (#123). */
+  commentCounts: Record<string, number>;
   isLoading: boolean;
   isError: boolean;
 }) {
   const [openFilename, setOpenFilename] = useState<string | null>(null);
-  const feedback = useDiffFeedback(owner, repo, number);
   const openFile = files?.find((f) => f.filename === openFilename) ?? null;
   useEffect(() => {
     if (openFilename && files && !openFile) setOpenFilename(null);
   }, [files, openFile, openFilename]);
-
-  const commentCounts = feedback.data?.comment_counts ?? {};
 
   const totalAdditions =
     files?.reduce((sum, file) => sum + file.additions, 0) ?? 0;
@@ -843,7 +843,12 @@ function FilesChanged({
       ) : !files || files.length === 0 ? (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">No diff.</p>
-          <DiffFeedbackHistory owner={owner} repo={repo} number={number} />
+          <DiffFeedbackHistory
+            owner={owner}
+            repo={repo}
+            number={number}
+            fetchEnabled={false}
+          />
         </div>
       ) : (
         <>
@@ -863,7 +868,12 @@ function FilesChanged({
               ))}
             </ul>
           </div>
-          <DiffFeedbackHistory owner={owner} repo={repo} number={number} />
+          <DiffFeedbackHistory
+            owner={owner}
+            repo={repo}
+            number={number}
+            fetchEnabled={false}
+          />
           {openFile ? (
             <DiffFileDialog
               owner={owner}

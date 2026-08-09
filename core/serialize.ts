@@ -2336,6 +2336,14 @@ export interface IssueListPageWire {
   repo: RepoWire;
   workspaces: WorkspaceWire[];
   labels: LabelWire[];
+  /**
+   * Display state of the Workflow run linked to each PR the rows above show, for the mini tracker
+   * on the row (#112). Selected with the page rather than per row so one event does not fan out
+   * into one request per row; each entry names its PR in `pr_number`, and a PR with no run is
+   * simply absent. Same shape the per-PR `workflowRuns/stateForPull` returns, so the client seeds
+   * that query's cache with these and the row reads them from there.
+   */
+  workflow_runs: WorkflowRunStateWire[];
 }
 
 /** Data selected together for the issue-detail screen. */
@@ -2363,6 +2371,17 @@ export interface PullDetailPageWire {
   reviews: ReviewWire[];
   line_comments: ReviewCommentWire[];
   comments: CommentWire[];
+  /**
+   * The diff feedback the detail screen itself renders: the per-file badge counts under Files
+   * changed, and the threads whose anchors have left the diff ("previous threads"). Both are
+   * derived from `files`, so folding them in here costs no extra git and spares the screen two
+   * `diffFeedback/list` calls on load (#123). Threads anchored in the current diff stay out — the
+   * diff dialog fetches those per path when a file is opened.
+   */
+  diff_feedback: {
+    comment_counts: Record<string, number>;
+    orphaned_threads: DiffFeedbackThreadWire[];
+  };
 }
 
 export interface PullCommitWire {
