@@ -172,10 +172,25 @@ run 開始時に DB の値をダンプするだけのデバッグ用ファイル
 
 ### 4.1 副論点: step prompt を manifest に inline するか、別ファイルにするか
 
+step prompt は markdown であり、数十行になることもある。これを manifest（JSON）本体に埋め込むか、
+別ファイルに出すかを検討した。
+
 | 案 | 形 | 評価 |
 |---|---|---|
-| inline | `"prompts": { "execute": "…\n…" }` | 1 ファイルで完結するが、markdown を JSON 文字列（`\n` escape）として手で編集することになる。G2 の主用途が「prompt を書き換える」である以上、致命的に扱いづらい |
-| **sidecar（採用）** | `"prompts": { "execute": "execute-step-prompt.md" }` と同ディレクトリの `.md` | run ディレクトリは既に `*-contract.md` / `*-prompt.md` を置いている。人間は markdown を markdown のまま編集できる |
+| inline | `"prompts": { "execute": "…\n…" }` | 1 ファイルで完結するが、markdown を JSON 文字列（改行が `\n` escape）として手で編集することになる。G2 の主用途が「prompt を書き換える」である以上、致命的に扱いづらい |
+| **sidecar（採用）** | `"prompts": { "execute": "execute-step-prompt.md" }` と、同じ run ディレクトリに置く `.md` の実体 | 人間は markdown を markdown のまま編集できる。run ディレクトリは既に `*-contract.md` / `*-prompt.md` を置いており、置き場所として無理がない |
+
+ここで言う **sidecar（サイドカーファイル）** は、主ファイルの傍らに置く companion file を指す一般的な
+呼び方である。主ファイルに埋め込むと扱いづらい内容を別ファイルへ出し、主ファイルからはファイル名だけで
+参照する。本書では「manifest 本体に prompt の markdown を埋め込む代わりに、同じ run ディレクトリの `.md`
+に置き、manifest からは名前で指す」形を指す。
+
+```text
+$LOOPHUB_HOME/runs/workflow/56/
+├── manifest.json            ← "prompts": { "execute": "execute-step-prompt.md" }
+├── execute-step-prompt.md   ← prompt の実体（sidecar）
+└── verify-step-prompt.md
+```
 
 sidecar の参照は **run ディレクトリ直下の単純ファイル名のみ**に制限する（絶対 path・`..`・path separator を
 拒否）。`core/workflow/run-files.ts` の「触る path はすべて run id から導出し、caller が書き先を選べない」
