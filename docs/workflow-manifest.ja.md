@@ -483,6 +483,7 @@ event / git / DB に書く。
 | `core/terminal/terminal-launch.ts` | `buildWorkflowStepHerdrLaunchPlan` に `effort` を追加し `buildRuntimeFlags` へ渡す（G6） |
 | `core/serialize.ts` | `WorkflowRunManifestWire`（Web が表示するための wire 形 = core と web の境界を越える JSON の型）。`web/src/api/types.ts` は type-only import で導出する |
 | `cli/commands/workflow.ts` | `lh workflow manifest show|path`。parent launch の flag 組み立てに `effort` を追加 |
+| `web/src/components/linked-pull-summary.tsx` | 既存の **"Model" 行の意味が変わる**（下記）。表示を直すのは I7 だが、意味の変化は G3 を入れた時点で起きる |
 | `web/src/components/workflow-run-status.tsx`（任意 / 後続） | 現在の動作条件の表示。編集 UI は非目標 |
 | `docs/workflow.ja.md` | §4（workflow 定義）と §10（実装境界）に manifest を追記し、本書へリンク |
 
@@ -499,11 +500,42 @@ event / git / DB に書く。
 いずれも「manifest から解決した launch configuration」を 1 つ作って 3 経路が共有する形にすれば済む。
 `launchStep()` だけを書き換えて済ませないこと。
 
+#### 設定値と実績値を混ぜない
+
+manifest を入れると、UI が答え得る問いが 2 つに分かれる。**混同しないことが正しさの条件**である。
+
+| | 設定値（configuration） | 実績値（fact） |
+|---|---|---|
+| 問い | 次に起動する子は何で動くか | 実際に何が動き、いくら掛かったか |
+| 出所 | manifest（agent ごと） | `agent_sessions` / `session_usage` 行（session ごと） |
+| 変わる契機 | 人間が manifest を編集したとき | 子が起動・実行されたとき |
+
+G2（走行中の変更）を入れると、この 2 つは**正当に食い違う**。人間が model を変えた直後、実績値は
+まだ古い model を指し、設定値は新しい model を指す。どちらも正しい。片方だけを見て他方を推測できない
+というのが、manifest を入れたあとの状態である。
+
+**この区別が既存の表示に影響する。** `linked-pull-summary.tsx` の "Model" 行は
+`pull.agent_model` → `pullAgentSummary()` → `primaryDevSessionForPull()` を辿るが、この最後の関数は
+`kind = 'dev'` の session を選ぶ。workflow では **parent（orchestrator）だけが `dev`** で登録され、
+Execute / Verify の子は `workflow-step` で登録される。つまりこの行が示しているのは、実装を書く子の
+model ではなく **parent の model** である。
+
+現在は全 agent が同じ model なので実害が無い。しかし G3（agent ごとの model / effort）を入れた瞬間、
+人間が Execute だけ別の model にしても、この行は parent の model を示し続ける。ラベルは単に "Model" な
+ので、読者は「この PR が何で作られたか」と受け取る。**G3 は既存の表示を誤りに変える。**
+
+したがって I7 は「あれば便利な表示」ではなく、G3 の影響を受けた表示を正す作業を含む。行を
+「orchestrator の model」と正確に名乗らせるか、agent ごとの表示に置き換えるかは実装時に選ぶ。
+
 ### 6.2 データ
 
 - schema 変更は `workflow_runs.manifest_version` の 1 列のみ。既存行は NULL のまま legacy 経路で動く。
-- `workflow_runs.runtime` / `model` / `contract_language` 列は**残す**が、launch では読まなくなる。
-  run 一覧などの表示・検索用の非正規化コピーとして扱う（§10-1）。
+- `workflow_runs.runtime` / `model` / `contract_language` 列は当面**残す**が、launch では読まなくなる。
+  これらを読んでいるのは `runRuntime()` / `runModel()` / `runContractLanguage()` の 3 関数だけで、その
+  呼び出し元は I4 が manifest へ寄せる 3 経路に限られる。`WorkflowRunStateWire` はこれらを公開しておらず、
+  Web にも他の読み手が無い。したがって I4 の後に残る読み手は **legacy run の解決経路ただ 1 つ**
+  （`manifest_version IS NULL` の run、§5.6）である。「表示用の非正規化コピーとして残す」という理由は
+  成立しない —— 表示している場所が無いからである。扱いは §10-1 の論点として残す。
 - `workflows` テーブル（`execute_prompt` / `verify_prompt`）は workflow **定義**の SSOT のまま。run 開始時に
   そこから snapshot を取る形に変わる。
 
@@ -573,7 +605,7 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 
 | リスク | 影響 | 緩和 |
 |---|---|---|
-| DB と manifest の drift（同じ値が 2 か所にある） | 表示と実挙動が食い違う | §3 の役割分割を本書と code comment で明文化する。**動作条件について launch 経路は manifest しか読まない**という 1 方向の依存にする。DB 列は表示用の非正規化コピーと位置づける。pointer / workspace は manifest に複製しないので、そもそも drift し得ない（§4.2） |
+| DB と manifest の drift（同じ値が 2 か所にある） | 表示と実挙動が食い違う | §3 の役割分割を本書と code comment で明文化する。**動作条件について launch 経路は manifest しか読まない**という 1 方向の依存にする。I4 の後 `workflow_runs.runtime` / `model` は読み手を持たなくなるため、drift の実害は「古い値が残っている」ことだけになる（§6.2 / §10-1）。pointer / workspace は manifest に複製しないので、そもそも drift し得ない（§4.2） |
 | 人間の編集ミスで launch が止まる | run が進まなくなる。worker 経由の自動 launch も止まる | 意図的な挙動（判断 #5）。エラーメッセージに manifest の絶対 path と不正な理由を必ず含める。`lh workflow manifest show` で事前検証できるようにする |
 | 編集途中の partial read | 一時的に launch が失敗する | 自動 retry を足さない。可視エラーを見た人間が再実行する。多くの editor は atomic rename で保存するため実際の窓は小さい |
 | step prompt を run ごとに snapshot したことで、global prompt の編集が走行中 run に効かなくなる | 既存の（暗黙の）挙動変更 | 意図した改善（G4）。breaking change として `docs/breaking-changes.ja.md` に記録し、`workflow update` の出力で「走行中の run には効かない」ことを示す |
@@ -585,8 +617,11 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 
 ## 10. 未解決の論点
 
-1. **`workflow_runs.runtime` / `model` 列の最終的な扱い。** 本設計では表示用の非正規化コピーとして残すが、
-   Web の run 一覧が manifest 経由で読むようになれば列ごと落とせる。落とす場合の legacy run の表示をどうするか。
+1. **`workflow_runs.runtime` / `model` 列の最終的な扱い。** §6.2 のとおり、I4 の後これらは **読み手を
+   1 つも持たない**（`WorkflowRunStateWire` も公開していない）。したがって論点は「表示用に残すか」では
+   なく「いつ落とすか」である。残す唯一の理由は legacy run —— `manifest_version IS NULL` の run は
+   これらの列から launch configuration を解決するため、legacy 経路を維持する限り列も要る。legacy run が
+   すべて終わったと判断できる基準を決められれば、列ごと落とせる。
 2. **per-agent runtime をいつ解放するか。** manifest の形は Execute=claude-code / Verify=codex を表現できるが、
    v1 は同一 runtime を強制する。解放には CLI の preflight（`lh workflow launch-step` が run 単位で 1 binary を
    確認している）と cursor workspace trust の扱いを agent 単位に広げる必要がある。
@@ -637,7 +672,7 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 | I4 | launch 3 経路が manifest を読む | `core/service/workflow-runs.ts` | I3 |
 | I5 | effort を argv に通す | `core/terminal/terminal-launch.ts` / `cli/commands/workflow.ts` | I4 |
 | I6 | `lh workflow manifest show\|path` | `cli/commands/workflow.ts` | I4 |
-| I7 | run の動作条件を Web に表示（任意） | `core/serialize.ts` / `web/` | I4 |
+| I7 | Web の表示を設定値に合わせる | `core/serialize.ts` / `web/src/components/linked-pull-summary.tsx` | I4 |
 | I8 | 既存ドキュメントの更新 | `docs/` | I4 |
 
 I1 と I2 は並行できる。I5–I8 も互いに独立。
@@ -787,25 +822,27 @@ DB fallback を読み残すと §9 が「防ぐ」と宣言した drift がそ�
 
 ---
 
-### I7. run の動作条件を Web に表示する（任意）
+### I7. Web の表示を設定値に合わせる
 
-**何を作るか.** manifest の内容 —— agent ごとの runtime / model / effort と、step prompt がどこから
-来ているか —— を Web の run 表示に**読み取り専用で**出す。現在これを知るには
-`lh workflow manifest show` を打つしかなく、Web で run を監督している人間からは見えない。
+**何を作るか.** 2 つある。
 
-**なぜ任意か.** 人間が最も見たい model は、**既に別経路で Web に届いている**からである。
+1. **既存の "Model" 行を正す。** §6.1「設定値と実績値を混ぜない」のとおり、
+   `linked-pull-summary.tsx` の "Model" 行は `primaryDevSessionForPull()`（`kind = 'dev'`）を辿るため
+   **parent の model** を示している。G3 で agent ごとに model / effort を分けられるようにした時点で、
+   この行は「この PR が何で作られたか」を尋ねる読者に誤った答えを返す。行を
+   「orchestrator の model」と正確に名乗らせるか、agent ごとの表示に置き換える。
+2. **manifest の内容を読み取り専用で出す。** agent ごとの runtime / model / effort と step prompt の
+   出所を Web の run 表示に出す。現在これを知るには `lh workflow manifest show` を打つしかなく、Web で
+   run を監督している人間からは見えない。G1（動作条件を 1 か所で読める）は、CLI を開かない監督者には
+   届いていない。
 
-```text
-linked-pull-summary.tsx の "Model" 行
-  → pull.agent_model → pullAgentSummary() → agent session 行 → registerAgentSession()
-```
+**「任意」の意味.** I1–I4 が無いと成立しないので後に置くだけで、**内容として省略可能という意味ではない。**
+1 は G3 が持ち込む誤りの手当てであり、G3 を入れて 1 を入れなければ、Web は嘘を表示する。順序の問題として
+後回しにできる、というだけである。
 
-`registerAgentSession()` を呼ぶのは `confirmStepLaunch()`、すなわち I4 で manifest 由来に寄せる 3 経路の
-1 つである。つまり **I4 さえ正しく行えば Web の Model 表示は自動的に正しくなる。** I7 が追加で与えるのは
-effort・agent ごとの内訳・prompt の出所だけで、無くても Web が嘘を表示することはない。
-
-逆に言えば、**I4 で `confirmStepLaunch()` を寄せ忘れると、Web は実際の argv と異なる model を表示し
-続ける。** §9 の drift が、ログではなく監督者の画面に出る。I7 の有無に関わらず I4 は落とせない。
+なお **I4 は I7 の有無に関わらず落とせない。** `confirmStepLaunch()` を寄せ忘れると、子 session に
+記録される model が argv と食い違い、usage / cost の帰属が壊れる（§6.1）。これは表示の問題ではなく
+記録の問題なので、I7 では直らない。
 
 **scope.** `core/serialize.ts` に `WorkflowRunManifestWire`（core と web の境界を越える JSON の形）を
 置き、`web/src/api/types.ts` は type-only import で導出する —— wire 形を web で手書きしない規約であり、
