@@ -684,21 +684,33 @@ export interface CommitInfo {
   subject: string;
 }
 
-// Commits on head not reachable from base (base..head), newest first. Additional bases let
-// callers exclude commits reachable from another view of the same base branch, such as a
-// remote-tracking ref. Bounded by `limit` so a long-lived branch can't return an unbounded log into
-// the debug view. Fields are separated by US (0x1f) and records by RS (0x1e) so subjects with
-// tabs/newlines stay intact.
+export interface CommitLogOptions {
+  // Bounds a long-lived branch so it can't return an unbounded log into the debug view.
+  limit?: number;
+  // Exclude commits reachable from another view of the same base branch, such as a
+  // remote-tracking ref or a base view the head absorbed before a rewrite.
+  additionalBases?: string[];
+  // Follow only each merge's first parent, i.e. list what this branch did on its own line and
+  // treat everything it merged in as someone else's work (#98). Base branches get rewritten
+  // under a long-lived PR, and every rewritten view the head merged is unreachable from the
+  // current base tip, so no fixed set of `--not` bases can name them all — but they all arrive
+  // through a merge's second parent, which is exactly what this skips.
+  firstParentOnly?: boolean;
+}
+
+// Commits on head not reachable from base (base..head), newest first. Fields are separated by
+// US (0x1f) and records by RS (0x1e) so subjects with tabs/newlines stay intact.
 export async function commitLog(
   repoPath: string,
   base: string,
   head: string,
-  limit = 100,
-  additionalBases: string[] = [],
+  opts: CommitLogOptions = {},
 ): Promise<CommitInfo[]> {
+  const { limit = 100, additionalBases = [], firstParentOnly = false } = opts;
   const r = await git(repoPath, [
     "log",
     `--max-count=${limit}`,
+    ...(firstParentOnly ? ["--first-parent"] : []),
     "--format=%H%x1f%an%x1f%cI%x1f%s%x1e",
     head,
     "--not",

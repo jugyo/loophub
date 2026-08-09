@@ -29,7 +29,11 @@ import {
 } from "../github.ts";
 import { parseClosingIssueNumber } from "../links.ts";
 import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
-import { resolvePullBaseSha, resolvePullDiffBaseSha } from "../pull-base.ts";
+import {
+  resolvePullBaseSha,
+  resolvePullDiffBaseSha,
+  resolvePullDiffBaseShas,
+} from "../pull-base.ts";
 import { existingPullWorktreePath } from "../pull-worktree.ts";
 import {
   agentSessionJSON,
@@ -102,20 +106,29 @@ function assertNoOtherOpenPull(
 export async function pullDiffFiles(
   name: string,
   number: number,
-): Promise<{ baseSha: string; headSha: string; files: DiffFile[] }> {
+): Promise<{
+  baseSha: string;
+  baseShas: string[];
+  headSha: string;
+  files: DiffFile[];
+}> {
   const r = repoOr404(name);
   const row = issueOr404(r, number, "pull");
   const p = S.getPull(row.id)!;
   // Same live three-dot base as pulls.diff (see resolvePullDiffBaseSha). Using base_ref...head
   // alone misses origin/<base_ref> when the local base branch lags behind a remote merge.
-  const [baseSha, headSha] = await Promise.all([
-    resolvePullDiffBaseSha(r.local_path, p),
+  // The whole candidate list comes back so the commit list can exclude all of them (#98) off the
+  // same single resolution this caller already pays for.
+  const [baseShas, headSha] = await Promise.all([
+    resolvePullDiffBaseShas(r.local_path, p),
     revParse(r.local_path, localBranchRef(p.head_ref)),
   ]);
+  const baseSha = baseShas[0];
   if (!baseSha || !headSha)
     throw new ServiceError(422, "pull request diff is unavailable");
   return {
     baseSha,
+    baseShas,
     headSha,
     files: await diffFilesBetween(r.local_path, baseSha, headSha),
   };
@@ -173,14 +186,14 @@ export const pulls = {
   get(
     name: string,
     number: number,
-    opts: { withComments?: boolean; diffBaseSha?: string } = {},
+    opts: { withComments?: boolean; diffBaseShas?: string[] } = {},
   ) {
     const r = repoOr404(name);
     return pullJSON(r, issueOr404(r, number, "pull"), {
       withCommits: true,
       withRelatedSessions: true,
       withComments: opts.withComments !== false,
-      diffBaseSha: opts.diffBaseSha,
+      diffBaseShas: opts.diffBaseShas,
     });
   },
 

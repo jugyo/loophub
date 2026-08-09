@@ -86,7 +86,7 @@ export const pageData = {
     const [pull, reviewRows, lineComments, commentRows] = await Promise.all([
       pulls.get(name, number, {
         withComments: false,
-        diffBaseSha: diff.baseSha,
+        diffBaseShas: diff.baseShas,
       }),
       reviews.list(name, number),
       reviews.listComments(name, number),
