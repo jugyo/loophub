@@ -1546,12 +1546,21 @@ export function DiffFeedbackHistory({
   owner,
   repo,
   number,
+  fetchEnabled = true,
 }: {
   owner: string;
   repo: string;
   number: number;
+  /** False on the PR detail screen, which seeds this scope from its page query (#123). */
+  fetchEnabled?: boolean;
 }) {
-  const feedback = useDiffFeedback(owner, repo, number, { orphaned: true });
+  const feedback = useDiffFeedback(
+    owner,
+    repo,
+    number,
+    { orphaned: true },
+    fetchEnabled,
+  );
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);
   const archive = useSetDiffFeedbackArchived(owner, repo, number);

@@ -316,6 +316,71 @@ describe("PullDetail", () => {
     ).toEqual(["M", "web/src/a.ts", "+1−1", "", "2"]);
   });
 
+  // The badge counts and the previous-threads list are the screen's own diff feedback, so they
+  // ride along on the page fetch; only opening a file in the diff dialog asks for threads by
+  // path (#123).
+  it("renders diff feedback from the page fetch, without a diffFeedback/list call", async () => {
+    renderDetail({
+      "diffFeedback/list": () => ({
+        threads: diffFeedback,
+        comment_counts: { "web/src/a.ts": 2 },
+      }),
+    });
+
+    const filesChanged = await screen.findByRole("heading", {
+      name: /Files changed \(1\)/,
+    });
+    const section = filesChanged.closest("section");
+    if (!section) throw new Error("Files changed section not found");
+    expect(
+      await within(section).findByLabelText("2 diff comments"),
+    ).toBeTruthy();
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Previous diff threads" }),
+    );
+    expect(await within(section).findByText("First comment")).toBeTruthy();
+    expect(rpcCall("diffFeedback/list")).toBeFalsy();
+  });
+
+  // Archiving has no optimistic update and emits no event, so the page query is what has to
+  // refetch — the previous-threads list it seeds would otherwise sit on the pre-archive value
+  // and the action would look like it did nothing (#123).
+  it("shows a previous thread as archived after archiving it", async () => {
+    let archivedAt: string | null = null;
+    renderDetail({
+      "diffFeedback/list": () => ({
+        threads: diffFeedback.map((thread) => ({
+          ...thread,
+          archived_at: archivedAt,
+        })),
+        comment_counts: { "web/src/a.ts": 2 },
+      }),
+      "diffFeedback/archive": () => {
+        archivedAt = "2026-07-30T00:00:00Z";
+        return {};
+      },
+    });
+
+    const filesChanged = await screen.findByRole("heading", {
+      name: /Files changed \(1\)/,
+    });
+    const section = filesChanged.closest("section");
+    if (!section) throw new Error("Files changed section not found");
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Previous diff threads" }),
+    );
+    const card = await within(section).findByLabelText("Diff thread 1");
+    fireEvent.pointerDown(
+      within(card).getByRole("button", { name: "Actions for diff thread 1" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+
+    expect(
+      await within(section).findByLabelText("Archived diff thread 1"),
+    ).toBeTruthy();
+  });
+
   it("does not offer a ready action after changes are requested", async () => {
     renderDetailWithPull({
       review_state: "CHANGES_REQUESTED",

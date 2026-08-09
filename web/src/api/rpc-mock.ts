@@ -56,6 +56,14 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                 const comments = handlers["comments/list"]
                   ? await handlers["comments/list"](pageParams)
                   : [];
+                // The page carries the diff feedback it renders itself, which the server derives
+                // from the orphaned scope of the same list call (#123).
+                const feedback: any = handlers["diffFeedback/list"]
+                  ? await handlers["diffFeedback/list"]({
+                      ...pageParams,
+                      scope: { orphaned: true },
+                    })
+                  : null;
                 return {
                   pull: { ...pull, comment_list: comments },
                   comments,
@@ -68,6 +76,10 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                   line_comments: handlers["reviews/listComments"]
                     ? await handlers["reviews/listComments"](pageParams)
                     : [],
+                  diff_feedback: {
+                    comment_counts: feedback?.comment_counts ?? {},
+                    orphaned_threads: feedback?.threads ?? [],
+                  },
                 };
               }
             : undefined;

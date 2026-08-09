@@ -78,6 +78,15 @@ export function usePullDetailPage(owner: string, repo: string, number: number) {
         data.line_comments,
       );
       qc.setQueryData(queryKeys.issueComments(repoFull, number), data.comments);
+      // Previous threads read the orphaned scope of the diff feedback list; the counts ride
+      // along so the seeded entry is the whole list shape the mutation helpers expect (#123).
+      qc.setQueryData<DiffFeedbackList>(
+        [...feedbackKey(owner, repo, number), { orphaned: true }],
+        {
+          threads: data.diff_feedback.orphaned_threads,
+          comment_counts: data.diff_feedback.comment_counts,
+        },
+      );
       return data;
     },
   });
@@ -195,10 +204,12 @@ export function useDiffFeedback(
   repo: string,
   number: number,
   scope: { path?: string; orphaned?: boolean } = {},
+  enabled = true,
 ) {
   return useQuery({
     queryKey: [...feedbackKey(owner, repo, number), scope],
     queryFn: () => listDiffFeedback(owner, repo, number, scope),
+    enabled,
   });
 }
 
@@ -402,8 +413,15 @@ export function useSetDiffFeedbackArchived(
         input.threadId,
         input.archived,
       ),
+    // Archiving has no optimistic update and emits no event, so a refetch is the only thing that
+    // moves the card to its archived form. The PR detail screen reads the orphaned threads from
+    // its page query, whose key sits beside the diff feedback ones under the pull prefix — so
+    // invalidate the prefix, or archiving a previous thread would look like nothing happened
+    // (#123).
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: feedbackKey(owner, repo, number) }),
+      qc.invalidateQueries({
+        queryKey: queryKeys.pull(full(owner, repo), number),
+      }),
   });
 }
 

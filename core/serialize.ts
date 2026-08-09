@@ -2363,6 +2363,17 @@ export interface PullDetailPageWire {
   reviews: ReviewWire[];
   line_comments: ReviewCommentWire[];
   comments: CommentWire[];
+  /**
+   * The diff feedback the detail screen itself renders: the per-file badge counts under Files
+   * changed, and the threads whose anchors have left the diff ("previous threads"). Both are
+   * derived from `files`, so folding them in here costs no extra git and spares the screen two
+   * `diffFeedback/list` calls on load (#123). Threads anchored in the current diff stay out — the
+   * diff dialog fetches those per path when a file is opened.
+   */
+  diff_feedback: {
+    comment_counts: Record<string, number>;
+    orphaned_threads: DiffFeedbackThreadWire[];
+  };
 }
 
 export interface PullCommitWire {

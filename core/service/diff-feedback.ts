@@ -27,6 +27,7 @@ import { resolvePullDiffBaseSha } from "../pull-base.ts";
 import {
   type DiffFeedbackContextLineWire,
   type DiffFeedbackFreshness,
+  type DiffFeedbackListWire,
   type DiffFeedbackPendingWire,
   type DiffFeedbackPlacement,
   type DiffFeedbackThreadDetailWire,
@@ -674,41 +675,68 @@ function threadForPull(
   return thread;
 }
 
+/**
+ * Threads (narrowed to `scope`) and per-file message counts for a diff the caller already
+ * resolved. `diffFeedback.list` resolves the diff itself; `pageData.pullDetail` passes the diff it
+ * computed for Files changed, so one page load resolves the PR's diff base once instead of once
+ * per caller (#123). A null diff means the pair is unavailable: threads still list, with no file
+ * to resolve their anchors against.
+ */
+export function diffFeedbackForDiff(
+  name: string,
+  number: number,
+  diff: { baseSha: string; headSha: string; files: DiffFile[] } | null,
+  scope: { path?: string; orphaned?: boolean } = {},
+  actor?: string,
+): DiffFeedbackListWire {
+  const r = repoOr404(name);
+  const row = issueOr404(r, number, "pull");
+  const files = diff?.files ?? [];
+  const stored = diff
+    ? new Map(
+        S.listDiffFeedbackLocations(row.id, diff.baseSha, diff.headSha).map(
+          (location) => [location.thread_id, location],
+        ),
+      )
+    : new Map<number, S.DiffFeedbackLocationRow>();
+  const threads = S.listDiffFeedbackThreads(row.id).map((thread) => {
+    const cached = stored.get(thread.id);
+    const parsed = cached ? parseLocation(cached) : null;
+    return threadWire(
+      thread,
+      parsed?.location ?? fallbackLocation(files, thread),
+      parsed?.originalContext ?? null,
+      actor,
+    );
+  });
+  return {
+    threads: selectDiffFeedbackThreads(threads, files, scope),
+    comment_counts: countDiffFeedbackMessagesByFile(threads, files),
+  };
+}
+
 export const diffFeedback = {
   async list(
     name: string,
     number: number,
     scope: { path?: string; orphaned?: boolean } = {},
     sessionId?: string | null,
-  ) {
+  ): Promise<DiffFeedbackListWire> {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const pull = S.getPull(row.id)!;
     const pair = await currentPair(r.local_path, pull);
-    const files = pair
-      ? await diffFilesBetween(r.local_path, pair.baseSha, pair.headSha)
-      : [];
-    const stored = pair
-      ? new Map(
-          S.listDiffFeedbackLocations(row.id, pair.baseSha, pair.headSha).map(
-            (location) => [location.thread_id, location],
+    const diff = pair
+      ? {
+          ...pair,
+          files: await diffFilesBetween(
+            r.local_path,
+            pair.baseSha,
+            pair.headSha,
           ),
-        )
-      : new Map<number, S.DiffFeedbackLocationRow>();
-    const threads = S.listDiffFeedbackThreads(row.id).map((thread) => {
-      const cached = stored.get(thread.id);
-      const parsed = cached ? parseLocation(cached) : null;
-      return threadWire(
-        thread,
-        parsed?.location ?? fallbackLocation(files, thread),
-        parsed?.originalContext ?? null,
-        actorFor(sessionId),
-      );
-    });
-    return {
-      threads: selectDiffFeedbackThreads(threads, files, scope),
-      comment_counts: countDiffFeedbackMessagesByFile(threads, files),
-    };
+        }
+      : null;
+    return diffFeedbackForDiff(name, number, diff, scope, actorFor(sessionId));
   },
 
   async precompute(name: string, number: number): Promise<number> {

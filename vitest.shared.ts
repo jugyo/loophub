@@ -52,6 +52,7 @@ export const gitIntegrationTestFiles = [
   "core/pull-work-duration.test.ts",
   "core/repos-service.test.ts",
   "core/service/diff-feedback.test.ts",
+  "core/service/page-data.test.ts",
   "core/service/pulls.test.ts",
   "core/service/reviews.test.ts",
   "core/service/transaction-boundaries.test.ts",

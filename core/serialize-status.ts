@@ -360,6 +360,13 @@ export async function pullJSON(
     withCommits?: boolean;
     withRelatedSessions?: boolean;
     withComments?: boolean;
+    /**
+     * The PR's live diff base, when the caller has already resolved it. Resolving it costs a
+     * `rev-parse`/`merge-base` fan-out that the git-command cache cannot serve (ref-name
+     * operands), so a caller that needs the same base for something else — `pageData.pullDetail`,
+     * which also diffs Files changed from it — passes its own instead of paying twice (#123).
+     */
+    diffBaseSha?: string;
   } = {},
 ): Promise<PullWire> {
   const p = S.getPull(row.id)!;
@@ -374,7 +381,7 @@ export async function pullJSON(
   // rebased, because the rewrite makes them unreachable from that tip again. Resolved here rather
   // than in pullStatusFields so only PR detail (withCommits) pays for the extra git lookups.
   const commitBaseSha = opts.withCommits
-    ? await resolvePullDiffBaseSha(repo.local_path, p)
+    ? (opts.diffBaseSha ?? (await resolvePullDiffBaseSha(repo.local_path, p)))
     : null;
   const commits = opts.withCommits
     ? status.headSha && commitBaseSha

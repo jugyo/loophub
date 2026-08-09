@@ -883,6 +883,8 @@ export function getPullDetailPage(owner: string, repo: string, number: number) {
   return rpc<PullDetailPage>("pageData/pullDetail", {
     repo: full(owner, repo),
     number,
+    // The page carries diff feedback, which is read as the caller (see listDiffFeedback).
+    session_id: getSessionId(),
   });
 }
 

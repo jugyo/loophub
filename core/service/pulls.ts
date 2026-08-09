@@ -7,6 +7,7 @@ import { formatEvent } from "../events.ts";
 import {
   commitLog,
   commitsAhead,
+  type DiffFile,
   diffFiles,
   diffFilesBetween,
   diffStat,
@@ -93,6 +94,33 @@ function assertNoOtherOpenPull(
   }
 }
 
+/**
+ * A pull's changed files together with the base/head pair they were diffed from. `pulls.files`
+ * drops the pair; a caller that needs both — `pageData.pullDetail`, which also resolves the PR's
+ * diff feedback against it — would otherwise resolve the diff base a second time (#123).
+ */
+export async function pullDiffFiles(
+  name: string,
+  number: number,
+): Promise<{ baseSha: string; headSha: string; files: DiffFile[] }> {
+  const r = repoOr404(name);
+  const row = issueOr404(r, number, "pull");
+  const p = S.getPull(row.id)!;
+  // Same live three-dot base as pulls.diff (see resolvePullDiffBaseSha). Using base_ref...head
+  // alone misses origin/<base_ref> when the local base branch lags behind a remote merge.
+  const [baseSha, headSha] = await Promise.all([
+    resolvePullDiffBaseSha(r.local_path, p),
+    revParse(r.local_path, localBranchRef(p.head_ref)),
+  ]);
+  if (!baseSha || !headSha)
+    throw new ServiceError(422, "pull request diff is unavailable");
+  return {
+    baseSha,
+    headSha,
+    files: await diffFilesBetween(r.local_path, baseSha, headSha),
+  };
+}
+
 export const pulls = {
   // Thin lookup for callers outside core/ (lh-worker's workflow dispatch) that only need a PR's
   // head ref for a given repo + issue number, not the full serialized pull.
@@ -142,12 +170,17 @@ export const pulls = {
     );
   },
 
-  get(name: string, number: number, opts: { withComments?: boolean } = {}) {
+  get(
+    name: string,
+    number: number,
+    opts: { withComments?: boolean; diffBaseSha?: string } = {},
+  ) {
     const r = repoOr404(name);
     return pullJSON(r, issueOr404(r, number, "pull"), {
       withCommits: true,
       withRelatedSessions: true,
       withComments: opts.withComments !== false,
+      diffBaseSha: opts.diffBaseSha,
     });
   },
 
@@ -320,18 +353,7 @@ export const pulls = {
   },
 
   async files(name: string, number: number) {
-    const r = repoOr404(name);
-    const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id)!;
-    // Same live three-dot base as pulls.diff (see resolvePullDiffBaseSha). Using base_ref...head
-    // alone misses origin/<base_ref> when the local base branch lags behind a remote merge.
-    const [baseSha, headSha] = await Promise.all([
-      resolvePullDiffBaseSha(r.local_path, p),
-      revParse(r.local_path, localBranchRef(p.head_ref)),
-    ]);
-    if (!baseSha || !headSha)
-      throw new ServiceError(422, "pull request diff is unavailable");
-    return diffFilesBetween(r.local_path, baseSha, headSha);
+    return (await pullDiffFiles(name, number)).files;
   },
 
   async diff(
