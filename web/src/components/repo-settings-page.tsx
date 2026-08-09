@@ -58,10 +58,10 @@ const MERGE_MODE_LABELS: Record<MergeMode, string> = {
 
 const REPO_SETTINGS_SECTIONS = [
   "general",
-  "pull-requests",
   "coding-agent",
-  "workspaces",
   "workflows",
+  "pull-requests",
+  "workspaces",
   "archive",
 ] as const;
 
@@ -90,25 +90,11 @@ const SETTINGS_NAV_ITEMS: Array<{
     path: "/r/$owner/$repo/settings",
   },
   {
-    id: "pull-requests",
-    label: "Pull requests",
-    description: "Default action for pull requests.",
-    icon: GitPullRequestArrow,
-    path: "/r/$owner/$repo/settings/pull-requests",
-  },
-  {
     id: "coding-agent",
-    label: "Coding agent",
+    label: "Agent",
     description: "Repository-specific agent defaults.",
     icon: Bot,
     path: "/r/$owner/$repo/settings/coding-agent",
-  },
-  {
-    id: "workspaces",
-    label: "Workspaces",
-    description: "Registered integration branches.",
-    icon: SquareKanban,
-    path: "/r/$owner/$repo/settings/workspaces",
   },
   {
     id: "workflows",
@@ -116,6 +102,20 @@ const SETTINGS_NAV_ITEMS: Array<{
     description: "Repository-specific workflow definitions.",
     icon: Workflow,
     path: "/r/$owner/$repo/settings/workflows",
+  },
+  {
+    id: "pull-requests",
+    label: "Pull requests",
+    description: "Default action for pull requests.",
+    icon: GitPullRequestArrow,
+    path: "/r/$owner/$repo/settings/pull-requests",
+  },
+  {
+    id: "workspaces",
+    label: "Workspaces",
+    description: "Registered integration branches.",
+    icon: SquareKanban,
+    path: "/r/$owner/$repo/settings/workspaces",
   },
   {
     id: "archive",

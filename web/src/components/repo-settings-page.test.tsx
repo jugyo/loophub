@@ -290,7 +290,7 @@ describe("RepoSettingsPage", () => {
     expect(general.getAttribute("aria-current")).toBe("page");
     expect(general.getAttribute("href")).toBe("/r/me/proj/settings");
     expect(
-      screen.getByRole("link", { name: "Coding agent" }).getAttribute("href"),
+      screen.getByRole("link", { name: "Agent" }).getAttribute("href"),
     ).toBe("/r/me/proj/settings/coding-agent");
     expect(
       screen.getByRole("link", { name: "Workspaces" }).getAttribute("href"),
@@ -306,6 +306,23 @@ describe("RepoSettingsPage", () => {
     expect(pullRequests.getAttribute("href")).toBe(
       "/r/me/proj/settings/pull-requests",
     );
+
+    const nav = screen.getByRole("navigation", {
+      name: "Repository settings",
+    });
+    const order = [
+      "General",
+      "Agent",
+      "Workflows",
+      "Pull requests",
+      "Workspaces",
+      "Archive",
+    ];
+    const labels = within(nav)
+      .getAllByRole("link")
+      .map((link) => link.textContent);
+    expect(labels).toEqual(order);
+
     pullRequests.focus();
     expect(document.activeElement).toBe(pullRequests);
     fireEvent.click(pullRequests);
