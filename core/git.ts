@@ -314,18 +314,26 @@ export async function gitDirOf(repoPath: string): Promise<string> {
   return p;
 }
 
-export interface DiffFile {
+/** What a changed file is, without the text of the change. */
+export interface DiffFileSummary {
   filename: string;
   previousFilename?: string;
   headFilename?: string;
   status: string; // modified | added | removed | renamed
   additions: number;
   deletions: number;
+}
+
+export interface DiffFile extends DiffFileSummary {
   patch: string;
 }
 
 export interface DiffOptions {
   ignoreWhitespace?: boolean;
+  /** Limit the diff to these exact paths — matched literally, so a name git itself printed cannot
+   *  be re-read as pathspec magic. Pass every path a file is known by, so that a rename still
+   *  pairs its two sides instead of reading as a delete and an add. */
+  paths?: string[];
 }
 
 const STATUS_MAP: Record<string, string> = {
@@ -359,6 +367,22 @@ export async function diffFilesBetween(
   return diffFilesForRevisions(repoPath, [baseSha, headSha], options);
 }
 
+/**
+ * The files changed between an exact base/head commit pair, without their patches.
+ *
+ * One `git diff --raw --numstat -z` instead of the three runs `diffFilesBetween` makes: a caller
+ * that only needs to know which files changed — and how they are named on each side — should not
+ * pay for the whole PR's patch text, which is seconds on a large diff (#120).
+ */
+export async function diffFileSummariesBetween(
+  repoPath: string,
+  baseSha: string,
+  headSha: string,
+  options: DiffOptions = {},
+): Promise<DiffFileSummary[]> {
+  return diffFileSummariesForRevisions(repoPath, [baseSha, headSha], options);
+}
+
 /** Files changed by one commit compared with its first parent. */
 export async function commitDiffFiles(
   repoPath: string,
@@ -371,12 +395,24 @@ export async function commitDiffFiles(
   return diffFilesForRevisions(repoPath, [base, sha]);
 }
 
-async function diffFilesForRevisions(
+function diffArgs(options: DiffOptions): {
+  whitespaceArgs: string[];
+  pathspecArgs: string[];
+} {
+  return {
+    whitespaceArgs: options.ignoreWhitespace ? ["--ignore-all-space"] : [],
+    pathspecArgs: options.paths?.length
+      ? ["--", ...options.paths.map((path) => `:(literal)${path}`)]
+      : [],
+  };
+}
+
+async function diffFileSummariesForRevisions(
   repoPath: string,
   revisions: string[],
   options: DiffOptions = {},
-): Promise<DiffFile[]> {
-  const whitespaceArgs = options.ignoreWhitespace ? ["--ignore-all-space"] : [];
+): Promise<DiffFileSummary[]> {
+  const { whitespaceArgs, pathspecArgs } = diffArgs(options);
   const metadata = await git(repoPath, [
     "diff",
     ...whitespaceArgs,
@@ -384,17 +420,49 @@ async function diffFilesForRevisions(
     "--numstat",
     "-z",
     ...revisions,
+    ...pathspecArgs,
   ]);
   assertGitSuccess(metadata, "git diff --raw --numstat -z failed");
   const { statusByFile, structured } = parseRawNumstatZ(metadata.stdout);
+  return structured.map((paths) => {
+    const headFilename = paths.headFilename ?? paths.filename;
+    const displayFilename = paths?.previousFilename
+      ? `${paths.previousFilename} => ${headFilename}`
+      : paths.filename;
+    return {
+      filename: displayFilename,
+      previousFilename: paths?.previousFilename,
+      headFilename,
+      status:
+        statusByFile[headFilename] ??
+        statusByFile[displayFilename] ??
+        "modified",
+      additions: paths.additions,
+      deletions: paths.deletions,
+    };
+  });
+}
+
+async function diffFilesForRevisions(
+  repoPath: string,
+  revisions: string[],
+  options: DiffOptions = {},
+): Promise<DiffFile[]> {
+  const { whitespaceArgs, pathspecArgs } = diffArgs(options);
+  const summaries = await diffFileSummariesForRevisions(
+    repoPath,
+    revisions,
+    options,
+  );
   const [patch, addedPatch] = await Promise.all([
-    git(repoPath, ["diff", ...whitespaceArgs, ...revisions]),
+    git(repoPath, ["diff", ...whitespaceArgs, ...revisions, ...pathspecArgs]),
     git(repoPath, [
       "diff",
       ...whitespaceArgs,
       "--no-renames",
       "--diff-filter=A",
       ...revisions,
+      ...pathspecArgs,
     ]),
   ]);
   assertGitSuccess(patch, "git diff patch failed");
@@ -408,35 +476,20 @@ async function diffFilesForRevisions(
     }),
   );
 
-  const files: DiffFile[] = [];
-  for (const [index, paths] of structured.entries()) {
-    const headFilename = paths.headFilename ?? paths.filename;
-    const displayFilename = paths?.previousFilename
-      ? `${paths.previousFilename} => ${headFilename}`
-      : paths.filename;
-    const status =
-      statusByFile[headFilename] ?? statusByFile[displayFilename] ?? "modified";
+  return summaries.map((summary, index) => {
+    const headFilename = summary.headFilename ?? summary.filename;
     const originalPatch = stripDiffHeader(patches[index] ?? "");
     const copyTargetPatch = stripDiffHeader(
       addedPatchByFile.get(headFilename) ?? "",
     );
     const filePatch =
-      status === "copied" &&
+      summary.status === "copied" &&
       !originalPatch.includes("@@") &&
       copyTargetPatch.includes("@@")
         ? `${originalPatch}\n${copyTargetPatch}`
         : originalPatch;
-    files.push({
-      filename: displayFilename,
-      previousFilename: paths?.previousFilename,
-      headFilename,
-      status,
-      additions: paths.additions,
-      deletions: paths.deletions,
-      patch: filePatch,
-    });
-  }
-  return files;
+    return { ...summary, patch: filePatch };
+  });
 }
 
 function parseRawNumstatZ(stdout: string): {

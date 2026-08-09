@@ -15,6 +15,7 @@ import {
   commitsAhead,
   currentBranch,
   describeUnresolvedRevision,
+  diffFileSummariesBetween,
   diffFiles,
   diffFilesBetween,
   diffStat,
@@ -654,6 +655,64 @@ test("diffFiles exposes structured rename target paths", async () => {
   rmSync(p, { recursive: true, force: true });
 });
 
+// #120: a caller that only needs the file names should not pay for the PR's patch, and one that
+// needs a single file's patch should not pay for the others'.
+test("diffFileSummariesBetween names the same files without their patches", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-diff-summaries-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "old.txt"), "old\n");
+  writeFileSync(join(p, "kept.txt"), "one\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  await git(p, ["mv", "old.txt", "new.txt"]);
+  writeFileSync(join(p, "kept.txt"), "two\n");
+  await git(p, ["commit", "-qam", "rename and edit"]);
+
+  const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
+  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
+  const files = await diffFilesBetween(p, baseSha, headSha);
+  const summaries = await diffFileSummariesBetween(p, baseSha, headSha);
+  expect(summaries).toEqual(
+    files.map(({ patch: _patch, ...summary }) => summary),
+  );
+  expect(summaries).toContainEqual(
+    expect.objectContaining({
+      filename: "old.txt => new.txt",
+      previousFilename: "old.txt",
+      headFilename: "new.txt",
+      status: "renamed",
+    }),
+  );
+
+  // Naming both sides of the rename keeps git's rename detection: the pathspec must not turn it
+  // into a delete plus an add.
+  const renameOnly = await diffFilesBetween(p, baseSha, headSha, {
+    paths: ["old.txt", "new.txt"],
+  });
+  expect(renameOnly).toEqual([
+    files.find((file) => file.headFilename === "new.txt"),
+  ]);
+
+  // Paths are matched literally: a name git printed can never be re-read as pathspec magic.
+  expect(
+    await diffFilesBetween(p, baseSha, headSha, { paths: ["*.txt"] }),
+  ).toEqual([]);
+
+  clearGitResultCache();
+  const summariesOnly = await traceGitCommands(() =>
+    diffFileSummariesBetween(p, baseSha, headSha),
+  );
+  expect(
+    summariesOnly.commands.filter((command) => command.startsWith("diff ")),
+  ).toHaveLength(1);
+
+  rmSync(p, { recursive: true, force: true });
+});
+
 test("diffFiles can omit whitespace-only changes without hiding substantive changes", async () => {
   const p = mkdtempSync(join(tmpdir(), "lh-difffiles-whitespace-"));
   await git(p, ["init", "-q", "-b", "main"]);
@@ -1035,6 +1094,8 @@ test("every SHA-resolved query these helpers ask is served from the cache", asyn
   const ask = async () => {
     await diffFiles(p, baseSha, headSha);
     await diffFilesBetween(p, baseSha, headSha, { ignoreWhitespace: true });
+    await diffFilesBetween(p, baseSha, headSha, { paths: ["f.txt"] });
+    await diffFileSummariesBetween(p, baseSha, headSha);
     await commitDiffFiles(p, headSha);
     await diffStat(p, baseSha, headSha);
     await pathInDiff(p, baseSha, headSha, "f.txt");
