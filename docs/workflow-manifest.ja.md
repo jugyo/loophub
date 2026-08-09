@@ -608,21 +608,202 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 
 ---
 
-## 11. 今後の作業（実装 issue の分割案）
+## 11. 実装計画
 
-1. `core/workflow/manifest.ts` —— 型・serialize・parse・validation と単体テスト（DB / filesystem 不要）。
-2. `workflow_runs.manifest_version` の migration と `WorkflowRunRow` / `createWorkflowRun` の追従。
-3. `workflowRuns.start()` が manifest と step prompt sidecar を書く（transaction の外）。
-4. `workflowRuns.launchStep()`・`confirmStepLaunch()`・`stepInput()` と parent launch が、manifest から
-   解決した**同じ** launch configuration を共有する。legacy（`manifest_version IS NULL`）分岐を 1 か所に
-   閉じる。3 経路のうち 1 つでも DB fallback を読み残すと §6.1 の drift が出るため、これは分割せず
-   1 つの issue で行う。
-5. effort を launch argv に通す（`buildWorkflowStepHerdrLaunchPlan` / `parentAgentFlags`）。
-6. `lh workflow manifest show|path`。
-7. `WorkflowRunManifestWire` と Web の表示（任意）。
-8. `docs/workflow.ja.md` §4 / §10 の更新、`docs/breaking-changes.ja.md` への prompt snapshot 化の記録。
+8 つの issue に分ける。**I1–I4 が本体**で、この 4 つが揃うまで manifest は生の状態
+（書かれるが読まれない、あるいは読まれるが書かれない）になるため、途中で止めると中途半端な二重管理が
+残る。I5–I8 は I4 の後であれば独立に出せる。
 
-1–4 は順に依存する。5 は 4 の後なら独立に出せる。6–8 は 4 の後であれば並行できる。
+| # | issue | 主に触る場所 | 依存 |
+|---|---|---|---|
+| I1 | manifest の型と validation | `core/workflow/manifest.ts`（新規） | — |
+| I2 | `manifest_version` 列 | `core/migrations.ts` / `core/store/workflows.ts` | — |
+| I3 | `start()` が manifest を書く | `core/service/workflow-runs.ts` / `core/workflow/run-files.ts` | I1, I2 |
+| I4 | launch 3 経路が manifest を読む | `core/service/workflow-runs.ts` | I3 |
+| I5 | effort を argv に通す | `core/terminal/terminal-launch.ts` / `cli/commands/workflow.ts` | I4 |
+| I6 | `lh workflow manifest show\|path` | `cli/commands/workflow.ts` | I4 |
+| I7 | wire type と Web 表示 | `core/serialize.ts` / `web/` | I4 |
+| I8 | 既存ドキュメントの更新 | `docs/` | I4 |
+
+I1 と I2 は並行できる。I5–I8 も互いに独立。
+
+---
+
+### I1. manifest の型・parse・validation
+
+**scope.** `core/workflow/manifest.ts` を新規に作る。node 非依存の pure leaf にし、DB も filesystem も
+使わずに単体テストできる形にする（`core/worktree-prune.ts` と同じ姿勢）。ファイル I/O は持たない ——
+それは I3 で `run-files.ts` に足す。
+
+持たせるもの:
+
+- `WorkflowManifest` 型（§5.2 の schema）と `WorkflowManifestAgent`（`runtime` / `model` / `effort`）。
+- `parseWorkflowManifest(text): WorkflowManifest` —— §5.4 の検証 1・2・3・4・5・6 のうち、ファイルを
+  読まずに判定できるもの（JSON 妥当性、`manifest_version`、runtime の registry 存在と 3 agent 一致、
+  model 非空、`prompts.<step>` が単純ファイル名であること、未知 key）。
+- `serializeWorkflowManifest(manifest): string` —— I3 が書き出すのに使う。key 順を固定し、人間が編集した
+  後の diff が読めるようにする。
+- 失敗は `ServiceError(422, ...)` で、メッセージに**どのフィールドがなぜ駄目か**を含める。path は呼び出し
+  側が知っているので、ここでは付けない（I3 / I4 が付与する）。
+
+**AC.**
+
+- 壊れた JSON / 未知 `manifest_version` / 未知 runtime / 3 agent の runtime 不一致 / 空 model /
+  `..` や `/` を含む prompt path / 未知 key のそれぞれが 422 になり、理由が読める。
+- 正常な manifest が round-trip する（`parse(serialize(m))` が `m` と等しい）。
+- `effort` は空文字を受け入れる（cursor / opencode / grok は effort flag を持たないため）。
+
+**test.** `core/workflow/manifest.test.ts`。DB・filesystem・git を使わない純粋な単体テスト。
+
+---
+
+### I2. `workflow_runs.manifest_version` 列
+
+**scope.** 既存の `addColumn` migration に 1 本足すだけ。
+
+```ts
+addColumn("079-workflow-runs-manifest-version", "workflow_runs", "manifest_version", "INTEGER"),
+```
+
+`WorkflowRunRow` に `manifest_version: number | null` を足し、`createWorkflowRun()` の INSERT に 1 列足す。nullable にするのは、既存行に入れるべき値が無いからで、
+`cost_increment_usd` / `cost_limit_usd` が同じ理由で nullable になっている前例に合わせる。
+
+**AC.** 既存 DB を開いても migration が通り、既存 run の `manifest_version` が NULL のまま
+（= §5.6 の legacy 判定が効く）。新規 run は 1 が入る（I3 で書く）。
+
+**test.** 既存の migration テストの形に合わせる。
+
+---
+
+### I3. `start()` が manifest と sidecar を書く
+
+**scope.** `core/workflow/run-files.ts` に read / write を足し、`workflowRuns.start()` から呼ぶ。
+
+- `run-files.ts`: `writeWorkflowManifest(runId, text)` / `readWorkflowManifest(runId)` /
+  `writeStepPromptSidecar(runId, step, text)` / `readStepPromptSidecar(runId, name)` /
+  `workflowManifestPath(runId)`。path は既存どおり run id からのみ導出し、caller が書き先を選べない形を
+  保つ。sidecar の読み出しは I1 が検証済みの単純ファイル名だけを受ける。
+- `start()`: §5.3 の順序どおり、`db.transaction`（run 行 + `workflow_run.started`）の**後**に
+  sidecar → manifest → 既存の contract / prompt を書く。初期値は §5.3「初期値の決め方」の表に従い、
+  effort は model と対称に解決する（`effectiveRepoAgentConfigFor(repo).effort` / `agentEffort(runtime)`）。
+  `createWorkflowRun()` に `manifestVersion: 1` を渡す。
+
+この issue の時点では**まだ誰も manifest を読まない**。書くだけを先に入れることで、I4 の変更を
+「読み替え」だけに閉じられる。
+
+**AC.**
+
+- 新規 run で `$LOOPHUB_HOME/runs/workflow/<runId>/manifest.json` と 2 つの sidecar が生成される。
+- 対象 repository の worktree には何も書かれない（`git status` が clean のまま）。
+- manifest の `agents` 3 つが同じ初期値を持ち、effort が Settings 由来の値になる。
+- 書き込みに失敗すると `start` が非 0 で終わり、既存の catch が dev lock を外す。自動修復しない。
+
+**test.** 既存の workflow run service テストに追加。`LOOPHUB_HOME` を temp に向けて生成物を検証する。
+
+---
+
+### I4. launch の 3 経路が manifest を読む
+
+**この計画で最も壊しやすい issue。** §6.1 のとおり、同じ値を解決している経路が 3 つあり、1 つでも
+DB fallback を読み残すと §9 が「防ぐ」と宣言した drift がそのまま出る。**分割しないこと。**
+
+**scope.**
+
+1. `resolveLaunchConfig(run): LaunchConfig` を 1 つ作る。`manifest_version` が非 NULL なら manifest を
+   読んで I1 で検証し、NULL なら従来の `runRuntime` / `runModel` / `runContractLanguage` /
+   `workflowStepPrompt` で解決する（§5.6 の legacy 経路）。**legacy 分岐はこの関数の中だけ**に置く。
+2. 3 経路をこれに寄せる。
+   - `launchStep()` —— 4 つの解決関数の呼び出しを置き換える。
+   - `confirmStepLaunch()` —— `S.registerAgentSession(..., runRuntime(run), ..., input.model?.trim() || runModel(run), ...)`
+     を同じ config から取る。ここを残すと argv と session 行の model がずれ、usage / cost の帰属が壊れる。
+   - `stepInput()` —— `workflowStepPrompt(workflow, step)` を sidecar 由来に変える。ここを残すと
+     `lh workflow step input` の dry-run が実際の launch prompt とずれる。
+3. parent launch（`lh workflow start` の後半）も `agents.parent` を使う。
+4. 不正な manifest は §5.4 のとおり非 0 で止める。**DB へ silent fallback しない。**
+
+`--model` override（`launch-step --model`）は 1 回限りの上書きとして残し、manifest は書き換えない。
+
+**AC.**
+
+- manifest の `agents.<kind>.model` を編集して子を起動すると、argv と `agent_sessions` に記録される
+  model が**一致する**。
+- `lh workflow step input` が表示する step prompt が、同じ run の実際の launch prompt と一致する。
+  global な workflow 定義を編集しても両方とも変わらない（G4）。
+- `manifest_version` が NULL の legacy run が従来どおり launch できる。
+- 壊れた manifest で launch が非 0 になり、manifest の絶対 path と理由が出る。
+
+**test.** 3 経路それぞれについて「manifest 由来の値が出る」ことと、legacy run が従来値で動くことを
+確認する。とくに `confirmStepLaunch()` の session 行と argv の一致は回帰しやすいので明示的に押さえる。
+
+---
+
+### I5. effort を launch argv に通す
+
+**scope.** §1.2-2 の穴を塞ぐ。`buildRuntimeFlags()` は既に `--effort` /
+`-c model_reasoning_effort=` を組み立てられるので、渡していない 2 か所を直すだけ。
+
+- `buildWorkflowStepHerdrLaunchPlan()` の input に `effort?: string` を足し、`buildRuntimeFlags()` へ渡す。
+- `parentAgentFlags()`（`cli/commands/workflow.ts`）に同じく `effort` を通す。
+- 値は I4 の `LaunchConfig` から取る。
+
+**AC.** claude-code / codex では launch した子の argv に effort が現れ、grok / cursor / opencode では
+現れない（`buildRuntimeFlags()` が無視する）。Settings で設定した effort が workflow に効く（G6）。
+
+**test.** 既存の launch plan テストに effort のケースを足す。
+
+---
+
+### I6. `lh workflow manifest show|path`
+
+**scope.** `cli/commands/workflow.ts` の subcommand dispatch に `manifest` を足す。core 側は I1 / I3 の
+関数を組み合わせるだけで、新しいドメインロジックは持たない（CLI は flag 解析と表示だけ、という規約）。
+
+- `show <run> [--repo <owner/name>] [--json]` —— manifest を検証して表示する。§5.5 のとおり **3 入力を
+  出所つきで**並べる: manifest 由来の動作条件、DB 由来の pointer、規約から導出した workspace。
+  編集できるのが 1 列目だけであることが読み取れる形にする。`--json` は manifest の絶対 path を含める。
+- `path <run> [--repo <owner/name>]` —— `manifest.json` の絶対 path だけを出す（`$EDITOR` 連携用）。
+
+§5.5 の非対称性（Verify には次の launch で効くが、Execute は走行中の run では差し替えられない）を
+`show` の出力にも出す。読者がここで気づけないと、存在しない運用を期待することになる。
+
+**AC.** 壊れた manifest に対して `show` が非 0 で理由を出す（launch を試す前に人間が気づける）。
+
+**test.** 既存の CLI テストの形に合わせる。
+
+---
+
+### I7. wire type と Web 表示（任意）
+
+**scope.** `core/serialize.ts` に `WorkflowRunManifestWire` を置き、`web/src/api/types.ts` は
+type-only import で導出する（wire 形を web で手書きしない規約）。RPC method を足す場合は
+`web/server/contract.ts` を変更したうえで `npm run contract` を実行し、`docs/rpc-contract.json` を
+一緒に commit する。
+
+表示のみ。**編集 UI は非目標**（N-list / §10-4）。走行中の run に対する「次の launch から効く」という
+意味論を UI でどう出すかが未解決なので、そこを決めずに編集を出さない。
+
+---
+
+### I8. 既存ドキュメントの更新
+
+- `docs/workflow.ja.md` §4（workflow 定義）と §10（実装境界）に manifest を追記し、本書へリンクする。
+- `docs/breaking-changes.ja.md` に **step prompt の snapshot 化**を記録する。`lh workflow update` で
+  workflow 定義の prompt を変えても、既に開始済みの run には効かなくなる —— これは意図した改善（G4）
+  だが、既存の（暗黙の）挙動の変更にあたる。
+
+---
+
+### 進め方の注意
+
+- **I4 を分割しない。** 3 経路のうち 1 つでも残すと、設計が自分で宣言した性質をその経路だけ破る。
+- **I3 と I4 の間は「書くが読まない」状態**で、この間 manifest は生成されるだけで挙動を変えない。
+  安全な中断点はここだけである。
+- **legacy 分岐は `resolveLaunchConfig()` の中に閉じる。** 3 経路それぞれに `manifest_version` の
+  if を書くと、legacy 判定が 3 か所に散り、§5.6 の意図（「書き込み失敗した新 run」と「manifest を
+  持たない旧 run」を取り違えない）が守りにくくなる。
+- **§10 の未解決論点は実装で勝手に決めない。** とくに §10-3（cost / rework 上限）と §10-7（走行中の
+  Execute 差し替え）は manifest とは独立に判断すべき論点として切り出してある。I1–I8 の中で
+  「ついでに」解かないこと。
 
 ---
 
