@@ -1,9 +1,9 @@
 // lh-web HTTP binding. A plain node:http server that mounts the JSON-RPC dispatcher at
 // POST /rpc, serves attachments, and delegates everything else to a static handler for the SPA.
 // There is no long-running daemon equivalent to the old `lh serve` /
-// Bun.serve — the process runs only while someone is looking. The SPA handler is injectable:
-// `lh-web` injects a Vite dev middleware (dev.ts) so one process serves the UI with HMR; the
-// default `handleStatic` serves a built web/dist. Keeping Vite out of this file means the
+// Bun.serve — the process runs only while someone is looking. `handleStatic` serves the web/dist
+// that `lh-web` builds at startup (build.ts); it stays injectable so the handler can be wrapped,
+// as `lh-web` does while that build is still running. Keeping Vite out of this file means the
 // HTTP core (and its tests) never imports Vite.
 
 import { createReadStream, existsSync, statSync } from "node:fs";
@@ -276,14 +276,16 @@ async function handleRpc(
 }
 
 // Serve a file from web/dist, falling back to index.html for SPA client routes.
-function handleStatic(
+export function handleStatic(
   _req: IncomingMessage,
   res: ServerResponse,
   url: URL,
 ): void {
   if (!existsSync(DIST_DIR)) {
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Not built. Run the SPA build, or use the Vite dev server.\n");
+    res.end(
+      "Not built. Start lh-web, which builds the SPA before serving it.\n",
+    );
     return;
   }
 
@@ -308,8 +310,9 @@ function handleStatic(
   createReadStream(filePath).pipe(res);
 }
 
-// Serves GET requests that aren't API routes — i.e. the SPA. `handleStatic` (web/dist)
-// is the default; `lh-web` injects a Vite dev middleware instead (see dev.ts).
+// Serves GET requests that aren't API routes — i.e. the SPA. `handleStatic` (web/dist) is the
+// default; `lh-web` wraps it so requests that arrive while its startup build is still running
+// get an error instead of the previous build.
 export type StaticHandler = (
   req: IncomingMessage,
   res: ServerResponse,

@@ -110,7 +110,7 @@ LoopHub は**自分のマシンで自分だけが使うローカルツール**�
 ```sh
 npm run serve # lh-web + lh-worker をまとめて起動
 npm run serve:debug # コンポーネントデバッグ UI を有効にして両プロセスを起動
-npm run lh-web # http://localhost:8730 — API + UI + HMR を 1 プロセスで
+npm run lh-web # http://localhost:8730 — API + UI を 1 プロセスで（起動時に SPA を build）
 npm run lh-worker # events を tail してリポジトリの自動化を実行
 ```
 
