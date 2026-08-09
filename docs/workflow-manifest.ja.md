@@ -500,32 +500,41 @@ event / git / DB に書く。
 いずれも「manifest から解決した launch configuration」を 1 つ作って 3 経路が共有する形にすれば済む。
 `launchStep()` だけを書き換えて済ませないこと。
 
-#### 設定値と実績値を混ぜない
+#### Web の "Model" 行は parent の model を出している
 
-manifest を入れると、UI が答え得る問いが 2 つに分かれる。**混同しないことが正しさの条件**である。
+PR ページの "Model" 行は、こう辿って値を得ている。
 
-| | 設定値（configuration） | 実績値（fact） |
+```text
+"Model" 行 → pull.agent_model → pullAgentSummary() → primaryDevSessionForPull()
+                                                     └ kind = 'dev' の session を選ぶ
+```
+
+workflow が `dev` で登録するのは **parent（orchestrator）だけ**である。Execute / Verify の子は
+`workflow-step` で登録される。つまりこの行は、**実装を書いた子ではなく parent の model** を示している。
+
+今は全 agent が同じ model なので、これで困らない。**G3（agent ごとの model / effort）を入れると困る。**
+
+| | run 開始時 | 人間が manifest で execute だけ変更した後 |
+|---|---|---|
+| parent の model | `opus` | `opus` |
+| Execute の model（実際に実装する） | `opus` | **`claude-opus-5`** |
+| Web の "Model" 行 | `opus` | `opus` ← 変わらない |
+
+ラベルは単に "Model" なので、読者はこれを「この PR が何で作られたか」と読む。実際に実装したのは
+`claude-opus-5` である。**G3 は、正しかった表示を誤りに変える。**
+
+したがって I7 は「あれば便利な表示」ではなく、G3 が持ち込んだ誤りの手当てを含む。行を
+「orchestrator の model」と正確に名乗らせるか、agent ごとの表示に置き換えるかは実装時に選ぶ。
+
+これは一般化すると、manifest を入れた後の UI は**別の 2 つの問い**に答えることになる、という話である。
+
+| | 設定値 | 実績値 |
 |---|---|---|
 | 問い | 次に起動する子は何で動くか | 実際に何が動き、いくら掛かったか |
 | 出所 | manifest（agent ごと） | `agent_sessions` / `session_usage` 行（session ごと） |
-| 変わる契機 | 人間が manifest を編集したとき | 子が起動・実行されたとき |
 
-G2（走行中の変更）を入れると、この 2 つは**正当に食い違う**。人間が model を変えた直後、実績値は
-まだ古い model を指し、設定値は新しい model を指す。どちらも正しい。片方だけを見て他方を推測できない
-というのが、manifest を入れたあとの状態である。
-
-**この区別が既存の表示に影響する。** `linked-pull-summary.tsx` の "Model" 行は
-`pull.agent_model` → `pullAgentSummary()` → `primaryDevSessionForPull()` を辿るが、この最後の関数は
-`kind = 'dev'` の session を選ぶ。workflow では **parent（orchestrator）だけが `dev`** で登録され、
-Execute / Verify の子は `workflow-step` で登録される。つまりこの行が示しているのは、実装を書く子の
-model ではなく **parent の model** である。
-
-現在は全 agent が同じ model なので実害が無い。しかし G3（agent ごとの model / effort）を入れた瞬間、
-人間が Execute だけ別の model にしても、この行は parent の model を示し続ける。ラベルは単に "Model" な
-ので、読者は「この PR が何で作られたか」と受け取る。**G3 は既存の表示を誤りに変える。**
-
-したがって I7 は「あれば便利な表示」ではなく、G3 の影響を受けた表示を正す作業を含む。行を
-「orchestrator の model」と正確に名乗らせるか、agent ごとの表示に置き換えるかは実装時に選ぶ。
+G2（走行中の変更）を入れると、この 2 つは**正当に食い違う**。model を変えた直後、実績値は古い model を、
+設定値は新しい model を指す。どちらも正しい。だから片方を他方の代わりに表示してはいけない。
 
 ### 6.2 データ
 
@@ -826,7 +835,7 @@ DB fallback を読み残すと §9 が「防ぐ」と宣言した drift がそ�
 
 **何を作るか.** 2 つある。
 
-1. **既存の "Model" 行を正す。** §6.1「設定値と実績値を混ぜない」のとおり、
+1. **既存の "Model" 行を正す。** §6.1「Web の "Model" 行は parent の model を出している」のとおり、
    `linked-pull-summary.tsx` の "Model" 行は `primaryDevSessionForPull()`（`kind = 'dev'`）を辿るため
    **parent の model** を示している。G3 で agent ごとに model / effort を分けられるようにした時点で、
    この行は「この PR が何で作られたか」を尋ねる読者に誤った答えを返す。行を
