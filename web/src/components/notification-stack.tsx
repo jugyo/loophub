@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  Bell,
   CheckCircle2,
+  ChevronDown,
   CircleDollarSign,
   Info,
   MessageSquare,
@@ -12,6 +14,10 @@ import { useMemo, useState } from "react";
 import type { Notification } from "@/api/types";
 import { useToast } from "@/components/toast";
 import { YesNoPrompt } from "@/components/yes-no-prompt";
+import {
+  getNotificationsMinimized,
+  setNotificationsMinimized,
+} from "@/lib/notification-minimize";
 import { formatCost } from "@/lib/session-usage";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -80,17 +86,20 @@ export function NotificationStack() {
   const herdrSessions = useHerdrSessions();
   const { showError } = useToast();
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
-  const visible = useMemo(
+  const [minimized, setMinimized] = useState(getNotificationsMinimized);
+  const unread = useMemo(
     () =>
       (data ?? [])
         .filter(
           (notification) =>
             notification.read_at == null && !dismissedIds.has(notification.id),
         )
-        .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id)
-        .slice(0, MAX_VISIBLE_NOTIFICATIONS),
+        .sort(
+          (a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id,
+        ),
     [data, dismissedIds],
   );
+  const visible = unread.slice(0, MAX_VISIBLE_NOTIFICATIONS);
 
   function markRead(notification: Notification) {
     setDismissedIds((ids) => new Set(ids).add(notification.id));
@@ -117,8 +126,14 @@ export function NotificationStack() {
     });
   }
 
+  // A view preference, not a read: the notifications stay unread and come back as they were.
+  function minimize(next: boolean) {
+    setMinimized(next);
+    setNotificationsMinimized(next);
+  }
+
   function clearAll() {
-    if (visible.length === 0 || readAllNotifications.isPending) return;
+    if (unread.length === 0 || readAllNotifications.isPending) return;
     readAllNotifications.mutate(undefined, {
       onError: (error) =>
         showError(
@@ -170,7 +185,7 @@ export function NotificationStack() {
     );
   }
 
-  if (!isError && visible.length === 0) return null;
+  if (!isError && unread.length === 0) return null;
 
   return (
     <section
@@ -179,16 +194,42 @@ export function NotificationStack() {
       data-debug-component="NotificationStack"
       className="pointer-events-none fixed right-4 bottom-12 z-40 flex max-h-[calc(100vh-4rem)] w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto"
     >
-      {visible.length > 0 ? (
-        <div className="pointer-events-auto flex justify-end">
+      {unread.length > 0 ? (
+        // One button carries both states so toggling keeps it mounted, and a keyboard user who
+        // folds the stack stays on the control that unfolds it again.
+        <div className="pointer-events-auto flex justify-end gap-2">
           <button
             type="button"
-            onClick={clearAll}
-            disabled={readAllNotifications.isPending}
-            className="rounded-md border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => minimize(!minimized)}
+            aria-expanded={!minimized}
+            aria-label={minimized ? undefined : "Minimize notifications"}
+            title={minimized ? "Show notifications" : "Minimize"}
+            className={cn(
+              "inline-flex items-center rounded-md border bg-background text-xs font-medium hover:bg-accent hover:text-accent-foreground",
+              minimized
+                ? "gap-1.5 px-2.5 py-1 text-foreground shadow-lg"
+                : "px-2 py-1 text-muted-foreground shadow-sm",
+            )}
           >
-            Clear all
+            {minimized ? (
+              <>
+                <Bell className="size-3.5" aria-hidden="true" />
+                {unread.length} unread
+              </>
+            ) : (
+              <ChevronDown className="size-3.5" aria-hidden="true" />
+            )}
           </button>
+          {minimized ? null : (
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={readAllNotifications.isPending}
+              className="rounded-md border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Clear all
+            </button>
+          )}
         </div>
       ) : null}
       {isError ? (
@@ -203,16 +244,18 @@ export function NotificationStack() {
           <span>Failed to load notifications.</span>
         </div>
       ) : null}
-      {visible.map((notification) => (
-        <NotificationItem
-          key={notification.id}
-          notification={notification}
-          onRead={() => markRead(notification)}
-          herdrPaneId={herdrPaneId(notification)}
-          onFocusHerdr={(paneId) => focusHerdr(notification, paneId)}
-          herdrPending={focus.isPending}
-        />
-      ))}
+      {minimized
+        ? null
+        : visible.map((notification) => (
+            <NotificationItem
+              key={notification.id}
+              notification={notification}
+              onRead={() => markRead(notification)}
+              herdrPaneId={herdrPaneId(notification)}
+              onFocusHerdr={(paneId) => focusHerdr(notification, paneId)}
+              herdrPending={focus.isPending}
+            />
+          ))}
     </section>
   );
 }

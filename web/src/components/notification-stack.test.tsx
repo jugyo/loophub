@@ -26,6 +26,9 @@ const notifications = vi.hoisted(() => ({
   isError: false,
   herdrRepos: [] as HerdrRepoSessions[],
   workflowRun: null as WorkflowRunState | null,
+  // Subscribers stand in for the query cache, so a test can deliver a notification to a
+  // mounted stack the way an invalidated list would.
+  listeners: new Set<() => void>(),
 }));
 const actions = vi.hoisted(() => ({
   list: vi.fn(),
@@ -36,17 +39,27 @@ const actions = vi.hoisted(() => ({
   increaseCostLimit: vi.fn(),
 }));
 
-vi.mock("@/queries/notifications", () => ({
-  useNotifications: (input: unknown) => {
-    actions.list(input);
-    return { data: notifications.value, isError: notifications.isError };
-  },
-  useReadNotification: () => ({ mutate: actions.read }),
-  useReadAllNotifications: () => ({
-    mutate: actions.readAll,
-    isPending: false,
-  }),
-}));
+vi.mock("@/queries/notifications", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useNotifications: (input: unknown) => {
+      actions.list(input);
+      useSyncExternalStore(
+        (onChange: () => void) => {
+          notifications.listeners.add(onChange);
+          return () => notifications.listeners.delete(onChange);
+        },
+        () => notifications.value,
+      );
+      return { data: notifications.value, isError: notifications.isError };
+    },
+    useReadNotification: () => ({ mutate: actions.read }),
+    useReadAllNotifications: () => ({
+      mutate: actions.readAll,
+      isPending: false,
+    }),
+  };
+});
 
 vi.mock("@/queries/terminal", () => ({
   useFocusHerdrAgent: () => ({ mutate: actions.focus, isPending: false }),
@@ -65,9 +78,18 @@ vi.mock("@/queries/workflow-runs", () => ({
   }),
 }));
 
+/** Replace the unread list the way a refreshed query would, notifying mounted stacks. */
+function deliverNotifications(next: Notification[]) {
+  notifications.value = next;
+  act(() => {
+    for (const listener of notifications.listeners) listener();
+  });
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  localStorage.clear();
   notifications.value = [];
   notifications.isError = false;
   notifications.herdrRepos = [];
@@ -510,6 +532,118 @@ describe("NotificationStack", () => {
     expect(screen.queryByRole("button", { name: "Yes" })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Increase cost limit" }),
+    ).toBeNull();
+  });
+
+  it("collapses the cards to the unread total when minimized", async () => {
+    notifications.value = [1, 2, 3, 4, 5, 6, 7].map((id) =>
+      makeNotification(id),
+    );
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+
+    expect(screen.queryByText("Notification 7")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear all" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "7 unread", expanded: false }),
+    ).toBeTruthy();
+    expect(actions.read).not.toHaveBeenCalled();
+    expect(actions.readAll).not.toHaveBeenCalled();
+  });
+
+  it("shows the unread notifications again when expanded", async () => {
+    notifications.value = [1, 2, 3, 4, 5, 6, 7].map((id) =>
+      makeNotification(id),
+    );
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "7 unread" }));
+
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(
+      [
+        expect.stringContaining("Notification 7"),
+        expect.stringContaining("Notification 6"),
+        expect.stringContaining("Notification 5"),
+        expect.stringContaining("Notification 4"),
+        expect.stringContaining("Notification 3"),
+      ],
+    );
+    expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: "Minimize notifications",
+        expanded: true,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("keeps keyboard focus on the control that folds and unfolds the stack", async () => {
+    notifications.value = [makeNotification(1), makeNotification(2)];
+    renderStack();
+
+    const minimizeButton = await screen.findByRole("button", {
+      name: "Minimize notifications",
+    });
+    minimizeButton.focus();
+    fireEvent.click(minimizeButton);
+
+    const expandButton = screen.getByRole("button", { name: "2 unread" });
+    expect(document.activeElement).toBe(expandButton);
+    fireEvent.click(expandButton);
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Minimize notifications" }),
+    );
+  });
+
+  it("counts unread notifications arriving while minimized", async () => {
+    notifications.value = [makeNotification(1)];
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+    deliverNotifications([makeNotification(1), makeNotification(2)]);
+
+    expect(screen.getByRole("button", { name: "2 unread" })).toBeTruthy();
+    expect(screen.queryByText("Notification 2")).toBeNull();
+  });
+
+  it("stays minimized when the page is loaded again", async () => {
+    notifications.value = [makeNotification(1)];
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+    cleanup();
+    renderStack();
+
+    expect(
+      await screen.findByRole("button", { name: "1 unread" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Notification 1")).toBeNull();
+  });
+
+  it("shows nothing while minimized once no notification is unread", async () => {
+    notifications.value = [makeNotification(1)];
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+    deliverNotifications([
+      makeNotification(1, { read_at: "2026-01-01T00:01:00Z" }),
+    ]);
+
+    expect(
+      screen.queryByRole("region", { name: "Unread notifications" }),
     ).toBeNull();
   });
 
