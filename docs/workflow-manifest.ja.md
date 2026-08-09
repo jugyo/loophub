@@ -29,7 +29,8 @@ run が子を起動するとき、その argv とプロンプトを決める値�
 | contract 本文 | `core/workflow/contracts/{parent,execute,verify}.{md,ja.md}` | ビルド時（LoopHub 所有） |
 | cost 上限 | `workflow_runs.cost_increment_usd` / `cost_limit_usd`（開始時に `devCostLimitUsd()` から pin） | run 開始時 |
 | rework 上限 | `WORKFLOW_REWORK_LIMIT`（module 定数 8） | ビルド時 |
-| worktree path / branch | 保存せず `resolveWorktreeIdentity(head_ref, pr_number)` + `worktreeRoot()` から毎回導出 | 参照のたび |
+| branch（head / base） | `pulls.head_ref` / `pulls.base_ref` | PR 作成時 |
+| worktree path | 保存せず `resolveWorktreeIdentity(head_ref, pr_number)` + `worktreeRoot()` から毎回導出 | 参照のたび |
 
 `workflowRuns.launchStep()` はこれらを 4 種類の解決関数（`runRuntime` / `runModel` /
 `runContractLanguage` / `workflowStepPrompt`）に分けて組み立てている。つまり「この run が今どういう
@@ -108,10 +109,10 @@ lifecycle state をファイルへ移すと、worker / web / CLI の 3 process �
 `increaseWorkflowRunCostLimit()` のような CAS（`cost_limit_usd = ?` を条件にした原子的更新）が成立しなくなる。
 
 **対象も manifest に入れない。** pointer と workspace は人間が設定する値ではなく、run 開始時に issue と
-linked PR から確定する事実である。workspace に至っては保存すらされておらず、PR 番号から
-`resolveWorktreeIdentity()` + `worktreeRoot()` で毎回導出される（[worktree ライフサイクル](worktree.ja.md)）。
-これを manifest に複製すると、「編集しても効かないフィールド」と「DB との一致を確かめるためだけの検証」を
-同時に抱え込むことになる。§4.2 で詳述する。
+linked PR から確定する事実である。branch は PR 行（`pulls.head_ref` / `pulls.base_ref`）が持ち、worktree
+path はそこから `resolveWorktreeIdentity()` + `worktreeRoot()` が導出する
+（[worktree ライフサイクル](worktree.ja.md)）。これを manifest に複製すると、「編集しても効かない
+フィールド」と「DB との一致を確かめるためだけの検証」を同時に抱え込むことになる。§4.2 で詳述する。
 
 残る configuration は「人間が読んで編集する」対象であり、event と同時 commit する必要がない。したがって
 ファイルが適している。
@@ -194,9 +195,12 @@ manifest の**中身**に持たせるか、manifest とは**別入力**として
 
 1. **編集できない設定は設定ではない。** manifest の目的は「人間が読んで編集する動作条件を 1 か所に置く」
    ことである。編集しても無視されるフィールドが混ざると、その目的自体が曖昧になる。
-2. **workspace は導出値であって設定値ではない。** worktree path と branch は PR 番号から一意に決まる規約
-   （`loophub/pr-<m>` / `$LOOPHUB_HOME/worktrees/<owner>/<repo>/pr-<m>`）であり、DB にも保存されていない。
-   manifest で別の場所を指せるようにすると、その規約と `lh worktree prune` の前提が壊れる。
+2. **workspace は人間が選ぶ値ではなく、LoopHub が確定する導出値である。** branch は PR 行
+   （`pulls.head_ref` / `pulls.base_ref`）が持ち、worktree path はその head_ref と PR 番号から
+   `resolveWorktreeIdentity()` + `worktreeRoot()` が導く（head_ref が `issue-<n>` 形式の run は
+   `legacy-issue` scheme になるため、PR 番号だけでは決まらない）。いずれも PR を開いた時点で確定し、
+   run の生涯で変わらない。manifest で別の場所を指せるようにすると、
+   [worktree ライフサイクル](worktree.ja.md) の規約と `lh worktree prune` の前提が壊れる。
 3. **検証が 1 つ消える。** 中身に持たせる案では「manifest の `run.id` が起動対象の run と一致するか」を
    検証する必要があった。持たなければ、一致し得ないものが存在しないので検証も要らない。
 4. **どの run の manifest かは path が表す。** manifest は `runs/workflow/<runId>/` の下にあり、この path は
@@ -255,6 +259,14 @@ $LOOPHUB_HOME/runs/workflow/<runId>/
 入らない（§4.2）。issue #94 が候補に挙げた issue id / pr id / worktree path / branch は、manifest ではなく
 launch の別入力として扱う（§5.4）。
 
+残る候補 **workflow name も持たせない。** これは pointer でも workspace でもなく「どの workflow 定義を
+使うか」という第 3 の性質を持つが、manifest を作った時点でその定義から prompt は sidecar へ snapshot 済み
+であり（§5.3）、launch は以降 `workflows` 行を読まない。したがって name を持たせても launch の挙動を何も
+決めず、書き換えても効かない —— §4.2 の理由 1（編集できない設定は設定ではない）がそのまま当てはまる。
+どの定義から生まれた run かという系譜は `workflow_runs.workflow_id` が持つ。ただし manifest をテンプレート
+として run 間で再利用する段になると、「この manifest はどの workflow 由来か」を名乗る必要が出るため、
+§10-5 と合わせて再検討する。
+
 key は英語で固定する。`contract_language` は生成されるプロンプト**本文**の言語であり、manifest の構造
 ラベルの言語ではない —— 「文書構造を支えるラベルは共通言語で安定させ、prose だけを localize する」という
 リポジトリ規約に従う。
@@ -267,7 +279,7 @@ key は英語で固定する。`contract_language` は生成されるプロン�
 | `contract_language` | contract / プロンプト本文の言語 | 次の launch から反映 |
 | `agents.<kind>.runtime` | 起動する runtime | v1 は 3 つとも同値であることを要求（§10-2） |
 | `agents.<kind>.model` | `--model` に渡す値。非空 | 次の launch から反映 |
-| `agents.<kind>.effort` | reasoning effort。空文字可（cursor / opencode は effort flag を持たない） | 次の launch から反映 |
+| `agents.<kind>.effort` | reasoning effort。空文字可。argv に効くのは claude-code（`--effort`）と codex（`-c model_reasoning_effort=`）だけで、grok / cursor / opencode は `buildRuntimeFlags()` が無視する | 次の launch から反映 |
 | `prompts.<step>` | step prompt の sidecar ファイル名 | 参照先の `.md` を編集すれば次の launch から反映 |
 
 この schema には run 固有の値が 1 つも無い。したがって manifest は **run 非依存の設定ファイル**であり、
@@ -293,6 +305,27 @@ flowchart TD
 - 書き込みに失敗すれば `start` は非 0 で終了し、既存の catch が dev lock を外す。run 行だけが残った状態は
   次の launch で可視エラーになる（§5.4）。**自動修復も再試行もしない。**
 - step prompt の snapshot はここで 1 回だけ取る。以降 `workflows` テーブルは launch から参照しない（G4）。
+
+#### 初期値の決め方
+
+3 つの agent には**同じ初期値**を書く。per-agent に分けるのは人間が編集したときであって、開始時点で
+LoopHub が勝手に振り分けはしない。
+
+| フィールド | 初期値 |
+|---|---|
+| `runtime` | `lh workflow start` が解決した runtime（明示 flag → repo override → application 既定）。現在 `workflow_runs.runtime` に pin している値と同じ |
+| `model` | 同じく `lh workflow start` の解決結果。runtime が repo override のそれと一致すれば `effectiveRepoAgentConfigFor(repo).model`、違えば `agentModel(runtime)` |
+| `effort` | **model と対称に解決する** —— runtime が repo override のそれと一致すれば `effectiveRepoAgentConfigFor(repo).effort`、違えば `agentEffort(runtime)` |
+| `contract_language` | `workflowContractLanguage()`（現在 `workflow_runs.contract_language` に pin している値） |
+| `prompts.<step>` | `workflows` 行の `execute_prompt` / `verify_prompt` を sidecar へ書き出したファイル名 |
+
+effort だけは既存の解決経路が無いため、ここで新設する規則である。`lh workflow start` には `--model` に
+相当する `--effort` flag が無く（`cli/commands/workflow.ts` の usage 参照）、`workflow_runs` にも effort 列が
+無い。model 側が既に「repo override が効くなら効かせ、駄目なら application 既定」という形なので、effort も
+同じ規則に揃える。これで **Settings で設定した effort がそのまま workflow の初期値になる**（G6）。
+
+`lh workflow start --effort` を足すことは必須としない。初期値が Settings 由来で決まり、run ごとの調整は
+manifest 編集でできる以上、flag は新しい入口を 1 つ増やすだけになる。必要が確認できてから足せばよい。
 
 ### 5.4 読み込み（子の launch）
 
@@ -396,7 +429,7 @@ event / git / DB に書く。
 |---|---|
 | `core/workflow/manifest.ts`（新規） | manifest の型・serialize・parse・validation。node 非依存の pure leaf にし、DB も filesystem も無しで単体テストする（`core/worktree-prune.ts` と同じ姿勢） |
 | `core/workflow/run-files.ts` | manifest と step prompt sidecar の read / write を追加。path は従来どおり run id からのみ導出 |
-| `core/service/workflow-runs.ts` | `start()` が manifest と sidecar を書く。`launchStep()` が `runRuntime` / `runModel` / `runContractLanguage` / `workflowStepPrompt` の代わりに manifest を読む。legacy 分岐を 1 か所に閉じる |
+| `core/service/workflow-runs.ts` | `start()` が manifest と sidecar を書く。`launchStep()` が `runRuntime` / `runModel` / `runContractLanguage` / `workflowStepPrompt` の代わりに manifest を読む。**`confirmStepLaunch()` と `stepInput()` も同じ解決へ寄せる**（下記）。legacy 分岐を 1 か所に閉じる |
 | `core/store/workflows.ts` | `WorkflowRunRow` に `manifest_version: number \| null`、`createWorkflowRun` の INSERT に 1 列 |
 | `core/migrations.ts` | `addColumn("0NN-workflow-runs-manifest-version", "workflow_runs", "manifest_version", "INTEGER")` |
 | `core/terminal/terminal-launch.ts` | `buildWorkflowStepHerdrLaunchPlan` に `effort` を追加し `buildRuntimeFlags` へ渡す（G6） |
@@ -406,6 +439,17 @@ event / git / DB に書く。
 | `docs/workflow.ja.md` | §4（workflow 定義）と §10（実装境界）に manifest を追記し、本書へリンク |
 
 `core` / `cli` の責務分割は既存規約どおり: 解析・検証・解決は core、CLI は flag 解析と表示だけを持つ。
+
+**`launchStep()` 以外に同じ値を解決している経路が 2 つある。** どちらも一緒に寄せないと、本設計が
+掲げた性質がその経路だけ破れる。
+
+| 経路 | 現在 | 寄せないと起きること |
+|---|---|---|
+| `confirmStepLaunch()` | `S.registerAgentSession(..., runRuntime(run), ..., input.model?.trim() \|\| runModel(run), ...)` で子 session の runtime / model を記録する | 実際の argv は manifest の `agents.<kind>.model`、session 行は DB fallback の値になり、**§9 が「launch 経路は manifest しか読まない」で防ぐと宣言した drift がそのまま usage / cost の帰属に出る** |
+| `stepInput()` | `workflowStepPrompt(workflow, step)` で `workflows` 行を live 読みして prompt を合成する（`lh workflow step input` の dry-run） | G4 がこの経路だけ破れ、dry-run が表示する prompt と実際の launch prompt がずれる。**設計を確認するための道具が実態と食い違う**という最悪の壊れ方をする |
+
+いずれも「manifest から解決した launch configuration」を 1 つ作って 3 経路が共有する形にすれば済む。
+`launchStep()` だけを書き換えて済ませないこと。
 
 ### 6.2 データ
 
@@ -461,8 +505,8 @@ lh workflow manifest path <run> [--repo <owner/name>]
 - **step は Execute / Verify の 2 つのまま。** manifest は step を追加も改名もできない。`agents` の key は
   `parent` / `execute` / `verify` の 3 つに固定する。
 - **pointer 入力は変わらない。** Execute は (repo, issue, pr[, review])、Verify は
-  (issue, base SHA, head SHA, 提出先 PR)。pointer は manifest の管理外であり（§4.2）、その集合にも解決経路
-  にも manifest は関与しない。
+  (repo, issue, base SHA, head SHA, 提出先 PR)。pointer は manifest の管理外であり（§4.2）、その集合にも
+  解決経路にも manifest は関与しない。
 - **遷移判断は変わらない。** 遷移は従来どおり turn done event の観測と `lh workflow step status` の
   HEAD / review 観測だけで決まる。manifest は遷移に一切関与しない。
 - **注入経路は変わらない。** rework は `lh workflow deliver` の `orchestrator: address review <id>` のまま。
@@ -520,8 +564,10 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 1. `core/workflow/manifest.ts` —— 型・serialize・parse・validation と単体テスト（DB / filesystem 不要）。
 2. `workflow_runs.manifest_version` の migration と `WorkflowRunRow` / `createWorkflowRun` の追従。
 3. `workflowRuns.start()` が manifest と step prompt sidecar を書く（transaction の外）。
-4. `workflowRuns.launchStep()` と parent launch が manifest を読む。legacy（`manifest_version IS NULL`）
-   分岐を 1 か所に閉じる。
+4. `workflowRuns.launchStep()`・`confirmStepLaunch()`・`stepInput()` と parent launch が、manifest から
+   解決した**同じ** launch configuration を共有する。legacy（`manifest_version IS NULL`）分岐を 1 か所に
+   閉じる。3 経路のうち 1 つでも DB fallback を読み残すと §6.1 の drift が出るため、これは分割せず
+   1 つの issue で行う。
 5. effort を launch argv に通す（`buildWorkflowStepHerdrLaunchPlan` / `parentAgentFlags`）。
 6. `lh workflow manifest show|path`。
 7. `WorkflowRunManifestWire` と Web の表示（任意）。
@@ -551,6 +597,12 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
   起動対象の issue / PR / worktree が変わらない。
 - `manifest_version` が NULL の legacy run が、manifest 無しで従来どおり launch できる。
 - 3 agent の runtime が異なる manifest は v1 では validation error になる。
-- Verify の pointer 集合（issue / base SHA / head SHA / 提出先 PR）が manifest 導入前後で同一である。
+- `agents.<kind>.model` を編集して子を起動すると、**argv と `agent_sessions` に記録される model が一致する**
+  （`confirmStepLaunch()` が DB fallback を読み残していないことの確認。§6.1）。
+- `lh workflow step input` が表示する step prompt が、同じ run の実際の launch prompt と一致する
+  （`stepInput()` が sidecar を読んでいることの確認）。global な workflow 定義を編集しても両方とも変わらない。
+- Settings で effort を設定してから run を開始すると、その値が manifest の 3 agent すべての初期値になり、
+  claude-code / codex では launch argv に現れる。grok / cursor / opencode では argv に現れない。
+- Verify の pointer 集合（repo / issue / base SHA / head SHA / 提出先 PR）が manifest 導入前後で同一である。
 - 遷移（turn done → HEAD 前進 → fresh Verify、request_changes → rework）が manifest 導入前と同じ観測条件で
   進む。manifest の内容が遷移判断に入り込まない。
