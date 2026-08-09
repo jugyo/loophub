@@ -32,8 +32,9 @@ setWebRuntimeConfig({
 });
 configureSlowOperationLogging(args.debug ? log.info : undefined);
 
-// The build below takes a few seconds. Until it lands, refuse to serve rather than hand out
-// whatever an earlier run left in web/dist — stale code is harder to notice than a plain error.
+// The build below takes a few seconds (or is skipped when dist/.build-hash already matches the
+// source, build.ts). Until it lands, refuse to serve rather than hand out whatever an earlier run
+// left in web/dist — stale code is harder to notice than a plain error.
 let built = false;
 const server = createLhWebServer(
   (req, res, url) => {
@@ -62,9 +63,13 @@ server.listen(port, host, () => {
 });
 
 try {
-  await buildSpa();
+  const builtFresh = await buildSpa();
   built = true;
-  log.info("lh-web: SPA build ready");
+  log.info(
+    builtFresh
+      ? "lh-web: SPA build ready"
+      : "lh-web: SPA build skipped (dist up to date)",
+  );
 } catch (err) {
   log.error(
     "lh-web: failed to build the SPA. Are web deps installed (npm --prefix web install)?",
