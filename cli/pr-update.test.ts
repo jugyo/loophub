@@ -89,6 +89,7 @@ function review(n: number, event = "pass") {
   const result = lh([
     "pr",
     "review",
+    "submit",
     String(n),
     "--repo",
     REPO,

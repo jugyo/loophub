@@ -439,7 +439,7 @@ test("a failed worker sweep event leaves the observed head SHA unrecorded", asyn
 test("a failed generated notification leaves its source cursor unadvanced", async () => {
   // Settle whatever the merge-ready sweep would generate on its own first, so the only
   // notification.created insert under injection below is the one the signal backfill makes.
-  await svc.notifications.unreadCount();
+  await svc.notifications.sweep();
   const cursorBefore = S.notificationSourceCursors().events;
 
   const signal = svc.events.emit(repoId, "dev.cost_stopped", "lh-worker", {
@@ -450,9 +450,7 @@ test("a failed generated notification leaves its source cursor unadvanced", asyn
     S.listNotifications({}).some((row) => row.source_key === sourceKey);
 
   await expect(
-    whileFailingAsync("notification.created", () =>
-      svc.notifications.unreadCount(),
-    ),
+    whileFailingAsync("notification.created", () => svc.notifications.sweep()),
   ).rejects.toThrowError(/injected event failure/);
 
   // The cursor says "every signal up to here has been turned into a notification". Advancing it
@@ -460,8 +458,8 @@ test("a failed generated notification leaves its source cursor unadvanced", asyn
   expect(S.notificationSourceCursors().events).toBe(cursorBefore);
   expect(hasSignalNotification()).toBe(false);
 
-  // The retained cursor is what lets the next refresh still reach the signal.
-  await svc.notifications.unreadCount();
+  // The retained cursor is what lets the next sweep still reach the signal.
+  await svc.notifications.sweep();
   expect(hasSignalNotification()).toBe(true);
 });
 

@@ -73,6 +73,7 @@ test("list generates merge-ready and over-budget notifications", async () => {
   });
   S.createReview(attention.id, "reviewer", "REQUEST_CHANGES", "fix this");
 
+  await svc.notifications.sweep();
   const beforeGrace = await svc.notifications.list({ limit: 20 });
   expect(beforeGrace).toEqual(
     expect.not.arrayContaining([
@@ -84,6 +85,7 @@ test("list generates merge-ready and over-budget notifications", async () => {
   );
 
   ageMergeReadyState(repo.id, done.number);
+  await svc.notifications.sweep();
   const notifications = await svc.notifications.list({ limit: 20 });
   expect(notifications).toEqual(
     expect.arrayContaining([
@@ -113,7 +115,8 @@ test("list generates merge-ready and over-budget notifications", async () => {
   );
   expect((await svc.notifications.unreadCount()).count).toBe(2);
 
-  await svc.notifications.list({ limit: 20 });
+  // A second sweep over unchanged state does not duplicate the notifications.
+  await svc.notifications.sweep();
   expect((await svc.notifications.unreadCount()).count).toBe(2);
 });
 
@@ -166,7 +169,7 @@ test("list creates warning notifications for Workflow cost and rework limit even
       "Fresh review 42 requests changes, but the rework limit of 8 has been reached.",
   });
 
-  await svc.notifications.list({ limit: 100 });
+  await svc.notifications.sweep();
   const notifications = (await svc.notifications.list({ limit: 100 })).filter(
     (notification: any) => notification.repo.name === "me/workflow-limits",
   );
@@ -235,6 +238,7 @@ test("list does not create Workflow limit warnings below the limits", async () =
   });
   S.updateWorkflowRun(run.id, { reworkCount: 7 });
 
+  await svc.notifications.sweep();
   const notifications = await svc.notifications.list({ limit: 100 });
 
   expect(
@@ -253,6 +257,7 @@ test("ready-for-review alone does not generate a notification", async () => {
     number: pr.number,
   });
 
+  await svc.notifications.sweep();
   const notifications = await svc.notifications.list({ limit: 100 });
 
   expect(
@@ -448,6 +453,7 @@ test("backfill defers reversible hidden states but ignores merged PR signals", a
   S.setRepoArchived(repo.id, true);
   S.setMerged(merged.id, "merged-sha", "merge");
 
+  await svc.notifications.sweep();
   let notifications = await svc.notifications.list({ limit: 100 });
 
   expect(
@@ -470,6 +476,7 @@ test("backfill defers reversible hidden states but ignores merged PR signals", a
   S.setRepoArchived(repo.id, false);
   S.updateIssue(closed.id, { state: "open" });
 
+  await svc.notifications.sweep();
   notifications = await svc.notifications.list({ limit: 100 });
   expect(
     notifications.some(
@@ -504,6 +511,7 @@ test("request-changes reviews do not generate human-attention notifications", as
   S.createReview(resolved.id, "reviewer", "REQUEST_CHANGES", "fix this");
   S.createReview(resolved.id, "reviewer", "PASS", "fixed");
 
+  await svc.notifications.sweep();
   let notifications = await svc.notifications.list({ limit: 100 });
   expect(
     notifications.some(
@@ -517,6 +525,7 @@ test("request-changes reviews do not generate human-attention notifications", as
   const changed = S.createIssue(repo.id, "pull", "Changed PR", "", "me");
   S.createPull(changed.id, "changed", "main", "sha-changed", null);
   S.createReview(changed.id, "reviewer", "REQUEST_CHANGES", "first");
+  await svc.notifications.sweep();
   notifications = await svc.notifications.list({ limit: 100 });
   expect(notifications).not.toContainEqual(
     expect.objectContaining({
@@ -526,9 +535,10 @@ test("request-changes reviews do not generate human-attention notifications", as
   );
 
   S.createReview(changed.id, "reviewer", "PASS", "fixed");
-  await svc.notifications.unreadCount();
+  await svc.notifications.sweep();
   S.createReview(changed.id, "reviewer", "REQUEST_CHANGES", "again");
 
+  await svc.notifications.sweep();
   notifications = await svc.notifications.list({ limit: 100 });
   expect(notifications).not.toContainEqual(
     expect.objectContaining({
@@ -552,6 +562,7 @@ test("backfill creates a notification for each repeated cost stop event", async 
     session_id: "session-cost-2",
   });
 
+  await svc.notifications.sweep();
   const notifications = await svc.notifications.list({ limit: 100 });
 
   expect(

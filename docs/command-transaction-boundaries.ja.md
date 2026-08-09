@@ -225,8 +225,8 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `sessions.link` | procedure | session link、`agent_session.linked` | — |
 | `sessions.usageSync` | executor（cohort ごと） | usage rows、subagent usage、message dedupe、cursor、external session と `agent_session.updated` | transcript の走査と読み出し、相関、cost 計算 |
 | `notifications.send` | procedure | notification、`notification.created` | — |
-| `notifications.read` / `readAll` | procedure | read state、`notification.updated` | 先行する generated notification の refresh |
-| notification の signal backfill | procedure | generated notification、`notification.created`、source cursor | — |
+| `notifications.read` / `readAll` | procedure | read state、`notification.updated` | — |
+| `notifications.sweep`（signal backfill 部分） | procedure | generated notification、`notification.created`、source cursor | — |
 | `scheduledTasks.create` / `update` / `delete` | procedure | task row、対応する `scheduled_task.*` | — |
 | `scheduledTasks.run` / `sweep` | 二段 protocol | run claim、finish result | herdr launch |
 | `terminal.launch` | procedure | pane row と claim、`pull_request.github_pr_export_started`（launch 成功後） | herdr spawn、workspace / tab / pane 操作 |
