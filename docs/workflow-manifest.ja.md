@@ -481,7 +481,7 @@ event / git / DB に書く。
 | `core/store/workflows.ts` | `WorkflowRunRow` に `manifest_version: number \| null`、`createWorkflowRun` の INSERT に 1 列 |
 | `core/migrations.ts` | `addColumn("0NN-workflow-runs-manifest-version", "workflow_runs", "manifest_version", "INTEGER")` |
 | `core/terminal/terminal-launch.ts` | `buildWorkflowStepHerdrLaunchPlan` に `effort` を追加し `buildRuntimeFlags` へ渡す（G6） |
-| `core/serialize.ts` | `WorkflowRunManifestWire`（Web が表示するための wire 形）。`web/src/api/types.ts` は type-only import で導出する |
+| `core/serialize.ts` | `WorkflowRunManifestWire`（Web が表示するための wire 形 = core と web の境界を越える JSON の型）。`web/src/api/types.ts` は type-only import で導出する |
 | `cli/commands/workflow.ts` | `lh workflow manifest show|path`。parent launch の flag 組み立てに `effort` を追加 |
 | `web/src/components/workflow-run-status.tsx`（任意 / 後続） | 現在の動作条件の表示。編集 UI は非目標 |
 | `docs/workflow.ja.md` | §4（workflow 定義）と §10（実装境界）に manifest を追記し、本書へリンク |
@@ -637,7 +637,7 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 | I4 | launch 3 経路が manifest を読む | `core/service/workflow-runs.ts` | I3 |
 | I5 | effort を argv に通す | `core/terminal/terminal-launch.ts` / `cli/commands/workflow.ts` | I4 |
 | I6 | `lh workflow manifest show\|path` | `cli/commands/workflow.ts` | I4 |
-| I7 | wire type と Web 表示 | `core/serialize.ts` / `web/` | I4 |
+| I7 | run の動作条件を Web に表示（任意） | `core/serialize.ts` / `web/` | I4 |
 | I8 | 既存ドキュメントの更新 | `docs/` | I4 |
 
 I1 と I2 は並行できる。I5–I8 も互いに独立。
@@ -787,15 +787,35 @@ DB fallback を読み残すと §9 が「防ぐ」と宣言した drift がそ�
 
 ---
 
-### I7. wire type と Web 表示（任意）
+### I7. run の動作条件を Web に表示する（任意）
 
-**scope.** `core/serialize.ts` に `WorkflowRunManifestWire` を置き、`web/src/api/types.ts` は
-type-only import で導出する（wire 形を web で手書きしない規約）。RPC method を足す場合は
+**何を作るか.** manifest の内容 —— agent ごとの runtime / model / effort と、step prompt がどこから
+来ているか —— を Web の run 表示に**読み取り専用で**出す。現在これを知るには
+`lh workflow manifest show` を打つしかなく、Web で run を監督している人間からは見えない。
+
+**なぜ任意か.** 人間が最も見たい model は、**既に別経路で Web に届いている**からである。
+
+```text
+linked-pull-summary.tsx の "Model" 行
+  → pull.agent_model → pullAgentSummary() → agent session 行 → registerAgentSession()
+```
+
+`registerAgentSession()` を呼ぶのは `confirmStepLaunch()`、すなわち I4 で manifest 由来に寄せる 3 経路の
+1 つである。つまり **I4 さえ正しく行えば Web の Model 表示は自動的に正しくなる。** I7 が追加で与えるのは
+effort・agent ごとの内訳・prompt の出所だけで、無くても Web が嘘を表示することはない。
+
+逆に言えば、**I4 で `confirmStepLaunch()` を寄せ忘れると、Web は実際の argv と異なる model を表示し
+続ける。** §9 の drift が、ログではなく監督者の画面に出る。I7 の有無に関わらず I4 は落とせない。
+
+**scope.** `core/serialize.ts` に `WorkflowRunManifestWire`（core と web の境界を越える JSON の形）を
+置き、`web/src/api/types.ts` は type-only import で導出する —— wire 形を web で手書きしない規約であり、
+serializer を変えたときに web のビルドが壊れることで、黙った食い違いを防ぐ。RPC method を足す場合は
 `web/server/contract.ts` を変更したうえで `npm run contract` を実行し、`docs/rpc-contract.json` を
-一緒に commit する。
+一緒に commit する（tracked な生成物のため）。
 
-表示のみ。**編集 UI は非目標**（N-list / §10-4）。走行中の run に対する「次の launch から効く」という
-意味論を UI でどう出すかが未解決なので、そこを決めずに編集を出さない。
+**表示のみ。編集 UI は非目標**（N-list / §10-4）。走行中の run に対する「次の launch から効く」という
+意味論を UI でどう表現するかが未解決であり、とくに Execute については §5.5 のとおり走行中に差し替える
+手段が無い。この 2 つを決めずに編集を出すと、押せるのに効かない UI になる。
 
 ---
 
