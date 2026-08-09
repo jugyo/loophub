@@ -437,6 +437,9 @@ active を clear した直後に親が Verify ではなく Execute を起こす�
 `manifest show` の出力と本書に明記する。既存 run の Execute を差し替える経路を持つべきかどうかは
 §10-7 の未解決論点として残す。
 
+**編集しても、既に起動した子の記録は変わらない。** manifest は「次に何で動くか」であって「何で動いたか」
+ではない。後者は起動時に子の session 行へ記録され、manifest の編集では動かない（§6.1）。
+
 書き込み用の CLI subcommand（`manifest set` 等）は v1 では作らない。人間が editor で JSON と markdown を
 直接編集するのが最も単純で、追加の API 面を持たずに済む。必要が確認できてから足す。
 
@@ -500,9 +503,38 @@ event / git / DB に書く。
 いずれも「manifest から解決した launch configuration」を 1 つ作って 3 経路が共有する形にすれば済む。
 `launchStep()` だけを書き換えて済ませないこと。
 
-#### Web の "Model" 行は parent の model を出している
+#### manifest は真実だが、書き換えられる —— だから起動時に記録する
 
-PR ページの "Model" 行は、こう辿って値を得ている。
+manifest は「**次に起動する子が何で動くか**」の真実である。しかし §5.5 のとおり人間が途中で書き換える。
+したがって manifest を後から読んでも、**既に動いた子が何で起動されたかは分からない。**
+
+```text
+10:00  manifest: execute = opus            → Execute child A を起動（opus で動く）
+10:30  人間が manifest を編集: execute = claude-opus-5
+11:00  manifest を読む → "claude-opus-5"   ← child A が opus で動いた事実は失われている
+```
+
+そこで **2 種類の記録**を持つ。どちらか一方では足りない。
+
+| | manifest（設定値） | 起動時パラメータ（実績値） |
+|---|---|---|
+| 答える問い | 次に起動する子は何で動くか | **この子は何で起動されたか** |
+| 可変性 | 人間が編集できる | 起動時に書いたら変えない |
+| 粒度 | agent 種別ごと | child（session）ごと |
+| 置き場所 | `runs/workflow/<runId>/manifest.json` | `agent_sessions` 行 |
+
+**起動時パラメータは既に半分ある。** `confirmStepLaunch()` は `registerAgentSession()` で子 session の
+`runtime` と `model` を記録している。足りないのは **effort** で、本設計が effort を launch に通す（G6）
+以上、記録側にも列が要る。`workflow_step.launched` event の payload は run / step / session_id /
+head_sha だけで起動パラメータを持たないが、child = session が 1 対 1 なので session 行に置けば足り、
+2 か所に同じ事実を書く必要はない。
+
+なお runtime が報告する実使用 model（`session_usage` 行）は第 3 の値であり、要求した model と必ずしも
+一致しない（`opus` のような alias が解決されるため）。cost 帰属はこちらを使う。本設計はこれを変えない。
+
+#### 表示: Web の "Model" 行は parent の model を出している
+
+現在の PR ページの "Model" 行は、こう辿って値を得ている。
 
 ```text
 "Model" 行 → pull.agent_model → pullAgentSummary() → primaryDevSessionForPull()
@@ -523,22 +555,19 @@ workflow が `dev` で登録するのは **parent（orchestrator）だけ**で�
 ラベルは単に "Model" なので、読者はこれを「この PR が何で作られたか」と読む。実際に実装したのは
 `claude-opus-5` である。**G3 は、正しかった表示を誤りに変える。**
 
-したがって I7 は「あれば便利な表示」ではなく、G3 が持ち込んだ誤りの手当てを含む。行を
-「orchestrator の model」と正確に名乗らせるか、agent ごとの表示に置き換えるかは実装時に選ぶ。
+**表示の方針**（#268 / #269 の決定）:
 
-これは一般化すると、manifest を入れた後の UI は**別の 2 つの問い**に答えることになる、という話である。
-
-| | 設定値 | 実績値 |
-|---|---|---|
-| 問い | 次に起動する子は何で動くか | 実際に何が動き、いくら掛かったか |
-| 出所 | manifest（agent ごと） | `agent_sessions` / `session_usage` 行（session ごと） |
-
-G2（走行中の変更）を入れると、この 2 つは**正当に食い違う**。model を変えた直後、実績値は古い model を、
-設定値は新しい model を指す。どちらも正しい。だから片方を他方の代わりに表示してはいけない。
+- run の**設定**を見せる場所は manifest を読む。「この run は次に何で動くか」の真実は manifest である。
+- 「**この PR は何で作られたか**」を見せる "Model" 行は、parent ではなく **実装した子の起動時パラメータ**
+  を出す。manifest を読んではいけない —— 編集後は当時の値と違うからである。
+- manifest を持たない PR（legacy run、workflow 以外の dev session）は従来の session 由来の表示のまま。
 
 ### 6.2 データ
 
-- schema 変更は `workflow_runs.manifest_version` の 1 列のみ。既存行は NULL のまま legacy 経路で動く。
+- schema 変更は 2 列。`workflow_runs.manifest_version`（既存行は NULL のまま legacy 経路で動く）と、
+  **`agent_sessions.effort`** —— 子の起動時パラメータを完全にするための列である（§6.1）。`runtime` /
+  `model` は既にこの行にあり、effort だけが欠けている。既存行は NULL で、当時 effort が渡っていなかった
+  という事実をそのまま表す。
 - `workflow_runs.runtime` / `model` / `contract_language` 列は当面**残す**が、launch では読まなくなる。
   これらを読んでいるのは `runRuntime()` / `runModel()` / `runContractLanguage()` の 3 関数だけで、その
   呼び出し元は I4 が manifest へ寄せる 3 経路に限られる。`WorkflowRunStateWire` はこれらを公開しておらず、
@@ -679,9 +708,9 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 | I2 | `manifest_version` 列 | `core/migrations.ts` / `core/store/workflows.ts` | — |
 | I3 | `start()` が manifest を書く | `core/service/workflow-runs.ts` / `core/workflow/run-files.ts` | I1, I2 |
 | I4 | launch 3 経路が manifest を読む | `core/service/workflow-runs.ts` | I3 |
-| I5 | effort を argv に通す | `core/terminal/terminal-launch.ts` / `cli/commands/workflow.ts` | I4 |
+| I5 | effort を argv に通し、起動時パラメータを記録 | `core/terminal/terminal-launch.ts` / `cli/commands/workflow.ts` / `core/migrations.ts` | I4 |
 | I6 | `lh workflow manifest show\|path` | `cli/commands/workflow.ts` | I4 |
-| I7 | Web の表示を設定値に合わせる | `core/serialize.ts` / `web/src/components/linked-pull-summary.tsx` | I4 |
+| I7 | Web の表示を正しい出所に繋ぐ | `core/serialize-status.ts` / `web/src/components/linked-pull-summary.tsx` | I4, I5 |
 | I8 | 既存ドキュメントの更新 | `docs/` | I4 |
 
 I1 と I2 は並行できる。I5–I8 も互いに独立。
@@ -796,7 +825,7 @@ DB fallback を読み残すと §9 が「防ぐ」と宣言した drift がそ�
 
 ---
 
-### I5. effort を launch argv に通す
+### I5. effort を launch argv に通し、起動時パラメータを記録する
 
 **scope.** §1.2-2 の穴を塞ぐ。`buildRuntimeFlags()` は既に `--effort` /
 `-c model_reasoning_effort=` を組み立てられるので、渡していない 2 か所を直すだけ。
@@ -805,10 +834,21 @@ DB fallback を読み残すと §9 が「防ぐ」と宣言した drift がそ�
 - `parentAgentFlags()`（`cli/commands/workflow.ts`）に同じく `effort` を通す。
 - 値は I4 の `LaunchConfig` から取る。
 
-**AC.** claude-code / codex では launch した子の argv に effort が現れ、grok / cursor / opencode では
-現れない（`buildRuntimeFlags()` が無視する）。Settings で設定した effort が workflow に効く（G6）。
+**あわせて起動時パラメータを記録する**（§6.1）。effort を launch に通すなら、記録側にも置かないと
+「この子が何で起動されたか」が manifest の編集で失われる。
 
-**test.** 既存の launch plan テストに effort のケースを足す。
+- `agent_sessions.effort` 列を足す（migration 1 本）。
+- `confirmStepLaunch()` の `registerAgentSession()` に effort を渡す。runtime / model は既に渡している。
+
+**AC.**
+
+- claude-code / codex では launch した子の argv に effort が現れ、grok / cursor / opencode では
+  現れない（`buildRuntimeFlags()` が無視する）。Settings で設定した effort が workflow に効く（G6）。
+- 子を起動したあとに manifest を書き換えても、**その子の session 行の runtime / model / effort は
+  変わらない**。§6.1 の 10:00 / 10:30 / 11:00 の例がそのまま検証手順になる。
+
+**test.** 既存の launch plan テストに effort のケースを足す。manifest 編集後に既存 session 行が
+変わらないことを明示的に押さえる。
 
 ---
 
@@ -831,33 +871,33 @@ DB fallback を読み残すと §9 が「防ぐ」と宣言した drift がそ�
 
 ---
 
-### I7. Web の表示を設定値に合わせる
+### I7. Web の表示を正しい出所に繋ぐ
 
-**何を作るか.** 2 つある。
+**何を作るか.** §6.1 の表示方針（#268 / #269 の決定）を実装する。2 つある。
 
-1. **既存の "Model" 行を正す。** §6.1「Web の "Model" 行は parent の model を出している」のとおり、
-   `linked-pull-summary.tsx` の "Model" 行は `primaryDevSessionForPull()`（`kind = 'dev'`）を辿るため
-   **parent の model** を示している。G3 で agent ごとに model / effort を分けられるようにした時点で、
-   この行は「この PR が何で作られたか」を尋ねる読者に誤った答えを返す。行を
-   「orchestrator の model」と正確に名乗らせるか、agent ごとの表示に置き換える。
-2. **manifest の内容を読み取り専用で出す。** agent ごとの runtime / model / effort と step prompt の
-   出所を Web の run 表示に出す。現在これを知るには `lh workflow manifest show` を打つしかなく、Web で
-   run を監督している人間からは見えない。G1（動作条件を 1 か所で読める）は、CLI を開かない監督者には
-   届いていない。
+1. **"Model" 行を実装した子の起動時パラメータに繋ぐ。** 現在は `primaryDevSessionForPull()`
+   （`kind = 'dev'`）で parent の model を出している。「この PR は何で作られたか」に答えるなら、
+   出すべきは Execute 子の session 行（runtime / model / effort）である。**ここで manifest を読んでは
+   いけない** —— 編集後は当時の値と違うからである。
+2. **run の設定を manifest から表示する。** agent ごとの runtime / model / effort と step prompt の
+   出所を run 表示に出す。「この run は次に何で動くか」の真実は manifest である。現在これを知るには
+   `lh workflow manifest show` を打つしかなく、Web で監督している人間からは見えない（G1）。
 
-**「任意」の意味.** I1–I4 が無いと成立しないので後に置くだけで、**内容として省略可能という意味ではない。**
-1 は G3 が持ち込む誤りの手当てであり、G3 を入れて 1 を入れなければ、Web は嘘を表示する。順序の問題として
-後回しにできる、というだけである。
+1 と 2 は**別の問いに答える別の表示**であり、片方でもう片方を代用しない（§6.1）。
 
-なお **I4 は I7 の有無に関わらず落とせない。** `confirmStepLaunch()` を寄せ忘れると、子 session に
-記録される model が argv と食い違い、usage / cost の帰属が壊れる（§6.1）。これは表示の問題ではなく
-記録の問題なので、I7 では直らない。
+**依存が I4 である理由.** I4 より前に 2 を出すと、表示は manifest・実際の launch は DB という逆向きの
+嘘になる。
 
-**scope.** `core/serialize.ts` に `WorkflowRunManifestWire`（core と web の境界を越える JSON の形）を
-置き、`web/src/api/types.ts` は type-only import で導出する —— wire 形を web で手書きしない規約であり、
-serializer を変えたときに web のビルドが壊れることで、黙った食い違いを防ぐ。RPC method を足す場合は
-`web/server/contract.ts` を変更したうえで `npm run contract` を実行し、`docs/rpc-contract.json` を
+**scope.** wire の**型**は `core/serialize.ts` に置く（wire 形の SSOT）。ただし **manifest の読み取りは
+`core/serialize.ts` に書けない** —— あの module は同期で `node:fs` / `core/git.ts` を持たない規約であり、
+manifest はファイルだからである。読み取りは `core/serialize-status.ts` に置く。ここは live な worktree
+状態を読む serializer の置き場所で、既に `latestWorkflowRunForPull()` を呼んでいるため run 行が手元にある。
+`web/src/api/types.ts` は型を type-only import で導出する（web で wire 形を手書きしない規約）。RPC method を
+足す場合は `web/server/contract.ts` を変更したうえで `npm run contract` を実行し、`docs/rpc-contract.json` を
 一緒に commit する（tracked な生成物のため）。
+
+**fallback.** manifest を持たない PR（legacy run、workflow 以外の dev session）は従来の session 由来の
+表示のままにする。
 
 **表示のみ。編集 UI は非目標**（N-list / §10-4）。走行中の run に対する「次の launch から効く」という
 意味論を UI でどう表現するかが未解決であり、とくに Execute については §5.5 のとおり走行中に差し替える
@@ -896,6 +936,12 @@ serializer を変えたときに web のビルドが壊れることで、黙っ�
   argv は変わらない。
 - `agents.execute.effort` を編集しても、`lh workflow deliver` で継続する既存 Execute session には効かず、
   次の fresh Execute launch から効く。
+- 子を起動したあとに manifest を書き換えても、その子の session 行の runtime / model / effort が変わらない
+  （§6.1 の「10:00 起動 → 10:30 編集 → 11:00 参照」がそのまま手順になる）。
+- Web の "Model" 行が、parent ではなく実装した子の起動時パラメータを示す。manifest を編集しても、
+  既に作られた PR に対するこの行は変わらない。
+- run の設定表示（manifest 由来）と "Model" 行（起動時パラメータ由来）が、manifest 編集後に**別の値を
+  示す**。これは不整合ではなく、別の問いに対する別の正しい答えである。
 - 走行中の run で `agents.execute.*` を編集した人間が、その run の Execute を差し替える手段を持たないこと
   を確認する（§5.5）。具体的には、human session からの `lh workflow launch-step --step execute` が
   403 で、`active_step: execute` を持つ run に対する parent からの同 command が 409 で、いずれも
