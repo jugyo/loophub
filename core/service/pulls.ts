@@ -21,6 +21,7 @@ import {
   revParse,
 } from "../git.ts";
 import {
+  GITHUB_PR_STATUS_TTL_MS,
   type GithubDeps,
   type GithubPrStatusDeps,
   parseGhPrStatus,
@@ -60,8 +61,6 @@ import {
 
 // #850: how long a cached GitHub PR status is served before hitting `gh` again. On-demand from the
 // PR-detail sidebar, so a short TTL keeps the panel roughly live without spawning a `gh` per render.
-const GITHUB_PR_STATUS_TTL_MS = 60_000;
-
 interface PullCreateDeps {
   revParse: typeof revParse;
 }

@@ -160,6 +160,31 @@ export interface GithubPullSyncRow {
   local_path: string;
 }
 
+// #152: open, active linked GitHub PRs are the pull-detail status targets. Keep the selection in
+// core so the eager worker and any future caller use the same set without reconstructing it from
+// partial pull responses.
+export interface GithubPrStatusSyncRow {
+  issue_id: number;
+  url: string;
+  local_path: string;
+}
+
+export function githubPrStatusSyncRows(): GithubPrStatusSyncRow[] {
+  return db
+    .query(
+      `SELECT gp.issue_id AS issue_id, gp.url AS url, r.local_path AS local_path
+       FROM github_pulls gp
+       JOIN issues i ON i.id = gp.issue_id
+       JOIN pulls p ON p.issue_id = gp.issue_id
+       JOIN repos r ON r.id = i.repo_id
+       WHERE gp.status = 'linked'
+         AND i.kind = 'pull' AND i.state = 'open'
+         AND p.merged = 0 AND p.archived_at IS NULL AND r.archived = 0
+       ORDER BY i.repo_id, i.number`,
+    )
+    .all() as GithubPrStatusSyncRow[];
+}
+
 export interface WorkflowGithubPullSyncRow extends GithubPullSyncRow {
   workflow_run_id: number;
   parent_session_id: string;

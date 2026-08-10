@@ -3,6 +3,10 @@ import {
   syncGithubFeedback,
 } from "../core/github-feedback-sync.ts";
 import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
+import {
+  type GithubPrStatusSyncResult,
+  syncGithubPrStatus,
+} from "../core/github-status-sync.ts";
 import { sweepPullConflicts } from "../core/pull-conflict-events.ts";
 import type { SessionUsageSyncResult } from "../core/service/sessions.ts";
 import type { WorktreeAutoPruneResult } from "../core/service/worktrees.ts";
@@ -303,6 +307,8 @@ export function startConflictSweep(
 // it to a much coarser interval (DEFAULT_GITHUB_MERGE_SWEEP_MS).
 export function startGithubMergeSweep(
   intervalMs = DEFAULT_GITHUB_MERGE_SWEEP_MS,
+  mergeSweep: typeof syncGithubMergeStatus = syncGithubMergeStatus,
+  statusSweep: () => Promise<GithubPrStatusSyncResult> = syncGithubPrStatus,
 ): () => void {
   let stopped = false;
   let running = false;
@@ -312,9 +318,23 @@ export function startGithubMergeSweep(
     running = true;
     const startedAt = logLoopStarted("github merge sweep");
     try {
-      const emitted = await syncGithubMergeStatus();
+      const emitted = await mergeSweep();
+      let status: GithubPrStatusSyncResult;
+      try {
+        status = await statusSweep();
+      } catch (err) {
+        // Status refresh is an eager cache optimization; it must not turn a successful merge sweep
+        // into a failed tick or prevent the next tick from trying again.
+        workerLog.error(
+          `lh-worker: github PR status sweep failed error=${errorMessage(err)}`,
+        );
+        status = { checked: 0, refreshed: 0, failures: 1 };
+      }
       logLoopCompleted("github merge sweep", startedAt, {
         emitted_events: emitted.length,
+        status_checked: status.checked,
+        status_refreshed: status.refreshed,
+        status_failures: status.failures,
       });
     } catch (err) {
       logLoopFailed("github merge sweep", startedAt, err);

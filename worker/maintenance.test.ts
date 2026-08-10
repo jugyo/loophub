@@ -234,6 +234,23 @@ test("GitHub feedback sweep runs at its configured interval and logs per-PR fail
   }
 });
 
+test("GitHub merge sweep also refreshes PR status and isolates status failures", async () => {
+  vi.useFakeTimers();
+  const mergeSweep = vi.fn(async () => []);
+  const statusSweep = vi.fn(async () => {
+    throw new Error("gh auth failed");
+  });
+  const stop = M.startGithubMergeSweep(25, mergeSweep, statusSweep);
+  try {
+    await vi.advanceTimersByTimeAsync(25);
+    expect(mergeSweep).toHaveBeenCalledTimes(1);
+    expect(statusSweep).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+    vi.useRealTimers();
+  }
+});
+
 test("pull sweep logs start and completion to stdout", async () => {
   const out = vi.spyOn(console, "log").mockImplementation(() => {});
   const stop = M.startPullSweep(10);
