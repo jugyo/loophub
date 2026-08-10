@@ -10,6 +10,9 @@ import { queryKeys, queryKeysForEvent } from "@/lib/event-keys";
 import { getLastEventId, rememberEventId, setLastEventId } from "@/lib/session";
 
 const VISIBLE_POLL_MS = 1500;
+// A hidden tab keeps polling so its views are already current when it is brought back, but at a
+// slower rate: the freshness it needs is "not stale on return", not "live to the second".
+const HIDDEN_POLL_MS = 10_000;
 const POLL_LIMIT = 100;
 const ROLLBACK_PROBE_MS = 30_000;
 
@@ -97,8 +100,11 @@ export function useLoopHubEvents(): void {
     let rollbackProbeCursor: number | null = null;
     let rollbackProbeAt = 0;
 
-    const schedule = (delay = VISIBLE_POLL_MS) => {
-      if (stopped || document.visibilityState !== "visible") return;
+    const pollDelay = () =>
+      document.visibilityState === "visible" ? VISIBLE_POLL_MS : HIDDEN_POLL_MS;
+
+    const schedule = (delay = pollDelay()) => {
+      if (stopped) return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
@@ -107,7 +113,7 @@ export function useLoopHubEvents(): void {
     };
 
     const poll = async () => {
-      if (stopped || pollInFlight || document.visibilityState !== "visible") {
+      if (stopped || pollInFlight) {
         return;
       }
       pollInFlight = true;
@@ -130,7 +136,7 @@ export function useLoopHubEvents(): void {
           return;
         }
         const events = await listEvents({ since: cursor, limit: POLL_LIMIT });
-        if (stopped || document.visibilityState !== "visible") return;
+        if (stopped) return;
         if (events.length === 0) {
           const now = Date.now();
           if (
@@ -156,17 +162,18 @@ export function useLoopHubEvents(): void {
       }
     };
 
+    // Visibility only switches the polling rate. Becoming visible polls right away instead of
+    // waiting out the slow interval; becoming hidden re-times the pending poll to the slow one.
     const onVisibilityChange = () => {
-      if (document.visibilityState !== "visible") {
-        if (timer) clearTimeout(timer);
-        timer = null;
+      if (document.visibilityState === "visible") {
+        void poll();
         return;
       }
-      void poll();
+      schedule();
     };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
-    if (document.visibilityState === "visible") void poll();
+    void poll();
 
     return () => {
       stopped = true;
