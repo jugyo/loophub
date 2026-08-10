@@ -171,15 +171,18 @@ function LogList({ tab, logs }: { tab: LogTab; logs: DebugLogState }) {
 export function DebugPanel() {
   const { debug } = useWebConfig();
   const [open, setOpen] = useState(false);
-  const logs = useDebugLog(debug);
+  const logs = useDebugLog(debug && open);
 
   if (!debug) return null;
 
+  function handleClose() {
+    clearDebugLog();
+    setOpen(false);
+  }
+
   return (
     <>
-      {open ? (
-        <DebugLogPanel logs={logs} onClose={() => setOpen(false)} />
-      ) : null}
+      {open ? <DebugLogPanel logs={logs} onClose={handleClose} /> : null}
       <Button
         type="button"
         variant="ghost"

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { LoopEvent } from "@/api/types";
 import {
   clearDebugLog,
+  getDebugLogSnapshot,
   recordEvents,
   recordInvalidation,
   recordRpc,
@@ -94,8 +95,8 @@ describe("DebugPanel", () => {
 
   it("lists received events in ascending order (newest at the bottom)", () => {
     renderPanel(true);
-    act(() => recordEvents([event(1), event(2, "pull_request.updated")]));
     openPanel();
+    act(() => recordEvents([event(1), event(2, "pull_request.updated")]));
 
     const items = screen.getAllByRole("listitem");
     expect(items).toHaveLength(2);
@@ -143,8 +144,8 @@ describe("DebugPanel", () => {
 
   it("follows the tail while pinned to the bottom and stops when scrolled up", () => {
     renderPanel(true);
-    act(() => recordEvents([event(1)]));
     openPanel();
+    act(() => recordEvents([event(1)]));
 
     const scroll = screen.getByTestId("debug-log-scroll");
     // happy-dom does no layout, so stub the metrics of an overflowed list.
@@ -189,14 +190,13 @@ describe("DebugPanel", () => {
 
   it("shows invalidated query keys for an event on the invalidation tab", () => {
     renderPanel(true);
+    openPanel();
     act(() =>
       recordInvalidation(event(7, "issue.commented"), [
         ["issues", "me/proj"],
         ["issue", "me/proj", 3],
       ]),
     );
-    openPanel();
-
     openTab(/Invalidation/);
     expect(screen.getByText(/issue\.commented/)).toBeTruthy();
     expect(screen.getByText('["issues","me/proj"]')).toBeTruthy();
@@ -205,6 +205,7 @@ describe("DebugPanel", () => {
 
   it("shows RPC method, params, and duration on the RPC tab", () => {
     renderPanel(true);
+    openPanel();
     act(() =>
       recordRpc({
         method: "events/list",
@@ -213,8 +214,6 @@ describe("DebugPanel", () => {
         ok: true,
       }),
     );
-    openPanel();
-
     openTab(/RPC/);
     expect(screen.getByText("events/list")).toBeTruthy();
     expect(screen.getByText("12.5ms")).toBeTruthy();
@@ -223,6 +222,7 @@ describe("DebugPanel", () => {
 
   it("marks failed RPC calls with their error", () => {
     renderPanel(true);
+    openPanel();
     act(() =>
       recordRpc({
         method: "repos/get",
@@ -232,7 +232,6 @@ describe("DebugPanel", () => {
         error: "Not Found",
       }),
     );
-    openPanel();
     openTab(/RPC/);
     expect(screen.getByText("repos/get")).toBeTruthy();
     expect(screen.getByText("Not Found")).toBeTruthy();
@@ -240,10 +239,10 @@ describe("DebugPanel", () => {
 
   it("clears all logs via the Clear button", () => {
     renderPanel(true);
+    openPanel();
     act(() =>
       recordRpc({ method: "a/b", params: {}, durationMs: 1, ok: true }),
     );
-    openPanel();
     openTab(/RPC/);
     expect(screen.getByText("a/b")).toBeTruthy();
 
@@ -253,11 +252,33 @@ describe("DebugPanel", () => {
     expect(screen.getByText("No RPC calls yet")).toBeTruthy();
   });
 
-  it("keeps the panel recording while it is closed", () => {
+  it("does not record while the panel is closed", () => {
     renderPanel(true);
     act(() => recordEvents([event(1)]));
+    expect(getDebugLogSnapshot().events).toHaveLength(0);
     openPanel();
-    expect(screen.getByText(/issue\.updated/)).toBeTruthy();
+    expect(screen.getByText("No events received yet")).toBeTruthy();
+  });
+
+  it("clears logs and display state when closed, then records only after reopening", () => {
+    renderPanel(true);
+    openPanel();
+    act(() =>
+      recordRpc({ method: "a/b", params: {}, durationMs: 1, ok: true }),
+    );
+    openTab(/RPC/);
+    expect(screen.getByText("a/b")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close debug panel" }));
+    expect(getDebugLogSnapshot().rpcs).toHaveLength(0);
+
+    openPanel();
+    expect(
+      screen.getByRole("tab", { name: /Events/ }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getByText("No events received yet")).toBeTruthy();
+    act(() => recordEvents([event(2, "pull_request.updated")]));
+    expect(screen.getByText(/pull_request\.updated/)).toBeTruthy();
   });
 
   it("stops recording when the panel is unmounted (debug off)", () => {
