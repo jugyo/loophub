@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { traceGitCommands } from "../git-trace-test-helper.ts";
+import type { PullTimelineItemWire } from "../serialize.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-page-data-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -89,6 +90,22 @@ beforeAll(async () => {
     );
   }
 
+  // #145: a review (with a line comment) and a conversation comment, so the timeline test has every
+  // kind to fold together. Created before the revert below, so they predate the newest commit.
+  await svc.comments.createHumanForPull(
+    REPO,
+    prNumber,
+    "First conversation comment",
+  );
+  await svc.reviews.create(REPO, prNumber, {
+    event: "PASS",
+    body: "LGTM",
+    model: "test-model",
+    comments: [
+      { path: "kept.txt", line: 2, side: "RIGHT", body: "Nice change." },
+    ],
+  });
+
   // Undoing one of the two changes drops that file out of the diff, orphaning its thread while
   // the other stays anchored in the current diff.
   git(["checkout", "-q", "feature"]);
@@ -117,6 +134,43 @@ test("pullDetail carries the diff feedback the screen renders itself", async () 
   expect(
     page.diff_feedback.orphaned_threads.map((thread) => thread.anchor.path),
   ).toEqual(["reverted.txt"]);
+});
+
+test("pullDetail assembles the PR timeline from data it already fetched", async () => {
+  const page = await svc.pageData.pullDetail(REPO, prNumber, "me");
+  const ofKind = <TKind extends PullTimelineItemWire["kind"]>(kind: TKind) =>
+    page.timeline.filter(
+      (item): item is Extract<PullTimelineItemWire, { kind: TKind }> =>
+        item.kind === kind,
+    );
+
+  // Every source row the page fetched shows up exactly once, so nothing was dropped or invented.
+  expect(page.timeline.length).toBe(
+    (page.pull.commits ?? []).length +
+      page.reviews.length +
+      page.line_comments.length +
+      page.comments.length,
+  );
+  expect(ofKind("commit")).toHaveLength((page.pull.commits ?? []).length);
+  expect(ofKind("review")).toHaveLength(page.reviews.length);
+  expect(ofKind("line_comment")).toHaveLength(page.line_comments.length);
+  expect(ofKind("comment")).toHaveLength(page.comments.length);
+
+  // Chronological, oldest first — the backend's one job, since the frontend renders as-is.
+  const times = page.timeline.map((item) => Date.parse(item.created_at));
+  expect([...times].sort((a, b) => a - b)).toEqual(times);
+
+  // Entries reuse the git-derived commit rows and the comment rows rather than re-fetching them.
+  // pull.commits is newest-first; the timeline is oldest-first, so the commit list reads reversed.
+  expect(ofKind("commit").map((item) => item.commit.sha)).toEqual(
+    [...(page.pull.commits ?? [])].reverse().map((commit) => commit.sha),
+  );
+  expect(ofKind("comment").map((item) => item.comment.body)).toEqual(
+    page.comments.map((comment) => comment.body),
+  );
+  expect(ofKind("line_comment")[0].line_comment.body).toBe(
+    page.line_comments[0].body,
+  );
 });
 
 test("pullDetail resolves the PR's diff base once", async () => {

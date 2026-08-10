@@ -86,18 +86,50 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                       scope: { orphaned: true },
                     })
                   : null;
+                const reviews = handlers["reviews/list"]
+                  ? await handlers["reviews/list"](pageParams)
+                  : [];
+                const lineComments = handlers["reviews/listComments"]
+                  ? await handlers["reviews/listComments"](pageParams)
+                  : [];
+                // #145: the backend folds the timeline out of the same lists, so the mock mirrors
+                // that assembly (chronological, oldest first) instead of asking each test for it.
+                const timeline = [
+                  // pull.commits is newest first; feed it oldest first so same-second commits stay
+                  // in commit order after the chronological stable sort below.
+                  ...[...(pull.commits ?? [])].reverse().map((commit: any) => ({
+                    kind: "commit",
+                    created_at: commit.date,
+                    commit,
+                  })),
+                  ...reviews.map((review: any) => ({
+                    kind: "review",
+                    created_at: review.submitted_at,
+                    review,
+                  })),
+                  ...lineComments.map((lineComment: any) => ({
+                    kind: "line_comment",
+                    created_at: lineComment.created_at,
+                    line_comment: lineComment,
+                  })),
+                  ...comments.map((comment: any) => ({
+                    kind: "comment",
+                    created_at: comment.created_at,
+                    comment,
+                  })),
+                ].sort(
+                  (a: any, b: any) =>
+                    Date.parse(a.created_at) - Date.parse(b.created_at),
+                );
                 return {
                   pull: { ...pull, comment_list: comments },
                   comments,
                   files: handlers["pulls/files"]
                     ? await handlers["pulls/files"](pageParams)
                     : [],
-                  reviews: handlers["reviews/list"]
-                    ? await handlers["reviews/list"](pageParams)
-                    : [],
-                  line_comments: handlers["reviews/listComments"]
-                    ? await handlers["reviews/listComments"](pageParams)
-                    : [],
+                  reviews,
+                  line_comments: lineComments,
+                  timeline,
                   diff_feedback: {
                     comment_counts: feedback?.comment_counts ?? {},
                     orphaned_threads: feedback?.threads ?? [],

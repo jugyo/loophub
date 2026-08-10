@@ -2372,6 +2372,13 @@ export interface PullDetailPageWire {
   line_comments: ReviewCommentWire[];
   comments: CommentWire[];
   /**
+   * The whole PR activity in one chronological list (#145): commits, reviews, line comments and
+   * conversation comments, oldest first. Assembled by pageData.pullDetail from the fields above —
+   * `pull.commits`, `reviews`, `line_comments` and `comments` — so it costs the page no extra git,
+   * query or HTTP work, and the frontend renders the array as-is.
+   */
+  timeline: PullTimelineItemWire[];
+  /**
    * The diff feedback the detail screen itself renders: the per-file badge counts under Files
    * changed, and the threads whose anchors have left the diff ("previous threads"). Both are
    * derived from `files`, so folding them in here costs no extra git and spares the screen two
@@ -2393,3 +2400,33 @@ export interface PullCommitWire {
   // belongs to the current PR history. False means this current-history commit is locally ahead.
   pushed_to_github?: boolean;
 }
+
+/**
+ * One entry in the PR-detail timeline (#145): a commit, a review, a conversation comment, or a
+ * line comment, in display order (chronological, oldest first). Assembled by pageData.pullDetail
+ * from data the page already fetches (`pull.commits` / `reviews` / `line_comments` / `comments`),
+ * so the frontend renders the array as-is and never rebuilds or re-sorts it. `created_at` is the
+ * entry's timestamp on its own, uniform across kinds. Line-comment entries carry the full wire row
+ * but the UI only lists their location — the content stays out of the timeline.
+ */
+export type PullTimelineItemWire =
+  | {
+      kind: "commit";
+      created_at: string;
+      commit: PullCommitWire;
+    }
+  | {
+      kind: "review";
+      created_at: string;
+      review: ReviewWire;
+    }
+  | {
+      kind: "comment";
+      created_at: string;
+      comment: CommentWire;
+    }
+  | {
+      kind: "line_comment";
+      created_at: string;
+      line_comment: ReviewCommentWire;
+    };
