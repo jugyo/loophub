@@ -11,9 +11,7 @@
 // #2364: every caller resolves its refs first and asks for the SHA pair, so they all share one
 // entry: the serializers rendering a list, the merge-ready sweep behind the notification badge,
 // and the Workflow run state on issue/PR detail. Calling with branch names instead would key
-// nothing and re-spawn merge-tree per poll — the git-command cache (core/git-cache.ts) cannot
-// stand in for that, since a branch name is exactly what makes an invocation uncacheable there
-// and a conflicting merge-tree exits non-zero, which it never caches.
+// nothing and re-spawn merge-tree per poll.
 //
 // Deliberately NOT cached here: `working` (worktree dirty) and review state. Neither is a
 // function of the SHA pair — the worktree can go dirty/clean and a review can be submitted

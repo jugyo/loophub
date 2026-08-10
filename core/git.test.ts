@@ -10,9 +10,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   aheadBehind,
-  commitDiffFiles,
-  commitLog,
-  commitsAhead,
   currentBranch,
   describeUnresolvedRevision,
   diffFileSummariesBetween,
@@ -24,12 +21,10 @@ import {
   hasEffectiveDiff,
   isIndexLockError,
   localBranchRef,
-  mergeBase,
   mergePreview,
   mergePull,
   pathInDiff,
   pullFastForward,
-  pushedCommitShas,
   sleep,
   worktreeAdd,
   worktreeList,
@@ -37,7 +32,6 @@ import {
   worktreeRemove,
   worktreeStatus,
 } from "./git.ts";
-import { clearGitResultCache } from "./git-cache.ts";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
 
 async function makeRepo(): Promise<string> {
@@ -702,7 +696,6 @@ test("diffFileSummariesBetween names the same files without their patches", asyn
     await diffFilesBetween(p, baseSha, headSha, { paths: ["*.txt"] }),
   ).toEqual([]);
 
-  clearGitResultCache();
   const summariesOnly = await traceGitCommands(() =>
     diffFileSummariesBetween(p, baseSha, headSha),
   );
@@ -1042,9 +1035,8 @@ test("pathInDiff reports only files actually changed in base...head", async () =
   rmSync(p, { recursive: true, force: true });
 });
 
-test("a repeated SHA-resolved query is served from the cache, while ref queries re-run", async () => {
+test("repeated git queries run again, including SHA-resolved queries", async () => {
   const p = await makeRepo();
-  clearGitResultCache();
   const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
   const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
 
@@ -1058,7 +1050,9 @@ test("a repeated SHA-resolved query is served from the cache, while ref queries 
   const warm = await traceGitCommands(() =>
     diffFilesBetween(p, baseSha, headSha),
   );
-  expect(warm.commands).toEqual([]);
+  expect(
+    warm.commands.filter((command) => command.startsWith("diff ")),
+  ).toHaveLength(3);
   expect(warm.result).toEqual(cold.result);
 
   // The same question asked by branch name still spawns git: a ref can move under it.
@@ -1078,40 +1072,6 @@ test("a repeated SHA-resolved query is served from the cache, while ref queries 
   expect(
     status.commands.filter((command) => command.startsWith("status ")),
   ).toHaveLength(2);
-
-  rmSync(p, { recursive: true, force: true });
-});
-
-// The cacheable-argument table in core/git-cache.ts only clears argv spellings it has vouched for,
-// so a flag added to one of these call sites silently stops being cached. Pin every query that is
-// meant to be cached: a second round of identical calls must not spawn git at all.
-test("every SHA-resolved query these helpers ask is served from the cache", async () => {
-  const p = await makeRepo();
-  clearGitResultCache();
-  const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
-  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
-
-  const ask = async () => {
-    await diffFiles(p, baseSha, headSha);
-    await diffFilesBetween(p, baseSha, headSha, { ignoreWhitespace: true });
-    await diffFilesBetween(p, baseSha, headSha, { paths: ["f.txt"] });
-    await diffFileSummariesBetween(p, baseSha, headSha);
-    await commitDiffFiles(p, headSha);
-    await diffStat(p, baseSha, headSha);
-    await pathInDiff(p, baseSha, headSha, "f.txt");
-    await hasEffectiveDiff(p, baseSha, headSha);
-    await commitLog(p, baseSha, headSha);
-    await commitsAhead(p, baseSha, headSha);
-    await pushedCommitShas(p, baseSha, headSha, headSha);
-    await mergeBase(p, baseSha, headSha);
-    await fileAtRef(p, headSha, "f.txt");
-  };
-
-  const cold = await traceGitCommands(ask);
-  expect(cold.commands.length).toBeGreaterThan(0);
-
-  const warm = await traceGitCommands(ask);
-  expect(warm.commands).toEqual([]);
 
   rmSync(p, { recursive: true, force: true });
 });

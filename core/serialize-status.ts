@@ -362,8 +362,8 @@ export async function pullJSON(
     withComments?: boolean;
     /**
      * The PR's live diff base, when the caller has already resolved it. Resolving it costs a
-     * `rev-parse`/`merge-base` fan-out that the git-command cache cannot serve (ref-name
-     * operands), so a caller that needs the same base for something else — `pageData.pullDetail`,
+     * `rev-parse`/`merge-base` fan-out uses live ref-name operands, so a caller that needs the same
+     * base for something else — `pageData.pullDetail`,
      * which also diffs Files changed from it — passes its own instead of paying twice (#123).
      * The whole candidate list, preferred base first: the commit list excludes all of them (#98).
      */

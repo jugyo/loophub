@@ -1,9 +1,8 @@
 // #2364: the polled callers of the (baseSha, headSha) fan-out share one computation.
 //
 // The merge preview is the expensive half (a real merge-tree over both trees) and, unlike the diff
-// commands, it is not something core/git-cache.ts can cache: a conflicting merge-tree exits
-// non-zero, which that cache never keeps. So the guarantee has to hold at the pull-status-cache
-// level, and this file asserts it against a real repository — including the other half, that a
+// commands. The guarantee has to hold at the pull-status-cache level, and this file asserts it
+// against a real repository — including the other half, that a
 // moved ref is a different key and never serves the stale answer.
 
 import { spawnSync } from "node:child_process";

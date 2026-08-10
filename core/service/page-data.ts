@@ -98,7 +98,7 @@ export const pageData = {
     // Everything on this screen that depends on the PR's live diff base — Files changed, the
     // commit list on the PR row, and the diff feedback anchors — sits on the same base, so
     // resolve it once here and hand it to the rest (#123). The resolution is the request's one
-    // uncacheable git cost: its operands are ref names, so the git-command cache cannot help.
+    // The operands are ref names, so resolve the live diff base once for this request.
     const diff = await pullDiffFiles(name, number);
     const [pull, reviewRows, lineComments, commentRows] = await Promise.all([
       pulls.get(name, number, {

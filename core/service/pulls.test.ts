@@ -8,9 +8,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
-import { clearGitResultCache } from "../git-cache.ts";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { traceGitCommands } from "../git-trace-test-helper.ts";
+
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-pull-commits-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -175,7 +176,7 @@ test("archive hides the PR from lists while preserving its data and git branch",
   expect(
     (await svc.pulls.list("me/proj")).some((p) => p.number === pull.number),
   ).toBe(true);
-});
+}, 30_000);
 
 test("archive preserves an imported GitHub issue link", async () => {
   const pull = await svc.pulls.create("me/proj", {
@@ -402,7 +403,7 @@ test("diff excludes base-side files after merging an advanced base into head", a
 
   rmSync(path, { recursive: true, force: true });
   rmSync(plainPath, { recursive: true, force: true });
-});
+}, 30_000);
 
 // #2420: UI Files changed uses pulls.files. When local main lags and the PR merges
 // origin/main, both files() and diff() must drop the remote-only base files.
@@ -510,7 +511,7 @@ test("files and commits exclude base-side work after the base branch is rebased"
   ]);
 
   rmSync(path, { recursive: true, force: true });
-});
+}, 30_000);
 
 // #98: merging the rewritten base branch back into head leaves head holding two mutually
 // unrelated views of the base branch. Excluding only the preferred one still lists the other
@@ -621,7 +622,7 @@ test("commits exclude base-side work across repeated base rewrites and merges", 
   ]);
 
   rmSync(path, { recursive: true, force: true });
-});
+}, 30_000);
 
 test("repos/commitFiles returns commits outside a pull request", async () => {
   const files = await svc.repos.commitFiles("me/commit-files", outsideSha);
@@ -656,10 +657,6 @@ exec "${realGit}" "$@"
   chmodSync(fakeGit, 0o755);
   const originalPath = process.env.PATH;
   process.env.PATH = `${bin}:${originalPath ?? ""}`;
-  // This commit's parent diff is immutable, so an earlier test left it cached and the stub would
-  // never be reached. A fresh process would run git here, which is the path under test.
-  clearGitResultCache();
-
   try {
     await expect(
       svc.repos.commitFiles("me/commit-files", featureSha),

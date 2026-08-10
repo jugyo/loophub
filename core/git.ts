@@ -1,7 +1,6 @@
 import { execFile, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cachedGitResult } from "./git-cache.ts";
 
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,17 +28,13 @@ export function runGitSync(
   };
 }
 
-// Run `git -C <repoPath> <args...>` without throwing; we inspect exitCode manually. Invocations
-// whose output cannot change (see core/git-cache.ts) are served from an in-process cache instead of
-// spawning git again.
+// Run `git -C <repoPath> <args...>` without throwing; we inspect exitCode manually.
 export function git(
   repoPath: string,
   args: string[],
   env: Record<string, string> = {},
 ): Promise<GitResult> {
-  return cachedGitResult(repoPath, args, env, () =>
-    spawnGit(repoPath, args, env),
-  );
+  return spawnGit(repoPath, args, env);
 }
 
 function spawnGit(

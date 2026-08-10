@@ -1069,9 +1069,9 @@ async function observeWorkflowRunStatus(
 }
 
 /**
- * Reads each distinct ref once for as long as it is held. `rev-parse` is deliberately uncacheable
- * (core/git-cache.ts) because it reports where a ref is right now, so one lookup per ref is the
- * most sharing that stays live — and the rows of one page share a base branch (#112).
+ * Reads each distinct ref once for as long as it is held. `rev-parse` reports where a ref is right
+ * now, so one lookup per ref is the most sharing that stays live — and the rows of one page share
+ * a base branch (#112).
  */
 type RefResolver = (ref: string) => Promise<string | null>;
 
@@ -2621,8 +2621,8 @@ export const workflowRuns = {
     input: { pulls: number[] },
   ): Promise<WorkflowRunStateWire[]> {
     const r = repoOr404(name);
-    // The rows of one page share a base branch, and `rev-parse` is deliberately uncacheable
-    // (core/git-cache.ts), so resolve each distinct ref once for the whole page.
+    // The rows of one page share a base branch, so resolve each distinct ref once for the whole
+    // page.
     const resolveRef = refResolver(r.local_path);
     const runs = [...new Set(input.pulls)]
       .map((pull) => S.latestWorkflowRunForPull(r.id, pull))
