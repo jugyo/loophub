@@ -19,15 +19,14 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CodingAgent, MergeMode, Workspace } from "@/api/types";
+import {
+  agentConfigSummary,
+  CodingAgentSettingsList,
+} from "@/components/coding-agent-settings";
 import { NewWorkspaceButton } from "@/components/new-workspace-button";
 import { ReadOnlyPromptDialog } from "@/components/read-only-prompt-dialog";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { RepoWorkflowsSection } from "@/components/workflows-page";
-import {
-  CODING_AGENT_LABELS,
-  EFFORT_SUGGESTIONS,
-  MODEL_SUGGESTIONS,
-} from "@/lib/agent-models";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
 import {
@@ -48,7 +47,6 @@ import {
   useSettingsWorkspaces,
   useSetWorkspaceArchived,
 } from "@/queries/workspaces";
-import { CODING_AGENTS } from "../../../core/runtimes.ts";
 import { githubPrExportPrompt } from "../../../core/workflow/github-pr-export-prompt.ts";
 
 const MERGE_MODE_LABELS: Record<MergeMode, string> = {
@@ -942,50 +940,15 @@ function GithubPrExportExtraPromptSection({
 // model / effort or falls back to the application (Settings screen) defaults. While off, the editors
 // are hidden and the effective config the run launches with is shown inline. Mirrors the raw-setting
 // vs effective structure of MergeModeSection.
+//
+// #165: while on, the runtime / model / effort editor is the same CodingAgentSettingsList the
+// application Settings screen uses, so both screens read and behave alike. The repo stores a single
+// triple rather than per-agent values, so the selected row carries the saved model/effort and
+// choosing a model on another row switches the pinned runtime along with it.
 const OVERRIDE_LABELS: { value: boolean; label: string }[] = [
   { value: false, label: "Off (use application settings)" },
   { value: true, label: "On (override for this repo)" },
 ];
-
-// An empty string means "use the runtime's default", stored as null. A currently-saved value outside
-// the suggestion list is injected as a leading option so the picker reflects the real saved state.
-function OverrideSelect({
-  label,
-  value,
-  suggestions,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  suggestions: string[];
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  const options =
-    value && !suggestions.includes(value)
-      ? [value, ...suggestions]
-      : suggestions;
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <select
-        aria-label={label}
-        className="rounded-md border bg-background px-3 py-1.5 text-sm disabled:opacity-50"
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">Default</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
 
 function AgentConfigSection({ owner, repo }: { owner: string; repo: string }) {
   const { data, isLoading } = useRepoAgentConfig(owner, repo);
@@ -1017,9 +980,7 @@ function AgentConfigSection({ owner, repo }: { owner: string; repo: string }) {
   }
 
   const effective = data?.effective;
-  const effectiveHint = effective
-    ? `${effective.runtime} · ${effective.model} · ${effective.effort}`
-    : "";
+  const effectiveHint = effective ? agentConfigSummary(effective) : "";
 
   return (
     <section data-debug-component="AgentConfigSection" className="mt-6">
@@ -1072,60 +1033,30 @@ function AgentConfigSection({ owner, repo }: { owner: string; repo: string }) {
       </div>
 
       {override ? (
-        <div className="mt-3 max-w-md border-l-2 pl-4">
-          <h3 className="text-xs font-medium text-muted-foreground">Runtime</h3>
-          <div
-            role="radiogroup"
-            aria-label="Runtime"
-            className="mt-1 rounded-md border"
-          >
-            {CODING_AGENTS.map((value) => {
-              const active = runtime === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  disabled={disabled}
-                  className={cn(
-                    "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
-                    disabledButtonStateClasses,
-                  )}
-                  onClick={() => {
-                    if (active) return;
-                    // Switching runtime clears model/effort so they fall back to the new runtime's
-                    // defaults rather than carrying a value that runtime may not accept.
-                    update({ runtime: value, model: "", effort: "" });
-                  }}
-                >
-                  <Check
-                    className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
-                    aria-hidden="true"
-                  />
-                  <span>{CODING_AGENT_LABELS[value]}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-3 flex flex-col gap-3">
-            <OverrideSelect
-              label="Model"
-              value={model}
-              suggestions={MODEL_SUGGESTIONS[runtime]}
-              disabled={disabled}
-              onChange={(value) => update({ model: value })}
-            />
-            <OverrideSelect
-              label="Effort"
-              value={effort}
-              suggestions={EFFORT_SUGGESTIONS[runtime]}
-              disabled={disabled}
-              onChange={(value) => update({ effort: value })}
-            />
-          </div>
-        </div>
+        <CodingAgentSettingsList
+          name="repo-coding-agent"
+          label="Coding agent"
+          selected={runtime}
+          // Only the pinned runtime has stored values; the other rows read as Default.
+          values={{ [runtime]: { model, effort } }}
+          // An empty model/effort means "use the runtime's default", stored as null.
+          allowDefault
+          disabled={isLoading}
+          saving={save.isPending}
+          onSelectAgent={(agent) => {
+            if (agent === runtime) return;
+            // Switching runtime clears model/effort so they fall back to the new runtime's
+            // defaults rather than carrying a value that runtime may not accept.
+            update({ runtime: agent, model: "", effort: "" });
+          }}
+          onSaveModel={(agent, selectedModel, selectedEffort) =>
+            update({
+              runtime: agent,
+              model: selectedModel,
+              effort: selectedEffort,
+            })
+          }
+        />
       ) : null}
       {save.error ? (
         <p className="mt-2 text-sm text-destructive">{String(save.error)}</p>
