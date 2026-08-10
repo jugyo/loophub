@@ -1,10 +1,12 @@
 // Debug panel (--debug only): a small toggle button hosted in the bottom status bar
-// (AppStatusbar) that opens a panel showing the event -> invalidation -> refetch trail
-// recorded in web/src/lib/debug-log.ts. Desktop-only; the panel is a fixed overlay and
+// (AppStatusbar) that opens a full-width dock panel (Chrome DevTools style) showing the
+// event -> invalidation -> refetch trail recorded in web/src/lib/debug-log.ts. Its top
+// edge can be dragged to resize the height, and its log view follows the tail while the
+// scroll position stays at the bottom. Desktop-only; the panel is a fixed overlay and
 // does not participate in mobile layout.
 
 import { Activity, Bug, Cable, ListTree, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   clearDebugLog,
@@ -24,6 +26,13 @@ const TABS: { id: LogTab; label: string }[] = [
   { id: "invalidations", label: "Invalidation" },
   { id: "rpcs", label: "RPC" },
 ];
+
+const DEFAULT_HEIGHT = 320;
+const MIN_HEIGHT = 96;
+// Cap the dock at 90% of the viewport so a slice of the app stays visible above it.
+const MAX_HEIGHT_FRACTION = 0.9;
+// While the scroll position is this close to the bottom, follow the tail.
+const STICK_TO_BOTTOM_EPSILON = 8;
 
 function formatTime(at: number): string {
   const d = new Date(at);
@@ -130,10 +139,10 @@ function LogList({ tab, logs }: { tab: LogTab; logs: DebugLogState }) {
         : "No RPC calls yet";
   const entries =
     tab === "events"
-      ? [...logs.events].reverse()
+      ? logs.events
       : tab === "invalidations"
-        ? [...logs.invalidations].reverse()
-        : [...logs.rpcs].reverse();
+        ? logs.invalidations
+        : logs.rpcs;
 
   if (entries.length === 0) {
     return (
@@ -195,12 +204,80 @@ function DebugLogPanel({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<LogTab>("events");
+  const [height, setHeight] = useState(DEFAULT_HEIGHT);
+  const [resizing, setResizing] = useState(false);
+  const [stickToBottom, setStickToBottom] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const entries =
+    tab === "events"
+      ? logs.events
+      : tab === "invalidations"
+        ? logs.invalidations
+        : logs.rpcs;
+
+  // While pinned to the tail, keep the newest entry in view when the list grows.
+  useEffect(() => {
+    if (!stickToBottom) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight - el.clientHeight;
+  }, [entries, stickToBottom]);
+
+  // Drag on the panel's top edge to resize its height (Chrome DevTools style).
+  useEffect(() => {
+    if (!resizing) return;
+    function onPointerMove(event: PointerEvent) {
+      setHeight(
+        Math.max(
+          MIN_HEIGHT,
+          Math.min(
+            window.innerHeight * MAX_HEIGHT_FRACTION,
+            window.innerHeight - event.clientY,
+          ),
+        ),
+      );
+    }
+    function onPointerUp() {
+      setResizing(false);
+    }
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+    return () => {
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [resizing]);
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setStickToBottom(distanceFromBottom < STICK_TO_BOTTOM_EPSILON);
+  }
 
   return (
     <div
       data-testid="debug-log-panel"
-      className="fixed bottom-11 right-3 z-50 flex max-h-[70vh] w-[26rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border bg-card shadow-lg"
+      className="fixed inset-x-0 bottom-7 z-50 flex flex-col overflow-hidden border-t bg-card shadow-lg"
+      style={{ height }}
     >
+      <div
+        role="separator"
+        aria-label="Resize debug panel"
+        aria-orientation="horizontal"
+        aria-valuemin={MIN_HEIGHT}
+        aria-valuemax={Math.round(window.innerHeight * MAX_HEIGHT_FRACTION)}
+        aria-valuenow={Math.round(height)}
+        className={cn(
+          "h-2 shrink-0 cursor-row-resize touch-none border-b bg-border/40",
+          resizing && "bg-primary/30",
+        )}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          setResizing(true);
+        }}
+      />
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <h2 className="text-sm font-semibold">Debug panel</h2>
         <div className="flex items-center gap-1">
@@ -244,7 +321,10 @@ function DebugLogPanel({
                 ? "text-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
-            onClick={() => setTab(id)}
+            onClick={() => {
+              setTab(id);
+              setStickToBottom(true);
+            }}
           >
             {id === "events" ? (
               <Activity className="size-3" aria-hidden="true" />
@@ -257,7 +337,12 @@ function DebugLogPanel({
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        data-testid="debug-log-scroll"
+        className="min-h-0 flex-1 overflow-y-auto"
+        onScroll={handleScroll}
+      >
         <LogList tab={tab} logs={logs} />
       </div>
     </div>

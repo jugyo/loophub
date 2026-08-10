@@ -92,14 +92,99 @@ describe("DebugPanel", () => {
     expect(screen.queryByTestId("debug-log-panel")).toBeNull();
   });
 
-  it("lists received events in reverse-chronological order", () => {
+  it("lists received events in ascending order (newest at the bottom)", () => {
     renderPanel(true);
     act(() => recordEvents([event(1), event(2, "pull_request.updated")]));
     openPanel();
 
-    expect(screen.getByText("Events")).toBeTruthy();
-    expect(screen.getByText(/pull_request\.updated/)).toBeTruthy();
-    expect(screen.getByText(/issue\.updated/)).toBeTruthy();
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toContain("issue.updated");
+    expect(items[1].textContent).toContain("pull_request.updated");
+  });
+
+  it("renders the panel as a full-width dock anchored to the bottom of the screen", () => {
+    renderPanel(true);
+    openPanel();
+    const panel = screen.getByTestId("debug-log-panel");
+    expect(panel.className).toContain("fixed");
+    expect(panel.className).toContain("inset-x-0");
+    expect(panel.className).toContain("bottom-7");
+    expect(panel.className).not.toContain("w-[26rem]");
+    expect(panel.className).not.toContain("right-3");
+  });
+
+  it("resizes the panel height by dragging its top edge", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, "innerHeight");
+    try {
+      Object.defineProperty(window, "innerHeight", {
+        value: 600,
+        configurable: true,
+      });
+      renderPanel(true);
+      openPanel();
+      const panel = screen.getByTestId("debug-log-panel");
+      const separator = screen.getByRole("separator", {
+        name: "Resize debug panel",
+      });
+      expect(panel.style.height).toBe("320px");
+
+      fireEvent.pointerDown(separator, { button: 0, clientY: 400 });
+      fireEvent.pointerMove(document, { clientY: 200 });
+      expect(panel.style.height).toBe("400px");
+      expect(separator.getAttribute("aria-valuenow")).toBe("400");
+      fireEvent.pointerUp(document);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(window, "innerHeight", descriptor);
+      }
+    }
+  });
+
+  it("follows the tail while pinned to the bottom and stops when scrolled up", () => {
+    renderPanel(true);
+    act(() => recordEvents([event(1)]));
+    openPanel();
+
+    const scroll = screen.getByTestId("debug-log-scroll");
+    // happy-dom does no layout, so stub the metrics of an overflowed list.
+    Object.defineProperty(scroll, "scrollHeight", {
+      value: 1000,
+      configurable: true,
+    });
+    Object.defineProperty(scroll, "clientHeight", {
+      value: 100,
+      configurable: true,
+    });
+    Object.defineProperty(scroll, "scrollTop", {
+      value: 0,
+      configurable: true,
+      writable: true,
+    });
+
+    // A new entry while pinned to the bottom scrolls to the tail.
+    act(() => recordEvents([event(2, "pull_request.updated")]));
+    expect(scroll.scrollTop).toBe(900);
+
+    // Scrolling up detaches from the tail; further entries keep the scroll position.
+    Object.defineProperty(scroll, "scrollTop", {
+      value: 400,
+      configurable: true,
+      writable: true,
+    });
+    fireEvent.scroll(scroll);
+    act(() => recordEvents([event(3, "issue.commented")]));
+    expect(scroll.scrollTop).toBe(400);
+
+    // Scrolling back to the bottom re-pins and follows the tail again.
+    Object.defineProperty(scroll, "scrollTop", {
+      value: 900,
+      configurable: true,
+      writable: true,
+    });
+    fireEvent.scroll(scroll);
+    act(() => recordEvents([event(4, "issue.updated")]));
+    expect(scroll.scrollTop).toBe(900);
   });
 
   it("shows invalidated query keys for an event on the invalidation tab", () => {
