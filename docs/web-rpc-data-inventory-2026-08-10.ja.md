@@ -231,6 +231,19 @@ issue 本文のドラフト表は `issues/get` 等を「使用している」と
 `notifications/unreadCount`・`dashboard/overview`・`issues/create` も issue 本文では
 「使用」扱いだが、hook が mount されず実データは pageData 経由で届いている。
 
+## dead / seed メソッドの判断（#155）
+
+今回の 21 件は削除せず、現状の client 関数・query hook・RPC contract を維持する。
+
+- dead client 関数と dead hook は、将来の独立取得や UI 操作を再導入する際の再利用余地を
+  残す。現時点で発火しないことだけを理由に wire surface まで削る必要はない。
+- seed hook は pageData の一括取得と disabled query で詳細画面を構成する現在の設計に必要な
+  読み取り面である。個別 RPC を発火させないことは意図された挙動であり、hook を削除して
+  component 側の参照経路を変えると、将来の独立取得や cache key の再利用を制限する。
+- したがって UI の取得経路・表示挙動は変更しない。今回の判断では削除を行わないため、
+  削除後の挙動差分を検証する必要もない。既存の Web テストで pageData と disabled query
+  の組み合わせを継続的に確認する。
+
 ## ページ別の初期ロード RPC ファンアウト
 
 アプリシェル（root の `useLoopHubEvents` + `AppLayout`）が常時 mount するのは
