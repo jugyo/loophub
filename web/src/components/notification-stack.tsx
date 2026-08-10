@@ -1,10 +1,10 @@
-import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Bell,
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
+  ExternalLink,
   Info,
   MessageSquare,
   Terminal,
@@ -287,25 +287,34 @@ function NotificationItem({
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
-        <Link
-          to={notification.resource.href}
+        {/* A new tab, not an SPA navigation: reading a notification should not cost the supervisor
+            the screen they were working on. The target stays the same in-app path. */}
+        <a
+          href={notification.resource.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Open ${label} in a new tab`}
           onClick={onRead}
           className="block rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <div className="truncate font-medium">{notification.title}</div>
-          {notification.resource.kind === "pull" &&
-          notification.resource.title ? (
-            <div className="truncate text-xs text-muted-foreground">
-              {notification.resource.title}
-            </div>
-          ) : null}
-          <div className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+          <div className="flex items-baseline gap-1.5">
+            {/* The title stays shrinkable: one long enough to fill the row has to ellipsize
+                rather than push the row wider. */}
+            <span className="min-w-0 truncate font-medium">
+              {notification.title}
+            </span>
+            <ExternalLink
+              className="size-3 shrink-0 self-center text-muted-foreground"
+              aria-hidden="true"
+            />
+          </div>
+          <div className="truncate text-xs text-muted-foreground">
             {notification.body}
           </div>
-          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="min-w-0 truncate">{notification.repo.name}</span>
             <span aria-hidden="true">/</span>
-            <span>{label}</span>
+            <span className="shrink-0">{label}</span>
             <time
               className="ml-auto shrink-0"
               dateTime={notification.created_at}
@@ -313,7 +322,7 @@ function NotificationItem({
               {relativeTime(notification.created_at)}
             </time>
           </div>
-        </Link>
+        </a>
         {costHeldRun != null && notification.resource.number != null ? (
           <WorkflowBudgetAction
             repo={notification.repo.name}

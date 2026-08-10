@@ -292,25 +292,34 @@ describe("NotificationStack", () => {
     expect(actions.readAll).toHaveBeenCalledWith(undefined, expect.any(Object));
   });
 
-  it("navigates pull notifications and marks them read", async () => {
+  it("opens pull notifications in a new tab and marks them read", async () => {
     notifications.value = [makeNotification(12)];
     const { router } = renderStack();
 
     const link = await screen.findByRole("link", { name: /Notification 12/ });
+    expect(link.getAttribute("href")).toBe("/r/me/proj/pulls/12");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link.getAttribute("title")).toBe("Open PR #12 in a new tab");
+    expect(link.querySelector("svg.lucide-external-link")).toBeTruthy();
+    // The test environment would try to fetch the new tab's URL; only the handler matters here.
+    const stopNavigation = (event: Event) => event.preventDefault();
+    document.addEventListener("click", stopNavigation);
     await act(async () => fireEvent.click(link));
+    document.removeEventListener("click", stopNavigation);
 
     expect(actions.read).toHaveBeenCalledWith(12, expect.any(Object));
-    expect(router.state.location.pathname).toBe("/r/me/proj/pulls/12");
+    expect(router.state.location.pathname).toBe("/");
   });
 
-  it("shows a pull title on one truncated line", async () => {
-    const title = "A very long pull request title that should stay on one line";
+  it("keeps a notification to a title, body, and metadata line", async () => {
     notifications.value = [
       makeNotification(12, {
+        body: "A very long notification body that should stay on one line",
         resource: {
           kind: "pull",
           number: 12,
-          title,
+          title: "A pull request title that no longer takes its own line",
           href: "/r/me/proj/pulls/12",
         },
       }),
@@ -318,27 +327,38 @@ describe("NotificationStack", () => {
 
     renderStack();
 
+    const body = await screen.findByText(
+      "A very long notification body that should stay on one line",
+    );
+    expect(body.className).toContain("truncate");
+    expect(body.className).toContain("text-xs");
+    expect(
+      screen.queryByText(
+        "A pull request title that no longer takes its own line",
+      ),
+    ).toBeNull();
+    const link = screen.getByRole("link", { name: /Notification 12/ });
+    // Title, body, metadata — the body gets the row's full width instead of splitting it with
+    // the title, and the pull title still gets no row of its own.
+    expect(link.children.length).toBe(3);
+    expect(link.children[0].textContent).toBe("Notification 12");
+    expect(link.children[1]).toBe(body);
+    expect(link.children[2].textContent).toContain("me/proj");
+    expect(link.children[2].textContent).toContain("PR #12");
+  });
+
+  it("lets a long title ellipsize instead of widening the row", async () => {
+    const title = "me/a-repository-with-a-long-name PR #1234 merged on GitHub";
+    notifications.value = [makeNotification(12, { title })];
+
+    renderStack();
+
+    // A title span that cannot shrink is laid out at max-content, so `truncate` never applies and
+    // the title pushes the external-link icon and the metadata past the card's edge.
     const titleElement = await screen.findByText(title);
     expect(titleElement.className).toContain("truncate");
-    expect(titleElement.className).toContain("text-xs");
-  });
-
-  it("does not reserve space for a missing pull title", async () => {
-    notifications.value = [
-      makeNotification(12, {
-        resource: {
-          kind: "pull",
-          number: 12,
-          title: null,
-          href: "/r/me/proj/pulls/12",
-        },
-      }),
-    ];
-
-    renderStack();
-
-    expect(await screen.findByText("Notification 12")).toBeTruthy();
-    expect(screen.queryByText("A very long pull request title")).toBeNull();
+    expect(titleElement.className).toContain("min-w-0");
+    expect(titleElement.className).not.toContain("shrink-0");
   });
 
   it("shows and focuses a live Herdr pane for the notification PR", async () => {
