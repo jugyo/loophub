@@ -1,4 +1,4 @@
-import { diffFeedback, repos } from "../core/service.ts";
+import { diffFeedback, projectPullDiff, repos } from "../core/service.ts";
 import { workerErrorDetail, workerLog } from "./logger.ts";
 
 const FULL_SHA = /^[0-9a-f]{40}$/i;
@@ -40,6 +40,9 @@ export async function projectDiffFeedbackEvent(
   if (!repo || number == null) return;
 
   try {
+    if (row.type === "pull_request.updated") {
+      await projectPullDiff(repo.full_name, number);
+    }
     await diffFeedback.precompute(repo.full_name, number);
   } catch (error) {
     workerLog.error(

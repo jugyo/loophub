@@ -11,7 +11,7 @@ export { issues } from "./service/issues.ts";
 export { labels } from "./service/labels.ts";
 export { notifications } from "./service/notifications.ts";
 export { pageData } from "./service/page-data.ts";
-export { pulls } from "./service/pulls.ts";
+export { projectPullDiff, pulls } from "./service/pulls.ts";
 export type { Repo } from "./service/repos.ts";
 export { repos } from "./service/repos.ts";
 export { retros } from "./service/retros.ts";

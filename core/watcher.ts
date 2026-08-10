@@ -8,6 +8,7 @@ import * as S from "./store.ts";
 // 初回（head_sha 未記録）は静かに記録するだけで発火しない。
 export async function sweepPullUpdates(): Promise<any[]> {
   const emitted: any[] = [];
+  S.prunePullDiffProjections();
   for (const p of S.openPulls()) {
     const cur = await revParse(p.local_path, localBranchRef(p.head_ref));
     if (!cur) continue; // ブランチが見つからない場合はスキップ

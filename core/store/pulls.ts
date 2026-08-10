@@ -4,6 +4,11 @@ import type { MergeableState } from "../mergeable.ts";
 import type { IssueRow } from "./issues.ts";
 import { linkSession, setSessionKind } from "./sessions.ts";
 
+// Keep one large diff from monopolizing the shared SQLite database. A larger diff falls back to
+// the existing live-Git path and is not retained in the projection table.
+export const MAX_PULL_DIFF_PROJECTION_BYTES = 8 * 1024 * 1024;
+const PULL_DIFF_PROJECTION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 export interface PullRow {
   issue_id: number;
   head_ref: string;
@@ -375,6 +380,96 @@ export function upsertPullStatusProjection(input: {
       now(),
     ],
   );
+}
+
+export interface PullDiffProjectionFile {
+  filename: string;
+  previousFilename?: string;
+  headFilename?: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch: string;
+  lines: {
+    kind: "hunk" | "context" | "addition" | "deletion" | "meta";
+    text: string;
+    left_line: number | null;
+    right_line: number | null;
+  }[];
+}
+
+export interface PullDiffProjection {
+  issue_id: number;
+  base_sha: string;
+  head_sha: string;
+  files: PullDiffProjectionFile[];
+  updated_at: string;
+}
+
+export function getPullDiffProjection(
+  issueId: number,
+  baseSha: string,
+  headSha: string,
+): PullDiffProjection | null {
+  const row = db
+    .query(
+      `SELECT issue_id, base_sha, head_sha, files_json, updated_at
+       FROM pull_diff_projection
+       WHERE issue_id = ? AND base_sha = ? AND head_sha = ?`,
+    )
+    .get(issueId, baseSha, headSha) as
+    | (Omit<PullDiffProjection, "files"> & { files_json: string })
+    | undefined;
+  if (!row) return null;
+  return { ...row, files: JSON.parse(row.files_json) };
+}
+
+export function upsertPullDiffProjection(input: {
+  issueId: number;
+  baseSha: string;
+  headSha: string;
+  files: PullDiffProjectionFile[];
+}): boolean {
+  const filesJson = JSON.stringify(input.files);
+  if (Buffer.byteLength(filesJson, "utf8") > MAX_PULL_DIFF_PROJECTION_BYTES) {
+    db.run(`DELETE FROM pull_diff_projection WHERE issue_id = ?`, [
+      input.issueId,
+    ]);
+    return false;
+  }
+  db.run(
+    `INSERT INTO pull_diff_projection
+       (issue_id, base_sha, head_sha, files_json, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(issue_id) DO UPDATE SET
+       base_sha = excluded.base_sha,
+       head_sha = excluded.head_sha,
+       files_json = excluded.files_json,
+       updated_at = excluded.updated_at`,
+    [input.issueId, input.baseSha, input.headSha, filesJson, now()],
+  );
+  return true;
+}
+
+/** Remove projections that can no longer be served or have exceeded their retention period. */
+export function prunePullDiffProjections(
+  olderThan = new Date(
+    Date.now() - PULL_DIFF_PROJECTION_RETENTION_MS,
+  ).toISOString(),
+): number {
+  db.run(
+    `DELETE FROM pull_diff_projection
+     WHERE updated_at < ?
+        OR issue_id IN (
+          SELECT i.id
+          FROM issues i
+          LEFT JOIN pulls p ON p.issue_id = i.id
+          WHERE i.kind = 'pull' AND (i.state = 'closed' OR p.archived_at IS NOT NULL)
+        )`,
+    [olderThan],
+  );
+  return (db.query("SELECT changes() AS changes").get() as { changes: number })
+    .changes;
 }
 
 export interface PullConflictTransition {

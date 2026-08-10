@@ -1385,6 +1385,18 @@ export const MIGRATIONS: Migration[] = [
     "conflict",
     "INTEGER NOT NULL DEFAULT 0",
   ),
+  sql(
+    "082-create-pull-diff-projection",
+    `
+    CREATE TABLE IF NOT EXISTS pull_diff_projection (
+      issue_id    INTEGER PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
+      base_sha    TEXT NOT NULL,
+      head_sha    TEXT NOT NULL,
+      files_json  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+  `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `
