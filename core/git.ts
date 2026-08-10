@@ -268,6 +268,17 @@ export async function pullFastForward(
   return git(repoPath, ["pull", "--ff-only", remote, branch]);
 }
 
+// `git fetch <remote>` in a checkout. Quiet on purpose — fetch output is progress noise the caller
+// does not show, and only a failure matters. Unlike pullFastForward, fetch never touches the
+// working tree or the checked-out branch, so it is safe on a detached HEAD; it only moves the
+// remote-tracking refs under `refs/remotes/<remote>/`.
+export async function fetchRemote(
+  repoPath: string,
+  remote = "origin",
+): Promise<GitResult> {
+  return git(repoPath, ["fetch", "--quiet", remote]);
+}
+
 export async function isGitRepo(repoPath: string): Promise<boolean> {
   const r = await git(repoPath, ["rev-parse", "--git-dir"]);
   return r.code === 0;

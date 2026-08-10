@@ -202,6 +202,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.repos.pullFromOrigin(p.name),
   },
+  "repos/fetchFromOrigin": {
+    description:
+      "Run `git fetch origin` in the repo's checkout and return the refreshed origin sync state. Only remote-tracking refs move — the working tree and the checked-out branch are untouched, so it also works on a detached HEAD.",
+    params: params({ name: repo }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.repos.fetchFromOrigin(p.name),
+  },
   "repos/setAgentConfig": {
     description:
       "Set the repo's Coding agent override: toggle plus runtime/model/effort, or falls back to app defaults when off (#1532).",

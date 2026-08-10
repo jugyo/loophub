@@ -4,6 +4,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createRepo,
+  fetchRepoFromOrigin,
   getRepo,
   getRepoAgentConfig,
   getRepoGithubPrExportExtraPrompt,
@@ -179,6 +180,23 @@ export function usePullRepoFromOrigin(owner: string, repo: string) {
       qc.setQueryData(queryKeys.repoOriginSync(full(owner, repo)), sync);
       qc.invalidateQueries({ queryKey: queryKeys.issues(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: queryKeys.pulls(full(owner, repo)) });
+    },
+  });
+}
+
+/**
+ * Refresh the repo's remote-tracking refs from origin (git fetch origin) for the sidebar's
+ * ahead/behind counts (#71). The mutation already answers with the refreshed sync state, so it
+ * seeds the query cache directly instead of round-tripping for it. Fetch never moves the
+ * checkout's branch, so the issue / PR lists — which group and measure against local refs — are
+ * untouched.
+ */
+export function useFetchRepoFromOrigin(owner: string, repo: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => fetchRepoFromOrigin(owner, repo),
+    onSuccess: (sync) => {
+      qc.setQueryData(queryKeys.repoOriginSync(full(owner, repo)), sync);
     },
   });
 }

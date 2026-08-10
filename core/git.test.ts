@@ -16,6 +16,7 @@ import {
   diffFiles,
   diffFilesBetween,
   diffStat,
+  fetchRemote,
   fileAtRef,
   git,
   hasEffectiveDiff,
@@ -1199,6 +1200,50 @@ test("pullFastForward fast-forwards from origin and refuses a diverged branch (#
   const refused = await pullFastForward(clonePath, "main");
   expect(refused.code).not.toBe(0);
   expect(`${refused.stderr}${refused.stdout}`).toMatch(/fast-forward/i);
+
+  rmSync(upstream, { recursive: true, force: true });
+  rmSync(clonePath, { recursive: true, force: true });
+});
+
+test("fetchRemote updates only the remote-tracking refs, never the checkout (#71)", async () => {
+  const upstream = await makeRepo();
+  const clonePath = join(upstream, "..", `fetch-${upstream.split("/").pop()}`);
+  await git(upstream, ["clone", "-q", upstream, clonePath]);
+  await git(clonePath, ["config", "user.email", "t@t.local"]);
+  await git(clonePath, ["config", "user.name", "tester"]);
+
+  // A commit the clone has and the remote does not: the checkout's branch tip is ahead.
+  writeFileSync(join(clonePath, "local.txt"), "local\n");
+  await git(clonePath, ["add", "-A"]);
+  await git(clonePath, ["commit", "-qm", "local"]);
+  const localSha = (await git(clonePath, ["rev-parse", "HEAD"])).stdout.trim();
+
+  writeFileSync(join(upstream, "remote.txt"), "remote\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "remote"]);
+  const remoteSha = (await git(upstream, ["rev-parse", "HEAD"])).stdout.trim();
+
+  // Before the fetch, the clone's remote-tracking ref is stale.
+  expect(
+    (
+      await git(clonePath, ["rev-parse", "refs/remotes/origin/main"])
+    ).stdout.trim(),
+  ).not.toBe(remoteSha);
+
+  const fetched = await fetchRemote(clonePath);
+  expect(fetched.code).toBe(0);
+
+  // The remote-tracking ref moved to the new upstream tip…
+  expect(
+    (
+      await git(clonePath, ["rev-parse", "refs/remotes/origin/main"])
+    ).stdout.trim(),
+  ).toBe(remoteSha);
+  // …but the working tree and the checked-out branch are untouched.
+  expect(existsSync(join(clonePath, "remote.txt"))).toBe(false);
+  expect((await git(clonePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(
+    localSha,
+  );
 
   rmSync(upstream, { recursive: true, force: true });
   rmSync(clonePath, { recursive: true, force: true });

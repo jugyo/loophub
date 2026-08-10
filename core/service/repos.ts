@@ -9,6 +9,7 @@ import {
   commitDiffFiles,
   currentBranch,
   defaultBranch,
+  fetchRemote,
   isGitRepo,
   localBranchRef,
   pullFastForward,
@@ -325,6 +326,24 @@ export const repos = {
         422,
         `git pull --ff-only origin ${branch} failed: ${detail}`,
       );
+    }
+    return originSyncOf(r);
+  },
+
+  // Refresh the checkout's view of origin: `git fetch origin` updates the remote-tracking refs the
+  // originSync read above derives its counts from, answering with the refreshed sync state. Unlike
+  // pullFromOrigin this never touches the working tree or the checked-out branch, so it is safe on a
+  // detached HEAD and leaves issue/PR grouping and bases untouched. Every way it can fail — no
+  // origin, an unreachable remote — is reported with git's own message rather than retried.
+  async fetchFromOrigin(name: string): Promise<RepoOriginSyncWire> {
+    const r = repoOr404(name);
+    if (!(await remoteUrl(r.local_path)))
+      throw new ServiceError(422, "no origin remote is configured");
+    const fetched = await fetchRemote(r.local_path);
+    if (fetched.code !== 0) {
+      const detail =
+        fetched.stderr.trim() || fetched.stdout.trim() || "unknown error";
+      throw new ServiceError(422, `git fetch origin failed: ${detail}`);
     }
     return originSyncOf(r);
   },

@@ -9,10 +9,15 @@ import {
   ArrowUp,
   GitBranch,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
-import { usePullRepoFromOrigin, useRepoOriginSync } from "@/queries/repos";
+import {
+  useFetchRepoFromOrigin,
+  usePullRepoFromOrigin,
+  useRepoOriginSync,
+} from "@/queries/repos";
 
 export function RepoSidebar({ owner, repo }: { owner: string; repo: string }) {
   return (
@@ -64,6 +69,7 @@ function AheadBehind({
 function OriginSection({ owner, repo }: { owner: string; repo: string }) {
   const query = useRepoOriginSync(owner, repo);
   const pull = usePullRepoFromOrigin(owner, repo);
+  const fetchOrigin = useFetchRepoFromOrigin(owner, repo);
   // A failed background refetch keeps the last-loaded value, so the sync branch below stays on
   // real data instead of blanking; only a load that never produced one falls through to the error.
   const sync = query.data;
@@ -89,9 +95,12 @@ function OriginSection({ owner, repo }: { owner: string; repo: string }) {
         <p className="text-sm text-muted-foreground">No origin remote.</p>
       ) : (
         <>
-          {/* The counts follow the branch name rather than being pushed to the sidebar's far edge:
-              they are a fact about that branch, and a gap the width of the column reads as two
-              unrelated items. A long branch name truncates instead of crowding them out. */}
+          {/* The refresh button sits right after the ahead/behind counts on the row that shows the
+              branch and its standing against origin, where the fact it refreshes is displayed —
+              grouped with the counts rather than pushed to the sidebar's far edge, so no dead space
+              opens up between them. It updates only the remote-tracking refs without touching the
+              checkout, so unlike the Pull button it stays enabled on a detached HEAD. A long branch
+              name truncates instead of crowding the rest of the row out. */}
           <div className="flex items-center gap-3 text-sm">
             <span className="flex min-w-0 items-center gap-1.5">
               <GitBranch
@@ -107,7 +116,30 @@ function OriginSection({ owner, repo }: { owner: string; repo: string }) {
                 <AheadBehind ahead={sync.ahead} behind={sync.behind} />
               </span>
             ) : null}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6 shrink-0"
+              onClick={() => fetchOrigin.mutate()}
+              disabled={fetchOrigin.isPending}
+              aria-label="Fetch origin"
+              title="git fetch origin"
+            >
+              {fetchOrigin.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="size-3.5" aria-hidden="true" />
+              )}
+            </Button>
           </div>
+          {fetchOrigin.isError ? (
+            <div
+              role="alert"
+              className="break-words rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
+            >
+              {errorMessage(fetchOrigin.error, "Fetch failed")}
+            </div>
+          ) : null}
           {/* Sized to its own label rather than the sidebar's width: a full-width primary block
               reads as the page's main action, which this is not — the issue list's New issue is.
               Fast-forward only, so a diverged branch fails with git's own message instead of
