@@ -421,18 +421,13 @@ describe("NotificationStack", () => {
     ).toBeNull();
   });
 
-  it("increases a cost-held run's limit from its notification after confirming", async () => {
+  it("shows the increase question and increases a cost-held run's limit after Yes", async () => {
     notifications.value = [makeCostNotification()];
     notifications.workflowRun = makeRunState();
     renderStack();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Increase cost limit" }),
-    );
-
-    expect(actions.increaseCostLimit).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("group", { name: "Increase to $30.00?" }),
+      await screen.findByRole("group", { name: "Increase to $30.00?" }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
@@ -442,20 +437,16 @@ describe("NotificationStack", () => {
     );
   });
 
-  it("keeps the question answerable with No without increasing", async () => {
+  it("marks the notification read with No without increasing", async () => {
     notifications.value = [makeCostNotification()];
     notifications.workflowRun = makeRunState();
     renderStack();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Increase cost limit" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "No" }));
+    fireEvent.click(await screen.findByRole("button", { name: "No" }));
 
     expect(actions.increaseCostLimit).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("button", { name: "Increase cost limit" }),
-    ).toBeTruthy();
+    expect(actions.read).toHaveBeenCalledWith(12, expect.any(Object));
+    expect(screen.queryByText("Workflow cost limit exceeded")).toBeNull();
   });
 
   it.each([
@@ -488,7 +479,7 @@ describe("NotificationStack", () => {
       await screen.findByText("Workflow cost limit exceeded"),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: "Increase cost limit" }),
+      screen.queryByRole("group", { name: "Increase to $30.00?" }),
     ).toBeNull();
   });
 
@@ -501,10 +492,7 @@ describe("NotificationStack", () => {
     );
     renderStack();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Increase cost limit" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes" }));
 
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toBe("cost limit changed since it was read");
@@ -523,15 +511,12 @@ describe("NotificationStack", () => {
     );
     renderStack();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Increase cost limit" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes" }));
 
     expect(screen.getByText("Cost limit increased to $30.00.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Yes" })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Increase cost limit" }),
+      screen.queryByRole("group", { name: "Increase to $30.00?" }),
     ).toBeNull();
   });
 

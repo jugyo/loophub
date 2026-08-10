@@ -319,6 +319,7 @@ function NotificationItem({
             repo={notification.repo.name}
             pull={notification.resource.number}
             run={costHeldRun}
+            onRead={onRead}
           />
         ) : null}
       </div>
@@ -358,15 +359,16 @@ function WorkflowBudgetAction({
   repo,
   pull,
   run,
+  onRead,
 }: {
   repo: string;
   pull: number;
   run: number;
+  onRead: () => void;
 }) {
   const [owner, name] = repo.split("/");
   const { data: state } = useWorkflowRunForPull(owner, name, pull);
   const increaseCostLimit = useIncreaseWorkflowRunCostLimit(owner, name, pull);
-  const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [increasedLimitUsd, setIncreasedLimitUsd] = useState<number | null>(
     null,
@@ -387,41 +389,28 @@ function WorkflowBudgetAction({
   const nextLimit = state.cost_limit_usd + state.cost_increment_usd;
   return (
     <div className="mt-2 flex flex-col items-start gap-1 text-xs">
-      {asking ? (
-        <YesNoPrompt
-          question={`Increase to ${formatCost(nextLimit)}?`}
-          pending={increaseCostLimit.isPending}
-          onYes={() =>
-            increaseCostLimit.mutate(
-              { run: state.id, expectedLimitUsd: state.cost_limit_usd },
-              {
-                onSuccess: (result) => {
-                  setError(null);
-                  setIncreasedLimitUsd(result.current_limit_usd);
-                },
-                onError: (failure) =>
-                  setError(
-                    failure instanceof Error
-                      ? failure.message
-                      : "Failed to increase the workflow budget.",
-                  ),
+      <YesNoPrompt
+        question={`Increase to ${formatCost(nextLimit)}?`}
+        pending={increaseCostLimit.isPending}
+        onYes={() =>
+          increaseCostLimit.mutate(
+            { run: state.id, expectedLimitUsd: state.cost_limit_usd },
+            {
+              onSuccess: (result) => {
+                setError(null);
+                setIncreasedLimitUsd(result.current_limit_usd);
               },
-            )
-          }
-          onNo={() => {
-            setAsking(false);
-            setError(null);
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setAsking(true)}
-          className="rounded-md border px-2 py-0.5 font-medium text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          Increase cost limit
-        </button>
-      )}
+              onError: (failure) =>
+                setError(
+                  failure instanceof Error
+                    ? failure.message
+                    : "Failed to increase the workflow budget.",
+                ),
+            },
+          )
+        }
+        onNo={onRead}
+      />
       {error ? (
         <p role="alert" className="text-destructive">
           {error}
