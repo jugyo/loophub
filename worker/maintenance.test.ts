@@ -280,6 +280,23 @@ test("pull sweep logs start and completion to stdout", async () => {
   }
 });
 
+test("notification sweep remains active after git pull observation moved out", async () => {
+  vi.useFakeTimers();
+  const sweep = vi.spyOn(svc.notifications, "sweep").mockResolvedValue({
+    mergeReady: { checked: 0, created: [] },
+    backfilled: 2,
+  });
+  const stop = M.startNotificationSweep(10);
+  try {
+    await vi.advanceTimersByTimeAsync(10);
+    expect(sweep).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+    sweep.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 test("closed pull cleanup sweep kills closed-PR agents", async () => {
   vi.useFakeTimers();
   const cleanupSpy = vi

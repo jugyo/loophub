@@ -8,6 +8,7 @@ export { events } from "./service/events.ts";
 export { handoffs } from "./service/handoffs.ts";
 export { herdr } from "./service/herdr.ts";
 export { issues } from "./service/issues.ts";
+export { jobs } from "./service/jobs.ts";
 export { labels } from "./service/labels.ts";
 export { notifications } from "./service/notifications.ts";
 export { pageData } from "./service/page-data.ts";

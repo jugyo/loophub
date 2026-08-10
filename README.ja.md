@@ -87,7 +87,7 @@ lh repo add ~/work/my-project --name me/my-project
 **4. UI を開く**
 
 ```sh
-npm run serve # http://localhost:8730 — lh-web + lh-worker
+npm run serve # http://localhost:8730 — lh-web + 5つの常駐プロセス
 ```
 
 issue の作成や workflow の開始は UI から行う。プロセスの起動バリエーション、CLI、データの置き場所は [Processes, CLI, and data](#processes-cli-and-data) を参照。
@@ -108,15 +108,21 @@ LoopHub は**自分のマシンで自分だけが使うローカルツール**�
 ### Processes
 
 ```sh
-npm run serve # lh-web + lh-worker をまとめて起動
-npm run serve:debug # コンポーネントデバッグ UI を有効にして両プロセスを起動
+npm run serve # lh-web + watcher 3種 + dispatcher + job queue をまとめて起動
+npm run serve:debug # コンポーネントデバッグ UI を有効にして同じ6プロセスを起動
 npm run lh-web # http://localhost:8730 — API + UI を 1 プロセスで（起動時に SPA を build）
-npm run lh-worker # events を tail してリポジトリの自動化を実行
+npm run lh-worker # events を tail してリポジトリの自動化と常駐 maintenance を実行
+npm run lh-watcher-git # ローカル git の状態を観測して event を記録
+npm run lh-watcher-github # GitHub の状態を観測して event を記録
+npm run lh-watcher-agents # エージェント runtime の状態を観測して event を記録
+npm run lh-dispatcher # event を tail して DB 由来の判断と workflow dispatch を実行
+npm run lh-job-queue # 外部副作用 job の専用プロセス境界
 ```
 
-出力には `[web]` / `[worker]` のプレフィックスが付く。`serve` のどちらか一方が終了すると、
-もう一方も停止して `serve` 全体が終了する。`Ctrl-C` でも両方を停止できる。
-`serve:debug` も同じ 2 プロセスを起動し、`lh-web` にだけ `--debug` を渡す。
+出力には `[web]` / `[git]` / `[github]` / `[agents]` / `[dispatcher]` / `[queue]` のプレフィックスが付く。
+`serve` のいずれか一つが終了すると、残りも停止して `serve` 全体が終了する。
+`Ctrl-C` でも6プロセスを停止できる。`serve:debug` も同じ6プロセスを起動し、`lh-web` にだけ `--debug` を渡す。
+`lh-worker` を単独起動した場合は、従来どおり git sweep も実行する。分離プロセスを使う場合は `serve` を利用する。
 
 ### CLI
 

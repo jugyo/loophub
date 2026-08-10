@@ -16,15 +16,25 @@
   "bin": {
     "lh": "cli/index.ts",
     "lh-web": "web/server/index.ts",
-    "lh-worker": "worker/index.ts"
+    "lh-worker": "worker/index.ts",
+    "lh-watcher-git": "worker/git-watcher-index.ts",
+    "lh-watcher-github": "worker/github-watcher-index.ts",
+    "lh-watcher-agents": "worker/agents-watcher-index.ts",
+    "lh-dispatcher": "worker/dispatcher-index.ts",
+    "lh-job-queue": "worker/job-queue-index.ts"
   },
   "scripts": {
     "postinstall": "npm --prefix web install",
     "lh": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx cli/index.ts",
     "lh-web": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx web/server/index.ts",
     "lh-worker": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/index.ts",
-    "serve": "concurrently --kill-others --names web,worker \"npm run lh-web\" \"npm run lh-worker\"",
-    "serve:debug": "concurrently --kill-others --names web,worker \"npm run lh-web -- --debug\" \"npm run lh-worker\"",
+    "lh-watcher-git": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/git-watcher-index.ts",
+    "lh-watcher-github": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/github-watcher-index.ts",
+    "lh-watcher-agents": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/agents-watcher-index.ts",
+    "lh-dispatcher": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/dispatcher-index.ts",
+    "lh-job-queue": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/job-queue-index.ts",
+    "serve": "concurrently --kill-others --names web,git,github,agents,dispatcher,queue \"npm run lh-web\" \"npm run lh-watcher-git\" \"npm run lh-watcher-github\" \"npm run lh-watcher-agents\" \"npm run lh-dispatcher\" \"npm run lh-job-queue\"",
+    "serve:debug": "concurrently --kill-others --names web,git,github,agents,dispatcher,queue \"npm run lh-web -- --debug\" \"npm run lh-watcher-git\" \"npm run lh-watcher-github\" \"npm run lh-watcher-agents\" \"npm run lh-dispatcher\" \"npm run lh-job-queue\"",
     "contract": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx scripts/emit-rpc-contract.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check",

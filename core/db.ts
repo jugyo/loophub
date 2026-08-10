@@ -944,6 +944,26 @@ CREATE TABLE IF NOT EXISTS worker_runtime (
   heartbeat_at     TEXT NOT NULL
 );
 
+-- External side-effect work claimed by lh-job-queue. Dispatchers enqueue decisions here; the
+-- queue owns the claim and result lifecycle, while a stale running row remains visible for human
+-- recovery instead of being retried automatically.
+CREATE TABLE IF NOT EXISTS jobs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  type          TEXT NOT NULL,
+  repo_id       INTEGER REFERENCES repos(id),
+  dedupe_key    TEXT NOT NULL UNIQUE,
+  params        TEXT NOT NULL,
+  status        TEXT NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed')),
+  result        TEXT,
+  error         TEXT,
+  created_at    TEXT NOT NULL,
+  started_at    TEXT,
+  heartbeat_at  TEXT,
+  finished_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at, id);
+
 -- Minimal run tracking for the workflow delete guard (#997) plus the run lifecycle state. A
 -- workflow referenced by an active run cannot be deleted.
 CREATE TABLE IF NOT EXISTS workflow_runs (

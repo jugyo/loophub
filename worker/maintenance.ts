@@ -267,6 +267,40 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
   };
 }
 
+// Notification Center generation remains owned by the resident dispatcher-side worker while
+// local git observation runs in lh-watcher-git. Keeping this as a separate loop preserves the
+// previous pull-sweep cadence without coupling DB-only notification work to git observation.
+export function startNotificationSweep(
+  intervalMs = DEFAULT_SWEEP_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    const startedAt = logLoopStarted("notification sweep");
+    try {
+      const result = await notifications.sweep();
+      logLoopCompleted("notification sweep", startedAt, {
+        created_notifications: result.mergeReady.created.length,
+        backfilled_notifications: result.backfilled,
+      });
+    } catch (err) {
+      logLoopFailed("notification sweep", startedAt, err);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
 // Fire pull_request.merge_conflict for open PRs whose base advanced into a conflict while they
 // waited for a human merge (#1232). This loop is an event source only — consumers (e.g. a Workflow
 // parent polling `lh events`) observe the emitted events on their own; no session is launched here.

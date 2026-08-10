@@ -1395,6 +1395,26 @@ export const MIGRATIONS: Migration[] = [
       files_json  TEXT NOT NULL,
       updated_at  TEXT NOT NULL
     );
+    `,
+  ),
+  sql(
+    "083-create-jobs",
+    `
+    CREATE TABLE IF NOT EXISTS jobs (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      type          TEXT NOT NULL,
+      repo_id       INTEGER REFERENCES repos(id),
+      dedupe_key    TEXT NOT NULL UNIQUE,
+      params        TEXT NOT NULL,
+      status        TEXT NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed')),
+      result        TEXT,
+      error         TEXT,
+      created_at    TEXT NOT NULL,
+      started_at    TEXT,
+      heartbeat_at  TEXT,
+      finished_at   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at, id);
   `,
   ),
 ];
