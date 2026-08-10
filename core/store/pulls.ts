@@ -46,6 +46,20 @@ export interface OpenPullSweepRow {
   local_path: string;
 }
 
+export interface PullStatusProjection {
+  base_sha: string;
+  head_sha: string;
+  mergeable: number | null;
+  mergeable_state: MergeableState;
+  has_effective_diff: number;
+  conflict: number;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  commits_ahead: number;
+  updated_at: string;
+}
+
 // ---- pulls ----
 export function listPulls(
   repoId: number,
@@ -304,6 +318,63 @@ export function openPulls(): OpenPullSweepRow[] {
          AND p.archived_at IS NULL AND r.archived = 0`,
     )
     .all() as OpenPullSweepRow[];
+}
+
+export function getPullStatusProjection(
+  baseSha: string,
+  headSha: string,
+): PullStatusProjection | null {
+  return db
+    .query(
+      `SELECT base_sha, head_sha, mergeable, mergeable_state, has_effective_diff, conflict,
+              additions, deletions, changed_files, commits_ahead, updated_at
+       FROM pull_status_projection
+       WHERE base_sha = ? AND head_sha = ?`,
+    )
+    .get(baseSha, headSha) as PullStatusProjection | null;
+}
+
+export function upsertPullStatusProjection(input: {
+  baseSha: string;
+  headSha: string;
+  mergeable: boolean | null;
+  mergeableState: MergeableState;
+  hasEffectiveDiff: boolean;
+  conflict: boolean;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commitsAhead: number;
+}): void {
+  db.run(
+    `INSERT INTO pull_status_projection
+       (base_sha, head_sha, mergeable, mergeable_state, has_effective_diff, conflict, additions,
+        deletions, changed_files, commits_ahead, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(base_sha, head_sha) DO UPDATE SET
+       mergeable = excluded.mergeable,
+       mergeable_state = excluded.mergeable_state,
+       has_effective_diff = excluded.has_effective_diff,
+       conflict = excluded.conflict,
+       additions = excluded.additions,
+       deletions = excluded.deletions,
+       changed_files = excluded.changed_files,
+       commits_ahead = excluded.commits_ahead,
+       updated_at = excluded.updated_at`,
+    [
+      input.baseSha,
+      input.headSha,
+      input.mergeable == null ? null : input.mergeable ? 1 : 0,
+      input.mergeableState,
+      input.hasEffectiveDiff ? 1 : 0,
+      input.conflict ? 1 : 0,
+      input.additions,
+      input.deletions,
+      input.changedFiles,
+      input.commitsAhead,
+      now(),
+    ],
+  );
 }
 
 export interface PullConflictTransition {

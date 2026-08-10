@@ -1356,6 +1356,35 @@ export const MIGRATIONS: Migration[] = [
     "github_pr_export_extra_prompt",
     "TEXT",
   ),
+  sql(
+    "079-create-pull-status-projection",
+    `
+    CREATE TABLE IF NOT EXISTS pull_status_projection (
+      base_sha       TEXT NOT NULL,
+      head_sha       TEXT NOT NULL,
+      mergeable      INTEGER CHECK (mergeable IS NULL OR mergeable IN (0, 1)),
+      mergeable_state TEXT NOT NULL,
+      additions      INTEGER NOT NULL,
+      deletions      INTEGER NOT NULL,
+      changed_files  INTEGER NOT NULL,
+      commits_ahead  INTEGER NOT NULL,
+      updated_at     TEXT NOT NULL,
+      PRIMARY KEY (base_sha, head_sha)
+    );
+  `,
+  ),
+  addColumn(
+    "080-pull-status-projection-signals",
+    "pull_status_projection",
+    "has_effective_diff",
+    "INTEGER NOT NULL DEFAULT 0",
+  ),
+  addColumn(
+    "081-pull-status-projection-conflict",
+    "pull_status_projection",
+    "conflict",
+    "INTEGER NOT NULL DEFAULT 0",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

@@ -17,17 +17,44 @@ import * as S from "./store.ts";
 export async function currentMergeableState(
   pull: S.OpenPullSweepRow,
 ): Promise<MergeableState> {
+  return (await currentPullStatus(pull))?.mergeable_state ?? "unknown";
+}
+
+export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
+  baseSha: string;
+  headSha: string;
+  mergeable: boolean | null;
+  mergeable_state: MergeableState;
+  hasEffectiveDiff: boolean;
+  conflict: boolean;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commitsAhead: number;
+} | null> {
   const [headSha, baseSha] = await Promise.all([
     revParse(pull.local_path, localBranchRef(pull.head_ref)),
     revParse(pull.local_path, localBranchRef(pull.base_ref)),
   ]);
-  if (!headSha || !baseSha) return "unknown";
+  if (!headSha || !baseSha) return null;
 
   const status = await pullShaStatus(pull.local_path, baseSha, headSha);
   const reviewGate = S.computeReviewGate(pull.issue_id, headSha);
-  return resolveMergeable({
+  const decision = resolveMergeable({
     hasEffectiveDiff: status.hasEffectiveDiff,
     conflict: status.conflict,
     reviewGate,
-  }).mergeable_state;
+  });
+  return {
+    baseSha,
+    headSha,
+    mergeable: decision.mergeable,
+    mergeable_state: decision.mergeable_state,
+    hasEffectiveDiff: status.hasEffectiveDiff,
+    conflict: status.conflict,
+    additions: status.additions,
+    deletions: status.deletions,
+    changedFiles: status.changedFiles,
+    commitsAhead: status.commitsAhead,
+  };
 }

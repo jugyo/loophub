@@ -108,16 +108,29 @@ async function pullStatusFields(
     // cached on that pair — a refetch with no moved ref spawns zero git
     // subprocesses. Asking for the resolved SHAs (not the refs) is what makes
     // the value match its key even if a ref moves after we resolved it.
-    const status = await pullShaStatus(repo.local_path, baseSha, headSha);
-    commits_ahead = status.commitsAhead;
-    additions = status.additions;
-    deletions = status.deletions;
-    changed_files = status.changedFiles;
-    ({ mergeable, mergeable_state } = resolveMergeable({
-      hasEffectiveDiff: status.hasEffectiveDiff,
-      conflict: status.conflict,
-      reviewGate: reviewStatus.gate,
-    }));
+    const projection = S.getPullStatusProjection(baseSha, headSha);
+    if (projection) {
+      ({ mergeable, mergeable_state } = resolveMergeable({
+        hasEffectiveDiff: projection.has_effective_diff === 1,
+        conflict: projection.conflict === 1,
+        reviewGate: reviewStatus.gate,
+      }));
+      commits_ahead = projection.commits_ahead;
+      additions = projection.additions;
+      deletions = projection.deletions;
+      changed_files = projection.changed_files;
+    } else {
+      const status = await pullShaStatus(repo.local_path, baseSha, headSha);
+      commits_ahead = status.commitsAhead;
+      additions = status.additions;
+      deletions = status.deletions;
+      changed_files = status.changedFiles;
+      ({ mergeable, mergeable_state } = resolveMergeable({
+        hasEffectiveDiff: status.hasEffectiveDiff,
+        conflict: status.conflict,
+        reviewGate: reviewStatus.gate,
+      }));
+    }
   }
   // "working" badge: real uncommitted changes in this PR's worktree. Guarded so the
   // git status only runs for an open PR whose worktree directory actually exists (see

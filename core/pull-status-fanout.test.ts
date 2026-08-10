@@ -38,8 +38,11 @@ let C: typeof import("./pull-status-cache.ts");
 let M: typeof import("./pull-mergeable-state.ts");
 let G: typeof import("./git.ts");
 let S: typeof import("./store.ts");
+let W: typeof import("./watcher.ts");
+let Z: typeof import("./serialize-status.ts");
 let svc: typeof import("./service.ts");
 let repoPath: string;
+let linkedIssueId: number;
 
 function git(args: string[]) {
   return spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
@@ -57,6 +60,8 @@ beforeAll(async () => {
   M = await import("./pull-mergeable-state.ts");
   G = await import("./git.ts");
   S = await import("./store.ts");
+  W = await import("./watcher.ts");
+  Z = await import("./serialize-status.ts");
   svc = await import("./service.ts");
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-status-fanout-repo-"));
@@ -70,8 +75,16 @@ beforeAll(async () => {
 
   await svc.repos.create({ path: repoPath, name: "me/fanout" });
   const repo = S.getRepo("me", "fanout")!;
+  const linkedIssue = S.createIssue(
+    repo.id,
+    "issue",
+    "Feature issue",
+    "",
+    "me",
+  );
+  linkedIssueId = linkedIssue.id;
   const issue = S.createIssue(repo.id, "pull", "Feature PR", "", "me");
-  S.createPull(issue.id, "feature", "main", null, null);
+  S.createPull(issue.id, "feature", "main", null, linkedIssue.id);
 });
 
 beforeEach(() => {
@@ -126,6 +139,70 @@ test("the sweep's mergeable state reuses the entry the SHA pair already has", as
   // Still the one fan-out from above: the sweep resolved the refs and hit the same key.
   expect(calls.mergePreview).toBe(1);
   expect(calls.hasEffectiveDiff).toBe(1);
+});
+
+test("the pull sweep persists the SHA projection and the issue list reads it", async () => {
+  await W.sweepPullUpdates();
+  const pull = S.openPulls().find((row) => row.head_ref === "feature")!;
+  const [base, head] = await shas();
+  expect(S.getPullStatusProjection(base, head)).toMatchObject({
+    base_sha: base,
+    head_sha: head,
+    mergeable_state: "blocked",
+    additions: 1,
+    deletions: 0,
+    changed_files: 1,
+    commits_ahead: 1,
+  });
+
+  S.upsertPullStatusProjection({
+    baseSha: base,
+    headSha: head,
+    mergeable: true,
+    mergeableState: "clean",
+    hasEffectiveDiff: true,
+    conflict: false,
+    additions: 9,
+    deletions: 8,
+    changedFiles: 7,
+    commitsAhead: 6,
+  });
+  calls.mergePreview = 0;
+  calls.hasEffectiveDiff = 0;
+  const row = S.getIssueById(linkedIssueId)!;
+  const repo = S.getRepoById(pull.repo_id)!;
+  const out = await Z.issueListItemJSON(row, repo);
+  expect(out.linked_pull_request).toMatchObject({
+    mergeable_state: "blocked",
+    additions: 9,
+    deletions: 8,
+    changed_files: 7,
+    commits_ahead: 6,
+  });
+  expect(calls.mergePreview).toBe(0);
+  expect(calls.hasEffectiveDiff).toBe(0);
+});
+
+test("a projection reapplies the current review gate", async () => {
+  const [base, head] = await shas();
+  S.upsertPullStatusProjection({
+    baseSha: base,
+    headSha: head,
+    mergeable: true,
+    mergeableState: "clean",
+    hasEffectiveDiff: true,
+    conflict: false,
+    additions: 1,
+    deletions: 0,
+    changedFiles: 1,
+    commitsAhead: 1,
+  });
+  const pull = S.openPulls().find((row) => row.head_ref === "feature")!;
+  const repo = S.getRepoById(pull.repo_id)!;
+  const row = S.getIssueById(linkedIssueId)!;
+  expect(
+    (await Z.issueListItemJSON(row, repo)).linked_pull_request,
+  ).toMatchObject({ mergeable_state: "blocked" });
 });
 
 // Acceptance: caching on resolved SHAs must not make a moved ref stale. The head here moves to a
