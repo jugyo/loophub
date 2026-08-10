@@ -48,7 +48,6 @@ export function CreateIssueButton({
           aria-label="New issue"
           title="New issue"
           disabled={disabled}
-          className="rounded-r-none"
           onClick={() => launchIssue()}
         >
           <Plus className="size-4" />

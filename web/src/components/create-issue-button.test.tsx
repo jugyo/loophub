@@ -43,6 +43,19 @@ describe("CreateIssueButton", () => {
     ).toBeNull();
   });
 
+  it("keeps both corners rounded when enabled or disabled", () => {
+    const { rerender } = render(<CreateIssueButton repo="me/proj" />);
+    let button = screen.getByRole("button", { name: /new issue/i });
+    expect(button.className).toContain("rounded-md");
+    expect(button.className).not.toContain("rounded-r-none");
+
+    rerender(<CreateIssueButton repo="me/proj" disabled />);
+    button = screen.getByRole("button", { name: /new issue/i });
+    expect(button.disabled).toBe(true);
+    expect(button.className).toContain("rounded-md");
+    expect(button.className).not.toContain("rounded-r-none");
+  });
+
   it("dispatches the issue-create workflow with direct filing instructions", () => {
     render(<CreateIssueButton repo="me/proj" />);
 
