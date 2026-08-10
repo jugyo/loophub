@@ -51,6 +51,12 @@ export function eventSubjects(
   if (type === "dev.cost_stopped") {
     return subjectNumber(fields, "number", "pull");
   }
+  if (type === "agent_session.usage_updated") {
+    const runId = fields.id;
+    return typeof runId === "number"
+      ? [{ kind: "workflow_run", id: runId }]
+      : [];
+  }
   if (type.startsWith("workflow_run.") || type.startsWith("workflow_step.")) {
     const subjects: EventSubjectWire[] = [];
     const runId = fields.id;

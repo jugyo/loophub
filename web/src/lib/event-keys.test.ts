@@ -491,15 +491,30 @@ describe("queryKeysForEvent", () => {
       ev({
         type: "agent_session.usage_updated",
         repo: "me/proj",
-        payload: { session_id: "s", pr: 7, issue: 4 },
+        payload: { id: 3, session_id: "s", pr: 7, issue: 4 },
+        subjects: [{ kind: "workflow_run", id: 3 }],
       }),
     );
     expect(keys).toContainEqual(["agent-sessions"]);
-    expect(keys).toContainEqual(["workflow-run", "agent-costs", "me/proj"]);
-    expect(keys).toContainEqual(["workflow-run", "total-cost", "me/proj"]);
+    expect(keys).toContainEqual(["workflow-run", "agent-costs", "me/proj", 3]);
+    expect(keys).toContainEqual(["workflow-run", "total-cost", "me/proj", 3]);
+    expect(keys).not.toContainEqual(["workflow-run", "agent-costs", "me/proj"]);
+    expect(keys).not.toContainEqual(["workflow-run", "total-cost", "me/proj"]);
     expect(keys).toContainEqual(["pull-usage", "me/proj", 7]);
     expect(keys).not.toContainEqual(["pull", "me/proj", 7]);
     expect(keys).not.toContainEqual(["issue", "me/proj", 4]);
+  });
+
+  it("keeps usage invalidation broad when no workflow run is identified", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "agent_session.usage_updated",
+        repo: "me/proj",
+        payload: { session_id: "s", pr: 7 },
+      }),
+    );
+    expect(keys).toContainEqual(["workflow-run", "agent-costs", "me/proj"]);
+    expect(keys).toContainEqual(["workflow-run", "total-cost", "me/proj"]);
   });
 
   // The other agent_session events change the details themselves (their related_sessions list), so

@@ -65,6 +65,26 @@ describe("eventSubjects", () => {
     );
   });
 
+  test("names the workflow run on agent-session usage events", () => {
+    expect(
+      eventSubjects("agent_session.usage_updated", {
+        id: 9,
+        session_id: "session",
+        pr: 13,
+      }),
+    ).toEqual([{ kind: "workflow_run", id: 9 }]);
+  });
+
+  test("does not treat an agent-session row id as a workflow run", () => {
+    expect(
+      eventSubjects("agent_session.updated", {
+        id: 17,
+        agent: "codex",
+        session: "session",
+      }),
+    ).toEqual([]);
+  });
+
   test("names nothing for an event type with no known subject", () => {
     expect(eventSubjects("terminal.sessions_updated", { number: 12 })).toEqual(
       [],

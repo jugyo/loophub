@@ -457,22 +457,24 @@ export function startUsageSweep(
           continue;
         }
         for (const target of targets) {
+          const workflow =
+            target.kind === "pull"
+              ? sessions.workflowUsageTarget(
+                  target.repo_id,
+                  target.number,
+                  session.session_id,
+                )
+              : null;
           events.emit(target.repo_id, "agent_session.usage_updated", actor, {
             ...payload,
             [target.kind === "pull" ? "pr" : "issue"]: target.number,
+            ...(workflow ? { id: workflow.runId } : {}),
           });
-          if (target.kind === "pull") {
-            const workflow = sessions.workflowUsageTarget(
-              target.repo_id,
-              target.number,
-              session.session_id,
-            );
-            if (workflow) {
-              workflowRuns.detectCostExceeded(target.repo, {
-                run: workflow.runId,
-                usageSession: session.session_id,
-              });
-            }
+          if (workflow) {
+            workflowRuns.detectCostExceeded(target.repo, {
+              run: workflow.runId,
+              usageSession: session.session_id,
+            });
           }
         }
       }

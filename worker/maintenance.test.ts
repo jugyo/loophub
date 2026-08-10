@@ -637,6 +637,7 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
       output_tokens: 10,
     });
     expect(JSON.parse(usageEvents()[0].payload)).toMatchObject({
+      id: run.id,
       session_id: sessionId,
       messages: 1,
       pr: pull.number,
