@@ -853,7 +853,7 @@ export const MIGRATIONS: Migration[] = [
     DROP TABLE comment_reactions_old;
     CREATE INDEX idx_comment_reactions_comment
       ON comment_reactions(comment_id, created_at, id);
-    `,
+  `,
   ),
   sql(
     "055-diff-feedback-locations",
@@ -1415,8 +1415,11 @@ export const MIGRATIONS: Migration[] = [
       finished_at   TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at, id);
-  `,
+    `,
   ),
+  addColumn("084-repos-origin-branch", "repos", "origin_branch", "TEXT"),
+  addColumn("085-repos-origin-ahead", "repos", "origin_ahead", "INTEGER"),
+  addColumn("086-repos-origin-behind", "repos", "origin_behind", "INTEGER"),
 ];
 
 const LEDGER_SCHEMA = `

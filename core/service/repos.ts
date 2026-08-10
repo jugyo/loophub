@@ -68,6 +68,22 @@ async function originSyncOf(r: S.Repo): Promise<RepoOriginSyncWire> {
   };
 }
 
+async function originSyncCounts(
+  r: S.Repo,
+  branch: string,
+): Promise<{ branch: string; ahead: number | null; behind: number | null }> {
+  const counts = await aheadBehind(
+    r.local_path,
+    localBranchRef(branch),
+    `refs/remotes/origin/${branch}`,
+  );
+  return {
+    branch,
+    ahead: counts?.ahead ?? null,
+    behind: counts?.behind ?? null,
+  };
+}
+
 // ===== repos =====
 export const repos = {
   async commitFiles(name: string, sha: string) {
@@ -327,7 +343,9 @@ export const repos = {
         `git pull --ff-only origin ${branch} failed: ${detail}`,
       );
     }
-    return originSyncOf(r);
+    const sync = await originSyncCounts(r, branch);
+    db.transaction(() => S.setRepoOriginSync(r.id, sync));
+    return originSyncOf(repoOr404(name));
   },
 
   // Refresh the checkout's view of origin: `git fetch origin` updates the remote-tracking refs the
@@ -345,7 +363,12 @@ export const repos = {
         fetched.stderr.trim() || fetched.stdout.trim() || "unknown error";
       throw new ServiceError(422, `git fetch origin failed: ${detail}`);
     }
-    return originSyncOf(r);
+    const branch = await currentBranch(r.local_path);
+    if (branch) {
+      const sync = await originSyncCounts(r, branch);
+      db.transaction(() => S.setRepoOriginSync(r.id, sync));
+    }
+    return originSyncOf(repoOr404(name));
   },
 
   // #1532: set (or clear) the repo's Coding agent override. `override` toggles whether the repo's

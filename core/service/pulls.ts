@@ -5,8 +5,10 @@ import { publish } from "../domain-events.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
 import {
+  aheadBehind,
   commitLog,
   commitsAhead,
+  currentBranch,
   type DiffFile,
   diffFiles,
   diffFilesBetween,
@@ -845,9 +847,28 @@ export const pulls = {
       throw new ServiceError(409, res.reason ?? "Merge conflict");
     }
     if (!res.merged) throw new ServiceError(422, "Merge failed");
+    const checkedOutBranch = await currentBranch(r.local_path);
+    let originSync: {
+      branch: string;
+      ahead: number | null;
+      behind: number | null;
+    } | null = null;
+    if (checkedOutBranch === p.base_ref && (await remoteUrl(r.local_path))) {
+      const counts = await aheadBehind(
+        r.local_path,
+        localBranchRef(p.base_ref),
+        `refs/remotes/origin/${p.base_ref}`,
+      );
+      originSync = {
+        branch: p.base_ref,
+        ahead: counts?.ahead ?? null,
+        behind: counts?.behind ?? null,
+      };
+    }
     // The git merge is done; the PR state, persisted facts and every subscriber write commit
     // together so a merged PR is never recorded without the closure cascade it caused.
     db.transaction(() => {
+      if (originSync) S.setRepoOriginSync(r.id, originSync);
       S.setMerged(row.id, res.sha!, method);
       publish({
         type: "pull.closed",

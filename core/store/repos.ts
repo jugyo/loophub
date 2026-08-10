@@ -9,6 +9,9 @@ export interface Repo {
   local_path: string;
   default_branch: string;
   created_at: string;
+  origin_branch?: string | null;
+  origin_ahead?: number | null;
+  origin_behind?: number | null;
   archived: number;
   archived_at: string | null;
   // #406: 'merge' | 'github_pr' | null (unset → default-by-remote, see core/merge-mode.ts).
@@ -83,6 +86,18 @@ export function setRepoFavorite(id: number, favorite: boolean) {
     favoritedAt,
     id,
   ]);
+}
+
+export function setRepoOriginSync(
+  id: number,
+  sync: { branch: string | null; ahead: number | null; behind: number | null },
+) {
+  db.run(
+    `UPDATE repos
+     SET origin_branch = ?, origin_ahead = ?, origin_behind = ?
+     WHERE id = ?`,
+    [sync.branch, sync.ahead, sync.behind, id],
+  );
 }
 
 // #406: set (or clear) the repo's merge-mode toggle. `mode` of null resets to the default-by-remote

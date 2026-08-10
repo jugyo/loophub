@@ -401,7 +401,25 @@ test("originSync reports the checkout's standing against origin, pullFromOrigin 
     ahead: 0,
     behind: 0,
   });
+  expect(
+    S.getRepoById((await svc.repos.get("me/origin-sync")).id),
+  ).toMatchObject({
+    origin_branch: "main",
+    origin_ahead: 0,
+    origin_behind: 0,
+  });
   expect(existsSync(join(clonePath, "next.txt"))).toBe(true);
+
+  // The persisted projection is an eager write for consumers that need it, but originSync keeps
+  // its existing live-ref behavior when another process advances the remote-tracking ref.
+  writeFileSync(join(upstream, "later.txt"), "later\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "later"]);
+  await git(clonePath, ["fetch", "-q", "origin"]);
+  expect(await svc.repos.originSync("me/origin-sync")).toMatchObject({
+    ahead: 0,
+    behind: 1,
+  });
 });
 
 // #71: without an origin there is nothing to sync — the repo top hides the section rather than

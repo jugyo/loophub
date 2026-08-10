@@ -222,7 +222,10 @@ CREATE TABLE IF NOT EXISTS repos (
   owner         TEXT NOT NULL,
   local_path    TEXT NOT NULL,
   default_branch TEXT NOT NULL DEFAULT 'main',
-  created_at    TEXT NOT NULL
+  created_at    TEXT NOT NULL,
+  origin_branch TEXT,
+  origin_ahead  INTEGER,
+  origin_behind INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS workspaces (
