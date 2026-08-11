@@ -14,17 +14,12 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-  HerdrRepoSessions,
-  Notification,
-  WorkflowRunState,
-} from "@/api/types";
+import type { Notification, WorkflowRunState } from "@/api/types";
 import { NotificationStack } from "./notification-stack";
 
 const notifications = vi.hoisted(() => ({
   value: [] as Notification[],
   isError: false,
-  herdrRepos: [] as HerdrRepoSessions[],
   workflowRun: null as WorkflowRunState | null,
   // Subscribers stand in for the query cache, so a test can deliver a notification to a
   // mounted stack the way an invalidated list would.
@@ -34,7 +29,6 @@ const actions = vi.hoisted(() => ({
   list: vi.fn(),
   read: vi.fn(),
   readAll: vi.fn(),
-  focus: vi.fn(),
   showError: vi.fn(),
   increaseCostLimit: vi.fn(),
 }));
@@ -60,11 +54,6 @@ vi.mock("@/queries/notifications", async () => {
     }),
   };
 });
-
-vi.mock("@/queries/terminal", () => ({
-  useFocusHerdrAgent: () => ({ mutate: actions.focus, isPending: false }),
-  useHerdrSessions: () => ({ data: { repos: notifications.herdrRepos } }),
-}));
 
 vi.mock("@/components/toast", () => ({
   useToast: () => ({ showError: actions.showError }),
@@ -92,7 +81,6 @@ afterEach(() => {
   localStorage.clear();
   notifications.value = [];
   notifications.isError = false;
-  notifications.herdrRepos = [];
   notifications.workflowRun = null;
 });
 
@@ -280,7 +268,7 @@ describe("NotificationStack", () => {
 
     expect(actions.read).toHaveBeenCalledWith(6, expect.any(Object));
     expect(screen.queryByText("Notification 6")).toBeNull();
-    expect(screen.getByText("Notification 1")).toBeTruthy();
+    expect(screen.getByText("Notification 1 #1")).toBeTruthy();
   });
 
   it("marks every unread notification read through Clear all", async () => {
@@ -302,6 +290,9 @@ describe("NotificationStack", () => {
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
     expect(link.getAttribute("title")).toBe("Open PR #12 in a new tab");
     expect(link.querySelector("svg.lucide-external-link")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Open PR #12 in Herdr" }),
+    ).toBeNull();
     // The test environment would try to fetch the new tab's URL; only the handler matters here.
     const stopNavigation = (event: Event) => event.preventDefault();
     document.addEventListener("click", stopNavigation);
@@ -312,7 +303,7 @@ describe("NotificationStack", () => {
     expect(router.state.location.pathname).toBe("/");
   });
 
-  it("keeps a notification to a title, body, and metadata line", async () => {
+  it("shows the notification kind above the PR title and metadata", async () => {
     notifications.value = [
       makeNotification(12, {
         body: "A very long notification body that should stay on one line",
@@ -332,113 +323,46 @@ describe("NotificationStack", () => {
     );
     expect(body.className).toContain("truncate");
     expect(body.className).toContain("text-xs");
-    expect(
-      screen.queryByText(
-        "A pull request title that no longer takes its own line",
-      ),
-    ).toBeNull();
-    const link = screen.getByRole("link", { name: /Notification 12/ });
-    // Title, body, metadata — the body gets the row's full width instead of splitting it with
-    // the title, and the pull title still gets no row of its own.
-    expect(link.children.length).toBe(3);
-    expect(link.children[0].textContent).toBe("Notification 12");
-    expect(link.children[1]).toBe(body);
-    expect(link.children[2].textContent).toContain("me/proj");
-    expect(link.children[2].textContent).toContain("PR #12");
+    expect(screen.getByText("Merge ready")).toBeTruthy();
+    const link = screen.getByRole("link", {
+      name: /A pull request title that no longer takes its own line #12/,
+    });
+    expect(link.children.length).toBe(4);
+    expect(link.children[1].textContent).toBe(
+      "A pull request title that no longer takes its own line #12",
+    );
+    expect(link.children[2]).toBe(body);
+    expect(link.children[3].textContent).toContain("me/proj");
+    expect(link.children[3].textContent).toContain("PR #12");
   });
 
-  it("lets a long title ellipsize instead of widening the row", async () => {
-    const title = "me/a-repository-with-a-long-name PR #1234 merged on GitHub";
-    notifications.value = [makeNotification(12, { title })];
+  it("ellipsizes long PR titles and repository names", async () => {
+    const title =
+      "A very long pull request title that must stay inside the card";
+    notifications.value = [
+      makeNotification(12, {
+        title: "Merge ready",
+        repo: { name: "me/a-repository-with-a-long-name" },
+        resource: {
+          kind: "pull",
+          number: 1234,
+          title,
+          href: "/r/me/a-repository-with-a-long-name/pulls/1234",
+        },
+      }),
+    ];
 
     renderStack();
 
     // A title span that cannot shrink is laid out at max-content, so `truncate` never applies and
     // the title pushes the external-link icon and the metadata past the card's edge.
-    const titleElement = await screen.findByText(title);
+    const titleElement = await screen.findByText(`${title} #1234`);
     expect(titleElement.className).toContain("truncate");
     expect(titleElement.className).toContain("min-w-0");
     expect(titleElement.className).not.toContain("shrink-0");
-  });
-
-  it("shows and focuses a live Herdr pane for the notification PR", async () => {
-    notifications.value = [makeNotification(12)];
-    notifications.herdrRepos = [
-      {
-        repo: "me/proj",
-        session_name: "me/proj",
-        agents: [],
-        pull_workspaces: [
-          { pull: 12, pane_id: "pane_live_1234567890", status: "working" },
-        ],
-        issue_workspaces: [],
-      },
-    ];
-    const { router } = renderStack();
-
-    const openButton = await screen.findByRole("button", {
-      name: "Open PR #12 in Herdr",
-    });
-    expect(openButton.querySelector("svg.lucide-terminal")).toBeTruthy();
-    fireEvent.click(openButton);
-
-    expect(actions.focus).toHaveBeenCalledWith(
-      { repo: "me/proj", paneId: "pane_live_1234567890" },
-      expect.any(Object),
-    );
-    expect(actions.read).not.toHaveBeenCalled();
-    expect(router.state.location.pathname).toBe("/");
-  });
-
-  it("places the Herdr action at the bottom-right away from close", async () => {
-    notifications.value = [makeNotification(12)];
-    notifications.herdrRepos = [
-      {
-        repo: "me/proj",
-        session_name: "me/proj",
-        agents: [],
-        pull_workspaces: [
-          { pull: 12, pane_id: "pane_live_1234567890", status: "working" },
-        ],
-        issue_workspaces: [],
-      },
-    ];
-    renderStack();
-
-    const closeButton = await screen.findByRole("button", {
-      name: "Close Notification 12",
-    });
-    const openButton = screen.getByRole("button", {
-      name: "Open PR #12 in Herdr",
-    });
-    const actions = closeButton.parentElement;
-
-    expect(actions).toBe(openButton.parentElement);
-    expect(actions?.className).toContain("self-stretch");
-    expect(actions?.className).toContain("justify-between");
-  });
-
-  it("hides the Herdr action when the stored pane is no longer live", async () => {
-    notifications.value = [
-      makeNotification(12, { herdr_pane_id: "pane_stale_1234567890" }),
-    ];
-    notifications.herdrRepos = [
-      {
-        repo: "me/proj",
-        session_name: "me/proj",
-        agents: [],
-        pull_workspaces: [],
-        issue_workspaces: [],
-      },
-    ];
-    renderStack();
-
-    expect(
-      await screen.findByRole("button", { name: "Close Notification 12" }),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: "Open PR #12 in Herdr" }),
-    ).toBeNull();
+    const repoElement = screen.getByText("me/a-repository-with-a-long-name");
+    expect(repoElement.className).toContain("truncate");
+    expect(repoElement.className).toContain("min-w-0");
   });
 
   it("shows the increase question and increases a cost-held run's limit after Yes", async () => {
@@ -466,7 +390,7 @@ describe("NotificationStack", () => {
 
     expect(actions.increaseCostLimit).not.toHaveBeenCalled();
     expect(actions.read).toHaveBeenCalledWith(12, expect.any(Object));
-    expect(screen.queryByText("Workflow cost limit exceeded")).toBeNull();
+    expect(screen.queryByText("Workflow cost limit exceeded #12")).toBeNull();
   });
 
   it.each([
@@ -496,7 +420,7 @@ describe("NotificationStack", () => {
     renderStack();
 
     expect(
-      await screen.findByText("Workflow cost limit exceeded"),
+      await screen.findByText("Workflow cost limit exceeded #12"),
     ).toBeTruthy();
     expect(
       screen.queryByRole("group", { name: "Increase to $30.00?" }),
@@ -671,31 +595,9 @@ describe("NotificationStack", () => {
       },
       message: "Clear failed",
     },
-    {
-      action: "focus",
-      invoke: async () => {
-        fireEvent.click(
-          await screen.findByRole("button", { name: "Open PR #12 in Herdr" }),
-        );
-      },
-      message: "Focus failed",
-    },
   ])("shows $action failures through the shared error toast", async (testCase) => {
     notifications.value = [makeNotification(12)];
-    notifications.herdrRepos = [
-      {
-        repo: "me/proj",
-        session_name: "me/proj",
-        agents: [],
-        pull_workspaces: [
-          { pull: 12, pane_id: "pane_live_1234567890", status: "working" },
-        ],
-        issue_workspaces: [],
-      },
-    ];
-    actions[
-      testCase.action as "read" | "readAll" | "focus"
-    ].mockImplementationOnce(
+    actions[testCase.action as "read" | "readAll"].mockImplementationOnce(
       (_input: unknown, options: { onError: (error: Error) => void }) =>
         options.onError(new Error(testCase.message)),
     );

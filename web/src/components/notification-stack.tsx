@@ -7,7 +7,6 @@ import {
   ExternalLink,
   Info,
   MessageSquare,
-  Terminal,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -26,7 +25,6 @@ import {
   useReadAllNotifications,
   useReadNotification,
 } from "@/queries/notifications";
-import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
 import {
   useIncreaseWorkflowRunCostLimit,
   useWorkflowRunForPull,
@@ -78,12 +76,18 @@ function resourceLabel(notification: Notification): string {
   return "Repository";
 }
 
+function notificationKindLabel(notification: Notification): string {
+  if (notification.kind === "merge_ready") return "Merge ready";
+  if (notification.kind === "over_budget") return "Over budget";
+  if (notification.kind === "human_attention") return "Human attention";
+  if (notification.kind === "agent_comment") return "Agent comment";
+  return "Notification";
+}
+
 export function NotificationStack() {
   const { data, isError } = useNotifications({ unreadOnly: true });
   const readNotification = useReadNotification();
   const readAllNotifications = useReadAllNotifications();
-  const focus = useFocusHerdrAgent();
-  const herdrSessions = useHerdrSessions();
   const { showError } = useToast();
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
   const [minimized, setMinimized] = useState(getNotificationsMinimized);
@@ -142,47 +146,6 @@ export function NotificationStack() {
             : "Failed to clear notifications.",
         ),
     });
-  }
-
-  function herdrPaneId(notification: Notification): string | null {
-    const repo = herdrSessions.data?.repos.find(
-      (group) => group.repo === notification.repo.name,
-    );
-    if (notification.herdr_pane_id) {
-      const paneId = notification.herdr_pane_id;
-      const paneIsLive =
-        repo?.agents.some((agent) => agent.id === paneId) ||
-        repo?.pull_workspaces.some(
-          (workspace) => workspace.pane_id === paneId,
-        ) ||
-        repo?.issue_workspaces?.some(
-          (workspace) => workspace.pane_id === paneId,
-        );
-      return paneIsLive ? paneId : null;
-    }
-    if (
-      notification.resource.kind !== "pull" ||
-      notification.resource.number == null
-    ) {
-      return null;
-    }
-    return (
-      repo?.pull_workspaces.find(
-        (workspace) => workspace.pull === notification.resource.number,
-      )?.pane_id ?? null
-    );
-  }
-
-  function focusHerdr(notification: Notification, paneId: string) {
-    focus.mutate(
-      { repo: notification.repo.name, paneId },
-      {
-        onError: (error) =>
-          showError(
-            error instanceof Error ? error.message : "Failed to open in Herdr.",
-          ),
-      },
-    );
   }
 
   if (!isError && unread.length === 0) return null;
@@ -251,9 +214,6 @@ export function NotificationStack() {
               key={notification.id}
               notification={notification}
               onRead={() => markRead(notification)}
-              herdrPaneId={herdrPaneId(notification)}
-              onFocusHerdr={(paneId) => focusHerdr(notification, paneId)}
-              herdrPending={focus.isPending}
             />
           ))}
     </section>
@@ -263,19 +223,18 @@ export function NotificationStack() {
 function NotificationItem({
   notification,
   onRead,
-  onFocusHerdr,
-  herdrPaneId,
-  herdrPending,
 }: {
   notification: Notification;
   onRead: () => void;
-  onFocusHerdr: (paneId: string) => void;
-  herdrPaneId: string | null;
-  herdrPending: boolean;
 }) {
   const Icon = notificationIcon(notification);
   const label = resourceLabel(notification);
   const costHeldRun = costHeldWorkflowRun(notification);
+  const resourceTitle = notification.resource.title ?? notification.title;
+  const resourceHeading =
+    notification.resource.number == null
+      ? resourceTitle
+      : `${resourceTitle} #${notification.resource.number}`;
   return (
     <article
       data-debug-component="NotificationItem"
@@ -297,11 +256,14 @@ function NotificationItem({
           onClick={onRead}
           className="block rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
+          <div className="truncate text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">
+            {notificationKindLabel(notification)}
+          </div>
           <div className="flex items-baseline gap-1.5">
             {/* The title stays shrinkable: one long enough to fill the row has to ellipsize
                 rather than push the row wider. */}
-            <span className="min-w-0 truncate font-medium">
-              {notification.title}
+            <span className="min-w-0 truncate font-semibold">
+              {resourceHeading}
             </span>
             <ExternalLink
               className="size-3 shrink-0 self-center text-muted-foreground"
@@ -311,7 +273,7 @@ function NotificationItem({
           <div className="truncate text-xs text-muted-foreground">
             {notification.body}
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <span className="min-w-0 truncate">{notification.repo.name}</span>
             <span aria-hidden="true">/</span>
             <span className="shrink-0">{label}</span>
@@ -342,18 +304,6 @@ function NotificationItem({
         >
           <X className="size-4" aria-hidden="true" />
         </button>
-        {herdrPaneId ? (
-          <button
-            type="button"
-            title="Open in Herdr"
-            aria-label={`Open ${label} in Herdr`}
-            disabled={herdrPending}
-            onClick={() => onFocusHerdr(herdrPaneId)}
-            className="inline-flex size-5 items-center justify-center self-center rounded-md border border-zinc-400 bg-zinc-500 text-zinc-50 hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-          >
-            <Terminal className="size-2.5" aria-hidden="true" />
-          </button>
-        ) : null}
       </div>
     </article>
   );
