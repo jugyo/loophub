@@ -1,4 +1,4 @@
-import { DebugPanel } from "@/components/debug-panel";
+import type { ReactNode } from "react";
 import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import { formatCost } from "@/lib/session-usage";
 import { useCurrentRepo } from "@/lib/use-current-repo";
@@ -9,7 +9,7 @@ function configuredValue(value: string | undefined): string {
   return value?.trim() ? value : "Not set";
 }
 
-export function AppStatusbar() {
+export function AppStatusbar({ debugPanel }: { debugPanel?: ReactNode }) {
   const { data, isError } = useSettings();
   const currentRepo = useCurrentRepo();
   const [owner = "", repo = ""] = currentRepo?.split("/") ?? [];
@@ -83,7 +83,7 @@ export function AppStatusbar() {
           </div>
         ))}
       </dl>
-      <DebugPanel />
+      {debugPanel}
     </footer>
   );
 }

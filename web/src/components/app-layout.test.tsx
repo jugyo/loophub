@@ -5,7 +5,13 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppLayout } from "./app-layout";
 
@@ -40,7 +46,12 @@ vi.mock("@/queries/worker-status", () => ({
 }));
 
 vi.mock("@/components/app-statusbar", () => ({
-  AppStatusbar: () => <footer data-testid="app-statusbar">Status</footer>,
+  AppStatusbar: ({ debugPanel }: { debugPanel?: React.ReactNode }) => (
+    <footer data-testid="app-statusbar">
+      Status
+      {debugPanel}
+    </footer>
+  ),
 }));
 vi.mock("@/components/app-topbar", () => ({
   AppTopbar: () => <header>Topbar</header>,
@@ -66,6 +77,9 @@ vi.mock("@/components/toast", () => ({
   ToastViewport: () => null,
 }));
 vi.mock("@/lib/use-scroll-to-top", () => ({ useScrollToTop: vi.fn() }));
+vi.mock("@/lib/web-config", () => ({
+  useWebConfig: () => ({ debug: true }),
+}));
 
 afterEach(cleanup);
 
@@ -121,6 +135,22 @@ describe("AppLayout", () => {
     expect(statusbar.compareDocumentPosition(main as Node)).toBe(
       Node.DOCUMENT_POSITION_PRECEDING,
     );
+  });
+
+  it("places the open debug panel after main content in the shell flow", async () => {
+    const { container } = renderLayout();
+    await screen.findByText("Dashboard route");
+
+    fireEvent.click(screen.getByRole("button", { name: "Debug panel" }));
+
+    const main = container.querySelector("main");
+    const panel = screen.getByTestId("debug-log-panel");
+    expect(main?.compareDocumentPosition(panel)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(panel.parentElement?.className).toContain("flex");
+    expect(panel.parentElement?.className).toContain("flex-col");
+    expect(panel.className).toContain("shrink-0");
   });
 
   it("reserves the detail pages' sticky header height as scroll padding (#2033)", async () => {

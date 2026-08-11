@@ -96,6 +96,7 @@ describe("DebugPanel", () => {
   it("lists received events in ascending order (newest at the bottom)", () => {
     renderPanel(true);
     openPanel();
+    openTab(/Event/);
     act(() => recordEvents([event(1), event(2, "pull_request.updated")]));
 
     const items = screen.getAllByRole("listitem");
@@ -104,15 +105,26 @@ describe("DebugPanel", () => {
     expect(items[1].textContent).toContain("pull_request.updated");
   });
 
-  it("renders the panel as a full-width dock anchored to the bottom of the screen", () => {
+  it("renders the panel as a full-width dock in the app layout flow", () => {
     renderPanel(true);
     openPanel();
     const panel = screen.getByTestId("debug-log-panel");
-    expect(panel.className).toContain("fixed");
-    expect(panel.className).toContain("inset-x-0");
-    expect(panel.className).toContain("bottom-7");
+    expect(panel.className).not.toContain("fixed");
+    expect(panel.className).toContain("shrink-0");
     expect(panel.className).not.toContain("w-[26rem]");
     expect(panel.className).not.toContain("right-3");
+  });
+
+  it("orders tabs as RPC, Event, and Invalidation and opens on RPC", () => {
+    renderPanel(true);
+    openPanel();
+
+    expect(
+      screen.getAllByRole("tab").map((tab) => tab.textContent?.trim()),
+    ).toEqual(["RPC", "Event", "Invalidation"]);
+    expect(
+      screen.getByRole("tab", { name: "RPC" }).getAttribute("aria-selected"),
+    ).toBe("true");
   });
 
   it("resizes the panel height by dragging its top edge", () => {
@@ -145,6 +157,7 @@ describe("DebugPanel", () => {
   it("follows the tail while pinned to the bottom and stops when scrolled up", () => {
     renderPanel(true);
     openPanel();
+    openTab(/Event/);
     act(() => recordEvents([event(1)]));
 
     const scroll = screen.getByTestId("debug-log-scroll");
@@ -257,6 +270,7 @@ describe("DebugPanel", () => {
     act(() => recordEvents([event(1)]));
     expect(getDebugLogSnapshot().events).toHaveLength(0);
     openPanel();
+    openTab(/Event/);
     expect(screen.getByText("No events received yet")).toBeTruthy();
   });
 
@@ -274,9 +288,10 @@ describe("DebugPanel", () => {
 
     openPanel();
     expect(
-      screen.getByRole("tab", { name: /Events/ }).getAttribute("aria-selected"),
+      screen.getByRole("tab", { name: /RPC/ }).getAttribute("aria-selected"),
     ).toBe("true");
-    expect(screen.getByText("No events received yet")).toBeTruthy();
+    expect(screen.getByText("No RPC calls yet")).toBeTruthy();
+    openTab(/Event/);
     act(() => recordEvents([event(2, "pull_request.updated")]));
     expect(screen.getByText(/pull_request\.updated/)).toBeTruthy();
   });

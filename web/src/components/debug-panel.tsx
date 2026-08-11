@@ -2,11 +2,19 @@
 // (AppStatusbar) that opens a full-width dock panel (Chrome DevTools style) showing the
 // event -> invalidation -> refetch trail recorded in web/src/lib/debug-log.ts. Its top
 // edge can be dragged to resize the height, and its log view follows the tail while the
-// scroll position stays at the bottom. Desktop-only; the panel is a fixed overlay and
-// does not participate in mobile layout.
+// scroll position stays at the bottom. Desktop-only; the panel participates in the app shell
+// layout so it does not cover route content.
 
 import { Activity, Bug, Cable, ListTree, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   clearDebugLog,
@@ -22,9 +30,9 @@ import { useWebConfig } from "@/lib/web-config";
 type LogTab = "events" | "invalidations" | "rpcs";
 
 const TABS: { id: LogTab; label: string }[] = [
-  { id: "events", label: "Events" },
-  { id: "invalidations", label: "Invalidation" },
   { id: "rpcs", label: "RPC" },
+  { id: "events", label: "Event" },
+  { id: "invalidations", label: "Invalidation" },
 ];
 
 const DEFAULT_HEIGHT = 320;
@@ -33,6 +41,64 @@ const MIN_HEIGHT = 96;
 const MAX_HEIGHT_FRACTION = 0.9;
 // While the scroll position is this close to the bottom, follow the tail.
 const STICK_TO_BOTTOM_EPSILON = 8;
+
+type DebugPanelContextValue = {
+  debug: boolean;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  logs: DebugLogState;
+  height: number;
+  setHeight: (height: number) => void;
+  resizing: boolean;
+  setResizing: (resizing: boolean) => void;
+  stickToBottom: boolean;
+  setStickToBottom: (stickToBottom: boolean) => void;
+  scrollRef: RefObject<HTMLDivElement | null>;
+};
+
+const DebugPanelContext = createContext<DebugPanelContextValue | null>(null);
+
+export function DebugPanelProvider({ children }: { children: ReactNode }) {
+  const { debug } = useWebConfig();
+  const [open, setOpen] = useState(false);
+  const logs = useDebugLog(debug && open);
+  const [height, setHeight] = useState(DEFAULT_HEIGHT);
+  const [resizing, setResizing] = useState(false);
+  const [stickToBottom, setStickToBottom] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  return (
+    <DebugPanelContext.Provider
+      value={{
+        debug,
+        open,
+        setOpen,
+        logs,
+        height,
+        setHeight,
+        resizing,
+        setResizing,
+        stickToBottom,
+        setStickToBottom,
+        scrollRef,
+      }}
+    >
+      {children}
+    </DebugPanelContext.Provider>
+  );
+}
+
+function useDebugPanelContext() {
+  return useContext(DebugPanelContext);
+}
+
+function useRequiredDebugPanelContext() {
+  const panel = useDebugPanelContext();
+  if (!panel) {
+    throw new Error("DebugLogPanel must be rendered inside DebugPanelProvider");
+  }
+  return panel;
+}
 
 function formatTime(at: number): string {
   const d = new Date(at);
@@ -169,48 +235,48 @@ function LogList({ tab, logs }: { tab: LogTab; logs: DebugLogState }) {
 }
 
 export function DebugPanel() {
-  const { debug } = useWebConfig();
-  const [open, setOpen] = useState(false);
-  const logs = useDebugLog(debug && open);
-
-  if (!debug) return null;
-
-  function handleClose() {
-    clearDebugLog();
-    setOpen(false);
-  }
-
   return (
-    <>
-      {open ? <DebugLogPanel logs={logs} onClose={handleClose} /> : null}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        aria-label="Debug panel"
-        aria-pressed={open}
-        title="Debug panel"
-        onClick={() => setOpen(true)}
-        className="ml-1 h-7 w-7"
-      >
-        <Bug className="size-3.5" aria-hidden="true" />
-      </Button>
-    </>
+    <DebugPanelProvider>
+      <DebugPanelToggle />
+      <DebugLogPanel />
+    </DebugPanelProvider>
   );
 }
 
-function DebugLogPanel({
-  logs,
-  onClose,
-}: {
-  logs: DebugLogState;
-  onClose: () => void;
-}) {
-  const [tab, setTab] = useState<LogTab>("events");
-  const [height, setHeight] = useState(DEFAULT_HEIGHT);
-  const [resizing, setResizing] = useState(false);
-  const [stickToBottom, setStickToBottom] = useState(true);
-  const scrollRef = useRef<HTMLDivElement>(null);
+export function DebugPanelToggle() {
+  const panel = useDebugPanelContext();
+  if (!panel?.debug) return null;
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label="Debug panel"
+      aria-pressed={panel.open}
+      title="Debug panel"
+      onClick={() => panel.setOpen(true)}
+      className="ml-1 h-7 w-7"
+    >
+      <Bug className="size-3.5" aria-hidden="true" />
+    </Button>
+  );
+}
+
+export function DebugLogPanel() {
+  const panel = useRequiredDebugPanelContext();
+  const [tab, setTab] = useState<LogTab>("rpcs");
+
+  const {
+    logs,
+    height,
+    setHeight,
+    resizing,
+    setResizing,
+    stickToBottom,
+    setStickToBottom,
+    scrollRef,
+  } = panel;
 
   const entries =
     tab === "events"
@@ -258,10 +324,12 @@ function DebugLogPanel({
     setStickToBottom(distanceFromBottom < STICK_TO_BOTTOM_EPSILON);
   }
 
+  if (!panel.debug || !panel.open) return null;
+
   return (
     <div
       data-testid="debug-log-panel"
-      className="fixed inset-x-0 bottom-7 z-50 flex flex-col overflow-hidden border-t bg-card shadow-lg"
+      className="flex shrink-0 flex-col overflow-hidden border-t bg-card shadow-lg"
       style={{ height }}
     >
       <div
@@ -300,7 +368,10 @@ function DebugLogPanel({
             size="icon"
             aria-label="Close debug panel"
             title="Close debug panel"
-            onClick={onClose}
+            onClick={() => {
+              clearDebugLog();
+              panel.setOpen(false);
+            }}
             className="h-7 w-7"
           >
             <X className="size-3.5" aria-hidden="true" />

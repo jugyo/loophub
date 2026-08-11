@@ -18,6 +18,11 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { CodingAgent, GlobalSettings, RepoAgentConfig } from "@/api/types";
+import {
+  DebugLogPanel,
+  DebugPanelProvider,
+  DebugPanelToggle,
+} from "@/components/debug-panel";
 import { SettingsPage } from "@/components/settings-page";
 import { WebConfigProvider } from "@/lib/web-config";
 import { AppStatusbar } from "./app-statusbar";
@@ -318,7 +323,12 @@ describe("AppStatusbar", () => {
       defaultOptions: { queries: { retry: false } },
     });
     const rootRoute = createRootRoute({
-      component: () => <AppStatusbar />,
+      component: () => (
+        <DebugPanelProvider>
+          <DebugLogPanel />
+          <AppStatusbar debugPanel={<DebugPanelToggle />} />
+        </DebugPanelProvider>
+      ),
     });
     const homeRoute = createRoute({
       getParentRoute: () => rootRoute,
@@ -347,7 +357,7 @@ describe("AppStatusbar", () => {
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
 
     fireEvent.click(toggle);
-    expect(within(statusbar).getByTestId("debug-log-panel")).toBeTruthy();
+    expect(screen.getByTestId("debug-log-panel")).toBeTruthy();
   });
 
   it("keeps application Coding agent settings on pages that are not repo-scoped (#1536)", async () => {
