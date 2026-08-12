@@ -213,7 +213,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `workflowRuns.deliver` | 委譲（`activateStep`） | — | herdr agent list と pane run |
 | `workflowInstructions.registerParentPane` | procedure | pane row、resource link | — |
 | `workflowInstructions.dispatchRun` | procedure（区間ごと） | receipt claim / complete と cursor advance | pane への配送。claim と complete は配送を挟んだ別区間 |
-| `workflowEscalation.escalateHuman` | 三段 protocol | escalation event、claim、issue comment と `issue.commented`、complete | — |
+| `workflowEscalation.escalateHuman` | 三段 protocol | escalation event、claim、PR comment と `pull_request.commented`、complete | — |
 | `workflowCostHold.run` | 三段 protocol | claim、await-human の state と event、complete | herdr list / Escape / pane notification |
 | `workflowWatch.beginEffect` / `completeEffect` | store helper | receipt の claim / complete | wait、source event の選択 |
 

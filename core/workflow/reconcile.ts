@@ -295,12 +295,7 @@ export function workflowActionPlan(
     case "wait":
       return watch([]);
     case "escalate": {
-      const escalate = command(
-        "escalate-human",
-        ...scoped,
-        "--issue",
-        String(context.issue),
-      );
+      const escalate = command("escalate-human", ...scoped);
       escalate.input = {
         argument: "--reason",
         source: "escalation_reason",

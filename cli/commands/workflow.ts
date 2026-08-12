@@ -870,25 +870,23 @@ async function escalateHuman(): Promise<void> {
   );
   const repo =
     flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
-  const issue =
-    flags.issue === undefined ? undefined : positiveInt(flags.issue, "--issue");
   const result = await runOp(async () =>
     (await svc()).workflowEscalation.escalateHuman(
       repo,
-      { run: runId, reason: flags.reason!, issue },
+      { run: runId, reason: flags.reason! },
       await writeSession(),
     ),
   );
   if (flags.json) {
     out(result);
   } else {
-    console.log(`Workflow run #${result.run}\tIssue #${result.issue}`);
-    const effect = result.effects.issue_comment;
-    console.log(`issue comment\t${effect.status.replaceAll("_", " ")}`);
-    if (effect.error) console.log(`issue comment error\t${effect.error}`);
+    console.log(`Workflow run #${result.run}\tPR #${result.pr}`);
+    const effect = result.effects.pr_comment;
+    console.log(`pr comment\t${effect.status.replaceAll("_", " ")}`);
+    if (effect.error) console.log(`pr comment error\t${effect.error}`);
   }
   if (!result.ok) {
-    fail("escalate-human did not record the Issue comment");
+    fail("escalate-human did not record the PR comment");
   }
 }
 

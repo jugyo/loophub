@@ -34,7 +34,7 @@ export function usage(): void {
   lh workflow turn done [--repo owner/name] [--run <id>]   # (Execute child) declare the turn done — payload-less; the parent observes HEAD/review state
   lh workflow escalate --reason <text> [--repo owner/name] [--run <id>]   # (Execute child) request human guidance; the parent notifies the human and waits for an instruction
   lh workflow deliver --run <id> --text <single-line-instruction> [--repo owner/name] [--json]   # activate and deliver to the latest Execute child pane
-  lh workflow escalate-human --reason <text> [--repo owner/name] [--run <id>] [--issue <n>]   # record an idempotent Issue comment
+  lh workflow escalate-human --reason <text> [--repo owner/name] [--run <id>]   # record an idempotent PR comment
   lh workflow instruction <run> [--repo owner/name] (--event <id> --requires-changes true|false | --note <text|->) [--json]      # submit a parent input — a GitHub-reference verdict or a direct human instruction — and return the instruction it produces, without changing run state
   lh workflow effect begin|complete --repo owner/name --run <id> --event <id> --effect <key> [--json]   # durable idempotency receipt for a non-transactional parent side effect
   lh workflow cost-hold --repo owner/name --run <id> --event <id> [--json]   # hold a cost-exceeded run, interrupt its active pane, and notify the child exactly once

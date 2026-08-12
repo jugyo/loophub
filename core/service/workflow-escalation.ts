@@ -1,9 +1,8 @@
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
-import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
 import { inlineText } from "../workflow/prompts.ts";
 import { comments } from "./comments.ts";
-import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
+import { actorFor, ensureWritable, repoOr404 } from "./shared.ts";
 
 type EffectStatus = {
   status: "completed" | "already_completed" | "pending" | "failed";
@@ -13,14 +12,14 @@ type EffectStatus = {
 type WorkflowEscalationDeps = {
   createComment(
     name: string,
-    issue: number,
+    pr: number,
     body: string,
     sessionId?: string | null,
   ): unknown;
 };
 
 const defaultDeps: WorkflowEscalationDeps = {
-  createComment: comments.create,
+  createComment: comments.createForPull,
 };
 
 function reasonText(value: string): string {
@@ -72,7 +71,7 @@ function runEffect(
 export const workflowEscalation = {
   escalateHuman(
     name: string,
-    input: { run: number; reason: string; issue?: number },
+    input: { run: number; reason: string },
     sessionId?: string | null,
     dependencyOverrides: Partial<WorkflowEscalationDeps> = {},
   ) {
@@ -85,47 +84,37 @@ export const workflowEscalation = {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
     const reason = reasonText(input.reason);
-    const requestedIssueNumber = input.issue ?? run.issue_number;
-    issueOr404(repo, requestedIssueNumber, "issue");
+    const pr = S.getIssue(repo.id, run.pr_number);
+    if (pr?.kind !== "pull") {
+      throw new ServiceError(
+        404,
+        `Workflow run linked PR #${run.pr_number} not found`,
+      );
+    }
     const event = S.getOrCreateWorkflowHumanEscalationEvent(
       repo.id,
       actorFor(sessionId),
       {
         id: run.id,
-        issue_number: requestedIssueNumber,
+        issue_number: run.issue_number,
         reason,
       },
     );
-    // The stored row is the first escalation recorded for this run and reason, so its issue number
-    // is what a later replay must agree with. A row that predates the field falls back to the
-    // requested issue instead of reporting a conflict against `undefined`.
-    const issueNumber =
-      parseWorkflowEventPayload(event.payload)?.issue_number ??
-      requestedIssueNumber;
-    if (input.issue !== undefined && input.issue !== issueNumber) {
-      throw new ServiceError(
-        409,
-        `escalation for this run and reason already targets Issue #${issueNumber}`,
-      );
-    }
     const body = `Workflow run ${run.id} requires human guidance: ${reason}`;
-    const issueComment = runEffect(
-      run.id,
-      event.id,
-      "escalation.issue-comment",
-      () => deps.createComment(name, issueNumber, body, sessionId),
+    const prComment = runEffect(run.id, event.id, "escalation.pr-comment", () =>
+      deps.createComment(name, run.pr_number, body, sessionId),
     );
     const ok =
-      issueComment.status === "completed" ||
-      issueComment.status === "already_completed";
+      prComment.status === "completed" ||
+      prComment.status === "already_completed";
     return {
       ok,
       run: run.id,
       event_id: event.id,
-      issue: issueNumber,
+      pr: run.pr_number,
       reason,
       effects: {
-        issue_comment: issueComment,
+        pr_comment: prComment,
       },
     };
   },
