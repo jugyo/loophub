@@ -94,6 +94,7 @@ function fakeRuntime(
     sendTextExit?: number;
     focusedState?: Record<string, string>;
     paneCloseExit?: number;
+    paneMoveExit?: number;
     paneListJson?: string;
     worktreeOpenJson?: string;
     tabCreateJson?: string;
@@ -106,6 +107,7 @@ function fakeRuntime(
     sendTextExit = 0,
     focusedState,
     paneCloseExit = 0,
+    paneMoveExit = 0,
     paneListJson = "",
     worktreeOpenJson = "",
     tabCreateJson = REUSE_TAB_JSON,
@@ -168,7 +170,7 @@ case " $command " in
   *" pane list "*) printf '%s' '${paneListJson}'; exit 0 ;;
   *" pane split "*) printf '%s' '${paneSplitJson}'; exit 0 ;;
   *" pane zoom "*) change_focus; exit 0 ;;
-  *" pane move "*) change_focus_without_no_focus; exit 0 ;;
+  *" pane move "*) change_focus_without_no_focus; exit ${paneMoveExit} ;;
   *" pane process-info "*)
     # The pid a discard signals, per pane. Written by the caller so a test can offer a process group
     # it owns instead of an arbitrary one; no file for the pane means herdr cannot report it, which
@@ -705,6 +707,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     }),
     // The child's pane, split off the parent's — the pane the layout below then arranges.
     paneSplitJson: JSON.stringify({ result: { pane: { pane_id: "w1:p3" } } }),
+    paneMoveExit: 7,
   });
   try {
     const launched = run(
@@ -731,6 +734,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     );
 
     expect(launched.exitCode, launched.stderr).toBe(0);
+    expect(launched.stderr).toContain("warning: skipped Workflow pane layout");
     expect(launched.stdout).toContain(`agent\texecutor #${body.run.id}-1`);
     const log = readFileSync(runtime.log, "utf8");
     // The child splits its parent's pane, so it lands in the run's own tab.
@@ -742,10 +746,10 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     expect(log).toContain(
       "pane move w1:p3 --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
     );
-    expect(log).toContain(
+    expect(log).not.toContain(
       "pane move w1:p3 --tab w1:t1 --split right --target-pane w1:p2 --ratio 0.5 --no-focus",
     );
-    expect(log).toContain("tab close w1:t3");
+    expect(log).not.toContain("tab close w1:t3");
     expect(log).not.toContain("pane move w1:p4");
     expect(log).not.toContain("pane zoom");
     expect(log).not.toMatch(/(?:workspace|tab|agent) focus/);

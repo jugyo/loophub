@@ -14,7 +14,6 @@ import {
 } from "../../core/terminal/terminal-launch.ts";
 import {
   layoutWorkflowTab,
-  WorkflowPaneLayoutError,
   type WorkflowPaneLayoutHerdr,
 } from "../../core/terminal/workflow-pane-layout.ts";
 import { workflowParentHerdrAgentName } from "../../core/workflow/herdr-agents.ts";
@@ -133,8 +132,7 @@ function preflightStepLaunch(runtime: CodingAgent): void {
 }
 
 // The Herdr seam core's layoutWorkflowTab drives: one spawnSync per command, bound to the run's
-// session. Throwing on failure lets the layout operation decide what a failed command means; the
-// caller turns the resulting WorkflowPaneLayoutError into a visible non-zero exit.
+// session. Layout is best-effort and does not change launch-step's result after confirmation.
 function herdrPaneLayoutRunner(sessionName: string): WorkflowPaneLayoutHerdr {
   return (args, opts) => {
     const captureStdout = opts?.captureStdout === true;
@@ -525,20 +523,15 @@ async function launchStep(): Promise<void> {
     fail("herdr returned no valid pane_id for the step's pane");
   }
   // The child's command is in its pane once the launch succeeds, so persist that truth before
-  // ancillary layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
-  // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
+  // ancillary layout work. Layout is best-effort and must not turn a recorded launch into a
+  // failure; launch-step never retries automatically (an explicit retry is a new session).
   await confirm(childPaneId);
   if (result.anchor_pane_id) {
-    try {
-      layoutWorkflowTab({
-        anchorPaneId: result.anchor_pane_id,
-        runId: result.run.id,
-        herdr: herdrPaneLayoutRunner(result.herdr.sessionName),
-      });
-    } catch (e) {
-      if (e instanceof WorkflowPaneLayoutError) fail(e.message);
-      throw e;
-    }
+    layoutWorkflowTab({
+      anchorPaneId: result.anchor_pane_id,
+      runId: result.run.id,
+      herdr: herdrPaneLayoutRunner(result.herdr.sessionName),
+    });
   } else {
     // Preserve the legacy/headless launch path that had no placement anchor. The child got its own
     // tab, so there is no run tab to rebuild; make the missing visual guarantee explicit without

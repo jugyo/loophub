@@ -3,7 +3,6 @@ import {
   layoutWorkflowTab,
   parsePreviousWorkflowVerifyPane,
   parseWorkflowRunTab,
-  WorkflowPaneLayoutError,
   workflowPaneGridPlan,
 } from "./workflow-pane-layout.ts";
 
@@ -134,7 +133,7 @@ describe("Workflow pane grid", () => {
     });
   });
 
-  test("refuses to change a tab containing a non-Workflow pane", () => {
+  test("ignores a non-Workflow pane in the anchor's tab", () => {
     const stdout = JSON.stringify({
       result: {
         panes: [
@@ -153,10 +152,14 @@ describe("Workflow pane grid", () => {
         ],
       },
     });
-    expect(parseWorkflowRunTab(stdout, "w1:p1", 7)).toBeNull();
+    expect(parseWorkflowRunTab(stdout, "w1:p1", 7)).toEqual({
+      tabId: "w1:t1",
+      workspaceId: "w1",
+      paneIds: ["w1:p1"],
+    });
   });
 
-  test("refuses to move a step pane from another Workflow run", () => {
+  test("ignores a step pane from another Workflow run", () => {
     const stdout = JSON.stringify({
       result: {
         panes: [
@@ -175,7 +178,11 @@ describe("Workflow pane grid", () => {
         ],
       },
     });
-    expect(parseWorkflowRunTab(stdout, "w1:p1", 7)).toBeNull();
+    expect(parseWorkflowRunTab(stdout, "w1:p1", 7)).toEqual({
+      tabId: "w1:t1",
+      workspaceId: "w1",
+      paneIds: ["w1:p1"],
+    });
   });
 
   test("refuses an anchor that is missing, is a step pane, or shares its tab with a second parent", () => {
@@ -356,7 +363,7 @@ describe("Workflow tab layout", () => {
     expect(commands).toEqual(["pane list"]);
   });
 
-  test("refuses to rebuild a tab that holds a foreign pane", () => {
+  test("does not move a foreign pane in the anchor's tab", () => {
     const { commands, herdr } = fakeHerdr({
       "pane list": paneListJson([
         {
@@ -374,11 +381,7 @@ describe("Workflow tab layout", () => {
       ]),
     });
 
-    expect(() =>
-      layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr }),
-    ).toThrow(
-      /pane w1:p2 is not the only parent pane of a tab holding just run #7's panes/,
-    );
+    layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr });
     expect(commands).toEqual(["pane list"]);
   });
 
@@ -474,15 +477,13 @@ describe("Workflow tab layout", () => {
       "tab create": "not json",
     });
 
-    expect(() =>
-      layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr }),
-    ).toThrow(/herdr tab create returned invalid JSON/);
+    layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr });
     expect(commands).not.toContain(
       "pane move w1:p3 --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
     );
   });
 
-  test("wraps a failed Herdr command as a layout error and stops the rebuild", () => {
+  test("warns on a failed Herdr command and stops the rebuild", () => {
     const { commands, herdr } = fakeHerdr(
       {
         "pane list": paneListJson([
@@ -504,9 +505,7 @@ describe("Workflow tab layout", () => {
       "pane move",
     );
 
-    expect(() =>
-      layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr }),
-    ).toThrow(new WorkflowPaneLayoutError("herdr exited with status 7"));
+    layoutWorkflowTab({ anchorPaneId: "w1:p2", runId: 7, herdr });
     // No cleanup of the half-staged rebuild: the failure is left visible for a human.
     expect(commands).not.toContain("tab close w1:t3");
   });
