@@ -469,6 +469,26 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "workflowRuns/increaseReworkLimit": {
+    description:
+      "Increase a rework-held Workflow run's limit by its current fixed limit.",
+    params: params(
+      {
+        repo,
+        run: positiveInt,
+        expected_limit: positiveInt,
+        session_id: sid,
+      },
+      ["repo", "run", "expected_limit", "session_id"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.workflowRuns.increaseReworkLimitForHuman(
+        p.repo,
+        { run: p.run, expectedLimit: p.expected_limit },
+        p.session_id,
+      ),
+  },
 
   // ---- terminal launch ----
   "terminal/launch": {

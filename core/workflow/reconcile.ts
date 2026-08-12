@@ -40,6 +40,7 @@ export type WorkflowWakeInput =
   | { kind: "pr_comment"; commentId: number }
   | { kind: "out_of_band_review"; reviewId: number }
   | { kind: "cost_limit_increased" }
+  | { kind: "rework_limit_increased" }
   | { kind: "human_instruction" }
   | { kind: "cost_exceeded"; eventId: number };
 
@@ -446,6 +447,27 @@ export function reconcileWorkflow(
     return {
       action: "wait",
       reason: `Workflow run status is ${input.status}.`,
+    };
+  }
+
+  if (input.wake?.kind === "rework_limit_increased") {
+    const review = input.steps.verify.latest_review;
+    if (
+      input.currentStep === "verify" &&
+      review?.fresh &&
+      review.event === "request_changes" &&
+      input.reworkCount < input.reworkLimit
+    ) {
+      return {
+        action: "request_rework",
+        reason: `A human increased the rework limit; review ${review.id} can be addressed.`,
+        review_id: review.id,
+      };
+    }
+    return {
+      action: "wait",
+      reason:
+        "The rework limit increased, but the run has no fresh review to rework.",
     };
   }
 

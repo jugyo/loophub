@@ -21,7 +21,8 @@ export type WorkflowRunTransition =
   | "activate_step"
   | "await_human"
   | "resume_after_human"
-  | "request_rework";
+  | "request_rework"
+  | "rework_limit_increased";
 
 /**
  * `id` is the run id every run-scoped payload carries — `eventsForWorkflowRun` selects on it, so a

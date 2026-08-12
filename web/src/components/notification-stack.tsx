@@ -27,6 +27,7 @@ import {
 } from "@/queries/notifications";
 import {
   useIncreaseWorkflowRunCostLimit,
+  useIncreaseWorkflowRunReworkLimit,
   useWorkflowRunForPull,
 } from "@/queries/workflow-runs";
 
@@ -61,6 +62,13 @@ function notificationTone(notification: Notification): string {
 // itself, so the kind and the run id decide it — never the generated title.
 function costHeldWorkflowRun(notification: Notification): number | null {
   if (notification.kind !== "over_budget") return null;
+  if (notification.resource.kind !== "pull") return null;
+  return notification.workflow_run_id;
+}
+
+function reworkHeldWorkflowRun(notification: Notification): number | null {
+  if (notification.kind !== "human_attention") return null;
+  if (!notification.body.toLowerCase().includes("rework limit")) return null;
   if (notification.resource.kind !== "pull") return null;
   return notification.workflow_run_id;
 }
@@ -230,6 +238,7 @@ function NotificationItem({
   const Icon = notificationIcon(notification);
   const label = resourceLabel(notification);
   const costHeldRun = costHeldWorkflowRun(notification);
+  const reworkHeldRun = reworkHeldWorkflowRun(notification);
   const resourceTitle = notification.resource.title ?? notification.title;
   const resourceHeading =
     notification.resource.number == null
@@ -293,6 +302,14 @@ function NotificationItem({
             onRead={onRead}
           />
         ) : null}
+        {reworkHeldRun != null && notification.resource.number != null ? (
+          <WorkflowReworkAction
+            repo={notification.repo.name}
+            pull={notification.resource.number}
+            run={reworkHeldRun}
+            onRead={onRead}
+          />
+        ) : null}
       </div>
       <div className="flex shrink-0 self-stretch flex-col justify-between gap-2">
         <button
@@ -306,6 +323,67 @@ function NotificationItem({
         </button>
       </div>
     </article>
+  );
+}
+
+function WorkflowReworkAction({
+  repo,
+  pull,
+  run,
+  onRead,
+}: {
+  repo: string;
+  pull: number;
+  run: number;
+  onRead: () => void;
+}) {
+  const [owner, name] = repo.split("/");
+  const { data: state } = useWorkflowRunForPull(owner, name, pull);
+  const increase = useIncreaseWorkflowRunReworkLimit(owner, name, pull);
+  const [error, setError] = useState<string | null>(null);
+  const [increasedLimit, setIncreasedLimit] = useState<number | null>(null);
+
+  if (increasedLimit !== null) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        Rework limit increased to {increasedLimit}.
+      </p>
+    );
+  }
+  if (!state || state.id !== run || !state.rework_limit_increase_available) {
+    return null;
+  }
+  const nextLimit = state.rework_limit * 2;
+  return (
+    <div className="mt-2 flex flex-col items-start gap-1 text-xs">
+      <YesNoPrompt
+        question={`Increase rework limit to ${nextLimit}?`}
+        pending={increase.isPending}
+        onYes={() =>
+          increase.mutate(
+            { run: state.id, expectedLimit: state.rework_limit },
+            {
+              onSuccess: (result) => {
+                setError(null);
+                setIncreasedLimit(result.current_limit);
+              },
+              onError: (failure) =>
+                setError(
+                  failure instanceof Error
+                    ? failure.message
+                    : "Failed to increase the workflow rework limit.",
+                ),
+            },
+          )
+        }
+        onNo={onRead}
+      />
+      {error ? (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

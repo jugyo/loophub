@@ -31,6 +31,7 @@ const actions = vi.hoisted(() => ({
   readAll: vi.fn(),
   showError: vi.fn(),
   increaseCostLimit: vi.fn(),
+  increaseReworkLimit: vi.fn(),
 }));
 
 vi.mock("@/queries/notifications", async () => {
@@ -63,6 +64,10 @@ vi.mock("@/queries/workflow-runs", () => ({
   useWorkflowRunForPull: () => ({ data: notifications.workflowRun }),
   useIncreaseWorkflowRunCostLimit: () => ({
     mutate: actions.increaseCostLimit,
+    isPending: false,
+  }),
+  useIncreaseWorkflowRunReworkLimit: () => ({
+    mutate: actions.increaseReworkLimit,
     isPending: false,
   }),
 }));
@@ -121,6 +126,15 @@ function makeCostNotification(
   });
 }
 
+function makeReworkNotification(): Notification {
+  return makeNotification(13, {
+    kind: "human_attention",
+    title: "Workflow rework limit reached",
+    body: "Workflow run 7 reached the rework limit (8/8).",
+    workflow_run_id: 7,
+  });
+}
+
 function makeRunState(
   partial: Partial<WorkflowRunState> = {},
 ): WorkflowRunState {
@@ -135,6 +149,7 @@ function makeRunState(
     cost_increment_usd: 10,
     cost_limit_usd: 20,
     cost_limit_increase_available: true,
+    rework_limit_increase_available: false,
     needs_human_reason: "cost limit exceeded",
     issue_number: 42,
     pr_number: 12,
@@ -379,6 +394,34 @@ describe("NotificationStack", () => {
       { run: 7, expectedLimitUsd: 20 },
       expect.any(Object),
     );
+  });
+
+  it("offers and confirms a rework limit increase", async () => {
+    notifications.value = [makeReworkNotification()];
+    notifications.workflowRun = makeRunState({
+      rework_count: 8,
+      rework_limit: 8,
+      rework_limit_increase_available: true,
+    });
+    actions.increaseReworkLimit.mockImplementationOnce(
+      (
+        _input: unknown,
+        options: { onSuccess: (result: { current_limit: number }) => void },
+      ) => options.onSuccess({ current_limit: 16 }),
+    );
+    renderStack();
+
+    expect(
+      await screen.findByRole("group", {
+        name: "Increase rework limit to 16?",
+      }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    expect(actions.increaseReworkLimit).toHaveBeenCalledWith(
+      { run: 7, expectedLimit: 8 },
+      expect.any(Object),
+    );
+    expect(screen.getByText("Rework limit increased to 16.")).toBeTruthy();
   });
 
   it("marks the notification read with No without increasing", async () => {

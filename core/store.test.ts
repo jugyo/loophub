@@ -1018,3 +1018,37 @@ test("listRepos sorts favorites first, then by insertion order (#457)", () => {
 
   expect(idsAmong([a.id, b.id, c.id])).toEqual([c.id, a.id, b.id]);
 });
+
+test("increases a held workflow rework limit with an expected-value guard", () => {
+  const repo = S.createRepo("me/rework-limit", "/tmp/rework-limit");
+  const issue = S.createIssue(repo.id, "issue", "Workflow", "", "me");
+  const pull = S.createIssue(repo.id, "pull", "Workflow PR", "", "me");
+  const workflow = S.createWorkflow({
+    name: "rework-limit",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 1,
+    costLimitUsd: 1,
+  });
+  S.updateWorkflowRun(run.id, {
+    reworkCount: 8,
+    needsHumanReason:
+      "Fresh review requests changes, but the rework limit of 8 has been reached.",
+  });
+
+  expect(S.increaseWorkflowRunReworkLimit(run.id, 8)).toEqual({
+    previous_limit: 8,
+    current_limit: 16,
+  });
+  expect(S.getWorkflowRun(run.id)?.rework_limit).toBe(16);
+  expect(S.increaseWorkflowRunReworkLimit(run.id, 8)).toBeNull();
+});

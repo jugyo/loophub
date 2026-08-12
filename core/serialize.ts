@@ -1557,6 +1557,7 @@ export interface WorkflowRunStateWire {
   active_verify_started_at: string | null;
   rework_count: number;
   rework_limit: number;
+  rework_limit_increase_available: boolean;
   cost_increment_usd: number;
   cost_limit_usd: number;
   // True only while the run is held on the current limit's cost-exceeded event and still has an
@@ -1631,6 +1632,7 @@ export function workflowRunStateJSON(input: {
   latestReview: WorkflowRunReviewSummaryWire | null;
   verificationStatus: WorkflowRunStateWire["verification_status"];
   reworkLimit: number;
+  reworkLimitIncreaseAvailable: boolean;
   costIncrementUsd: number;
   costLimitUsd: number;
   costLimitIncreaseAvailable: boolean;
@@ -1650,6 +1652,7 @@ export function workflowRunStateJSON(input: {
     active_verify_started_at: input.activeVerifyStartedAt,
     rework_count: run.rework_count,
     rework_limit: input.reworkLimit,
+    rework_limit_increase_available: input.reworkLimitIncreaseAvailable,
     cost_increment_usd: input.costIncrementUsd,
     cost_limit_usd: input.costLimitUsd,
     cost_limit_increase_available: input.costLimitIncreaseAvailable,

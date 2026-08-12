@@ -10,6 +10,7 @@ import {
   getWorkflowRunStateForPull,
   getWorkflowRunTotalCost,
   increaseWorkflowRunCostLimit,
+  increaseWorkflowRunReworkLimit,
 } from "@/api/client";
 import { queryKeys } from "./keys";
 
@@ -57,6 +58,32 @@ export function useIncreaseWorkflowRunCostLimit(
         }),
         // #112: on a list row that key is seeded by pageData/issueList and its query is disabled,
         // so the refetch that actually clears the hold is the page's.
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues(full) }),
+      ]);
+    },
+  });
+}
+
+export function useIncreaseWorkflowRunReworkLimit(
+  owner: string,
+  repo: string,
+  pull: number,
+) {
+  const full = `${owner}/${repo}`;
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      run,
+      expectedLimit,
+    }: {
+      run: number;
+      expectedLimit: number;
+    }) => increaseWorkflowRunReworkLimit(full, run, expectedLimit),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.workflowRunForPull(full, pull),
+        }),
         queryClient.invalidateQueries({ queryKey: queryKeys.issues(full) }),
       ]);
     },

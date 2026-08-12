@@ -466,6 +466,25 @@ export function increaseWorkflowRunCostLimit(
   });
 }
 
+/** Raise a rework-held run's limit by its current limit. */
+export function increaseWorkflowRunReworkLimit(
+  repo: string,
+  run: number,
+  expectedLimit: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{
+    run: number;
+    previous_limit: number;
+    current_limit: number;
+  }>("workflowRuns/increaseReworkLimit", {
+    repo,
+    run,
+    expected_limit: expectedLimit,
+    session_id: sessionId,
+  });
+}
+
 // --- global settings ---
 // Instance-level settings (#474), as opposed to the per-repo settings above.
 export function getSettings() {

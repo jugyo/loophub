@@ -72,7 +72,6 @@ import {
 } from "../workflow/prompts.ts";
 import {
   reconcileWorkflow,
-  WORKFLOW_REWORK_LIMIT,
   type WorkflowNextAction,
   type WorkflowWakeInput,
   workflowActionPlan,
@@ -181,6 +180,12 @@ export type WorkflowRunCostLimitIncreaseResult = {
   increment_usd: number;
   previous_limit_usd: number;
   current_limit_usd: number;
+};
+
+export type WorkflowRunReworkLimitIncreaseResult = {
+  run: number;
+  previous_limit: number;
+  current_limit: number;
 };
 
 export type WorkflowLaunchStepResult = {
@@ -833,6 +838,12 @@ function workflowWakeObservation(input: {
   if (event.type === "workflow_run.cost_limit_increased") {
     return { kind: "cost_limit_increased" };
   }
+  if (
+    event.type === "workflow_run.updated" &&
+    payload.transition === "rework_limit_increased"
+  ) {
+    return { kind: "rework_limit_increased" };
+  }
   if (event.type === "workflow_run.cost_exceeded") {
     return { kind: "cost_exceeded", eventId };
   }
@@ -1043,7 +1054,7 @@ async function observeWorkflowRunStatus(
     status: run.status,
     active_step: run.active_step,
     rework_count: run.rework_count,
-    rework_limit: WORKFLOW_REWORK_LIMIT,
+    rework_limit: run.rework_limit,
     needs_human_reason: run.needs_human_reason,
     awaiting_human: run.needs_human_reason !== null,
     pending_effect_receipt: pendingEffectReceipt,
@@ -1178,7 +1189,11 @@ async function workflowRunState(
     workflowName,
     latestReview,
     verificationStatus,
-    reworkLimit: WORKFLOW_REWORK_LIMIT,
+    reworkLimit: run.rework_limit,
+    reworkLimitIncreaseAvailable:
+      run.status === "running" &&
+      run.needs_human_reason?.includes("rework limit") === true &&
+      run.rework_count >= run.rework_limit,
     costIncrementUsd: incrementUsd,
     costLimitUsd: limitUsd,
     costLimitIncreaseAvailable: costLimitIncreaseAvailable(repo, run),
@@ -1898,6 +1913,59 @@ export const workflowRuns = {
     return increaseRunCostLimit(repo, run, input, sessionId);
   },
 
+  increaseReworkLimitForHuman(
+    name: string,
+    input: { run: number; expectedLimit: number },
+    sessionId: string,
+  ): WorkflowRunReworkLimitIncreaseResult {
+    if (!sessionId) {
+      throw new ServiceError(403, "Human Workflow action requires a session");
+    }
+    const { repo, run } = runInRepo(name, input.run);
+    assertRunningLifecycle(run);
+    if (!Number.isInteger(input.expectedLimit) || input.expectedLimit <= 0) {
+      throw new ServiceError(
+        422,
+        "expected rework limit must be a positive integer",
+      );
+    }
+    if (run.rework_limit !== input.expectedLimit) {
+      throw new ServiceError(
+        409,
+        `expected rework limit ${input.expectedLimit} does not match current limit ${run.rework_limit}`,
+      );
+    }
+    const increased = db.transaction(() => {
+      const applied = S.increaseWorkflowRunReworkLimit(
+        run.id,
+        input.expectedLimit,
+      );
+      if (!applied) {
+        throw new ServiceError(
+          409,
+          "Workflow rework limit was not increased because its state changed",
+        );
+      }
+      S.emitWorkflowEvent(
+        repo.id,
+        "workflow_run.updated",
+        actorFor(sessionId),
+        {
+          id: run.id,
+          issue_number: run.issue_number,
+          pr_number: run.pr_number,
+          transition: "rework_limit_increased",
+          status: run.status,
+          current_step: run.current_step,
+          rework_count: run.rework_count,
+          needs_human_reason: null,
+        },
+      );
+      return applied;
+    });
+    return { run: run.id, ...increased };
+  },
+
   async requestRework(
     name: string,
     input: { run: number },
@@ -1928,7 +1996,7 @@ export const workflowRuns = {
         "Workflow Verify review does not request changes",
       );
     }
-    if (run.rework_count >= WORKFLOW_REWORK_LIMIT) {
+    if (run.rework_count >= run.rework_limit) {
       throw new ServiceError(409, "Workflow rework limit reached");
     }
     // The Execute child that will address the review is still live in its pane, so hand

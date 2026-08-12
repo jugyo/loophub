@@ -978,6 +978,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   status             TEXT NOT NULL,
   current_step       TEXT NOT NULL,
   rework_count       INTEGER NOT NULL DEFAULT 0,
+  rework_limit       INTEGER NOT NULL DEFAULT 8,
   auto_mode          INTEGER NOT NULL DEFAULT 0,
   -- Runtime + model resolved for the parent at start, so every step inherits the same values a
   -- human/config selected (#516/#594). Nullable: rows written before these columns fall back to

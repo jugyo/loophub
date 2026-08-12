@@ -1420,6 +1420,12 @@ export const MIGRATIONS: Migration[] = [
   addColumn("084-repos-origin-branch", "repos", "origin_branch", "TEXT"),
   addColumn("085-repos-origin-ahead", "repos", "origin_ahead", "INTEGER"),
   addColumn("086-repos-origin-behind", "repos", "origin_behind", "INTEGER"),
+  addColumn(
+    "087-workflow-runs-rework-limit",
+    "workflow_runs",
+    "rework_limit",
+    "INTEGER NOT NULL DEFAULT 8",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

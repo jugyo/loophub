@@ -932,6 +932,41 @@
       }
     },
     {
+      "name": "workflowRuns/increaseReworkLimit",
+      "description": "Increase a rework-held Workflow run's limit by its current fixed limit.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "run",
+          "expected_limit",
+          "session_id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "terminal/launch",
       "description": "Launch a terminal workflow as a named Herdr session. workflow-run (Start workflow) spawns `lh workflow start --herdr` and lets it provision the worktree/PR and the herdr pane itself (#1007); the other workflows are orchestrated by this RPC directly.",
       "params": {
