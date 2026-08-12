@@ -2,12 +2,12 @@ import { flags, sub } from "../args.ts";
 import {
   fail,
   out,
-  readStdin,
   resolveRepo,
   run as runOp,
   svc,
   writeSession,
 } from "../context.ts";
+import { readTextInput } from "../text-input.ts";
 import { usage } from "../usage.ts";
 
 function parseResource(raw: string | undefined): {
@@ -32,8 +32,8 @@ export async function run(): Promise<void> {
       "usage: lh notification send --kind merge_ready|over_budget|human_attention|agent_comment --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/name] [--json]";
     if (!flags.kind) fail(`--kind is required\n${sendUsage}`);
     if (!flags.title) fail(`--title is required\n${sendUsage}`);
-    if (!flags.body) fail(`--body is required\n${sendUsage}`);
-    const body = flags.body === "-" ? await readStdin() : flags.body;
+    if (flags.body === undefined) fail(`--body is required\n${sendUsage}`);
+    const body = await readTextInput(flags.body);
     const resource = parseResource(flags.resource);
     const notification = await runOp(async () =>
       s.notifications.send(

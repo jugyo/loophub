@@ -17,6 +17,10 @@
 
 launch note と `orchestrator:` で始まる同じ指示は同様に扱います。
 
+## 自由テキストの入力
+
+Markdown 本文や review、comment、handoff などの自由テキストを `lh` に渡すときは、shell 引数へ本文を埋め込まないでください。`--body` / `--text` / `--reason` / `--note` は直接入力に加えて、`-` で stdin、`@path` でファイルを受け取ります。バッククォートや改行を含む本文は、heredoc またはファイルから `--body -` / `--body @path` のように渡してください。
+
 ## Follow-up の分類
 
 - **Rework（`orchestrator: address review <id>`）** — 指定された review と全 review comments を

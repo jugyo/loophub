@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
 import { ensureCursorWorkspaceTrusted } from "../../core/cursor-workspace.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
@@ -24,7 +23,6 @@ import {
   display,
   fail,
   out,
-  readStdin,
   resolveRepo,
   run as runOp,
   svc,
@@ -40,6 +38,7 @@ import {
   type HerdrLaunchResult,
   launchAgentInWorktreeHerdr,
 } from "../herdr-launch.ts";
+import { readTextInput } from "../text-input.ts";
 import { usage } from "../usage.ts";
 
 type PromptField = "execute_prompt" | "verify_prompt";
@@ -57,8 +56,7 @@ function nameArg(): string {
 }
 
 async function fileText(path: string): Promise<string> {
-  if (path === "-") return readStdin();
-  return readFileSync(path, "utf8");
+  return readTextInput(path, { bareFile: true });
 }
 
 async function promptPatchFromFlags(): Promise<
@@ -412,11 +410,9 @@ async function launchStep(): Promise<void> {
   if (!step) fail("--step is required");
   const repo = await resolveRepo();
   const note =
-    flags.note === "-"
-      ? await readStdin()
-      : typeof flags.note === "string"
-        ? flags.note
-        : undefined;
+    typeof flags.note === "string"
+      ? await readTextInput(flags.note)
+      : undefined;
   // The rework pointer: the review the relaunched Execute child must address (#1358).
   const review =
     flags.review !== undefined
@@ -579,7 +575,7 @@ async function runLifecycle(): Promise<void> {
     }
     return;
   }
-  const result = await runOp(() => {
+  const result = await runOp(async () => {
     if (action === "advance-to-verify") {
       return service.advanceToVerify(repo, { run: runId }, sessionId);
     }
@@ -597,11 +593,8 @@ async function runLifecycle(): Promise<void> {
     }
     if (action === "await-human") {
       if (!flags.reason) fail("--reason is required");
-      return service.awaitHuman(
-        repo,
-        { run: runId, reason: flags.reason },
-        sessionId,
-      );
+      const reason = await readTextInput(flags.reason);
+      return service.awaitHuman(repo, { run: runId, reason }, sessionId);
     }
     if (action === "resume") {
       if (!flags.step) fail("--step is required");
@@ -643,11 +636,9 @@ async function stepInput(): Promise<void> {
     );
   }
   const note =
-    flags.note === "-"
-      ? await readStdin()
-      : typeof flags.note === "string"
-        ? flags.note
-        : undefined;
+    typeof flags.note === "string"
+      ? await readTextInput(flags.note)
+      : undefined;
   const review =
     flags.review !== undefined
       ? positiveInt(flags.review, "--review")
@@ -728,11 +719,9 @@ async function instruction(): Promise<void> {
   const event =
     flags.event === undefined ? undefined : positiveInt(flags.event, "--event");
   const note =
-    flags.note === "-"
-      ? await readStdin()
-      : typeof flags.note === "string"
-        ? flags.note
-        : undefined;
+    typeof flags.note === "string"
+      ? await readTextInput(flags.note)
+      : undefined;
   if (event !== undefined && note !== undefined) {
     fail("workflow instruction accepts either --event or --note");
   }
@@ -821,7 +810,7 @@ async function parentReady(): Promise<void> {
 
 async function escalate(): Promise<void> {
   if (!flags.reason) fail("--reason is required");
-  const reason = flags.reason;
+  const reason = await readTextInput(flags.reason);
   const runId = positiveInt(
     flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
     "--run or LOOPHUB_WORKFLOW_RUN",
@@ -844,8 +833,8 @@ async function escalate(): Promise<void> {
 
 async function deliver(): Promise<void> {
   const runId = positiveInt(flags.run, "--run");
-  const text = flags.text;
-  if (text === undefined) fail("--text is required");
+  if (flags.text === undefined) fail("--text is required");
+  const text = await readTextInput(flags.text);
   const repo = await resolveRepo();
   const result = await runOp(async () =>
     (await svc()).workflowRuns.deliver(
@@ -864,6 +853,7 @@ async function deliver(): Promise<void> {
 
 async function escalateHuman(): Promise<void> {
   if (!flags.reason) fail("--reason is required");
+  const reason = await readTextInput(flags.reason);
   const runId = positiveInt(
     flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
     "--run or LOOPHUB_WORKFLOW_RUN",
@@ -873,7 +863,7 @@ async function escalateHuman(): Promise<void> {
   const result = await runOp(async () =>
     (await svc()).workflowEscalation.escalateHuman(
       repo,
-      { run: runId, reason: flags.reason! },
+      { run: runId, reason },
       await writeSession(),
     ),
   );

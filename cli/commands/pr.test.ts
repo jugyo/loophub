@@ -12,7 +12,7 @@ function git(args: string[]) {
   return spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
-function lh(args: string[]) {
+function lh(args: string[], input?: string) {
   const result = spawnSync(
     process.execPath,
     [
@@ -25,6 +25,7 @@ function lh(args: string[]) {
     ],
     {
       encoding: "utf8",
+      input,
       env: {
         ...process.env,
         LOOPHUB_HOME: home,
@@ -107,6 +108,26 @@ test("lh pr create and comment return the created resource", () => {
   const comment = JSON.parse(json.stdout);
   expect(comment).toMatchObject({ body: "second" });
   expect(comment.id).toBeGreaterThan(0);
+});
+
+test("lh pr update --body accepts stdin without shell expansion", () => {
+  const number = createPull("feature-body-input");
+  const body = "review `id`\nsecond line\n";
+  const updated = lh(
+    [
+      "pr",
+      "update",
+      String(number),
+      "--repo",
+      "me/proj",
+      "--body",
+      "-",
+      "--json",
+    ],
+    body,
+  );
+  expect(updated.exitCode, updated.stderr).toBe(0);
+  expect(JSON.parse(updated.stdout).body).toBe(body);
 });
 
 test("lh pr close / reopen report the transition and the no-op", () => {

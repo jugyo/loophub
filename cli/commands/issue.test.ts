@@ -12,7 +12,7 @@ function git(args: string[]) {
   return spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
-function lh(args: string[]) {
+function lh(args: string[], input?: string) {
   const result = spawnSync(
     process.execPath,
     [
@@ -25,6 +25,7 @@ function lh(args: string[]) {
     ],
     {
       encoding: "utf8",
+      input,
       env: {
         ...process.env,
         LOOPHUB_HOME: home,
@@ -147,6 +148,59 @@ test("lh issue comment returns the created comment", () => {
   const comment = JSON.parse(json.stdout);
   expect(comment).toMatchObject({ body: "second" });
   expect(comment.id).toBeGreaterThan(0);
+});
+
+test("free-text body input preserves Markdown from stdin and files", () => {
+  const body = "line one `id`\nline two\n";
+  const fromStdin = lh(
+    [
+      "issue",
+      "create",
+      "--repo",
+      "me/proj",
+      "--title",
+      "stdin body",
+      "--body",
+      "-",
+      "--json",
+    ],
+    body,
+  );
+  expect(fromStdin.exitCode, fromStdin.stderr).toBe(0);
+  const created = JSON.parse(fromStdin.stdout);
+  expect(created.body).toBe(body);
+
+  const file = join(home, "body.md");
+  writeFileSync(file, body);
+  const updated = lh([
+    "issue",
+    "update",
+    String(created.number),
+    "--repo",
+    "me/proj",
+    "--body",
+    `@${file}`,
+    "--json",
+  ]);
+  expect(updated.exitCode, updated.stderr).toBe(0);
+  expect(JSON.parse(updated.stdout).body).toBe(body);
+});
+
+test("free-text body keeps legacy inline text beginning with @", () => {
+  const body = "@alice の確認";
+  const created = lh([
+    "issue",
+    "create",
+    "--repo",
+    "me/proj",
+    "--title",
+    "at-prefixed body",
+    "--body",
+    body,
+    "--json",
+  ]);
+  expect(created.exitCode, created.stderr).toBe(0);
+  expect(JSON.parse(created.stdout).body).toBe(body);
 });
 
 test("lh issue close reports the state transition and the already-closed no-op", () => {

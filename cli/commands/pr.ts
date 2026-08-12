@@ -5,12 +5,12 @@ import {
   fail,
   out,
   prStatusLabel,
-  readStdin,
   resolveRepo,
   run as runOp,
   svc,
   writeSession,
 } from "../context.ts";
+import { readTextInput } from "../text-input.ts";
 import { usage } from "../usage.ts";
 
 // A `--comments` / `--ac-results` argument is inline JSON or a file path (#1895). stdin support was
@@ -97,7 +97,8 @@ export async function run(): Promise<void> {
             side: flags.side?.toUpperCase() ?? "",
             startLine: Number(flags["start-line"]),
             endLine: Number(flags["end-line"]),
-            body: flags.body ?? "",
+            body:
+              flags.body === undefined ? "" : await readTextInput(flags.body),
           },
           await writeSession(),
         ),
@@ -114,7 +115,7 @@ export async function run(): Promise<void> {
           repo,
           Number(flags.pr),
           Number(target),
-          flags.body ?? "",
+          flags.body === undefined ? "" : await readTextInput(flags.body),
           await writeSession(),
         ),
       );
@@ -189,7 +190,7 @@ export async function run(): Promise<void> {
         repo,
         {
           title: flags.title ?? "",
-          body: flags.body || "",
+          body: flags.body === undefined ? "" : await readTextInput(flags.body),
           head: flags.head ?? "",
           ...(flags.base ? { base: flags.base } : {}),
           ...(flags.issue ? { issue: Number(flags.issue) } : {}),
@@ -202,7 +203,7 @@ export async function run(): Promise<void> {
   } else if (sub === "update") {
     const patch: { title?: string; body?: string } = {};
     if (flags.title !== undefined) patch.title = flags.title;
-    if (flags.body !== undefined) patch.body = flags.body;
+    if (flags.body !== undefined) patch.body = await readTextInput(flags.body);
     if (Object.keys(patch).length === 0)
       fail("--title and/or --body is required");
     const p = await runOp(async () =>
@@ -235,7 +236,7 @@ export async function run(): Promise<void> {
         s.comments.createForPull(
           repo,
           number,
-          flags.body ?? "",
+          flags.body === undefined ? "" : await readTextInput(flags.body),
           await writeSession(),
         ),
       );
@@ -287,8 +288,7 @@ export async function run(): Promise<void> {
       fail("--body is required (- for stdin, or a file path)");
     // Same convention as `--comments`: `-` reads stdin, anything else is a file path. The skill
     // pipes the generated description via `--body -` and a HEREDOC.
-    const body =
-      flags.body === "-" ? await readStdin() : readFileSync(flags.body, "utf8");
+    const body = await readTextInput(flags.body, { bareFile: true });
     const g = await runOp(async () =>
       s.pulls.createGithubPull(
         repo,
@@ -352,7 +352,7 @@ export async function run(): Promise<void> {
         Number(numberText),
         {
           event: (flags.event || "comment").toUpperCase(),
-          body: flags.body || "",
+          body: flags.body === undefined ? "" : await readTextInput(flags.body),
           ...(flags.model ? { model: flags.model } : {}),
           // Pin the review to an explicit commit (defaults to the PR's current head). A Workflow
           // Verify child passes the head SHA it was launched against (#1358).
@@ -387,7 +387,8 @@ export async function run(): Promise<void> {
             ...(flags["review-comment"]
               ? { reviewCommentId: Number(flags["review-comment"]) }
               : {}),
-            body: flags.body ?? "",
+            body:
+              flags.body === undefined ? "" : await readTextInput(flags.body),
           },
           await writeSession(),
         ),

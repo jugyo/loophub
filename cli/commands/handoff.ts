@@ -2,12 +2,12 @@ import { flags, sub } from "../args.ts";
 import {
   fail,
   out,
-  readStdin,
   resolveRepo,
   run as runOp,
   svc,
   writeSession,
 } from "../context.ts";
+import { readTextInput } from "../text-input.ts";
 import { usage } from "../usage.ts";
 
 export async function run(): Promise<void> {
@@ -22,13 +22,11 @@ export async function run(): Promise<void> {
     if (!flags.phase || !flags.dir) fail(recordUsage);
     if (!flags.pr && !flags.issue)
       fail(`--pr or --issue is required\n${recordUsage}`);
-    if (!flags.body && !flags.src)
+    if (flags.body === undefined && !flags.src)
       fail(`--body or --src is required\n${recordUsage}`);
     // `--body -` reads the instruction/report from stdin so large prompts aren't shell args.
     const body =
-      flags.body === "-"
-        ? await readStdin()
-        : (flags.body as string | undefined);
+      flags.body === undefined ? undefined : await readTextInput(flags.body);
     const session = await writeSession();
     const h = await runOp(() =>
       s.handoffs.record(

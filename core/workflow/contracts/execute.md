@@ -19,6 +19,10 @@ usage that they do not provide, consult `lh --help` or the relevant subcommand's
 During the session, messages beginning with `orchestrator:` are instructions from the workflow
 parent; treat an identical launch note the same way.
 
+## Free-text input
+
+When passing Markdown bodies, reviews, comments, or handoffs to `lh`, do not embed the body in a shell argument. `--body`, `--text`, `--reason`, and `--note` accept direct text plus `-` for stdin and `@path` for a file. For content containing backticks or newlines, use a heredoc or file with `--body -` / `--body @path`.
+
 ## Classify follow-ups
 
 - **Rework (`orchestrator: address review <id>`)** — read the specified review and all its review
