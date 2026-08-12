@@ -43,6 +43,14 @@ export type WorkflowWakeInput =
   | { kind: "human_instruction" }
   | { kind: "cost_exceeded"; eventId: number };
 
+export type WorkflowEscalationContext = {
+  current_step: WorkflowStep;
+  active_step: WorkflowStep | null;
+  current_head: string | null;
+  needs_human_reason: string | null;
+  awaiting_human: boolean;
+};
+
 export type WorkflowNextAction =
   | { action: "complete"; reason: string }
   | { action: "launch_execute"; reason: string }
@@ -110,6 +118,7 @@ export type WorkflowNextAction =
       action: "escalate";
       reason: string;
       escalation_reason: "execute_request";
+      execution_context?: WorkflowEscalationContext;
     }
   | {
       action: "ask_human";
@@ -300,7 +309,20 @@ export function workflowActionPlan(
         argument: "--reason",
         source: "escalation_reason",
       };
-      return watch([escalate], "parent_judgement");
+      if (action.escalation_reason !== "execute_request") {
+        return watch([escalate], "parent_judgement");
+      }
+      return {
+        boundary: "parent_judgement",
+        commands: [escalate],
+        decision: {
+          question:
+            "Write a human-facing escalation comment from the request and execution context.",
+          inputs: ["escalation reason", "execution context"],
+          submit: null,
+        },
+        after: "watch",
+      };
     }
     case "ask_human":
       return {
@@ -432,6 +454,13 @@ export function reconcileWorkflow(
       action: "escalate",
       reason: input.wake.reason,
       escalation_reason: "execute_request",
+      execution_context: {
+        current_step: input.currentStep,
+        active_step: input.activeStep,
+        current_head: input.currentHead,
+        needs_human_reason: input.needsHumanReason,
+        awaiting_human: input.awaitingHuman,
+      },
     };
   }
 

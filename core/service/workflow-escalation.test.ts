@@ -99,6 +99,21 @@ test("escalateHuman fails visibly when the run PR is missing", () => {
   ).toThrowError(/linked PR #\d+ not found/);
 });
 
+test("escalateHuman records the parent's organized decision context", () => {
+  const { repo, pr, run } = createRun("me/escalation-organized");
+  const reason =
+    "Background: 仕様の前提が未確定。 Missing information: 対象環境。 Options: 現行仕様を維持するか変更する。 Decision points: 人間が選択肢を決める。";
+
+  const result = svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    { run: run.id, reason },
+    run.parent_session_id,
+  );
+
+  expect(result.ok).toBe(true);
+  expect(S.listComments(pr.id)[0]?.body).toContain(reason);
+});
+
 test("escalateHuman exposes failure and does not replay a pending effect", () => {
   const { repo, pr, run } = createRun("me/escalation-partial");
 
