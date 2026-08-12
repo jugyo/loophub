@@ -608,6 +608,44 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     parentSessionId: otherParentSessionId,
   });
 
+  const unparentedSessionId = "99999999-0000-0000-0000-000000000729";
+  S.registerAgentSession(
+    unparentedSessionId,
+    "workflow-step",
+    unparentedSessionId,
+  );
+  const unparentedPull = S.createIssue(
+    repo.id,
+    "pull",
+    "Unparented PR",
+    "",
+    "me",
+  );
+  S.createPull(unparentedPull.id, "loophub/issue-726", "main", null);
+  const unparentedRun = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 726,
+    prNumber: unparentedPull.number,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId: null,
+  });
+  S.appendWorkflowRunStepSession(
+    unparentedRun.id,
+    "execute",
+    unparentedSessionId,
+  );
+  expect(
+    svc.sessions.workflowUsageTarget(
+      repo.id,
+      unparentedPull.number,
+      unparentedSessionId,
+    ),
+  ).toEqual({ runId: unparentedRun.id, parentSessionId: null });
+
   const projectDir = join(HOME, ".claude", "projects", "repo-worktree");
   mkdirSync(projectDir, { recursive: true });
   const transcript = join(projectDir, `${sessionId}.jsonl`);
