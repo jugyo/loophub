@@ -257,6 +257,54 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     result.parent.user_prompt,
   );
 
+  const manifestPath = join(
+    HOME,
+    "runs",
+    "workflow",
+    String(result.run.id),
+    "manifest.json",
+  );
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  expect(manifest).toMatchObject({
+    manifest_version: 1,
+    agents: {
+      parent: { runtime: "claude-code", model: "opus" },
+      execute: { runtime: "claude-code", model: "opus" },
+      verify: { runtime: "claude-code", model: "opus" },
+    },
+    prompts: {
+      execute: "execute-step-prompt.md",
+      verify: "verify-step-prompt.md",
+    },
+  });
+  expect(manifest.agents.parent.effort).toBe(manifest.agents.execute.effort);
+  expect(manifest.agents.execute.effort).toBe(manifest.agents.verify.effort);
+  expect(
+    readFileSync(
+      join(
+        HOME,
+        "runs",
+        "workflow",
+        String(result.run.id),
+        "execute-step-prompt.md",
+      ),
+      "utf8",
+    ),
+  ).toBe(workflow.execute_prompt);
+  expect(
+    readFileSync(
+      join(
+        HOME,
+        "runs",
+        "workflow",
+        String(result.run.id),
+        "verify-step-prompt.md",
+      ),
+      "utf8",
+    ),
+  ).toBe(workflow.verify_prompt);
+  expect(gitAt(result.worktree, ["status", "--porcelain"])).toBe("");
+
   // Escalation blocks automatic progress; an explicit resume releases it with a fresh rework budget.
   svc.workflowRuns.awaitHuman(
     repo.full_name,

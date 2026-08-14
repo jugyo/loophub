@@ -96,6 +96,30 @@ test("concurrent step launches keep immutable session-scoped inputs", () => {
   expect(readFileSync(secondPrompt, "utf8")).toBe("## Second prompt\n");
 });
 
+test("manifest and step prompt sidecars can be read by their run-scoped paths", () => {
+  const manifest = F.writeWorkflowManifest(7, '{"manifest_version":1}\n');
+  const execute = F.writeStepPromptSidecar(7, "execute", "Execute guidance\n");
+
+  expect(manifest).toBe(join(HOME, "runs", "workflow", "7", "manifest.json"));
+  expect(F.workflowManifestPath(7)).toBe(manifest);
+  expect(F.readWorkflowManifest(7)).toBe('{"manifest_version":1}\n');
+  expect(execute).toBe(
+    join(HOME, "runs", "workflow", "7", "execute-step-prompt.md"),
+  );
+  expect(F.readStepPromptSidecar(7, "execute-step-prompt.md")).toBe(
+    "Execute guidance\n",
+  );
+});
+
+test.each([
+  "../outside.md",
+  "nested/file.md",
+  "/tmp/outside.md",
+  "..",
+])("rejects a non-simple sidecar file name: %s", (name) => {
+  expect(() => F.readStepPromptSidecar(7, name)).toThrow(/simple file name/);
+});
+
 test("a rewrite truncates the previous contract instead of appending", () => {
   F.writeStepContract(8, "execute", "# Long first contract\n");
   const path = F.writeStepContract(8, "execute", "# Short\n");
