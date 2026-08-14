@@ -28,7 +28,7 @@ run が子を起動するとき、その argv とプロンプトを決める値�
 | step prompt | `workflows.execute_prompt` / `workflows.verify_prompt` | **子の launch のたびに live 読み取り** |
 | contract 本文 | `core/workflow/contracts/{parent,execute,verify}.{md,ja.md}` | ソース固定（LoopHub 所有。実行時の設定では変わらない） |
 | cost 上限 | `workflow_runs.cost_increment_usd` / `cost_limit_usd`（開始時に `devCostLimitUsd()` から pin） | run 開始時 |
-| rework 上限 | `WORKFLOW_REWORK_LIMIT`（module 定数 8） | ソース固定 |
+| rework 上限 | `workflow_runs.rework_limit`（既定は `WORKFLOW_REWORK_LIMIT` = 8）。走行中に増やせる | run 開始時 + 人間が増やしたとき |
 | branch（head / base） | `pulls.head_ref` / `pulls.base_ref` | PR 作成時 |
 | worktree path | 保存せず `resolveWorktreeIdentity(head_ref, pr_number)` + `worktreeRoot()` から毎回導出 | 参照のたび |
 
@@ -663,10 +663,12 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 2. **per-agent runtime をいつ解放するか。** manifest の形は Execute=claude-code / Verify=codex を表現できるが、
    v1 は同一 runtime を強制する。解放には CLI の preflight（`lh workflow launch-step` が run 単位で 1 binary を
    確認している）と cursor workspace trust の扱いを agent 単位に広げる必要がある。
-3. **cost 上限 / rework 上限を manifest に入れるか。** `cost_increment_usd` は configuration に見えるが、
-   `increaseWorkflowRunCostLimit()` は `cost_limit_usd = cost_limit_usd + cost_increment_usd` を SQL の CAS で
-   実行している。manifest 側を権威にすると値を SQL に渡す形へ変える必要があり、cost hold の receipt 粒度
-   （(run, 累計上限) 単位）とも噛み合わせが要る。v1 では対象外とした。
+3. **cost 上限 / rework 上限を manifest に入れるか。** どちらも「設定に見えるが、実際は走行中に人間が
+   増やす per-run state」である。cost 側は `increaseWorkflowRunCostLimit()` が
+   `cost_limit_usd = cost_limit_usd + cost_increment_usd` を SQL の CAS で実行し、rework 側も
+   `workflow_runs.rework_limit` を同様に増やす。manifest 側を権威にすると値を SQL に渡す形へ変える必要が
+   あり、cost hold の receipt 粒度（(run, 累計上限) 単位）とも噛み合わせが要る。**§3 の分類では
+   configuration ではなく state に属する**というのが現時点の整理であり、v1 では対象外とした。
 4. **Web に manifest の編集 UI を出すか。** v1 は表示のみ。編集を出すなら、走行中の run に対する
    「次の launch から効く」という意味論を UI でどう表現するかが論点。
 5. **manifest を run 間で再利用するか。** §4.2 の分離により manifest の中身は既に run 非依存なので、
@@ -750,10 +752,12 @@ I1 と I2 は並行できる。I5–I8 も互いに独立。
 **scope.** 既存の `addColumn` migration に 1 本足すだけ。
 
 ```ts
-addColumn("079-workflow-runs-manifest-version", "workflow_runs", "manifest_version", "INTEGER"),
+addColumn("0NN-workflow-runs-manifest-version", "workflow_runs", "manifest_version", "INTEGER"),
 ```
 
-`WorkflowRunRow` に `manifest_version: number | null` を足し、`createWorkflowRun()` の INSERT に 1 列足す。nullable にするのは、既存行に入れるべき値が無いからで、
+`0NN` は採番時点で空いている次の番号にする（本書執筆後も migration は増え続けるため、番号を固定で
+書かない）。`WorkflowRunRow` に `manifest_version: number | null` を足し、`createWorkflowRun()` の
+INSERT に 1 列足す。nullable にするのは、既存行に入れるべき値が無いからで、
 `cost_increment_usd` / `cost_limit_usd` が同じ理由で nullable になっている前例に合わせる。
 
 **AC.** 既存 DB を開いても migration が通り、既存 run の `manifest_version` が NULL のまま
