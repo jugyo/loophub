@@ -1426,6 +1426,12 @@ export const MIGRATIONS: Migration[] = [
     "rework_limit",
     "INTEGER NOT NULL DEFAULT 8",
   ),
+  addColumn(
+    "088-workflow-runs-manifest-version",
+    "workflow_runs",
+    "manifest_version",
+    "INTEGER",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

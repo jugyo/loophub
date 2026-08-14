@@ -176,6 +176,7 @@ export interface WorkflowRunInput {
   model?: string | null;
   contractLanguage?: WorkflowContractLanguage;
   parentSessionId?: string | null;
+  manifestVersion?: number | null;
   costIncrementUsd: number;
   costLimitUsd: number;
 }
@@ -213,6 +214,7 @@ export interface WorkflowRunRow {
   event_cursor: number;
   cost_increment_usd: number | null;
   cost_limit_usd: number | null;
+  manifest_version: number | null;
   created_at: string;
   updated_at: string;
   // Fixed when the run first leaves `running`; terminal maintenance must not move it.
@@ -224,8 +226,8 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
   return db
     .query(
       `INSERT INTO workflow_runs
-        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, contract_language, parent_session_id, cost_increment_usd, cost_limit_usd, rework_limit, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, contract_language, parent_session_id, cost_increment_usd, cost_limit_usd, rework_limit, manifest_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.workflowId,
@@ -242,6 +244,7 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
       input.costIncrementUsd,
       input.costLimitUsd,
       input.reworkLimit ?? 8,
+      input.manifestVersion ?? null,
       t,
       t,
     ) as WorkflowRunRow;
@@ -657,6 +660,7 @@ export function updateWorkflowRun(
     status?: string;
     currentStep?: string;
     reworkCount?: number;
+    manifestVersion?: number | null;
     // string sets the human-wait reason, explicit null clears it (#1307).
     needsHumanReason?: string | null;
     activeStep?: string | null;
@@ -681,6 +685,10 @@ export function updateWorkflowRun(
   if (patch.reworkCount !== undefined) {
     sets.push("rework_count = ?");
     params.push(patch.reworkCount);
+  }
+  if (patch.manifestVersion !== undefined) {
+    sets.push("manifest_version = ?");
+    params.push(patch.manifestVersion);
   }
   if (patch.needsHumanReason !== undefined) {
     sets.push("needs_human_reason = ?");
