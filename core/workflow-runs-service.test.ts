@@ -265,6 +265,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     "manifest.json",
   );
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const manifestText = readFileSync(manifestPath, "utf8");
   expect(manifest).toMatchObject({
     manifest_version: 1,
     agents: {
@@ -279,6 +280,31 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   });
   expect(manifest.agents.parent.effort).toBe(manifest.agents.execute.effort);
   expect(manifest.agents.execute.effort).toBe(manifest.agents.verify.effort);
+  const executePromptPath = join(
+    HOME,
+    "runs",
+    "workflow",
+    String(result.run.id),
+    "execute-step-prompt.md",
+  );
+  const executePromptText = readFileSync(executePromptPath, "utf8");
+  writeFileSync(executePromptPath, "Manifest snapshot prompt.\n");
+  const stepInput = await svc.workflowRuns.stepInput(
+    repo.full_name,
+    { run: result.run.id, step: "execute" },
+    result.session_id,
+  );
+  expect(stepInput.user_prompt).toContain("Manifest snapshot prompt.");
+  writeFileSync(manifestPath, '{"manifest_version":1}\n');
+  await expect(
+    svc.workflowRuns.stepInput(
+      repo.full_name,
+      { run: result.run.id, step: "execute" },
+      result.session_id,
+    ),
+  ).rejects.toThrow(new RegExp(`${manifestPath} is invalid`));
+  writeFileSync(manifestPath, manifestText);
+  writeFileSync(executePromptPath, executePromptText);
   expect(
     readFileSync(
       join(
@@ -336,11 +362,11 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     {
       run: result.run.id,
       step: "execute",
-      model: "sonnet",
       note: "Read the issue first.",
     },
     result.session_id,
   );
+  writeFileSync(executePromptPath, executePromptText);
   expect(launched.step).toBe("execute");
   expect(launched.worktree).toBe(result.worktree);
   expect(readFileSync(launched.system_prompt_path, "utf8")).toContain(
@@ -387,7 +413,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(S.getAgentSession(launched.session_id)?.name).toBe(
     launched.agent_name,
   );
-  expect(S.getAgentSession(launched.session_id)?.model).toBe("sonnet");
+  expect(S.getAgentSession(launched.session_id)?.model).toBe("opus");
   expect(S.getAgentSession(launched.session_id)?.created_at).toBe(launchedAt);
   expect(
     S.listHandoffs(repo.id, {
