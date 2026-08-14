@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AgentExecutionTarget } from "../agent-control.ts";
 import {
+  agentEffort,
   agentModel,
   type CodingAgent,
   configDir,
@@ -63,6 +64,10 @@ import {
   parseWorkflowHerdrAgentName,
   workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
+import {
+  serializeWorkflowManifest,
+  type WorkflowManifest,
+} from "../workflow/manifest.ts";
 import { workflowMessages } from "../workflow/messages.ts";
 import {
   inlineText,
@@ -81,6 +86,8 @@ import {
   writeParentPrompt,
   writeStepContract,
   writeStepPrompt,
+  writeStepPromptSidecar,
+  writeWorkflowManifest,
 } from "../workflow/run-files.ts";
 import {
   projectWorkflowRunEvents,
@@ -1538,6 +1545,7 @@ export const workflowRuns = {
           parentSessionId: sessionId,
           costIncrementUsd,
           costLimitUsd: costIncrementUsd,
+          manifestVersion: 1,
         });
         S.emitWorkflowEvent(r.id, "workflow_run.started", actorFor(sessionId), {
           id: created.id,
@@ -1548,6 +1556,37 @@ export const workflowRuns = {
         });
         return created;
       });
+
+      const effective = effectiveRepoAgentConfigFor(r);
+      const model = run.model?.trim() || agentModel(runtime);
+      const effort =
+        runtime === effective.runtime ? effective.effort : agentEffort(runtime);
+      const executePromptName = "execute-step-prompt.md";
+      const verifyPromptName = "verify-step-prompt.md";
+      writeStepPromptSidecar(
+        run.id,
+        "execute",
+        workflowStepPrompt(workflow, "execute"),
+      );
+      writeStepPromptSidecar(
+        run.id,
+        "verify",
+        workflowStepPrompt(workflow, "verify"),
+      );
+      const manifest: WorkflowManifest = {
+        manifest_version: 1,
+        contract_language: contractLanguage,
+        agents: {
+          parent: { runtime, model, effort },
+          execute: { runtime, model, effort },
+          verify: { runtime, model, effort },
+        },
+        prompts: {
+          execute: executePromptName,
+          verify: verifyPromptName,
+        },
+      };
+      writeWorkflowManifest(run.id, serializeWorkflowManifest(manifest));
 
       const systemPrompt = renderWorkflowContract(
         {

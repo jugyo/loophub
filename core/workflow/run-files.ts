@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { configDir } from "../config.ts";
+import { ServiceError } from "../errors.ts";
 import { ensureHomeDir, writeHomeFile } from "../home-files.ts";
 import type { WorkflowStep } from "./compose.ts";
 
@@ -12,6 +16,48 @@ function ensureRunDir(runId: number): string {
 
 function writeRunFile(runId: number, name: string, text: string): string {
   return writeHomeFile(ensureRunDir(runId), name, text);
+}
+
+function runFilePath(runId: number, name: string): string {
+  return join(configDir(), "runs", "workflow", String(runId), name);
+}
+
+function readRunFile(runId: number, name: string): string {
+  return readFileSync(runFilePath(runId, name), "utf8");
+}
+
+function simpleFileName(name: string): string {
+  if (!name || name === ".." || name.includes("/") || name.includes("\\")) {
+    throw new ServiceError(
+      422,
+      "workflow run file name must be a simple file name",
+    );
+  }
+  return name;
+}
+
+export function workflowManifestPath(runId: number): string {
+  return runFilePath(runId, "manifest.json");
+}
+
+export function writeWorkflowManifest(runId: number, text: string): string {
+  return writeRunFile(runId, "manifest.json", text);
+}
+
+export function readWorkflowManifest(runId: number): string {
+  return readFileSync(workflowManifestPath(runId), "utf8");
+}
+
+export function writeStepPromptSidecar(
+  runId: number,
+  step: WorkflowStep,
+  text: string,
+): string {
+  return writeRunFile(runId, `${step}-step-prompt.md`, text);
+}
+
+export function readStepPromptSidecar(runId: number, name: string): string {
+  return readRunFile(runId, simpleFileName(name));
 }
 
 export function writeParentContract(runId: number, text: string): string {
