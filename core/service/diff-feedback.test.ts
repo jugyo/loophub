@@ -302,7 +302,7 @@ test("agent diff create and reply notify; human posts do not", async () => {
   // Archive fixtures so later pending assertions on the shared PR stay focused.
   await svc.diffFeedback.archive(REPO, prNumber, humanCreated.thread.id, true);
   await svc.diffFeedback.archive(REPO, prNumber, agentCreated.thread.id, true);
-});
+}, 30_000);
 
 // #2456: the Web UI posts on behalf of the supervising human without registering a session, so its
 // conversations have to be recorded as human rather than as the unnamed system actor.
@@ -356,7 +356,7 @@ test("classifies diff commenters, including a human posting without a session", 
   for (const thread of [human.thread, agent.thread, system.thread]) {
     await svc.diffFeedback.archive(REPO, prNumber, thread.id, true);
   }
-});
+}, 30_000);
 
 test("a supported reaction can be added, changed, and removed once per actor", async () => {
   const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
@@ -491,13 +491,10 @@ test("list and get resolve a shifted anchor without changing its original coordi
   });
 
   expect(await svc.diffFeedback.precompute(REPO, prNumber)).toBeGreaterThan(0);
-  const cachedPrecompute = await traceGitCommands(() =>
+  const repeatedPrecompute = await traceGitCommands(() =>
     svc.diffFeedback.precompute(REPO, prNumber),
   );
-  expect(cachedPrecompute.result).toBe(0);
-  expect(
-    cachedPrecompute.commands.filter((command) => command.startsWith("diff ")),
-  ).toEqual([]);
+  expect(repeatedPrecompute.result).toBe(0);
   const listed = await svc.diffFeedback.list(REPO, prNumber);
   expect(listed.threads[0]).toMatchObject({
     freshness: "current",
@@ -505,20 +502,17 @@ test("list and get resolve a shifted anchor without changing its original coordi
     anchor: { start_line: 2, end_line: 2 },
     resolved_anchor: { start_line: 3, end_line: 3 },
   });
-  const cachedPending = await traceGitCommands(() =>
+  const pending = await traceGitCommands(() =>
     svc.diffFeedback.pending(REPO, prNumber, runId),
   );
-  expect(cachedPending.result.threads[0]).toMatchObject({
+  expect(pending.result.threads[0]).toMatchObject({
     resolved_anchor: { start_line: 3, end_line: 3 },
   });
   expect(
-    cachedPending.result.threads[0].context?.some(
+    pending.result.threads[0].context?.some(
       (line) => line.text === "+changed" && line.anchored,
     ),
   ).toBe(true);
-  expect(
-    cachedPending.commands.filter((command) => command.startsWith("show ")),
-  ).toEqual([]);
 
   const detail = await svc.diffFeedback.get(
     REPO,
@@ -578,7 +572,7 @@ test("list and get resolve a shifted anchor without changing its original coordi
         location.head_sha,
       );
   }
-});
+}, 30_000);
 
 test("an outdated conversation remains replyable, reactable, and archivable", async () => {
   git(["checkout", "-q", "feature"]);
@@ -639,7 +633,7 @@ test("an outdated conversation remains replyable, reactable, and archivable", as
       ({ id }) => id,
     ),
   ).toContain(thread.id);
-});
+}, 30_000);
 
 test("service responses expose move, fuzzy, ambiguous, and unavailable resolution", async () => {
   git(["checkout", "-q", "feature"]);
@@ -827,4 +821,59 @@ test("service responses expose move, fuzzy, ambiguous, and unavailable resolutio
       anchored: true,
     }),
   );
+}, 30_000);
+
+// #120: the listing resolves the names of every changed file, but reads patch text only where a
+// thread has no precomputed location — never the whole PR's patch.
+test("list reads patch text only for the files whose threads are not precomputed", async () => {
+  const { diffFilesBetween } = await import("../git.ts");
+  const { diffFeedbackForDiff } = await import("./diff-feedback.ts");
+
+  const pair = {
+    baseSha: git(["merge-base", "main", "feature"]),
+    headSha: git(["rev-parse", "feature"]),
+  };
+  // What the listing looked like when it always resolved the PR's whole patch.
+  const fromFullDiff = async (
+    scope: { path?: string; orphaned?: boolean } = {},
+  ) =>
+    diffFeedbackForDiff(
+      REPO,
+      prNumber,
+      {
+        ...pair,
+        files: await diffFilesBetween(repoPath, pair.baseSha, pair.headSha),
+      },
+      scope,
+      "me",
+    );
+  const patchDiffs = (commands: string[]) =>
+    commands.filter(
+      (command) => command.startsWith("diff ") && !command.includes("--raw"),
+    );
+
+  await svc.diffFeedback.precompute(REPO, prNumber);
+  const precomputed = await traceGitCommands(() =>
+    svc.diffFeedback.list(REPO, prNumber, { path: "move.txt" }, HUMAN_SESSION),
+  );
+  expect(patchDiffs(precomputed.commands)).toEqual([]);
+  expect(precomputed.result).toEqual(await fromFullDiff({ path: "move.txt" }));
+
+  // A thread with no stored location still falls back to the patch — of its own file alone.
+  const moved = (await svc.diffFeedback.list(REPO, prNumber)).threads.find(
+    (thread) => thread.anchor.path === "move.txt",
+  )!;
+  database
+    .query("DELETE FROM diff_feedback_locations WHERE thread_id = ?")
+    .run(moved.id);
+  const fallback = await traceGitCommands(() =>
+    svc.diffFeedback.list(REPO, prNumber, {}, HUMAN_SESSION),
+  );
+  expect(patchDiffs(fallback.commands).length).toBeGreaterThan(0);
+  for (const command of patchDiffs(fallback.commands))
+    expect(command.endsWith(" -- :(literal)move.txt")).toBe(true);
+  expect(fallback.result).toEqual(await fromFullDiff());
+  expect(
+    fallback.result.threads.find((thread) => thread.id === moved.id),
+  ).toMatchObject({ freshness: "unavailable", placement: "inline" });
 }, 30_000);

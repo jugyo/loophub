@@ -1,5 +1,6 @@
 import { db } from "./db.ts";
 import { localBranchRef, revParse } from "./git.ts";
+import { currentPullStatus } from "./pull-mergeable-state.ts";
 import * as S from "./store.ts";
 
 // open PR の head ref を走査し、前回記録した sha から動いていれば
@@ -7,9 +8,25 @@ import * as S from "./store.ts";
 // 初回（head_sha 未記録）は静かに記録するだけで発火しない。
 export async function sweepPullUpdates(): Promise<any[]> {
   const emitted: any[] = [];
+  S.prunePullDiffProjections();
   for (const p of S.openPulls()) {
     const cur = await revParse(p.local_path, localBranchRef(p.head_ref));
     if (!cur) continue; // ブランチが見つからない場合はスキップ
+    const status = await currentPullStatus(p);
+    if (status) {
+      S.upsertPullStatusProjection({
+        baseSha: status.baseSha,
+        headSha: status.headSha,
+        mergeable: status.mergeable,
+        mergeableState: status.mergeable_state,
+        hasEffectiveDiff: status.hasEffectiveDiff,
+        conflict: status.conflict,
+        additions: status.additions,
+        deletions: status.deletions,
+        changedFiles: status.changedFiles,
+        commitsAhead: status.commitsAhead,
+      });
+    }
     if (!p.head_sha) {
       S.setHeadSha(p.issue_id, cur);
       continue;

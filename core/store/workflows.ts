@@ -170,6 +170,7 @@ export interface WorkflowRunInput {
   prNumber: number;
   status: string;
   currentStep: string;
+  reworkLimit?: number;
   autoMode?: boolean;
   runtime?: string | null;
   model?: string | null;
@@ -188,6 +189,7 @@ export interface WorkflowRunRow {
   status: string;
   current_step: string;
   rework_count: number;
+  rework_limit: number;
   auto_mode: number;
   runtime: string | null;
   model: string | null;
@@ -222,8 +224,8 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
   return db
     .query(
       `INSERT INTO workflow_runs
-        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, contract_language, parent_session_id, cost_increment_usd, cost_limit_usd, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, contract_language, parent_session_id, cost_increment_usd, cost_limit_usd, rework_limit, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.workflowId,
@@ -239,9 +241,33 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
       input.parentSessionId ?? null,
       input.costIncrementUsd,
       input.costLimitUsd,
+      input.reworkLimit ?? 8,
       t,
       t,
     ) as WorkflowRunRow;
+}
+
+export function increaseWorkflowRunReworkLimit(
+  id: number,
+  expectedLimit: number,
+): { previous_limit: number; current_limit: number } | null {
+  const row = db
+    .query(
+      `UPDATE workflow_runs
+       SET rework_limit = rework_limit + ?, needs_human_reason = NULL, updated_at = ?
+       WHERE id = ?
+         AND status = 'running'
+         AND needs_human_reason LIKE '%rework limit%reached%'
+         AND rework_count >= rework_limit
+         AND rework_limit = ?
+       RETURNING rework_limit`,
+    )
+    .get(expectedLimit, now(), id, expectedLimit) as {
+    rework_limit: number;
+  } | null;
+  return row
+    ? { previous_limit: expectedLimit, current_limit: row.rework_limit }
+    : null;
 }
 
 export function increaseWorkflowRunCostLimit(

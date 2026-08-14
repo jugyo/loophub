@@ -1,15 +1,14 @@
-import { readFileSync } from "node:fs";
 import { flags, rest, sub } from "../args.ts";
 import {
   fail,
   out,
-  readStdin,
   relativeTime,
   resolveRepo,
   run as runOp,
   svc,
   writeSession,
 } from "../context.ts";
+import { readTextInput } from "../text-input.ts";
 import { usage } from "../usage.ts";
 
 export async function run(): Promise<void> {
@@ -20,10 +19,7 @@ export async function run(): Promise<void> {
       "usage: lh retro create --pr <m> --input <file|-> [--status draft]";
     if (!flags.pr) fail(usageLine);
     if (!flags.input) fail(`--input is required\n${usageLine}`);
-    const raw =
-      flags.input === "-"
-        ? await readStdin()
-        : readFileSync(flags.input, "utf8");
+    const raw = await readTextInput(flags.input, { bareFile: true });
     let data: any;
     try {
       data = JSON.parse(raw);

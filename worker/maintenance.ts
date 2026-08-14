@@ -3,6 +3,10 @@ import {
   syncGithubFeedback,
 } from "../core/github-feedback-sync.ts";
 import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
+import {
+  type GithubPrStatusSyncResult,
+  syncGithubPrStatus,
+} from "../core/github-status-sync.ts";
 import { sweepPullConflicts } from "../core/pull-conflict-events.ts";
 import type { SessionUsageSyncResult } from "../core/service/sessions.ts";
 import type { WorktreeAutoPruneResult } from "../core/service/worktrees.ts";
@@ -263,6 +267,40 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
   };
 }
 
+// Notification Center generation remains owned by the resident dispatcher-side worker while
+// local git observation runs in lh-watcher-git. Keeping this as a separate loop preserves the
+// previous pull-sweep cadence without coupling DB-only notification work to git observation.
+export function startNotificationSweep(
+  intervalMs = DEFAULT_SWEEP_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    const startedAt = logLoopStarted("notification sweep");
+    try {
+      const result = await notifications.sweep();
+      logLoopCompleted("notification sweep", startedAt, {
+        created_notifications: result.mergeReady.created.length,
+        backfilled_notifications: result.backfilled,
+      });
+    } catch (err) {
+      logLoopFailed("notification sweep", startedAt, err);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
 // Fire pull_request.merge_conflict for open PRs whose base advanced into a conflict while they
 // waited for a human merge (#1232). This loop is an event source only — consumers (e.g. a Workflow
 // parent polling `lh events`) observe the emitted events on their own; no session is launched here.
@@ -303,6 +341,8 @@ export function startConflictSweep(
 // it to a much coarser interval (DEFAULT_GITHUB_MERGE_SWEEP_MS).
 export function startGithubMergeSweep(
   intervalMs = DEFAULT_GITHUB_MERGE_SWEEP_MS,
+  mergeSweep: typeof syncGithubMergeStatus = syncGithubMergeStatus,
+  statusSweep: () => Promise<GithubPrStatusSyncResult> = syncGithubPrStatus,
 ): () => void {
   let stopped = false;
   let running = false;
@@ -312,9 +352,23 @@ export function startGithubMergeSweep(
     running = true;
     const startedAt = logLoopStarted("github merge sweep");
     try {
-      const emitted = await syncGithubMergeStatus();
+      const emitted = await mergeSweep();
+      let status: GithubPrStatusSyncResult;
+      try {
+        status = await statusSweep();
+      } catch (err) {
+        // Status refresh is an eager cache optimization; it must not turn a successful merge sweep
+        // into a failed tick or prevent the next tick from trying again.
+        workerLog.error(
+          `lh-worker: github PR status sweep failed error=${errorMessage(err)}`,
+        );
+        status = { checked: 0, refreshed: 0, failures: 1 };
+      }
       logLoopCompleted("github merge sweep", startedAt, {
         emitted_events: emitted.length,
+        status_checked: status.checked,
+        status_refreshed: status.refreshed,
+        status_failures: status.failures,
       });
     } catch (err) {
       logLoopFailed("github merge sweep", startedAt, err);
@@ -403,22 +457,24 @@ export function startUsageSweep(
           continue;
         }
         for (const target of targets) {
+          const workflow =
+            target.kind === "pull"
+              ? sessions.workflowUsageTarget(
+                  target.repo_id,
+                  target.number,
+                  session.session_id,
+                )
+              : null;
           events.emit(target.repo_id, "agent_session.usage_updated", actor, {
             ...payload,
             [target.kind === "pull" ? "pr" : "issue"]: target.number,
+            ...(workflow ? { id: workflow.runId } : {}),
           });
-          if (target.kind === "pull") {
-            const workflow = sessions.workflowUsageTarget(
-              target.repo_id,
-              target.number,
-              session.session_id,
-            );
-            if (workflow) {
-              workflowRuns.detectCostExceeded(target.repo, {
-                run: workflow.runId,
-                usageSession: session.session_id,
-              });
-            }
+          if (workflow) {
+            workflowRuns.detectCostExceeded(target.repo, {
+              run: workflow.runId,
+              usageSession: session.session_id,
+            });
           }
         }
       }

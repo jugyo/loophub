@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
 // `lh-worker` entry point: a resident process that tails the shared events table, runs the
-// per-repo `.loophub/workflow.yml` commands (issue #52), and owns resident maintenance loops.
+// per-repo `.loophub/workflow.yml` commands (issue #52), and owns non-git maintenance loops.
 // Runs only while invoked (no daemon).
 //   lh-worker [--poll-ms <ms>] [--sweep-ms <ms>] [--usage-sweep-ms <ms>]
 //             [--github-merge-sweep-ms <ms>] [--github-feedback-sweep-ms <ms>]
@@ -24,6 +24,7 @@ import {
   maintenanceSummary,
   normalizeMaintenanceLoopOptions,
   startMaintenanceLoops,
+  startNotificationSweep,
 } from "./maintenance.ts";
 import { startWorker } from "./runner.ts";
 
@@ -84,8 +85,30 @@ const maintenanceOptions = normalizeMaintenanceLoopOptions({
   worktreePruneSweepMs,
 });
 const worker = startWorker({ pollMs });
-const maintenance = startMaintenanceLoops(maintenanceOptions);
-const summary = maintenanceSummary(maintenanceOptions);
+const externalGitWatcher = process.env.LOOPHUB_GIT_WATCHER === "external";
+const notificationSweepStop =
+  externalGitWatcher && maintenanceOptions.sweepMs > 0
+    ? startNotificationSweep(maintenanceOptions.sweepMs)
+    : () => {};
+// When serve starts lh-watcher-git alongside this process, disable the legacy local-git loops to
+// avoid duplicate observations. A standalone lh-worker keeps the historical loops for backwards
+// compatibility; operators can migrate to the split processes incrementally.
+const maintenance = startMaintenanceLoops({
+  ...maintenanceOptions,
+  sweepMs: externalGitWatcher ? 0 : maintenanceOptions.sweepMs,
+  conflictSweepMs: externalGitWatcher ? 0 : maintenanceOptions.conflictSweepMs,
+  worktreePruneSweepMs: externalGitWatcher
+    ? 0
+    : maintenanceOptions.worktreePruneSweepMs,
+});
+const summary = maintenanceSummary({
+  ...maintenanceOptions,
+  sweepMs: externalGitWatcher ? 0 : maintenanceOptions.sweepMs,
+  conflictSweepMs: externalGitWatcher ? 0 : maintenanceOptions.conflictSweepMs,
+  worktreePruneSweepMs: externalGitWatcher
+    ? 0
+    : maintenanceOptions.worktreePruneSweepMs,
+});
 workerLog.info(
   `lh-worker started (events poll ${pollMs}ms; heartbeat ${summary.workerHeartbeat}; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; github feedback sweep ${summary.githubFeedbackSweep}; closed pull cleanup sweep ${summary.closedPullCleanupSweep}; conflict sweep ${summary.conflictSweep}; herdr sweep ${summary.herdrSweep}; worktree prune sweep ${summary.worktreePruneSweep})`,
 );
@@ -95,6 +118,7 @@ const shutdown = () => {
   if (isShuttingDown) return;
   isShuttingDown = true;
   maintenance.stop();
+  notificationSweepStop();
   worker.stop();
   process.exit(0);
 };

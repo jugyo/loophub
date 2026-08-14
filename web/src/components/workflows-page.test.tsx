@@ -150,16 +150,12 @@ describe("WorkflowsPage", () => {
       "settings/update": () => ({ workflowContractLanguage: "en" }),
     });
 
-    const group = await screen.findByRole("radiogroup", {
+    const select = await screen.findByRole("combobox", {
       name: "Workflow contract language",
     });
-    expect(
-      within(group)
-        .getByRole("radio", { name: "日本語" })
-        .getAttribute("aria-checked"),
-    ).toBe("true");
+    expect(select).toHaveProperty("value", "ja");
 
-    fireEvent.click(within(group).getByRole("radio", { name: "English" }));
+    fireEvent.change(select, { target: { value: "en" } });
     await waitFor(() =>
       expect(rpcCall("settings/update")?.params).toMatchObject({
         workflowContractLanguage: "en",

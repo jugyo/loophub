@@ -19,11 +19,13 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type {
+  CodingAgent,
   Repo,
   RepoAgentConfig,
   RepoMergeMode,
   Workspace,
 } from "@/api/types";
+import { RUNTIMES } from "../../../core/runtimes.ts";
 import {
   RepoSettingsPage,
   type RepoSettingsSection,
@@ -76,7 +78,41 @@ function agentConfig(override = false): RepoAgentConfig {
   };
 }
 
-function mockFetch(initialArchived: boolean, patchFails = false) {
+// What `repos/setAgentConfig` stores and reports back: while off the application defaults win,
+// while on the saved triple wins with empty model/effort falling back to the runtime's defaults.
+function savedAgentConfig(params: {
+  override: boolean;
+  runtime: CodingAgent;
+  model: string;
+  effort: string;
+}): RepoAgentConfig {
+  const runtime = params.override ? params.runtime : "claude-code";
+  return {
+    setting: {
+      override: params.override,
+      runtime: params.override ? params.runtime : null,
+      model: params.override ? params.model || null : null,
+      effort: params.override ? params.effort || null : null,
+    },
+    effective: {
+      runtime,
+      model:
+        params.override && params.model
+          ? params.model
+          : RUNTIMES[runtime].defaultModel,
+      effort:
+        params.override && params.effort
+          ? params.effort
+          : RUNTIMES[runtime].defaultEffort,
+    },
+  };
+}
+
+function mockFetch(
+  initialArchived: boolean,
+  patchFails = false,
+  initialAgentOverride = false,
+) {
   let activeWorkspaces: Workspace[] = [
     {
       branch: "workspace/current",
@@ -100,10 +136,11 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
     },
   ];
   let extraPrompt: string | null = null;
+  let agent = agentConfig(initialAgentOverride);
   return mockRpcFetch({
     "repos/get": () => repo(initialArchived),
     "repos/mergeMode": () => mergeMode(null),
-    "repos/agentConfig": () => agentConfig(),
+    "repos/agentConfig": () => agent,
     "repos/githubPrExportExtraPrompt": () => ({ extra_prompt: extraPrompt }),
     "repos/setGithubPrExportExtraPrompt": (p) => {
       if (patchFails) throw new RpcFault(500, "boom");
@@ -158,7 +195,8 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
     },
     "repos/setAgentConfig": (p) => {
       if (patchFails) throw new RpcFault(500, "boom");
-      return agentConfig(p.override);
+      agent = savedAgentConfig(p);
+      return agent;
     },
     "repos/update": (p) => {
       if (patchFails) throw new RpcFault(422, "branch not found: nope");
@@ -205,8 +243,12 @@ function renderSettings(
   initialArchived = false,
   patchFails = false,
   initialEntry = "/r/me/proj/settings",
+  initialAgentOverride = false,
 ) {
-  vi.stubGlobal("fetch", mockFetch(initialArchived, patchFails));
+  vi.stubGlobal(
+    "fetch",
+    mockFetch(initialArchived, patchFails, initialAgentOverride),
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -290,7 +332,7 @@ describe("RepoSettingsPage", () => {
     expect(general.getAttribute("aria-current")).toBe("page");
     expect(general.getAttribute("href")).toBe("/r/me/proj/settings");
     expect(
-      screen.getByRole("link", { name: "Coding agent" }).getAttribute("href"),
+      screen.getByRole("link", { name: "Agent" }).getAttribute("href"),
     ).toBe("/r/me/proj/settings/coding-agent");
     expect(
       screen.getByRole("link", { name: "Workspaces" }).getAttribute("href"),
@@ -306,6 +348,23 @@ describe("RepoSettingsPage", () => {
     expect(pullRequests.getAttribute("href")).toBe(
       "/r/me/proj/settings/pull-requests",
     );
+
+    const nav = screen.getByRole("navigation", {
+      name: "Repository settings",
+    });
+    const order = [
+      "General",
+      "Agent",
+      "Workflows",
+      "Pull requests",
+      "Workspaces",
+      "Archive",
+    ];
+    const labels = within(nav)
+      .getAllByRole("link")
+      .map((link) => link.textContent);
+    expect(labels).toEqual(order);
+
     pullRequests.focus();
     expect(document.activeElement).toBe(pullRequests);
     fireEvent.click(pullRequests);
@@ -785,6 +844,31 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  // Radix opens the dropdown on pointerdown, the same way the application Settings screen's
+  // agent rows are driven in settings-page.test.tsx.
+  async function openAgentDropdown(label: string): Promise<HTMLElement> {
+    fireEvent.pointerDown(await screen.findByRole("button", { name: label }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    return screen.findByRole("menu");
+  }
+
+  async function chooseModelEffort(
+    trigger: string,
+    modelOption: string,
+    effortOption: string,
+  ) {
+    const menu = await openAgentDropdown(trigger);
+    const model = within(menu).getByRole("menuitem", {
+      name: `${modelOption} effort options`,
+    });
+    fireEvent.pointerMove(model, { pointerType: "mouse" });
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: effortOption }),
+    );
+  }
+
   it("keeps the Coding agent override accessible and persists changes", async () => {
     renderSettings(false, false, "/r/me/proj/settings/coding-agent");
     const group = await screen.findByRole("radiogroup", {
@@ -804,5 +888,112 @@ describe("RepoSettingsPage", () => {
         effort: "",
       });
     });
+  });
+
+  it("edits the override with the same agent rows as the application settings", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/coding-agent", true);
+
+    const agents = await screen.findByRole("radiogroup", {
+      name: "Coding agent",
+    });
+    expect(within(agents).getAllByRole("radio")).toHaveLength(5);
+    expect(
+      (within(agents).getByRole("radio", { name: "Codex" }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    // The pinned runtime's row carries the saved override; the others read as Default.
+    const codex = await screen.findByRole("button", { name: "Codex model" });
+    expect(codex.textContent).toBe("GPT 5.6 Sol · High");
+    expect(
+      screen.getByRole("button", { name: "Claude Code model" }).textContent,
+    ).toBe("Default");
+
+    await chooseModelEffort("Codex model", "GPT 5.6 Terra", "Low");
+
+    await waitFor(() => {
+      expect(rpcCall("repos/setAgentConfig")?.params).toMatchObject({
+        name: "me/proj",
+        override: true,
+        runtime: "codex",
+        model: "gpt-5.6-terra",
+        effort: "low",
+      });
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Codex model" }).textContent,
+      ).toBe("GPT 5.6 Terra · Low"),
+    );
+    expect(
+      screen
+        .getByRole("radio", { name: /on \(override for this repo\)/i })
+        .textContent?.replace(/\s+/g, " "),
+    ).toContain("effective — Codex · GPT 5.6 Terra · Low");
+  });
+
+  it("switches the pinned runtime from another agent row", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/coding-agent", true);
+
+    const agents = await screen.findByRole("radiogroup", {
+      name: "Coding agent",
+    });
+    fireEvent.click(within(agents).getByRole("radio", { name: "Grok Build" }));
+
+    // Switching runtime clears model/effort so the new runtime's defaults apply.
+    await waitFor(() => {
+      expect(rpcCall("repos/setAgentConfig")?.params).toMatchObject({
+        override: true,
+        runtime: "grok",
+        model: "",
+        effort: "",
+      });
+    });
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("radio", {
+            name: "Grok Build",
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(true),
+    );
+    expect(
+      screen.getByRole("button", { name: "Grok Build model" }).textContent,
+    ).toBe("Default");
+  });
+
+  it("hands the override's model and effort back to the runtime defaults", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/coding-agent", true);
+    await screen.findByRole("radiogroup", { name: "Coding agent" });
+
+    await chooseModelEffort("Codex model", "Default", "Default");
+
+    await waitFor(() => {
+      expect(rpcCall("repos/setAgentConfig")?.params).toMatchObject({
+        override: true,
+        runtime: "codex",
+        model: "",
+        effort: "",
+      });
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Codex model" }).textContent,
+      ).toBe("Default"),
+    );
+  });
+
+  it("hides the agent rows and shows the application effective config while off", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/coding-agent");
+
+    const off = await screen.findByRole("radio", {
+      name: /off \(use application settings\)/i,
+    });
+    expect(off.textContent?.replace(/\s+/g, " ")).toContain(
+      "effective — Claude Code · Opus · Medium",
+    );
+    expect(
+      screen.queryByRole("radiogroup", { name: "Coding agent" }),
+    ).toBeNull();
   });
 });

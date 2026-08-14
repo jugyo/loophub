@@ -107,7 +107,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 6. コスト上限超過では event payload の `usage_session_id` と `active_step` /
    `active_session_id` を区別し、run を needs-human hold にしてから active child の pane だけに
    実 Esc と理由通知を送る。ここまでが `cost-hold` の責務で、親はその後 loop に戻る。増額と再開の判断は
-   人間が行う。解消不能状態も issue comment + needs-human 状態で人間へ渡す。
+   人間が行う。解消不能状態もリンク済み PR の comment + needs-human 状態で人間へ渡す。
 7. passing verdict 後も run と parent agent、および可能なら Execute pane を維持し、追加指示や
    turn-done を待つ。run を恒久終了する command は無く、終了させるのは人間である。merge はしない。
 
@@ -174,7 +174,7 @@ action を届ける。action は event id と canonical reference だけを含�
 次の instruction を待つ。hold 中の event 再送に対しても同じ action が返るが、effect が
 一度きりであることは action ではなく `cost.hold` receipt が保証する。
 
-Esc、pane 通知、Issue comment のような DB transaction 外の side effect は、実行前に durable
+Esc、pane 通知、PR comment のような DB transaction 外の side effect は、実行前に durable
 receipt を claim し、成功後に complete する。
 
 ```sh
@@ -343,7 +343,7 @@ hold を解除する。通常の resume 自体は上限を変更しない。resu
 同じ pane で続行し、Verify は中断した子を再利用せず current HEAD に対する fresh child を起動する。
 増額されなければ hold は維持され、注入・step 遷移・子起動は行われない。`cost-hold` の pane 解決、hold、
 Esc、通知のいずれかに失敗した場合は成功扱いせず、親 pane に command と error を表示し、
-`lh workflow escalate-human --repo <repo> --run <run> --reason <text>` で Issue comment に通知して
+`lh workflow escalate-human --repo <repo> --run <run> --reason <text>` でリンク済み PR の comment に通知して
 hold を維持する。
 同じ edge の再処理で暗黙 retry や通知の重複を行わない。
 
@@ -358,7 +358,7 @@ hold を維持する。
 |---|---|---|
 | start | run started | worker instruction に従って Execute を launch |
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
-| Execute | `workflow_run.escalated` を受領 | event の reason で `escalate-human` → Issue comment に通知。run state は変えず、人間の指示まで step launch も rework もしない |
+| Execute | `workflow_run.escalated` を受領 | event の reason で `escalate-human` → 親 agent が担当するリンク済み PR の comment に通知。run state は変えず、人間の指示まで step launch も rework もしない |
 | Execute / Verify | `workflow_run.cost_exceeded` を受領 | `cost_hold` action → `cost-hold` が active child を解決 → `await-human` → 実 Esc + 1 行通知（再送分は `already_completed` で effect を発火しない）→ loop に戻る |
 | Cost hold | 人間が増額 | 人間が期待上限付き専用操作で `B` 増額 → hold を解除。Execute は同じ target で続行、Verify は current HEAD に fresh launch |
 | Cost hold | 増額なし | hold を維持し、子起動・注入・自動遷移を行わず次の明示的指示を待つ |
@@ -389,7 +389,7 @@ rework 上限は 8。rework は parent の **1 行の**
 修正後の Verify は常に fresh child とする。注入の成功自体を execute complete の根拠
 にしない — 次の遷移は `lh workflow step status` の HEAD / review 観測のみ。
 
-上限到達後に fresh な request_changes を観測したときは rework せず、`escalate-human` で Issue comment に
+上限到達後に fresh な request_changes を観測したときは rework せず、`escalate-human` でリンク済み PR の comment に
 通知する。この escalation は run を DB で hold しない（`needs_human_reason` は null のまま）ため、復帰は
 人間の指示を `lh workflow instruction <run> --note <text>` に渡すことで行い、返る action は既存 Execute target への
 `deliver` である。`run resume` を経由しないので rework count は上限のまま残り、以降の request_changes は
@@ -423,7 +423,7 @@ lh workflow run increase-cost-limit --run <id> --expected-limit <usd>
 lh workflow deliver --run <id> --text <single-line-instruction> # 最新 Execute を activate して指示を注入
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
-lh workflow escalate-human --reason <text> [--run <id>] [--issue <n>] # Issue comment を冪等に記録
+lh workflow escalate-human --reason <text> [--run <id>] # 親 agent のリンク済み PR への comment を冪等に記録
 lh workflow instruction <run> (--event <id> --requires-changes true|false | --note <text|->) --json # 親の入力（GitHub reference の判断 / 人間の直接指示）に対する instruction を返す
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測

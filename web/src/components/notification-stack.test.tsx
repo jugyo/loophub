@@ -14,44 +14,47 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-  HerdrRepoSessions,
-  Notification,
-  WorkflowRunState,
-} from "@/api/types";
+import type { Notification, WorkflowRunState } from "@/api/types";
 import { NotificationStack } from "./notification-stack";
 
 const notifications = vi.hoisted(() => ({
   value: [] as Notification[],
   isError: false,
-  herdrRepos: [] as HerdrRepoSessions[],
   workflowRun: null as WorkflowRunState | null,
+  // Subscribers stand in for the query cache, so a test can deliver a notification to a
+  // mounted stack the way an invalidated list would.
+  listeners: new Set<() => void>(),
 }));
 const actions = vi.hoisted(() => ({
   list: vi.fn(),
   read: vi.fn(),
   readAll: vi.fn(),
-  focus: vi.fn(),
   showError: vi.fn(),
   increaseCostLimit: vi.fn(),
+  increaseReworkLimit: vi.fn(),
 }));
 
-vi.mock("@/queries/notifications", () => ({
-  useNotifications: (input: unknown) => {
-    actions.list(input);
-    return { data: notifications.value, isError: notifications.isError };
-  },
-  useReadNotification: () => ({ mutate: actions.read }),
-  useReadAllNotifications: () => ({
-    mutate: actions.readAll,
-    isPending: false,
-  }),
-}));
-
-vi.mock("@/queries/terminal", () => ({
-  useFocusHerdrAgent: () => ({ mutate: actions.focus, isPending: false }),
-  useHerdrSessions: () => ({ data: { repos: notifications.herdrRepos } }),
-}));
+vi.mock("@/queries/notifications", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useNotifications: (input: unknown) => {
+      actions.list(input);
+      useSyncExternalStore(
+        (onChange: () => void) => {
+          notifications.listeners.add(onChange);
+          return () => notifications.listeners.delete(onChange);
+        },
+        () => notifications.value,
+      );
+      return { data: notifications.value, isError: notifications.isError };
+    },
+    useReadNotification: () => ({ mutate: actions.read }),
+    useReadAllNotifications: () => ({
+      mutate: actions.readAll,
+      isPending: false,
+    }),
+  };
+});
 
 vi.mock("@/components/toast", () => ({
   useToast: () => ({ showError: actions.showError }),
@@ -63,14 +66,26 @@ vi.mock("@/queries/workflow-runs", () => ({
     mutate: actions.increaseCostLimit,
     isPending: false,
   }),
+  useIncreaseWorkflowRunReworkLimit: () => ({
+    mutate: actions.increaseReworkLimit,
+    isPending: false,
+  }),
 }));
+
+/** Replace the unread list the way a refreshed query would, notifying mounted stacks. */
+function deliverNotifications(next: Notification[]) {
+  notifications.value = next;
+  act(() => {
+    for (const listener of notifications.listeners) listener();
+  });
+}
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  localStorage.clear();
   notifications.value = [];
   notifications.isError = false;
-  notifications.herdrRepos = [];
   notifications.workflowRun = null;
 });
 
@@ -111,6 +126,15 @@ function makeCostNotification(
   });
 }
 
+function makeReworkNotification(): Notification {
+  return makeNotification(13, {
+    kind: "human_attention",
+    title: "Workflow rework limit reached",
+    body: "Workflow run 7 reached the rework limit (8/8).",
+    workflow_run_id: 7,
+  });
+}
+
 function makeRunState(
   partial: Partial<WorkflowRunState> = {},
 ): WorkflowRunState {
@@ -125,6 +149,7 @@ function makeRunState(
     cost_increment_usd: 10,
     cost_limit_usd: 20,
     cost_limit_increase_available: true,
+    rework_limit_increase_available: false,
     needs_human_reason: "cost limit exceeded",
     issue_number: 42,
     pr_number: 12,
@@ -258,7 +283,7 @@ describe("NotificationStack", () => {
 
     expect(actions.read).toHaveBeenCalledWith(6, expect.any(Object));
     expect(screen.queryByText("Notification 6")).toBeNull();
-    expect(screen.getByText("Notification 1")).toBeTruthy();
+    expect(screen.getByText("Notification 1 #1")).toBeTruthy();
   });
 
   it("marks every unread notification read through Clear all", async () => {
@@ -270,147 +295,98 @@ describe("NotificationStack", () => {
     expect(actions.readAll).toHaveBeenCalledWith(undefined, expect.any(Object));
   });
 
-  it("navigates pull notifications and marks them read", async () => {
+  it("opens pull notifications in a new tab and marks them read", async () => {
     notifications.value = [makeNotification(12)];
     const { router } = renderStack();
 
     const link = await screen.findByRole("link", { name: /Notification 12/ });
-    await act(async () => fireEvent.click(link));
-
-    expect(actions.read).toHaveBeenCalledWith(12, expect.any(Object));
-    expect(router.state.location.pathname).toBe("/r/me/proj/pulls/12");
-  });
-
-  it("shows a pull title on one truncated line", async () => {
-    const title = "A very long pull request title that should stay on one line";
-    notifications.value = [
-      makeNotification(12, {
-        resource: {
-          kind: "pull",
-          number: 12,
-          title,
-          href: "/r/me/proj/pulls/12",
-        },
-      }),
-    ];
-
-    renderStack();
-
-    const titleElement = await screen.findByText(title);
-    expect(titleElement.className).toContain("truncate");
-    expect(titleElement.className).toContain("text-xs");
-  });
-
-  it("does not reserve space for a missing pull title", async () => {
-    notifications.value = [
-      makeNotification(12, {
-        resource: {
-          kind: "pull",
-          number: 12,
-          title: null,
-          href: "/r/me/proj/pulls/12",
-        },
-      }),
-    ];
-
-    renderStack();
-
-    expect(await screen.findByText("Notification 12")).toBeTruthy();
-    expect(screen.queryByText("A very long pull request title")).toBeNull();
-  });
-
-  it("shows and focuses a live Herdr pane for the notification PR", async () => {
-    notifications.value = [makeNotification(12)];
-    notifications.herdrRepos = [
-      {
-        repo: "me/proj",
-        session_name: "me/proj",
-        agents: [],
-        pull_workspaces: [
-          { pull: 12, pane_id: "pane_live_1234567890", status: "working" },
-        ],
-        issue_workspaces: [],
-      },
-    ];
-    const { router } = renderStack();
-
-    const openButton = await screen.findByRole("button", {
-      name: "Open PR #12 in Herdr",
-    });
-    expect(openButton.querySelector("svg.lucide-terminal")).toBeTruthy();
-    fireEvent.click(openButton);
-
-    expect(actions.focus).toHaveBeenCalledWith(
-      { repo: "me/proj", paneId: "pane_live_1234567890" },
-      expect.any(Object),
-    );
-    expect(actions.read).not.toHaveBeenCalled();
-    expect(router.state.location.pathname).toBe("/");
-  });
-
-  it("places the Herdr action at the bottom-right away from close", async () => {
-    notifications.value = [makeNotification(12)];
-    notifications.herdrRepos = [
-      {
-        repo: "me/proj",
-        session_name: "me/proj",
-        agents: [],
-        pull_workspaces: [
-          { pull: 12, pane_id: "pane_live_1234567890", status: "working" },
-        ],
-        issue_workspaces: [],
-      },
-    ];
-    renderStack();
-
-    const closeButton = await screen.findByRole("button", {
-      name: "Close Notification 12",
-    });
-    const openButton = screen.getByRole("button", {
-      name: "Open PR #12 in Herdr",
-    });
-    const actions = closeButton.parentElement;
-
-    expect(actions).toBe(openButton.parentElement);
-    expect(actions?.className).toContain("self-stretch");
-    expect(actions?.className).toContain("justify-between");
-  });
-
-  it("hides the Herdr action when the stored pane is no longer live", async () => {
-    notifications.value = [
-      makeNotification(12, { herdr_pane_id: "pane_stale_1234567890" }),
-    ];
-    notifications.herdrRepos = [
-      {
-        repo: "me/proj",
-        session_name: "me/proj",
-        agents: [],
-        pull_workspaces: [],
-        issue_workspaces: [],
-      },
-    ];
-    renderStack();
-
-    expect(
-      await screen.findByRole("button", { name: "Close Notification 12" }),
-    ).toBeTruthy();
+    expect(link.getAttribute("href")).toBe("/r/me/proj/pulls/12");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link.getAttribute("title")).toBe("Open PR #12 in a new tab");
+    expect(link.querySelector("svg.lucide-external-link")).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: "Open PR #12 in Herdr" }),
     ).toBeNull();
+    // The test environment would try to fetch the new tab's URL; only the handler matters here.
+    const stopNavigation = (event: Event) => event.preventDefault();
+    document.addEventListener("click", stopNavigation);
+    await act(async () => fireEvent.click(link));
+    document.removeEventListener("click", stopNavigation);
+
+    expect(actions.read).toHaveBeenCalledWith(12, expect.any(Object));
+    expect(router.state.location.pathname).toBe("/");
   });
 
-  it("increases a cost-held run's limit from its notification after confirming", async () => {
+  it("shows the notification kind above the PR title and metadata", async () => {
+    notifications.value = [
+      makeNotification(12, {
+        body: "A very long notification body that should stay on one line",
+        resource: {
+          kind: "pull",
+          number: 12,
+          title: "A pull request title that no longer takes its own line",
+          href: "/r/me/proj/pulls/12",
+        },
+      }),
+    ];
+
+    renderStack();
+
+    const body = await screen.findByText(
+      "A very long notification body that should stay on one line",
+    );
+    expect(body.className).toContain("truncate");
+    expect(body.className).toContain("text-xs");
+    expect(screen.getByText("Merge ready")).toBeTruthy();
+    const link = screen.getByRole("link", {
+      name: /A pull request title that no longer takes its own line #12/,
+    });
+    expect(link.children.length).toBe(4);
+    expect(link.children[1].textContent).toBe(
+      "A pull request title that no longer takes its own line #12",
+    );
+    expect(link.children[2]).toBe(body);
+    expect(link.children[3].textContent).toContain("me/proj");
+    expect(link.children[3].textContent).toContain("PR #12");
+  });
+
+  it("ellipsizes long PR titles and repository names", async () => {
+    const title =
+      "A very long pull request title that must stay inside the card";
+    notifications.value = [
+      makeNotification(12, {
+        title: "Merge ready",
+        repo: { name: "me/a-repository-with-a-long-name" },
+        resource: {
+          kind: "pull",
+          number: 1234,
+          title,
+          href: "/r/me/a-repository-with-a-long-name/pulls/1234",
+        },
+      }),
+    ];
+
+    renderStack();
+
+    // A title span that cannot shrink is laid out at max-content, so `truncate` never applies and
+    // the title pushes the external-link icon and the metadata past the card's edge.
+    const titleElement = await screen.findByText(`${title} #1234`);
+    expect(titleElement.className).toContain("truncate");
+    expect(titleElement.className).toContain("min-w-0");
+    expect(titleElement.className).not.toContain("shrink-0");
+    const repoElement = screen.getByText("me/a-repository-with-a-long-name");
+    expect(repoElement.className).toContain("truncate");
+    expect(repoElement.className).toContain("min-w-0");
+  });
+
+  it("shows the increase question and increases a cost-held run's limit after Yes", async () => {
     notifications.value = [makeCostNotification()];
     notifications.workflowRun = makeRunState();
     renderStack();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Increase cost limit" }),
-    );
-
-    expect(actions.increaseCostLimit).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("group", { name: "Increase to $30.00?" }),
+      await screen.findByRole("group", { name: "Increase to $30.00?" }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
@@ -420,20 +396,44 @@ describe("NotificationStack", () => {
     );
   });
 
-  it("keeps the question answerable with No without increasing", async () => {
+  it("offers and confirms a rework limit increase", async () => {
+    notifications.value = [makeReworkNotification()];
+    notifications.workflowRun = makeRunState({
+      rework_count: 8,
+      rework_limit: 8,
+      rework_limit_increase_available: true,
+    });
+    actions.increaseReworkLimit.mockImplementationOnce(
+      (
+        _input: unknown,
+        options: { onSuccess: (result: { current_limit: number }) => void },
+      ) => options.onSuccess({ current_limit: 16 }),
+    );
+    renderStack();
+
+    expect(
+      await screen.findByRole("group", {
+        name: "Increase rework limit to 16?",
+      }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    expect(actions.increaseReworkLimit).toHaveBeenCalledWith(
+      { run: 7, expectedLimit: 8 },
+      expect.any(Object),
+    );
+    expect(screen.getByText("Rework limit increased to 16.")).toBeTruthy();
+  });
+
+  it("marks the notification read with No without increasing", async () => {
     notifications.value = [makeCostNotification()];
     notifications.workflowRun = makeRunState();
     renderStack();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Increase cost limit" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "No" }));
+    fireEvent.click(await screen.findByRole("button", { name: "No" }));
 
     expect(actions.increaseCostLimit).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("button", { name: "Increase cost limit" }),
-    ).toBeTruthy();
+    expect(actions.read).toHaveBeenCalledWith(12, expect.any(Object));
+    expect(screen.queryByText("Workflow cost limit exceeded #12")).toBeNull();
   });
 
   it.each([
@@ -463,10 +463,10 @@ describe("NotificationStack", () => {
     renderStack();
 
     expect(
-      await screen.findByText("Workflow cost limit exceeded"),
+      await screen.findByText("Workflow cost limit exceeded #12"),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: "Increase cost limit" }),
+      screen.queryByRole("group", { name: "Increase to $30.00?" }),
     ).toBeNull();
   });
 
@@ -479,10 +479,7 @@ describe("NotificationStack", () => {
     );
     renderStack();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Increase cost limit" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes" }));
 
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toBe("cost limit changed since it was read");
@@ -501,15 +498,124 @@ describe("NotificationStack", () => {
     );
     renderStack();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Increase cost limit" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes" }));
 
     expect(screen.getByText("Cost limit increased to $30.00.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Yes" })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Increase cost limit" }),
+      screen.queryByRole("group", { name: "Increase to $30.00?" }),
+    ).toBeNull();
+  });
+
+  it("collapses the cards to the unread total when minimized", async () => {
+    notifications.value = [1, 2, 3, 4, 5, 6, 7].map((id) =>
+      makeNotification(id),
+    );
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+
+    expect(screen.queryByText("Notification 7")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear all" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "7 unread", expanded: false }),
+    ).toBeTruthy();
+    expect(actions.read).not.toHaveBeenCalled();
+    expect(actions.readAll).not.toHaveBeenCalled();
+  });
+
+  it("shows the unread notifications again when expanded", async () => {
+    notifications.value = [1, 2, 3, 4, 5, 6, 7].map((id) =>
+      makeNotification(id),
+    );
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "7 unread" }));
+
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(
+      [
+        expect.stringContaining("Notification 7"),
+        expect.stringContaining("Notification 6"),
+        expect.stringContaining("Notification 5"),
+        expect.stringContaining("Notification 4"),
+        expect.stringContaining("Notification 3"),
+      ],
+    );
+    expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: "Minimize notifications",
+        expanded: true,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("keeps keyboard focus on the control that folds and unfolds the stack", async () => {
+    notifications.value = [makeNotification(1), makeNotification(2)];
+    renderStack();
+
+    const minimizeButton = await screen.findByRole("button", {
+      name: "Minimize notifications",
+    });
+    minimizeButton.focus();
+    fireEvent.click(minimizeButton);
+
+    const expandButton = screen.getByRole("button", { name: "2 unread" });
+    expect(document.activeElement).toBe(expandButton);
+    fireEvent.click(expandButton);
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Minimize notifications" }),
+    );
+  });
+
+  it("counts unread notifications arriving while minimized", async () => {
+    notifications.value = [makeNotification(1)];
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+    deliverNotifications([makeNotification(1), makeNotification(2)]);
+
+    expect(screen.getByRole("button", { name: "2 unread" })).toBeTruthy();
+    expect(screen.queryByText("Notification 2")).toBeNull();
+  });
+
+  it("stays minimized when the page is loaded again", async () => {
+    notifications.value = [makeNotification(1)];
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+    cleanup();
+    renderStack();
+
+    expect(
+      await screen.findByRole("button", { name: "1 unread" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Notification 1")).toBeNull();
+  });
+
+  it("shows nothing while minimized once no notification is unread", async () => {
+    notifications.value = [makeNotification(1)];
+    renderStack();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Minimize notifications" }),
+    );
+    deliverNotifications([
+      makeNotification(1, { read_at: "2026-01-01T00:01:00Z" }),
+    ]);
+
+    expect(
+      screen.queryByRole("region", { name: "Unread notifications" }),
     ).toBeNull();
   });
 
@@ -532,31 +638,9 @@ describe("NotificationStack", () => {
       },
       message: "Clear failed",
     },
-    {
-      action: "focus",
-      invoke: async () => {
-        fireEvent.click(
-          await screen.findByRole("button", { name: "Open PR #12 in Herdr" }),
-        );
-      },
-      message: "Focus failed",
-    },
   ])("shows $action failures through the shared error toast", async (testCase) => {
     notifications.value = [makeNotification(12)];
-    notifications.herdrRepos = [
-      {
-        repo: "me/proj",
-        session_name: "me/proj",
-        agents: [],
-        pull_workspaces: [
-          { pull: 12, pane_id: "pane_live_1234567890", status: "working" },
-        ],
-        issue_workspaces: [],
-      },
-    ];
-    actions[
-      testCase.action as "read" | "readAll" | "focus"
-    ].mockImplementationOnce(
+    actions[testCase.action as "read" | "readAll"].mockImplementationOnce(
       (_input: unknown, options: { onError: (error: Error) => void }) =>
         options.onError(new Error(testCase.message)),
     );

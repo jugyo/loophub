@@ -19,7 +19,7 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-function createRun(name: string) {
+function createRun(name: string, withPr = true) {
   const repo = S.createRepo(name, HOME);
   const issue = S.createIssue(
     repo.id,
@@ -28,6 +28,10 @@ function createRun(name: string) {
     "body",
     "me",
   );
+  const pr = withPr
+    ? S.createIssue(repo.id, "pull", "Implementation", "body", "me")
+    : null;
+  if (pr) S.createPull(pr.id, "feature", "main", "head", issue.id);
   const workflow = S.createWorkflow({
     name: `workflow-${repo.id}`,
     description: "",
@@ -45,11 +49,11 @@ function createRun(name: string) {
     costIncrementUsd: 10,
     costLimitUsd: 10,
   });
-  return { repo, issue, run };
+  return { repo, issue, pr: pr!, run };
 }
 
-test("escalateHuman records one Issue comment across replays", () => {
-  const { repo, issue, run } = createRun("me/escalation");
+test("escalateHuman records one PR comment across replays", () => {
+  const { repo, pr, run } = createRun("me/escalation");
 
   const first = svc.workflowEscalation.escalateHuman(
     repo.full_name,
@@ -65,86 +69,53 @@ test("escalateHuman records one Issue comment across replays", () => {
   expect(first).toMatchObject({
     ok: true,
     run: run.id,
-    issue: issue.number,
+    pr: pr.number,
     reason: "Rework limit reached.",
     effects: {
-      issue_comment: { status: "completed" },
+      pr_comment: { status: "completed" },
     },
   });
   expect(replay).toMatchObject({
     ok: true,
     effects: {
-      issue_comment: { status: "already_completed" },
+      pr_comment: { status: "already_completed" },
     },
   });
-  expect(S.listComments(issue.id)).toHaveLength(1);
-  expect(S.listComments(issue.id)[0].body).toBe(
+  expect(S.listComments(pr.id)).toHaveLength(1);
+  expect(S.listComments(pr.id)[0].body).toBe(
     `Workflow run ${run.id} requires human guidance: Rework limit reached.`,
   );
 });
 
-test("escalateHuman can override the run Issue", () => {
-  const { repo, issue, run } = createRun("me/escalation-override");
-  const other = S.createIssue(
-    repo.id,
-    "issue",
-    "Escalation target",
-    "body",
-    "me",
-  );
+test("escalateHuman fails visibly when the run PR is missing", () => {
+  const { repo, run } = createRun("me/escalation-missing-pr", false);
 
-  const result = svc.workflowEscalation.escalateHuman(
-    repo.full_name,
-    {
-      run: run.id,
-      reason: "The decision belongs on the other Issue.",
-      issue: other.number,
-    },
-    run.parent_session_id,
-  );
-
-  expect(result).toMatchObject({ ok: true, issue: other.number });
-  expect(S.listComments(issue.id)).toHaveLength(0);
-  expect(S.listComments(other.id)).toHaveLength(1);
-
-  const replay = svc.workflowEscalation.escalateHuman(
-    repo.full_name,
-    {
-      run: run.id,
-      reason: "The decision belongs on the other Issue.",
-    },
-    run.parent_session_id,
-  );
-  expect(replay).toMatchObject({
-    ok: true,
-    issue: other.number,
-    effects: {
-      issue_comment: { status: "already_completed" },
-    },
-  });
-
-  const third = S.createIssue(
-    repo.id,
-    "issue",
-    "Different target",
-    "body",
-    "me",
-  );
   expect(() =>
     svc.workflowEscalation.escalateHuman(
       repo.full_name,
-      {
-        run: run.id,
-        reason: "The decision belongs on the other Issue.",
-        issue: third.number,
-      },
+      { run: run.id, reason: "The decision needs human guidance." },
       run.parent_session_id,
     ),
-  ).toThrowError(/already targets Issue/);
+  ).toThrowError(/linked PR #\d+ not found/);
+});
+
+test("escalateHuman records the parent's organized decision context", () => {
+  const { repo, pr, run } = createRun("me/escalation-organized");
+  const reason =
+    "Background: 仕様の前提が未確定。 Missing information: 対象環境。 Options: 現行仕様を維持するか変更する。 Decision points: 人間が選択肢を決める。";
+
+  const result = svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    { run: run.id, reason },
+    run.parent_session_id,
+  );
+
+  expect(result.ok).toBe(true);
+  expect(S.listComments(pr.id)[0]?.body).toContain(reason);
 });
 
 test("escalateHuman exposes failure and does not replay a pending effect", () => {
-  const { repo, issue, run } = createRun("me/escalation-partial");
+  const { repo, pr, run } = createRun("me/escalation-partial");
 
   const failed = svc.workflowEscalation.escalateHuman(
     repo.full_name,
@@ -165,12 +136,12 @@ test("escalateHuman exposes failure and does not replay a pending effect", () =>
   expect(failed).toMatchObject({
     ok: false,
     effects: {
-      issue_comment: { status: "failed", error: "comment unavailable" },
+      pr_comment: { status: "failed", error: "comment unavailable" },
     },
   });
   expect(replay).toMatchObject({
     ok: false,
-    effects: { issue_comment: { status: "pending" } },
+    effects: { pr_comment: { status: "pending" } },
   });
-  expect(S.listComments(issue.id)).toHaveLength(0);
+  expect(S.listComments(pr.id)).toHaveLength(0);
 });

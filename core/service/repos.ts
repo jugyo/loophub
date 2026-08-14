@@ -9,6 +9,7 @@ import {
   commitDiffFiles,
   currentBranch,
   defaultBranch,
+  fetchRemote,
   isGitRepo,
   localBranchRef,
   pullFastForward,
@@ -61,6 +62,22 @@ async function originSyncOf(r: S.Repo): Promise<RepoOriginSyncWire> {
     : null;
   return {
     has_origin: true,
+    branch,
+    ahead: counts?.ahead ?? null,
+    behind: counts?.behind ?? null,
+  };
+}
+
+async function originSyncCounts(
+  r: S.Repo,
+  branch: string,
+): Promise<{ branch: string; ahead: number | null; behind: number | null }> {
+  const counts = await aheadBehind(
+    r.local_path,
+    localBranchRef(branch),
+    `refs/remotes/origin/${branch}`,
+  );
+  return {
     branch,
     ahead: counts?.ahead ?? null,
     behind: counts?.behind ?? null,
@@ -326,7 +343,32 @@ export const repos = {
         `git pull --ff-only origin ${branch} failed: ${detail}`,
       );
     }
-    return originSyncOf(r);
+    const sync = await originSyncCounts(r, branch);
+    db.transaction(() => S.setRepoOriginSync(r.id, sync));
+    return originSyncOf(repoOr404(name));
+  },
+
+  // Refresh the checkout's view of origin: `git fetch origin` updates the remote-tracking refs the
+  // originSync read above derives its counts from, answering with the refreshed sync state. Unlike
+  // pullFromOrigin this never touches the working tree or the checked-out branch, so it is safe on a
+  // detached HEAD and leaves issue/PR grouping and bases untouched. Every way it can fail — no
+  // origin, an unreachable remote — is reported with git's own message rather than retried.
+  async fetchFromOrigin(name: string): Promise<RepoOriginSyncWire> {
+    const r = repoOr404(name);
+    if (!(await remoteUrl(r.local_path)))
+      throw new ServiceError(422, "no origin remote is configured");
+    const fetched = await fetchRemote(r.local_path);
+    if (fetched.code !== 0) {
+      const detail =
+        fetched.stderr.trim() || fetched.stdout.trim() || "unknown error";
+      throw new ServiceError(422, `git fetch origin failed: ${detail}`);
+    }
+    const branch = await currentBranch(r.local_path);
+    if (branch) {
+      const sync = await originSyncCounts(r, branch);
+      db.transaction(() => S.setRepoOriginSync(r.id, sync));
+    }
+    return originSyncOf(repoOr404(name));
   },
 
   // #1532: set (or clear) the repo's Coding agent override. `override` toggles whether the repo's

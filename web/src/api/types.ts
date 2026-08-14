@@ -36,6 +36,7 @@ import type {
   PullDiffWire,
   PullFileWire,
   PullSummaryWire,
+  PullTimelineItemWire,
   PullUsageWire,
   PullWire,
   RelatedSessionsUsageByKindWire,
@@ -283,6 +284,9 @@ export type PullRequest = PullWire;
 export type IssueListPage = IssueListPageWire;
 export type IssueDetailPage = IssueDetailPageWire;
 export type PullDetailPage = PullDetailPageWire;
+
+/** One entry of the PR-detail timeline (#145), as assembled by the backend page query. */
+export type PullTimelineItem = PullTimelineItemWire;
 
 /** A PR's agent-cost totals on their own, served without touching git (#2263). */
 export type PullUsage = PullUsageWire;

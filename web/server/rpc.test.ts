@@ -552,6 +552,30 @@ test("workflowRuns/increaseCostLimit raises a cost-held run from a Web session",
   increase.mockRestore();
 });
 
+test("workflowRuns/increaseReworkLimit raises a rework-held run from a Web session", async () => {
+  const increase = vi
+    .spyOn(svc.workflowRuns, "increaseReworkLimitForHuman")
+    .mockReturnValue({
+      run: 9,
+      previous_limit: 8,
+      current_limit: 16,
+    });
+
+  const response: any = await call("workflowRuns/increaseReworkLimit", {
+    repo: "me/proj",
+    run: 9,
+    expected_limit: 8,
+    session_id: "77777777-7777-4777-8777-777777777777",
+  });
+  expect(response.result).toMatchObject({ current_limit: 16 });
+  expect(increase).toHaveBeenCalledWith(
+    "me/proj",
+    { run: 9, expectedLimit: 8 },
+    "77777777-7777-4777-8777-777777777777",
+  );
+  increase.mockRestore();
+});
+
 test("issues/create accepts an explicit null target_branch", async () => {
   const created: any = await call("issues/create", {
     repo: "me/proj",

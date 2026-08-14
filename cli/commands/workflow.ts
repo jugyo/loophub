@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
 import { ensureCursorWorkspaceTrusted } from "../../core/cursor-workspace.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
@@ -15,7 +14,6 @@ import {
 } from "../../core/terminal/terminal-launch.ts";
 import {
   layoutWorkflowTab,
-  WorkflowPaneLayoutError,
   type WorkflowPaneLayoutHerdr,
 } from "../../core/terminal/workflow-pane-layout.ts";
 import { workflowParentHerdrAgentName } from "../../core/workflow/herdr-agents.ts";
@@ -24,7 +22,6 @@ import {
   display,
   fail,
   out,
-  readStdin,
   resolveRepo,
   run as runOp,
   svc,
@@ -40,6 +37,7 @@ import {
   type HerdrLaunchResult,
   launchAgentInWorktreeHerdr,
 } from "../herdr-launch.ts";
+import { readTextInput } from "../text-input.ts";
 import { usage } from "../usage.ts";
 
 type PromptField = "execute_prompt" | "verify_prompt";
@@ -57,8 +55,7 @@ function nameArg(): string {
 }
 
 async function fileText(path: string): Promise<string> {
-  if (path === "-") return readStdin();
-  return readFileSync(path, "utf8");
+  return readTextInput(path, { bareFile: true });
 }
 
 async function promptPatchFromFlags(): Promise<
@@ -135,8 +132,7 @@ function preflightStepLaunch(runtime: CodingAgent): void {
 }
 
 // The Herdr seam core's layoutWorkflowTab drives: one spawnSync per command, bound to the run's
-// session. Throwing on failure lets the layout operation decide what a failed command means; the
-// caller turns the resulting WorkflowPaneLayoutError into a visible non-zero exit.
+// session. Layout is best-effort and does not change launch-step's result after confirmation.
 function herdrPaneLayoutRunner(sessionName: string): WorkflowPaneLayoutHerdr {
   return (args, opts) => {
     const captureStdout = opts?.captureStdout === true;
@@ -412,11 +408,9 @@ async function launchStep(): Promise<void> {
   if (!step) fail("--step is required");
   const repo = await resolveRepo();
   const note =
-    flags.note === "-"
-      ? await readStdin()
-      : typeof flags.note === "string"
-        ? flags.note
-        : undefined;
+    typeof flags.note === "string"
+      ? await readTextInput(flags.note)
+      : undefined;
   // The rework pointer: the review the relaunched Execute child must address (#1358).
   const review =
     flags.review !== undefined
@@ -529,20 +523,15 @@ async function launchStep(): Promise<void> {
     fail("herdr returned no valid pane_id for the step's pane");
   }
   // The child's command is in its pane once the launch succeeds, so persist that truth before
-  // ancillary layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
-  // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
+  // ancillary layout work. Layout is best-effort and must not turn a recorded launch into a
+  // failure; launch-step never retries automatically (an explicit retry is a new session).
   await confirm(childPaneId);
   if (result.anchor_pane_id) {
-    try {
-      layoutWorkflowTab({
-        anchorPaneId: result.anchor_pane_id,
-        runId: result.run.id,
-        herdr: herdrPaneLayoutRunner(result.herdr.sessionName),
-      });
-    } catch (e) {
-      if (e instanceof WorkflowPaneLayoutError) fail(e.message);
-      throw e;
-    }
+    layoutWorkflowTab({
+      anchorPaneId: result.anchor_pane_id,
+      runId: result.run.id,
+      herdr: herdrPaneLayoutRunner(result.herdr.sessionName),
+    });
   } else {
     // Preserve the legacy/headless launch path that had no placement anchor. The child got its own
     // tab, so there is no run tab to rebuild; make the missing visual guarantee explicit without
@@ -579,7 +568,7 @@ async function runLifecycle(): Promise<void> {
     }
     return;
   }
-  const result = await runOp(() => {
+  const result = await runOp(async () => {
     if (action === "advance-to-verify") {
       return service.advanceToVerify(repo, { run: runId }, sessionId);
     }
@@ -597,11 +586,8 @@ async function runLifecycle(): Promise<void> {
     }
     if (action === "await-human") {
       if (!flags.reason) fail("--reason is required");
-      return service.awaitHuman(
-        repo,
-        { run: runId, reason: flags.reason },
-        sessionId,
-      );
+      const reason = await readTextInput(flags.reason);
+      return service.awaitHuman(repo, { run: runId, reason }, sessionId);
     }
     if (action === "resume") {
       if (!flags.step) fail("--step is required");
@@ -643,11 +629,9 @@ async function stepInput(): Promise<void> {
     );
   }
   const note =
-    flags.note === "-"
-      ? await readStdin()
-      : typeof flags.note === "string"
-        ? flags.note
-        : undefined;
+    typeof flags.note === "string"
+      ? await readTextInput(flags.note)
+      : undefined;
   const review =
     flags.review !== undefined
       ? positiveInt(flags.review, "--review")
@@ -728,11 +712,9 @@ async function instruction(): Promise<void> {
   const event =
     flags.event === undefined ? undefined : positiveInt(flags.event, "--event");
   const note =
-    flags.note === "-"
-      ? await readStdin()
-      : typeof flags.note === "string"
-        ? flags.note
-        : undefined;
+    typeof flags.note === "string"
+      ? await readTextInput(flags.note)
+      : undefined;
   if (event !== undefined && note !== undefined) {
     fail("workflow instruction accepts either --event or --note");
   }
@@ -821,7 +803,7 @@ async function parentReady(): Promise<void> {
 
 async function escalate(): Promise<void> {
   if (!flags.reason) fail("--reason is required");
-  const reason = flags.reason;
+  const reason = await readTextInput(flags.reason);
   const runId = positiveInt(
     flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
     "--run or LOOPHUB_WORKFLOW_RUN",
@@ -844,8 +826,8 @@ async function escalate(): Promise<void> {
 
 async function deliver(): Promise<void> {
   const runId = positiveInt(flags.run, "--run");
-  const text = flags.text;
-  if (text === undefined) fail("--text is required");
+  if (flags.text === undefined) fail("--text is required");
+  const text = await readTextInput(flags.text);
   const repo = await resolveRepo();
   const result = await runOp(async () =>
     (await svc()).workflowRuns.deliver(
@@ -864,31 +846,30 @@ async function deliver(): Promise<void> {
 
 async function escalateHuman(): Promise<void> {
   if (!flags.reason) fail("--reason is required");
+  const reason = await readTextInput(flags.reason);
   const runId = positiveInt(
     flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
     "--run or LOOPHUB_WORKFLOW_RUN",
   );
   const repo =
     flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
-  const issue =
-    flags.issue === undefined ? undefined : positiveInt(flags.issue, "--issue");
   const result = await runOp(async () =>
     (await svc()).workflowEscalation.escalateHuman(
       repo,
-      { run: runId, reason: flags.reason!, issue },
+      { run: runId, reason },
       await writeSession(),
     ),
   );
   if (flags.json) {
     out(result);
   } else {
-    console.log(`Workflow run #${result.run}\tIssue #${result.issue}`);
-    const effect = result.effects.issue_comment;
-    console.log(`issue comment\t${effect.status.replaceAll("_", " ")}`);
-    if (effect.error) console.log(`issue comment error\t${effect.error}`);
+    console.log(`Workflow run #${result.run}\tPR #${result.pr}`);
+    const effect = result.effects.pr_comment;
+    console.log(`pr comment\t${effect.status.replaceAll("_", " ")}`);
+    if (effect.error) console.log(`pr comment error\t${effect.error}`);
   }
   if (!result.ok) {
-    fail("escalate-human did not record the Issue comment");
+    fail("escalate-human did not record the PR comment");
   }
 }
 

@@ -11,7 +11,7 @@ afterEach(() => {
 
 describe("diagnostic logging", () => {
   it("builds a diagnostic line only while diagnostics are enabled", () => {
-    const message = vi.fn(() => "[git-cache] event=hit");
+    const message = vi.fn(() => "[diagnostic] event=test");
 
     logDiagnostic(message);
     expect(message).not.toHaveBeenCalled();
@@ -20,6 +20,6 @@ describe("diagnostic logging", () => {
     configureSlowOperationLogging(log);
     logDiagnostic(message);
 
-    expect(log).toHaveBeenCalledWith("[git-cache] event=hit");
+    expect(log).toHaveBeenCalledWith("[diagnostic] event=test");
   });
 });

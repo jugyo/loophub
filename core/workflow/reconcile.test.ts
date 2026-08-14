@@ -291,6 +291,38 @@ describe("reconcileWorkflow", () => {
     });
   });
 
+  test("requests the held review after a human increases the rework limit", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          currentStep: "verify",
+          activeStep: "verify",
+          reworkCount: 8,
+          reworkLimit: 16,
+          wake: { kind: "rework_limit_increased" },
+          steps: {
+            execute: {
+              complete: false,
+              missing: [
+                "head has not advanced past review #10 (request_changes)",
+              ],
+            },
+            verify: {
+              complete: true,
+              missing: [],
+              latest_review: {
+                id: 10,
+                event: "request_changes",
+                headSha: HEAD,
+                fresh: true,
+              },
+            },
+          },
+        }),
+      ),
+    ).toMatchObject({ action: "request_rework", review_id: 10 });
+  });
+
   test("recovers from a rework-limit escalation through a human instruction", () => {
     // `escalate-human` records the notification without holding the run, so the human
     // instruction reaches Execute by delivery alone — no resume, no rework count reset.
@@ -484,6 +516,13 @@ describe("reconcileWorkflow", () => {
         action: "escalate",
         escalation_reason: "execute_request",
         reason: "Need product guidance",
+        execution_context: {
+          current_step: "execute",
+          active_step: null,
+          current_head: HEAD,
+          needs_human_reason: null,
+          awaiting_human: false,
+        },
       },
     ],
     [
@@ -830,6 +869,25 @@ describe("workflowActionPlan", () => {
         escalation_reason: "execute_request",
       }).commands[0],
     ).toMatchObject({ input: { argument: "--reason" } });
+    expect(
+      plan({
+        action: "escalate",
+        reason: "request",
+        escalation_reason: "execute_request",
+        execution_context: {
+          current_step: "execute",
+          active_step: "execute",
+          current_head: HEAD,
+          needs_human_reason: null,
+          awaiting_human: false,
+        },
+      }),
+    ).toMatchObject({
+      boundary: "parent_judgement",
+      decision: {
+        inputs: ["escalation reason", "execution context"],
+      },
+    });
     expect(plan({ action: "wait", reason: "waiting" })).toMatchObject({
       commands: [],
       after: "watch",

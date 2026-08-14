@@ -853,7 +853,7 @@ export const MIGRATIONS: Migration[] = [
     DROP TABLE comment_reactions_old;
     CREATE INDEX idx_comment_reactions_comment
       ON comment_reactions(comment_id, created_at, id);
-    `,
+  `,
   ),
   sql(
     "055-diff-feedback-locations",
@@ -1355,6 +1355,76 @@ export const MIGRATIONS: Migration[] = [
     "repos",
     "github_pr_export_extra_prompt",
     "TEXT",
+  ),
+  sql(
+    "079-create-pull-status-projection",
+    `
+    CREATE TABLE IF NOT EXISTS pull_status_projection (
+      base_sha       TEXT NOT NULL,
+      head_sha       TEXT NOT NULL,
+      mergeable      INTEGER CHECK (mergeable IS NULL OR mergeable IN (0, 1)),
+      mergeable_state TEXT NOT NULL,
+      additions      INTEGER NOT NULL,
+      deletions      INTEGER NOT NULL,
+      changed_files  INTEGER NOT NULL,
+      commits_ahead  INTEGER NOT NULL,
+      updated_at     TEXT NOT NULL,
+      PRIMARY KEY (base_sha, head_sha)
+    );
+  `,
+  ),
+  addColumn(
+    "080-pull-status-projection-signals",
+    "pull_status_projection",
+    "has_effective_diff",
+    "INTEGER NOT NULL DEFAULT 0",
+  ),
+  addColumn(
+    "081-pull-status-projection-conflict",
+    "pull_status_projection",
+    "conflict",
+    "INTEGER NOT NULL DEFAULT 0",
+  ),
+  sql(
+    "082-create-pull-diff-projection",
+    `
+    CREATE TABLE IF NOT EXISTS pull_diff_projection (
+      issue_id    INTEGER PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
+      base_sha    TEXT NOT NULL,
+      head_sha    TEXT NOT NULL,
+      files_json  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+    `,
+  ),
+  sql(
+    "083-create-jobs",
+    `
+    CREATE TABLE IF NOT EXISTS jobs (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      type          TEXT NOT NULL,
+      repo_id       INTEGER REFERENCES repos(id),
+      dedupe_key    TEXT NOT NULL UNIQUE,
+      params        TEXT NOT NULL,
+      status        TEXT NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed')),
+      result        TEXT,
+      error         TEXT,
+      created_at    TEXT NOT NULL,
+      started_at    TEXT,
+      heartbeat_at  TEXT,
+      finished_at   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at, id);
+    `,
+  ),
+  addColumn("084-repos-origin-branch", "repos", "origin_branch", "TEXT"),
+  addColumn("085-repos-origin-ahead", "repos", "origin_ahead", "INTEGER"),
+  addColumn("086-repos-origin-behind", "repos", "origin_behind", "INTEGER"),
+  addColumn(
+    "087-workflow-runs-rework-limit",
+    "workflow_runs",
+    "rework_limit",
+    "INTEGER NOT NULL DEFAULT 8",
   ),
 ];
 

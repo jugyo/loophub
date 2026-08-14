@@ -1557,6 +1557,7 @@ export interface WorkflowRunStateWire {
   active_verify_started_at: string | null;
   rework_count: number;
   rework_limit: number;
+  rework_limit_increase_available: boolean;
   cost_increment_usd: number;
   cost_limit_usd: number;
   // True only while the run is held on the current limit's cost-exceeded event and still has an
@@ -1631,6 +1632,7 @@ export function workflowRunStateJSON(input: {
   latestReview: WorkflowRunReviewSummaryWire | null;
   verificationStatus: WorkflowRunStateWire["verification_status"];
   reworkLimit: number;
+  reworkLimitIncreaseAvailable: boolean;
   costIncrementUsd: number;
   costLimitUsd: number;
   costLimitIncreaseAvailable: boolean;
@@ -1650,6 +1652,7 @@ export function workflowRunStateJSON(input: {
     active_verify_started_at: input.activeVerifyStartedAt,
     rework_count: run.rework_count,
     rework_limit: input.reworkLimit,
+    rework_limit_increase_available: input.reworkLimitIncreaseAvailable,
     cost_increment_usd: input.costIncrementUsd,
     cost_limit_usd: input.costLimitUsd,
     cost_limit_increase_available: input.costLimitIncreaseAvailable,
@@ -2372,6 +2375,13 @@ export interface PullDetailPageWire {
   line_comments: ReviewCommentWire[];
   comments: CommentWire[];
   /**
+   * The whole PR activity in one chronological list (#145): commits, reviews and conversation
+   * comments, oldest first. Assembled by pageData.pullDetail from the fields above —
+   * `pull.commits`, `reviews` and `comments` — so it costs the page no extra git,
+   * query or HTTP work, and the frontend renders the array as-is.
+   */
+  timeline: PullTimelineItemWire[];
+  /**
    * The diff feedback the detail screen itself renders: the per-file badge counts under Files
    * changed, and the threads whose anchors have left the diff ("previous threads"). Both are
    * derived from `files`, so folding them in here costs no extra git and spares the screen two
@@ -2393,3 +2403,27 @@ export interface PullCommitWire {
   // belongs to the current PR history. False means this current-history commit is locally ahead.
   pushed_to_github?: boolean;
 }
+
+/**
+ * One entry in the PR-detail timeline (#145): a commit, a review, or a conversation comment, in
+ * display order (chronological, oldest first). Assembled by pageData.pullDetail from data the page
+ * already fetches (`pull.commits` / `reviews` / `comments`), so the frontend renders the array as-is
+ * and never rebuilds or re-sorts it. `created_at` is the entry's timestamp on its own, uniform
+ * across kinds. Review line comments remain available through `line_comments` for the Diff view.
+ */
+export type PullTimelineItemWire =
+  | {
+      kind: "commit";
+      created_at: string;
+      commit: PullCommitWire;
+    }
+  | {
+      kind: "review";
+      created_at: string;
+      review: ReviewWire;
+    }
+  | {
+      kind: "comment";
+      created_at: string;
+      comment: CommentWire;
+    };

@@ -1,7 +1,7 @@
 // PR detail view (/r/:owner/:repo/pulls/:number). v1 parity: title, body,
 // state + review badges, head→base, the linked issue (bidirectional with the
 // issue's linked PR), the commit/review timeline, the file diff with its diff
-// feedback threads (review line comments show in the timeline only, not the diff),
+// feedback threads for review line comments,
 // issue comments, plus the write operations — merge (when PASSED) and close/reopen
 // (when not merged).
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
@@ -19,16 +19,26 @@ import {
   type ReactNode,
   type RefObject,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
-import type { PullFile, PullRequest } from "@/api/types";
+import type {
+  IssueComment,
+  PullFile,
+  PullLineComment,
+  PullRequest,
+  PullReview,
+  PullTimelineItem,
+} from "@/api/types";
 import {
   ArchivedComment,
   CommentActionsMenu,
   commentPreview,
 } from "@/components/comment-archive";
+import { CommentAuthorLabel } from "@/components/comment-author-label";
 import { CommentMetadata } from "@/components/comment-metadata";
+import { CommitDiffDialog } from "@/components/commit-diff-dialog";
 import { CopyButton } from "@/components/copy-button";
 import {
   DetailHeaderTitle,
@@ -39,7 +49,10 @@ import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { Markdown } from "@/components/markdown";
-import { PullCommitsSection } from "@/components/pull-commits-section";
+import {
+  PullCommitsSection,
+  ReviewDetailsDialog,
+} from "@/components/pull-commits-section";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import {
   DiffFeedbackHistory,
@@ -57,10 +70,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
-import { pullDetailBadges } from "@/lib/badges";
+import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { errorMessage } from "@/lib/error-message";
 import { usePageTitle } from "@/lib/page-title";
-import { relativeTime } from "@/lib/time";
+import { formatDuration, relativeTime } from "@/lib/time";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
@@ -105,6 +118,14 @@ export function PullDetail({
   const lineCommentsQuery = usePullComments(owner, repo, number, false);
   const commentsQuery = useIssueComments(owner, repo, number, false);
   const titleRef = useRef<HTMLDivElement>(null);
+  // #145: which file's diff dialog is open. Owned here — above Files changed — so a timeline line
+  // comment (in CommentList) can open the same dialog Files changed renders.
+  const [openFilename, setOpenFilename] = useState<string | null>(null);
+  const [timelineCommit, setTimelineCommit] = useState<{
+    sha: string;
+    subject: string;
+  } | null>(null);
+  const [timelineReview, setTimelineReview] = useState<PullReview | null>(null);
   // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
   // otherwise, and the sidebar section is hidden anyway when github_pull is absent (#850).
   const githubStatusQuery = useGithubPrStatus(
@@ -133,6 +154,24 @@ export function PullDetail({
   }
 
   const pull = pullQuery.data;
+  const timelineReviewGroup = timelineReview
+    ? (reviewsQuery.data ?? []).filter(
+        (review) => review.head_sha === timelineReview.head_sha,
+      )
+    : [];
+  const timelineReviewCommit = timelineReview
+    ? (pull.commits ?? []).find(
+        (commit) => commit.sha === timelineReview.head_sha,
+      )
+    : null;
+  const timelineReviewComments = new Map<number, PullLineComment[]>();
+  for (const comment of lineCommentsQuery.data ?? []) {
+    if (comment.pull_request_review_id == null) continue;
+    const comments =
+      timelineReviewComments.get(comment.pull_request_review_id) ?? [];
+    comments.push(comment);
+    timelineReviewComments.set(comment.pull_request_review_id, comments);
+  }
   return (
     // The whole PR detail is a two-column layout (#346): the main column (header, commit/review
     // timeline, diff, comments) on the left and the Sessions sidebar on the right, from the top
@@ -187,12 +226,42 @@ export function PullDetail({
               isReviewsError={false}
               showGithubPushState={!!pull.github_pull}
             />
+            {timelineCommit ? (
+              <CommitDiffDialog
+                owner={owner}
+                repo={repo}
+                sha={timelineCommit.sha}
+                subject={timelineCommit.subject}
+                onClose={() => setTimelineCommit(null)}
+              />
+            ) : null}
+            {timelineReview ? (
+              <ReviewDetailsDialog
+                owner={owner}
+                repo={repo}
+                label={
+                  timelineReviewCommit
+                    ? `${timelineReviewCommit.sha.slice(0, 7)}: ${timelineReviewCommit.subject}`
+                    : timelineReview.head_sha.slice(0, 7)
+                }
+                reviews={
+                  timelineReviewGroup.length > 0
+                    ? timelineReviewGroup
+                    : [timelineReview]
+                }
+                commentsByReview={timelineReviewComments}
+                onClose={() => setTimelineReview(null)}
+              />
+            ) : null}
             <FilesChanged
               owner={owner}
               repo={repo}
               number={number}
               files={filesQuery.data}
               commentCounts={pageQuery.data?.diff_feedback.comment_counts ?? {}}
+              openFilename={openFilename}
+              onOpenFile={setOpenFilename}
+              onCloseFile={() => setOpenFilename(null)}
               isLoading={false}
               isError={false}
             />
@@ -201,7 +270,10 @@ export function PullDetail({
               owner={owner}
               repo={repo}
               number={number}
+              timeline={pageQuery.data?.timeline}
               comments={commentsQuery.data}
+              onOpenCommit={setTimelineCommit}
+              onOpenReview={setTimelineReview}
               isLoading={false}
               isError={false}
             />
@@ -793,6 +865,9 @@ function FilesChanged({
   number,
   files,
   commentCounts,
+  openFilename,
+  onOpenFile,
+  onCloseFile,
   isLoading,
   isError,
 }: {
@@ -802,14 +877,20 @@ function FilesChanged({
   files: PullFile[] | undefined;
   /** Per-file diff feedback counts, from the same page query that produced `files` (#123). */
   commentCounts: Record<string, number>;
+  /** Which file's diff dialog is open. */
+  openFilename: string | null;
+  onOpenFile: (filename: string) => void;
+  onCloseFile: () => void;
   isLoading: boolean;
   isError: boolean;
 }) {
-  const [openFilename, setOpenFilename] = useState<string | null>(null);
-  const openFile = files?.find((f) => f.filename === openFilename) ?? null;
+  const openFile =
+    files && openFilename ? (findPullFile(files, openFilename) ?? null) : null;
+  // A line comment can name a path the current diff no longer has (a file reverted since the
+  // comment was made): nothing to show, so the pending open is dropped instead of a dangling dialog.
   useEffect(() => {
-    if (openFilename && files && !openFile) setOpenFilename(null);
-  }, [files, openFile, openFilename]);
+    if (openFilename && files && !openFile) onCloseFile();
+  }, [files, openFile, openFilename, onCloseFile]);
 
   const totalAdditions =
     files?.reduce((sum, file) => sum + file.additions, 0) ?? 0;
@@ -863,7 +944,7 @@ function FilesChanged({
                   key={file.filename}
                   file={file}
                   commentCount={commentCounts[file.filename] ?? 0}
-                  onOpen={() => setOpenFilename(file.filename)}
+                  onOpen={() => onOpenFile(file.filename)}
                 />
               ))}
             </ul>
@@ -882,8 +963,8 @@ function FilesChanged({
               files={files}
               file={openFile}
               commentCounts={commentCounts}
-              onSelectFile={setOpenFilename}
-              onClose={() => setOpenFilename(null)}
+              onSelectFile={onOpenFile}
+              onClose={onCloseFile}
             />
           ) : null}
         </>
@@ -924,18 +1005,82 @@ function FileSummaryRow({
   );
 }
 
+// The comment list is the PR's timeline (#145): conversation comments, commits and reviews, in the
+// chronological order the backend assembled (`timeline`). Comment cards still read
+// the live `comments` query — which carries optimistic posts and reactions — so the section keeps
+// its instant feedback while the timeline supplies the order and the other kinds.
+
+// A stable key for a timeline entry. Prefixed by kind so entries that happen to share an id cannot
+// collide as React siblings.
+function timelineItemKey(item: PullTimelineItem): string {
+  switch (item.kind) {
+    case "commit":
+      return `commit:${item.commit.sha}`;
+    case "review":
+      return `review:${item.review.id}`;
+    case "comment":
+      return `comment:${item.comment.id}`;
+    default:
+      return "unknown";
+  }
+}
+
+// The rendered entry for a timeline item, given everything the entry kinds need.
+function timelineItemContent(
+  item: PullTimelineItem,
+  context: {
+    owner: string;
+    repo: string;
+    onOpenCommit: (commit: { sha: string; subject: string }) => void;
+    onOpenReview: (review: PullReview) => void;
+    reaction: ReturnType<typeof useReactToPullComment>;
+    archive: ReturnType<typeof useSetPullCommentArchived>;
+    showError: (message: string) => void;
+  },
+) {
+  switch (item.kind) {
+    case "commit":
+      return (
+        <TimelineCommitItem item={item} onOpenCommit={context.onOpenCommit} />
+      );
+    case "review":
+      return (
+        <TimelineReviewItem item={item} onOpenReview={context.onOpenReview} />
+      );
+    case "comment":
+      return (
+        <CommentCard
+          owner={context.owner}
+          repo={context.repo}
+          comment={item.comment}
+          reaction={context.reaction}
+          archive={context.archive}
+          showError={context.showError}
+        />
+      );
+    default:
+      return null;
+  }
+}
+
 function CommentList({
   owner,
   repo,
   number,
+  timeline,
   comments,
+  onOpenCommit,
+  onOpenReview,
   isLoading,
   isError,
 }: {
   owner: string;
   repo: string;
   number: number;
-  comments: import("@/api/types").IssueComment[] | undefined;
+  timeline: PullTimelineItem[] | undefined;
+  comments: IssueComment[] | undefined;
+  onOpenCommit: (commit: { sha: string; subject: string }) => void;
+  onOpenReview: (review: PullReview) => void;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -967,6 +1112,69 @@ function CommentList({
     post.mutate(trimmed);
   }
 
+  // Reconcile the backend timeline against the live comments query: comment entries pick up the
+  // live row (optimistic post/reaction/archive), and comments the server has not echoed into the
+  // timeline yet are appended newest-last. The order and presence of everything else is the
+  // backend's — this is comment-card freshness only, not a rebuild of the timeline.
+  const items = useMemo(() => {
+    if (!timeline) return timeline;
+    const live = new Map(
+      comments?.map((comment) => [comment.id, comment]) ?? [],
+    );
+    const knownIds = new Set(
+      timeline
+        .filter(
+          (item): item is Extract<PullTimelineItem, { kind: "comment" }> =>
+            item.kind === "comment",
+        )
+        .map((item) => item.comment.id),
+    );
+    return [
+      ...timeline.map((item) =>
+        item.kind === "comment" && live.has(item.comment.id)
+          ? { ...item, comment: live.get(item.comment.id)! }
+          : item,
+      ),
+      ...(comments ?? [])
+        .filter((comment) => !knownIds.has(comment.id))
+        .map((comment) => ({
+          kind: "comment" as const,
+          created_at: comment.created_at,
+          comment,
+        })),
+    ];
+  }, [comments, timeline]);
+
+  // Group the timeline into runs of consecutive non-comment entries so the connector line spans
+  // only those; a conversation comment breaks the line and renders as its own full-width card
+  // (PR comment #307). Order is untouched — the runs are the original sequence split at comments.
+  const runs = useMemo(() => {
+    const grouped: PullTimelineItem[][] = [];
+    let run: PullTimelineItem[] = [];
+    for (const item of items ?? []) {
+      if (item.kind === "comment") {
+        if (run.length) grouped.push(run);
+        run = [];
+        grouped.push([item]);
+      } else {
+        run.push(item);
+      }
+    }
+    if (run.length) grouped.push(run);
+    return grouped;
+  }, [items]);
+
+  // Everything the entry renderers need, collected once for the runs below.
+  const itemContext = {
+    owner,
+    repo,
+    onOpenCommit,
+    onOpenReview,
+    reaction,
+    archive,
+    showError,
+  };
+
   return (
     <section
       ref={sectionRef}
@@ -985,147 +1193,41 @@ function CommentList({
         <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
           Failed to load comments.
         </div>
-      ) : !comments || comments.length === 0 ? (
+      ) : !items || items.length === 0 ? (
         <p className="text-sm text-muted-foreground">No comments.</p>
       ) : (
-        comments.map((c) => {
-          const archived = c.archived_at != null;
-          const menu = (
-            <CommentActionsMenu
-              label={`Actions for PR comment ${c.id}`}
-              copyMarkdown={c.body}
-              archived={archived}
-              busy={archive.isPending}
-              onArchived={(next) =>
-                archive.mutate(
-                  { commentId: c.id, archived: next },
-                  {
-                    onError: (error) =>
-                      showError(
-                        errorMessage(
-                          error,
-                          next ? "Archive failed" : "Unarchive failed",
-                        ),
-                      ),
-                  },
-                )
-              }
+        // Activity entries (commits and reviews) are connected by a vertical line with a
+        // dot per entry, the way the workflow run history does (WorkflowRunDetailDialog): the line
+        // is the run's left border and each dot (with its ring) masks the line behind it. A
+        // conversation comment breaks the run and renders as its own full-width card — the line
+        // does not pass through comments (PR comment #300, #307).
+        runs.map((group) =>
+          group[0].kind === "comment" ? (
+            <CommentCard
+              key={timelineItemKey(group[0])}
+              comment={group[0].comment}
+              {...itemContext}
             />
-          );
-          const content = (
-            <>
-              <Markdown owner={owner} repo={repo}>
-                {c.body}
-              </Markdown>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {c.reactions.map((item) => (
-                  <button
-                    type="button"
-                    key={item.emoji}
-                    aria-label={`${item.emoji} reaction: ${item.count}`}
-                    aria-pressed={item.reacted}
-                    disabled={reaction.isPending}
-                    onClick={() =>
-                      reaction.mutate(
-                        { commentId: c.id, emoji: item.emoji },
-                        {
-                          onError: (error) =>
-                            showError(errorMessage(error, "Reaction failed")),
-                        },
-                      )
-                    }
-                    className={
-                      item.reacted
-                        ? "rounded-full border bg-accent px-2 py-0.5 text-xs text-accent-foreground"
-                        : "rounded-full border bg-background px-2 py-0.5 text-xs"
-                    }
-                  >
-                    {item.emoji} {item.count}
-                  </button>
-                ))}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label={`Add reaction to PR comment ${c.id}`}
-                      disabled={reaction.isPending}
-                    >
-                      <SmilePlus className="size-3.5" aria-hidden="true" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    className="flex min-w-0 gap-1 p-1"
-                  >
-                    {COMMENT_REACTIONS.map((emoji) => (
-                      <DropdownMenuItem
-                        key={emoji}
-                        className="flex size-8 cursor-pointer items-center justify-center p-0 text-base"
-                        aria-label={`React to PR comment ${c.id} with ${emoji}`}
-                        onSelect={() =>
-                          reaction.mutate(
-                            { commentId: c.id, emoji },
-                            {
-                              onError: (error) =>
-                                showError(
-                                  errorMessage(error, "Reaction failed"),
-                                ),
-                            },
-                          )
-                        }
-                      >
-                        {emoji}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </>
-          );
-          return (
-            <article
-              key={c.id}
-              data-debug-component="PullComment"
-              className={
-                archived
-                  ? "rounded-md border border-dashed px-3 py-2"
-                  : "rounded-md border p-3"
-              }
+          ) : (
+            <ol
+              key={`run:${timelineItemKey(group[0])}`}
+              className="relative ml-2 border-l pl-5"
             >
-              {archived ? (
-                <ArchivedComment
-                  label={`Archived PR comment ${c.id}`}
-                  preview={`${c.user.login}: ${commentPreview(c.body)}`}
-                  menu={menu}
+              {group.map((item) => (
+                <li
+                  key={timelineItemKey(item)}
+                  className="relative pb-3 last:pb-0"
                 >
-                  <header className="mb-1">
-                    <CommentMetadata
-                      author={c.user.login}
-                      authorType={c.author_type}
-                      createdAt={c.created_at}
-                      id={c.id}
-                    />
-                  </header>
-                  {content}
-                </ArchivedComment>
-              ) : (
-                <>
-                  <header className="mb-1 flex items-start justify-between gap-2">
-                    <CommentMetadata
-                      author={c.user.login}
-                      authorType={c.author_type}
-                      createdAt={c.created_at}
-                      id={c.id}
-                    />
-                    {menu}
-                  </header>
-                  {content}
-                </>
-              )}
-            </article>
-          );
-        })
+                  <span
+                    aria-hidden="true"
+                    className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-muted-foreground/60 ring-4 ring-background"
+                  />
+                  {timelineItemContent(item, itemContext)}
+                </li>
+              ))}
+            </ol>
+          ),
+        )
       )}
       <div
         data-debug-component="PullCommentForm"
@@ -1166,5 +1268,264 @@ function CommentList({
         </div>
       </div>
     </section>
+  );
+}
+
+// A conversation comment in the timeline (#145). The card and every action on it are unchanged from
+// before the timeline — only the data source moved from "the comments list" to a timeline entry.
+function CommentCard({
+  owner,
+  repo,
+  comment,
+  reaction,
+  archive,
+  showError,
+}: {
+  owner: string;
+  repo: string;
+  comment: IssueComment;
+  reaction: ReturnType<typeof useReactToPullComment>;
+  archive: ReturnType<typeof useSetPullCommentArchived>;
+  showError: (message: string) => void;
+}) {
+  const archived = comment.archived_at != null;
+  const menu = (
+    <CommentActionsMenu
+      label={`Actions for PR comment ${comment.id}`}
+      copyMarkdown={comment.body}
+      archived={archived}
+      busy={archive.isPending}
+      onArchived={(next) =>
+        archive.mutate(
+          { commentId: comment.id, archived: next },
+          {
+            onError: (error) =>
+              showError(
+                errorMessage(
+                  error,
+                  next ? "Archive failed" : "Unarchive failed",
+                ),
+              ),
+          },
+        )
+      }
+    />
+  );
+  const content = (
+    <>
+      <Markdown owner={owner} repo={repo}>
+        {comment.body}
+      </Markdown>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {comment.reactions.map((item) => (
+          <button
+            type="button"
+            key={item.emoji}
+            aria-label={`${item.emoji} reaction: ${item.count}`}
+            aria-pressed={item.reacted}
+            disabled={reaction.isPending}
+            onClick={() =>
+              reaction.mutate(
+                { commentId: comment.id, emoji: item.emoji },
+                {
+                  onError: (error) =>
+                    showError(errorMessage(error, "Reaction failed")),
+                },
+              )
+            }
+            className={
+              item.reacted
+                ? "rounded-full border bg-accent px-2 py-0.5 text-xs text-accent-foreground"
+                : "rounded-full border bg-background px-2 py-0.5 text-xs"
+            }
+          >
+            {item.emoji} {item.count}
+          </button>
+        ))}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={`Add reaction to PR comment ${comment.id}`}
+              disabled={reaction.isPending}
+            >
+              <SmilePlus className="size-3.5" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="flex min-w-0 gap-1 p-1">
+            {COMMENT_REACTIONS.map((emoji) => (
+              <DropdownMenuItem
+                key={emoji}
+                className="flex size-8 cursor-pointer items-center justify-center p-0 text-base"
+                aria-label={`React to PR comment ${comment.id} with ${emoji}`}
+                onSelect={() =>
+                  reaction.mutate(
+                    { commentId: comment.id, emoji },
+                    {
+                      onError: (error) =>
+                        showError(errorMessage(error, "Reaction failed")),
+                    },
+                  )
+                }
+              >
+                {emoji}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </>
+  );
+  return (
+    <article
+      data-debug-component="PullComment"
+      className={
+        archived
+          ? "rounded-md border border-dashed px-3 py-2"
+          : "rounded-md border p-3"
+      }
+    >
+      {archived ? (
+        <ArchivedComment
+          label={`Archived PR comment ${comment.id}`}
+          preview={`${comment.user.login}: ${commentPreview(comment.body)}`}
+          menu={menu}
+        >
+          <header className="mb-1">
+            <CommentMetadata
+              author={comment.user.login}
+              authorType={comment.author_type}
+              createdAt={comment.created_at}
+              id={comment.id}
+            />
+          </header>
+          {content}
+        </ArchivedComment>
+      ) : (
+        <>
+          <header className="mb-1 flex items-start justify-between gap-2">
+            <CommentMetadata
+              author={comment.user.login}
+              authorType={comment.author_type}
+              createdAt={comment.created_at}
+              id={comment.id}
+            />
+            {menu}
+          </header>
+          {content}
+        </>
+      )}
+    </article>
+  );
+}
+
+// How a review's event reads in the timeline (#145): the same verdict labels the Commits section
+// uses, falling back to the raw state for an event we do not special-case.
+const REVIEW_VERDICT: Record<string, { tone: BadgeTone; label: string }> = {
+  PASS: { tone: "review-passed", label: "passed" },
+  REQUEST_CHANGES: { tone: "review-changes", label: "changes requested" },
+  COMMENT: { tone: "review-commented", label: "commented" },
+};
+
+// One commit in the timeline (#145): the same facts the Commits section rows carry, without the
+// review grouping that section owns. Kept to a plain, low row — non-comment entries recede next
+// to the bordered comment cards (PR comment #288).
+function TimelineCommitItem({
+  item,
+  onOpenCommit,
+}: {
+  item: Extract<PullTimelineItem, { kind: "commit" }>;
+  onOpenCommit: (commit: { sha: string; subject: string }) => void;
+}) {
+  const shortSha = item.commit.sha.slice(0, 7);
+  return (
+    <article data-debug-component="TimelineCommit" className="px-1 py-0.5">
+      <button
+        type="button"
+        aria-label={`View timeline changes in ${shortSha}: ${item.commit.subject}`}
+        onClick={() => onOpenCommit(item.commit)}
+        className="flex w-full min-w-0 items-center gap-2 rounded text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <code className="shrink-0 rounded bg-muted px-1 py-px text-[10px] leading-4 text-muted-foreground">
+          {shortSha}
+        </code>
+        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+          {item.commit.subject}
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground/80">
+          {item.commit.author} ·{" "}
+          <time dateTime={item.created_at} title={item.created_at}>
+            {relativeTime(item.created_at)}
+          </time>
+        </span>
+      </button>
+    </article>
+  );
+}
+
+// One review in the timeline (#145): a single minimal line — verdict, author, model and duration —
+// in its chronological place. The full review body stays in the Commits section's review dialog
+// (PR comment #313).
+function TimelineReviewItem({
+  item,
+  onOpenReview,
+}: {
+  item: Extract<PullTimelineItem, { kind: "review" }>;
+  onOpenReview: (review: PullReview) => void;
+}) {
+  const review = item.review;
+  const verdict =
+    REVIEW_VERDICT[review.state] ??
+    ({ tone: "review-commented", label: review.state } as const);
+  return (
+    <article data-debug-component="TimelineReview" className="px-1 py-0.5">
+      <button
+        type="button"
+        aria-label={`View review for ${review.head_sha.slice(0, 7)}`}
+        onClick={() => onOpenReview(review)}
+        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded text-left text-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Badge tone={verdict.tone}>{verdict.label}</Badge>
+        <CommentAuthorLabel
+          author={review.user.login}
+          authorType={review.author_type}
+        />
+        {review.model ? (
+          <span className="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">
+            {review.model}
+          </span>
+        ) : null}
+        <time
+          dateTime={item.created_at}
+          title={item.created_at}
+          className="text-xs text-muted-foreground"
+        >
+          {relativeTime(item.created_at)}
+        </time>
+        {/* How long the review itself took (#2387). Omitted — never 0 — for a review whose
+            duration the wire could not derive. */}
+        {review.duration_seconds !== null ? (
+          <span
+            className="text-xs text-muted-foreground"
+            title={`Review took ${review.duration_seconds}s`}
+          >
+            {" · took "}
+            {formatDuration(review.duration_seconds)}
+          </span>
+        ) : null}
+      </button>
+    </article>
+  );
+}
+
+// A changed file matching a path as a line comment names it: the display filename or either side
+// of a rename. Undefined when the path is not in the current diff (#145).
+function findPullFile(files: PullFile[], path: string): PullFile | undefined {
+  return files.find(
+    (file) =>
+      file.filename === path ||
+      file.headFilename === path ||
+      file.previousFilename === path,
   );
 }

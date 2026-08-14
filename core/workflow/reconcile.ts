@@ -40,8 +40,17 @@ export type WorkflowWakeInput =
   | { kind: "pr_comment"; commentId: number }
   | { kind: "out_of_band_review"; reviewId: number }
   | { kind: "cost_limit_increased" }
+  | { kind: "rework_limit_increased" }
   | { kind: "human_instruction" }
   | { kind: "cost_exceeded"; eventId: number };
+
+export type WorkflowEscalationContext = {
+  current_step: WorkflowStep;
+  active_step: WorkflowStep | null;
+  current_head: string | null;
+  needs_human_reason: string | null;
+  awaiting_human: boolean;
+};
 
 export type WorkflowNextAction =
   | { action: "complete"; reason: string }
@@ -110,6 +119,7 @@ export type WorkflowNextAction =
       action: "escalate";
       reason: string;
       escalation_reason: "execute_request";
+      execution_context?: WorkflowEscalationContext;
     }
   | {
       action: "ask_human";
@@ -295,17 +305,25 @@ export function workflowActionPlan(
     case "wait":
       return watch([]);
     case "escalate": {
-      const escalate = command(
-        "escalate-human",
-        ...scoped,
-        "--issue",
-        String(context.issue),
-      );
+      const escalate = command("escalate-human", ...scoped);
       escalate.input = {
         argument: "--reason",
         source: "escalation_reason",
       };
-      return watch([escalate], "parent_judgement");
+      if (action.escalation_reason !== "execute_request") {
+        return watch([escalate], "parent_judgement");
+      }
+      return {
+        boundary: "parent_judgement",
+        commands: [escalate],
+        decision: {
+          question:
+            "Write a human-facing escalation comment from the request and execution context.",
+          inputs: ["escalation reason", "execution context"],
+          submit: null,
+        },
+        after: "watch",
+      };
     }
     case "ask_human":
       return {
@@ -432,11 +450,39 @@ export function reconcileWorkflow(
     };
   }
 
+  if (input.wake?.kind === "rework_limit_increased") {
+    const review = input.steps.verify.latest_review;
+    if (
+      input.currentStep === "verify" &&
+      review?.fresh &&
+      review.event === "request_changes" &&
+      input.reworkCount < input.reworkLimit
+    ) {
+      return {
+        action: "request_rework",
+        reason: `A human increased the rework limit; review ${review.id} can be addressed.`,
+        review_id: review.id,
+      };
+    }
+    return {
+      action: "wait",
+      reason:
+        "The rework limit increased, but the run has no fresh review to rework.",
+    };
+  }
+
   if (input.wake?.kind === "execute_escalation") {
     return {
       action: "escalate",
       reason: input.wake.reason,
       escalation_reason: "execute_request",
+      execution_context: {
+        current_step: input.currentStep,
+        active_step: input.activeStep,
+        current_head: input.currentHead,
+        needs_human_reason: input.needsHumanReason,
+        awaiting_human: input.awaitingHuman,
+      },
     };
   }
 

@@ -222,7 +222,10 @@ CREATE TABLE IF NOT EXISTS repos (
   owner         TEXT NOT NULL,
   local_path    TEXT NOT NULL,
   default_branch TEXT NOT NULL DEFAULT 'main',
-  created_at    TEXT NOT NULL
+  created_at    TEXT NOT NULL,
+  origin_branch TEXT,
+  origin_ahead  INTEGER,
+  origin_behind INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -944,6 +947,26 @@ CREATE TABLE IF NOT EXISTS worker_runtime (
   heartbeat_at     TEXT NOT NULL
 );
 
+-- External side-effect work claimed by lh-job-queue. Dispatchers enqueue decisions here; the
+-- queue owns the claim and result lifecycle, while a stale running row remains visible for human
+-- recovery instead of being retried automatically.
+CREATE TABLE IF NOT EXISTS jobs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  type          TEXT NOT NULL,
+  repo_id       INTEGER REFERENCES repos(id),
+  dedupe_key    TEXT NOT NULL UNIQUE,
+  params        TEXT NOT NULL,
+  status        TEXT NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed')),
+  result        TEXT,
+  error         TEXT,
+  created_at    TEXT NOT NULL,
+  started_at    TEXT,
+  heartbeat_at  TEXT,
+  finished_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at, id);
+
 -- Minimal run tracking for the workflow delete guard (#997) plus the run lifecycle state. A
 -- workflow referenced by an active run cannot be deleted.
 CREATE TABLE IF NOT EXISTS workflow_runs (
@@ -955,6 +978,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   status             TEXT NOT NULL,
   current_step       TEXT NOT NULL,
   rework_count       INTEGER NOT NULL DEFAULT 0,
+  rework_limit       INTEGER NOT NULL DEFAULT 8,
   auto_mode          INTEGER NOT NULL DEFAULT 0,
   -- Runtime + model resolved for the parent at start, so every step inherits the same values a
   -- human/config selected (#516/#594). Nullable: rows written before these columns fall back to

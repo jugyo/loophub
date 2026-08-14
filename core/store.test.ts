@@ -31,6 +31,70 @@ test("createRepo normalizes slashless names to me/<name> (RETURNING row)", () =>
   expect(S.getRepo("me", "proj")?.id).toBe(repo.id);
 });
 
+test("pull diff projection keeps only the latest commit pair for a PR", () => {
+  const repo = S.createRepo("me/diff-projection", "/tmp/diff-projection");
+  const pull = S.createIssue(repo.id, "pull", "diff", "", "bot");
+  const file = {
+    filename: "f.txt",
+    status: "modified",
+    additions: 1,
+    deletions: 0,
+    patch: "@@ -1 +1 @@\n-old\n+new\n",
+    lines: [
+      {
+        kind: "addition" as const,
+        text: "+new",
+        left_line: null,
+        right_line: 1,
+      },
+    ],
+  };
+
+  expect(
+    S.upsertPullDiffProjection({
+      issueId: pull.id,
+      baseSha: "base-1",
+      headSha: "head-1",
+      files: [file],
+    }),
+  ).toBe(true);
+  expect(S.getPullDiffProjection(pull.id, "base-1", "head-1")?.files).toEqual([
+    file,
+  ]);
+  expect(S.getPullDiffProjection(pull.id, "other", "head-1")).toBeNull();
+
+  S.upsertPullDiffProjection({
+    issueId: pull.id,
+    baseSha: "base-2",
+    headSha: "head-2",
+    files: [],
+  });
+  expect(S.getPullDiffProjection(pull.id, "base-1", "head-1")).toBeNull();
+  expect(S.getPullDiffProjection(pull.id, "base-2", "head-2")?.files).toEqual(
+    [],
+  );
+
+  expect(
+    S.upsertPullDiffProjection({
+      issueId: pull.id,
+      baseSha: "base-3",
+      headSha: "head-3",
+      files: [{ ...file, patch: "x".repeat(S.MAX_PULL_DIFF_PROJECTION_BYTES) }],
+    }),
+  ).toBe(false);
+  expect(S.getPullDiffProjection(pull.id, "base-3", "head-3")).toBeNull();
+
+  S.upsertPullDiffProjection({
+    issueId: pull.id,
+    baseSha: "base-4",
+    headSha: "head-4",
+    files: [],
+  });
+  S.updateIssue(pull.id, { state: "closed" });
+  expect(S.prunePullDiffProjections()).toBe(1);
+  expect(S.getPullDiffProjection(pull.id, "base-4", "head-4")).toBeNull();
+});
+
 test("a Workflow run keeps its first lifecycle end while terminal maintenance continues", () => {
   vi.useFakeTimers();
   try {
@@ -953,4 +1017,38 @@ test("listRepos sorts favorites first, then by insertion order (#457)", () => {
       .filter((id) => ids.includes(id));
 
   expect(idsAmong([a.id, b.id, c.id])).toEqual([c.id, a.id, b.id]);
+});
+
+test("increases a held workflow rework limit with an expected-value guard", () => {
+  const repo = S.createRepo("me/rework-limit", "/tmp/rework-limit");
+  const issue = S.createIssue(repo.id, "issue", "Workflow", "", "me");
+  const pull = S.createIssue(repo.id, "pull", "Workflow PR", "", "me");
+  const workflow = S.createWorkflow({
+    name: "rework-limit",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 1,
+    costLimitUsd: 1,
+  });
+  S.updateWorkflowRun(run.id, {
+    reworkCount: 8,
+    needsHumanReason:
+      "Fresh review requests changes, but the rework limit of 8 has been reached.",
+  });
+
+  expect(S.increaseWorkflowRunReworkLimit(run.id, 8)).toEqual({
+    previous_limit: 8,
+    current_limit: 16,
+  });
+  expect(S.getWorkflowRun(run.id)?.rework_limit).toBe(16);
+  expect(S.increaseWorkflowRunReworkLimit(run.id, 8)).toBeNull();
 });

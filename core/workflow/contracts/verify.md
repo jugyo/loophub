@@ -22,6 +22,10 @@ dependencies, contracts, types, invariants, and behavior.
 The launch prompt also provides the PR number solely as the review submission target. During the
 session, messages beginning with `orchestrator:` are instructions from the workflow parent.
 
+## Free-text input
+
+When passing Markdown review bodies or line comments to `lh`, do not embed the body in a shell argument. `--body` accepts direct text plus `-` for stdin and `@path` for a file. For content containing backticks or newlines, use a heredoc or file with `--body -` / `--body @path`.
+
 ## Grade the rubric
 
 The rubric is the issue's structured `acceptance_criteria` — the enabled ones carried by

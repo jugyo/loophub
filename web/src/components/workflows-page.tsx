@@ -4,14 +4,18 @@
 // are the only user-configurable part. Same workflows/* RPCs the CLI uses; this is the
 // management UI. Start-workflow and run status are intentionally out of scope here.
 
-import { Check, LayoutTemplate, Plus, X } from "lucide-react";
+import { LayoutTemplate, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
-import type { Workflow, WorkflowContracts } from "@/api/types";
+import type {
+  Workflow,
+  WorkflowContractLanguage,
+  WorkflowContracts,
+} from "@/api/types";
 import { ReadOnlyPromptDialog } from "@/components/read-only-prompt-dialog";
 import { SettingsLayout } from "@/components/settings-header";
 import { useTerminalLauncher } from "@/components/terminal-controller";
-import { Button, disabledButtonStateClasses } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
 import { trapDialogFocus } from "@/lib/trap-dialog-focus";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
@@ -308,6 +312,11 @@ function TemplatePickerDialog({
   );
 }
 
+const LANGUAGE_OPTIONS: { value: WorkflowContractLanguage; label: string }[] = [
+  { value: "en", label: "English" },
+  { value: "ja", label: "日本語" },
+];
+
 function WorkflowContractLanguageSettings() {
   const { data, isLoading } = useSettings();
   const update = useUpdateSettings();
@@ -323,41 +332,24 @@ function WorkflowContractLanguageSettings() {
         Language for LoopHub&apos;s fixed Parent, Execute, and Verify
         instructions. New runs keep the language selected when they start.
       </p>
-      <div
-        role="radiogroup"
+      <select
         aria-label="Workflow contract language"
-        className="mt-3 rounded-md border"
+        className="mt-3 rounded-md border bg-background px-3 py-1.5 text-sm disabled:opacity-50"
+        value={language}
+        disabled={isLoading || update.isPending}
+        onChange={(e) =>
+          update.mutate({
+            workflowContractLanguage: e.target
+              .value as WorkflowContractLanguage,
+          })
+        }
       >
-        {[
-          { value: "en" as const, label: "English" },
-          { value: "ja" as const, label: "日本語" },
-        ].map((option) => {
-          const active = language === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              disabled={isLoading || update.isPending}
-              className={cn(
-                "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
-                disabledButtonStateClasses,
-              )}
-              onClick={() => {
-                if (active) return;
-                update.mutate({ workflowContractLanguage: option.value });
-              }}
-            >
-              <Check
-                className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
-                aria-hidden="true"
-              />
-              <span>{option.label}</span>
-            </button>
-          );
-        })}
-      </div>
+        {LANGUAGE_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </section>
   );
 }

@@ -1,17 +1,22 @@
-import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  Bell,
   CheckCircle2,
+  ChevronDown,
   CircleDollarSign,
+  ExternalLink,
   Info,
   MessageSquare,
-  Terminal,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Notification } from "@/api/types";
 import { useToast } from "@/components/toast";
 import { YesNoPrompt } from "@/components/yes-no-prompt";
+import {
+  getNotificationsMinimized,
+  setNotificationsMinimized,
+} from "@/lib/notification-minimize";
 import { formatCost } from "@/lib/session-usage";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -20,9 +25,9 @@ import {
   useReadAllNotifications,
   useReadNotification,
 } from "@/queries/notifications";
-import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
 import {
   useIncreaseWorkflowRunCostLimit,
+  useIncreaseWorkflowRunReworkLimit,
   useWorkflowRunForPull,
 } from "@/queries/workflow-runs";
 
@@ -61,6 +66,13 @@ function costHeldWorkflowRun(notification: Notification): number | null {
   return notification.workflow_run_id;
 }
 
+function reworkHeldWorkflowRun(notification: Notification): number | null {
+  if (notification.kind !== "human_attention") return null;
+  if (!notification.body.toLowerCase().includes("rework limit")) return null;
+  if (notification.resource.kind !== "pull") return null;
+  return notification.workflow_run_id;
+}
+
 function resourceLabel(notification: Notification): string {
   const number = notification.resource.number;
   if (notification.resource.kind === "pull" && number != null) {
@@ -72,25 +84,34 @@ function resourceLabel(notification: Notification): string {
   return "Repository";
 }
 
+function notificationKindLabel(notification: Notification): string {
+  if (notification.kind === "merge_ready") return "Merge ready";
+  if (notification.kind === "over_budget") return "Over budget";
+  if (notification.kind === "human_attention") return "Human attention";
+  if (notification.kind === "agent_comment") return "Agent comment";
+  return "Notification";
+}
+
 export function NotificationStack() {
   const { data, isError } = useNotifications({ unreadOnly: true });
   const readNotification = useReadNotification();
   const readAllNotifications = useReadAllNotifications();
-  const focus = useFocusHerdrAgent();
-  const herdrSessions = useHerdrSessions();
   const { showError } = useToast();
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
-  const visible = useMemo(
+  const [minimized, setMinimized] = useState(getNotificationsMinimized);
+  const unread = useMemo(
     () =>
       (data ?? [])
         .filter(
           (notification) =>
             notification.read_at == null && !dismissedIds.has(notification.id),
         )
-        .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id)
-        .slice(0, MAX_VISIBLE_NOTIFICATIONS),
+        .sort(
+          (a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id,
+        ),
     [data, dismissedIds],
   );
+  const visible = unread.slice(0, MAX_VISIBLE_NOTIFICATIONS);
 
   function markRead(notification: Notification) {
     setDismissedIds((ids) => new Set(ids).add(notification.id));
@@ -117,8 +138,14 @@ export function NotificationStack() {
     });
   }
 
+  // A view preference, not a read: the notifications stay unread and come back as they were.
+  function minimize(next: boolean) {
+    setMinimized(next);
+    setNotificationsMinimized(next);
+  }
+
   function clearAll() {
-    if (visible.length === 0 || readAllNotifications.isPending) return;
+    if (unread.length === 0 || readAllNotifications.isPending) return;
     readAllNotifications.mutate(undefined, {
       onError: (error) =>
         showError(
@@ -129,48 +156,7 @@ export function NotificationStack() {
     });
   }
 
-  function herdrPaneId(notification: Notification): string | null {
-    const repo = herdrSessions.data?.repos.find(
-      (group) => group.repo === notification.repo.name,
-    );
-    if (notification.herdr_pane_id) {
-      const paneId = notification.herdr_pane_id;
-      const paneIsLive =
-        repo?.agents.some((agent) => agent.id === paneId) ||
-        repo?.pull_workspaces.some(
-          (workspace) => workspace.pane_id === paneId,
-        ) ||
-        repo?.issue_workspaces?.some(
-          (workspace) => workspace.pane_id === paneId,
-        );
-      return paneIsLive ? paneId : null;
-    }
-    if (
-      notification.resource.kind !== "pull" ||
-      notification.resource.number == null
-    ) {
-      return null;
-    }
-    return (
-      repo?.pull_workspaces.find(
-        (workspace) => workspace.pull === notification.resource.number,
-      )?.pane_id ?? null
-    );
-  }
-
-  function focusHerdr(notification: Notification, paneId: string) {
-    focus.mutate(
-      { repo: notification.repo.name, paneId },
-      {
-        onError: (error) =>
-          showError(
-            error instanceof Error ? error.message : "Failed to open in Herdr.",
-          ),
-      },
-    );
-  }
-
-  if (!isError && visible.length === 0) return null;
+  if (!isError && unread.length === 0) return null;
 
   return (
     <section
@@ -179,16 +165,42 @@ export function NotificationStack() {
       data-debug-component="NotificationStack"
       className="pointer-events-none fixed right-4 bottom-12 z-40 flex max-h-[calc(100vh-4rem)] w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto"
     >
-      {visible.length > 0 ? (
-        <div className="pointer-events-auto flex justify-end">
+      {unread.length > 0 ? (
+        // One button carries both states so toggling keeps it mounted, and a keyboard user who
+        // folds the stack stays on the control that unfolds it again.
+        <div className="pointer-events-auto flex justify-end gap-2">
           <button
             type="button"
-            onClick={clearAll}
-            disabled={readAllNotifications.isPending}
-            className="rounded-md border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => minimize(!minimized)}
+            aria-expanded={!minimized}
+            aria-label={minimized ? undefined : "Minimize notifications"}
+            title={minimized ? "Show notifications" : "Minimize"}
+            className={cn(
+              "inline-flex items-center rounded-md border bg-background text-xs font-medium hover:bg-accent hover:text-accent-foreground",
+              minimized
+                ? "gap-1.5 px-2.5 py-1 text-foreground shadow-lg"
+                : "px-2 py-1 text-muted-foreground shadow-sm",
+            )}
           >
-            Clear all
+            {minimized ? (
+              <>
+                <Bell className="size-3.5" aria-hidden="true" />
+                {unread.length} unread
+              </>
+            ) : (
+              <ChevronDown className="size-3.5" aria-hidden="true" />
+            )}
           </button>
+          {minimized ? null : (
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={readAllNotifications.isPending}
+              className="rounded-md border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Clear all
+            </button>
+          )}
         </div>
       ) : null}
       {isError ? (
@@ -203,16 +215,15 @@ export function NotificationStack() {
           <span>Failed to load notifications.</span>
         </div>
       ) : null}
-      {visible.map((notification) => (
-        <NotificationItem
-          key={notification.id}
-          notification={notification}
-          onRead={() => markRead(notification)}
-          herdrPaneId={herdrPaneId(notification)}
-          onFocusHerdr={(paneId) => focusHerdr(notification, paneId)}
-          herdrPending={focus.isPending}
-        />
-      ))}
+      {minimized
+        ? null
+        : visible.map((notification) => (
+            <NotificationItem
+              key={notification.id}
+              notification={notification}
+              onRead={() => markRead(notification)}
+            />
+          ))}
     </section>
   );
 }
@@ -220,19 +231,19 @@ export function NotificationStack() {
 function NotificationItem({
   notification,
   onRead,
-  onFocusHerdr,
-  herdrPaneId,
-  herdrPending,
 }: {
   notification: Notification;
   onRead: () => void;
-  onFocusHerdr: (paneId: string) => void;
-  herdrPaneId: string | null;
-  herdrPending: boolean;
 }) {
   const Icon = notificationIcon(notification);
   const label = resourceLabel(notification);
   const costHeldRun = costHeldWorkflowRun(notification);
+  const reworkHeldRun = reworkHeldWorkflowRun(notification);
+  const resourceTitle = notification.resource.title ?? notification.title;
+  const resourceHeading =
+    notification.resource.number == null
+      ? resourceTitle
+      : `${resourceTitle} #${notification.resource.number}`;
   return (
     <article
       data-debug-component="NotificationItem"
@@ -244,25 +255,37 @@ function NotificationItem({
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
-        <Link
-          to={notification.resource.href}
+        {/* A new tab, not an SPA navigation: reading a notification should not cost the supervisor
+            the screen they were working on. The target stays the same in-app path. */}
+        <a
+          href={notification.resource.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Open ${label} in a new tab`}
           onClick={onRead}
           className="block rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <div className="truncate font-medium">{notification.title}</div>
-          {notification.resource.kind === "pull" &&
-          notification.resource.title ? (
-            <div className="truncate text-xs text-muted-foreground">
-              {notification.resource.title}
-            </div>
-          ) : null}
-          <div className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+          <div className="truncate text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">
+            {notificationKindLabel(notification)}
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            {/* The title stays shrinkable: one long enough to fill the row has to ellipsize
+                rather than push the row wider. */}
+            <span className="min-w-0 truncate font-semibold">
+              {resourceHeading}
+            </span>
+            <ExternalLink
+              className="size-3 shrink-0 self-center text-muted-foreground"
+              aria-hidden="true"
+            />
+          </div>
+          <div className="truncate text-xs text-muted-foreground">
             {notification.body}
           </div>
-          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <span className="min-w-0 truncate">{notification.repo.name}</span>
             <span aria-hidden="true">/</span>
-            <span>{label}</span>
+            <span className="shrink-0">{label}</span>
             <time
               className="ml-auto shrink-0"
               dateTime={notification.created_at}
@@ -270,12 +293,21 @@ function NotificationItem({
               {relativeTime(notification.created_at)}
             </time>
           </div>
-        </Link>
+        </a>
         {costHeldRun != null && notification.resource.number != null ? (
           <WorkflowBudgetAction
             repo={notification.repo.name}
             pull={notification.resource.number}
             run={costHeldRun}
+            onRead={onRead}
+          />
+        ) : null}
+        {reworkHeldRun != null && notification.resource.number != null ? (
+          <WorkflowReworkAction
+            repo={notification.repo.name}
+            pull={notification.resource.number}
+            run={reworkHeldRun}
+            onRead={onRead}
           />
         ) : null}
       </div>
@@ -289,20 +321,69 @@ function NotificationItem({
         >
           <X className="size-4" aria-hidden="true" />
         </button>
-        {herdrPaneId ? (
-          <button
-            type="button"
-            title="Open in Herdr"
-            aria-label={`Open ${label} in Herdr`}
-            disabled={herdrPending}
-            onClick={() => onFocusHerdr(herdrPaneId)}
-            className="inline-flex size-5 items-center justify-center self-center rounded-md border border-zinc-400 bg-zinc-500 text-zinc-50 hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-          >
-            <Terminal className="size-2.5" aria-hidden="true" />
-          </button>
-        ) : null}
       </div>
     </article>
+  );
+}
+
+function WorkflowReworkAction({
+  repo,
+  pull,
+  run,
+  onRead,
+}: {
+  repo: string;
+  pull: number;
+  run: number;
+  onRead: () => void;
+}) {
+  const [owner, name] = repo.split("/");
+  const { data: state } = useWorkflowRunForPull(owner, name, pull);
+  const increase = useIncreaseWorkflowRunReworkLimit(owner, name, pull);
+  const [error, setError] = useState<string | null>(null);
+  const [increasedLimit, setIncreasedLimit] = useState<number | null>(null);
+
+  if (increasedLimit !== null) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        Rework limit increased to {increasedLimit}.
+      </p>
+    );
+  }
+  if (!state || state.id !== run || !state.rework_limit_increase_available) {
+    return null;
+  }
+  const nextLimit = state.rework_limit * 2;
+  return (
+    <div className="mt-2 flex flex-col items-start gap-1 text-xs">
+      <YesNoPrompt
+        question={`Increase rework limit to ${nextLimit}?`}
+        pending={increase.isPending}
+        onYes={() =>
+          increase.mutate(
+            { run: state.id, expectedLimit: state.rework_limit },
+            {
+              onSuccess: (result) => {
+                setError(null);
+                setIncreasedLimit(result.current_limit);
+              },
+              onError: (failure) =>
+                setError(
+                  failure instanceof Error
+                    ? failure.message
+                    : "Failed to increase the workflow rework limit.",
+                ),
+            },
+          )
+        }
+        onNo={onRead}
+      />
+      {error ? (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -315,15 +396,16 @@ function WorkflowBudgetAction({
   repo,
   pull,
   run,
+  onRead,
 }: {
   repo: string;
   pull: number;
   run: number;
+  onRead: () => void;
 }) {
   const [owner, name] = repo.split("/");
   const { data: state } = useWorkflowRunForPull(owner, name, pull);
   const increaseCostLimit = useIncreaseWorkflowRunCostLimit(owner, name, pull);
-  const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [increasedLimitUsd, setIncreasedLimitUsd] = useState<number | null>(
     null,
@@ -344,41 +426,28 @@ function WorkflowBudgetAction({
   const nextLimit = state.cost_limit_usd + state.cost_increment_usd;
   return (
     <div className="mt-2 flex flex-col items-start gap-1 text-xs">
-      {asking ? (
-        <YesNoPrompt
-          question={`Increase to ${formatCost(nextLimit)}?`}
-          pending={increaseCostLimit.isPending}
-          onYes={() =>
-            increaseCostLimit.mutate(
-              { run: state.id, expectedLimitUsd: state.cost_limit_usd },
-              {
-                onSuccess: (result) => {
-                  setError(null);
-                  setIncreasedLimitUsd(result.current_limit_usd);
-                },
-                onError: (failure) =>
-                  setError(
-                    failure instanceof Error
-                      ? failure.message
-                      : "Failed to increase the workflow budget.",
-                  ),
+      <YesNoPrompt
+        question={`Increase to ${formatCost(nextLimit)}?`}
+        pending={increaseCostLimit.isPending}
+        onYes={() =>
+          increaseCostLimit.mutate(
+            { run: state.id, expectedLimitUsd: state.cost_limit_usd },
+            {
+              onSuccess: (result) => {
+                setError(null);
+                setIncreasedLimitUsd(result.current_limit_usd);
               },
-            )
-          }
-          onNo={() => {
-            setAsking(false);
-            setError(null);
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setAsking(true)}
-          className="rounded-md border px-2 py-0.5 font-medium text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          Increase cost limit
-        </button>
-      )}
+              onError: (failure) =>
+                setError(
+                  failure instanceof Error
+                    ? failure.message
+                    : "Failed to increase the workflow budget.",
+                ),
+            },
+          )
+        }
+        onNo={onRead}
+      />
       {error ? (
         <p role="alert" className="text-destructive">
           {error}

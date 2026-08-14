@@ -94,6 +94,7 @@ function fakeRuntime(
     sendTextExit?: number;
     focusedState?: Record<string, string>;
     paneCloseExit?: number;
+    paneMoveExit?: number;
     paneListJson?: string;
     worktreeOpenJson?: string;
     tabCreateJson?: string;
@@ -106,6 +107,7 @@ function fakeRuntime(
     sendTextExit = 0,
     focusedState,
     paneCloseExit = 0,
+    paneMoveExit = 0,
     paneListJson = "",
     worktreeOpenJson = "",
     tabCreateJson = REUSE_TAB_JSON,
@@ -168,7 +170,7 @@ case " $command " in
   *" pane list "*) printf '%s' '${paneListJson}'; exit 0 ;;
   *" pane split "*) printf '%s' '${paneSplitJson}'; exit 0 ;;
   *" pane zoom "*) change_focus; exit 0 ;;
-  *" pane move "*) change_focus_without_no_focus; exit 0 ;;
+  *" pane move "*) change_focus_without_no_focus; exit ${paneMoveExit} ;;
   *" pane process-info "*)
     # The pid a discard signals, per pane. Written by the caller so a test can offer a process group
     # it owns instead of an arbitrary one; no file for the pane means herdr cannot report it, which
@@ -316,6 +318,25 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
   ]);
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
+  git(["branch", "feature"]);
+  const prOut = run([
+    "pr",
+    "create",
+    "--repo",
+    REPO,
+    "--head",
+    "feature",
+    "--base",
+    "main",
+    "--title",
+    "Workflow turn-done target",
+    "--body",
+    "body",
+    "--issue",
+    issue,
+  ]);
+  const pr = prOut.stdout.match(/created PR #(\d+)/)?.[1];
+  if (!pr) throw new Error(prOut.stdout);
   const started = run([
     "workflow",
     "start",
@@ -452,7 +473,7 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
     { LOOPHUB_SESSION_ID: parentSession },
   );
   expect(humanEscalation.exitCode, humanEscalation.stderr).toBe(0);
-  expect(humanEscalation.stdout).toContain("issue comment\tcompleted");
+  expect(humanEscalation.stdout).toContain("pr comment\tcompleted");
   expect(humanEscalation.stdout).not.toContain("inbox");
 
   const replay = run(
@@ -469,11 +490,12 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
     { LOOPHUB_SESSION_ID: parentSession },
   );
   expect(replay.exitCode, replay.stderr).toBe(0);
-  expect(replay.stdout).toContain("issue comment\talready completed");
+  expect(replay.stdout).toContain("pr comment\talready completed");
   expect(replay.stdout).not.toContain("inbox");
 
-  const issueView = run(["issue", "view", issue, "--repo", REPO, "--json"]);
-  expect(JSON.parse(issueView.stdout).comment_list).toHaveLength(1);
+  const prView = run(["pr", "view", pr, "--repo", REPO, "--json"]);
+  expect(prView.exitCode, prView.stderr).toBe(0);
+  expect(JSON.parse(prView.stdout).comment_list).toHaveLength(1);
 
   const { DatabaseSync } = REQUIRE(
     "node:sqlite",
@@ -502,8 +524,8 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
   db.exec("DROP TRIGGER fail_escalation_comment");
   db.close();
   expect(failed.exitCode).not.toBe(0);
-  expect(failed.stdout).toContain("issue comment\tfailed");
-  expect(failed.stdout).toContain("issue comment error\tcomments unavailable");
+  expect(failed.stdout).toContain("pr comment\tfailed");
+  expect(failed.stdout).toContain("pr comment error\tcomments unavailable");
 
   const failedReplay = run(
     [
@@ -519,16 +541,9 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
     { LOOPHUB_SESSION_ID: parentSession },
   );
   expect(failedReplay.exitCode).not.toBe(0);
-  expect(failedReplay.stdout).toContain("issue comment\tpending");
-  const issueAfterFailure = run([
-    "issue",
-    "view",
-    issue,
-    "--repo",
-    REPO,
-    "--json",
-  ]);
-  expect(JSON.parse(issueAfterFailure.stdout).comment_list).toHaveLength(1);
+  expect(failedReplay.stdout).toContain("pr comment\tpending");
+  const prAfterFailure = run(["pr", "view", pr, "--repo", REPO, "--json"]);
+  expect(JSON.parse(prAfterFailure.stdout).comment_list).toHaveLength(1);
 });
 
 afterAll(() => {
@@ -692,6 +707,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     }),
     // The child's pane, split off the parent's — the pane the layout below then arranges.
     paneSplitJson: JSON.stringify({ result: { pane: { pane_id: "w1:p3" } } }),
+    paneMoveExit: 7,
   });
   try {
     const launched = run(
@@ -718,6 +734,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     );
 
     expect(launched.exitCode, launched.stderr).toBe(0);
+    expect(launched.stderr).toContain("warning: skipped Workflow pane layout");
     expect(launched.stdout).toContain(`agent\texecutor #${body.run.id}-1`);
     const log = readFileSync(runtime.log, "utf8");
     // The child splits its parent's pane, so it lands in the run's own tab.
@@ -729,10 +746,10 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     expect(log).toContain(
       "pane move w1:p3 --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
     );
-    expect(log).toContain(
+    expect(log).not.toContain(
       "pane move w1:p3 --tab w1:t1 --split right --target-pane w1:p2 --ratio 0.5 --no-focus",
     );
-    expect(log).toContain("tab close w1:t3");
+    expect(log).not.toContain("tab close w1:t3");
     expect(log).not.toContain("pane move w1:p4");
     expect(log).not.toContain("pane zoom");
     expect(log).not.toMatch(/(?:workspace|tab|agent) focus/);

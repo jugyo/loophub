@@ -576,3 +576,6 @@ export interface GithubPrStatusDeps {
 export const realGithubPrStatusDeps: GithubPrStatusDeps = {
   fetchStatus: fetchGithubPrStatus,
 };
+
+// Keep the eager worker refresh and the on-demand RPC on the same cache contract.
+export const GITHUB_PR_STATUS_TTL_MS = 60_000;

@@ -401,7 +401,25 @@ test("originSync reports the checkout's standing against origin, pullFromOrigin 
     ahead: 0,
     behind: 0,
   });
+  expect(
+    S.getRepoById((await svc.repos.get("me/origin-sync")).id),
+  ).toMatchObject({
+    origin_branch: "main",
+    origin_ahead: 0,
+    origin_behind: 0,
+  });
   expect(existsSync(join(clonePath, "next.txt"))).toBe(true);
+
+  // The persisted projection is an eager write for consumers that need it, but originSync keeps
+  // its existing live-ref behavior when another process advances the remote-tracking ref.
+  writeFileSync(join(upstream, "later.txt"), "later\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "later"]);
+  await git(clonePath, ["fetch", "-q", "origin"]);
+  expect(await svc.repos.originSync("me/origin-sync")).toMatchObject({
+    ahead: 0,
+    behind: 1,
+  });
 });
 
 // #71: without an origin there is nothing to sync — the repo top hides the section rather than
@@ -475,5 +493,85 @@ test("originSync reports a detached HEAD, and pullFromOrigin refuses it (#71)", 
   });
   await expect(svc.repos.pullFromOrigin("me/detached")).rejects.toThrow(
     /HEAD is detached/,
+  );
+});
+
+// #71: fetchFromOrigin refreshes the remote-tracking refs the counts come from without touching
+// the checkout — the sync state it returns reflects the new upstream tip, and the branch and
+// working tree stay put.
+test("fetchFromOrigin refreshes the behind count without moving the checkout (#71)", async () => {
+  const upstream = initGitRepo();
+  await git(upstream, ["config", "user.email", "t@t.local"]);
+  await git(upstream, ["config", "user.name", "tester"]);
+  writeFileSync(join(upstream, "f.txt"), "base\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "base"]);
+
+  const clonePath = join(HOME, "fetch-clone");
+  await git(upstream, ["clone", "-q", upstream, clonePath]);
+  await git(clonePath, ["config", "user.email", "t@t.local"]);
+  await git(clonePath, ["config", "user.name", "tester"]);
+  await svc.repos.create({ path: clonePath, name: "me/fetch-clone" });
+
+  const baseSha = (await git(clonePath, ["rev-parse", "HEAD"])).stdout.trim();
+
+  writeFileSync(join(upstream, "next.txt"), "next\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "next"]);
+
+  // Stale before the fetch.
+  expect(await svc.repos.originSync("me/fetch-clone")).toMatchObject({
+    ahead: 0,
+    behind: 0,
+  });
+
+  expect(await svc.repos.fetchFromOrigin("me/fetch-clone")).toEqual({
+    has_origin: true,
+    branch: "main",
+    ahead: 0,
+    behind: 1,
+  });
+  // The checkout's branch and working tree are untouched.
+  expect((await git(clonePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(
+    baseSha,
+  );
+  expect(existsSync(join(clonePath, "next.txt"))).toBe(false);
+});
+
+// #71: fetch has no branch to move, only refs to refresh, so — unlike pull — it runs on a detached
+// HEAD rather than refusing.
+test("fetchFromOrigin runs on a detached HEAD (#71)", async () => {
+  const upstream = initGitRepo();
+  await git(upstream, ["config", "user.email", "t@t.local"]);
+  await git(upstream, ["config", "user.name", "tester"]);
+  writeFileSync(join(upstream, "f.txt"), "base\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "base"]);
+
+  const clonePath = join(HOME, "fetch-detached-clone");
+  await git(upstream, ["clone", "-q", upstream, clonePath]);
+  await git(clonePath, ["checkout", "-q", "--detach", "HEAD"]);
+  await svc.repos.create({ path: clonePath, name: "me/fetch-detached" });
+
+  writeFileSync(join(upstream, "next.txt"), "next\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "next"]);
+
+  expect(await svc.repos.fetchFromOrigin("me/fetch-detached")).toEqual({
+    has_origin: true,
+    branch: null,
+    ahead: null,
+    behind: null,
+  });
+});
+
+// #71: without an origin there is nothing to fetch, same as pull.
+test("fetchFromOrigin refuses without an origin (#71)", async () => {
+  await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/fetch-no-origin",
+  });
+  await expect(svc.repos.fetchFromOrigin("me/fetch-no-origin")).rejects.toThrow(
+    /no origin remote is configured/,
   );
 });

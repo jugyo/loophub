@@ -196,6 +196,8 @@ export interface NotificationSignalRow {
   issue_number: number | null;
   cost_usd: number | null;
   limit_usd: number | null;
+  rework_count: number | null;
+  rework_limit: number | null;
   detail: string | null;
   source_key: string;
   created_at: string;
@@ -288,6 +290,8 @@ export function listNotificationSignalRows(
                 NULL AS issue_number,
                 NULL AS cost_usd,
                 NULL AS limit_usd,
+                NULL AS rework_count,
+                NULL AS rework_limit,
                 NULL AS detail,
                 'cost:' || r.id || ':' || i.number || ':' || e.id AS source_key,
                 e.created_at AS created_at
@@ -310,6 +314,8 @@ export function listNotificationSignalRows(
                 NULL AS issue_number,
                 NULL AS cost_usd,
                 NULL AS limit_usd,
+                NULL AS rework_count,
+                NULL AS rework_limit,
                 NULL AS detail,
                 'github-merged:' || r.id || ':' || i.number || ':' || e.id AS source_key,
                 e.created_at AS created_at
@@ -332,6 +338,8 @@ export function listNotificationSignalRows(
                 wr.issue_number AS issue_number,
                 json_extract(e.payload, '$.cost_usd') AS cost_usd,
                 json_extract(e.payload, '$.limit_usd') AS limit_usd,
+                NULL AS rework_count,
+                NULL AS rework_limit,
                 NULL AS detail,
                 'workflow-cost:' || r.id || ':' || wr.id || ':' ||
                   json_extract(e.payload, '$.limit_usd') AS source_key,
@@ -357,6 +365,8 @@ export function listNotificationSignalRows(
                 wr.issue_number AS issue_number,
                 NULL AS cost_usd,
                 NULL AS limit_usd,
+                wr.rework_count AS rework_count,
+                wr.rework_limit AS rework_limit,
                 json_extract(e.payload, '$.reason') AS detail,
                 'workflow-rework:' || r.id || ':' || wr.id || ':' || e.id AS source_key,
                 e.created_at AS created_at

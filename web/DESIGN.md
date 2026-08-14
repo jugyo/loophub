@@ -136,7 +136,7 @@ tooltip so narrow controls stay identifiable. Markers live on:
 - Purpose-named interactive controls and wrappers (for example
   `CreateIssueButton`, `NewWorkspaceButton`, `ThemeToggle`,
   `ComponentDebugToggle`, `NotificationCenter`, `NotificationStack`, `RepoSwitcher`,
-  `RepositorySearch`, `HerdrAgentInput`, `AgentModelPicker`)
+  `RepositorySearch`, `HerdrAgentInput`)
 - Dropdown content surfaces under `ui/` that own a root DOM node
   (`DropdownMenuContent`, `DropdownMenuSubContent`)
 

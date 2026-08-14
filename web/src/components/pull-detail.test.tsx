@@ -412,9 +412,18 @@ describe("PullDetail", () => {
     expect(screen.queryByRole("heading", { name: "Develop" })).toBeNull();
 
     // The existing file summary opens its diff in a dialog instead of expanding inline.
-    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
+    const filesSection = (
+      await screen.findByRole("heading", {
+        name: /Files changed \(1\)/,
+      })
+    ).closest("section")!;
+    expect(await within(filesSection).findByText("web/src/a.ts")).toBeTruthy();
     expect(screen.queryByText("const x = 1;")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
+    fireEvent.click(
+      within(filesSection).getByRole("button", {
+        name: /web\/src\/a\.ts/i,
+      }),
+    );
     const fileDialog = await screen.findByRole("dialog", {
       name: /Diff for web\/src\/a\.ts/i,
     });
@@ -423,8 +432,8 @@ describe("PullDetail", () => {
     expect(
       within(fileDialog).getByRole("button", { name: "Split" }),
     ).toBeTruthy();
-    // #2451: review line comments have no place in the diff view — the Reviews timeline below is
-    // their only view, so the dialog shows diff feedback threads alone.
+    // #2451: review line comments have no place in the diff view — the dialog shows diff feedback
+    // threads alone.
     expect(within(fileDialog).queryByText("nice constant")).toBeNull();
     const reviewedCommit = screen
       .getByRole("button", {
@@ -481,6 +490,128 @@ describe("PullDetail", () => {
     expect(
       await screen.findByRole("heading", { name: "Comments (2)" }),
     ).toBeTruthy();
+  });
+
+  // #145/#215: the comment list is the backend-assembled timeline — commits, reviews and
+  // conversation comments appear in chronological order (oldest first), while line comments stay
+  // available to the Diff view only.
+  it("renders commits, reviews and comments in timeline order without diff comments", async () => {
+    renderDetail();
+
+    const section = (
+      await screen.findByRole("heading", {
+        name: "Comments (2)",
+      })
+    ).closest("section")!;
+    // The fixture's timestamps order them: commit bbbb (oldest), review, comment 9, comment 11,
+    // commit aaaa (newest). The review entry is its minimal one-liner verdict (#313).
+    const order = [
+      "Earlier change",
+      "passed",
+      "Thanks!",
+      "Rebased on main.",
+      "Latest change",
+    ];
+    const nodes = order.map((text) => within(section).getByText(text));
+    for (let index = 0; index < nodes.length - 1; index += 1) {
+      expect(
+        nodes[index].compareDocumentPosition(nodes[index + 1]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    expect(within(section).queryByText("web/src/a.ts:1")).toBeNull();
+  });
+
+  // #313: a review entry is a single minimal line — verdict, author and time — with the body left
+  // to the Commits section's review dialog.
+  it("renders a review as a one-line entry without its body", async () => {
+    renderDetail();
+
+    const section = (
+      await screen.findByRole("heading", {
+        name: "Comments (2)",
+      })
+    ).closest("section")!;
+    expect(within(section).getByText("passed")).toBeTruthy();
+    expect(within(section).queryByText("LGTM")).toBeNull();
+  });
+
+  it("opens the commit diff dialog for the selected timeline commit", async () => {
+    renderDetail({
+      "repos/commitFiles": () => files,
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "Comments (2)" })
+    ).closest("section")!;
+    const commitButton = within(section).getByRole("button", {
+      name: "View timeline changes in bbbbbbb: Earlier change",
+    });
+    expect(commitButton.tagName).toBe("BUTTON");
+    expect(commitButton.hasAttribute("disabled")).toBe(false);
+    commitButton.focus();
+    fireEvent.click(commitButton);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Changes in bbbbbbb: Earlier change",
+    });
+    expect(await within(dialog).findByText("+const x = 1;")).toBeTruthy();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: /Changes in bbbbbbb/ })).toBe(
+      null,
+    );
+  });
+
+  it("opens the review details dialog for the selected timeline review", async () => {
+    renderDetail();
+
+    const section = (
+      await screen.findByRole("heading", { name: "Comments (2)" })
+    ).closest("section")!;
+    const reviewButton = within(section).getByRole("button", {
+      name: "View review for aaaaaaa",
+    });
+    expect(reviewButton.tagName).toBe("BUTTON");
+    expect(reviewButton.hasAttribute("disabled")).toBe(false);
+    reviewButton.focus();
+    fireEvent.click(reviewButton);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    expect(within(dialog).getByText("LGTM")).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Close reviews" }),
+    );
+    expect(screen.queryByRole("dialog", { name: /Reviews for/ })).toBe(null);
+  });
+
+  // #300/#307: the activity entries (commits and reviews) connect along a vertical
+  // line, the same pattern the workflow run history uses — but a conversation comment breaks the
+  // line and renders as its own card, not on it.
+  it("connects activity entries with a vertical line and leaves comments off it", async () => {
+    renderDetail();
+
+    const section = (
+      await screen.findByRole("heading", {
+        name: "Comments (2)",
+      })
+    ).closest("section")!;
+    // The fixture's two comments split the activity into two runs: commits bbbb → review, then
+    // commit aaaa (newest); the line comment is excluded from the timeline.
+    const lists = within(section).getAllByRole("list");
+    expect(lists).toHaveLength(2);
+    for (const list of lists) expect(list.className).toContain("border-l");
+    const items = within(section).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    for (const item of items) {
+      expect(item.className).toContain("relative");
+      expect(item.querySelector("span.absolute.rounded-full")).toBeTruthy();
+    }
+    // The conversation comments are cards outside the line — no listitem, no dot.
+    expect(
+      section.querySelectorAll('[data-debug-component="PullComment"]'),
+    ).toHaveLength(2);
   });
 
   it("shows zero in the Comments heading when there are no comments", async () => {
@@ -724,7 +855,14 @@ describe("PullDetail", () => {
   });
 
   it("renders the empty comments state before the comment form", async () => {
-    renderDetail({ "comments/list": () => [] });
+    // No commits/reviews/line comments either, so the whole timeline is empty and the section has
+    // nothing but its "No comments." placeholder and the composer.
+    renderDetail({
+      "pulls/get": () => ({ ...pull, commits: [] }),
+      "reviews/list": () => [],
+      "reviews/listComments": () => [],
+      "comments/list": () => [],
+    });
 
     const emptyState = await screen.findByText("No comments.");
     const composer = screen.getByLabelText("Add a PR comment");
@@ -1305,7 +1443,13 @@ describe("PullDetail", () => {
   });
 
   it("keeps bottom spacing after the comments section when comments are empty", async () => {
-    renderDetail({ "comments/list": () => [] });
+    // An empty timeline (no commits/reviews/line comments either) so "No comments." renders.
+    renderDetail({
+      "pulls/get": () => ({ ...pull, commits: [] }),
+      "reviews/list": () => [],
+      "reviews/listComments": () => [],
+      "comments/list": () => [],
+    });
 
     const heading = await screen.findByRole("heading", {
       name: "Comments (0)",
@@ -1701,8 +1845,12 @@ describe("PullDetail", () => {
       within(currentDialog).getByRole("button", { name: "Close reviews" }),
     );
 
+    // The superseded review stays out of the commit rows, but the comment timeline still lists it
+    // in its chronological place as its minimal one-liner (#145, #313): the verdict, not the body.
     expect(screen.queryByText("old1234")).toBeNull();
+    expect(within(currentGroup).queryByText("needs work")).toBeNull();
     expect(screen.queryByText("needs work")).toBeNull();
+    expect(screen.getByText("changes requested")).toBeTruthy();
   });
 
   it("omits every review when none targets a listed commit", async () => {
@@ -1767,13 +1915,19 @@ describe("PullDetail", () => {
     await screen.findByRole("button", {
       name: "View changes in aaaaaaa: Latest change",
     });
+    const currentGroup = screen
+      .getByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      })
+      .closest("li")!;
+    // No review is grouped under a commit — the row reads "Not reviewed", and no dialog exists.
+    expect(within(currentGroup).queryByText("Reviewed")).toBeNull();
     expect(screen.queryByText("Reviews for unknown commits")).toBeNull();
-    expect(screen.queryByText("newer34")).toBeNull();
-    expect(screen.queryByText("older12")).toBeNull();
+    // The reviews still surface in the comment timeline, just not grouped under a commit (#145),
+    // as their minimal one-liner: the verdict badge, not the body (#313).
     expect(screen.queryByText("newest feedback")).toBeNull();
     expect(screen.queryByText("older feedback")).toBeNull();
-    expect(screen.queryByText("current")).toBeNull();
-    expect(screen.queryByText("changes requested")).toBeNull();
+    expect(screen.getAllByText("changes requested")).toHaveLength(2);
   });
 
   it("resolves a group's verdict from the latest review, so a later PASS clears an earlier REQUEST_CHANGES (#533)", async () => {

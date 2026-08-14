@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -30,23 +24,6 @@ vi.mock("@/queries/settings", () => ({
     },
   }),
 }));
-vi.mock("@/queries/repos", () => ({
-  useRepoAgentConfig: () => ({
-    data: {
-      setting: {
-        override: false,
-        runtime: null,
-        model: null,
-        effort: null,
-      },
-      effective: {
-        runtime: "claude-code",
-        model: "opus",
-        effort: "medium",
-      },
-    },
-  }),
-}));
 
 import { CreateIssueButton } from "./create-issue-button";
 
@@ -61,6 +38,22 @@ describe("CreateIssueButton", () => {
   it("renders a New issue button", () => {
     render(<CreateIssueButton repo="me/proj" />);
     expect(screen.getByRole("button", { name: /new issue/i })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Choose agent and model" }),
+    ).toBeNull();
+  });
+
+  it("keeps both corners rounded when enabled or disabled", () => {
+    const { rerender } = render(<CreateIssueButton repo="me/proj" />);
+    let button = screen.getByRole("button", { name: /new issue/i });
+    expect(button.className).toContain("rounded-md");
+    expect(button.className).not.toContain("rounded-r-none");
+
+    rerender(<CreateIssueButton repo="me/proj" disabled />);
+    button = screen.getByRole("button", { name: /new issue/i });
+    expect(button.disabled).toBe(true);
+    expect(button.className).toContain("rounded-md");
+    expect(button.className).not.toContain("rounded-r-none");
   });
 
   it("dispatches the issue-create workflow with direct filing instructions", () => {
@@ -137,110 +130,6 @@ describe("CreateIssueButton", () => {
         "in workspace/with-a-very-long-name-that-should-not-wrap-the-button",
       ).className,
     ).toContain("text-xs");
-  });
-
-  it("launches issue creation with a suggested one-shot agent, model, and effort", async () => {
-    render(<CreateIssueButton repo="me/proj" />);
-
-    fireEvent.pointerDown(
-      screen.getByRole("button", {
-        name: "Choose agent and model",
-      }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Codex" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
-    const codexModelMenu = (
-      await screen.findByRole("menuitem", { name: "gpt-5.6-sol" })
-    ).closest('[role="menu"]')!;
-    expect(
-      within(codexModelMenu)
-        .getAllByRole("menuitem")
-        .map((item) => item.textContent)
-        .filter((item) => item?.startsWith("gpt-")),
-    ).toEqual([
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-      "gpt-5.5",
-      "gpt-5.4",
-      "gpt-5.4-mini",
-      "gpt-5.3-codex-spark",
-    ]);
-    fireEvent.click(
-      await screen.findByRole("menuitem", { name: "gpt-5.6-sol" }),
-    );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Effort" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "high" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create with Codex" }));
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
-      workflow: "issue-create",
-      agent: "codex",
-      model: "gpt-5.6-sol",
-      effort: "high",
-      prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
-    });
-  });
-
-  it("launches issue creation with a custom one-shot model", () => {
-    render(<CreateIssueButton repo="me/proj" />);
-
-    fireEvent.pointerDown(
-      screen.getByRole("button", {
-        name: "Choose agent and model",
-      }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.change(screen.getByLabelText("Custom model"), {
-      target: { value: "vendor/custom-preview" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create with Claude Code" }),
-    );
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
-      workflow: "issue-create",
-      agent: "claude-code",
-      model: "vendor/custom-preview",
-      effort: "medium",
-      prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
-    });
-  });
-
-  it("launches issue creation with OpenCode model and empty effort", async () => {
-    render(<CreateIssueButton repo="me/proj" />);
-
-    fireEvent.pointerDown(
-      screen.getByRole("button", {
-        name: "Choose agent and model",
-      }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(screen.getByRole("button", { name: "OpenCode" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
-    fireEvent.click(
-      await screen.findByRole("menuitem", { name: "openai/gpt-5.6" }),
-    );
-    // OpenCode has no effort ladder (TUI has no --variant); leave effort empty.
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create with OpenCode" }),
-    );
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
-      workflow: "issue-create",
-      agent: "opencode",
-      model: "openai/gpt-5.6",
-      // Empty effort is omitted at the launch boundary (same as Cursor).
-      effort: undefined,
-      prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
-    });
   });
 
   it("renders as a regular button instead of a fixed floating action button", () => {

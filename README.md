@@ -101,7 +101,7 @@ The default bind address is therefore loopback only (`127.0.0.1`).
 ```sh
 npm run serve # lh-web + lh-worker together
 npm run serve:debug # same, with the component debug UI enabled
-npm run lh-web # http://localhost:8730 — API + UI + HMR in one process
+npm run lh-web # http://localhost:8730 — API + UI in one process (builds the SPA at startup)
 npm run lh-worker # tail events and run per-repo automation
 ```
 

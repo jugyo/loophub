@@ -234,6 +234,23 @@ test("GitHub feedback sweep runs at its configured interval and logs per-PR fail
   }
 });
 
+test("GitHub merge sweep also refreshes PR status and isolates status failures", async () => {
+  vi.useFakeTimers();
+  const mergeSweep = vi.fn(async () => []);
+  const statusSweep = vi.fn(async () => {
+    throw new Error("gh auth failed");
+  });
+  const stop = M.startGithubMergeSweep(25, mergeSweep, statusSweep);
+  try {
+    await vi.advanceTimersByTimeAsync(25);
+    expect(mergeSweep).toHaveBeenCalledTimes(1);
+    expect(statusSweep).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+    vi.useRealTimers();
+  }
+});
+
 test("pull sweep logs start and completion to stdout", async () => {
   const out = vi.spyOn(console, "log").mockImplementation(() => {});
   const stop = M.startPullSweep(10);
@@ -260,6 +277,23 @@ test("pull sweep logs start and completion to stdout", async () => {
   } finally {
     stop();
     out.mockRestore();
+  }
+});
+
+test("notification sweep remains active after git pull observation moved out", async () => {
+  vi.useFakeTimers();
+  const sweep = vi.spyOn(svc.notifications, "sweep").mockResolvedValue({
+    mergeReady: { checked: 0, created: [] },
+    backfilled: 2,
+  });
+  const stop = M.startNotificationSweep(10);
+  try {
+    await vi.advanceTimersByTimeAsync(10);
+    expect(sweep).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+    sweep.mockRestore();
+    vi.useRealTimers();
   }
 });
 
@@ -574,6 +608,44 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     parentSessionId: otherParentSessionId,
   });
 
+  const unparentedSessionId = "99999999-0000-0000-0000-000000000729";
+  S.registerAgentSession(
+    unparentedSessionId,
+    "workflow-step",
+    unparentedSessionId,
+  );
+  const unparentedPull = S.createIssue(
+    repo.id,
+    "pull",
+    "Unparented PR",
+    "",
+    "me",
+  );
+  S.createPull(unparentedPull.id, "loophub/issue-726", "main", null);
+  const unparentedRun = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 726,
+    prNumber: unparentedPull.number,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId: null,
+  });
+  S.appendWorkflowRunStepSession(
+    unparentedRun.id,
+    "execute",
+    unparentedSessionId,
+  );
+  expect(
+    svc.sessions.workflowUsageTarget(
+      repo.id,
+      unparentedPull.number,
+      unparentedSessionId,
+    ),
+  ).toEqual({ runId: unparentedRun.id, parentSessionId: null });
+
   const projectDir = join(HOME, ".claude", "projects", "repo-worktree");
   mkdirSync(projectDir, { recursive: true });
   const transcript = join(projectDir, `${sessionId}.jsonl`);
@@ -603,6 +675,7 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
       output_tokens: 10,
     });
     expect(JSON.parse(usageEvents()[0].payload)).toMatchObject({
+      id: run.id,
       session_id: sessionId,
       messages: 1,
       pr: pull.number,

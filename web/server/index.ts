@@ -2,15 +2,15 @@
 // `lh-web` entry point: start the lh-web HTTP process. Runs only while in use (no daemon).
 //   lh-web [--port <n>] [--debug]
 //   (port: default 8730 or LOOPHUB_PORT)
-// One command, one port: this process serves the JSON-RPC API and the SPA
-// (with HMR) by embedding Vite in middleware mode — no separate dev server. Resident
-// maintenance loops run in lh-worker, including Notification Center generation (#118): without
+// One command, one port: this process serves the JSON-RPC API and the SPA it builds at startup
+// (build.ts) — no dev server and no HMR, so a source change reaches the browser on the next
+// restart. Resident maintenance loops run in lh-worker, including Notification Center generation (#118): without
 // lh-worker running, lh-web alone will not produce new notifications.
 
 import { configureSlowOperationLogging } from "../../core/slow-operation.ts";
 import { LH_WEB_HELP, type LhWebArgs, parseLhWebArgs } from "./args.ts";
-import { createViteDev, type ViteDev } from "./dev.ts";
-import { createLhWebServer } from "./http.ts";
+import { buildSpa } from "./build.ts";
+import { createLhWebServer, handleStatic } from "./http.ts";
 import { log } from "./logger.ts";
 import { setWebRuntimeConfig } from "./runtime-config.ts";
 
@@ -32,60 +32,57 @@ setWebRuntimeConfig({
 });
 configureSlowOperationLogging(args.debug ? log.info : undefined);
 
-// Embed Vite so this single process serves the SPA with HMR alongside /rpc.
-// `vite` is assigned before listen(), so by the time requests arrive it is always set; the
-// guard only covers the brief async startup window.
-let vite: ViteDev | undefined;
+// The build below takes a few seconds (or is skipped when dist/.build-hash already matches the
+// source, build.ts). Until it lands, refuse to serve rather than hand out whatever an earlier run
+// left in web/dist — stale code is harder to notice than a plain error.
+let built = false;
 const server = createLhWebServer(
   (req, res, url) => {
-    if (vite) vite.serveStatic(req, res, url);
-    else res.writeHead(503).end("lh-web is starting\n");
+    if (built) handleStatic(req, res, url);
+    else res.writeHead(503).end("lh-web is building the UI\n");
   },
   { debug: args.debug },
 );
 
-// Bind to loopback by default: the embedded Vite server transforms and serves web/ source, so
-// it must not be reachable off-host. Override with LOOPHUB_HOST (e.g. 0.0.0.0) only when LAN
-// access is intentional.
+// Bind to loopback by default: this is a single-user local tool and the API it exposes is
+// unauthenticated. Override with LOOPHUB_HOST (e.g. 0.0.0.0) only when LAN access is intentional.
 const host = process.env.LOOPHUB_HOST ?? "127.0.0.1";
-
-try {
-  vite = await createViteDev(server);
-} catch (err) {
-  log.error(
-    "lh-web: failed to start the embedded Vite dev server. Are web deps installed (npm --prefix web install)?",
-  );
-  log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
-  process.exit(1);
-}
 
 server.on("error", (error) => {
   log.error(
     `lh-web: server error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
   );
-  const closeVite = vite ? vite.close() : Promise.resolve();
-  void closeVite
-    .catch((closeError) => {
-      log.error(
-        `lh-web: shutdown error: ${closeError instanceof Error ? closeError.message : String(closeError)}`,
-      );
-    })
-    .finally(() => process.exit(1));
+  process.exit(1);
 });
 
+// Listen first so a port clash is reported at once instead of after the build.
 server.listen(port, host, () => {
   const shown = host === "127.0.0.1" ? "localhost" : host;
   const url = `http://${shown}:${port}`;
-  log.info(`lh-web listening on ${url}  (API + UI + HMR)`);
+  log.info(`lh-web listening on ${url}  (API + UI)`);
 });
+
+try {
+  const builtFresh = await buildSpa();
+  built = true;
+  log.info(
+    builtFresh
+      ? "lh-web: SPA build ready"
+      : "lh-web: SPA build skipped (dist up to date)",
+  );
+} catch (err) {
+  log.error(
+    "lh-web: failed to build the SPA. Are web deps installed (npm --prefix web install)?",
+  );
+  log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
+  process.exit(1);
+}
 
 let isShuttingDown = false;
 
 const shutdown = async () => {
   if (isShuttingDown) return;
   isShuttingDown = true;
-
-  if (vite) await vite.close();
 
   // Close gracefully first, giving existing connections a moment to finish.
   await new Promise<void>((resolve) => {

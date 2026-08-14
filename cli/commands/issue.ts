@@ -26,6 +26,7 @@ import {
   resolveDevRuntime,
 } from "../dev.ts";
 import { currentHerdrPaneContext } from "../herdr-context.ts";
+import { readTextInput } from "../text-input.ts";
 import { usage } from "../usage.ts";
 
 export async function run(): Promise<void> {
@@ -232,12 +233,14 @@ export async function run(): Promise<void> {
     const acceptanceCriteria = (flags.ac ?? [])
       .map((x) => x.trim())
       .filter(Boolean);
+    const body =
+      flags.body === undefined ? undefined : await readTextInput(flags.body);
     const i = await runOp(async () =>
       s.issues.create(
         repo,
         {
           title: flags.title ?? "",
-          body: flags.body || "",
+          body: body || "",
           labels,
           acceptance_criteria: acceptanceCriteria,
           workspace: flags.workspace,
@@ -288,7 +291,7 @@ export async function run(): Promise<void> {
       target_branch?: string | null;
     } = {};
     if (flags.title !== undefined) patch.title = flags.title;
-    if (flags.body !== undefined) patch.body = flags.body;
+    if (flags.body !== undefined) patch.body = await readTextInput(flags.body);
     if (flags.workspace !== undefined && typeof flags.workspace !== "string")
       fail("--workspace requires a value");
     if (flags.workspace !== undefined && flags["clear-workspace"])
@@ -312,8 +315,10 @@ export async function run(): Promise<void> {
     // Write commands return the resource they created/updated so an agent can verify from the
     // output what actually happened, instead of trusting a fixed success word (#1863).
     const number = Number(rest[0]);
+    const body =
+      flags.body === undefined ? "" : await readTextInput(flags.body);
     const c = await runOp(async () =>
-      s.comments.create(repo, number, flags.body ?? "", await writeSession()),
+      s.comments.create(repo, number, body, await writeSession()),
     );
     out(c);
     if (!flags.json)
@@ -372,9 +377,9 @@ export async function run(): Promise<void> {
         });
     } else if (action === "add") {
       const number = Number(rest[1]);
-      const c = await runOp(() =>
-        s.issues.acAdd(repo, number, flags.text ?? ""),
-      );
+      const text =
+        flags.text === undefined ? "" : await readTextInput(flags.text);
+      const c = await runOp(() => s.issues.acAdd(repo, number, text));
       out(c);
       if (!flags.json)
         console.log(`added acceptance criterion ${c.id} to issue #${number}`);

@@ -2,6 +2,7 @@ import type {
   IssueDetailPageWire,
   IssueListPageWire,
   PullDetailPageWire,
+  PullTimelineItemWire,
 } from "../serialize.ts";
 import { comments } from "./comments.ts";
 import { diffFeedbackForDiff } from "./diff-feedback.ts";
@@ -98,7 +99,7 @@ export const pageData = {
     // Everything on this screen that depends on the PR's live diff base — Files changed, the
     // commit list on the PR row, and the diff feedback anchors — sits on the same base, so
     // resolve it once here and hand it to the rest (#123). The resolution is the request's one
-    // uncacheable git cost: its operands are ref names, so the git-command cache cannot help.
+    // The operands are ref names, so resolve the live diff base once for this request.
     const diff = await pullDiffFiles(name, number);
     const [pull, reviewRows, lineComments, commentRows] = await Promise.all([
       pulls.get(name, number, {
@@ -119,12 +120,36 @@ export const pageData = {
       { orphaned: true },
       actorFor(sessionId),
     );
+    // #145: the whole PR activity as one chronological list, folded out of data this request
+    // already fetched — the git commit list on the PR row, reviews and comments —
+    // so assembly adds no git, query or HTTP work of its own. Stable sort keeps the insertion
+    // order below for entries sharing a timestamp.
+    const timeline: PullTimelineItemWire[] = [
+      // pull.commits is newest first; feed it oldest first so same-second commits stay in commit
+      // order after the chronological stable sort below.
+      ...[...(pull.commits ?? [])].reverse().map((commit) => ({
+        kind: "commit" as const,
+        created_at: commit.date,
+        commit,
+      })),
+      ...reviewRows.map((review) => ({
+        kind: "review" as const,
+        created_at: review.submitted_at,
+        review,
+      })),
+      ...commentRows.map((comment) => ({
+        kind: "comment" as const,
+        created_at: comment.created_at,
+        comment,
+      })),
+    ].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
     return {
       pull,
       files: diff.files,
       reviews: reviewRows,
       line_comments: lineComments,
       comments: commentRows,
+      timeline,
       diff_feedback: {
         comment_counts: orphaned.comment_counts,
         orphaned_threads: orphaned.threads,

@@ -48,8 +48,16 @@ function wrapper(client: QueryClient) {
   };
 }
 
+// The hook reads document.visibilityState to pick its polling interval. One stub for the whole
+// file, reset per test, keeps a value set by one test from leaking into the next.
+let visibilityState: DocumentVisibilityState = "visible";
+
 beforeEach(() => {
   vi.useFakeTimers();
+  visibilityState = "visible";
+  vi.spyOn(document, "visibilityState", "get").mockImplementation(
+    () => visibilityState,
+  );
 });
 
 // A client with no stored cursor spends its first call learning the newest event id, so tests
@@ -146,68 +154,80 @@ describe("useLoopHubEvents", () => {
     });
   });
 
-  it("only polls while the tab is visible and resumes immediately", async () => {
-    let visibilityState: DocumentVisibilityState = "hidden";
-    vi.spyOn(document, "visibilityState", "get").mockImplementation(
-      () => visibilityState,
-    );
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockImplementation(() => Promise.resolve(jsonResponse([])));
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(fetchMock).not.toHaveBeenCalled();
-
-    visibilityState = "visible";
-    document.dispatchEvent(new Event("visibilitychange"));
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-
-    visibilityState = "hidden";
-    document.dispatchEvent(new Event("visibilitychange"));
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    visibilityState = "visible";
-    document.dispatchEvent(new Event("visibilitychange"));
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-  });
-
-  it("does not start a rollback probe when a poll finishes in a hidden tab", async () => {
+  it("keeps polling and invalidating in a hidden tab, on the slower interval", async () => {
     warmCursor(1);
-    let visibilityState: DocumentVisibilityState = "visible";
-    vi.spyOn(document, "visibilityState", "get").mockImplementation(
-      () => visibilityState,
-    );
-    let resolvePoll: (response: Response) => void = () => {};
+    visibilityState = "hidden";
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockImplementationOnce(
-        () =>
-          new Promise<Response>((resolve) => {
-            resolvePoll = resolve;
-          }),
-      )
+      .mockResolvedValueOnce(jsonResponse([ev(7)]))
       .mockImplementation(() => Promise.resolve(jsonResponse([])));
     vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
 
-    render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    render(<HookHarness />, { wrapper: wrapper(client) });
 
-    visibilityState = "hidden";
-    document.dispatchEvent(new Event("visibilitychange"));
-    resolvePoll(jsonResponse([]));
-    await vi.advanceTimersByTimeAsync(30_000);
+    // A hidden tab still advances its cursor and invalidates, so it is not stale on return.
+    await vi.waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["issues", "me/proj"],
+      }),
+    );
+    expect(localStorage.getItem("lh_last_event_id")).toBe("7");
+
+    await vi.advanceTimersByTimeAsync(1500);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    visibilityState = "visible";
-    document.dispatchEvent(new Event("visibilitychange"));
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.advanceTimersByTimeAsync(8500);
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
     expect(rpcParams(fetchMock.mock.calls[1])).toEqual({
-      since: 1,
+      since: 7,
       limit: 100,
     });
+  });
+
+  it("polls immediately when the tab becomes visible and returns to the faster interval", async () => {
+    visibilityState = "hidden";
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  });
+
+  it("re-times a pending poll to the slower interval when the tab becomes hidden", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    visibilityState = "hidden";
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(8500);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
   it("continues polling after an RPC error", async () => {

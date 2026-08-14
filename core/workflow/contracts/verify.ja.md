@@ -21,6 +21,10 @@ context として読み、test を実行してかまいません。
 launch prompt では review 提出先としてのみ PR 番号も渡されます。session 中に `orchestrator:` で始まる
 メッセージは workflow parent からの follow-up instruction です。
 
+## 自由テキストの入力
+
+Markdown の review 本文や line comment を `lh` に渡すときは、shell 引数へ本文を埋め込まないでください。`--body` は直接入力に加えて、`-` で stdin、`@path` でファイルを受け取ります。バッククォートや改行を含む本文は、heredoc またはファイルから `--body -` / `--body @path` のように渡してください。
+
 ## rubric の採点
 
 rubric は issue の構造化 `acceptance_criteria` — `lh issue view <n> --json` が返す enabled な criterion

@@ -5,8 +5,10 @@ import { publish } from "../domain-events.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
 import {
+  aheadBehind,
   commitLog,
   commitsAhead,
+  currentBranch,
   type DiffFile,
   diffFiles,
   diffFilesBetween,
@@ -21,6 +23,7 @@ import {
   revParse,
 } from "../git.ts";
 import {
+  GITHUB_PR_STATUS_TTL_MS,
   type GithubDeps,
   type GithubPrStatusDeps,
   parseGhPrStatus,
@@ -60,8 +63,6 @@ import {
 
 // #850: how long a cached GitHub PR status is served before hitting `gh` again. On-demand from the
 // PR-detail sidebar, so a short TTL keeps the panel roughly live without spawning a `gh` per render.
-const GITHUB_PR_STATUS_TTL_MS = 60_000;
-
 interface PullCreateDeps {
   revParse: typeof revParse;
 }
@@ -132,6 +133,63 @@ export async function pullDiffFiles(
     headSha,
     files: await diffFilesBetween(r.local_path, baseSha, headSha),
   };
+}
+
+function diffProjectionFiles(files: DiffFile[]): S.PullDiffProjectionFile[] {
+  return files.map((file) => ({
+    ...file,
+    lines: parsePatchWithCoordinates(file.patch).map((line) => ({
+      kind: line.kind,
+      text: line.text,
+      left_line: line.leftLine,
+      right_line: line.rightLine,
+    })),
+  }));
+}
+
+export async function projectPullDiff(
+  name: string,
+  number: number,
+): Promise<void> {
+  const r = repoOr404(name);
+  const row = issueOr404(r, number, "pull");
+  const p = S.getPull(row.id)!;
+  const [baseSha, headSha] = await Promise.all([
+    resolvePullDiffBaseSha(r.local_path, p),
+    revParse(r.local_path, localBranchRef(p.head_ref)),
+  ]);
+  if (!baseSha || !headSha) return;
+  const files = await diffFilesBetween(r.local_path, baseSha, headSha);
+  S.upsertPullDiffProjection({
+    issueId: row.id,
+    baseSha,
+    headSha,
+    files: diffProjectionFiles(files),
+  });
+}
+
+function pullDiffWireFiles(
+  files: S.PullDiffProjectionFile[] | DiffFile[],
+  projectRoot: string,
+) {
+  return files.map((file) => ({
+    path: file.headFilename ?? file.filename,
+    absolute_path: join(projectRoot, file.headFilename ?? file.filename),
+    original_path: file.previousFilename ?? null,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+    patch: file.patch,
+    lines:
+      "lines" in file
+        ? file.lines
+        : parsePatchWithCoordinates(file.patch).map((line) => ({
+            kind: line.kind,
+            text: line.text,
+            left_line: line.leftLine,
+            right_line: line.rightLine,
+          })),
+  }));
 }
 
 export const pulls = {
@@ -394,9 +452,14 @@ export const pulls = {
     ]);
     if (!baseSha || !headSha)
       throw new ServiceError(422, "pull request diff is unavailable");
-    const files = await diffFilesBetween(r.local_path, baseSha, headSha, {
-      ignoreWhitespace,
-    });
+    const projected = !ignoreWhitespace
+      ? S.getPullDiffProjection(row.id, baseSha, headSha)
+      : null;
+    const files =
+      projected?.files ??
+      (await diffFilesBetween(r.local_path, baseSha, headSha, {
+        ignoreWhitespace,
+      }));
     const selectedFiles =
       path == null
         ? files
@@ -409,26 +472,7 @@ export const pulls = {
     return {
       base_sha: baseSha,
       head_sha: headSha,
-      files: selectedFiles.map((file) => {
-        const serializedFile = {
-          path: file.headFilename ?? file.filename,
-          absolute_path: join(projectRoot, file.headFilename ?? file.filename),
-          original_path: file.previousFilename ?? null,
-          status: file.status,
-          additions: file.additions,
-          deletions: file.deletions,
-          patch: file.patch,
-        };
-        return {
-          ...serializedFile,
-          lines: parsePatchWithCoordinates(file.patch).map((line) => ({
-            kind: line.kind,
-            text: line.text,
-            left_line: line.leftLine,
-            right_line: line.rightLine,
-          })),
-        };
-      }),
+      files: pullDiffWireFiles(selectedFiles, projectRoot),
     };
   },
 
@@ -803,9 +847,28 @@ export const pulls = {
       throw new ServiceError(409, res.reason ?? "Merge conflict");
     }
     if (!res.merged) throw new ServiceError(422, "Merge failed");
+    const checkedOutBranch = await currentBranch(r.local_path);
+    let originSync: {
+      branch: string;
+      ahead: number | null;
+      behind: number | null;
+    } | null = null;
+    if (checkedOutBranch === p.base_ref && (await remoteUrl(r.local_path))) {
+      const counts = await aheadBehind(
+        r.local_path,
+        localBranchRef(p.base_ref),
+        `refs/remotes/origin/${p.base_ref}`,
+      );
+      originSync = {
+        branch: p.base_ref,
+        ahead: counts?.ahead ?? null,
+        behind: counts?.behind ?? null,
+      };
+    }
     // The git merge is done; the PR state, persisted facts and every subscriber write commit
     // together so a merged PR is never recorded without the closure cascade it caused.
     db.transaction(() => {
+      if (originSync) S.setRepoOriginSync(r.id, originSync);
       S.setMerged(row.id, res.sha!, method);
       publish({
         type: "pull.closed",

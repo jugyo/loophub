@@ -392,14 +392,19 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // those links are UI metadata whose related_sessions list and usage summary live in that
     // detail's query too.
     if (repo) {
-      keys.push(["workflow-run", "agent-costs", repo]);
-      keys.push(["workflow-run", "total-cost", repo]);
       const prNumber = payload?.pr;
       const issueNumber = payload?.issue;
       // #2263: a running agent's usage counter is the app's highest-frequency event, and the only
       // thing it changes on those details is the tokens/cost pair — which now has its own git-free
       // query. Refetching a git-backed detail every few seconds for two numbers is not worth it.
       const usageOnly = type === "agent_session.usage_updated";
+      if (usageOnly && workflowRunId !== null) {
+        keys.push([...queryKeys.workflowRunAgentCosts(repo, workflowRunId)]);
+        keys.push([...queryKeys.workflowRunTotalCost(repo, workflowRunId)]);
+      } else {
+        keys.push(["workflow-run", "agent-costs", repo]);
+        keys.push(["workflow-run", "total-cost", repo]);
+      }
       if (typeof prNumber === "number") {
         if (usageOnly) keys.push([...queryKeys.pullUsage(repo, prNumber)]);
         else keys.push([...queryKeys.pull(repo, prNumber)]);

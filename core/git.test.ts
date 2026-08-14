@@ -10,25 +10,22 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   aheadBehind,
-  commitDiffFiles,
-  commitLog,
-  commitsAhead,
   currentBranch,
   describeUnresolvedRevision,
+  diffFileSummariesBetween,
   diffFiles,
   diffFilesBetween,
   diffStat,
+  fetchRemote,
   fileAtRef,
   git,
   hasEffectiveDiff,
   isIndexLockError,
   localBranchRef,
-  mergeBase,
   mergePreview,
   mergePull,
   pathInDiff,
   pullFastForward,
-  pushedCommitShas,
   sleep,
   worktreeAdd,
   worktreeList,
@@ -36,7 +33,6 @@ import {
   worktreeRemove,
   worktreeStatus,
 } from "./git.ts";
-import { clearGitResultCache } from "./git-cache.ts";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
 
 async function makeRepo(): Promise<string> {
@@ -654,6 +650,63 @@ test("diffFiles exposes structured rename target paths", async () => {
   rmSync(p, { recursive: true, force: true });
 });
 
+// #120: a caller that only needs the file names should not pay for the PR's patch, and one that
+// needs a single file's patch should not pay for the others'.
+test("diffFileSummariesBetween names the same files without their patches", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-diff-summaries-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "old.txt"), "old\n");
+  writeFileSync(join(p, "kept.txt"), "one\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  await git(p, ["mv", "old.txt", "new.txt"]);
+  writeFileSync(join(p, "kept.txt"), "two\n");
+  await git(p, ["commit", "-qam", "rename and edit"]);
+
+  const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
+  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
+  const files = await diffFilesBetween(p, baseSha, headSha);
+  const summaries = await diffFileSummariesBetween(p, baseSha, headSha);
+  expect(summaries).toEqual(
+    files.map(({ patch: _patch, ...summary }) => summary),
+  );
+  expect(summaries).toContainEqual(
+    expect.objectContaining({
+      filename: "old.txt => new.txt",
+      previousFilename: "old.txt",
+      headFilename: "new.txt",
+      status: "renamed",
+    }),
+  );
+
+  // Naming both sides of the rename keeps git's rename detection: the pathspec must not turn it
+  // into a delete plus an add.
+  const renameOnly = await diffFilesBetween(p, baseSha, headSha, {
+    paths: ["old.txt", "new.txt"],
+  });
+  expect(renameOnly).toEqual([
+    files.find((file) => file.headFilename === "new.txt"),
+  ]);
+
+  // Paths are matched literally: a name git printed can never be re-read as pathspec magic.
+  expect(
+    await diffFilesBetween(p, baseSha, headSha, { paths: ["*.txt"] }),
+  ).toEqual([]);
+
+  const summariesOnly = await traceGitCommands(() =>
+    diffFileSummariesBetween(p, baseSha, headSha),
+  );
+  expect(
+    summariesOnly.commands.filter((command) => command.startsWith("diff ")),
+  ).toHaveLength(1);
+
+  rmSync(p, { recursive: true, force: true });
+});
+
 test("diffFiles can omit whitespace-only changes without hiding substantive changes", async () => {
   const p = mkdtempSync(join(tmpdir(), "lh-difffiles-whitespace-"));
   await git(p, ["init", "-q", "-b", "main"]);
@@ -983,9 +1036,8 @@ test("pathInDiff reports only files actually changed in base...head", async () =
   rmSync(p, { recursive: true, force: true });
 });
 
-test("a repeated SHA-resolved query is served from the cache, while ref queries re-run", async () => {
+test("repeated git queries run again, including SHA-resolved queries", async () => {
   const p = await makeRepo();
-  clearGitResultCache();
   const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
   const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
 
@@ -999,7 +1051,9 @@ test("a repeated SHA-resolved query is served from the cache, while ref queries 
   const warm = await traceGitCommands(() =>
     diffFilesBetween(p, baseSha, headSha),
   );
-  expect(warm.commands).toEqual([]);
+  expect(
+    warm.commands.filter((command) => command.startsWith("diff ")),
+  ).toHaveLength(3);
   expect(warm.result).toEqual(cold.result);
 
   // The same question asked by branch name still spawns git: a ref can move under it.
@@ -1019,38 +1073,6 @@ test("a repeated SHA-resolved query is served from the cache, while ref queries 
   expect(
     status.commands.filter((command) => command.startsWith("status ")),
   ).toHaveLength(2);
-
-  rmSync(p, { recursive: true, force: true });
-});
-
-// The cacheable-argument table in core/git-cache.ts only clears argv spellings it has vouched for,
-// so a flag added to one of these call sites silently stops being cached. Pin every query that is
-// meant to be cached: a second round of identical calls must not spawn git at all.
-test("every SHA-resolved query these helpers ask is served from the cache", async () => {
-  const p = await makeRepo();
-  clearGitResultCache();
-  const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
-  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
-
-  const ask = async () => {
-    await diffFiles(p, baseSha, headSha);
-    await diffFilesBetween(p, baseSha, headSha, { ignoreWhitespace: true });
-    await commitDiffFiles(p, headSha);
-    await diffStat(p, baseSha, headSha);
-    await pathInDiff(p, baseSha, headSha, "f.txt");
-    await hasEffectiveDiff(p, baseSha, headSha);
-    await commitLog(p, baseSha, headSha);
-    await commitsAhead(p, baseSha, headSha);
-    await pushedCommitShas(p, baseSha, headSha, headSha);
-    await mergeBase(p, baseSha, headSha);
-    await fileAtRef(p, headSha, "f.txt");
-  };
-
-  const cold = await traceGitCommands(ask);
-  expect(cold.commands.length).toBeGreaterThan(0);
-
-  const warm = await traceGitCommands(ask);
-  expect(warm.commands).toEqual([]);
 
   rmSync(p, { recursive: true, force: true });
 });
@@ -1178,6 +1200,50 @@ test("pullFastForward fast-forwards from origin and refuses a diverged branch (#
   const refused = await pullFastForward(clonePath, "main");
   expect(refused.code).not.toBe(0);
   expect(`${refused.stderr}${refused.stdout}`).toMatch(/fast-forward/i);
+
+  rmSync(upstream, { recursive: true, force: true });
+  rmSync(clonePath, { recursive: true, force: true });
+});
+
+test("fetchRemote updates only the remote-tracking refs, never the checkout (#71)", async () => {
+  const upstream = await makeRepo();
+  const clonePath = join(upstream, "..", `fetch-${upstream.split("/").pop()}`);
+  await git(upstream, ["clone", "-q", upstream, clonePath]);
+  await git(clonePath, ["config", "user.email", "t@t.local"]);
+  await git(clonePath, ["config", "user.name", "tester"]);
+
+  // A commit the clone has and the remote does not: the checkout's branch tip is ahead.
+  writeFileSync(join(clonePath, "local.txt"), "local\n");
+  await git(clonePath, ["add", "-A"]);
+  await git(clonePath, ["commit", "-qm", "local"]);
+  const localSha = (await git(clonePath, ["rev-parse", "HEAD"])).stdout.trim();
+
+  writeFileSync(join(upstream, "remote.txt"), "remote\n");
+  await git(upstream, ["add", "-A"]);
+  await git(upstream, ["commit", "-qm", "remote"]);
+  const remoteSha = (await git(upstream, ["rev-parse", "HEAD"])).stdout.trim();
+
+  // Before the fetch, the clone's remote-tracking ref is stale.
+  expect(
+    (
+      await git(clonePath, ["rev-parse", "refs/remotes/origin/main"])
+    ).stdout.trim(),
+  ).not.toBe(remoteSha);
+
+  const fetched = await fetchRemote(clonePath);
+  expect(fetched.code).toBe(0);
+
+  // The remote-tracking ref moved to the new upstream tip…
+  expect(
+    (
+      await git(clonePath, ["rev-parse", "refs/remotes/origin/main"])
+    ).stdout.trim(),
+  ).toBe(remoteSha);
+  // …but the working tree and the checked-out branch are untouched.
+  expect(existsSync(join(clonePath, "remote.txt"))).toBe(false);
+  expect((await git(clonePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(
+    localSha,
+  );
 
   rmSync(upstream, { recursive: true, force: true });
   rmSync(clonePath, { recursive: true, force: true });

@@ -106,10 +106,9 @@ export function parsePreviousWorkflowVerifyPane(
  * never name a tab that has since stopped holding the run (nor one it merely inherited from its own
  * environment); pane and tab come from a single observation and cannot disagree.
  *
- * `null` means the tab is unsafe to rebuild, and the caller must surface an error rather than lay
- * out part of it: the anchor is absent or not this run's parent pane, a second pane claims to be the
- * parent, or a pane in the tab belongs to another run or to nobody — rebuilding around any of those
- * would move a pane outside this run's scope.
+ * `null` means the tab is unsafe to rebuild: the anchor is absent or not this run's parent pane.
+ * Panes belonging to another run or to nobody are ignored, so layout only moves panes this run
+ * owns.
  */
 export function parseWorkflowRunTab(
   stdout: string,
@@ -146,8 +145,8 @@ export function parseWorkflowRunTab(
     if (pane?.tab_id !== tabId) continue;
     const paneId = pane?.pane_id;
     const kind = workflowHerdrPaneKind(pane?.label, runId);
+    if (kind === null) continue;
     if (!isHerdrId(paneId) || pane?.workspace_id !== workspaceId) return null;
-    if (kind === null) return null;
     // A second parent pane in the tab means the anchor is not the only candidate, so which pane the
     // grid is built around would again depend on who asked. Refuse instead of picking one.
     if (kind === "parent" && paneId !== anchorPaneId) return null;
@@ -224,31 +223,25 @@ export function workflowPaneGridPlan(paneIds: string[]): WorkflowPaneGridPlan {
 
 /**
  * The Herdr command seam `layoutWorkflowTab` drives. It runs one `herdr` invocation against the
- * caller's session and returns its stdout when `captureStdout` is set, "" otherwise. Any failure
- * (spawn error, signal, non-zero exit) must throw; layoutWorkflowTab surfaces it as a
- * WorkflowPaneLayoutError rather than continuing a half-applied rebuild.
+ * caller's session and returns its stdout when `captureStdout` is set, "" otherwise.
  */
 export type WorkflowPaneLayoutHerdr = (
   args: string[],
   opts?: { captureStdout?: boolean },
 ) => string;
 
-export class WorkflowPaneLayoutError extends Error {
-  constructor(detail: string) {
-    super(`failed to layout Workflow panes: ${detail}`);
-    this.name = "WorkflowPaneLayoutError";
-  }
-}
-
 function runLayoutCommand(
   herdr: WorkflowPaneLayoutHerdr,
   args: string[],
   captureStdout = false,
-): string {
+): string | null {
   try {
     return herdr(args, { captureStdout });
   } catch (e: any) {
-    throw new WorkflowPaneLayoutError(e?.message ?? String(e));
+    console.error(
+      `warning: skipped Workflow pane layout after "${args.join(" ")}" failed: ${e?.message ?? String(e)}`,
+    );
+    return null;
   }
 }
 
@@ -263,8 +256,8 @@ function runLayoutCommand(
  * one pane the rebuild never moves. Whatever else goes wrong, the parent agent stays where it was.
  *
  * Every mutation is `--no-focus`: layout is ancillary to a launch that already happened, so it must
- * never steal focus from an unrelated tab (the regression in 65cda7cf). Failures throw
- * WorkflowPaneLayoutError and are left for a human — no cleanup or retry of a partial rebuild.
+ * never steal focus from an unrelated tab (the regression in 65cda7cf). Failures are left for a
+ * human — no cleanup or retry of a partial rebuild.
  */
 export function layoutWorkflowTab(input: {
   anchorPaneId: string;
@@ -273,11 +266,13 @@ export function layoutWorkflowTab(input: {
 }): void {
   const { anchorPaneId, runId, herdr } = input;
   const paneList = runLayoutCommand(herdr, ["pane", "list"], true);
+  if (paneList === null) return;
   const tab = parseWorkflowRunTab(paneList, anchorPaneId, runId);
   if (!tab) {
-    throw new WorkflowPaneLayoutError(
-      `pane ${anchorPaneId} is not the only parent pane of a tab holding just run #${runId}'s panes`,
+    console.error(
+      `warning: skipped Workflow pane layout because pane ${anchorPaneId} is not a resolvable parent pane for run #${runId}`,
     );
+    return;
   }
   const plan = workflowPaneGridPlan(tab.paneIds);
   if (plan.stagingPaneIds.length === 0) return;
@@ -287,45 +282,55 @@ export function layoutWorkflowTab(input: {
     ["tab", "create", "--workspace", tab.workspaceId, "--no-focus"],
     true,
   );
+  if (created === null) return;
   const stagingTabId = parseHerdrTabId(created);
   const stagingRootPaneId = parseHerdrRootPaneId(created);
   if (!stagingTabId || !stagingRootPaneId) {
-    throw new WorkflowPaneLayoutError("herdr tab create returned invalid JSON");
+    console.error(
+      "warning: skipped Workflow pane layout because herdr tab create returned invalid JSON",
+    );
+    return;
   }
 
   // Do not defensively run `pane zoom --off` here: Herdr 0.7.1 focuses an explicitly targeted
   // pane even when it is already unzoomed. Every mutation in this staged rebuild must stay no-focus.
   for (const paneId of plan.stagingPaneIds) {
-    runLayoutCommand(herdr, [
-      "pane",
-      "move",
-      paneId,
-      "--tab",
-      stagingTabId,
-      "--split",
-      "down",
-      "--target-pane",
-      stagingRootPaneId,
-      "--ratio",
-      "0.5",
-      "--no-focus",
-    ]);
+    if (
+      runLayoutCommand(herdr, [
+        "pane",
+        "move",
+        paneId,
+        "--tab",
+        stagingTabId,
+        "--split",
+        "down",
+        "--target-pane",
+        stagingRootPaneId,
+        "--ratio",
+        "0.5",
+        "--no-focus",
+      ]) === null
+    )
+      return;
   }
   for (const placement of plan.placements) {
-    runLayoutCommand(herdr, [
-      "pane",
-      "move",
-      placement.paneId,
-      "--tab",
-      tab.tabId,
-      "--split",
-      placement.split,
-      "--target-pane",
-      placement.targetPaneId,
-      "--ratio",
-      String(placement.ratio),
-      "--no-focus",
-    ]);
+    if (
+      runLayoutCommand(herdr, [
+        "pane",
+        "move",
+        placement.paneId,
+        "--tab",
+        tab.tabId,
+        "--split",
+        placement.split,
+        "--target-pane",
+        placement.targetPaneId,
+        "--ratio",
+        String(placement.ratio),
+        "--no-focus",
+      ]) === null
+    )
+      return;
   }
   runLayoutCommand(herdr, ["tab", "close", stagingTabId]);
 }

@@ -1,7 +1,7 @@
 # LoopHub Web UI
 
-React SPA (Vite + TypeScript + Tailwind) for LoopHub. `lh-web` embeds Vite in middleware
-mode, so a single process serves the API (`/rpc`) and the SPA (with HMR) on one
+React SPA (Vite + TypeScript + Tailwind) for LoopHub. `lh-web` builds the SPA at startup and
+serves the resulting `dist/` itself, so a single process serves the API (`/rpc`) and the UI on one
 port — no separate dev server.
 
 > Note: the components use a shadcn-style design system (Tailwind + `cn`/`cva` tokens,
@@ -22,11 +22,12 @@ From the repo root:
 ```sh
 npm install
 npm --prefix web install # also run by the root postinstall; explicit so it works with ignore-scripts=true
-npm run lh-web          # http://localhost:8730 — API + UI + HMR, one process
+npm run lh-web          # http://localhost:8730 — API + UI, one process
 ```
 
-Open http://localhost:8730. Editing files under `web/src` hot-reloads the browser.
-`lh-web` mounts Vite (middleware mode) for everything except `/rpc` and `/attachments` routes.
+Open http://localhost:8730. Startup runs `vite build` (a few seconds) and everything after that is
+static file serving: there is no HMR client and no dev WebSocket in the page, so editing a source
+file never moves a screen you are working in. **Restart `lh-web` to pick up a source change.**
 
 There is no standalone Vite dev server or API proxy. The SPA is always served same-origin, same
 process, by its own `lh-web`, and `src/api/client.ts` always uses a same-origin base — there is no
@@ -51,8 +52,8 @@ when done.
 | `npm run build` | Type-check + production build to `dist/` |
 | `npm run test` | Vitest |
 
-`lh-web`'s default static handler can also serve a built `dist/` (Vite-free) as a fallback;
-the embedded Vite path is the primary dev flow.
+`lh-web` runs the same production build itself at startup and then serves `dist/` through its
+static handler; `npm run build` is the same thing plus a type-check, on demand.
 
 ## API client
 

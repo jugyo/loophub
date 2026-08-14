@@ -84,7 +84,7 @@ export const sessions = {
 
   workflowUsageTarget(repoId: number, prNumber: number, sessionId: string) {
     const run = S.runningWorkflowRunForSession(repoId, prNumber, sessionId);
-    return run?.parent_session_id
+    return run
       ? { runId: run.id, parentSessionId: run.parent_session_id }
       : null;
   },

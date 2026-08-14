@@ -13,6 +13,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
 let DB: typeof import("./db.ts");
+let statusSync: typeof import("./github-status-sync.ts");
 let repoPath: string;
 let ghNumber = 2000;
 
@@ -24,6 +25,7 @@ beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
   DB = await import("./db.ts");
+  statusSync = await import("./github-status-sync.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-gh-pr-status-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -109,6 +111,49 @@ test("githubStatus serves the cache within the TTL without calling gh again (#85
   await svc.pulls.githubStatus("me/proj", number, deps);
   await svc.pulls.githubStatus("me/proj", number, deps);
   expect(calls).toBe(1);
+});
+
+test("the eager status sweep fills the same cache used by githubStatus (#152)", async () => {
+  const number = await openGithubLinkedPull();
+  let calls = 0;
+  const result = await statusSync.syncGithubPrStatus({
+    fetchStatus: async () => {
+      calls++;
+      return SAMPLE;
+    },
+  });
+
+  expect(result.checked).toBeGreaterThan(0);
+  expect(result.refreshed).toBeGreaterThan(0);
+  expect(calls).toBe(result.refreshed);
+  expect(
+    await svc.pulls.githubStatus("me/proj", number, depsReturning(SAMPLE)),
+  ).toMatchObject({ state: "open", checks: "failure" });
+});
+
+test("the eager status sweep keeps stale cache data when GitHub fails (#152)", async () => {
+  const number = await openGithubLinkedPull();
+  await svc.pulls.githubStatus("me/proj", number, depsReturning(SAMPLE));
+  const repo = await svc.repos.get("me/proj");
+  const issueId = S.getIssue(repo!.id, number)!.id;
+  DB.db.run("UPDATE github_pull_status SET synced_at = ? WHERE issue_id = ?", [
+    "2000-01-01T00:00:00Z",
+    issueId,
+  ]);
+  const result = await statusSync.syncGithubPrStatus({
+    fetchStatus: async () => {
+      throw new Error("gh network error");
+    },
+  });
+
+  expect(result.failures).toBeGreaterThan(0);
+  await expect(
+    svc.pulls.githubStatus("me/proj", number, {
+      fetchStatus: async () => {
+        throw new Error("should not fetch while cache is fresh");
+      },
+    }),
+  ).resolves.toMatchObject({ state: "open" });
 });
 
 test("githubStatus falls back to the stale cache when a past-TTL refetch fails (#850)", async () => {

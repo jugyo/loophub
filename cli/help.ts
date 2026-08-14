@@ -11,7 +11,7 @@ Usage:
 
 Options:
   --title <text>          Issue title (required, non-empty).
-  --body <text>           Markdown issue body.
+  --body <text>           Markdown issue body; @file reads a file and - reads stdin.
   --label <name,...>      Comma-separated labels.
   --ac <text>             Structured acceptance criterion (repeatable, non-blank).
   --workspace <name>      Active registered workspace whose branch becomes the target.
@@ -101,7 +101,7 @@ Usage:
 
 Options:
   --title <text>        New pull request title.
-  --body <text>         New Markdown body.
+  --body <text>         New Markdown body; @file reads a file and - reads stdin.
   --repo <owner/name>   Repository (defaults to the repository at the current path).
   --session-id <uuid>   Attribute the update to a registered agent session.
   --json                Print the updated pull request as JSON.
@@ -117,7 +117,7 @@ Usage:
   lh pr comment react <comment> --pr <number> --emoji <emoji> [options]
 
 Options:
-  --body <text>         Comment body.
+  --body <text>         Comment body; @file reads a file and - reads stdin.
   --pr <number>         Target pull request (required for react).
   --emoji <emoji>       Reaction emoji (required for react).
   --repo <owner/name>   Repository (defaults to the repository at the current path).
@@ -140,7 +140,7 @@ Usage:
 Options:
   --pr <number>         Target pull request (required by the conversation-scoped actions).
   --run <id>            Workflow run whose unanswered conversations pending returns.
-  --body <text>         Comment body for create and reply.
+  --body <text>         Comment body for create and reply; @file reads a file and - reads stdin.
   --base-sha <sha>      Base commit the anchor was taken against (create).
   --head-sha <sha>      Head commit the anchor was taken against (create).
   --path <path>         Anchored file path (create).
@@ -169,7 +169,7 @@ Usage:
 
 Options:
   --event <verdict>       Review verdict: comment (default), pass, or request_changes.
-  --body <text>           Review summary.
+  --body <text>           Review summary; @file reads a file and - reads stdin.
   --commit <sha>          Pin the review to this head commit (defaults to the current PR head).
   --comments <json|file>  Line comments as [{ "path", "line", "side"?, "body" }].
   --ac-results <json|file>
@@ -201,7 +201,7 @@ Usage:
 Options:
   --review <id>          Target review (required).
   --review-comment <id>  Optional review comment within the target review.
-  --body <text>          Response body (required for add).
+  --body <text>          Response body (required for add); @file reads a file and - reads stdin.
   --repo <owner/name>    Repository (defaults to the repository at the current path).
   --session-id <uuid>    Attribute the response to a registered agent session.
   --json                 Print the response or response list as JSON.
@@ -235,7 +235,7 @@ Usage:
   lh workflow escalate --reason <text> [options]
 
 Options:
-  --reason <text>       Short summary of what the child needs from a human (required).
+  --reason <text|@file|-> Short summary; @file reads a file and - reads stdin (required).
   --run <id>            Workflow run (defaults to LOOPHUB_WORKFLOW_RUN).
   --repo <owner/name>   Repository (defaults to LOOPHUB_WORKFLOW_REPO, then the current path).
   --session-id <uuid>   Attribute the escalation to a registered agent session.
@@ -251,7 +251,7 @@ Usage:
 Options:
   --event <id>              The event whose GitHub references the parent read.
   --requires-changes <bool> The parent's verdict on those references.
-  --note <text|->           A direct human instruction; - reads the instruction from stdin.
+  --note <text|@file|->     A direct human instruction; @file reads a file and - reads stdin.
   --repo <owner/name>       Repository (defaults to the repository at the current path).
   --json                    Print the action, observations, and structured instructions as JSON.
   --help                    Show this help without reading or changing the database.

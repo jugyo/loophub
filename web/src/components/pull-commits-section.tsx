@@ -329,7 +329,7 @@ function AcGradeCounts({ reviews }: { reviews: PullReview[] }) {
   );
 }
 
-function ReviewDetailsDialog({
+export function ReviewDetailsDialog({
   owner,
   repo,
   label,

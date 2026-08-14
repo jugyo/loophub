@@ -318,6 +318,26 @@
       }
     },
     {
+      "name": "repos/fetchFromOrigin",
+      "description": "Run `git fetch origin` in the repo's checkout and return the refreshed origin sync state. Only remote-tracking refs move — the working tree and the checked-out branch are untouched, so it also works on a detached HEAD.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "repos/setAgentConfig",
       "description": "Set the repo's Coding agent override: toggle plus runtime/model/effort, or falls back to app defaults when off (#1532).",
       "params": {
@@ -903,6 +923,41 @@
           "repo",
           "run",
           "expected_limit_usd",
+          "session_id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "workflowRuns/increaseReworkLimit",
+      "description": "Increase a rework-held Workflow run's limit by its current fixed limit.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "run",
+          "expected_limit",
           "session_id"
         ],
         "additionalProperties": false

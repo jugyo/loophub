@@ -18,6 +18,8 @@ import {
 import { ServiceError } from "../errors.ts";
 import {
   type DiffFile,
+  type DiffFileSummary,
+  diffFileSummariesBetween,
   diffFilesBetween,
   fileAtRef,
   localBranchRef,
@@ -125,7 +127,7 @@ function contentLines(content: string): string[] {
   return lines;
 }
 
-function pathsForFile(file: DiffFile): Set<string> {
+function pathsForFile(file: DiffFileSummary): Set<string> {
   return new Set(
     [file.filename, file.headFilename, file.previousFilename].filter(
       (path): path is string => path != null,
@@ -133,10 +135,10 @@ function pathsForFile(file: DiffFile): Set<string> {
   );
 }
 
-function currentFileForAnchor(
-  files: DiffFile[],
+function currentFileForAnchor<File extends DiffFileSummary>(
+  files: File[],
   thread: S.DiffFeedbackThreadRow,
-): DiffFile | null {
+): File | null {
   const originalPaths = new Set(
     [thread.path, thread.original_path].filter(
       (path): path is string => path != null,
@@ -491,12 +493,22 @@ function parseLocation(row: S.DiffFeedbackLocationRow): {
   };
 }
 
+/**
+ * The diff a thread listing reads: every changed file by name, plus the patch of the files whose
+ * patch the caller resolved. `fallbackLocation` is the only reader of `patch`, and it only runs for
+ * a thread whose location has not been precomputed yet — so `diffFeedback.list` resolves the patch
+ * of just those threads' files instead of the whole PR's (#120), while `pageData.pullDetail` passes
+ * the full `DiffFile[]` it already computed for Files changed.
+ */
+type DiffFeedbackDiffFile = DiffFileSummary & { patch?: string };
+
 function fallbackLocation(
-  files: DiffFile[],
+  files: DiffFeedbackDiffFile[],
   thread: S.DiffFeedbackThreadRow,
 ): ResolvedThreadLocation {
   const file = currentFileForAnchor(files, thread);
-  const lines = file ? parsePatchWithCoordinates(file.patch) : null;
+  const lines =
+    file?.patch != null ? parsePatchWithCoordinates(file.patch) : null;
   return {
     anchor: null,
     freshness: "unavailable",
@@ -685,7 +697,11 @@ function threadForPull(
 export function diffFeedbackForDiff(
   name: string,
   number: number,
-  diff: { baseSha: string; headSha: string; files: DiffFile[] } | null,
+  diff: {
+    baseSha: string;
+    headSha: string;
+    files: DiffFeedbackDiffFile[];
+  } | null,
   scope: { path?: string; orphaned?: boolean } = {},
   actor?: string,
 ): DiffFeedbackListWire {
@@ -715,6 +731,50 @@ export function diffFeedbackForDiff(
   };
 }
 
+/**
+ * The diff `diffFeedback.list` reads, resolved as cheaply as the threads allow.
+ *
+ * Which files changed comes from the one `git diff --raw --numstat -z` the names need. Patch text
+ * is only read by `fallbackLocation`, i.e. only for threads whose location `precompute` has not
+ * written yet, so it is fetched for the files those threads anchor to and no others — a PR whose
+ * locations are all cached resolves no patch at all (#120). The file is asked for under every path
+ * it is known by, so a rename still reaches git's rename detection through the pathspec.
+ */
+async function listDiffFiles(
+  repoPath: string,
+  issueId: number,
+  pair: { baseSha: string; headSha: string },
+  threads: S.DiffFeedbackThreadRow[],
+): Promise<DiffFeedbackDiffFile[]> {
+  const summaries = await diffFileSummariesBetween(
+    repoPath,
+    pair.baseSha,
+    pair.headSha,
+  );
+  const cached = new Set(
+    S.listDiffFeedbackLocations(issueId, pair.baseSha, pair.headSha).map(
+      ({ thread_id }) => thread_id,
+    ),
+  );
+  const paths = new Set<string>();
+  for (const thread of threads) {
+    if (cached.has(thread.id)) continue;
+    const file = currentFileForAnchor(summaries, thread);
+    if (file) for (const path of pathsForFile(file)) paths.add(path);
+  }
+  if (paths.size === 0) return summaries;
+  const patched = await diffFilesBetween(repoPath, pair.baseSha, pair.headSha, {
+    paths: [...paths],
+  });
+  const patchByFile = new Map(
+    patched.map((file) => [file.filename, file.patch]),
+  );
+  return summaries.map((summary) => {
+    const patch = patchByFile.get(summary.filename);
+    return patch == null ? summary : { ...summary, patch };
+  });
+}
+
 export const diffFeedback = {
   async list(
     name: string,
@@ -729,10 +789,11 @@ export const diffFeedback = {
     const diff = pair
       ? {
           ...pair,
-          files: await diffFilesBetween(
+          files: await listDiffFiles(
             r.local_path,
-            pair.baseSha,
-            pair.headSha,
+            row.id,
+            pair,
+            S.listDiffFeedbackThreads(row.id),
           ),
         }
       : null;

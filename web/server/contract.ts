@@ -202,6 +202,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.repos.pullFromOrigin(p.name),
   },
+  "repos/fetchFromOrigin": {
+    description:
+      "Run `git fetch origin` in the repo's checkout and return the refreshed origin sync state. Only remote-tracking refs move — the working tree and the checked-out branch are untouched, so it also works on a detached HEAD.",
+    params: params({ name: repo }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.repos.fetchFromOrigin(p.name),
+  },
   "repos/setAgentConfig": {
     description:
       "Set the repo's Coding agent override: toggle plus runtime/model/effort, or falls back to app defaults when off (#1532).",
@@ -459,6 +466,26 @@ export const methods: Record<string, MethodDef> = {
       svc.workflowRuns.increaseCostLimitForHuman(
         p.repo,
         { run: p.run, expectedLimitUsd: p.expected_limit_usd },
+        p.session_id,
+      ),
+  },
+  "workflowRuns/increaseReworkLimit": {
+    description:
+      "Increase a rework-held Workflow run's limit by its current fixed limit.",
+    params: params(
+      {
+        repo,
+        run: positiveInt,
+        expected_limit: positiveInt,
+        session_id: sid,
+      },
+      ["repo", "run", "expected_limit", "session_id"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.workflowRuns.increaseReworkLimitForHuman(
+        p.repo,
+        { run: p.run, expectedLimit: p.expected_limit },
         p.session_id,
       ),
   },

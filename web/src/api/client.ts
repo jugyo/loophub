@@ -289,6 +289,14 @@ export function pullRepoFromOrigin(owner: string, repo: string) {
   });
 }
 
+// #71: refresh the repo's remote-tracking refs from origin (git fetch origin), answering with the
+// refreshed sync state. Unlike pull, this never moves the checkout's branch.
+export function fetchRepoFromOrigin(owner: string, repo: string) {
+  return rpc<RepoOriginSync>("repos/fetchFromOrigin", {
+    name: full(owner, repo),
+  });
+}
+
 // #1532: resolved Coding agent view (raw override + effective config) for the settings UI.
 export function getRepoAgentConfig(owner: string, repo: string) {
   return rpc<RepoAgentConfig>("repos/agentConfig", { name: full(owner, repo) });
@@ -454,6 +462,25 @@ export function increaseWorkflowRunCostLimit(
     repo,
     run,
     expected_limit_usd: expectedLimitUsd,
+    session_id: sessionId,
+  });
+}
+
+/** Raise a rework-held run's limit by its current limit. */
+export function increaseWorkflowRunReworkLimit(
+  repo: string,
+  run: number,
+  expectedLimit: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{
+    run: number;
+    previous_limit: number;
+    current_limit: number;
+  }>("workflowRuns/increaseReworkLimit", {
+    repo,
+    run,
+    expected_limit: expectedLimit,
     session_id: sessionId,
   });
 }
