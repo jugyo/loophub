@@ -536,6 +536,56 @@ describe("PullDetail", () => {
     expect(within(section).queryByText("LGTM")).toBeNull();
   });
 
+  it("opens the commit diff dialog for the selected timeline commit", async () => {
+    renderDetail({
+      "repos/commitFiles": () => files,
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "Comments (2)" })
+    ).closest("section")!;
+    const commitButton = within(section).getByRole("button", {
+      name: "View timeline changes in bbbbbbb: Earlier change",
+    });
+    expect(commitButton.tagName).toBe("BUTTON");
+    expect(commitButton.hasAttribute("disabled")).toBe(false);
+    commitButton.focus();
+    fireEvent.click(commitButton);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Changes in bbbbbbb: Earlier change",
+    });
+    expect(await within(dialog).findByText("+const x = 1;")).toBeTruthy();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: /Changes in bbbbbbb/ })).toBe(
+      null,
+    );
+  });
+
+  it("opens the review details dialog for the selected timeline review", async () => {
+    renderDetail();
+
+    const section = (
+      await screen.findByRole("heading", { name: "Comments (2)" })
+    ).closest("section")!;
+    const reviewButton = within(section).getByRole("button", {
+      name: "View review for aaaaaaa",
+    });
+    expect(reviewButton.tagName).toBe("BUTTON");
+    expect(reviewButton.hasAttribute("disabled")).toBe(false);
+    reviewButton.focus();
+    fireEvent.click(reviewButton);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    expect(within(dialog).getByText("LGTM")).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Close reviews" }),
+    );
+    expect(screen.queryByRole("dialog", { name: /Reviews for/ })).toBe(null);
+  });
+
   // #300/#307: the activity entries (commits and reviews) connect along a vertical
   // line, the same pattern the workflow run history uses — but a conversation comment breaks the
   // line and renders as its own card, not on it.

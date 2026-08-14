@@ -26,7 +26,9 @@ import {
 import type {
   IssueComment,
   PullFile,
+  PullLineComment,
   PullRequest,
+  PullReview,
   PullTimelineItem,
 } from "@/api/types";
 import {
@@ -36,6 +38,7 @@ import {
 } from "@/components/comment-archive";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
 import { CommentMetadata } from "@/components/comment-metadata";
+import { CommitDiffDialog } from "@/components/commit-diff-dialog";
 import { CopyButton } from "@/components/copy-button";
 import {
   DetailHeaderTitle,
@@ -46,7 +49,10 @@ import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { Markdown } from "@/components/markdown";
-import { PullCommitsSection } from "@/components/pull-commits-section";
+import {
+  PullCommitsSection,
+  ReviewDetailsDialog,
+} from "@/components/pull-commits-section";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import {
   DiffFeedbackHistory,
@@ -115,6 +121,11 @@ export function PullDetail({
   // #145: which file's diff dialog is open. Owned here — above Files changed — so a timeline line
   // comment (in CommentList) can open the same dialog Files changed renders.
   const [openFilename, setOpenFilename] = useState<string | null>(null);
+  const [timelineCommit, setTimelineCommit] = useState<{
+    sha: string;
+    subject: string;
+  } | null>(null);
+  const [timelineReview, setTimelineReview] = useState<PullReview | null>(null);
   // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
   // otherwise, and the sidebar section is hidden anyway when github_pull is absent (#850).
   const githubStatusQuery = useGithubPrStatus(
@@ -143,6 +154,24 @@ export function PullDetail({
   }
 
   const pull = pullQuery.data;
+  const timelineReviewGroup = timelineReview
+    ? (reviewsQuery.data ?? []).filter(
+        (review) => review.head_sha === timelineReview.head_sha,
+      )
+    : [];
+  const timelineReviewCommit = timelineReview
+    ? (pull.commits ?? []).find(
+        (commit) => commit.sha === timelineReview.head_sha,
+      )
+    : null;
+  const timelineReviewComments = new Map<number, PullLineComment[]>();
+  for (const comment of lineCommentsQuery.data ?? []) {
+    if (comment.pull_request_review_id == null) continue;
+    const comments =
+      timelineReviewComments.get(comment.pull_request_review_id) ?? [];
+    comments.push(comment);
+    timelineReviewComments.set(comment.pull_request_review_id, comments);
+  }
   return (
     // The whole PR detail is a two-column layout (#346): the main column (header, commit/review
     // timeline, diff, comments) on the left and the Sessions sidebar on the right, from the top
@@ -197,6 +226,33 @@ export function PullDetail({
               isReviewsError={false}
               showGithubPushState={!!pull.github_pull}
             />
+            {timelineCommit ? (
+              <CommitDiffDialog
+                owner={owner}
+                repo={repo}
+                sha={timelineCommit.sha}
+                subject={timelineCommit.subject}
+                onClose={() => setTimelineCommit(null)}
+              />
+            ) : null}
+            {timelineReview ? (
+              <ReviewDetailsDialog
+                owner={owner}
+                repo={repo}
+                label={
+                  timelineReviewCommit
+                    ? `${timelineReviewCommit.sha.slice(0, 7)}: ${timelineReviewCommit.subject}`
+                    : timelineReview.head_sha.slice(0, 7)
+                }
+                reviews={
+                  timelineReviewGroup.length > 0
+                    ? timelineReviewGroup
+                    : [timelineReview]
+                }
+                commentsByReview={timelineReviewComments}
+                onClose={() => setTimelineReview(null)}
+              />
+            ) : null}
             <FilesChanged
               owner={owner}
               repo={repo}
@@ -216,6 +272,8 @@ export function PullDetail({
               number={number}
               timeline={pageQuery.data?.timeline}
               comments={commentsQuery.data}
+              onOpenCommit={setTimelineCommit}
+              onOpenReview={setTimelineReview}
               isLoading={false}
               isError={false}
             />
@@ -973,6 +1031,8 @@ function timelineItemContent(
   context: {
     owner: string;
     repo: string;
+    onOpenCommit: (commit: { sha: string; subject: string }) => void;
+    onOpenReview: (review: PullReview) => void;
     reaction: ReturnType<typeof useReactToPullComment>;
     archive: ReturnType<typeof useSetPullCommentArchived>;
     showError: (message: string) => void;
@@ -980,9 +1040,13 @@ function timelineItemContent(
 ) {
   switch (item.kind) {
     case "commit":
-      return <TimelineCommitItem item={item} />;
+      return (
+        <TimelineCommitItem item={item} onOpenCommit={context.onOpenCommit} />
+      );
     case "review":
-      return <TimelineReviewItem item={item} />;
+      return (
+        <TimelineReviewItem item={item} onOpenReview={context.onOpenReview} />
+      );
     case "comment":
       return (
         <CommentCard
@@ -1005,6 +1069,8 @@ function CommentList({
   number,
   timeline,
   comments,
+  onOpenCommit,
+  onOpenReview,
   isLoading,
   isError,
 }: {
@@ -1013,6 +1079,8 @@ function CommentList({
   number: number;
   timeline: PullTimelineItem[] | undefined;
   comments: IssueComment[] | undefined;
+  onOpenCommit: (commit: { sha: string; subject: string }) => void;
+  onOpenReview: (review: PullReview) => void;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -1100,6 +1168,8 @@ function CommentList({
   const itemContext = {
     owner,
     repo,
+    onOpenCommit,
+    onOpenReview,
     reaction,
     archive,
     showError,
@@ -1363,27 +1433,33 @@ const REVIEW_VERDICT: Record<string, { tone: BadgeTone; label: string }> = {
 // to the bordered comment cards (PR comment #288).
 function TimelineCommitItem({
   item,
+  onOpenCommit,
 }: {
   item: Extract<PullTimelineItem, { kind: "commit" }>;
+  onOpenCommit: (commit: { sha: string; subject: string }) => void;
 }) {
   const shortSha = item.commit.sha.slice(0, 7);
   return (
-    <article
-      data-debug-component="TimelineCommit"
-      className="flex items-center gap-2 px-1 py-0.5"
-    >
-      <code className="shrink-0 rounded bg-muted px-1 py-px text-[10px] leading-4 text-muted-foreground">
-        {shortSha}
-      </code>
-      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-        {item.commit.subject}
-      </span>
-      <span className="shrink-0 text-xs text-muted-foreground/80">
-        {item.commit.author} ·{" "}
-        <time dateTime={item.created_at} title={item.created_at}>
-          {relativeTime(item.created_at)}
-        </time>
-      </span>
+    <article data-debug-component="TimelineCommit" className="px-1 py-0.5">
+      <button
+        type="button"
+        aria-label={`View timeline changes in ${shortSha}: ${item.commit.subject}`}
+        onClick={() => onOpenCommit(item.commit)}
+        className="flex w-full min-w-0 items-center gap-2 rounded text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <code className="shrink-0 rounded bg-muted px-1 py-px text-[10px] leading-4 text-muted-foreground">
+          {shortSha}
+        </code>
+        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+          {item.commit.subject}
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground/80">
+          {item.commit.author} ·{" "}
+          <time dateTime={item.created_at} title={item.created_at}>
+            {relativeTime(item.created_at)}
+          </time>
+        </span>
+      </button>
     </article>
   );
 }
@@ -1393,8 +1469,10 @@ function TimelineCommitItem({
 // (PR comment #313).
 function TimelineReviewItem({
   item,
+  onOpenReview,
 }: {
   item: Extract<PullTimelineItem, { kind: "review" }>;
+  onOpenReview: (review: PullReview) => void;
 }) {
   const review = item.review;
   const verdict =
@@ -1402,7 +1480,12 @@ function TimelineReviewItem({
     ({ tone: "review-commented", label: review.state } as const);
   return (
     <article data-debug-component="TimelineReview" className="px-1 py-0.5">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+      <button
+        type="button"
+        aria-label={`View review for ${review.head_sha.slice(0, 7)}`}
+        onClick={() => onOpenReview(review)}
+        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded text-left text-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
         <Badge tone={verdict.tone}>{verdict.label}</Badge>
         <CommentAuthorLabel
           author={review.user.login}
@@ -1431,7 +1514,7 @@ function TimelineReviewItem({
             {formatDuration(review.duration_seconds)}
           </span>
         ) : null}
-      </div>
+      </button>
     </article>
   );
 }
