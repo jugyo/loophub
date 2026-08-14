@@ -702,18 +702,22 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 （書かれるが読まれない、あるいは読まれるが書かれない）になるため、途中で止めると中途半端な二重管理が
 残る。I5–I8 は I4 の後であれば独立に出せる。
 
-| # | issue | 主に触る場所 | 依存 |
-|---|---|---|---|
-| I1 | manifest の型と validation | `core/workflow/manifest.ts`（新規） | — |
-| I2 | `manifest_version` 列 | `core/migrations.ts` / `core/store/workflows.ts` | — |
-| I3 | `start()` が manifest を書く | `core/service/workflow-runs.ts` / `core/workflow/run-files.ts` | I1, I2 |
-| I4 | launch 3 経路が manifest を読む | `core/service/workflow-runs.ts` | I3 |
-| I5 | effort を argv に通し、起動時パラメータを記録 | `core/terminal/terminal-launch.ts` / `cli/commands/workflow.ts` / `core/migrations.ts` | I4 |
-| I6 | `lh workflow manifest show\|path` | `cli/commands/workflow.ts` | I4 |
-| I7 | Web の表示を正しい出所に繋ぐ | `core/serialize-status.ts` / `web/src/components/linked-pull-summary.tsx` | I4, I5 |
-| I8 | 既存ドキュメントの更新 | `docs/` | I4 |
+| # | issue | 起票 | 主に触る場所 | 依存 |
+|---|---|---|---|---|
+| I1 | manifest の型と validation | #221 | `core/workflow/manifest.ts`（新規） | — |
+| I2 | `manifest_version` 列 | #222 | `core/migrations.ts` / `core/store/workflows.ts` | — |
+| I3 | `start()` が manifest を書く | #223 | `core/service/workflow-runs.ts` / `core/workflow/run-files.ts` | I1, I2 |
+| I4 | launch 3 経路が manifest を読む | #224 | `core/service/workflow-runs.ts` | I3 |
+| I5 | effort を argv に通し、起動時パラメータを記録 | #225 | `core/terminal/terminal-launch.ts` / `cli/commands/workflow.ts` / `core/migrations.ts` | I4 |
+| I6 | `lh workflow manifest show\|path` | #226 | `cli/commands/workflow.ts` | I4 |
+| I7 | Web の表示を正しい出所に繋ぐ | #227 | `core/serialize-status.ts` / `web/src/components/linked-pull-summary.tsx` | I4, I5 |
+| I8 | 既存ドキュメントの更新 | #228 | `docs/` | I4 |
 
 I1 と I2 は並行できる。I5–I8 も互いに独立。
+
+起票済み（#221–#228）。workspace / label はどちらも `workflow-manifest`。issue のタイトルは実施順の番号を
+持ち、本節の I1–I8 と 1 対 1 に対応する（I1 = 「1. …」= #221）。並行できる組み合わせは上記のとおりで、
+番号は厳密な直列順ではなく依存を満たす既定の進め方を表す。
 
 ---
 
