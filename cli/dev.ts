@@ -103,7 +103,6 @@ export function resolveDevRuntime(flags: {
   claudeCode?: boolean;
   codex?: boolean;
   grok?: boolean;
-  cursor?: boolean;
   opencode?: boolean;
   defaultRuntime?: DevRuntime;
 }): DevRuntime {
@@ -111,7 +110,6 @@ export function resolveDevRuntime(flags: {
     "claude-code": flags.claudeCode,
     codex: flags.codex,
     grok: flags.grok,
-    cursor: flags.cursor,
     opencode: flags.opencode,
   };
   const selected = CODING_AGENTS.filter((id) => passed[id]);

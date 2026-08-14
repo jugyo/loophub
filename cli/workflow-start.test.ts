@@ -2,7 +2,6 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -122,7 +121,6 @@ function fakeRuntime(
   const claude = join(dir, "claude");
   const codex = join(dir, "codex");
   const grok = join(dir, "grok");
-  const cursor = join(dir, "cursor-agent");
   const opencode = join(dir, "opencode");
   const sessionName = herdrSessionName({
     full_name: REPO,
@@ -195,10 +193,6 @@ exit 0
   writeFileSync(codex, '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n');
   writeFileSync(grok, '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n');
   writeFileSync(
-    cursor,
-    '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
-  );
-  writeFileSync(
     opencode,
     '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
   );
@@ -206,7 +200,6 @@ exit 0
   chmodSync(claude, 0o755);
   chmodSync(codex, 0o755);
   chmodSync(grok, 0o755);
-  chmodSync(cursor, 0o755);
   chmodSync(opencode, 0o755);
   return { dir, focusedStatePath, log };
 }
@@ -1727,70 +1720,6 @@ test("workflow start --grok launches the grok runtime without requiring claude",
     expect(log).not.toContain("--session-id");
     expect(log).toContain("--always-approve");
     expect(log).not.toContain("--force");
-  } finally {
-    rmSync(runtime.dir, { recursive: true, force: true });
-  }
-});
-
-test("workflow start --cursor launches Cursor Agent with its verified flags", () => {
-  const issueOut = run([
-    "issue",
-    "create",
-    "--repo",
-    REPO,
-    "--title",
-    "Cursor parent session",
-    "--body",
-    "Do it with Cursor",
-  ]);
-  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
-  if (!issue) throw new Error(issueOut.stdout);
-  const runtime = fakeRuntime();
-  try {
-    const cursorHome = join(runtime.dir, "home");
-    mkdirSync(cursorHome);
-    const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--cursor",
-        "--herdr",
-      ],
-      {
-        HOME: cursorHome,
-        PATH: `${runtime.dir}:${process.env.PATH}`,
-        HERDR_LOG: runtime.log,
-      },
-    );
-    expect(started.exitCode, started.stderr).toBe(0);
-    const log = readFileSync(runtime.log, "utf8");
-    expect(log).toMatch(/pane send-text \S+ .*\bcursor-agent '/);
-    expect(log).toContain("'--model' 'auto'");
-    expect(log).toContain("--force");
-    expect(log).toContain("'--sandbox' 'disabled'");
-    expect(log).toContain("--approve-mcps");
-    expect(log).not.toContain("--trust");
-    expect(log).not.toContain("--print");
-    expect(log).not.toContain("--session-id");
-    const worktree = started.stdout.match(/worktree\t(.+)/)?.[1]?.trim();
-    expect(worktree).toBeTruthy();
-    const canonicalWorktree = realpathSync(worktree!);
-    const marker = join(
-      cursorHome,
-      ".cursor",
-      "projects",
-      canonicalWorktree.replace(/^\//, "").replaceAll("/", "-"),
-      ".workspace-trusted",
-    );
-    expect(JSON.parse(readFileSync(marker, "utf8"))).toMatchObject({
-      workspacePath: canonicalWorktree,
-      trustMethod: "cli-flag",
-    });
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

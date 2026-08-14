@@ -13,7 +13,6 @@ vi.mock("@/queries/settings", () => ({
         "claude-code": { model: "opus", effort: "medium" },
         codex: { model: "gpt-5.5", effort: "medium" },
         grok: { model: "grok-code-fast-1", effort: "medium" },
-        cursor: { model: "auto", effort: "" },
         opencode: {
           model: "opencode/big-pickle",
           effort: "",

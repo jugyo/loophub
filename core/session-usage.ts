@@ -693,10 +693,6 @@ export function defaultGrokSessionsDir(): string {
   return join(homedir(), ".grok", "sessions");
 }
 
-export function defaultCursorProjectsDir(): string {
-  return join(homedir(), ".cursor", "projects");
-}
-
 // OpenCode 1.18.x persists sessions in a single SQLite database under the XDG data
 // home (default ~/.local/share/opencode/opencode.db). Token totals live on both the
 // session row and assistant message JSON; model ids are provider/model pairs.
@@ -704,15 +700,6 @@ export function defaultOpencodeDbPath(): string {
   const dataHome =
     process.env.XDG_DATA_HOME?.trim() || join(homedir(), ".local", "share");
   return join(dataHome, "opencode", "opencode.db");
-}
-
-export function encodeCursorProjectCwd(cwd: string): string {
-  return cwd
-    .replace(/^[\\/]+/, "")
-    .split(/[\\/]/)
-    .map((component) => component.replace(/^\.+/, ""))
-    .filter(Boolean)
-    .join("-");
 }
 
 // Grok Build stores sessions under ~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/.
@@ -730,31 +717,6 @@ export interface OpencodeSessionCandidate extends TranscriptCandidate {
   parentSessionId: string | null;
   directory: string;
   entries: UsageEntry[];
-}
-
-export interface CursorTranscriptCandidate extends TranscriptCandidate {
-  sessionId: string;
-  createdAtMs: number;
-}
-
-export interface CursorHeadlessResult {
-  sessionId: string;
-  result: string;
-}
-
-export function parseCursorHeadlessResult(
-  text: string,
-): CursorHeadlessResult | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  const row = objectValue(parsed);
-  const sessionId = stringValue(row?.session_id);
-  if (row?.type !== "result" || !sessionId) return null;
-  return { sessionId, result: stringValue(row.result) ?? "" };
 }
 
 export function createClaudeTranscriptIndex(
@@ -1115,41 +1077,6 @@ export function findGrokSessionUpdates(input: {
       mtimeMs: st.mtimeMs,
       sessionId: dirent.name,
       entries,
-    });
-  }
-  return out.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-// Cursor stores one transcript at
-// ~/.cursor/projects/<path-with-slashes-as-dashes>/agent-transcripts/<chatId>/<chatId>.jsonl.
-// Correlate by cwd because Cursor does not accept a caller-provided chat id.
-export function findCursorTranscripts(input: {
-  cwd: string;
-  projectsDir?: string;
-}): CursorTranscriptCandidate[] {
-  const projectsDir = input.projectsDir ?? defaultCursorProjectsDir();
-  if (!input.cwd || !existsSync(input.cwd) || !existsSync(projectsDir))
-    return [];
-  const transcriptsDir = join(
-    projectsDir,
-    encodeCursorProjectCwd(realpathSync(input.cwd)),
-    "agent-transcripts",
-  );
-  if (!existsSync(transcriptsDir)) return [];
-
-  const out: CursorTranscriptCandidate[] = [];
-  for (const dirent of readdirSync(transcriptsDir, { withFileTypes: true })) {
-    if (!dirent.isDirectory()) continue;
-    const path = join(transcriptsDir, dirent.name, `${dirent.name}.jsonl`);
-    if (!existsSync(path)) continue;
-    const st = statSync(path);
-    if (!st.isFile()) continue;
-    out.push({
-      path,
-      size: st.size,
-      mtimeMs: st.mtimeMs,
-      createdAtMs: st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs,
-      sessionId: dirent.name,
     });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));

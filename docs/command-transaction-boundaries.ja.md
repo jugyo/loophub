@@ -110,7 +110,7 @@ write の間に外部 I/O が挟まっている場合は、read を DB 区間の
   一つの区間で行う
 - `sessions.usageSync` — runtime module が transcript の走査と読み出しと相関を済ませて sync plan を組み、
   その後 executor が cohort ごとの write を一区間にする。cohort は同じ transcript 群を取り合う session の
-  集まり（Cursor の同一 cwd）で、取り合いのない runtime では session 単位になる
+  集まり（同一 cwd）で、取り合いのない runtime では session 単位になる
 - `workflowRuns.start` — run row と `workflow_run.started` を一区間にし、parent contract file の
   書き出しはその後に置く
 

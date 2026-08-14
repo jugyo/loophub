@@ -49,7 +49,7 @@ In particular, **without herdr you cannot start a workflow** — the core featur
 | **Node.js >= 22.12.0** | Run LoopHub (CLI / Web / worker) | [nodejs.org](https://nodejs.org) |
 | **git** | Repo registration, worktrees, branches, diffs, merges | Your OS package manager or installer |
 | **herdr** | Terminal multiplexer that launches and places agents. `lh workflow start` calls it directly | `brew install herdr` — [herdr.dev](https://herdr.dev) |
-| **A coding-agent CLI (at least one)** | The process that writes code | e.g. `claude`, `codex`, `grok`, `cursor-agent`, `opencode` |
+| **A coding-agent CLI (at least one)** | The process that writes code | e.g. `claude`, `codex`, `grok`, `opencode` |
 
 ## Quick start
 

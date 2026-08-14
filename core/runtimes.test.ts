@@ -24,14 +24,6 @@ test("every runtime defines the auto-approve argv the launch paths append", () =
     "--dangerously-bypass-approvals-and-sandbox",
   ]);
   expect(RUNTIMES.grok.autoApproveArgs).toEqual(["--always-approve"]);
-  expect(RUNTIMES.cursor).toMatchObject({
-    bin: "cursor-agent",
-    buildFlag: "--cursor",
-    defaultModel: "auto",
-    effortSuggestions: [],
-    autoApproveArgs: ["--force", "--sandbox", "disabled", "--approve-mcps"],
-  });
-  expect(CODING_AGENTS).toContain("cursor");
   expect(RUNTIMES.opencode).toMatchObject({
     bin: "opencode",
     buildFlag: "--opencode",

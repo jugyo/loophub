@@ -1,11 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,14 +8,11 @@ import {
   aggregateUsage,
   calculateCostUsd,
   claudeContextWindowForModel,
-  encodeCursorProjectCwd,
   findCodexRollouts,
-  findCursorTranscripts,
   findOpencodeSessions,
   parseClaudeSubagentJsonl,
   parseClaudeUsageJsonl,
   parseCodexRolloutJsonl,
-  parseCursorHeadlessResult,
   parseGrokTurnUsages,
   parseGrokUpdatesJsonl,
   priceForModel,
@@ -144,74 +134,6 @@ function writeOpencodeFixtureDb(
   }
   db.close();
 }
-
-test("parseCursorHeadlessResult reads the structured chat identifier", () => {
-  expect(
-    parseCursorHeadlessResult(
-      JSON.stringify({
-        type: "result",
-        session_id: "cursor-chat-id",
-        result: "Created issue",
-      }),
-    ),
-  ).toEqual({ sessionId: "cursor-chat-id", result: "Created issue" });
-  expect(parseCursorHeadlessResult("not json")).toBeNull();
-});
-
-test("findCursorTranscripts locates chat transcripts by encoded cwd", () => {
-  const root = mkdtempSync(join(tmpdir(), "lh-cursor-projects-"));
-  const projectsDir = join(root, "projects");
-  const cwd = join(root, "repo-worktree");
-  mkdirSync(cwd);
-  const transcriptDir = join(
-    projectsDir,
-    encodeCursorProjectCwd(realpathSync(cwd)),
-    "agent-transcripts",
-    "chat-1",
-  );
-  mkdirSync(transcriptDir, { recursive: true });
-  writeFileSync(
-    join(transcriptDir, "chat-1.jsonl"),
-    JSON.stringify({ role: "assistant", message: { content: [] } }),
-  );
-  expect(findCursorTranscripts({ cwd, projectsDir })).toMatchObject([
-    { sessionId: "chat-1" },
-  ]);
-  rmSync(root, { recursive: true, force: true });
-});
-
-test("findCursorTranscripts canonicalizes a symlinked cwd like Cursor trust", () => {
-  const root = mkdtempSync(join(tmpdir(), "lh-cursor-symlink-"));
-  const workspace = join(root, "workspace");
-  const symlink = join(root, "worktree-link");
-  const projectsDir = join(root, "projects");
-  mkdirSync(workspace);
-  symlinkSync(workspace, symlink, "dir");
-  const transcriptDir = join(
-    projectsDir,
-    encodeCursorProjectCwd(realpathSync(symlink)),
-    "agent-transcripts",
-    "chat-via-symlink",
-  );
-  mkdirSync(transcriptDir, { recursive: true });
-  writeFileSync(
-    join(transcriptDir, "chat-via-symlink.jsonl"),
-    JSON.stringify({ role: "assistant", message: { content: [] } }),
-  );
-
-  expect(findCursorTranscripts({ cwd: symlink, projectsDir })).toMatchObject([
-    { sessionId: "chat-via-symlink" },
-  ]);
-  rmSync(root, { recursive: true, force: true });
-});
-
-test("encodeCursorProjectCwd matches Cursor for dot-prefixed path components", () => {
-  expect(
-    encodeCursorProjectCwd(
-      "/Users/example/.loophub/worktrees/acme/widgets/pr-42",
-    ),
-  ).toBe("Users-example-loophub-worktrees-acme-widgets-pr-42");
-});
 
 test("parseClaudeUsageJsonl extracts assistant usage and dedupes message ids", () => {
   const text = [

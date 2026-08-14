@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
-import { ensureCursorWorkspaceTrusted } from "../../core/cursor-workspace.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { buildRuntimeFlags } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
@@ -233,9 +232,6 @@ async function launchParentHerdr(input: {
   // attach it has no TTY for.
   detach?: boolean;
 }): Promise<void> {
-  if (input.runtime === "cursor") {
-    ensureCursorWorkspaceTrusted(input.worktree);
-  }
   const env = { LOOPHUB_SESSION_ID: input.sessionId };
   const command = agentCommandLine({
     env,
@@ -311,7 +307,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --cursor | --opencode] [--model <name>] [--herdr] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode] [--model <name>] [--herdr] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -341,7 +337,6 @@ async function startWorkflow(): Promise<void> {
     claudeCode: flags["claude-code"] === true,
     codex: flags.codex === true,
     grok: flags.grok === true,
-    cursor: flags.cursor === true,
     opencode: flags.opencode === true,
     defaultRuntime: agentCfg.effective.runtime,
   });
@@ -492,9 +487,6 @@ async function launchStep(): Promise<void> {
         actorSessionId,
       ),
     );
-  if (result.runtime === "cursor") {
-    ensureCursorWorkspaceTrusted(result.worktree);
-  }
   launchedAt = new Date().toISOString();
   const outcome = await executeHerdrLaunchPlan(result.herdr, async (argv) => {
     const proc = spawnSync(argv[0], argv.slice(1), {

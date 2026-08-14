@@ -50,8 +50,8 @@ export interface RuntimeFlagsInput {
   // `--model <name>` for every runtime (sanitized; omitted when empty).
   model?: string;
   // Reasoning effort. claude: `--effort <level>`; codex: `-c model_reasoning_effort=<level>`;
-  // grok/cursor/opencode ignore it: grok has no verified effort flag; cursor encodes effort in the
-  // model id; OpenCode's `--variant` exists only on `opencode run`, not on the interactive TUI that
+  // grok/opencode ignore it: grok has no verified effort flag; OpenCode's `--variant` exists only on
+  // the `opencode run` command, not on the interactive TUI that
   // every LoopHub launch path uses (passing it makes the TUI print help and exit 1).
   effort?: string;
   // claude-only: `--session-id <id>`. Other runtimes correlate through their transcript metadata.
@@ -109,7 +109,7 @@ export function buildRuntimeFlags(input: RuntimeFlagsInput): string[] {
     args.push("--prompt");
     return args;
   }
-  if (runtime === "grok" || runtime === "cursor") {
+  if (runtime === "grok") {
     const args = runtimeApprovalArgs(runtime);
     args.push(...modelFlag(input.model));
     return args;
@@ -141,11 +141,5 @@ export function buildRuntimeFlags(input: RuntimeFlagsInput): string[] {
 // hand-written builders produced it, so every existing launch path emits byte-identical argv.
 export function buildRuntimeArgs(input: RuntimeArgsInput): string[] {
   const flags = buildRuntimeFlags(input);
-  // Cursor only accepts --trust together with --print. This builder serves the headless launches;
-  // herdr launches use buildRuntimeFlags() and stay interactive multi-turn processes, appending
-  // their prompt as a `"$(cat …)"` positional instead (see agentCommandLine).
-  if (input.runtime === "cursor") {
-    flags.push("--print", "--trust", "--output-format", "json");
-  }
   return [...flags, runtimePrompt(input)];
 }

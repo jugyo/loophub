@@ -284,8 +284,7 @@ export const methods: Record<string, MethodDef> = {
     params: params({
       agent: codingAgentEnum,
       model: strNonEmpty,
-      // Cursor has no independent effort setting and persists the empty string as its canonical
-      // value. Runtime-specific validation remains in the settings service.
+      // Runtime-specific validation remains in the settings service.
       effort: str,
       codingAgent: codingAgentEnum,
       devCostLimitUsd,

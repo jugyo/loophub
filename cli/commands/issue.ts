@@ -7,7 +7,6 @@ import {
   LH_ISSUE_CREATE_SESSION_AGENT,
   SESSION_KIND_ISSUE_CREATE,
 } from "../../core/session-runtime.ts";
-import { parseCursorHeadlessResult } from "../../core/session-usage.ts";
 import { issueCreatePrompt } from "../../core/workflow/issue-create-prompt.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
@@ -40,7 +39,6 @@ export async function run(): Promise<void> {
         claudeCode: flags["claude-code"] === true,
         codex: flags.codex === true,
         grok: flags.grok === true,
-        cursor: flags.cursor === true,
         opencode: flags.opencode === true,
       });
     } catch (e: any) {
@@ -120,7 +118,6 @@ export async function run(): Promise<void> {
       claudeCode: flags["claude-code"] === true,
       codex: flags.codex === true,
       grok: flags.grok === true,
-      cursor: flags.cursor === true,
       opencode: flags.opencode === true,
       defaultRuntime: agentCfg.effective.runtime,
     });
@@ -165,8 +162,7 @@ export async function run(): Promise<void> {
     // session reads it and links the session to whatever issue it files (the number is unknown
     // here, so the link is recorded after creation — see the create branch below).
     const proc = spawnSync(runtimeBin, runtimeArgs, {
-      encoding: runtime === "cursor" ? "utf8" : undefined,
-      stdio: runtime === "cursor" ? ["inherit", "pipe", "inherit"] : "inherit",
+      stdio: "inherit",
       cwd: r.local_path,
       env: {
         ...process.env,
@@ -191,20 +187,6 @@ export async function run(): Promise<void> {
       fail(
         `failed to launch ${runtimeBin}: terminated by signal ${proc.signal}`,
       );
-    }
-    if (runtime === "cursor" && typeof proc.stdout === "string") {
-      const result = parseCursorHeadlessResult(proc.stdout);
-      if (result) {
-        await runOp(() =>
-          s.sessions.recordExternalSession({
-            sessionId,
-            externalSession: result.sessionId,
-          }),
-        );
-        if (result.result) process.stdout.write(`${result.result}\n`);
-      } else if (proc.stdout) {
-        process.stdout.write(proc.stdout);
-      }
     }
     process.exit(proc.status ?? 1);
   } else if (sub === "create") {

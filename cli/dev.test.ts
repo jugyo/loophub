@@ -244,14 +244,6 @@ test("resolveDevRuntime rejects grok combined with another runtime flag", () => 
   ).toThrow(/mutually exclusive/);
 });
 
-test("resolveDevRuntime selects cursor and keeps runtime flags mutually exclusive", () => {
-  expect(resolveDevRuntime({ cursor: true })).toBe("cursor");
-  expect(resolveDevRuntime({ defaultRuntime: "cursor" })).toBe("cursor");
-  expect(() => resolveDevRuntime({ cursor: true, codex: true })).toThrow(
-    /mutually exclusive/,
-  );
-});
-
 test("resolveDevRuntime selects opencode and keeps runtime flags mutually exclusive", () => {
   expect(resolveDevRuntime({ opencode: true })).toBe("opencode");
   expect(resolveDevRuntime({ defaultRuntime: "opencode" })).toBe("opencode");
@@ -407,32 +399,6 @@ test("buildRuntimeLaunch returns grok and Grok argv for grok", () => {
   expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toMatch(
     /^grok /,
   );
-});
-
-test("buildRuntimeLaunch returns cursor-agent with verified headless flags", () => {
-  const launch = buildRuntimeLaunch({
-    runtime: "cursor",
-    sessionId: "sid-1",
-    slashCommand: "Create an issue.",
-    model: "gpt-5.3-codex-high",
-    effort: "high",
-  });
-  expect(launch).toEqual({
-    bin: "cursor-agent",
-    args: [
-      "--force",
-      "--sandbox",
-      "disabled",
-      "--approve-mcps",
-      "--model",
-      "gpt-5.3-codex-high",
-      "--print",
-      "--trust",
-      "--output-format",
-      "json",
-      "Create an issue.",
-    ],
-  });
 });
 
 test("buildRuntimeLaunch returns opencode with --auto/--model/--prompt (effort not forwarded)", () => {

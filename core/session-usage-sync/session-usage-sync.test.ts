@@ -1,10 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,13 +18,11 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let D: typeof import("../db.ts");
 let S: typeof import("../store.ts");
-let SU: typeof import("../session-usage.ts");
 let sync: typeof import("./index.ts");
 
 beforeAll(async () => {
   D = await import("../db.ts");
   S = await import("../store.ts");
-  SU = await import("../session-usage.ts");
   sync = await import("./index.ts");
 });
 
@@ -111,27 +103,6 @@ function writeCodexRollout(
   );
 }
 
-function writeCursorTranscript(
-  projectsDir: string,
-  cwd: string,
-  chatId: string,
-) {
-  const dir = join(
-    projectsDir,
-    SU.encodeCursorProjectCwd(realpathSync(cwd)),
-    "agent-transcripts",
-    chatId,
-  );
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, `${chatId}.jsonl`),
-    JSON.stringify({
-      role: "assistant",
-      message: { content: [{ type: "text", text: chatId }] },
-    }),
-  );
-}
-
 function writeClaudeTranscript(projectsDir: string, sessionId: string) {
   const projectDir = join(projectsDir, "repo-worktree");
   mkdirSync(projectDir, { recursive: true });
@@ -176,12 +147,6 @@ function planFor(cohorts: SessionUsageSyncCohort[], sessionId: string) {
     .find((plan) => plan.sessionId === sessionId)!;
 }
 
-function cohortFor(cohorts: SessionUsageSyncCohort[], sessionId: string) {
-  return cohorts.find((cohort) =>
-    cohort.plans.some((plan) => plan.sessionId === sessionId),
-  )!;
-}
-
 test("planning routes each session to its runtime module without touching the DB", () => {
   const repo = createRepoWithPath("me/plan-readonly");
   const codexSession = registerSession("codex");
@@ -200,18 +165,11 @@ test("planning routes each session to its runtime module without touching the DB
   const projectsDir = mkdtempSync(join(tmpdir(), "lh-claude-"));
   writeClaudeTranscript(projectsDir, claudeSession.id);
 
-  const cursorSession = registerSession("cursor", { kind: "issue-create" });
-  const cursorIssue = S.createIssue(repo.id, "issue", "cursor", "", "me");
-  S.linkSession(cursorSession.id, cursorIssue.id);
-  const cursorProjectsDir = mkdtempSync(join(tmpdir(), "lh-cursor-"));
-  writeCursorTranscript(cursorProjectsDir, repo.local_path, "chat-readonly");
-
-  const rows = [codexSession, claudeSession, cursorSession];
+  const rows = [codexSession, claudeSession];
   const before = usageTableSnapshot();
   const cohorts = sync.planSessionUsageSync(rows, {
     codexSessionsDir,
     projectsDir,
-    cursorProjectsDir,
   });
   expect(usageTableSnapshot()).toEqual(before);
 
@@ -224,21 +182,14 @@ test("planning routes each session to its runtime module without touching the DB
   expect(planFor(cohorts, claudeSession.id).messageIds).toEqual([
     `${claudeSession.id}-msg-1`,
   ]);
-  expect(planFor(cohorts, cursorSession.id).externalSession).toBe(
-    "chat-readonly",
-  );
 
   // The plans still describe unapplied work; only the executor writes.
   const applied = sync.applySessionUsageSync(cohorts);
   expect(applied.get(codexSession.id)?.status).toBe("updated");
   expect(S.listSessionUsage(codexSession.id)).toHaveLength(1);
-  expect(S.getAgentSession(cursorSession.id)?.external_session).toBe(
-    "chat-readonly",
-  );
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
   rmSync(projectsDir, { recursive: true, force: true });
-  rmSync(cursorProjectsDir, { recursive: true, force: true });
 });
 
 test("the Codex module plans one worktree aggregate and supersedes its peers", () => {
@@ -294,46 +245,6 @@ test("the Codex module plans one worktree aggregate and supersedes its peers", (
   expect(S.listSessionUsage(peer.id)).toEqual([]);
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
-});
-
-test("the Cursor module groups sessions sharing a transcript pool into one cohort", () => {
-  const repo = createRepoWithPath("me/cursor-cohort");
-  const cursorProjectsDir = mkdtempSync(join(tmpdir(), "lh-cursor-cohort-"));
-  writeCursorTranscript(cursorProjectsDir, repo.local_path, "chat-a");
-  writeCursorTranscript(cursorProjectsDir, repo.local_path, "chat-b");
-
-  const createdAt = new Date(Date.now() - 1_000).toISOString();
-  const first = registerSession("cursor", {
-    kind: "issue-create",
-    createdAt,
-  });
-  const second = registerSession("cursor", {
-    kind: "issue-create",
-    createdAt,
-  });
-  for (const session of [first, second]) {
-    const issue = S.createIssue(repo.id, "issue", "cursor", "", "me");
-    S.linkSession(session.id, issue.id);
-  }
-  const unlinked = registerSession("cursor", { kind: "issue-create" });
-
-  const cohorts = sync.planSessionUsageSync([first, second, unlinked], {
-    cursorProjectsDir,
-  });
-  expect(cohortFor(cohorts, first.id)).toBe(cohortFor(cohorts, second.id));
-  expect(cohortFor(cohorts, unlinked.id)).not.toBe(
-    cohortFor(cohorts, first.id),
-  );
-  expect(cohortFor(cohorts, unlinked.id).plans).toHaveLength(1);
-  expect(planFor(cohorts, unlinked.id).report.status).toBe("missing");
-  expect(
-    new Set([
-      planFor(cohorts, first.id).externalSession,
-      planFor(cohorts, second.id).externalSession,
-    ]),
-  ).toEqual(new Set(["chat-a", "chat-b"]));
-
-  rmSync(cursorProjectsDir, { recursive: true, force: true });
 });
 
 test("the executor rolls back every plan in a cohort when one of them fails", () => {

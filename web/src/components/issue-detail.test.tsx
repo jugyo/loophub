@@ -124,7 +124,6 @@ function mockFetch(
           effort: "medium",
         },
         grok: { model: "grok-4.5", effort: "medium" },
-        cursor: { model: "auto", effort: "" },
         opencode: {
           model: "opencode/big-pickle",
           effort: "medium",
@@ -672,7 +671,6 @@ describe("IssueDetail", () => {
           number: 28,
           title: "archived attempt",
           state: "closed",
-          agent_runtime: "cursor-agent",
           agent_model: "composer-1",
           total_tokens: 12_000,
           cost_usd: 3.4,

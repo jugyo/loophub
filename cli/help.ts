@@ -46,7 +46,6 @@ Options:
   --claude-code          Launch Claude Code.
   --codex                Launch Codex.
   --grok                 Launch Grok Build.
-  --cursor               Launch Cursor Agent.
   --opencode             Launch OpenCode.
   --model <name>         Override the selected runtime's default model.
   --effort <level>       Override the selected runtime's reasoning effort when supported.
@@ -79,7 +78,7 @@ Options:
   --agent <kind>        Agent or launcher kind.
   --session <id>        Runtime session identifier.
   --name <text>         Human-readable session name.
-  --runtime <runtime>   Runtime: claude-code, codex, grok, cursor, or opencode.
+  --runtime <runtime>   Runtime: claude-code, codex, grok, or opencode.
   --model <name>        Runtime model identifier.
   --kind <kind>         Session kind such as dev, review, or issue-create.
   --help                Show this help without changing the database.`;

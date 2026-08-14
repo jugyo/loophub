@@ -47,10 +47,7 @@ export function listAgentSessions(): AgentSessionRow[] {
     .all() as AgentSessionRow[];
 }
 
-// The default usage sweep's candidate set (#1119): sessions linked to an open PR, plus Cursor
-// issue-create sessions linked to an open issue. Cursor's structured headless result normally
-// records the chat id immediately, while this second set also lets maintenance correlate older or
-// interrupted launches from the repository transcript.
+// The default usage sweep's candidate set (#1119): sessions linked to an open PR.
 export function listSessionsForUsageSweep(): AgentSessionRow[] {
   return db
     .query(
@@ -59,12 +56,7 @@ export function listSessionsForUsageSweep(): AgentSessionRow[] {
        JOIN session_links l ON l.session_id = s.id
        JOIN issues i ON i.id = l.issue_id
        LEFT JOIN pulls p ON p.issue_id = i.id
-       WHERE (
-         i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND p.archived_at IS NULL
-       ) OR (
-         i.kind = 'issue' AND i.state = 'open' AND s.runtime = 'cursor'
-         AND s.kind = 'issue-create'
-       )
+       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND p.archived_at IS NULL
        ORDER BY s.updated_at DESC`,
     )
     .all() as AgentSessionRow[];

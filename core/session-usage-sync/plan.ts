@@ -18,6 +18,7 @@ export interface SessionUsageSyncOptions {
   projectsDir?: string;
   codexSessionsDir?: string;
   grokSessionsDir?: string;
+  /** @deprecated Ignored; retained only for compatibility with pre-removal callers. */
   cursorProjectsDir?: string;
   /** Path to OpenCode's opencode.db (default ~/.local/share/opencode/opencode.db). */
   opencodeDbPath?: string;

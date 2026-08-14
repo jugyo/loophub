@@ -10,13 +10,13 @@ export function usage(): void {
   lh repo favorite <owner/repo>   lh repo unfavorite <owner/repo>
   lh repo update --repo owner/name [--default-branch main] [--path /abs/path]
   lh repo remove --repo owner/name
-  lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code|codex|grok|cursor|opencode] [--model <name>] [--kind dev|review|issue-create]
+  lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code|codex|grok|opencode] [--model <name>] [--kind dev|review|issue-create]
   lh session list
   lh session usage [confirm] [--session <id>] [--json]
   lh session usage sync [--session <id>] [--full] [--json]
   lh session usage recalculate [--session <id>] [--json]
   lh issue search|list|view|create|import|update|comment|close|label  [--repo owner/repo]
-  lh issue new [--repo owner/name] [--claude-code | --codex | --grok | --cursor | --opencode] [--model <name>] [--effort <level>] [--target-branch <branch>] [--prompt <text>]
+  lh issue new [--repo owner/name] [--claude-code | --codex | --grok | --opencode] [--model <name>] [--effort <level>] [--target-branch <branch>] [--prompt <text>]
   lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|review-response|close|reopen  [--repo owner/repo]
@@ -24,7 +24,7 @@ export function usage(): void {
   lh notification send --kind merge_ready|over_budget|human_attention|agent_comment --title <text> --body <text|@file|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|archive|delete <name> [--repo <owner/name>] [--workflow-id <id>] [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage workflow prompt bundles
-  lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok | --cursor | --opencode] [--model <name>] [--herdr] [--no-launch]   # start a Workflow run (default runtime/model from app settings; agents launch in auto mode)
+  lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok | --opencode] [--model <name>] [--herdr] [--no-launch]   # start a Workflow run (default runtime/model from app settings; agents launch in auto mode)
   lh workflow run advance-to-verify|request-rework --run <id> [--repo owner/name]
   lh workflow run activate-step --run <id> --step execute --session <id> [--repo owner/name]
   lh workflow run await-human --run <id> --reason <text|@file|-> [--repo owner/name]

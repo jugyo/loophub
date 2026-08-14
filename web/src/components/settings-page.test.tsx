@@ -32,7 +32,6 @@ const DEFAULT_AGENT_SETTINGS: Record<
   "claude-code": { model: "opus", effort: "medium" },
   codex: { model: "gpt-5.5", effort: "medium" },
   grok: { model: "grok-code-fast-1", effort: "medium" },
-  cursor: { model: "auto", effort: "" },
   opencode: { model: "opencode/big-pickle", effort: "" },
 };
 
@@ -123,7 +122,7 @@ describe("SettingsPage", () => {
     const group = await screen.findByRole("radiogroup", {
       name: "Coding agent",
     });
-    expect(within(group).getAllByRole("radio")).toHaveLength(5);
+    expect(within(group).getAllByRole("radio")).toHaveLength(4);
     expect(within(group).getByText("Claude Code")).toBeTruthy();
     expect(within(group).getByText("OpenCode")).toBeTruthy();
     expect(within(group).queryByText("—")).toBeNull();
@@ -141,19 +140,12 @@ describe("SettingsPage", () => {
   it("omits the effort when it is unset or the agent has no effort levels", async () => {
     renderSettings("claude-code", 10, {
       "claude-code": { model: "opus", effort: "" },
-      cursor: { model: "auto", effort: "high" },
     });
     const withoutEffort = await screen.findByRole("button", {
       name: "Claude Code model",
     });
     expect(withoutEffort.textContent).toBe("Opus");
     expect(withoutEffort.getAttribute("title")).toBe("Opus");
-    // Cursor Agent offers no effort levels, so a stale saved value stays hidden.
-    const unsupported = screen.getByRole("button", {
-      name: "Cursor Agent model",
-    });
-    expect(unsupported.textContent).toBe("Auto");
-    expect(unsupported.getAttribute("title")).toBe("Auto");
   });
 
   it("marks and persists the default agent", async () => {

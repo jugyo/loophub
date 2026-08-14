@@ -896,7 +896,7 @@ describe("RepoSettingsPage", () => {
     const agents = await screen.findByRole("radiogroup", {
       name: "Coding agent",
     });
-    expect(within(agents).getAllByRole("radio")).toHaveLength(5);
+    expect(within(agents).getAllByRole("radio")).toHaveLength(4);
     expect(
       (within(agents).getByRole("radio", { name: "Codex" }) as HTMLInputElement)
         .checked,
