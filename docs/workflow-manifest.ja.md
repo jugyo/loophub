@@ -28,7 +28,7 @@ run が子を起動するとき、その argv とプロンプトを決める値�
 | step prompt | `workflows.execute_prompt` / `workflows.verify_prompt` | **子の launch のたびに live 読み取り** |
 | contract 本文 | `core/workflow/contracts/{parent,execute,verify}.{md,ja.md}` | ソース固定（LoopHub 所有。実行時の設定では変わらない） |
 | cost 上限 | `workflow_runs.cost_increment_usd` / `cost_limit_usd`（開始時に `devCostLimitUsd()` から pin） | run 開始時 |
-| rework 上限 | `workflow_runs.rework_limit`（既定は `WORKFLOW_REWORK_LIMIT` = 8）。走行中に増やせる | run 開始時 + 人間が増やしたとき |
+| rework 上限 | `workflow_runs.rework_limit`（migration `087`。既定は `WORKFLOW_REWORK_LIMIT` = 8）。`increaseWorkflowRunReworkLimit()` で走行中に増やせる | run 開始時 + 人間が増やしたとき |
 | branch（head / base） | `pulls.head_ref` / `pulls.base_ref` | PR 作成時 |
 | worktree path | 保存せず `resolveWorktreeIdentity(head_ref, pr_number)` + `worktreeRoot()` から毎回導出 | 参照のたび |
 
@@ -666,7 +666,7 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 3. **cost 上限 / rework 上限を manifest に入れるか。** どちらも「設定に見えるが、実際は走行中に人間が
    増やす per-run state」である。cost 側は `increaseWorkflowRunCostLimit()` が
    `cost_limit_usd = cost_limit_usd + cost_increment_usd` を SQL の CAS で実行し、rework 側も
-   `workflow_runs.rework_limit` を同様に増やす。manifest 側を権威にすると値を SQL に渡す形へ変える必要が
+   `increaseWorkflowRunReworkLimit()` が `workflow_runs.rework_limit`（migration `087`）を同様に増やす。manifest 側を権威にすると値を SQL に渡す形へ変える必要が
    あり、cost hold の receipt 粒度（(run, 累計上限) 単位）とも噛み合わせが要る。**§3 の分類では
    configuration ではなく state に属する**というのが現時点の整理であり、v1 では対象外とした。
 4. **Web に manifest の編集 UI を出すか。** v1 は表示のみ。編集を出すなら、走行中の run に対する
@@ -679,10 +679,8 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
 6. **`prompts` に parent を足すか。** 現在 parent の振る舞いは contract のみで決まり、ユーザー設定可能な
    parent prompt は存在しない。manifest がその器を持つべきかは、workflow 設計 §1 の前提（設定できるのは
    step prompt だけ）と直接ぶつかる。
-7. **走行中の run で Execute の configuration を差し替える経路を持つべきか。** §5.5 のとおり、現状その
-   手段は無い。`launch-step` は parent 限定（`assertParentActor()`）で人間の入口が無く、child を止めても
-   `active_step` / `active_session_id` が残り、`requestRework()` が rework のたびにそれを最新 Execute
-   session へ向け直すためである。G2 を Execute についても満たすなら、次のいずれかが要る。
+7. **走行中の run で Execute の configuration を差し替える経路を持つべきか。** 現状その手段が無い理由は
+   §5.5 に書いた。G2 を Execute についても満たすなら、次のいずれかが要る。
 
    - **人間が Execute child を明示的に終了できる操作**（active 2 列の clear を含む）。ただし
      `assertNoLiveExecuteChild()` は #2150 の二重起動を防ぐために入った guard なので、緩めるのではなく
