@@ -1604,6 +1604,12 @@ export const MIGRATIONS: Migration[] = [
       ON pull_file_views(issue_id, path, id);
     `,
   ),
+  addColumn(
+    "088-workflow-runs-manifest-version",
+    "workflow_runs",
+    "manifest_version",
+    "INTEGER",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

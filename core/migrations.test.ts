@@ -114,6 +114,7 @@ test("migration ID は一意で append-only の宣言順を維持する", () => 
     "003-create-issue-search-grams",
   ]);
   expect(ids.at(-1)).toBe("20260820211533-pull-file-views");
+  expect(ids).toContain("088-workflow-runs-manifest-version");
 });
 
 test("新しい migration ID は UTC timestamp と説明名を使う", () => {
