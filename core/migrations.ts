@@ -6,6 +6,11 @@ import type { Db } from "./db.ts";
 // `id` of an existing one — an id is the ledger key that records "this database already ran that
 // step". Editing the body of an already-released migration is equally off-limits; write a new one.
 //
+// 新しい migration を追加するときは `npm run migration:new -- descriptive-name` を実行する。
+// スクリプトが現在の UTC 秒を使った ID と entry の雛形を出力するので、実装した entry を
+// この配列の末尾に追加する。数値 prefix、ランダムな suffix、連番は追加せず、ID の重複は
+// 作者が解決すべき明示的なエラーとして扱う。
+//
 // Ledger choice: a `schema_migrations` table keyed by the migration id, not `PRAGMA user_version`.
 // Every database that predates this module carries `user_version = 0` while having applied an
 // unknown subset of the steps below, so a single monotonic integer cannot express what has already
@@ -21,6 +26,54 @@ import type { Db } from "./db.ts";
 export interface Migration {
   id: string;
   run: (db: Db) => void;
+}
+
+const LEGACY_MIGRATION_ID = /^\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const TIMESTAMP_MIGRATION_ID = /^\d{14}-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MIGRATION_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * 新しい migration の ID を作る。
+ *
+ * migration ID は UTC の秒精度を使い、ランダムな suffix や連番を付けない。同じ秒に別の
+ * migration が作られた場合は、宣言側で重複を解決する。
+ */
+export function createMigrationId(
+  name: string,
+  now: Date = new Date(),
+): string {
+  if (!MIGRATION_NAME.test(name)) {
+    throw new Error(
+      `migration name は lowercase kebab-case で指定してください: ${name}`,
+    );
+  }
+  const timestamp = [
+    now.getUTCFullYear().toString().padStart(4, "0"),
+    (now.getUTCMonth() + 1).toString().padStart(2, "0"),
+    now.getUTCDate().toString().padStart(2, "0"),
+    now.getUTCHours().toString().padStart(2, "0"),
+    now.getUTCMinutes().toString().padStart(2, "0"),
+    now.getUTCSeconds().toString().padStart(2, "0"),
+  ].join("");
+  return `${timestamp}-${name}`;
+}
+
+function validateMigrationIds(migrations: Migration[]): void {
+  const seen = new Set<string>();
+  for (const migration of migrations) {
+    if (
+      !LEGACY_MIGRATION_ID.test(migration.id) &&
+      !TIMESTAMP_MIGRATION_ID.test(migration.id)
+    ) {
+      throw new Error(
+        `migration ID が不正です: ${migration.id}; NNN-name または YYYYMMDDHHMMSS-name を指定してください`,
+      );
+    }
+    if (seen.has(migration.id)) {
+      throw new Error(`migration ID が重複しています: ${migration.id}`);
+    }
+    seen.add(migration.id);
+  }
 }
 
 function columnExists(db: Db, table: string, column: string): boolean {
@@ -1451,6 +1504,7 @@ export function runMigrations(
   db: Db,
   migrations: Migration[] = MIGRATIONS,
 ): string[] {
+  validateMigrationIds(migrations);
   db.exec(LEDGER_SCHEMA);
   // Read the ledger once up front so the steady state (everything applied) costs one query and
   // opens no transaction at all.

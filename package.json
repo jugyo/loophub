@@ -36,6 +36,7 @@
     "serve": "concurrently --kill-others --names web,git,github,agents,dispatcher,queue \"npm run lh-web\" \"npm run lh-watcher-git\" \"npm run lh-watcher-github\" \"npm run lh-watcher-agents\" \"npm run lh-dispatcher\" \"npm run lh-job-queue\"",
     "serve:debug": "concurrently --kill-others --names web,git,github,agents,dispatcher,queue \"npm run lh-web -- --debug\" \"npm run lh-watcher-git\" \"npm run lh-watcher-github\" \"npm run lh-watcher-agents\" \"npm run lh-dispatcher\" \"npm run lh-job-queue\"",
     "contract": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx scripts/emit-rpc-contract.ts",
+    "migration:new": "node --import tsx scripts/new-migration.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
     "format": "biome format --write",

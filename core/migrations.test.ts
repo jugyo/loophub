@@ -105,10 +105,80 @@ function appliedIds(db: import("./db.ts").Db): string[] {
   ).map((row) => row.id);
 }
 
-test("migration ids are unique and ordered by their numeric prefix", () => {
+test("migration ID は一意で append-only の宣言順を維持する", () => {
   const ids = M.MIGRATIONS.map((m) => m.id);
   expect(new Set(ids).size).toBe(ids.length);
-  expect([...ids].sort()).toEqual(ids);
+  expect(ids.slice(0, 3)).toEqual([
+    "001-seed-repo-number-sequences",
+    "002-drop-retired-issue-groups",
+    "003-create-issue-search-grams",
+  ]);
+  expect(ids.at(-1)).toBe("087-workflow-runs-rework-limit");
+});
+
+test("新しい migration ID は UTC timestamp と説明名を使う", () => {
+  expect(
+    M.createMigrationId("add-foo-index", new Date("2026-08-14T05:45:17.999Z")),
+  ).toBe("20260814054517-add-foo-index");
+});
+
+test("旧形式と timestamp 形式の migration ID は同じ ledger で宣言順に扱える", () => {
+  const db = D.openDb(join(HOME, "mixed.db"));
+  const ran: string[] = [];
+  expect(
+    M.runMigrations(db, [
+      { id: "001-existing-step", run: () => ran.push("old") },
+      { id: "20260814054517-add-foo-index", run: () => ran.push("new") },
+    ]),
+  ).toEqual(["001-existing-step", "20260814054517-add-foo-index"]);
+  expect(ran).toEqual(["old", "new"]);
+  expect(
+    db
+      .query(
+        "SELECT id FROM schema_migrations WHERE id IN (?, ?) ORDER BY rowid",
+      )
+      .all("001-existing-step", "20260814054517-add-foo-index"),
+  ).toEqual([
+    { id: "001-existing-step" },
+    { id: "20260814054517-add-foo-index" },
+  ]);
+  expect(
+    M.runMigrations(db, [
+      { id: "001-existing-step", run: () => ran.push("again") },
+      { id: "20260814054517-add-foo-index", run: () => ran.push("again") },
+    ]),
+  ).toEqual([]);
+  expect(ran).toEqual(["old", "new"]);
+});
+
+test("重複・不正な migration ID は実行前に失敗する", () => {
+  const db = D.openDb(join(HOME, "invalid-ids.db"));
+  const ran: string[] = [];
+  expect(() =>
+    M.runMigrations(db, [
+      { id: "20260814054517-add-foo-index", run: () => ran.push("first") },
+      { id: "20260814054517-add-foo-index", run: () => ran.push("duplicate") },
+    ]),
+  ).toThrow(/migration ID が重複しています: 20260814054517-add-foo-index/);
+  expect(ran).toEqual([]);
+  expect(() =>
+    M.runMigrations(db, [
+      { id: "not-a-valid-id", run: () => ran.push("invalid") },
+    ]),
+  ).toThrow(/migration ID が不正です: not-a-valid-id/);
+  expect(ran).toEqual([]);
+  expect(() =>
+    M.runMigrations(db, [
+      { id: "12-short-prefix", run: () => ran.push("short") },
+    ]),
+  ).toThrow(/migration ID が不正です: 12-short-prefix/);
+  expect(ran).toEqual([]);
+  expect(() =>
+    M.runMigrations(db, [
+      { id: "1234-long-prefix", run: () => ran.push("long") },
+    ]),
+  ).toThrow(/migration ID が不正です: 1234-long-prefix/);
+  expect(ran).toEqual([]);
 });
 
 test("first boot on an existing database seeds the ledger with every migration", () => {
