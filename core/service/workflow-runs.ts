@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AgentExecutionTarget } from "../agent-control.ts";
 import {
+  agentEffort,
   agentModel,
   type CodingAgent,
   configDir,
@@ -31,6 +32,7 @@ import {
   type WorkflowRunReviewSummaryWire,
   type WorkflowRunStateWire,
   type WorkflowRunTotalCostWire,
+  type WorkflowStepExecutionWire,
   type WorkflowStepStatusWire,
   workflowRunHistoryEventJSON,
   workflowRunStateJSON,
@@ -320,6 +322,96 @@ function workflowRunAgentCosts(
   return [...groups.values()];
 }
 
+function latestWorkflowStepRuns(
+  run: S.WorkflowRunRow,
+  projection: WorkflowRunProjection,
+  latestReview: S.ReviewRow | null,
+): {
+  execute: WorkflowStepExecutionWire | null;
+  verify: WorkflowStepExecutionWire | null;
+} {
+  const launches = projection.events.filter(
+    (event) => event.type === "workflow_step.launched",
+  );
+  const result: Record<WorkflowStep, WorkflowStepExecutionWire | null> = {
+    execute: null,
+    verify: null,
+  };
+  for (const step of WORKFLOW_STEPS) {
+    const launch = launches.findLast((event) => event.payload.step === step);
+    if (!launch || typeof launch.payload.session_id !== "string") continue;
+    const session = S.getAgentSession(launch.payload.session_id);
+    const usage = session ? S.listSessionUsage(session.id) : [];
+    const latestReviewSubmission =
+      step === "verify" && latestReview
+        ? projection.reviewSubmissions.get(latestReview.id)?.latest
+        : undefined;
+    const reviewForLaunch =
+      latestReviewSubmission && latestReviewSubmission.id > launch.id
+        ? latestReview
+        : null;
+    const endedEvent = projection.events.find((event) => {
+      if (event.id <= launch.id) return false;
+      if (event.type === "workflow_step.launched") return true;
+      if (
+        step === "verify" &&
+        (event.type === "workflow_run.review_submitted" ||
+          event.type === "pull_request.review_submitted")
+      ) {
+        return true;
+      }
+      return false;
+    });
+    const endedAt = endedEvent?.created_at ?? run.ended_at;
+    const startedMs = Date.parse(launch.created_at);
+    const endedMs = endedAt ? Date.parse(endedAt) : Date.now();
+    const durationSeconds =
+      Number.isFinite(startedMs) && Number.isFinite(endedMs)
+        ? Math.max(0, Math.round((endedMs - startedMs) / 1000))
+        : 0;
+    const hasUnknownCost = usage.some((row) => row.cost_usd === null);
+    const hasUsage = usage.length > 0;
+    result[step] = {
+      step,
+      started_at: launch.created_at,
+      ended_at: endedAt,
+      duration_seconds: durationSeconds,
+      status: endedAt
+        ? "completed"
+        : run.status === "running"
+          ? "running"
+          : "unknown",
+      result:
+        step === "verify" && reviewForLaunch
+          ? reviewForLaunch.event === "PASS"
+            ? "pass"
+            : "request_changes"
+          : null,
+      runtime: session?.runtime ?? null,
+      model: session?.model ?? null,
+      effort: session?.effort ?? null,
+      input_tokens: hasUsage
+        ? usage.reduce((sum, row) => sum + row.input_tokens, 0)
+        : null,
+      cache_creation_input_tokens: hasUsage
+        ? usage.reduce((sum, row) => sum + row.cache_creation_input_tokens, 0)
+        : null,
+      cache_read_input_tokens: hasUsage
+        ? usage.reduce((sum, row) => sum + row.cache_read_input_tokens, 0)
+        : null,
+      output_tokens: hasUsage
+        ? usage.reduce((sum, row) => sum + row.output_tokens, 0)
+        : null,
+      cost_usd:
+        hasUsage && !hasUnknownCost
+          ? usage.reduce((sum, row) => sum + (row.cost_usd ?? 0), 0)
+          : null,
+      cost_status: hasUnknownCost ? "unknown" : hasUsage ? "known" : "pending",
+    };
+  }
+  return result;
+}
+
 export type WorkflowConfirmStepLaunchResult = {
   run: WorkflowRunUpdateResult["run"];
   session_id: string;
@@ -487,6 +579,16 @@ function runModel(run: S.WorkflowRunRow): string {
     if (effective.runtime === runtime) return effective.model;
   }
   return agentModel(runtime);
+}
+
+function runEffort(run: S.WorkflowRunRow): string | null {
+  if (run.effort?.trim()) return run.effort.trim();
+  const repo = S.getRepoById(run.repo_id);
+  if (!repo) return null;
+  const effective = effectiveRepoAgentConfigFor(repo);
+  return effective.runtime === runRuntime(run)
+    ? effective.effort
+    : agentEffort(runRuntime(run));
 }
 
 function runJSON(run: S.WorkflowRunRow): WorkflowRunUpdateResult["run"] {
@@ -1184,6 +1286,7 @@ async function workflowRunState(
     run.needs_human_reason === null &&
     run.active_step === "verify" &&
     verifyLaunchPending;
+  const latestStepRuns = latestWorkflowStepRuns(run, projection, review);
   return workflowRunStateJSON({
     run,
     workflowName,
@@ -1210,6 +1313,7 @@ async function workflowRunState(
       prMerged: pull?.merged === 1,
     }),
     mergeConflict,
+    latestStepRuns,
   });
 }
 
@@ -1435,6 +1539,7 @@ export const workflowRuns = {
       // step inherits the same values. Omitted => claude-code + the agent's config default model.
       runtime?: CodingAgent;
       model?: string | null;
+      effort?: string | null;
       lockPid?: number;
     },
     sessionId: string = randomUUID(),
@@ -1444,6 +1549,10 @@ export const workflowRuns = {
     const workflow = workflowByInput(input, r);
     const issue = issueOr404(r, input.issue, "issue");
     const runtime: CodingAgent = input.runtime ?? "claude-code";
+    const effective = effectiveRepoAgentConfigFor(r);
+    const effort =
+      input.effort?.trim() ||
+      (effective.runtime === runtime ? effective.effort : agentEffort(runtime));
     const contractLanguage = workflowContractLanguage();
 
     S.registerAgentSession(
@@ -1534,6 +1643,7 @@ export const workflowRuns = {
           autoMode: true,
           runtime,
           model: input.model?.trim() || null,
+          effort,
           contractLanguage,
           parentSessionId: sessionId,
           costIncrementUsd,
@@ -2279,6 +2389,7 @@ export const workflowRuns = {
         "workflow-step",
         input.model?.trim() || runModel(run),
         input.launchedAt,
+        runEffort(run),
       );
       S.registerAgentExecutionTarget({
         sessionId,

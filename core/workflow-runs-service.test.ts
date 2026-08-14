@@ -3573,6 +3573,80 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   expect(completed?.ended_at).toBe(completedRun?.ended_at);
 });
 
+test("stateForPull exposes the latest step launch effort and complete token usage", async () => {
+  const repo = S.createRepo("me/workflow-step-details", REPO_PATH);
+  const issue = S.createIssue(repo.id, "issue", "Step details", "body", "me");
+  const pull = S.createIssue(repo.id, "pull", "Step details PR", "body", "me");
+  S.createPull(pull.id, "main", "main", null, issue.id);
+  const workflow = S.createWorkflow({
+    name: "step-details-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "27272727-2727-4272-8272-272727272727";
+  const child = "28282828-2828-4282-8282-282828282828";
+  S.registerAgentSession(parent, "lh-workflow", parent);
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "execute",
+    runtime: "codex",
+    model: "recorded-model",
+    effort: "high",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId: parent,
+  });
+  expect(run.effort).toBe("high");
+  S.emitWorkflowEvent(repo.id, "workflow_run.started", "me", {
+    id: run.id,
+    workflow_id: workflow.id,
+    issue_number: issue.number,
+    pr_number: pull.number,
+    session_id: parent,
+  });
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: run.id,
+      step: "execute",
+      sessionId: child,
+      agentName: `executor #${run.id}-1`,
+      pointers: [],
+    },
+    parent,
+  );
+  expect(S.getAgentSession(child)?.effort).toBe("high");
+  S.upsertSessionUsage(child, {
+    model: "recorded-model",
+    input_tokens: 100,
+    cache_creation_input_tokens: 20,
+    cache_read_input_tokens: 30,
+    output_tokens: 40,
+    cost_usd: 1.25,
+  });
+
+  const state = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: pull.number,
+  });
+  expect(state?.latest_step_runs?.execute).toMatchObject({
+    step: "execute",
+    runtime: "codex",
+    model: "recorded-model",
+    effort: "high",
+    input_tokens: 100,
+    cache_creation_input_tokens: 20,
+    cache_read_input_tokens: 30,
+    output_tokens: 40,
+    cost_usd: 1.25,
+    cost_status: "known",
+  });
+});
+
 test("statesForPulls answers a page's PRs exactly as the per-PR lookup does (#112)", async () => {
   const repo = S.createRepo("me/workflow-page-state", REPO_PATH);
   const workflow = S.createWorkflow({
@@ -3739,6 +3813,13 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
       })
     )?.active_verify_head_sha,
   ).toBe(secondHead);
+  expect(
+    (
+      await svc.workflowRuns.stateForPull(repo.full_name, {
+        pull: prIssue.number,
+      })
+    )?.latest_step_runs?.verify?.result,
+  ).toBeNull();
 });
 
 test("human lifecycle intents sanitize reasons and authorize explicit resume (#1307)", async () => {

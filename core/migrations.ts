@@ -1479,6 +1479,13 @@ export const MIGRATIONS: Migration[] = [
     "rework_limit",
     "INTEGER NOT NULL DEFAULT 8",
   ),
+  {
+    id: "20260814095613-workflow-runs-effort",
+    run: (db) => {
+      addColumnIfMissing(db, "workflow_runs", "effort", "TEXT");
+      addColumnIfMissing(db, "agent_sessions", "effort", "TEXT");
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

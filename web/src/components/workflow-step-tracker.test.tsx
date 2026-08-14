@@ -180,10 +180,13 @@ describe("WorkflowStepTracker", () => {
     expect(dialog.textContent).toContain("workflow");
     expect(dialog.textContent).toContain("Run #1");
     expect(dialog.textContent).toContain("working");
-    expect(within(dialog).getByText("Open in Herdr")).toBeTruthy();
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Open in Herdr" }),
-    );
+    const openInHerdr = within(dialog).getByRole("button", {
+      name: "Open in Herdr",
+    });
+    expect(openInHerdr.getAttribute("title")).toBe("Open in Herdr");
+    expect(openInHerdr.className).toContain("border-border");
+    expect(openInHerdr.parentElement?.className).toContain("flex");
+    fireEvent.click(openInHerdr);
     expect(focusHerdrAgent).toHaveBeenCalledWith(
       { repo: "me/proj", paneId: "w1:p0" },
       expect.anything(),
@@ -304,6 +307,46 @@ describe("WorkflowStepTracker", () => {
         }),
       ).toBeNull();
     }
+  });
+
+  it("shows the latest step execution details and distinguishes missing values", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({
+          latest_step_runs: {
+            execute: {
+              step: "execute",
+              started_at: "2026-08-14T09:00:00Z",
+              ended_at: null,
+              duration_seconds: 125,
+              status: "running",
+              result: null,
+              runtime: "codex",
+              model: "gpt-5.6",
+              effort: null,
+              input_tokens: 100,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 20,
+              output_tokens: 30,
+              cost_usd: null,
+              cost_status: "unknown",
+            },
+            verify: null,
+          },
+        })}
+      />,
+    );
+
+    fireEvent.focus(screen.getByText("Execute"));
+    const dialog = screen.getByRole("dialog", {
+      name: "Execute workflow step details",
+    });
+    expect(dialog.textContent).toContain("2026-08-14T09:00:00Z");
+    expect(dialog.textContent).toContain("2m 5s");
+    expect(dialog.textContent).toContain("150 tokens");
+    expect(dialog.textContent).toContain("Unknown");
+    expect(dialog.textContent).toContain("gpt-5.6");
+    expect(dialog.textContent).toContain("Not recorded");
   });
 
   it("opens the latest matching focusable step pane and offers no wrong action", () => {

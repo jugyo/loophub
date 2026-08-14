@@ -174,6 +174,7 @@ export interface WorkflowRunInput {
   autoMode?: boolean;
   runtime?: string | null;
   model?: string | null;
+  effort?: string | null;
   contractLanguage?: WorkflowContractLanguage;
   parentSessionId?: string | null;
   costIncrementUsd: number;
@@ -193,6 +194,7 @@ export interface WorkflowRunRow {
   auto_mode: number;
   runtime: string | null;
   model: string | null;
+  effort: string | null;
   contract_language: string;
   // Non-null while the run waits for an explicit human instruction (#1307); the run stays
   // `running`. NULL on legacy rows and after resume.
@@ -224,8 +226,8 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
   return db
     .query(
       `INSERT INTO workflow_runs
-        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, contract_language, parent_session_id, cost_increment_usd, cost_limit_usd, rework_limit, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, effort, contract_language, parent_session_id, cost_increment_usd, cost_limit_usd, rework_limit, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.workflowId,
@@ -237,6 +239,7 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
       input.autoMode === true ? 1 : 0,
       input.runtime ?? null,
       input.model ?? null,
+      input.effort ?? null,
       input.contractLanguage ?? "en",
       input.parentSessionId ?? null,
       input.costIncrementUsd,

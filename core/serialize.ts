@@ -270,6 +270,7 @@ export interface AgentSessionWire {
   runtime?: string;
   kind?: string;
   model?: string;
+  effort?: string;
   usage?: SessionUsageWire[];
   subagent_usage?: SessionSubagentUsageWire[];
   linked_targets?: SessionLinkedTargetWire[];
@@ -715,6 +716,7 @@ export function agentSessionJSON(
   if (row.runtime) out.runtime = row.runtime;
   if (row.kind) out.kind = row.kind;
   if (row.model) out.model = row.model;
+  if (row.effort) out.effort = row.effort;
   const usage = S.listSessionUsage(row.id);
   if (usage.length) out.usage = usage.map(sessionUsageJSON);
   const subagentUsage = S.listSessionSubagentUsage(row.id);
@@ -1544,6 +1546,24 @@ export interface WorkflowRunReviewSummaryWire {
   ac_results: ReviewAcResultWire[];
 }
 
+export interface WorkflowStepExecutionWire {
+  step: "execute" | "verify";
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number;
+  status: "running" | "completed" | "unknown";
+  result: string | null;
+  runtime: string | null;
+  model: string | null;
+  effort: string | null;
+  input_tokens: number | null;
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
+  cost_status: "known" | "unknown" | "pending" | "not_recorded";
+}
+
 export interface WorkflowRunStateWire {
   id: number;
   workflow_id: number | null;
@@ -1572,6 +1592,10 @@ export interface WorkflowRunStateWire {
   updated_at: string;
   // Fixed lifecycle end. Unlike `updated_at`, terminal-run maintenance never advances it.
   ended_at: string | null;
+  latest_step_runs?: {
+    execute: WorkflowStepExecutionWire | null;
+    verify: WorkflowStepExecutionWire | null;
+  };
   latest_review: WorkflowRunReviewSummaryWire | null;
   verification_status: "unverified" | "verified" | "stale";
   // Canonical pre-merge Done state. This remains distinct from the run lifecycle `status` and is
@@ -1640,6 +1664,7 @@ export function workflowRunStateJSON(input: {
   activeVerifyStartedAt: string | null;
   done: boolean;
   mergeConflict: boolean;
+  latestStepRuns: WorkflowRunStateWire["latest_step_runs"];
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1662,6 +1687,7 @@ export function workflowRunStateJSON(input: {
     created_at: run.created_at,
     updated_at: run.updated_at,
     ended_at: run.ended_at,
+    latest_step_runs: input.latestStepRuns,
     latest_review: input.latestReview,
     verification_status: input.verificationStatus,
     done: input.done,

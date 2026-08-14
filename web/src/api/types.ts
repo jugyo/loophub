@@ -67,6 +67,7 @@ import type {
   WorkflowRunReviewSummaryWire,
   WorkflowRunStateWire,
   WorkflowRunTotalCostWire,
+  WorkflowStepExecutionWire,
   WorkflowStepStatusWire,
   WorkflowWire,
   WorkspaceResolutionWire,
@@ -123,6 +124,7 @@ export type IssueComment = CommentWire;
 export type PullReview = ReviewWire;
 
 export type WorkflowStepStatus = WorkflowStepStatusWire;
+export type WorkflowStepExecution = WorkflowStepExecutionWire;
 
 /** A line comment on a PR (GET .../pulls/{number}/comments). */
 export type PullLineComment = ReviewCommentWire;

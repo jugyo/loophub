@@ -12,7 +12,12 @@
 
 import { Check, Loader2, Terminal, TriangleAlert } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
-import type { HerdrAgent, HerdrSessions, WorkflowRunState } from "@/api/types";
+import type {
+  HerdrAgent,
+  HerdrSessions,
+  WorkflowRunState,
+  WorkflowStepExecution,
+} from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { latestWorkflowStepAgent } from "@/components/herdr-badge";
 import { useToast } from "@/components/toast";
@@ -86,6 +91,59 @@ function workflowTrackerTitle(
   return `Workflow step: ${state.current_step === "verify" ? "Verify" : "Execute"}`;
 }
 
+function durationLabel(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
+}
+
+function StepExecutionDetails({
+  execution,
+}: {
+  execution: WorkflowStepExecution | null;
+}) {
+  if (!execution) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        No execution recorded.
+      </p>
+    );
+  }
+  const tokens =
+    execution.input_tokens === null ||
+    execution.cache_creation_input_tokens === null ||
+    execution.cache_read_input_tokens === null ||
+    execution.output_tokens === null
+      ? "Not recorded"
+      : `${execution.input_tokens + execution.cache_creation_input_tokens + execution.cache_read_input_tokens + execution.output_tokens} tokens`;
+  const cost =
+    execution.cost_status === "known" && execution.cost_usd !== null
+      ? `$${execution.cost_usd.toFixed(4)}`
+      : execution.cost_status === "pending"
+        ? "Pending"
+        : execution.cost_status === "unknown"
+          ? "Unknown"
+          : "Not recorded";
+  return (
+    <dl className="mt-2 grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-1 text-xs">
+      <dt className="text-muted-foreground">Started</dt>
+      <dd>{execution.started_at}</dd>
+      <dt className="text-muted-foreground">Duration</dt>
+      <dd>{durationLabel(execution.duration_seconds)}</dd>
+      <dt className="text-muted-foreground">Tokens</dt>
+      <dd>{tokens}</dd>
+      <dt className="text-muted-foreground">Cost</dt>
+      <dd>{cost}</dd>
+      <dt className="text-muted-foreground">Model</dt>
+      <dd>{execution.model ?? "Not recorded"}</dd>
+      <dt className="text-muted-foreground">Effort</dt>
+      <dd>{execution.effort ?? "Not recorded"}</dd>
+      <dt className="text-muted-foreground">Result</dt>
+      <dd>{execution.result ?? execution.status}</dd>
+    </dl>
+  );
+}
+
 function OpenInHerdrButton({
   repo,
   agent,
@@ -98,9 +156,9 @@ function OpenInHerdrButton({
   return (
     <Button
       type="button"
-      variant="secondary"
-      size="sm"
-      className="shrink-0"
+      variant="ghost"
+      size="icon"
+      className="size-7 shrink-0 border border-border"
       aria-label="Open in Herdr"
       title="Open in Herdr"
       disabled={focus.isPending}
@@ -123,7 +181,6 @@ function OpenInHerdrButton({
       ) : (
         <Terminal className="size-3.5" aria-hidden="true" />
       )}
-      Open in Herdr
     </Button>
   );
 }
@@ -204,13 +261,18 @@ function WorkflowNode({
             aria-label="Workflow details"
             className="rounded-md border bg-background p-3 text-foreground shadow-lg"
           >
-            <div className="border-b pb-2">
-              <div className="truncate text-sm font-semibold">
-                {state.workflow_name ?? "Workflow"}
+            <div className="flex items-start gap-3 border-b pb-2">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">
+                  {state.workflow_name ?? "Workflow"}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Run #{state.id}
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground">
-                Run #{state.id}
-              </div>
+              {repo && agent?.focusable ? (
+                <OpenInHerdrButton repo={repo} agent={agent} />
+              ) : null}
             </div>
             <dl className="mt-2 grid grid-cols-[3.5rem_1fr] gap-x-2 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Status</dt>
@@ -221,11 +283,6 @@ function WorkflowNode({
               <p className="mt-2 text-xs text-destructive">
                 Herdr pane data is unavailable.
               </p>
-            ) : null}
-            {repo && agent?.focusable ? (
-              <div className="mt-2 flex justify-end border-t pt-2">
-                <OpenInHerdrButton repo={repo} agent={agent} />
-              </div>
             ) : null}
           </div>
         </div>
@@ -239,6 +296,7 @@ function WorkflowStagePill({
   runId,
   stateSummary,
   stageStatus,
+  execution,
   ariaCurrent,
   className,
   repo,
@@ -251,6 +309,7 @@ function WorkflowStagePill({
   runId: number;
   stateSummary: string;
   stageStatus: string;
+  execution: WorkflowStepExecution | null;
   ariaCurrent?: "step";
   className: string;
   repo?: string;
@@ -326,21 +385,22 @@ function WorkflowStagePill({
                   Run #{runId}
                 </div>
               </div>
+              {repo && agent ? (
+                <OpenInHerdrButton repo={repo} agent={agent} />
+              ) : null}
             </div>
             <dl className="mt-2 grid grid-cols-[3.5rem_1fr] gap-x-2 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Status</dt>
               <dd className="font-medium">{stageStatus}</dd>
             </dl>
+            {stage.key !== "done" ? (
+              <StepExecutionDetails execution={execution} />
+            ) : null}
             <p className="mt-2 text-xs text-muted-foreground">{stateSummary}</p>
             {herdrUnavailable ? (
               <p className="mt-2 text-xs text-destructive">
                 Herdr pane data is unavailable.
               </p>
-            ) : null}
-            {repo && agent ? (
-              <div className="mt-2 flex justify-end border-t pt-2">
-                <OpenInHerdrButton repo={repo} agent={agent} />
-              </div>
             ) : null}
           </div>
         </div>
@@ -467,6 +527,11 @@ export function WorkflowStepTracker({
               runId={state.id}
               stateSummary={stateSummary}
               stageStatus={stageStatus}
+              execution={
+                stage.key === "execute" || stage.key === "verify"
+                  ? (state.latest_step_runs?.[stage.key] ?? null)
+                  : null
+              }
               ariaCurrent={isCurrent ? "step" : undefined}
               repo={repoFullName}
               agent={agent?.focusable ? agent : undefined}
