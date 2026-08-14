@@ -421,9 +421,10 @@ Verify と違い、**Execute の変更を走行中の run に確実に効かせ�
 1. Execute は「rework / 継続作業は同じ session を優先する」設計（#1556）なので、通常の rework は
    `lh workflow deliver` による既存 session への注入で進み、新しい child が起動しない。
 2. `lh workflow launch-step` は `assertParentActor()` を通り、run の `parent_session_id` 以外からは
-   403 になる。CLI は `writeSession()` → `ensureHumanSession()` で human session を使うため、**人間が
-   直接叩く経路は存在しない**（run state 更新系が human session を明示的に許す `assertRunUpdateActor()`
-   との対比から、この制限は意図的なもの）。
+   403 になる。既定の CLI 経路は `writeSession()` → `ensureHumanSession()` で human session を使うため、
+   **人間が普通に叩いて通る経路は無い**（`assertParentActor()` が見るのは actor session id だけなので、
+   `LOOPHUB_SESSION_ID` に parent の session id を入れれば通る。それは運用手段ではない）。run state
+   更新系が human session を明示的に許す `assertRunUpdateActor()` との対比から、この制限は意図的なもの。
 3. 仮に親が起こし直しても、Execute child のプロセスを止めただけでは `active_step` /
    `active_session_id` は残る。これらを NULL にするのは `advanceToVerify()` と Verify での
    `resumeAfterHuman()` だけで、child の死では clear されない。さらに `requestRework()` は child の生死に
@@ -530,15 +531,19 @@ head_sha だけで起動パラメータを持たないが、child = session が 
 2 か所に同じ事実を書く必要はない。
 
 なお runtime が報告する実使用 model（`session_usage` 行）は第 3 の値であり、要求した model と必ずしも
-一致しない（`opus` のような alias が解決されるため）。cost 帰属はこちらを使う。本設計はこれを変えない。
+一致しない（`opus` のような alias が解決され、`claude-opus-5` として報告される）。cost 帰属はこの値を
+使う。**そして後述のとおり、今の "Model" 行が表示しているのもこの値である。**
 
-#### 表示: Web の "Model" 行は parent の model を出している
+#### 表示: "Model" 行は parent の model を出している
 
-現在の PR ページの "Model" 行は、こう辿って値を得ている。
+"Model" 行は `linked-pull-summary.tsx` の `PullPopover` にあり、issue detail の `LinkedPullSummary` と
+issue 一覧の row から描画される（PR 詳細ページにこの表示は無い）。値はこう辿って得ている。
 
 ```text
 "Model" 行 → pull.agent_model → pullAgentSummary() → primaryDevSessionForPull()
-                                                     └ kind = 'dev' の session を選ぶ
+                                  │                  └ kind = 'dev' の session を選ぶ
+                                  └ その session の usage 行の model を優先し、
+                                    usage が 1 件も無いときだけ session 行の model に落ちる
 ```
 
 workflow が `dev` で登録するのは **parent（orchestrator）だけ**である。Execute / Verify の子は
@@ -555,12 +560,25 @@ workflow が `dev` で登録するのは **parent（orchestrator）だけ**で�
 ラベルは単に "Model" なので、読者はこれを「この PR が何で作られたか」と読む。実際に実装したのは
 `claude-opus-5` である。**G3 は、正しかった表示を誤りに変える。**
 
-**表示の方針**（#268 / #269 の決定）:
+**表示の方針:**
 
 - run の**設定**を見せる場所は manifest を読む。「この run は次に何で動くか」の真実は manifest である。
-- 「**この PR は何で作られたか**」を見せる "Model" 行は、parent ではなく **実装した子の起動時パラメータ**
-  を出す。manifest を読んではいけない —— 編集後は当時の値と違うからである。
-- manifest を持たない PR（legacy run、workflow 以外の dev session）は従来の session 由来の表示のまま。
+- 「**この PR は何で作られたか**」を見せる "Model" 行は、**parent ではなく実装した子（Execute）の session**
+  を選ぶ。**manifest を読んではいけない** —— 編集後は当時の値と違うからである。
+- manifest を持たない PR（legacy run、workflow 以外の dev session）は従来の表示のまま。
+
+**値の優先順位は変えない。** 直したいのは「どの session を選ぶか」であって、「その session の何を出すか」
+ではない。usage 優先のまま Execute の session に付け替える。
+
+| | 実使用 model（usage 優先。現状） | 起動時に要求した model |
+|---|---|---|
+| 例 | `claude-opus-5` | `opus`（alias のまま） |
+| 「何で作られたか」への答え | **より正確**（alias 解決後の実体） | 要求値であって実体ではない |
+| いつ得られるか | usage が届いてから | 起動時から確実にある |
+
+「何で作られたか」に答えるには実使用 model のほうが正確なので、優先順位は現状を維持する。起動時パラメータは
+usage が届くまでの fallback として働き、effort が加わることで（§11 の I5）その fallback が完全になる。
+**要求値を見たい人**は manifest 側の表示を見る —— それが設定値の置き場所だからである。
 
 ### 6.2 データ
 
@@ -662,7 +680,9 @@ manifest が変えるのは「子を起動するときにどの runtime / model 
    すべて終わったと判断できる基準を決められれば、列ごと落とせる。
 2. **per-agent runtime をいつ解放するか。** manifest の形は Execute=claude-code / Verify=codex を表現できるが、
    v1 は同一 runtime を強制する。解放には CLI の preflight（`lh workflow launch-step` が run 単位で 1 binary を
-   確認している）と cursor workspace trust の扱いを agent 単位に広げる必要がある。
+   確認している）と cursor workspace trust の扱い（`cli/commands/workflow.ts` の parent launch と
+   launch-step が、それぞれ `ensureCursorWorkspaceTrusted()` を run の runtime で 1 回呼ぶ）を agent 単位に
+   広げる必要がある。
 3. **cost 上限 / rework 上限を manifest に入れるか。** どちらも「設定に見えるが、実際は走行中に人間が
    増やす per-run state」である。cost 側は `increaseWorkflowRunCostLimit()` が
    `cost_limit_usd = cost_limit_usd + cost_increment_usd` を SQL の CAS で実行し、rework 側も
@@ -879,12 +899,13 @@ DB fallback を読み残すと §9 が「防ぐ」と宣言した drift がそ�
 
 ### I7. Web の表示を正しい出所に繋ぐ
 
-**何を作るか.** §6.1 の表示方針（#268 / #269 の決定）を実装する。2 つある。
+**何を作るか.** §6.1 の表示方針を実装する。2 つある。
 
-1. **"Model" 行を実装した子の起動時パラメータに繋ぐ。** 現在は `primaryDevSessionForPull()`
-   （`kind = 'dev'`）で parent の model を出している。「この PR は何で作られたか」に答えるなら、
-   出すべきは Execute 子の session 行（runtime / model / effort）である。**ここで manifest を読んでは
-   いけない** —— 編集後は当時の値と違うからである。
+1. **"Model" 行が選ぶ session を parent から実装した子へ付け替える。** 現在は
+   `primaryDevSessionForPull()`（`kind = 'dev'`）が parent を選ぶため、実装を書いた子ではなく
+   orchestrator の model が出ている。**値の優先順位（usage 優先 → 起動時記録に fallback）は変えない**
+   —— 直すのは session の選び方だけである（§6.1）。**ここで manifest を読んではいけない** ——
+   編集後は当時の値と違うからである。
 2. **run の設定を manifest から表示する。** agent ごとの runtime / model / effort と step prompt の
    出所を run 表示に出す。「この run は次に何で動くか」の真実は manifest である。現在これを知るには
    `lh workflow manifest show` を打つしかなく、Web で監督している人間からは見えない（G1）。
