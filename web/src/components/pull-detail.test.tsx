@@ -411,8 +411,7 @@ describe("PullDetail", () => {
     expect(screen.getByText("Render diff, reviews, comments.")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Develop" })).toBeNull();
 
-    // The existing file summary opens its diff in a dialog instead of expanding inline. The
-    // timeline also names the path (a line comment), so scope the row click to Files changed.
+    // The existing file summary opens its diff in a dialog instead of expanding inline.
     const filesSection = (
       await screen.findByRole("heading", {
         name: /Files changed \(1\)/,
@@ -433,8 +432,8 @@ describe("PullDetail", () => {
     expect(
       within(fileDialog).getByRole("button", { name: "Split" }),
     ).toBeTruthy();
-    // #2451: review line comments have no place in the diff view — the Reviews timeline below is
-    // their only view, so the dialog shows diff feedback threads alone.
+    // #2451: review line comments have no place in the diff view — the dialog shows diff feedback
+    // threads alone.
     expect(within(fileDialog).queryByText("nice constant")).toBeNull();
     const reviewedCommit = screen
       .getByRole("button", {
@@ -493,9 +492,10 @@ describe("PullDetail", () => {
     ).toBeTruthy();
   });
 
-  // #145: the comment list is the backend-assembled timeline — commits, reviews, line comments and
-  // conversation comments all appear, in the backend's chronological order (oldest first).
-  it("renders commits, reviews and line comments interleaved with comments in timeline order", async () => {
+  // #145/#215: the comment list is the backend-assembled timeline — commits, reviews and
+  // conversation comments appear in chronological order (oldest first), while line comments stay
+  // available to the Diff view only.
+  it("renders commits, reviews and comments in timeline order without diff comments", async () => {
     renderDetail();
 
     const section = (
@@ -503,12 +503,11 @@ describe("PullDetail", () => {
         name: "Comments (2)",
       })
     ).closest("section")!;
-    // The fixture's timestamps order them: commit bbbb (oldest), review, line comment, comment 9,
-    // comment 11, commit aaaa (newest). The review entry is its minimal one-liner verdict (#313).
+    // The fixture's timestamps order them: commit bbbb (oldest), review, comment 9, comment 11,
+    // commit aaaa (newest). The review entry is its minimal one-liner verdict (#313).
     const order = [
       "Earlier change",
       "passed",
-      "web/src/a.ts:1",
       "Thanks!",
       "Rebased on main.",
       "Latest change",
@@ -520,6 +519,7 @@ describe("PullDetail", () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     }
+    expect(within(section).queryByText("web/src/a.ts:1")).toBeNull();
   });
 
   // #313: a review entry is a single minimal line — verdict, author and time — with the body left
@@ -536,42 +536,7 @@ describe("PullDetail", () => {
     expect(within(section).queryByText("LGTM")).toBeNull();
   });
 
-  // #145 AC4: a timeline line comment lists its location, never its content — the content stays in
-  // the Commits section's review dialog.
-  it("lists a timeline line comment without its content", async () => {
-    renderDetail();
-
-    const section = (
-      await screen.findByRole("heading", {
-        name: "Comments (2)",
-      })
-    ).closest("section")!;
-    expect(within(section).getByText("web/src/a.ts:1")).toBeTruthy();
-    expect(within(section).queryByText("nice constant")).toBeNull();
-  });
-
-  // #145 AC5: clicking a timeline line comment opens the diff dialog with that file selected.
-  it("opens the diff dialog on the line comment's file from the timeline", async () => {
-    renderDetail();
-
-    const section = (
-      await screen.findByRole("heading", {
-        name: "Comments (2)",
-      })
-    ).closest("section")!;
-    fireEvent.click(
-      within(section).getByRole("button", {
-        name: "View web/src/a.ts in the diff",
-      }),
-    );
-
-    const dialog = await screen.findByRole("dialog", {
-      name: /Diff for web\/src\/a\.ts/i,
-    });
-    expect(within(dialog).getByText("const x = 1;")).toBeTruthy();
-  });
-
-  // #300/#307: the activity entries (commits, reviews, line comments) connect along a vertical
+  // #300/#307: the activity entries (commits and reviews) connect along a vertical
   // line, the same pattern the workflow run history uses — but a conversation comment breaks the
   // line and renders as its own card, not on it.
   it("connects activity entries with a vertical line and leaves comments off it", async () => {
@@ -582,13 +547,13 @@ describe("PullDetail", () => {
         name: "Comments (2)",
       })
     ).closest("section")!;
-    // The fixture's two comments split the activity into two runs: commits bbbb → review → line
-    // comment, then commit aaaa (newest).
+    // The fixture's two comments split the activity into two runs: commits bbbb → review, then
+    // commit aaaa (newest); the line comment is excluded from the timeline.
     const lists = within(section).getAllByRole("list");
     expect(lists).toHaveLength(2);
     for (const list of lists) expect(list.className).toContain("border-l");
     const items = within(section).getAllByRole("listitem");
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(3);
     for (const item of items) {
       expect(item.className).toContain("relative");
       expect(item.querySelector("span.absolute.rounded-full")).toBeTruthy();

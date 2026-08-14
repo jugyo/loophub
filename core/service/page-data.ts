@@ -121,7 +121,7 @@ export const pageData = {
       actorFor(sessionId),
     );
     // #145: the whole PR activity as one chronological list, folded out of data this request
-    // already fetched — the git commit list on the PR row, reviews, line comments and comments —
+    // already fetched — the git commit list on the PR row, reviews and comments —
     // so assembly adds no git, query or HTTP work of its own. Stable sort keeps the insertion
     // order below for entries sharing a timestamp.
     const timeline: PullTimelineItemWire[] = [
@@ -136,11 +136,6 @@ export const pageData = {
         kind: "review" as const,
         created_at: review.submitted_at,
         review,
-      })),
-      ...lineComments.map((lineComment) => ({
-        kind: "line_comment" as const,
-        created_at: lineComment.created_at,
-        line_comment: lineComment,
       })),
       ...commentRows.map((comment) => ({
         kind: "comment" as const,

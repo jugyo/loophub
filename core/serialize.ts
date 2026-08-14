@@ -2375,9 +2375,9 @@ export interface PullDetailPageWire {
   line_comments: ReviewCommentWire[];
   comments: CommentWire[];
   /**
-   * The whole PR activity in one chronological list (#145): commits, reviews, line comments and
-   * conversation comments, oldest first. Assembled by pageData.pullDetail from the fields above —
-   * `pull.commits`, `reviews`, `line_comments` and `comments` — so it costs the page no extra git,
+   * The whole PR activity in one chronological list (#145): commits, reviews and conversation
+   * comments, oldest first. Assembled by pageData.pullDetail from the fields above —
+   * `pull.commits`, `reviews` and `comments` — so it costs the page no extra git,
    * query or HTTP work, and the frontend renders the array as-is.
    */
   timeline: PullTimelineItemWire[];
@@ -2405,12 +2405,11 @@ export interface PullCommitWire {
 }
 
 /**
- * One entry in the PR-detail timeline (#145): a commit, a review, a conversation comment, or a
- * line comment, in display order (chronological, oldest first). Assembled by pageData.pullDetail
- * from data the page already fetches (`pull.commits` / `reviews` / `line_comments` / `comments`),
- * so the frontend renders the array as-is and never rebuilds or re-sorts it. `created_at` is the
- * entry's timestamp on its own, uniform across kinds. Line-comment entries carry the full wire row
- * but the UI only lists their location — the content stays out of the timeline.
+ * One entry in the PR-detail timeline (#145): a commit, a review, or a conversation comment, in
+ * display order (chronological, oldest first). Assembled by pageData.pullDetail from data the page
+ * already fetches (`pull.commits` / `reviews` / `comments`), so the frontend renders the array as-is
+ * and never rebuilds or re-sorts it. `created_at` is the entry's timestamp on its own, uniform
+ * across kinds. Review line comments remain available through `line_comments` for the Diff view.
  */
 export type PullTimelineItemWire =
   | {
@@ -2427,9 +2426,4 @@ export type PullTimelineItemWire =
       kind: "comment";
       created_at: string;
       comment: CommentWire;
-    }
-  | {
-      kind: "line_comment";
-      created_at: string;
-      line_comment: ReviewCommentWire;
     };

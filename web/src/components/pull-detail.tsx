@@ -1,7 +1,7 @@
 // PR detail view (/r/:owner/:repo/pulls/:number). v1 parity: title, body,
 // state + review badges, head→base, the linked issue (bidirectional with the
 // issue's linked PR), the commit/review timeline, the file diff with its diff
-// feedback threads (review line comments show in the timeline only, not the diff),
+// feedback threads for review line comments,
 // issue comments, plus the write operations — merge (when PASSED) and close/reopen
 // (when not merged).
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
@@ -12,7 +12,6 @@ import {
   ChevronDown,
   Github,
   Loader2,
-  MessageSquare,
   SmilePlus,
   UploadCloud,
 } from "lucide-react";
@@ -217,7 +216,6 @@ export function PullDetail({
               number={number}
               timeline={pageQuery.data?.timeline}
               comments={commentsQuery.data}
-              onOpenFile={setOpenFilename}
               isLoading={false}
               isError={false}
             />
@@ -821,7 +819,7 @@ function FilesChanged({
   files: PullFile[] | undefined;
   /** Per-file diff feedback counts, from the same page query that produced `files` (#123). */
   commentCounts: Record<string, number>;
-  /** Which file's diff dialog is open (also opened from timeline line comments, #145). */
+  /** Which file's diff dialog is open. */
   openFilename: string | null;
   onOpenFile: (filename: string) => void;
   onCloseFile: () => void;
@@ -949,21 +947,19 @@ function FileSummaryRow({
   );
 }
 
-// The comment list is the PR's timeline (#145): conversation comments, commits, reviews and line
-// comments, in the chronological order the backend assembled (`timeline`). Comment cards still read
+// The comment list is the PR's timeline (#145): conversation comments, commits and reviews, in the
+// chronological order the backend assembled (`timeline`). Comment cards still read
 // the live `comments` query — which carries optimistic posts and reactions — so the section keeps
 // its instant feedback while the timeline supplies the order and the other kinds.
 
-// A stable key for a timeline entry. Prefixed by kind so a review, line comment and comment that
-// happen to share a numeric id cannot collide as React siblings.
+// A stable key for a timeline entry. Prefixed by kind so entries that happen to share an id cannot
+// collide as React siblings.
 function timelineItemKey(item: PullTimelineItem): string {
   switch (item.kind) {
     case "commit":
       return `commit:${item.commit.sha}`;
     case "review":
       return `review:${item.review.id}`;
-    case "line_comment":
-      return `line-comment:${item.line_comment.id}`;
     case "comment":
       return `comment:${item.comment.id}`;
     default:
@@ -977,7 +973,6 @@ function timelineItemContent(
   context: {
     owner: string;
     repo: string;
-    onOpenFile: (filename: string) => void;
     reaction: ReturnType<typeof useReactToPullComment>;
     archive: ReturnType<typeof useSetPullCommentArchived>;
     showError: (message: string) => void;
@@ -988,10 +983,6 @@ function timelineItemContent(
       return <TimelineCommitItem item={item} />;
     case "review":
       return <TimelineReviewItem item={item} />;
-    case "line_comment":
-      return (
-        <TimelineLineCommentItem item={item} onOpenFile={context.onOpenFile} />
-      );
     case "comment":
       return (
         <CommentCard
@@ -1014,7 +1005,6 @@ function CommentList({
   number,
   timeline,
   comments,
-  onOpenFile,
   isLoading,
   isError,
 }: {
@@ -1023,8 +1013,6 @@ function CommentList({
   number: number;
   timeline: PullTimelineItem[] | undefined;
   comments: IssueComment[] | undefined;
-  /** Open the diff dialog for a file, e.g. from a timeline line comment (#145). */
-  onOpenFile: (filename: string) => void;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -1112,7 +1100,6 @@ function CommentList({
   const itemContext = {
     owner,
     repo,
-    onOpenFile,
     reaction,
     archive,
     showError,
@@ -1139,7 +1126,7 @@ function CommentList({
       ) : !items || items.length === 0 ? (
         <p className="text-sm text-muted-foreground">No comments.</p>
       ) : (
-        // Activity entries (commits, reviews, line comments) are connected by a vertical line with a
+        // Activity entries (commits and reviews) are connected by a vertical line with a
         // dot per entry, the way the workflow run history does (WorkflowRunDetailDialog): the line
         // is the run's left border and each dot (with its ring) masks the line behind it. A
         // conversation comment breaks the run and renders as its own full-width card — the line
@@ -1445,52 +1432,6 @@ function TimelineReviewItem({
           </span>
         ) : null}
       </div>
-    </article>
-  );
-}
-
-// One line comment in the timeline (#145): location only, no content, all on one line. Clicking
-// opens the diff dialog with that file selected. Kept to a plain, low row — no card border
-// (PR comment #288, #316).
-function TimelineLineCommentItem({
-  item,
-  onOpenFile,
-}: {
-  item: Extract<PullTimelineItem, { kind: "line_comment" }>;
-  onOpenFile: (filename: string) => void;
-}) {
-  const comment = item.line_comment;
-  return (
-    <article data-debug-component="TimelineLineComment" className="px-1 py-0.5">
-      <button
-        type="button"
-        aria-label={`View ${comment.path} in the diff`}
-        title="Open in the diff"
-        onClick={() => onOpenFile(comment.path)}
-        className="flex w-full min-w-0 items-center gap-2 rounded px-0.5 py-0.5 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <MessageSquare
-          className="size-3.5 shrink-0 text-muted-foreground/70"
-          aria-hidden="true"
-        />
-        <span className="shrink-0 text-sm">
-          <CommentAuthorLabel
-            author={comment.user.login}
-            authorType={comment.author_type}
-          />
-        </span>
-        <time
-          dateTime={item.created_at}
-          title={item.created_at}
-          className="shrink-0 text-xs text-muted-foreground"
-        >
-          {relativeTime(item.created_at)}
-        </time>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-          {comment.path}
-          {comment.line != null ? `:${comment.line}` : ""}
-        </span>
-      </button>
     </article>
   );
 }

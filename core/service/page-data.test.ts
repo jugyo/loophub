@@ -90,8 +90,9 @@ beforeAll(async () => {
     );
   }
 
-  // #145: a review (with a line comment) and a conversation comment, so the timeline test has every
-  // kind to fold together. Created before the revert below, so they predate the newest commit.
+  // #145/#215: a review (with a line comment) and a conversation comment. The line comment remains
+  // available for the Diff view but is not a timeline entry. Created before the revert below, so
+  // they predate the newest commit.
   await svc.comments.createHumanForPull(
     REPO,
     prNumber,
@@ -144,17 +145,18 @@ test("pullDetail assembles the PR timeline from data it already fetched", async 
         item.kind === kind,
     );
 
-  // Every source row the page fetched shows up exactly once, so nothing was dropped or invented.
+  // Timeline sources show up exactly once; line comments are fetched separately for the Diff view.
   expect(page.timeline.length).toBe(
     (page.pull.commits ?? []).length +
       page.reviews.length +
-      page.line_comments.length +
       page.comments.length,
   );
   expect(ofKind("commit")).toHaveLength((page.pull.commits ?? []).length);
   expect(ofKind("review")).toHaveLength(page.reviews.length);
-  expect(ofKind("line_comment")).toHaveLength(page.line_comments.length);
   expect(ofKind("comment")).toHaveLength(page.comments.length);
+  expect(page.line_comments).toHaveLength(1);
+  expect(page.line_comments[0].body).toBe("Nice change.");
+  expect(page.timeline.some((item) => "line_comment" in item)).toBe(false);
 
   // Chronological, oldest first — the backend's one job, since the frontend renders as-is.
   const times = page.timeline.map((item) => Date.parse(item.created_at));
@@ -167,9 +169,6 @@ test("pullDetail assembles the PR timeline from data it already fetched", async 
   );
   expect(ofKind("comment").map((item) => item.comment.body)).toEqual(
     page.comments.map((comment) => comment.body),
-  );
-  expect(ofKind("line_comment")[0].line_comment.body).toBe(
-    page.line_comments[0].body,
   );
 });
 

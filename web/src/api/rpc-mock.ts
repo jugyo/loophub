@@ -107,11 +107,6 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                     created_at: review.submitted_at,
                     review,
                   })),
-                  ...lineComments.map((lineComment: any) => ({
-                    kind: "line_comment",
-                    created_at: lineComment.created_at,
-                    line_comment: lineComment,
-                  })),
                   ...comments.map((comment: any) => ({
                     kind: "comment",
                     created_at: comment.created_at,
