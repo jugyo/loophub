@@ -1,5 +1,15 @@
 # Breaking changes
 
+## 2026-08-16: workflow の step prompt を run 開始時に snapshot
+
+workflow の step prompt は、run 開始時に workflow manifest と step prompt の sidecar へ snapshot
+されるようになった。`lh workflow update` で global な workflow 定義の prompt を変更しても、
+**既に開始済みの run には反映されない**。変更後の prompt は新しく開始する run から有効になる。
+
+これは、run ごとに prompt を固定し、global な workflow の編集が走行中の run を巻き添えにしないための
+意図した変更である。一方、以前の live 読み取りに依存していた利用者にとっては、既存の run の次の
+step 起動にも編集後の prompt が使われるという暗黙の挙動が変わる。
+
 ## 2026-08-07: commit 差分 RPC の PR 非依存化
 
 Issue #2467 で commit 差分取得の公開 interface を変更した。

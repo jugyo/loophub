@@ -1,6 +1,7 @@
 # Execute / Verify workflow — ポインタ入力と HEAD/review 観測による親子協調
 
 > Status: Implemented · Issue: #975 / #981 / #1284 / #1307 / #1358 / #1555 / #1556 / #1680 / #1697 / #1712 / #1716 / #1744 / #2103
+> 関連: [workflow manifest 設計](workflow-manifest.ja.md)
 >
 > 本書は、特定の skill を必須とせずに開発 workflow を実行するモデルを定義する。step は
 > **Execute / Verify の 2 つに固定**し、ユーザーが設定できるのは各 step に与える prompt だけである。
@@ -262,6 +263,10 @@ pull 型にして「対称化」することは独立性境界を壊すため明
 ## 4. workflow 定義
 
 workflow は global な prompt bundle として DB に保存する（Execute prompt / Verify prompt の 2 つ）。
+この定義は workflow の新しい run を開始するときに読み取られ、run ごとの workflow manifest と
+step prompt の sidecar に snapshot される。以後の step 起動はこの snapshot を参照するため、
+`lh workflow update` で global な workflow 定義を変更しても、既に開始済みの run の prompt には
+反映されない。変更後の prompt は新しく開始する run から有効になる。
 
 ```sql
 CREATE TABLE workflows (
@@ -461,6 +466,8 @@ workflow を開始せず明示的なエラーで終了する（失敗を黙っ�
 | `core/agent-control.ts` | text input、key input、close を抽象化する agent-control port |
 | `core/workflow/contracts/` | parent / Execute / Verify contract |
 | `core/workflow/compose.ts` | contract render と「ポインタ + step prompt」の launch prompt 合成 |
+| `core/workflow/manifest.ts` | run の動作条件を固定する manifest の型、検証、JSON 化 |
+| `core/workflow/run-files.ts` | run ごとの manifest、step prompt、contract ファイルの読み書き |
 | `core/workflow/steps.ts` | HEAD / review 観測から 2 step の状態を導く pure query |
 | `core/service/workflow-runs.ts` | run start、child launch、turn done、status、rework |
 | `core/service/workflow-instructions.ts` | run event から parent pane への構造化 instruction 配送 |
