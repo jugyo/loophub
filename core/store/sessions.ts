@@ -244,6 +244,12 @@ export function primaryDevSessionForPull(issueId: number): string | null {
 
 export function pullAgentSummary(issueId: number): PullAgentSummary | null {
   const sessionId = primaryDevSessionForPull(issueId);
+  return sessionId ? pullAgentSummaryForSession(sessionId) : null;
+}
+
+export function pullAgentSummaryForSession(
+  sessionId: string,
+): PullAgentSummary | null {
   if (!sessionId) return null;
   const session = getAgentSession(sessionId);
   if (!session) return null;
@@ -257,6 +263,18 @@ export function pullAgentSummary(issueId: number): PullAgentSummary | null {
         : session.model
           ? [session.model]
           : [],
+  };
+}
+
+export function pullAgentLaunchSummaryForSession(
+  sessionId: string,
+): PullAgentSummary | null {
+  const session = getAgentSession(sessionId);
+  if (!session) return null;
+  return {
+    agent: session.agent,
+    runtime: session.runtime,
+    models: session.model ? [session.model] : [],
   };
 }
 

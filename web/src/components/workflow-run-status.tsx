@@ -185,6 +185,34 @@ export function WorkflowRunStatusSection({
           overBudget={overBudget}
         />
 
+        {state.workflow_config ? (
+          <div
+            data-debug-component="WorkflowRunConfig"
+            data-testid="workflow-run-config"
+            className="border-t pt-3 text-sm"
+          >
+            <h3 className="font-medium">Run configuration</h3>
+            <dl className="mt-2 grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {(["parent", "execute", "verify"] as const).map((role) => {
+                const agent = state.workflow_config?.agents[role];
+                return (
+                  <div className="contents" key={role}>
+                    <dt>{role}</dt>
+                    <dd>
+                      {agent?.runtime} / {agent?.model} / {agent?.effort}
+                    </dd>
+                  </div>
+                );
+              })}
+              <dt>Prompt</dt>
+              <dd>
+                Execute: {state.workflow_config.prompt_sources.execute}; Verify:{" "}
+                {state.workflow_config.prompt_sources.verify}
+              </dd>
+            </dl>
+          </div>
+        ) : null}
+
         <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
           <span className="text-muted-foreground">Total cost</span>
           <span

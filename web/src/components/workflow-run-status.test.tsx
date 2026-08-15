@@ -107,6 +107,46 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
 }
 
 describe("WorkflowRunStatusSection", () => {
+  it("shows the manifest-backed agent settings and prompt sources", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          workflow_config: {
+            contract_language: "ja",
+            agents: {
+              parent: {
+                runtime: "codex",
+                model: "parent-model",
+                effort: "low",
+              },
+              execute: {
+                runtime: "codex",
+                model: "execute-model",
+                effort: "high",
+              },
+              verify: {
+                runtime: "codex",
+                model: "verify-model",
+                effort: "medium",
+              },
+            },
+            prompt_sources: {
+              execute: "execute-prompt.md",
+              verify: "verify-prompt.md",
+            },
+          },
+        })}
+      />,
+    );
+
+    const config = await screen.findByTestId("workflow-run-config");
+    expect(config.textContent).toContain("execute-model");
+    expect(config.textContent).toContain("execute-prompt.md");
+    expect(config.textContent).toContain("verify-prompt.md");
+  });
+
   it("opens the matching Workflow step pane from the detail tracker", async () => {
     mocks.herdrSessions = {
       repos: [

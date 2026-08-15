@@ -30,6 +30,7 @@ import type {
   LinkedIssueWire,
   PullWire,
   ReviewGateWire,
+  WorkflowRunConfigWire,
 } from "./serialize.ts";
 import {
   commentJSON,
@@ -45,6 +46,21 @@ import {
 } from "./serialize.ts";
 import { sessionRuntime } from "./session-runtime.ts";
 import * as S from "./store.ts";
+import { workflowStepSessionIds } from "./workflow/herdr-agents.ts";
+import { parseWorkflowManifest } from "./workflow/manifest.ts";
+import { readWorkflowManifest } from "./workflow/run-files.ts";
+
+export function workflowRunConfigJSON(
+  run: S.WorkflowRunRow,
+): WorkflowRunConfigWire | null {
+  if (run.manifest_version === null) return null;
+  const manifest = parseWorkflowManifest(readWorkflowManifest(run.id));
+  return {
+    contract_language: manifest.contract_language,
+    agents: manifest.agents,
+    prompt_sources: manifest.prompts,
+  };
+}
 
 // Git-derived status fields for a PR row: mergeable state, diff totals, the
 // "working" flag, and review state. Shared by pullJSON (PR list/detail) and the
@@ -269,7 +285,16 @@ async function linkedPullDetail(
 ): Promise<IssueListPullSummaryWire> {
   const status = await pullStatusFields(repo, pr);
   const usageTotals = S.sessionUsageTotalsForIssue(pr.id);
-  const agent = S.pullAgentSummary(pr.id);
+  const workflowRun = S.latestWorkflowRunForPull(repo.id, pr.number);
+  const executeSessionId =
+    workflowRun && workflowRun.manifest_version !== null
+      ? workflowStepSessionIds(workflowRun.step_sessions_json, "execute").at(-1)
+      : undefined;
+  const agent =
+    (executeSessionId
+      ? (S.pullAgentLaunchSummaryForSession(executeSessionId) ??
+        S.pullAgentSummaryForSession(executeSessionId))
+      : null) ?? S.pullAgentSummary(pr.id);
   const runtime = agent ? sessionRuntime(agent) : null;
   const model = agent?.models.length ? agent.models.join(", ") : null;
   // #882: total work duration for the sub-row, computed with the same pullWorkDuration used by the
@@ -290,7 +315,6 @@ async function linkedPullDetail(
   // Execute -> Verify loops the PR has taken. `workflow_runs` is indexed on (workflow_id, status)
   // only, so this scans the table — cheap against a table that holds one row per run and far below
   // the git fan-out this sub-row already pays. The list never asks Web to fetch run state per PR.
-  const workflowRun = S.latestWorkflowRunForPull(repo.id, pr.number);
   return {
     number: pr.number,
     title: pr.title,

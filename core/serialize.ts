@@ -1580,6 +1580,26 @@ export interface WorkflowRunStateWire {
   // false when a merge conflict blocks the otherwise fresh passing review.
   done: boolean;
   merge_conflict: boolean;
+  workflow_config: WorkflowRunConfigWire | null;
+}
+
+export interface WorkflowRunAgentConfigWire {
+  runtime: CodingAgent;
+  model: string;
+  effort: string;
+}
+
+export interface WorkflowRunConfigWire {
+  contract_language: WorkflowContractLanguage;
+  agents: {
+    parent: WorkflowRunAgentConfigWire;
+    execute: WorkflowRunAgentConfigWire;
+    verify: WorkflowRunAgentConfigWire;
+  };
+  prompt_sources: {
+    execute: string;
+    verify: string;
+  };
 }
 
 export interface WorkflowPendingEffectReceiptWire {
@@ -1642,6 +1662,7 @@ export function workflowRunStateJSON(input: {
   activeVerifyStartedAt: string | null;
   done: boolean;
   mergeConflict: boolean;
+  workflowConfig: WorkflowRunConfigWire | null;
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1668,6 +1689,7 @@ export function workflowRunStateJSON(input: {
     verification_status: input.verificationStatus,
     done: input.done,
     merge_conflict: input.mergeConflict,
+    workflow_config: input.workflowConfig,
   };
 }
 
