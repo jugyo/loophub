@@ -171,6 +171,23 @@ export type WorkflowRunStartResult = {
   };
 };
 
+export type WorkflowManifestViewResult = {
+  run: { id: number; issue: number; pr: number };
+  manifest_path: string;
+  manifest: WorkflowManifest;
+  pointers: Array<{ label: string; value: string }>;
+  workspace: {
+    worktree_path: string;
+    branch: string;
+    base_branch: string;
+  };
+  change_timing: {
+    next_child: string;
+    parent: string;
+    execute: string;
+  };
+};
+
 export type WorkflowRunUpdateResult = {
   run: {
     id: number;
@@ -1677,6 +1694,69 @@ function recordWorkflowStepLaunchFailure(
 }
 
 export const workflowRuns = {
+  manifestPath(name: string, runId: number): string {
+    const repo = repoOr404(name);
+    const run = workflowRunOr404(runId);
+    if (run.repo_id !== repo.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    return workflowManifestPath(run.id);
+  },
+
+  manifestView(name: string, runId: number): WorkflowManifestViewResult {
+    const repo = repoOr404(name);
+    const run = workflowRunOr404(runId);
+    if (run.repo_id !== repo.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    const path = workflowManifestPath(run.id);
+    let manifest: WorkflowManifest;
+    try {
+      manifest = parseWorkflowManifest(readWorkflowManifest(run.id));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new ServiceError(
+        422,
+        `workflow manifest ${path} is invalid: ${reason}`,
+      );
+    }
+
+    const issue = issueOr404(repo, run.issue_number, "issue");
+    const prIssue = issueOr404(repo, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull) {
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    }
+    const worktree = workflowRunWorktree({
+      repo,
+      prNumber: run.pr_number,
+      headRef: pull.head_ref,
+    });
+    return {
+      run: { id: run.id, issue: issue.number, pr: prIssue.number },
+      manifest_path: path,
+      manifest,
+      pointers: [
+        { label: "repo", value: repo.full_name },
+        { label: "issue", value: `#${issue.number}` },
+        { label: "pr", value: `#${prIssue.number}` },
+      ],
+      workspace: {
+        worktree_path: worktree,
+        branch: pull.head_ref,
+        base_branch: pull.base_ref,
+      },
+      change_timing: {
+        next_child:
+          "manifest と step prompt の変更は次に起動する子から反映されます",
+        parent:
+          "現在の run の parent には反映されません（run 開始時に起動済みです）",
+        execute:
+          "現在の Execute child には反映されません。既存の child を停止してから再起動してください",
+      },
+    };
+  },
+
   async start(
     name: string,
     input: {
