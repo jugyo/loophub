@@ -345,6 +345,7 @@ describe("herdr terminal launch", () => {
       userPromptPath: "/tmp/run/execute-prompt.md",
       splitPaneId: "w1:p2",
       model: "gpt-5.5",
+      effort: "high",
     });
     expect(plan.command).toContain("\"$(cat '/tmp/run/execute-prompt.md')\"");
     // The typed line is the whole launch: one send-text call, no follow-up.
@@ -538,6 +539,7 @@ describe("herdr terminal launch", () => {
       userPromptPath: "/tmp/run/execute-prompt.md",
       splitPaneId: "w1:p2",
       model: "gpt-5.5",
+      effort: "high",
     });
 
     // Codex still correlates through the ambient session env, but never gets a --session-id flag.
@@ -553,6 +555,7 @@ describe("herdr terminal launch", () => {
       "--dangerously-bypass-approvals-and-sandbox",
     );
     expect(plan.command).toContain("'--model' 'gpt-5.5'");
+    expect(plan.command).toContain("'-c' 'model_reasoning_effort=high'");
     // codex has no --append-system-prompt-file, so its prompt file is where the folded contract
     // lives; the command line only points at it.
     expect(plan.command).toContain("\"$(cat '/tmp/run/execute-prompt.md')\"");

@@ -736,6 +736,19 @@ test("registerAgentSession persists and updates the runtime column", () => {
   S.registerAgentSession(id, "lh-build", "ext-rt");
   expect(S.getAgentSession(id)!.runtime).toBe("claude-code");
 
+  S.registerAgentSession(
+    id,
+    "lh-build",
+    "ext-rt",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "high",
+  );
+  expect(S.getAgentSession(id)!.effort).toBe("high");
+
   // A runtime-less insert leaves the column NULL (the pre-#164 / backward-compat shape).
   const id2 = "22222222-0000-0000-0000-000000000002";
   S.registerAgentSession(id2, "lh-build", "ext-rt-2");

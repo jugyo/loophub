@@ -167,6 +167,7 @@ export type WorkflowRunStartResult = {
     // The same prompt as it was written for the run's runtime, which the parent launch's command
     // line reads back instead of carrying inline.
     user_prompt_path: string;
+    effort: string;
   };
 };
 
@@ -212,6 +213,7 @@ export type WorkflowLaunchStepResult = {
   // spawning the herdr launch it returns.
   runtime: CodingAgent;
   model: string;
+  effort: string;
   session_id: string;
   worktree: string;
   system_prompt_path: string;
@@ -1890,6 +1892,7 @@ export const workflowRuns = {
           system_prompt_path: systemPromptPath,
           user_prompt: userPrompt,
           user_prompt_path: userPromptPath,
+          effort: parentAgent.effort,
         },
       };
     } catch (e) {
@@ -2452,6 +2455,7 @@ export const workflowRuns = {
         userPromptPath,
         splitPaneId: anchorPaneId,
         model,
+        effort: stepAgent.effort,
       });
       // Keep confirmation's validation at the persistence boundary, but also validate the generated
       // plan before the CLI can spawn it. A future naming/normalization change must fail before it can
@@ -2477,6 +2481,7 @@ export const workflowRuns = {
       agent_name: herdr.label,
       runtime,
       model,
+      effort: stepAgent.effort,
       session_id: childSessionId,
       worktree,
       system_prompt_path: systemPromptPath,
@@ -2606,12 +2611,14 @@ export const workflowRuns = {
       run: number;
       step: string;
       sessionId: string;
+      runtime?: CodingAgent;
       agentName?: string;
       executionTarget: AgentExecutionTarget;
       pointers: WorkflowInputPointer[];
       headSha?: string;
       note?: string;
       model?: string;
+      effort?: string;
       launchedAt?: string;
     },
     actorSessionId?: string | null,
@@ -2680,11 +2687,11 @@ export const workflowRuns = {
         "workflow-step",
         sessionId,
         input.agentName ?? `Workflow ${step} run #${run.id}`,
-        stepAgent.runtime,
+        input.runtime ?? stepAgent.runtime,
         "workflow-step",
         input.model?.trim() || stepAgent.model,
         input.launchedAt,
-        stepAgent.effort,
+        input.effort?.trim() || stepAgent.effort,
       );
       S.registerAgentExecutionTarget({
         sessionId,
