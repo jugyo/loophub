@@ -985,6 +985,11 @@ test("pullAgentSummary returns the primary dev session runtime and usage models 
     runtime: "codex",
     models: ["gpt-5.5"],
   });
+  expect(S.pullAgentLaunchSummaryForSession(newDev)).toEqual({
+    agent: "lh-build",
+    runtime: "codex",
+    models: ["gpt-5.6-sol"],
+  });
 });
 
 test("hasAnyCostStopEvent detects a dev.cost_stopped event per PR, any session (#863)", () => {

@@ -37,6 +37,7 @@ import {
   workflowRunHistoryEventJSON,
   workflowRunStateJSON,
 } from "../serialize.ts";
+import { workflowRunConfigJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import { killPaneForegroundProcess } from "../terminal/herdr-cleanup.ts";
 import {
@@ -1429,6 +1430,7 @@ async function workflowRunState(
     }),
     mergeConflict,
     latestStepRuns,
+    workflowConfig: workflowRunConfigJSON(run),
   });
 }
 
