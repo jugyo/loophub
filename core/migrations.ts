@@ -1486,6 +1486,17 @@ export const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "agent_sessions", "effort", "TEXT");
     },
   },
+  {
+    id: "20260815194735-invalid-review-head-shas",
+    run: (db) => {
+      db.exec(`
+        UPDATE reviews
+        SET head_sha = NULL
+        WHERE head_sha IS NOT NULL
+          AND (length(head_sha) <> 40 OR head_sha GLOB '*[^0-9A-Fa-f]*');
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

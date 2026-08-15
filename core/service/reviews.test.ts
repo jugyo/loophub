@@ -586,3 +586,22 @@ test("an invalid verdict is rejected (#1895)", async () => {
     }),
   ).rejects.toThrow(/verdict must be 'pass' or 'fail'/);
 });
+
+test("明示的に送信した head SHA は完全な 16 進数 SHA でなければならない", async () => {
+  const pr = await newPull("invalid-head-sha");
+  for (const headSha of [
+    "short",
+    "g".repeat(40),
+    "a".repeat(39),
+    "a".repeat(41),
+  ]) {
+    await expect(
+      svc.reviews.create("me/reviews", pr, { headSha }),
+    ).rejects.toThrow("head-sha は 40 文字の 16 進数 SHA で指定してください");
+  }
+
+  const review = await svc.reviews.create("me/reviews", pr, {
+    headSha: "A".repeat(40),
+  });
+  expect(review.head_sha).toBe("A".repeat(40));
+});

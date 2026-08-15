@@ -113,7 +113,7 @@ test("migration ID は一意で append-only の宣言順を維持する", () => 
     "002-drop-retired-issue-groups",
     "003-create-issue-search-grams",
   ]);
-  expect(ids.at(-1)).toBe("20260814095613-workflow-runs-effort");
+  expect(ids.at(-1)).toBe("20260815194735-invalid-review-head-shas");
 });
 
 test("新しい migration ID は UTC timestamp と説明名を使う", () => {
@@ -187,6 +187,35 @@ test("first boot on an existing database seeds the ledger with every migration",
 
 test("a later boot re-runs nothing", () => {
   expect(M.runMigrations(D.db)).toEqual([]);
+});
+
+test("不正なレビュー head SHA は無害化し、有効な値は保持する", () => {
+  D.db.exec(`
+    INSERT INTO reviews (issue_id, author, author_type, event, body, head_sha, created_at)
+    VALUES
+      (10, 'bad-length', 'agent', 'COMMENT', '', 'a', 't3'),
+      (10, 'bad-hex', 'agent', 'COMMENT', '', 'g' || printf('%040d', 0), 't3'),
+      (10, 'valid', 'agent', 'COMMENT', '', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 't3');
+  `);
+  const migration = M.MIGRATIONS.find(
+    (candidate) => candidate.id === "20260815194735-invalid-review-head-shas",
+  );
+  if (!migration)
+    throw new Error("invalid review head SHA migration not found");
+  migration.run(D.db);
+
+  expect(
+    D.db
+      .query("SELECT author, head_sha FROM reviews WHERE id > 1 ORDER BY id")
+      .all(),
+  ).toEqual([
+    { author: "bad-length", head_sha: null },
+    { author: "bad-hex", head_sha: null },
+    {
+      author: "valid",
+      head_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
+  ]);
 });
 
 test("the one-time data migrations converged instead of running on every boot", () => {
@@ -302,7 +331,10 @@ test("comment author backfill uses unambiguous session identities", () => {
   ]);
   expect(
     D.db
-      .query(`SELECT author, author_type FROM reviews WHERE id > 1 ORDER BY id`)
+      .query(
+        `SELECT author, author_type FROM reviews
+         WHERE author IN ('dev', 'person', 'shared') ORDER BY id`,
+      )
       .all(),
   ).toEqual([
     { author: "dev", author_type: "agent" },

@@ -19,6 +19,8 @@ import {
   repoOr404,
 } from "./shared.ts";
 
+const FULL_SHA = /^[0-9a-f]{40}$/i;
+
 // The per-criterion grades of one review (#1895), joined to the rubric text via `criterion_id`.
 // A criterion disabled after grading still resolves here (grade rows are never deleted). Shared by
 // every surface that shows grades — the review wire and the workflow run summary — so the join
@@ -282,6 +284,12 @@ export const reviews = {
     // validate ownership and coverage here and reject with a visible error rather than silently
     // correcting (CLAUDE.md「可視エラーを優先」).
     const acResults = validateAcResults(row, input.acResults);
+    if (input.headSha !== undefined && !FULL_SHA.test(input.headSha)) {
+      throw new ServiceError(
+        422,
+        "head-sha は 40 文字の 16 進数 SHA で指定してください",
+      );
+    }
     const { actor, authorType } = commentActor(sessionId);
     // Bind the review to the agent session that submitted it (#2387): that session exists to
     // produce this one review, so its start is when the review began — what grounds the reported
