@@ -1432,6 +1432,7 @@ export const MIGRATIONS: Migration[] = [
     "manifest_version",
     "INTEGER",
   ),
+  addColumn("089-agent-sessions-effort", "agent_sessions", "effort", "TEXT"),
 ];
 
 const LEDGER_SCHEMA = `

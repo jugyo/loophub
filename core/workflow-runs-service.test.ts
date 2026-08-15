@@ -400,9 +400,11 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       step: launched.step,
       sessionId: launched.session_id,
       agentName: launched.agent_name,
+      runtime: launched.runtime,
       pointers: launched.pointers,
       note: "Read the issue first.",
       model: launched.model,
+      effort: launched.effort,
       launchedAt,
     },
     result.session_id,
@@ -414,6 +416,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     launched.agent_name,
   );
   expect(S.getAgentSession(launched.session_id)?.model).toBe("opus");
+  expect(S.getAgentSession(launched.session_id)?.effort).toBe(launched.effort);
   expect(S.getAgentSession(launched.session_id)?.created_at).toBe(launchedAt);
   expect(
     S.listHandoffs(repo.id, {

@@ -9,6 +9,7 @@ export interface AgentSessionRow {
   runtime: string | null;
   kind: string | null;
   model: string | null;
+  effort: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -81,6 +82,7 @@ export function registerAgentSession(
   kind?: string | null,
   model?: string | null,
   createdAt?: string | null,
+  effort?: string | null,
 ): { session: AgentSessionRow; created: boolean } {
   const existing = getAgentSession(id);
   const t = now();
@@ -94,12 +96,13 @@ export function registerAgentSession(
     // Preserve-on-re-register: an undefined arg keeps the stored value (the service layer relies on
     // this — it forwards name/runtime/kind straight through without `?? null`).
     db.run(
-      `UPDATE agent_sessions SET name = ?, runtime = ?, kind = ?, model = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE agent_sessions SET name = ?, runtime = ?, kind = ?, model = ?, effort = ?, updated_at = ? WHERE id = ?`,
       [
         name !== undefined ? name : existing.name,
         runtime !== undefined ? runtime : existing.runtime,
         kind !== undefined ? kind : existing.kind,
         model !== undefined ? model : existing.model,
+        effort !== undefined ? effort : existing.effort,
         t,
         id,
       ],
@@ -113,8 +116,8 @@ export function registerAgentSession(
     .get(agent, externalSession) as { id: string } | null;
   if (byPair) throw new Error("CONFLICT_PAIR" satisfies RegisterConflict);
   db.query(
-    `INSERT INTO agent_sessions (id, agent, external_session, name, runtime, kind, model, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    `INSERT INTO agent_sessions (id, agent, external_session, name, runtime, kind, model, effort, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
   ).get(
     id,
     agent,
@@ -123,6 +126,7 @@ export function registerAgentSession(
     runtime ?? null,
     kind ?? null,
     model ?? null,
+    effort ?? null,
     createdAt ?? t,
     t,
   );

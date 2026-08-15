@@ -270,6 +270,7 @@ export interface AgentSessionWire {
   runtime?: string;
   kind?: string;
   model?: string;
+  effort?: string;
   usage?: SessionUsageWire[];
   subagent_usage?: SessionSubagentUsageWire[];
   linked_targets?: SessionLinkedTargetWire[];
@@ -715,6 +716,7 @@ export function agentSessionJSON(
   if (row.runtime) out.runtime = row.runtime;
   if (row.kind) out.kind = row.kind;
   if (row.model) out.model = row.model;
+  if (row.effort) out.effort = row.effort;
   const usage = S.listSessionUsage(row.id);
   if (usage.length) out.usage = usage.map(sessionUsageJSON);
   const subagentUsage = S.listSessionSubagentUsage(row.id);

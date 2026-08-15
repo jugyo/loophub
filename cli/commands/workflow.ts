@@ -171,10 +171,12 @@ function parentAgentFlags(input: {
   sessionId: string;
   systemPromptPath: string;
   model: string;
+  effort: string;
 }): string[] {
   return buildRuntimeFlags({
     runtime: input.runtime,
     model: input.model,
+    effort: input.effort,
     sessionId: input.sessionId,
     systemPromptFile: input.systemPromptPath,
   });
@@ -227,6 +229,7 @@ async function launchParentHerdr(input: {
   systemPromptPath: string;
   userPromptPath: string;
   model: string;
+  effort: string;
   // Fire-and-forget (`--herdr`): start the parent agent in its herdr pane and return without the
   // interactive attach, so a non-interactive caller — lh-web's terminal.launch spawns
   // `lh workflow start ... --herdr` headless (#1007) — gets a prompt exit instead of blocking on an
@@ -395,6 +398,7 @@ async function startWorkflow(): Promise<void> {
     systemPromptPath: result.parent.system_prompt_path,
     userPromptPath: result.parent.user_prompt_path,
     model,
+    effort: result.parent.effort,
     // `--herdr` starts the parent fire-and-forget (no interactive attach) so lh-web can spawn this
     // headless (#1007); without it the CLI attaches for a human at a terminal.
     detach: flags.herdr === true,
@@ -477,6 +481,7 @@ async function launchStep(): Promise<void> {
           run: result.run.id,
           step: result.step,
           sessionId: result.session_id,
+          runtime: result.runtime,
           agentName: result.agent_name,
           executionTarget: {
             provider: "herdr",
@@ -487,6 +492,7 @@ async function launchStep(): Promise<void> {
           headSha: result.head_sha,
           note,
           model: result.model,
+          effort: result.effort,
           launchedAt,
         },
         actorSessionId,
