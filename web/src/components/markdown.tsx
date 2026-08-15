@@ -19,6 +19,11 @@ import remarkGfm from "remark-gfm";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
 import {
+  type MarkdownRenderedBlock,
+  type MarkdownRenderedBlockKind,
+  markdownRenderedBlock,
+} from "@/lib/markdown-source-map";
+import {
   type IssueRefKind,
   issueRefKey,
   issueRefTargets,
@@ -76,37 +81,93 @@ function mermaidChart(children: ReactNode): string | null {
   return typeof text === "string" ? text.replace(/\n$/, "") : "";
 }
 
-const components: Components = {
-  pre({ node, children, ...rest }) {
-    const chart = mermaidChart(children);
-    if (chart !== null) {
-      return <MermaidDiagram chart={chart} />;
-    }
-    return <pre {...rest}>{children}</pre>;
-  },
-  a({ href, title, children }) {
-    const m = href ? REF_HREF.exec(href) : null;
-    const params = m ? refParams(m) : null;
-    if (m && params) {
+function markdownComponents(
+  onRenderedBlock?: (block: MarkdownRenderedBlock) => void,
+): Components {
+  const report = (
+    kind: MarkdownRenderedBlockKind,
+    node: Parameters<NonNullable<Components["p"]>>[0]["node"],
+  ) => onRenderedBlock?.(markdownRenderedBlock(kind, node));
+
+  return {
+    p({ node, children, ...rest }) {
+      report("paragraph", node);
+      return <p {...rest}>{children}</p>;
+    },
+    h1({ node, children, ...rest }) {
+      report("heading", node);
+      return <h1 {...rest}>{children}</h1>;
+    },
+    h2({ node, children, ...rest }) {
+      report("heading", node);
+      return <h2 {...rest}>{children}</h2>;
+    },
+    h3({ node, children, ...rest }) {
+      report("heading", node);
+      return <h3 {...rest}>{children}</h3>;
+    },
+    h4({ node, children, ...rest }) {
+      report("heading", node);
+      return <h4 {...rest}>{children}</h4>;
+    },
+    h5({ node, children, ...rest }) {
+      report("heading", node);
+      return <h5 {...rest}>{children}</h5>;
+    },
+    h6({ node, children, ...rest }) {
+      report("heading", node);
+      return <h6 {...rest}>{children}</h6>;
+    },
+    li({ node, children, ...rest }) {
+      report("list-item", node);
+      return <li {...rest}>{children}</li>;
+    },
+    blockquote({ node, children, ...rest }) {
+      report("blockquote", node);
+      return <blockquote {...rest}>{children}</blockquote>;
+    },
+    tr({ node, children, ...rest }) {
+      report("table-row", node);
+      return <tr {...rest}>{children}</tr>;
+    },
+    img({ node, src, alt, title }) {
+      report("image", node);
+      if (!src) return null;
+      return <img src={src} alt={alt ?? ""} title={title} />;
+    },
+    pre({ node, children, ...rest }) {
+      const chart = mermaidChart(children);
+      if (chart !== null) {
+        report("mermaid", node);
+        return <MermaidDiagram chart={chart} />;
+      }
+      report("code-block", node);
+      return <pre {...rest}>{children}</pre>;
+    },
+    a({ href, title, children }) {
+      const m = href ? REF_HREF.exec(href) : null;
+      const params = m ? refParams(m) : null;
+      if (m && params) {
+        return (
+          <Link
+            to={REF_ROUTES[m[3] as keyof typeof REF_ROUTES]}
+            params={params}
+            className="text-link hover:underline"
+          >
+            {children}
+          </Link>
+        );
+      }
+      // Preserve the link title (`[text](url "title")`); other anchor attributes
+      // are not emitted by react-markdown for Markdown links.
       return (
-        <Link
-          to={REF_ROUTES[m[3] as keyof typeof REF_ROUTES]}
-          params={params}
-          className="text-link hover:underline"
-        >
+        <a href={href} title={title}>
           {children}
-        </Link>
+        </a>
       );
-    }
-    // Preserve the link title (`[text](url "title")`); other anchor attributes
-    // are not emitted by react-markdown for Markdown links.
-    return (
-      <a href={href} title={title}>
-        {children}
-      </a>
-    );
-  },
-};
+    },
+  };
+}
 
 export function Markdown({
   children,
@@ -114,12 +175,14 @@ export function Markdown({
   owner,
   repo,
   typeset = false,
+  onRenderedBlock,
 }: {
   children: string;
   className?: string;
   owner?: string;
   repo?: string;
   typeset?: boolean;
+  onRenderedBlock?: (block: MarkdownRenderedBlock) => void;
 }) {
   // Clicking an embedded image opens it full-size in <ImageLightbox> (#471).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
@@ -146,8 +209,9 @@ export function Markdown({
       ? [remarkGfm, [remarkIssueRefs, { owner, repo, kinds }]]
       : [remarkGfm];
   const componentsWithImg: Components = {
-    ...components,
-    img({ src, alt, title }) {
+    ...markdownComponents(onRenderedBlock),
+    img({ node, src, alt, title }) {
+      onRenderedBlock?.(markdownRenderedBlock("image", node));
       if (!src) return null;
       const open = () => setLightbox({ src, alt: alt ?? "" });
       return (
@@ -171,6 +235,7 @@ export function Markdown({
   return (
     <div className={cn(typeset ? "typeset" : "markdown-body", className)}>
       <ReactMarkdown
+        passNode
         remarkPlugins={remarkPlugins}
         components={componentsWithImg}
       >
