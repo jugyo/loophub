@@ -1,5 +1,8 @@
 import type { Position } from "unist";
-import type { PullDiffWire } from "../../../core/serialize";
+import type {
+  DiffFeedbackThreadWire,
+  PullDiffWire,
+} from "../../../core/serialize";
 
 /** A 1-based, inclusive range in the Markdown source. */
 export type MarkdownSourceRange = {
@@ -38,6 +41,17 @@ export type MarkdownDiffAnnotation = {
   block: MarkdownRenderedBlock;
   changeKind: Record<MarkdownDiffSide, MarkdownDiffChangeKind | null>;
   commentableRanges: MarkdownCommentableRange[];
+};
+
+export type MarkdownDiffFeedbackThreadPlacement = {
+  thread: DiffFeedbackThreadWire;
+  anchor: {
+    side: MarkdownDiffSide;
+    startLine: number;
+    endLine: number;
+  };
+  placement: "rendered" | "source-only";
+  block: MarkdownRenderedBlock | null;
 };
 
 type DiffLine = PullDiffWire["files"][number]["lines"][number];
@@ -168,6 +182,61 @@ export function markdownDiffAnnotations(
       }
       return { block: blocks[index], changeKind, commentableRanges: ranges };
     });
+}
+
+/**
+ * Place diff feedback threads in a rendered Markdown preview without changing their order.
+ * Resolved coordinates are preferred because they describe the current patch; the original
+ * anchor is retained for historical or unavailable threads so callers can still show a source
+ * location. A thread is attached to one smallest block containing its end line, which also makes
+ * a range crossing multiple blocks appear only once.
+ */
+export function markdownDiffFeedbackPlacements(
+  blocks: MarkdownRenderedBlock[],
+  threads: DiffFeedbackThreadWire[],
+): MarkdownDiffFeedbackThreadPlacement[] {
+  return threads.map((thread) => {
+    const anchor = thread.resolved_anchor ?? thread.anchor;
+    const placement = {
+      side: anchor.side,
+      startLine: anchor.start_line,
+      endLine: anchor.end_line,
+    } satisfies MarkdownDiffFeedbackThreadPlacement["anchor"];
+
+    if (thread.placement !== "inline") {
+      return {
+        thread,
+        anchor: placement,
+        placement: "source-only",
+        block: null,
+      };
+    }
+
+    const block = blocks
+      .filter((candidate) => {
+        const range = candidate.sourceRange;
+        return (
+          range != null &&
+          placement.endLine >= range.startLine &&
+          placement.endLine <= range.endLine
+        );
+      })
+      .reduce<MarkdownRenderedBlock | null>((smallest, candidate) => {
+        if (!smallest) return candidate;
+        const currentRange = candidate.sourceRange!;
+        const smallestRange = smallest.sourceRange!;
+        const currentSize = currentRange.endLine - currentRange.startLine;
+        const smallestSize = smallestRange.endLine - smallestRange.startLine;
+        return currentSize < smallestSize ? candidate : smallest;
+      }, null);
+
+    return {
+      thread,
+      anchor: placement,
+      placement: block ? "rendered" : "source-only",
+      block,
+    };
+  });
 }
 
 function changeKindFor(

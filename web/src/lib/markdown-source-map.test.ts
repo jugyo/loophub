@@ -1,9 +1,40 @@
 import { describe, expect, it } from "vitest";
+import type { DiffFeedbackThreadWire } from "../../../core/serialize";
 import {
   markdownDiffAnnotations,
+  markdownDiffFeedbackPlacements,
   markdownRenderedBlock,
   markdownSourceRange,
 } from "./markdown-source-map";
+
+function thread(
+  patch: Partial<DiffFeedbackThreadWire> = {},
+): DiffFeedbackThreadWire {
+  return {
+    id: 1,
+    pr_number: 10,
+    anchor: {
+      base_sha: "base",
+      head_sha: "head",
+      path: "README.md",
+      original_path: null,
+      side: "RIGHT",
+      start_line: 2,
+      end_line: 2,
+    },
+    resolved_anchor: null,
+    freshness: "current",
+    outdated_reason: null,
+    placement: "inline",
+    original_context: null,
+    archived_at: null,
+    created_by: "me",
+    created_by_type: "human",
+    created_at: "2026-01-01T00:00:00.000Z",
+    messages: [],
+    ...patch,
+  };
+}
 
 describe("markdown source mapping", () => {
   it("converts a positioned node to an inclusive line range", () => {
@@ -120,5 +151,113 @@ describe("markdown source mapping", () => {
         [{ kind: "addition", text: "", left_line: null, right_line: 1 }],
       ),
     ).toEqual([]);
+  });
+
+  it("prefers a resolved anchor and places a current thread in the smallest block", () => {
+    const parent = markdownRenderedBlock("blockquote", {
+      position: {
+        start: { line: 1, column: 1 },
+        end: { line: 5, column: 1 },
+      },
+    });
+    const child = markdownRenderedBlock("paragraph", {
+      position: {
+        start: { line: 3, column: 1 },
+        end: { line: 4, column: 1 },
+      },
+    });
+
+    expect(
+      markdownDiffFeedbackPlacements(
+        [parent, child],
+        [
+          thread({
+            anchor: { ...thread().anchor, start_line: 1, end_line: 1 },
+            resolved_anchor: {
+              path: "README.md",
+              original_path: null,
+              side: "LEFT",
+              start_line: 3,
+              end_line: 4,
+            },
+          }),
+        ],
+      ),
+    ).toEqual([
+      {
+        thread: expect.anything(),
+        anchor: { side: "LEFT", startLine: 3, endLine: 4 },
+        placement: "rendered",
+        block: child,
+      },
+    ]);
+  });
+
+  it("assigns a range crossing blocks once using the block containing end_line", () => {
+    const first = markdownRenderedBlock("paragraph", {
+      position: {
+        start: { line: 2, column: 1 },
+        end: { line: 3, column: 1 },
+      },
+    });
+    const second = markdownRenderedBlock("paragraph", {
+      position: {
+        start: { line: 4, column: 1 },
+        end: { line: 6, column: 1 },
+      },
+    });
+    const result = markdownDiffFeedbackPlacements(
+      [first, second],
+      [thread({ anchor: { ...thread().anchor, start_line: 3, end_line: 5 } })],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].block).toBe(second);
+    expect(result[0].placement).toBe("rendered");
+  });
+
+  it("keeps historical and unavailable threads source-only and preserves order", () => {
+    const block = markdownRenderedBlock("paragraph", {
+      position: {
+        start: { line: 2, column: 1 },
+        end: { line: 4, column: 1 },
+      },
+    });
+    const historical = thread({
+      id: 2,
+      freshness: "outdated",
+      placement: "historical",
+      resolved_anchor: {
+        path: "README.md",
+        original_path: null,
+        side: "RIGHT",
+        start_line: 2,
+        end_line: 2,
+      },
+    });
+    const unavailable = thread({
+      id: 3,
+      freshness: "unavailable",
+      placement: "historical",
+      resolved_anchor: null,
+      anchor: { ...thread().anchor, start_line: 3, end_line: 3 },
+    });
+
+    expect(
+      markdownDiffFeedbackPlacements([block], [historical, unavailable]),
+    ).toEqual([
+      {
+        thread: historical,
+        anchor: { side: "RIGHT", startLine: 2, endLine: 2 },
+        placement: "source-only",
+        block: null,
+      },
+      {
+        thread: unavailable,
+        anchor: { side: "RIGHT", startLine: 3, endLine: 3 },
+        placement: "source-only",
+        block: null,
+      },
+    ]);
   });
 });
