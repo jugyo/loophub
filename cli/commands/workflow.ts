@@ -97,6 +97,47 @@ function workflowIdFlag(): number | undefined {
   return Number(flags["workflow-id"]);
 }
 
+function manifestRunId(): number {
+  return positiveInt(rest[1], "run");
+}
+
+async function manifestCommand(): Promise<void> {
+  const action = rest[0];
+  if (action !== "show" && action !== "path") usage();
+  const runId = manifestRunId();
+  const repo = await resolveRepo();
+  const service = (await svc()).workflowRuns;
+  if (action === "path") {
+    console.log(await runOp(() => service.manifestPath(repo, runId)));
+    return;
+  }
+  const result = await runOp(() => service.manifestView(repo, runId));
+  if (flags.json) {
+    out(result);
+    return;
+  }
+  console.log(`動作条件 (manifest)\t${result.manifest_path}`);
+  console.log(`contract_language\t${result.manifest.contract_language}`);
+  for (const kind of ["parent", "execute", "verify"] as const) {
+    const agent = result.manifest.agents[kind];
+    console.log(`${kind}.runtime\t${agent.runtime}`);
+    console.log(`${kind}.model\t${agent.model}`);
+    console.log(`${kind}.effort\t${agent.effort}`);
+  }
+  console.log("pointer (DB)");
+  for (const pointer of result.pointers) {
+    console.log(`${pointer.label}\t${pointer.value}`);
+  }
+  console.log("workspace (規約から導出)");
+  console.log(`worktree_path\t${result.workspace.worktree_path}`);
+  console.log(`branch\t${result.workspace.branch}`);
+  console.log(`base_branch\t${result.workspace.base_branch}`);
+  console.log("反映タイミング");
+  console.log(`next_child\t${result.change_timing.next_child}`);
+  console.log(`parent\t${result.change_timing.parent}`);
+  console.log(`execute\t${result.change_timing.execute}`);
+}
+
 function commandAvailable(command: string): boolean {
   const result = spawnSync(command, ["--version"], {
     encoding: "utf8",
@@ -1027,6 +1068,8 @@ export async function run(): Promise<void> {
     else console.log(`archived workflow "${workflow.name}"`);
   } else if (sub === "start") {
     await startWorkflow();
+  } else if (sub === "manifest") {
+    await manifestCommand();
   } else if (sub === "launch-step") {
     await launchStep();
   } else if (sub === "run") {

@@ -25,6 +25,7 @@ export function usage(): void {
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|archive|delete <name> [--repo <owner/name>] [--workflow-id <id>] [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage workflow prompt bundles
   lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok | --cursor | --opencode] [--model <name>] [--herdr] [--no-launch]   # start a Workflow run (default runtime/model from app settings; agents launch in auto mode)
+  lh workflow manifest show|path <run> [--repo owner/name] [--json]   # inspect or print the path of a Workflow run manifest
   lh workflow run advance-to-verify|request-rework --run <id> [--repo owner/name]
   lh workflow run activate-step --run <id> --step execute --session <id> [--repo owner/name]
   lh workflow run await-human --run <id> --reason <text|@file|-> [--repo owner/name]
