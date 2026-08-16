@@ -157,7 +157,7 @@ function IssueHeader({
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
   const state = stateBadge(issue, "issues");
-  usePageTitle([`${owner}/${repo}`, `Issue #${issue.number}`, issue.title]);
+  usePageTitle([`Issue #${issue.number}`, issue.title, `${owner}/${repo}`]);
 
   return (
     <div data-debug-component="IssueHeader" className="flex flex-col gap-3">

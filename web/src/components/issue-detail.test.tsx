@@ -202,6 +202,9 @@ describe("IssueDetail", () => {
     renderDetail();
 
     expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
+    expect(document.title).toBe(
+      "Issue #12 · ui2: issue detail · me/proj · LoopHub",
+    );
     expect(screen.getByText("Render title, body, labels.")).toBeTruthy();
     expect(screen.getByText("ready-to-build")).toBeTruthy();
     expect(screen.queryByText(/^branch:/)).toBeNull();

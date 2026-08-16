@@ -402,6 +402,7 @@ describe("PullDetail", () => {
     const { container } = renderDetail();
 
     expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
+    expect(document.title).toBe("PR #30 · ui2: PR detail · me/proj · LoopHub");
     // Branch names are scoped to the sidebar's PR details section, the one place they appear (#59).
     const details = container.querySelector<HTMLElement>(
       '[data-debug-component="PullInfoSection"]',

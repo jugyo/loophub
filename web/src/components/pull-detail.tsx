@@ -383,7 +383,7 @@ function PullHeader({
   titleRef: RefObject<HTMLDivElement | null>;
 }) {
   const navigate = useNavigate();
-  usePageTitle([`${owner}/${repo}`, `PR #${pull.number}`, pull.title]);
+  usePageTitle([`PR #${pull.number}`, pull.title, `${owner}/${repo}`]);
 
   const badges = pullDetailBadges(pull);
 
