@@ -15,7 +15,8 @@ export function usage(): void {
   lh session usage [confirm] [--session <id>] [--json]
   lh session usage sync [--session <id>] [--full] [--json]
   lh session usage recalculate [--session <id>] [--json]
-  lh issue search|list|view|create|import|update|comment|close|label  [--repo owner/repo]
+  lh issue search|list|view|create|import|update|comment|close|label|sub  [--repo owner/repo]
+  lh issue sub list|add|remove|reorder ... [--repo owner/repo]
   lh issue new [--repo owner/name] [--claude-code | --codex | --grok | --opencode] [--model <name>] [--effort <level>] [--target-branch <branch>] [--prompt <text>]
   lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)

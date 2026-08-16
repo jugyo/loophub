@@ -69,6 +69,20 @@ Options:
   --json                Print the issue, comments, acceptance criteria, and linked PR as JSON.
   --help                Show this help without reading the database.`;
 
+const ISSUE_SUB_DETAILS = `
+
+Usage:
+  lh issue sub list <parent> [options]
+  lh issue sub add <parent> <child> [options]
+  lh issue sub remove <child> [options]
+  lh issue sub reorder <parent> --order <child,...> [options]
+
+Options:
+  --order <child,...>    Complete ordered list of sub-issue numbers (reorder only).
+  --repo <owner/name>    Repository (defaults to the repository at the current path).
+  --json                 Print the result as JSON.
+  --help                 Show this help without changing the database.`;
+
 const SESSION_REGISTER_DETAILS = `
 
 Usage:
@@ -307,6 +321,11 @@ export const commandHelp: readonly CommandHelp[] = [
   { path: ["issue", "comment"], description: "Comment on an issue." },
   { path: ["issue", "close"], description: "Close an issue." },
   { path: ["issue", "label"], description: "Add a label to an issue." },
+  {
+    path: ["issue", "sub"],
+    description: "Manage issue hierarchy.",
+    details: ISSUE_SUB_DETAILS,
+  },
   { path: ["session"], description: "Manage agent sessions." },
   {
     path: ["session", "register"],

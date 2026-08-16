@@ -262,6 +262,38 @@ export const issues = {
     });
   },
 
+  subIssueSummaries(name: string, numbers: number[]) {
+    const r = repoOr404(name);
+    const rows = S.listIssues(r.id, "issue", "all", "created", {
+      rootsOnly: true,
+    }).filter((row) => numbers.includes(row.number));
+    const summaries = S.subIssueSummariesByParent(rows.map((row) => row.id));
+    return new Map(
+      rows.map((row) => [
+        row.number,
+        summaries.get(row.id) ?? { open: 0, closed: 0, total: 0 },
+      ]),
+    );
+  },
+
+  hierarchy(name: string, number: number) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "issue");
+    const parents = S.listAncestorRows(row.id, 4)
+      .reverse()
+      .map((parent) => ({
+        number: parent.number,
+        state: parent.state,
+        title: parent.title,
+      }));
+    const children = S.listSubIssues(row.id).map((child) => ({
+      number: child.number,
+      state: child.state,
+      title: child.title,
+    }));
+    return { parents, children };
+  },
+
   // Issue detail. Unlike the list/summary `issueJSON` (where `comments` is just a count),
   // the detail also carries `comment_list` — the full comment bodies (author, time, text) — so
   // an implementation agent reading an issue via `lh issue view --json` gets the design context
