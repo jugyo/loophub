@@ -158,6 +158,7 @@ function makeRunState(
     ended_at: null,
     latest_review: null,
     verification_status: "unverified",
+    pr_merged: false,
     done: false,
     merge_conflict: false,
     ...partial,

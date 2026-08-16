@@ -24,6 +24,7 @@ import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
+import { workflowRunDisplayState } from "@/lib/workflow-run";
 import { useFocusHerdrAgent } from "@/queries/terminal";
 
 const STAGES = [
@@ -35,6 +36,7 @@ const STAGES = [
 type WorkflowTrackerState = {
   activeIndex: number;
   done: boolean;
+  merged: boolean;
   stale: boolean;
   needsHuman: boolean;
 };
@@ -58,29 +60,35 @@ function workflowParentAgent(
 export function workflowTrackerState(
   state: WorkflowRunState,
 ): WorkflowTrackerState {
+  state = workflowRunDisplayState(state);
   const needsHuman =
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked";
   const done = state.done;
+  const merged = state.pr_merged;
   const stale =
     state.status === "running" &&
     state.needs_human_reason === null &&
     state.verification_status === "stale";
-  // Canonical Done advances the tracker to index 2; otherwise it sits on the run's current step.
+  // Merge-ready and merged PRs advance the tracker to Done; otherwise it sits on the run's current
+  // step.
   const stepIndex = state.current_step === "verify" ? 1 : 0;
-  const activeIndex = done ? 2 : stepIndex;
-  return { activeIndex, done, stale, needsHuman };
+  const activeIndex = done || merged ? 2 : stepIndex;
+  return { activeIndex, done, merged, stale, needsHuman };
 }
 
 function workflowTrackerTitle(
   state: WorkflowRunState,
-  { done, stale, needsHuman }: WorkflowTrackerState,
+  { done, merged, stale, needsHuman }: WorkflowTrackerState,
 ): string {
-  if (state.merge_conflict) {
+  if (!merged && state.merge_conflict) {
     return "Merge conflict — resolve it before this PR can merge";
   }
   if (needsHuman) {
     return "Workflow run is waiting for a human instruction";
+  }
+  if (merged) {
+    return "The pull request was merged — the run reached Done";
   }
   if (done) {
     return "The pull request is ready to merge — the run reached Done";
@@ -247,7 +255,7 @@ function WorkflowNode({
         )}
       >
         <AgentBotIcon
-          working={agent?.status === "working"}
+          working={!state.pr_merged && agent?.status === "working"}
           className={cn(
             size === "md" ? "size-6 [&>svg]:size-3.5" : "size-[18px]",
           )}
@@ -276,7 +284,11 @@ function WorkflowNode({
             </div>
             <dl className="mt-2 grid grid-cols-[3.5rem_1fr] gap-x-2 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Status</dt>
-              <dd className="font-medium">{agent?.status ?? state.status}</dd>
+              <dd className="font-medium">
+                {state.pr_merged
+                  ? state.status
+                  : (agent?.status ?? state.status)}
+              </dd>
             </dl>
             <p className="mt-2 text-xs text-muted-foreground">{stateSummary}</p>
             {herdrUnavailable ? (
@@ -441,13 +453,14 @@ export function WorkflowStepTracker({
    */
   overBudget?: boolean;
 }) {
-  const tracker = workflowTrackerState(state);
+  const displayState = workflowRunDisplayState(state);
+  const tracker = workflowTrackerState(displayState);
   const { activeIndex, done, stale, needsHuman } = tracker;
   const pillSize =
     size === "md" ? "px-2.5 py-1 text-xs" : "px-2 py-0.5 text-[11px]";
   const connectorSize = size === "md" ? "w-4" : "w-2.5";
   const repoFullName = owner && repo ? `${owner}/${repo}` : undefined;
-  const stateSummary = workflowTrackerTitle(state, tracker);
+  const stateSummary = workflowTrackerTitle(displayState, tracker);
   const parentAgent = workflowParentAgent(
     herdrUnavailable ? undefined : herdrSessions,
     repoFullName,
@@ -463,7 +476,7 @@ export function WorkflowStepTracker({
       {showWorkflowNode ? (
         <>
           <WorkflowNode
-            state={state}
+            state={displayState}
             stateSummary={stateSummary}
             repo={repoFullName}
             agent={parentAgent}
@@ -483,8 +496,11 @@ export function WorkflowStepTracker({
         const isPast = index < activeIndex;
         // A PR-level conflict wins the terminal pill regardless of the run's step: an un-mergeable
         // PR is the most actionable state to surface, so "Done" becomes "Conflict!" (#1659).
-        const isDoneConflict = stage.key === "done" && state.merge_conflict;
-        const isDoneReached = stage.key === "done" && done;
+        const isDoneConflict =
+          stage.key === "done" &&
+          !tracker.merged &&
+          displayState.merge_conflict;
+        const isDoneReached = stage.key === "done" && (done || tracker.merged);
         const isStaleVerify = stage.key === "verify" && isCurrent && stale;
         const stageStatus = isDoneConflict
           ? "Conflict"
@@ -508,7 +524,7 @@ export function WorkflowStepTracker({
                 state.id,
                 stage.key,
               );
-        const stageWorking = agent?.status === "working";
+        const stageWorking = !tracker.merged && agent?.status === "working";
         return (
           <Fragment key={stage.key}>
             {index > 0 ? (
@@ -529,7 +545,7 @@ export function WorkflowStepTracker({
               stageStatus={stageStatus}
               execution={
                 stage.key === "execute" || stage.key === "verify"
-                  ? (state.latest_step_runs?.[stage.key] ?? null)
+                  ? (displayState.latest_step_runs?.[stage.key] ?? null)
                   : null
               }
               ariaCurrent={isCurrent ? "step" : undefined}

@@ -100,6 +100,7 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     ended_at: null,
     latest_review: null,
     verification_status: "unverified",
+    pr_merged: false,
     done: false,
     merge_conflict: false,
     ...partial,
@@ -386,6 +387,35 @@ describe("WorkflowRunStatusSection", () => {
     expect(await screen.findByText("Completed")).toBeTruthy();
     expect(screen.getByText("The Workflow run is completed.")).toBeTruthy();
     expect(screen.queryByText(/Verify passed/)).toBeNull();
+  });
+
+  it("prioritizes a merged PR over unreconciled running, stale, and held state", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          status: "running",
+          current_step: "verify",
+          pr_merged: true,
+          verification_status: "stale",
+          needs_human_reason: "Cost limit exceeded",
+          cost_limit_increase_available: true,
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(screen.getByText("The Workflow run is completed.")).toBeTruthy();
+    expect(screen.getByText("Done").getAttribute("aria-current")).toBe("step");
+    expect(screen.queryByText("Running")).toBeNull();
+    expect(screen.queryByText("Reverify required")).toBeNull();
+    expect(screen.queryByText(/fresh Verify is required/)).toBeNull();
+    expect(screen.queryByText("Needs human")).toBeNull();
+    expect(screen.queryByText("needs human")).toBeNull();
+    expect(screen.queryByText("over budget")).toBeNull();
+    expect(screen.queryByText("Cost limit exceeded")).toBeNull();
+    expect(screen.queryByText(/elapsed$/)).toBeNull();
   });
 
   it("keeps a verified running run free of continuing status text", async () => {

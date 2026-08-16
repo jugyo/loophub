@@ -48,6 +48,7 @@ function state(partial: Partial<WorkflowRunState> = {}): WorkflowRunState {
     ended_at: null,
     latest_review: null,
     verification_status: "unverified",
+    pr_merged: false,
     done: false,
     merge_conflict: false,
     ...partial,
@@ -606,6 +607,32 @@ describe("WorkflowStepTracker", () => {
       "step",
     );
     expect(screen.getByText("Done").getAttribute("aria-current")).toBeNull();
+  });
+
+  it("shows a merged PR at Done without a stale Verify or Conflict state (#265, PR #242)", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({
+          status: "running",
+          current_step: "verify",
+          pr_merged: true,
+          verification_status: "stale",
+          needs_human_reason: "waiting for a decision",
+          merge_conflict: true,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Done").getAttribute("aria-current")).toBe("step");
+    expect(screen.getByText("Done").className).toContain("text-green");
+    expect(screen.getByText("Verify").getAttribute("aria-current")).toBeNull();
+    expect(screen.queryByText("Conflict!")).toBeNull();
+    expect(screen.queryByText("needs human")).toBeNull();
+    expect(
+      screen.getByLabelText(
+        "The pull request was merged — the run reached Done",
+      ),
+    ).toBeTruthy();
   });
 
   it("flips the terminal Done pill to Conflict! in a danger tone when the PR conflicts", () => {

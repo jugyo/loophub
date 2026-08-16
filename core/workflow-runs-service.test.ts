@@ -3559,6 +3559,14 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   });
   expect(stale?.verification_status).toBe("stale");
   expect(stale?.done).toBe(false);
+  expect(stale?.pr_merged).toBe(false);
+
+  commit(REPO_PATH, "state.txt", "base conflict\n");
+  const conflicting = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: prIssue.number,
+  });
+  expect(conflicting?.merge_conflict).toBe(true);
+  expect(conflicting?.pr_merged).toBe(false);
 
   S.updateWorkflowRun(run.id, { needsHumanReason: "waiting for guidance" });
   const waiting = await svc.workflowRuns.stateForPull(repo.full_name, {
@@ -3571,6 +3579,20 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(completed?.ended_at).toBe(completedRun?.ended_at);
+
+  // #265 / PR #242 regression: merge is a distinct terminal display fact. It must not be
+  // mistaken for a closed-unmerged run or retain live git conflict state after the merge.
+  S.setMerged(prIssue.id, advancedHead, "merge");
+  const merged = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: prIssue.number,
+  });
+  expect(merged).toMatchObject({
+    status: "completed",
+    current_step: "verify",
+    pr_merged: true,
+    done: false,
+    merge_conflict: false,
+  });
 });
 
 test("stateForPull exposes the latest step launch effort and complete token usage", async () => {

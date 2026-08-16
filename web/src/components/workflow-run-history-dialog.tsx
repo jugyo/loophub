@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCost } from "@/lib/session-usage";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
+import { workflowRunDisplayState } from "@/lib/workflow-run";
 import {
   useWorkflowRunAgentCosts,
   useWorkflowRunHistory,
@@ -38,6 +39,10 @@ function displayName(value: string): string {
     .replace(/^./u, (character) => character.toUpperCase());
 }
 
+function currentStepLabel(state: WorkflowRunState): string {
+  return state.pr_merged ? "Done" : displayName(state.current_step);
+}
+
 function timestamp(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
@@ -59,6 +64,7 @@ export function WorkflowRunDetailDialog({
   state: WorkflowRunState;
   onClose: () => void;
 }) {
+  const displayState = workflowRunDisplayState(state);
   const history = useWorkflowRunHistory(owner, repo, state.id, true);
   const agents = useWorkflowRunAgentCosts(owner, repo, state.id, true);
   const backdropDismiss = useBackdropDismiss(onClose);
@@ -118,12 +124,12 @@ export function WorkflowRunDetailDialog({
             <div>
               <dt className="text-xs text-muted-foreground">Status</dt>
               <dd className="mt-1">
-                <Badge>{statusLabel(state)}</Badge>
+                <Badge>{statusLabel(displayState)}</Badge>
               </dd>
             </div>
             <Metadata
               label="Current step"
-              value={displayName(state.current_step)}
+              value={currentStepLabel(displayState)}
             />
             <Metadata
               label="Rework"

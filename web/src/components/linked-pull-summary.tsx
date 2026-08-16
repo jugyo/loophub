@@ -20,6 +20,7 @@ import {
 import { formatDuration } from "@/lib/time";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
+import { workflowRunDisplayState } from "@/lib/workflow-run";
 import { useHerdrSessions } from "@/queries/terminal";
 import {
   useIncreaseWorkflowRunCostLimit,
@@ -393,14 +394,15 @@ function WorkflowMiniProgress({
     }
   }, [state?.needs_human_reason, acknowledgedCostHold]);
   if (!state) return null;
+  const terminalState = workflowRunDisplayState(state);
   const budgetResumePending =
     acknowledgedCostHold !== null &&
-    acknowledgedCostHold.limitUsd === state.cost_limit_usd &&
-    acknowledgedCostHold.reason === state.needs_human_reason &&
-    !state.cost_limit_increase_available;
+    acknowledgedCostHold.limitUsd === terminalState.cost_limit_usd &&
+    acknowledgedCostHold.reason === terminalState.needs_human_reason &&
+    !terminalState.cost_limit_increase_available;
   const displayState = budgetResumePending
-    ? { ...state, needs_human_reason: null }
-    : state;
+    ? { ...terminalState, needs_human_reason: null }
+    : terminalState;
   return (
     <>
       <WorkflowStepTracker
@@ -413,16 +415,16 @@ function WorkflowMiniProgress({
         showWorkflowNode={showWorkflowNode}
         size="sm"
         // The badge below already marks the hold, so the tracker drops its "needs human" (#1932).
-        overBudget={state.cost_limit_increase_available}
+        overBudget={displayState.cost_limit_increase_available}
       />
       {/* Nothing is shown while the run is inside its budget; a successful increase is legible from
           the badge disappearing with the hold. */}
-      {state.cost_limit_increase_available ? (
+      {displayState.cost_limit_increase_available ? (
         <WorkflowBudgetControl
           owner={owner}
           repo={repo}
           pull={pull.number}
-          state={state}
+          state={displayState}
           onInteract={onStageInteract}
           onIncreased={setAcknowledgedCostHold}
         />

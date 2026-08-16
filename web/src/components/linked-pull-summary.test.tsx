@@ -147,6 +147,7 @@ function makeWorkflowRunState(
     ended_at: null,
     latest_review: null,
     verification_status: "unverified",
+    pr_merged: false,
     done: false,
     merge_conflict: false,
     ...overrides,
@@ -656,6 +657,14 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
     renderRowWithRun(held);
 
     expect(await screen.findByText("over budget")).toBeTruthy();
+    expect(screen.queryByText("needs human")).toBeNull();
+  });
+
+  it("suppresses a stale budget hold after the PR is merged", async () => {
+    renderRowWithRun({ ...held, pr_merged: true }, { merged: true });
+
+    expect(await screen.findByText("Done")).toBeTruthy();
+    expect(screen.queryByText("over budget")).toBeNull();
     expect(screen.queryByText("needs human")).toBeNull();
   });
 

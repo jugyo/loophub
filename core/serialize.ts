@@ -1598,6 +1598,9 @@ export interface WorkflowRunStateWire {
   };
   latest_review: WorkflowRunReviewSummaryWire | null;
   verification_status: "unverified" | "verified" | "stale";
+  // The linked PR's terminal state. Kept separate from `status === completed`, which also covers
+  // closed-unmerged PRs, and from `done`, which is the pre-merge merge-ready state.
+  pr_merged: boolean;
   // Canonical pre-merge Done state. This remains distinct from the run lifecycle `status` and is
   // false when a merge conflict blocks the otherwise fresh passing review.
   done: boolean;
@@ -1662,6 +1665,7 @@ export function workflowRunStateJSON(input: {
   costLimitIncreaseAvailable: boolean;
   activeVerifyHeadSha: string | null;
   activeVerifyStartedAt: string | null;
+  prMerged: boolean;
   done: boolean;
   mergeConflict: boolean;
   latestStepRuns: WorkflowRunStateWire["latest_step_runs"];
@@ -1690,6 +1694,7 @@ export function workflowRunStateJSON(input: {
     latest_step_runs: input.latestStepRuns,
     latest_review: input.latestReview,
     verification_status: input.verificationStatus,
+    pr_merged: input.prMerged,
     done: input.done,
     merge_conflict: input.mergeConflict,
   };

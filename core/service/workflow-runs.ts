@@ -1241,7 +1241,7 @@ async function workflowRunState(
     : [null, null];
   const currentHead = liveHead ?? pull?.head_sha ?? null;
   const shaStatus =
-    liveHead && liveBase
+    pull?.merged !== 1 && liveHead && liveBase
       ? await pullShaStatus(repo.local_path, liveBase, liveHead)
       : null;
   const mergeConflict = shaStatus?.conflict ?? false;
@@ -1307,6 +1307,7 @@ async function workflowRunState(
     activeVerifyStartedAt: verifyActive
       ? (verifyLaunch?.created_at ?? null)
       : null,
+    prMerged: pull?.merged === 1,
     done: workflowDone({
       mergeableState,
       prClosed: prIssue?.state === "closed",
