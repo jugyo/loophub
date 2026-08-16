@@ -62,8 +62,10 @@ import {
 } from "@/lib/diff-feedback";
 import { errorMessage } from "@/lib/error-message";
 import {
+  type MarkdownDiffFeedbackThreadPlacement,
   type MarkdownRenderedBlock,
   markdownDiffAnnotations,
+  markdownDiffFeedbackPlacements,
 } from "@/lib/markdown-source-map";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
@@ -2072,6 +2074,34 @@ function MarkdownPreviewPane({
   );
 }
 
+type RenderedCommentSelection = {
+  side: "LEFT" | "RIGHT";
+  startLine: number;
+  endLine: number;
+};
+
+function isDiffChangedError(error: unknown) {
+  return (
+    error instanceof Error && error.message === "pull request diff has changed"
+  );
+}
+
+function annotationForSelection(
+  annotation: ReturnType<typeof markdownDiffAnnotations>[number] | undefined,
+  selection: RenderedCommentSelection | null,
+) {
+  return Boolean(
+    annotation &&
+      selection &&
+      annotation.commentableRanges.some(
+        (range) =>
+          range.side === selection.side &&
+          range.startLine <= selection.startLine &&
+          range.endLine >= selection.endLine,
+      ),
+  );
+}
+
 function RenderedDiffPane({
   owner,
   repo,
@@ -2086,6 +2116,35 @@ function RenderedDiffPane({
   const diff = usePullDiff(owner, repo, number, path);
   const base = usePullFileAtRef(owner, repo, number, path, "base", true);
   const head = usePullFileAtRef(owner, repo, number, path, "head", true);
+  const feedback = useDiffFeedback(owner, repo, number, { path });
+  const reply = useReplyDiffFeedback(owner, repo, number);
+  const reaction = useReactToDiffFeedback(owner, repo, number);
+  const archive = useSetDiffFeedbackArchived(owner, repo, number);
+  const { showError } = useToast();
+  const [selection, setSelection] = useState<RenderedCommentSelection | null>(
+    null,
+  );
+  const [body, setBody] = useState("");
+  const create = useCreateDiffFeedback(
+    owner,
+    repo,
+    number,
+    path,
+    (error, input) => {
+      setSelection({
+        side: input.side,
+        startLine: input.start_line,
+        endLine: input.end_line,
+      });
+      setBody(input.body);
+      showError(errorMessage(error, "Create failed"));
+      if (isDiffChangedError(error)) {
+        void diff.refetch();
+        void base.refetch();
+        void head.refetch();
+      }
+    },
+  );
   const [baseBlocks, setBaseBlocks] = useState<MarkdownRenderedBlock[]>([]);
   const [headBlocks, setHeadBlocks] = useState<MarkdownRenderedBlock[]>([]);
   const baseBlocksRef = useRef<MarkdownRenderedBlock[]>([]);
@@ -2115,17 +2174,110 @@ function RenderedDiffPane({
     () => markdownDiffAnnotations(headBlocks, lines),
     [headBlocks, lines],
   );
+  const threads = feedback.data?.threads ?? [];
+  const basePlacements = useMemo(
+    () => markdownDiffFeedbackPlacements(baseBlocks, threads),
+    [baseBlocks, threads],
+  );
+  const headPlacements = useMemo(
+    () => markdownDiffFeedbackPlacements(headBlocks, threads),
+    [headBlocks, threads],
+  );
+  const stableFile = diff.data?.files[0];
+  const threadContent = useCallback(
+    (thread: DiffFeedbackThread) => (
+      <ThreadCard
+        owner={owner}
+        repo={repo}
+        thread={thread}
+        busy={reply.isPending}
+        reactionBusy={reaction.isPending}
+        archiveBusy={archive.isPending}
+        onReact={(messageId, emoji) =>
+          reaction.mutate(
+            { messageId, emoji },
+            {
+              onError: (error) =>
+                showError(errorMessage(error, "Reaction failed")),
+            },
+          )
+        }
+        onReply={(replyBody) =>
+          reply.mutate(
+            { threadId: thread.id, body: replyBody },
+            {
+              onError: (error) =>
+                showError(errorMessage(error, "Reply failed")),
+            },
+          )
+        }
+        onArchived={(archived) =>
+          archive.mutate(
+            { threadId: thread.id, archived },
+            {
+              onError: (error) =>
+                showError(errorMessage(error, "Update failed")),
+            },
+          )
+        }
+      />
+    ),
+    [archive, owner, reaction, repo, reply, showError],
+  );
+  const commentComposer =
+    selection && stableFile && diff.data ? (
+      <div className="col-span-2">
+        <DiffCommentComposer
+          selection={{ ...selection, hunk: 0 }}
+          body={body}
+          busy={create.isPending}
+          onBodyChange={setBody}
+          onCancel={() => {
+            setSelection(null);
+            setBody("");
+          }}
+          onSubmit={() => {
+            const submittedBody = body.trim();
+            setSelection(null);
+            setBody("");
+            create.mutate({
+              base_sha: diff.data.base_sha,
+              head_sha: diff.data.head_sha,
+              path: stableFile.path,
+              side: selection.side,
+              start_line: selection.startLine,
+              end_line: selection.endLine,
+              body: submittedBody,
+            });
+          }}
+        />
+      </div>
+    ) : null;
+  const sourceOnlyThreads = useMemo(() => {
+    const unique = new Map<number, DiffFeedbackThread>();
+    for (const placement of [...basePlacements, ...headPlacements]) {
+      if (placement.placement === "source-only") {
+        unique.set(placement.thread.id, placement.thread);
+      }
+    }
+    return [...unique.values()];
+  }, [basePlacements, headPlacements]);
 
   return (
     <div
       data-debug-component="RenderedDiffPane"
       className="grid min-h-full grid-cols-2 divide-x"
     >
+      {commentComposer}
       <RenderedDiffSide
         side="LEFT"
         label="Base"
         file={base}
         annotations={baseAnnotations}
+        placements={basePlacements}
+        selection={selection}
+        onSelect={setSelection}
+        threadContent={threadContent}
         registerBlock={registerBlock(baseBlocksRef)}
       />
       <RenderedDiffSide
@@ -2133,12 +2285,26 @@ function RenderedDiffPane({
         label="Head"
         file={head}
         annotations={headAnnotations}
+        placements={headPlacements}
+        selection={selection}
+        onSelect={setSelection}
+        threadContent={threadContent}
         registerBlock={registerBlock(headBlocksRef)}
       />
       {diff.isError ? (
         <p className="col-span-2 border-t border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
           Failed to load diff annotations.
         </p>
+      ) : null}
+      {sourceOnlyThreads.length > 0 ? (
+        <PreviousDiffThreadsSection
+          className="col-span-2 m-2 space-y-2"
+          heading="h4"
+        >
+          {sourceOnlyThreads.map((thread) => (
+            <Fragment key={thread.id}>{threadContent(thread)}</Fragment>
+          ))}
+        </PreviousDiffThreadsSection>
       ) : null}
     </div>
   );
@@ -2149,12 +2315,20 @@ function RenderedDiffSide({
   label,
   file,
   annotations,
+  placements,
+  selection,
+  onSelect,
+  threadContent,
   registerBlock,
 }: {
   side: "LEFT" | "RIGHT";
   label: "Base" | "Head";
   file: ReturnType<typeof usePullFileAtRef>;
   annotations: ReturnType<typeof markdownDiffAnnotations>;
+  placements: MarkdownDiffFeedbackThreadPlacement[];
+  selection: RenderedCommentSelection | null;
+  onSelect: (selection: RenderedCommentSelection) => void;
+  threadContent: (thread: DiffFeedbackThread) => ReactNode;
   registerBlock: (block: MarkdownRenderedBlock) => void;
 }) {
   const changeByBlock = useMemo(() => {
@@ -2167,12 +2341,76 @@ function RenderedDiffSide({
     }
     return result;
   }, [annotations, side]);
+  const annotationsByBlock = useMemo(
+    () =>
+      new Map(
+        annotations.map((annotation) => [
+          renderedBlockKey(annotation.block),
+          annotation,
+        ]),
+      ),
+    [annotations],
+  );
+  const threadsByBlock = useMemo(() => {
+    const result = new Map<string, MarkdownDiffFeedbackThreadPlacement[]>();
+    for (const placement of placements) {
+      if (!placement.block || placement.anchor.side !== side) continue;
+      const key = renderedBlockKey(placement.block);
+      result.set(key, [...(result.get(key) ?? []), placement]);
+    }
+    return result;
+  }, [placements, side]);
   const blockClassName = useCallback(
     (block: MarkdownRenderedBlock) => {
-      const change = changeByBlock.get(renderedBlockKey(block));
-      return change ? `markdown-diff-block-${change}` : undefined;
+      const key = renderedBlockKey(block);
+      const change = changeByBlock.get(key);
+      return cn(
+        change && `markdown-diff-block-${change}`,
+        threadsByBlock.has(key) && "markdown-diff-block-commented",
+        annotationForSelection(annotationsByBlock.get(key), selection) &&
+          "markdown-diff-block-selected",
+      );
     },
-    [changeByBlock],
+    [annotationsByBlock, changeByBlock, selection, threadsByBlock],
+  );
+  const action = useCallback(
+    (block: MarkdownRenderedBlock) => {
+      const annotation = annotationsByBlock.get(renderedBlockKey(block));
+      const ranges =
+        annotation?.commentableRanges.filter((range) => range.side === side) ??
+        [];
+      return ranges.length > 0 ? (
+        <span className="ml-2 inline-flex gap-1 align-middle">
+          {ranges.map((range) => (
+            <button
+              key={`${range.startLine}:${range.endLine}`}
+              type="button"
+              className="rounded-sm bg-blue-600 px-1.5 py-0.5 text-[10px] font-sans text-white hover:bg-blue-700"
+              aria-label={`Comment on ${label.toLowerCase()} lines ${range.startLine}-${range.endLine}`}
+              onClick={() => onSelect(range)}
+            >
+              <Plus className="inline size-3" aria-hidden="true" />
+            </button>
+          ))}
+        </span>
+      ) : null;
+    },
+    [annotationsByBlock, label, onSelect, side],
+  );
+  const after = useCallback(
+    (block: MarkdownRenderedBlock) => {
+      const blockThreads = threadsByBlock.get(renderedBlockKey(block));
+      return blockThreads?.length ? (
+        <div className="mt-2 space-y-2">
+          {blockThreads.map((placement) => (
+            <Fragment key={placement.thread.id}>
+              {threadContent(placement.thread)}
+            </Fragment>
+          ))}
+        </div>
+      ) : null;
+    },
+    [threadContent, threadsByBlock],
   );
 
   return (
@@ -2204,6 +2442,8 @@ function RenderedDiffSide({
             className="typeset-diff-preview mx-auto"
             onRenderedBlock={registerBlock}
             renderedBlockClassName={blockClassName}
+            renderedBlockAction={action}
+            renderedBlockAfter={after}
           >
             {file.data?.content ?? ""}
           </Markdown>

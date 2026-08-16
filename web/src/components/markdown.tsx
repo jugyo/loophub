@@ -84,6 +84,8 @@ function mermaidChart(children: ReactNode): string | null {
 function markdownComponents(
   onRenderedBlock?: (block: MarkdownRenderedBlock) => void,
   renderedBlockClassName?: (block: MarkdownRenderedBlock) => string | undefined,
+  renderedBlockAction?: (block: MarkdownRenderedBlock) => ReactNode,
+  renderedBlockAfter?: (block: MarkdownRenderedBlock) => ReactNode,
 ): Components {
   const report = (
     kind: MarkdownRenderedBlockKind,
@@ -93,107 +95,186 @@ function markdownComponents(
     onRenderedBlock?.(block);
     return renderedBlockClassName?.(block);
   };
+  const action = (
+    kind: MarkdownRenderedBlockKind,
+    node: Parameters<NonNullable<Components["p"]>>[0]["node"],
+  ) => renderedBlockAction?.(markdownRenderedBlock(kind, node));
+  const withAfter = (
+    element: ReactNode,
+    kind: MarkdownRenderedBlockKind,
+    node: Parameters<NonNullable<Components["p"]>>[0]["node"],
+  ) =>
+    renderedBlockAfter ? (
+      <>
+        {element}
+        {renderedBlockAfter(markdownRenderedBlock(kind, node))}
+      </>
+    ) : (
+      element
+    );
 
   return {
     p({ node, children, ...rest }) {
-      return (
+      return withAfter(
         <p {...rest} className={cn(rest.className, report("paragraph", node))}>
           {children}
-        </p>
+          {action("paragraph", node)}
+        </p>,
+        "paragraph",
+        node,
       );
     },
     h1({ node, children, ...rest }) {
-      return (
+      return withAfter(
         <h1 {...rest} className={cn(rest.className, report("heading", node))}>
           {children}
-        </h1>
+          {action("heading", node)}
+        </h1>,
+        "heading",
+        node,
       );
     },
     h2({ node, children, ...rest }) {
-      return (
+      return withAfter(
         <h2 {...rest} className={cn(rest.className, report("heading", node))}>
           {children}
-        </h2>
+          {action("heading", node)}
+        </h2>,
+        "heading",
+        node,
       );
     },
     h3({ node, children, ...rest }) {
-      return (
+      return withAfter(
         <h3 {...rest} className={cn(rest.className, report("heading", node))}>
           {children}
-        </h3>
+          {action("heading", node)}
+        </h3>,
+        "heading",
+        node,
       );
     },
     h4({ node, children, ...rest }) {
-      return (
+      return withAfter(
         <h4 {...rest} className={cn(rest.className, report("heading", node))}>
           {children}
-        </h4>
+          {action("heading", node)}
+        </h4>,
+        "heading",
+        node,
       );
     },
     h5({ node, children, ...rest }) {
-      return (
+      return withAfter(
         <h5 {...rest} className={cn(rest.className, report("heading", node))}>
           {children}
-        </h5>
+          {action("heading", node)}
+        </h5>,
+        "heading",
+        node,
       );
     },
     h6({ node, children, ...rest }) {
-      return (
+      return withAfter(
         <h6 {...rest} className={cn(rest.className, report("heading", node))}>
           {children}
-        </h6>
+          {action("heading", node)}
+        </h6>,
+        "heading",
+        node,
       );
     },
     li({ node, children, ...rest }) {
-      return (
+      return withAfter(
         <li {...rest} className={cn(rest.className, report("list-item", node))}>
           {children}
-        </li>
+          {action("list-item", node)}
+        </li>,
+        "list-item",
+        node,
       );
     },
     blockquote({ node, children, ...rest }) {
-      return (
+      return withAfter(
         <blockquote
           {...rest}
           className={cn(rest.className, report("blockquote", node))}
         >
           {children}
-        </blockquote>
+          {action("blockquote", node)}
+        </blockquote>,
+        "blockquote",
+        node,
       );
     },
     tr({ node, children, ...rest }) {
-      return (
+      const row = (
         <tr {...rest} className={cn(rest.className, report("table-row", node))}>
           {children}
         </tr>
+      );
+      const after = renderedBlockAfter?.(
+        markdownRenderedBlock("table-row", node),
+      );
+      return after ? (
+        <>
+          {row}
+          <tr>
+            <td colSpan={100}>{after}</td>
+          </tr>
+        </>
+      ) : (
+        row
       );
     },
     img({ node, src, alt, title }) {
       const blockClassName = report("image", node);
       if (!src) return null;
+      if (!renderedBlockAction) {
+        const element = (
+          <img
+            className={blockClassName}
+            src={src}
+            alt={alt ?? ""}
+            title={title}
+          />
+        );
+        return withAfter(element, "image", node);
+      }
       return (
-        <img
-          className={blockClassName}
-          src={src}
-          alt={alt ?? ""}
-          title={title}
-        />
+        <span
+          className={cn(
+            blockClassName,
+            renderedBlockAction && "inline-flex items-center gap-1",
+          )}
+        >
+          <img src={src} alt={alt ?? ""} title={title} />
+          {action("image", node)}
+        </span>
       );
     },
     pre({ node, children, ...rest }) {
       const chart = mermaidChart(children);
       if (chart !== null) {
-        return (
-          <MermaidDiagram chart={chart} className={report("mermaid", node)} />
+        return withAfter(
+          <>
+            <MermaidDiagram chart={chart} className={report("mermaid", node)} />
+            {action("mermaid", node)}
+          </>,
+          "mermaid",
+          node,
         );
       }
-      return (
+      return withAfter(
         <pre
           {...rest}
           className={cn(rest.className, report("code-block", node))}
         >
           {children}
-        </pre>
+          {action("code-block", node)}
+        </pre>,
+        "code-block",
+        node,
       );
     },
     a({ href, title, children }) {
@@ -229,6 +310,8 @@ export function Markdown({
   typeset = false,
   onRenderedBlock,
   renderedBlockClassName,
+  renderedBlockAction,
+  renderedBlockAfter,
 }: {
   children: string;
   className?: string;
@@ -237,6 +320,8 @@ export function Markdown({
   typeset?: boolean;
   onRenderedBlock?: (block: MarkdownRenderedBlock) => void;
   renderedBlockClassName?: (block: MarkdownRenderedBlock) => string | undefined;
+  renderedBlockAction?: (block: MarkdownRenderedBlock) => ReactNode;
+  renderedBlockAfter?: (block: MarkdownRenderedBlock) => ReactNode;
 }) {
   // Clicking an embedded image opens it full-size in <ImageLightbox> (#471).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
@@ -263,7 +348,12 @@ export function Markdown({
       ? [remarkGfm, [remarkIssueRefs, { owner, repo, kinds }]]
       : [remarkGfm];
   const componentsWithImg: Components = {
-    ...markdownComponents(onRenderedBlock, renderedBlockClassName),
+    ...markdownComponents(
+      onRenderedBlock,
+      renderedBlockClassName,
+      renderedBlockAction,
+      renderedBlockAfter,
+    ),
     img({ node, src, alt, title }) {
       const block = markdownRenderedBlock("image", node);
       onRenderedBlock?.(block);
@@ -286,12 +376,41 @@ export function Markdown({
         />
       );
       const blockClassName = renderedBlockClassName?.(block);
-      return blockClassName ? (
-        <span className={cn("markdown-diff-image-block", blockClassName)}>
-          {image}
-        </span>
+      const after = renderedBlockAfter?.(block);
+      if (!renderedBlockAction && !after) {
+        return blockClassName ? (
+          <img
+            className={blockClassName}
+            src={src}
+            alt={alt ?? ""}
+            title={title}
+          />
+        ) : (
+          image
+        );
+      }
+      const rendered = renderedBlockAction ? (
+        blockClassName ? (
+          <span className={cn("markdown-diff-image-block", blockClassName)}>
+            {image}
+            {renderedBlockAction(block)}
+          </span>
+        ) : (
+          <span>
+            {image}
+            {renderedBlockAction(block)}
+          </span>
+        )
       ) : (
         image
+      );
+      return after ? (
+        <>
+          {rendered}
+          {after}
+        </>
+      ) : (
+        rendered
       );
     },
   };

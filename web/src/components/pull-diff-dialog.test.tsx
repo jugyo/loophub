@@ -2689,6 +2689,137 @@ describe("DiffFileDialog", () => {
     ).toContain("markdown-diff-block-added");
   });
 
+  it("creates a rendered diff comment and shows its inline conversation", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-# Old\n+# New",
+    };
+    const create = vi.fn(async (input: Record<string, unknown>) => ({
+      thread: feedbackThread({
+        id: 8,
+        anchor: {
+          ...feedbackThread().anchor,
+          path: "README.md",
+          side: "RIGHT",
+          start_line: 1,
+          end_line: 1,
+        },
+        resolved_anchor: {
+          path: "README.md",
+          original_path: null,
+          side: "RIGHT",
+          start_line: 1,
+          end_line: 1,
+        },
+        messages: [
+          {
+            ...feedbackThread().messages[0],
+            id: 18,
+            thread_id: 8,
+            author: "me",
+            body: input.body as string,
+          },
+        ],
+      }),
+    }));
+    const unresolvedInlineThread = feedbackThread({
+      id: 7,
+      anchor: {
+        ...feedbackThread().anchor,
+        path: "README.md",
+        side: "RIGHT",
+        start_line: 999,
+        end_line: 999,
+      },
+      resolved_anchor: {
+        path: "README.md",
+        original_path: null,
+        side: "RIGHT",
+        start_line: 999,
+        end_line: 999,
+      },
+      placement: "inline",
+    });
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "README.md",
+              original_path: null,
+              status: "modified",
+              additions: 1,
+              deletions: 1,
+              patch: mdFile.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1 +1 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-# Old",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+# New",
+                  left_line: null,
+                  right_line: 1,
+                },
+              ],
+            },
+          ],
+        }),
+        "pulls/fileAtRef": (params) => ({
+          status: "ok",
+          content: params.side === "base" ? "# Old\n" : "# New\n",
+        }),
+        "diffFeedback/list": () => ({ threads: [unresolvedInlineThread] }),
+        "diffFeedback/create": create,
+      },
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Rendered diff" }),
+    );
+    await screen.findByRole("heading", { name: "New" });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Previous diff threads" }),
+    );
+    expect(await screen.findByLabelText("Diff thread 7")).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Comment on head lines 1-1" }),
+    );
+    fireEvent.change(screen.getByLabelText("Diff comment"), {
+      target: { value: "Rendered feedback" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          path: "README.md",
+          side: "RIGHT",
+          start_line: 1,
+          end_line: 1,
+          body: "Rendered feedback",
+        }),
+      ),
+    );
+  });
+
   it("renders GFM, tables, images, Mermaid, and long content in both panes", async () => {
     const mdFile: PullFile = {
       filename: "README.md",
