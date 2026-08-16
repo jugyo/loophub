@@ -525,7 +525,7 @@ describe("LinkedPullSummaryRow workflow agent activity", () => {
       screen.getByRole("img", {
         name: `${step === "execute" ? "Execute" : "Verify"} agent working`,
       }).className,
-    ).toContain("linked-pull-pulse");
+    ).toContain("animate-agent-bot-blink");
     expect(
       screen.getByText(step === "execute" ? "Execute" : "Verify").className,
     ).toContain("workflow-stage-glow");
@@ -543,7 +543,7 @@ describe("LinkedPullSummaryRow workflow agent activity", () => {
     const bots = document.querySelectorAll("[data-agent-bot-icon]");
     expect(bots).toHaveLength(3);
     for (const bot of bots) {
-      expect(bot.className).not.toContain("linked-pull-pulse");
+      expect(bot.className).not.toContain("animate-agent-bot-blink");
     }
   });
 

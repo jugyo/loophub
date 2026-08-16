@@ -164,7 +164,7 @@ describe("WorkflowStepTracker", () => {
     const workflow = screen.getByRole("button", { name: "Workflow" });
     const parentBot = workflow.querySelector("[data-agent-bot-icon]");
     expect(parentBot).toBeTruthy();
-    expect(parentBot?.className).toContain("linked-pull-pulse");
+    expect(parentBot?.className).toContain("animate-agent-bot-blink");
     expect(workflow.tagName).toBe("BUTTON");
     const node = workflow.parentElement!;
     const connector = node.nextElementSibling;
@@ -220,7 +220,7 @@ describe("WorkflowStepTracker", () => {
       .getByRole("button", { name: "Workflow" })
       .querySelector("[data-agent-bot-icon]");
     expect(parentBot).toBeTruthy();
-    expect(parentBot?.className).not.toContain("linked-pull-pulse");
+    expect(parentBot?.className).not.toContain("animate-agent-bot-blink");
   });
 
   it("animates a working parent bot without offering a non-focusable pane action", () => {
@@ -248,7 +248,7 @@ describe("WorkflowStepTracker", () => {
     const workflow = screen.getByRole("button", { name: "Workflow" });
     expect(
       workflow.querySelector("[data-agent-bot-icon]")?.className,
-    ).toContain("linked-pull-pulse");
+    ).toContain("animate-agent-bot-blink");
     fireEvent.focus(workflow);
     const dialog = screen.getByRole("dialog", { name: "Workflow details" });
     expect(dialog.textContent).toContain("working");
@@ -752,10 +752,10 @@ describe("WorkflowStepTracker", () => {
     );
     expect(
       screen.getByRole("img", { name: "Execute agent" }).className,
-    ).not.toContain("linked-pull-pulse");
+    ).not.toContain("animate-agent-bot-blink");
     expect(
       screen.getByRole("img", { name: "Verify agent" }).className,
-    ).not.toContain("linked-pull-pulse");
+    ).not.toContain("animate-agent-bot-blink");
   });
 
   it("ignores an older working attempt when the latest step agent has stopped", () => {

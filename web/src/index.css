@@ -515,6 +515,10 @@
 }
 
 @layer utilities {
+  .animate-agent-bot-blink {
+    animation: linked-pull-pulse 2.4s ease-out infinite;
+  }
+
   .animate-bot-wobble {
     animation: bot-wobble 0.8s ease-in-out infinite;
     display: inline-block;

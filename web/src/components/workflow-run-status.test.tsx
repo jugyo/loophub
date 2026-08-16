@@ -180,7 +180,7 @@ describe("WorkflowRunStatusSection", () => {
 
     const workflow = await screen.findByRole("button", { name: "Workflow" });
     const parentBot = workflow.querySelector("[data-agent-bot-icon]");
-    expect(parentBot?.className).toContain("linked-pull-pulse");
+    expect(parentBot?.className).toContain("animate-agent-bot-blink");
     const connector = workflow.parentElement?.nextElementSibling;
     expect(connector?.getAttribute("data-workflow-connector")).toBe(
       "workflow-execute",
@@ -221,7 +221,7 @@ describe("WorkflowRunStatusSection", () => {
     const workflow = await screen.findByRole("button", { name: "Workflow" });
     expect(
       workflow.querySelector("[data-agent-bot-icon]")?.className,
-    ).not.toContain("linked-pull-pulse");
+    ).not.toContain("animate-agent-bot-blink");
   });
 
   it("renders nothing when there is no run", () => {

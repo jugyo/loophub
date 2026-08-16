@@ -22,7 +22,7 @@ export function AgentBotIcon({
       className={cn(
         "relative flex size-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground",
         working &&
-          "animate-[linked-pull-pulse_2.4s_ease-out_infinite] bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/70 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-300/80",
+          "animate-agent-bot-blink bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/70 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-300/80",
         inactive && "opacity-45",
         className,
       )}
