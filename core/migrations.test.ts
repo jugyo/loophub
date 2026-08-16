@@ -113,7 +113,7 @@ test("migration ID は一意で append-only の宣言順を維持する", () => 
     "002-drop-retired-issue-groups",
     "003-create-issue-search-grams",
   ]);
-  expect(ids.at(-1)).toBe("20260815194735-invalid-review-head-shas");
+  expect(ids.at(-1)).toBe("20260815201510-workflow-step-launch-reservation");
 });
 
 test("新しい migration ID は UTC timestamp と説明名を使う", () => {

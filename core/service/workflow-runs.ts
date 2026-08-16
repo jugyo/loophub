@@ -42,6 +42,7 @@ import { killPaneForegroundProcess } from "../terminal/herdr-cleanup.ts";
 import {
   buildWorkflowStepHerdrLaunchPlan,
   HERDR_ID,
+  type HerdrLaunchPlan,
 } from "../terminal/terminal-launch.ts";
 import {
   composeWorkflowLaunchPrompt,
@@ -82,7 +83,8 @@ import {
   writeParentContract,
   writeParentPrompt,
   writeStepContract,
-  writeStepPrompt,
+  writeStepLaunchContract,
+  writeStepLaunchPrompt,
 } from "../workflow/run-files.ts";
 import {
   projectWorkflowRunEvents,
@@ -1159,6 +1161,14 @@ async function observeWorkflowRunStatus(
     rework_limit: run.rework_limit,
     needs_human_reason: run.needs_human_reason,
     awaiting_human: run.needs_human_reason !== null,
+    pending_step_launch:
+      run.launching_step !== null && run.launching_session_id !== null
+        ? {
+            step: workflowStep(run.launching_step),
+            session_id: run.launching_session_id,
+            head_sha: run.launching_head_sha,
+          }
+        : null,
     pending_effect_receipt: pendingEffectReceipt,
     unaddressed_out_of_band_reviews: unaddressedReviews,
     cost_increment_usd: costIncrementUsd,
@@ -1347,6 +1357,27 @@ function assertNoLiveExecuteChild(run: S.WorkflowRunRow, step: WorkflowStep) {
   );
 }
 
+function assertNoDuplicateVerifyChild(
+  run: S.WorkflowRunRow,
+  step: WorkflowStep,
+  headSha: string | undefined,
+) {
+  if (
+    step !== "verify" ||
+    run.active_step !== "verify" ||
+    !run.active_session_id
+  ) {
+    return;
+  }
+  if (run.active_head_sha !== headSha) {
+    return;
+  }
+  throw new ServiceError(
+    409,
+    `Workflow run #${run.id} already has a Verify session for ${headSha} (${run.active_session_id})`,
+  );
+}
+
 function assertParentActor(
   run: S.WorkflowRunRow,
   sessionId: string | null | undefined,
@@ -1527,6 +1558,35 @@ function increaseRunCostLimit(
     increment_usd: incrementUsd,
     ...increased,
   };
+}
+
+function recordWorkflowStepLaunchFailure(
+  repoId: number,
+  runId: number,
+  sessionId: string,
+  reason: string,
+  actorSessionId: string | null | undefined,
+): S.WorkflowRunRow | null {
+  return db.transaction(() => {
+    const failed = S.failWorkflowStepLaunch(runId, sessionId);
+    if (!failed) return null;
+    const step = workflowStep(failed.launch_failure_step ?? "");
+    S.emitWorkflowEvent(
+      repoId,
+      "workflow_step.launch_failed",
+      actorFor(actorSessionId),
+      {
+        id: failed.id,
+        issue_number: failed.issue_number,
+        pr_number: failed.pr_number,
+        step,
+        session_id: sessionId,
+        head_sha: failed.launch_failure_head_sha,
+        reason,
+      },
+    );
+    return failed;
+  });
 }
 
 export const workflowRuns = {
@@ -2173,6 +2233,7 @@ export const workflowRuns = {
     const reviewId = resolveReworkReview(prIssue.id, step, input.review);
     const headSha =
       step === "verify" ? await worktreeHead(worktree) : undefined;
+    assertNoDuplicateVerifyChild(run, step, headSha);
     const baseSha =
       step === "verify" && headSha
         ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
@@ -2205,8 +2266,9 @@ export const workflowRuns = {
       },
       runContractLanguage(run),
     );
-    const systemPromptPath = writeStepContract(
+    const systemPromptPath = writeStepLaunchContract(
       run.id,
+      childSessionId,
       step,
       composed.systemPrompt,
     );
@@ -2218,8 +2280,9 @@ export const workflowRuns = {
     // The positional prompt goes to a file the launch's command line reads back, resolved for this
     // runtime first: Codex and Grok have no --append-system-prompt-file, so their file carries the
     // contract folded in.
-    const userPromptPath = writeStepPrompt(
+    const userPromptPath = writeStepLaunchPrompt(
       run.id,
+      childSessionId,
       step,
       runtimePrompt({
         runtime,
@@ -2227,37 +2290,60 @@ export const workflowRuns = {
         prompt: composed.userPrompt,
       }),
     );
-    const sequence = S.reserveWorkflowRunChildSequence(
-      run.id,
-      nextWorkflowChildSequence(run.step_sessions_json),
-    );
-    if (sequence == null) throw new ServiceError(404, "Workflow run not found");
+    const sequence = S.reserveWorkflowStepLaunch(run.id, {
+      step,
+      sessionId: childSessionId,
+      headSha,
+      minimumNextSequence: nextWorkflowChildSequence(run.step_sessions_json),
+    });
+    if (sequence == null) {
+      const current = S.getWorkflowRun(run.id);
+      if (!current) throw new ServiceError(404, "Workflow run not found");
+      assertNoLiveExecuteChild(current, step);
+      assertNoDuplicateVerifyChild(current, step, headSha);
+      throw new ServiceError(
+        409,
+        `Workflow run #${run.id} is already launching ${current.launching_step ?? "a step"} (${current.launching_session_id ?? "unknown session"})`,
+      );
+    }
     // Where the child goes is decided here, from the pane the run's parent launch registered — not
     // from the environment of whoever ran the command. That record is the run's own anchor, so the
     // child lands beside its parent no matter which pane, tab or workspace is focused. A run with no
     // registered pane (parent started outside the recorded launch path) still falls back to the
     // caller's pane, which is better than the tab-create fallback that ignores the run entirely.
     const anchorPaneId = workflowRunParentPaneId(run) ?? input.paneId ?? null;
-    const herdr = buildWorkflowStepHerdrLaunchPlan({
-      repo: { full_name: r.full_name, local_path: r.local_path },
-      runId: run.id,
-      step,
-      sequence,
-      runtime,
-      sessionId: childSessionId,
-      worktree,
-      systemPromptPath,
-      userPromptPath,
-      splitPaneId: anchorPaneId,
-      model,
-    });
-    // Keep confirmation's validation at the persistence boundary, but also validate the generated
-    // plan before the CLI can spawn it. A future naming/normalization change must fail before it can
-    // leave a live child whose session metadata was never recorded.
-    // The label, not the herdr agent name: `agent_name` is the identity LoopHub records and later
-    // parses back (parseWorkflowHerdrAgentName), and since herdr 0.7.5 the herdr-side name is an
-    // opaque slug while the label carries the "executor #<run>-<n>" wording.
-    validateWorkflowStepAgentName(herdr.label, run.id, step);
+    let herdr: HerdrLaunchPlan;
+    try {
+      herdr = buildWorkflowStepHerdrLaunchPlan({
+        repo: { full_name: r.full_name, local_path: r.local_path },
+        runId: run.id,
+        step,
+        sequence,
+        runtime,
+        sessionId: childSessionId,
+        worktree,
+        systemPromptPath,
+        userPromptPath,
+        splitPaneId: anchorPaneId,
+        model,
+      });
+      // Keep confirmation's validation at the persistence boundary, but also validate the generated
+      // plan before the CLI can spawn it. A future naming/normalization change must fail before it can
+      // leave a live child whose session metadata was never recorded.
+      // The label, not the herdr agent name: `agent_name` is the identity LoopHub records and later
+      // parses back (parseWorkflowHerdrAgentName), and since herdr 0.7.5 the herdr-side name is an
+      // opaque slug while the label carries the "executor #<run>-<n>" wording.
+      validateWorkflowStepAgentName(herdr.label, run.id, step);
+    } catch (error) {
+      recordWorkflowStepLaunchFailure(
+        r.id,
+        run.id,
+        childSessionId,
+        error instanceof Error ? error.message : String(error),
+        sessionId,
+      );
+      throw error;
+    }
 
     return {
       run: runJSON(run),
@@ -2275,6 +2361,71 @@ export const workflowRuns = {
       anchor_pane_id: anchorPaneId,
       herdr,
     };
+  },
+
+  failStepLaunch(
+    name: string,
+    input: { run: number; sessionId: string; reason?: string },
+    actorSessionId?: string | null,
+  ): { run: number; session_id: string } {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    assertParentActor(run, actorSessionId);
+    if (
+      !recordWorkflowStepLaunchFailure(
+        r.id,
+        run.id,
+        input.sessionId,
+        input.reason ?? "Workflow step launch failed before spawn",
+        actorSessionId,
+      )
+    ) {
+      throw new ServiceError(
+        409,
+        "Workflow step launch reservation is not active",
+      );
+    }
+    return { run: run.id, session_id: input.sessionId };
+  },
+
+  recoverStepLaunch(
+    name: string,
+    input: { run: number; reason: string },
+    actorSessionId?: string | null,
+  ): WorkflowRunUpdateResult {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    assertParentActor(run, actorSessionId);
+    const reservedSessionId = run.launching_session_id;
+    if (!reservedSessionId) {
+      throw new ServiceError(
+        409,
+        "Workflow run has no pending step launch to recover",
+      );
+    }
+    const reason = workflowHumanReason(input.reason, "recover launch");
+    const recovered = recordWorkflowStepLaunchFailure(
+      r.id,
+      run.id,
+      reservedSessionId,
+      reason,
+      actorSessionId,
+    );
+    if (!recovered) {
+      throw new ServiceError(
+        409,
+        "Workflow step launch reservation changed before recovery",
+      );
+    }
+    return { run: runJSON(recovered) };
   },
 
   // Stop the Verify children left reviewing a HEAD the run has already moved past — called when a
@@ -2381,6 +2532,17 @@ export const workflowRuns = {
     // commit as one — a run that claims an active step must also carry the session and handoff that
     // step was launched with.
     const withActive = db.transaction(() => {
+      if (
+        run.launching_session_id !== null &&
+        (run.launching_session_id !== sessionId ||
+          run.launching_step !== step ||
+          run.launching_head_sha !== (input.headSha ?? null))
+      ) {
+        throw new ServiceError(
+          409,
+          "Workflow step launch reservation belongs to another launch",
+        );
+      }
       S.registerAgentSession(
         sessionId,
         "workflow-step",
@@ -2408,8 +2570,12 @@ export const workflowRuns = {
       const activated = S.updateWorkflowRun(run.id, {
         activeStep: step,
         activeSessionId: sessionId,
+        ...(step === "verify" ? { activeHeadSha: input.headSha } : {}),
       });
       if (!activated) throw new ServiceError(404, "Workflow run not found");
+      if (run.launching_session_id === sessionId) {
+        S.releaseWorkflowStepLaunch(run.id, sessionId);
+      }
       const handoff = S.createHandoff({
         repoId: r.id,
         prId: prIssue.id,

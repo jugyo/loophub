@@ -210,6 +210,17 @@ export interface WorkflowRunRow {
   // differ from current_step while additional Execute work runs after a fresh Verify pass.
   active_step: string | null;
   active_session_id: string | null;
+  active_head_sha: string | null;
+  // A durable claim held while `lh workflow launch-step` is between planning and confirming the
+  // external Herdr spawn. It prevents another worker delivery or parent replay from spawning the
+  // same step concurrently; a visible spawn failure releases it for an explicit retry.
+  launching_step: string | null;
+  launching_session_id: string | null;
+  launching_head_sha: string | null;
+  launch_failure_step: string | null;
+  launch_failure_session_id: string | null;
+  launch_failure_head_sha: string | null;
+  launch_failed_at: string | null;
   child_sequence: number;
   // Internal bookmark of the latest run event whose instruction was delivered by the worker.
   event_cursor: number;
@@ -664,6 +675,7 @@ export function updateWorkflowRun(
     needsHumanReason?: string | null;
     activeStep?: string | null;
     activeSessionId?: string | null;
+    activeHeadSha?: string | null;
   },
 ): WorkflowRunRow | null {
   const sets: string[] = [];
@@ -692,10 +704,24 @@ export function updateWorkflowRun(
   if (patch.activeStep !== undefined) {
     sets.push("active_step = ?");
     params.push(patch.activeStep);
+    if (patch.activeStep !== "verify") {
+      sets.push("active_head_sha = NULL");
+    }
+    if (patch.activeStep === null) {
+      sets.push(
+        "launching_step = NULL",
+        "launching_session_id = NULL",
+        "launching_head_sha = NULL",
+      );
+    }
   }
   if (patch.activeSessionId !== undefined) {
     sets.push("active_session_id = ?");
     params.push(patch.activeSessionId);
+  }
+  if (patch.activeHeadSha !== undefined) {
+    sets.push("active_head_sha = ?");
+    params.push(patch.activeHeadSha);
   }
   sets.push("updated_at = ?");
   params.push(updatedAt, id);
@@ -722,19 +748,84 @@ export function appendWorkflowRunStepSession(
   return getWorkflowRun(id);
 }
 
-export function reserveWorkflowRunChildSequence(
+export function reserveWorkflowStepLaunch(
   id: number,
-  minimumNextSequence: number,
+  input: {
+    step: string;
+    sessionId: string;
+    headSha?: string;
+    minimumNextSequence: number;
+  },
 ): number | null {
   const row = db
     .query(
       `UPDATE workflow_runs
-       SET child_sequence = MAX(child_sequence + 1, ?), updated_at = ?
+       SET child_sequence = MAX(child_sequence + 1, ?),
+           launching_step = ?,
+           launching_session_id = ?,
+           launching_head_sha = ?,
+           updated_at = ?
        WHERE id = ?
+         AND launching_session_id IS NULL
+         AND NOT (
+           (? = 'execute' AND active_step = 'execute' AND active_session_id IS NOT NULL)
+           OR
+           (? = 'verify' AND active_step = 'verify' AND active_session_id IS NOT NULL
+             AND active_head_sha = ?)
+         )
        RETURNING child_sequence`,
     )
-    .get(minimumNextSequence, now(), id) as { child_sequence: number } | null;
+    .get(
+      input.minimumNextSequence,
+      input.step,
+      input.sessionId,
+      input.headSha ?? null,
+      now(),
+      id,
+      input.step,
+      input.step,
+      input.headSha ?? null,
+    ) as { child_sequence: number } | null;
   return row?.child_sequence ?? null;
+}
+
+export function releaseWorkflowStepLaunch(
+  id: number,
+  sessionId: string,
+): WorkflowRunRow | null {
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET launching_step = NULL,
+           launching_session_id = NULL,
+           launching_head_sha = NULL,
+           updated_at = ?
+       WHERE id = ? AND launching_session_id = ?
+       RETURNING *`,
+    )
+    .get(now(), id, sessionId) as WorkflowRunRow | null;
+}
+
+export function failWorkflowStepLaunch(
+  id: number,
+  sessionId: string,
+): WorkflowRunRow | null {
+  const failedAt = now();
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET launch_failure_step = launching_step,
+           launch_failure_session_id = launching_session_id,
+           launch_failure_head_sha = launching_head_sha,
+           launch_failed_at = ?,
+           launching_step = NULL,
+           launching_session_id = NULL,
+           launching_head_sha = NULL,
+           updated_at = ?
+       WHERE id = ? AND launching_session_id = ?
+       RETURNING *`,
+    )
+    .get(failedAt, failedAt, id, sessionId) as WorkflowRunRow | null;
 }
 
 function parseStepSessions(value: string): Record<string, string[]> {

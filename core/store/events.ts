@@ -117,8 +117,11 @@ export function workflowSubjectMatchSql(input: {
   pr: string;
   issue: string;
 }): string {
+  // A launch failure is an audit record, not a progression signal: selecting it would let the
+  // parent reconcile the cleared reservation into an automatic retry.
   return `(
     ((${input.event}.type GLOB 'workflow_run.*' OR ${input.event}.type GLOB 'workflow_step.*')
+       AND ${input.event}.type <> 'workflow_step.launch_failed'
        AND json_extract(${input.event}.payload, '$.id') = ${input.run})
     OR (${input.event}.type GLOB 'pull_request.*'
        AND json_extract(${input.event}.payload, '$.number') = ${input.pr})

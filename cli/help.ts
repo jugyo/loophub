@@ -449,6 +449,10 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Update a workflow run.",
   },
   {
+    path: ["workflow", "run", "recover-launch"],
+    description: "Record and release an orphaned step launch.",
+  },
+  {
     path: ["workflow", "parent-ready"],
     description: "Declare the parent agent is up and reads its pane.",
     details: WORKFLOW_PARENT_READY_DETAILS,

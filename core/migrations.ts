@@ -1497,6 +1497,46 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    id: "20260815201510-workflow-step-launch-reservation",
+    run: (db) => {
+      addColumnIfMissing(db, "workflow_runs", "launching_step", "TEXT");
+      addColumnIfMissing(db, "workflow_runs", "launching_session_id", "TEXT");
+      addColumnIfMissing(db, "workflow_runs", "launching_head_sha", "TEXT");
+      addColumnIfMissing(db, "workflow_runs", "active_head_sha", "TEXT");
+      addColumnIfMissing(db, "workflow_runs", "launch_failure_step", "TEXT");
+      addColumnIfMissing(
+        db,
+        "workflow_runs",
+        "launch_failure_session_id",
+        "TEXT",
+      );
+      addColumnIfMissing(
+        db,
+        "workflow_runs",
+        "launch_failure_head_sha",
+        "TEXT",
+      );
+      addColumnIfMissing(db, "workflow_runs", "launch_failed_at", "TEXT");
+      db.exec(`
+        UPDATE workflow_runs AS run
+        SET active_head_sha = (
+          SELECT json_extract(event.payload, '$.head_sha')
+          FROM events AS event
+          WHERE event.repo_id = run.repo_id
+            AND event.type = 'workflow_step.launched'
+            AND json_extract(event.payload, '$.id') = run.id
+            AND json_extract(event.payload, '$.step') = 'verify'
+            AND json_extract(event.payload, '$.session_id') = run.active_session_id
+          ORDER BY event.id DESC
+          LIMIT 1
+        )
+        WHERE run.active_step = 'verify'
+          AND run.active_session_id IS NOT NULL
+          AND run.active_head_sha IS NULL;
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

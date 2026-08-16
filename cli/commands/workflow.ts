@@ -120,14 +120,15 @@ function preflightParentLaunch(runtime: CodingAgent): void {
   }
 }
 
-function preflightStepLaunch(runtime: CodingAgent): void {
+function stepLaunchPreflightError(runtime: CodingAgent): string | null {
   if (!commandAvailable("herdr")) {
-    fail("workflow launch-step requires herdr on PATH");
+    return "workflow launch-step requires herdr on PATH";
   }
   const bin = runtimeBin(runtime);
   if (!commandAvailable(bin)) {
-    fail(`workflow launch-step requires ${bin} on PATH`);
+    return `workflow launch-step requires ${bin} on PATH`;
   }
+  return null;
 }
 
 // The Herdr seam core's layoutWorkflowTab drives: one spawnSync per command, bound to the run's
@@ -435,18 +436,54 @@ async function launchStep(): Promise<void> {
       actorSessionId,
     ),
   );
-  // Preflight the runtime the run resolved (#516) — claude-code needs `claude`, codex needs `codex`.
-  preflightStepLaunch(result.runtime);
-  if (result.step === "verify") {
-    // This launch is the moment an older Verify child is known to be reviewing a HEAD the run has
-    // moved past — stop it here rather than pay for a review the freshness check will ignore (#61).
-    const stale = await runOp(() =>
-      s.workflowRuns.discardStaleVerifyChildren(
+  const failUnspawnedLaunch = async (message: string): Promise<never> => {
+    await runOp(() =>
+      s.workflowRuns.failStepLaunch(
         repo,
-        { run: result.run.id },
+        {
+          run: result.run.id,
+          sessionId: result.session_id,
+          reason: message,
+        },
         actorSessionId,
       ),
     );
+    fail(message);
+  };
+  const failUnspawnedLaunchWith = async (error: unknown): Promise<never> => {
+    await runOp(() =>
+      s.workflowRuns.failStepLaunch(
+        repo,
+        {
+          run: result.run.id,
+          sessionId: result.session_id,
+          reason: error instanceof Error ? error.message : String(error),
+        },
+        actorSessionId,
+      ),
+    );
+    return runOp(() => {
+      throw error;
+    });
+  };
+  // Preflight the runtime the run resolved (#516) — claude-code needs `claude`, codex needs `codex`.
+  const preflightError = stepLaunchPreflightError(result.runtime);
+  if (preflightError) await failUnspawnedLaunch(preflightError);
+  if (result.step === "verify") {
+    // This launch is the moment an older Verify child is known to be reviewing a HEAD the run has
+    // moved past — stop it here rather than pay for a review the freshness check will ignore (#61).
+    let stale: Awaited<
+      ReturnType<typeof s.workflowRuns.discardStaleVerifyChildren>
+    >;
+    try {
+      stale = await s.workflowRuns.discardStaleVerifyChildren(
+        repo,
+        { run: result.run.id },
+        actorSessionId,
+      );
+    } catch (error) {
+      return await failUnspawnedLaunchWith(error);
+    }
     for (const discarded of stale.discarded) {
       console.log(
         `discarded\t${display(discarded.agent_name ?? discarded.session_id)}`,
@@ -502,7 +539,7 @@ async function launchStep(): Promise<void> {
   });
   if (outcome.stdout) process.stdout.write(outcome.stdout);
   if (!outcome.ok) {
-    fail(
+    await failUnspawnedLaunch(
       `herdr failed to ${
         outcome.failed === "pane"
           ? "create the step's pane"
@@ -512,7 +549,9 @@ async function launchStep(): Promise<void> {
   }
   const childPaneId = outcome.paneId;
   if (!childPaneId) {
-    fail("herdr returned no valid pane_id for the step's pane");
+    return await failUnspawnedLaunch(
+      "herdr returned no valid pane_id for the step's pane",
+    );
   }
   // The child's command is in its pane once the launch succeeds, so persist that truth before
   // ancillary layout work. Layout is best-effort and must not turn a recorded launch into a
@@ -589,6 +628,11 @@ async function runLifecycle(): Promise<void> {
         sessionId,
       );
     }
+    if (action === "recover-launch") {
+      if (!flags.reason) fail("--reason is required");
+      const reason = await readTextInput(flags.reason);
+      return service.recoverStepLaunch(repo, { run: runId, reason }, sessionId);
+    }
     usage();
     throw new Error("unreachable");
   });
@@ -663,6 +707,12 @@ async function stepStatus(): Promise<void> {
   }
   if (result.needs_human_reason !== null) {
     console.log(`needs_human\t${display(result.needs_human_reason)}`);
+  }
+  if (result.pending_step_launch !== null) {
+    const launch = result.pending_step_launch;
+    console.log(
+      `pending_launch\t${display(launch.step)} ${display(launch.session_id)} ${display(launch.head_sha ?? "(no head)")}`,
+    );
   }
   console.log(`rework\t${result.rework_count}/${result.rework_limit}`);
   if (result.pending_effect_receipt !== null) {

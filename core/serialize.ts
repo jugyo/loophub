@@ -1619,6 +1619,12 @@ export interface WorkflowOutOfBandReviewWire {
   verdict: "feedback" | "request_changes";
 }
 
+export interface WorkflowPendingStepLaunchWire {
+  step: "execute" | "verify";
+  session_id: string;
+  head_sha: string | null;
+}
+
 // Complete observed state the Workflow parent's instructions are decided from. This wire shape
 // remains in core even though its current presentation is CLI-only, so future web consumers share
 // the same source of truth instead of re-declaring it.
@@ -1631,6 +1637,7 @@ export interface WorkflowStepStatusWire {
   rework_limit: number;
   needs_human_reason: string | null;
   awaiting_human: boolean;
+  pending_step_launch: WorkflowPendingStepLaunchWire | null;
   pending_effect_receipt: WorkflowPendingEffectReceiptWire | null;
   unaddressed_out_of_band_reviews: WorkflowOutOfBandReviewWire[];
   cost_increment_usd: number;
@@ -1971,6 +1978,12 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     description: ({ stepLabel }) =>
       `${stepLabel ?? "Workflow"} step execution started.`,
     significance: "default",
+  },
+  "workflow_step.launch_failed": {
+    label: ({ stepLabel }) => `${stepLabel ?? "Workflow"} step launch failed`,
+    description: ({ stepLabel, payload }) =>
+      `${stepLabel ?? "Workflow"} step failed before spawn: ${payloadString(payload, "reason") ?? "No reason recorded."}`,
+    significance: "notable",
   },
   "workflow_run.turn_done": {
     label: "Turn done declared",

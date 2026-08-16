@@ -14,6 +14,21 @@ function writeRunFile(runId: number, name: string, text: string): string {
   return writeHomeFile(ensureRunDir(runId), name, text);
 }
 
+function ensureStepLaunchDir(runId: number, sessionId: string): string {
+  if (!/^[0-9a-f-]+$/iu.test(sessionId)) {
+    throw new Error(
+      "Workflow launch session id contains unsafe path characters",
+    );
+  }
+  return ensureHomeDir(
+    "runs",
+    "workflow",
+    String(runId),
+    "launches",
+    sessionId,
+  );
+}
+
 export function writeParentContract(runId: number, text: string): string {
   return writeRunFile(runId, "parent-contract.md", text);
 }
@@ -24,6 +39,19 @@ export function writeStepContract(
   text: string,
 ): string {
   return writeRunFile(runId, `${step}-contract.md`, text);
+}
+
+export function writeStepLaunchContract(
+  runId: number,
+  sessionId: string,
+  step: WorkflowStep,
+  text: string,
+): string {
+  return writeHomeFile(
+    ensureStepLaunchDir(runId, sessionId),
+    `${step}-contract.md`,
+    text,
+  );
 }
 
 // The positional prompt the launch's command line reads back with `"$(cat …)"`, rather than
@@ -39,4 +67,17 @@ export function writeStepPrompt(
   text: string,
 ): string {
   return writeRunFile(runId, `${step}-prompt.md`, text);
+}
+
+export function writeStepLaunchPrompt(
+  runId: number,
+  sessionId: string,
+  step: WorkflowStep,
+  text: string,
+): string {
+  return writeHomeFile(
+    ensureStepLaunchDir(runId, sessionId),
+    `${step}-prompt.md`,
+    text,
+  );
 }

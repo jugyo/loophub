@@ -60,6 +60,42 @@ test("prompt writers sit beside the contracts in the same run dir", () => {
   expect(readFileSync(execute, "utf8")).toBe("## Inputs\n");
 });
 
+test("concurrent step launches keep immutable session-scoped inputs", () => {
+  const firstSession = "11111111-1111-4111-8111-111111111111";
+  const secondSession = "22222222-2222-4222-8222-222222222222";
+  const firstContract = F.writeStepLaunchContract(
+    7,
+    firstSession,
+    "verify",
+    "# First contract\n",
+  );
+  const firstPrompt = F.writeStepLaunchPrompt(
+    7,
+    firstSession,
+    "verify",
+    "## First prompt\n",
+  );
+  const secondContract = F.writeStepLaunchContract(
+    7,
+    secondSession,
+    "verify",
+    "# Second contract\n",
+  );
+  const secondPrompt = F.writeStepLaunchPrompt(
+    7,
+    secondSession,
+    "verify",
+    "## Second prompt\n",
+  );
+
+  expect(firstContract).not.toBe(secondContract);
+  expect(firstPrompt).not.toBe(secondPrompt);
+  expect(readFileSync(firstContract, "utf8")).toBe("# First contract\n");
+  expect(readFileSync(firstPrompt, "utf8")).toBe("## First prompt\n");
+  expect(readFileSync(secondContract, "utf8")).toBe("# Second contract\n");
+  expect(readFileSync(secondPrompt, "utf8")).toBe("## Second prompt\n");
+});
+
 test("a rewrite truncates the previous contract instead of appending", () => {
   F.writeStepContract(8, "execute", "# Long first contract\n");
   const path = F.writeStepContract(8, "execute", "# Short\n");
