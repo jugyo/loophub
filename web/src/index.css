@@ -216,6 +216,66 @@
   --scrollbar-thumb-hover: rgb(145 152 161 / 58%);
 }
 
+.markdown-diff-block-added,
+.markdown-diff-block-removed {
+  position: relative;
+  border-inline-start: 3px solid;
+  padding-inline-start: 0.75rem;
+}
+
+.markdown-diff-image-block {
+  display: block;
+  width: fit-content;
+}
+
+.markdown-diff-block-added {
+  border-color: #1a7f37;
+  background: rgb(46 160 67 / 10%);
+}
+
+.markdown-diff-block-removed {
+  border-color: #cf222e;
+  background: rgb(207 34 46 / 10%);
+}
+
+.markdown-diff-block-added::before,
+.markdown-diff-block-removed::before {
+  display: block;
+  margin-block-end: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.markdown-diff-block-added::before {
+  color: #1a7f37;
+  content: "Added";
+}
+
+.markdown-diff-block-removed::before {
+  color: #cf222e;
+  content: "Removed";
+}
+
+.dark .markdown-diff-block-added {
+  border-color: #3fb950;
+  background: rgb(63 185 80 / 12%);
+}
+
+.dark .markdown-diff-block-removed {
+  border-color: #f85149;
+  background: rgb(248 81 73 / 12%);
+}
+
+.dark .markdown-diff-block-added::before {
+  color: #3fb950;
+}
+
+.dark .markdown-diff-block-removed::before {
+  color: #f85149;
+}
+
 /* Rendered Markdown (issue / PR / comment bodies). Tailwind's preflight strips
    default element styles, so GFM output needs explicit rules. Scoped to
    .markdown-body so it never leaks into the rest of the UI. */

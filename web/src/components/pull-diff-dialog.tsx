@@ -16,8 +16,10 @@ import {
 } from "lucide-react";
 import {
   Fragment,
+  type MutableRefObject,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -59,6 +61,10 @@ import {
   singleSelection,
 } from "@/lib/diff-feedback";
 import { errorMessage } from "@/lib/error-message";
+import {
+  type MarkdownRenderedBlock,
+  markdownDiffAnnotations,
+} from "@/lib/markdown-source-map";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
@@ -125,7 +131,7 @@ function visibleCopyPath(path: string) {
   }).join("");
 }
 
-type DiffDialogMode = "diff" | "raw" | "base" | "head";
+type DiffDialogMode = "diff" | "raw" | "base" | "head" | "rendered";
 type StandardDiffDialogMode = "diff" | "raw";
 type DiffViewMode = "unified" | "split";
 type SplitRow =
@@ -248,7 +254,7 @@ export function DiffFileDialog({
   );
 
   function selectMode(nextMode: DiffDialogMode) {
-    if (nextMode === "base" || nextMode === "head") {
+    if (nextMode === "base" || nextMode === "head" || nextMode === "rendered") {
       setMarkdownMode(nextMode);
       return;
     }
@@ -458,6 +464,12 @@ export function DiffFileDialog({
                 </ModeButton>
                 {isMarkdown ? (
                   <>
+                    <ModeButton
+                      active={mode === "rendered"}
+                      onClick={() => selectMode("rendered")}
+                    >
+                      Rendered diff
+                    </ModeButton>
                     <ModeButton
                       active={mode === "base"}
                       onClick={() => selectMode("base")}
@@ -792,6 +804,16 @@ function FileDiffContent({
         number={number}
         path={file.filename}
         side={mode}
+      />
+    );
+  }
+  if (mode === "rendered") {
+    return (
+      <RenderedDiffPane
+        owner={owner}
+        repo={repo}
+        number={number}
+        path={file.filename}
       />
     );
   }
@@ -2048,4 +2070,150 @@ function MarkdownPreviewPane({
       )}
     </div>
   );
+}
+
+function RenderedDiffPane({
+  owner,
+  repo,
+  number,
+  path,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  path: string;
+}) {
+  const diff = usePullDiff(owner, repo, number, path);
+  const base = usePullFileAtRef(owner, repo, number, path, "base", true);
+  const head = usePullFileAtRef(owner, repo, number, path, "head", true);
+  const [baseBlocks, setBaseBlocks] = useState<MarkdownRenderedBlock[]>([]);
+  const [headBlocks, setHeadBlocks] = useState<MarkdownRenderedBlock[]>([]);
+  const baseBlocksRef = useRef<MarkdownRenderedBlock[]>([]);
+  const headBlocksRef = useRef<MarkdownRenderedBlock[]>([]);
+  const registerBlock = useCallback(
+    (ref: MutableRefObject<MarkdownRenderedBlock[]>) =>
+      (block: MarkdownRenderedBlock) => {
+        const key = renderedBlockKey(block);
+        if (!ref.current.some((item) => renderedBlockKey(item) === key)) {
+          ref.current = [...ref.current, block];
+        }
+      },
+    [],
+  );
+
+  useEffect(() => {
+    if (baseBlocksRef.current.length > 0) setBaseBlocks(baseBlocksRef.current);
+    if (headBlocksRef.current.length > 0) setHeadBlocks(headBlocksRef.current);
+  }, [base.data?.content, head.data?.content]);
+
+  const lines = diff.data?.files[0]?.lines ?? [];
+  const baseAnnotations = useMemo(
+    () => markdownDiffAnnotations(baseBlocks, lines),
+    [baseBlocks, lines],
+  );
+  const headAnnotations = useMemo(
+    () => markdownDiffAnnotations(headBlocks, lines),
+    [headBlocks, lines],
+  );
+
+  return (
+    <div
+      data-debug-component="RenderedDiffPane"
+      className="grid min-h-full grid-cols-2 divide-x"
+    >
+      <RenderedDiffSide
+        side="LEFT"
+        label="Base"
+        file={base}
+        annotations={baseAnnotations}
+        registerBlock={registerBlock(baseBlocksRef)}
+      />
+      <RenderedDiffSide
+        side="RIGHT"
+        label="Head"
+        file={head}
+        annotations={headAnnotations}
+        registerBlock={registerBlock(headBlocksRef)}
+      />
+      {diff.isError ? (
+        <p className="col-span-2 border-t border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load diff annotations.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function RenderedDiffSide({
+  side,
+  label,
+  file,
+  annotations,
+  registerBlock,
+}: {
+  side: "LEFT" | "RIGHT";
+  label: "Base" | "Head";
+  file: ReturnType<typeof usePullFileAtRef>;
+  annotations: ReturnType<typeof markdownDiffAnnotations>;
+  registerBlock: (block: MarkdownRenderedBlock) => void;
+}) {
+  const changeByBlock = useMemo(() => {
+    const result = new Map<string, "added" | "removed">();
+    for (const annotation of annotations) {
+      const change = annotation.changeKind[side];
+      if (change === "added" || change === "removed") {
+        result.set(renderedBlockKey(annotation.block), change);
+      }
+    }
+    return result;
+  }, [annotations, side]);
+  const blockClassName = useCallback(
+    (block: MarkdownRenderedBlock) => {
+      const change = changeByBlock.get(renderedBlockKey(block));
+      return change ? `markdown-diff-block-${change}` : undefined;
+    },
+    [changeByBlock],
+  );
+
+  return (
+    <section aria-label={`${label} rendered diff`} className="min-w-0">
+      <div className="sticky top-0 z-10 border-b bg-background/95 px-3 py-2 text-xs font-semibold backdrop-blur">
+        {label}
+      </div>
+      <div className="markdown-diff-preview min-h-full overflow-y-auto px-3 py-8">
+        {file.isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading rendered diff…
+          </div>
+        ) : file.isError ? (
+          <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+            Failed to load {label.toLowerCase()} preview.
+          </div>
+        ) : file.data?.status === "missing" ? (
+          <p className="text-sm text-muted-foreground">
+            N/A — file does not exist on {label.toLowerCase()}.
+          </p>
+        ) : file.data?.status === "binary" ? (
+          <p className="text-sm text-muted-foreground">
+            N/A — binary file, cannot render as Markdown.
+          </p>
+        ) : (
+          <Markdown
+            key={file.data?.content}
+            typeset
+            className="typeset-diff-preview mx-auto"
+            onRenderedBlock={registerBlock}
+            renderedBlockClassName={blockClassName}
+          >
+            {file.data?.content ?? ""}
+          </Markdown>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function renderedBlockKey(block: MarkdownRenderedBlock) {
+  const range = block.sourceRange;
+  return `${block.kind}:${range?.startLine ?? "-"}:${range?.endLine ?? "-"}`;
 }

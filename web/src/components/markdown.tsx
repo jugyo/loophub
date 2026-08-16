@@ -83,66 +83,118 @@ function mermaidChart(children: ReactNode): string | null {
 
 function markdownComponents(
   onRenderedBlock?: (block: MarkdownRenderedBlock) => void,
+  renderedBlockClassName?: (block: MarkdownRenderedBlock) => string | undefined,
 ): Components {
   const report = (
     kind: MarkdownRenderedBlockKind,
     node: Parameters<NonNullable<Components["p"]>>[0]["node"],
-  ) => onRenderedBlock?.(markdownRenderedBlock(kind, node));
+  ) => {
+    const block = markdownRenderedBlock(kind, node);
+    onRenderedBlock?.(block);
+    return renderedBlockClassName?.(block);
+  };
 
   return {
     p({ node, children, ...rest }) {
-      report("paragraph", node);
-      return <p {...rest}>{children}</p>;
+      return (
+        <p {...rest} className={cn(rest.className, report("paragraph", node))}>
+          {children}
+        </p>
+      );
     },
     h1({ node, children, ...rest }) {
-      report("heading", node);
-      return <h1 {...rest}>{children}</h1>;
+      return (
+        <h1 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+        </h1>
+      );
     },
     h2({ node, children, ...rest }) {
-      report("heading", node);
-      return <h2 {...rest}>{children}</h2>;
+      return (
+        <h2 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+        </h2>
+      );
     },
     h3({ node, children, ...rest }) {
-      report("heading", node);
-      return <h3 {...rest}>{children}</h3>;
+      return (
+        <h3 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+        </h3>
+      );
     },
     h4({ node, children, ...rest }) {
-      report("heading", node);
-      return <h4 {...rest}>{children}</h4>;
+      return (
+        <h4 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+        </h4>
+      );
     },
     h5({ node, children, ...rest }) {
-      report("heading", node);
-      return <h5 {...rest}>{children}</h5>;
+      return (
+        <h5 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+        </h5>
+      );
     },
     h6({ node, children, ...rest }) {
-      report("heading", node);
-      return <h6 {...rest}>{children}</h6>;
+      return (
+        <h6 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+        </h6>
+      );
     },
     li({ node, children, ...rest }) {
-      report("list-item", node);
-      return <li {...rest}>{children}</li>;
+      return (
+        <li {...rest} className={cn(rest.className, report("list-item", node))}>
+          {children}
+        </li>
+      );
     },
     blockquote({ node, children, ...rest }) {
-      report("blockquote", node);
-      return <blockquote {...rest}>{children}</blockquote>;
+      return (
+        <blockquote
+          {...rest}
+          className={cn(rest.className, report("blockquote", node))}
+        >
+          {children}
+        </blockquote>
+      );
     },
     tr({ node, children, ...rest }) {
-      report("table-row", node);
-      return <tr {...rest}>{children}</tr>;
+      return (
+        <tr {...rest} className={cn(rest.className, report("table-row", node))}>
+          {children}
+        </tr>
+      );
     },
     img({ node, src, alt, title }) {
-      report("image", node);
+      const blockClassName = report("image", node);
       if (!src) return null;
-      return <img src={src} alt={alt ?? ""} title={title} />;
+      return (
+        <img
+          className={blockClassName}
+          src={src}
+          alt={alt ?? ""}
+          title={title}
+        />
+      );
     },
     pre({ node, children, ...rest }) {
       const chart = mermaidChart(children);
       if (chart !== null) {
-        report("mermaid", node);
-        return <MermaidDiagram chart={chart} />;
+        return (
+          <MermaidDiagram chart={chart} className={report("mermaid", node)} />
+        );
       }
-      report("code-block", node);
-      return <pre {...rest}>{children}</pre>;
+      return (
+        <pre
+          {...rest}
+          className={cn(rest.className, report("code-block", node))}
+        >
+          {children}
+        </pre>
+      );
     },
     a({ href, title, children }) {
       const m = href ? REF_HREF.exec(href) : null;
@@ -176,6 +228,7 @@ export function Markdown({
   repo,
   typeset = false,
   onRenderedBlock,
+  renderedBlockClassName,
 }: {
   children: string;
   className?: string;
@@ -183,6 +236,7 @@ export function Markdown({
   repo?: string;
   typeset?: boolean;
   onRenderedBlock?: (block: MarkdownRenderedBlock) => void;
+  renderedBlockClassName?: (block: MarkdownRenderedBlock) => string | undefined;
 }) {
   // Clicking an embedded image opens it full-size in <ImageLightbox> (#471).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
@@ -209,12 +263,13 @@ export function Markdown({
       ? [remarkGfm, [remarkIssueRefs, { owner, repo, kinds }]]
       : [remarkGfm];
   const componentsWithImg: Components = {
-    ...markdownComponents(onRenderedBlock),
+    ...markdownComponents(onRenderedBlock, renderedBlockClassName),
     img({ node, src, alt, title }) {
-      onRenderedBlock?.(markdownRenderedBlock("image", node));
+      const block = markdownRenderedBlock("image", node);
+      onRenderedBlock?.(block);
       if (!src) return null;
       const open = () => setLightbox({ src, alt: alt ?? "" });
-      return (
+      const image = (
         <img
           src={src}
           alt={alt ?? ""}
@@ -229,6 +284,14 @@ export function Markdown({
             }
           }}
         />
+      );
+      const blockClassName = renderedBlockClassName?.(block);
+      return blockClassName ? (
+        <span className={cn("markdown-diff-image-block", blockClassName)}>
+          {image}
+        </span>
+      ) : (
+        image
       );
     },
   };
