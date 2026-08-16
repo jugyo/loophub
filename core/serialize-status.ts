@@ -201,10 +201,9 @@ async function pullMergeFields(
   };
 }
 
-// Issue list item with its linked PR enriched with status (working / review /
-// mergeable / diff totals) for the issue-list Pattern E sub-row. Async because
-// the status fields need a bounded git fan-out per linked PR; used only by the
-// paginated issues.list path, so issueJSON stays sync for detail/dashboard.
+// Issue list item with its linked PR enriched with the worker's current status projection. The
+// issue-list path never computes SHA-based status on demand; a missing projection is represented
+// as unknown/zero until the worker observes the PR.
 export async function issueListItemJSON(
   row: S.IssueRow,
   repo: S.Repo,
@@ -267,7 +266,39 @@ async function linkedPullDetail(
   repo: S.Repo,
   pr: S.LinkedPullIssueRow,
 ): Promise<IssueListPullSummaryWire> {
-  const status = await pullStatusFields(repo, pr);
+  const pull = S.getPull(pr.id)!;
+  const active =
+    pr.state === "open" && pull.merged === 0 && pull.archived_at === null;
+  // Active status is owned by the worker's current projection. Keeping ref observation out of this
+  // request path is what makes a projection hit a DB-only read; the worker sweep updates the SHA
+  // pair after a ref move, and the existing worker compatibility warning exposes a stopped worker.
+  const projection = active ? S.getCurrentPullStatusProjection(pr.id) : null;
+  const reviewStatus = S.computeReviewStatus(
+    pr.id,
+    projection?.head_sha ?? pull.head_sha,
+  );
+  // The worker intentionally sweeps only open, unmerged, unarchived PRs. Once a PR leaves that
+  // state, always preserve the historical detail/list contract through the existing status path;
+  // an old current projection must not make a merged or closed PR look active again.
+  const historicalStatus = !active ? await pullStatusFields(repo, pr) : null;
+  const mergeableState = historicalStatus
+    ? historicalStatus.mergeable_state
+    : projection
+      ? resolveMergeable({
+          hasEffectiveDiff: projection.has_effective_diff === 1,
+          conflict: projection.conflict === 1,
+          reviewGate: reviewStatus.gate,
+        }).mergeable_state
+      : "unknown";
+  const baseCommitsBehind = historicalStatus
+    ? historicalStatus.forkBaseSha && historicalStatus.baseSha
+      ? await commitsAhead(
+          repo.local_path,
+          historicalStatus.forkBaseSha,
+          historicalStatus.baseSha,
+        )
+      : 0
+    : (projection?.base_commits_behind ?? 0);
   const usageTotals = S.sessionUsageTotalsForIssue(pr.id);
   const agent = S.pullAgentSummary(pr.id);
   const runtime = agent ? sessionRuntime(agent) : null;
@@ -279,13 +310,9 @@ async function linkedPullDetail(
   const workTotal = pullWorkDuration(
     repo,
     pr,
-    status.pull,
+    pull,
     S.primaryDevSessionForPull(pr.id),
   ).total;
-  const base_commits_behind =
-    status.forkBaseSha && status.baseSha
-      ? await commitsAhead(repo.local_path, status.forkBaseSha, status.baseSha)
-      : 0;
   // #2147: the latest workflow run's rework count, so the issue list can show how many
   // Execute -> Verify loops the PR has taken. `workflow_runs` is indexed on (workflow_id, status)
   // only, so this scans the table — cheap against a table that holds one row per run and far below
@@ -297,14 +324,15 @@ async function linkedPullDetail(
     state: pr.state,
     merged: !!pr.merged,
     html_url: linkedRef(repo, "pulls", pr.number).html_url,
-    working: status.working,
-    review_state: status.review_state,
-    mergeable_state: status.mergeable_state,
-    additions: status.additions,
-    deletions: status.deletions,
-    changed_files: status.changed_files,
-    commits_ahead: status.commits_ahead,
-    base_commits_behind,
+    review_state: historicalStatus?.review_state ?? reviewStatus.state,
+    mergeable_state: mergeableState,
+    additions: historicalStatus?.additions ?? projection?.additions ?? 0,
+    deletions: historicalStatus?.deletions ?? projection?.deletions ?? 0,
+    changed_files:
+      historicalStatus?.changed_files ?? projection?.changed_files ?? 0,
+    commits_ahead:
+      historicalStatus?.commits_ahead ?? projection?.commits_ahead ?? 0,
+    base_commits_behind: baseCommitsBehind,
     ...(runtime ? { agent_runtime: runtime } : {}),
     ...(model ? { agent_model: model } : {}),
     // #629: the exported GitHub PR (if any), so the issue-list linked-PR sub-row can show a GH badge.

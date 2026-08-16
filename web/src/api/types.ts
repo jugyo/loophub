@@ -92,13 +92,12 @@ export type SearchResult = SearchResultWire;
 /**
  * Summary of the pull request linked to an issue. The base fields (including the #783 agent-cost
  * totals) are always present (issue-detail `linked_pull_request`); the rest are populated only on
- * the issue-list response (issueListItemJSON), which runs the git status fan-out per row.
+ * the issue-list response (issueListItemJSON), from the worker's current status projection.
  */
 export type LinkedPull = PullSummaryWire &
   Partial<
     Pick<
       IssueListPullSummaryWire,
-      | "working"
       | "review_state"
       | "mergeable_state"
       | "additions"

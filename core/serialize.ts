@@ -323,7 +323,6 @@ export type PullUsageWire = Pick<
 // linkedPullDetail), which runs the git status fan-out; the issue-detail summary
 // (pullSummary) does not, so those rows stay the plain PullSummaryWire.
 export interface IssueListPullSummaryWire extends PullSummaryWire {
-  working: boolean;
   review_state: S.ReviewState;
   mergeable_state: MergeableState;
   additions: number;

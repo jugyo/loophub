@@ -65,6 +65,11 @@ export interface PullStatusProjection {
   updated_at: string;
 }
 
+export interface CurrentPullStatusProjection extends PullStatusProjection {
+  issue_id: number;
+  base_commits_behind: number;
+}
+
 // ---- pulls ----
 export function listPulls(
   repoId: number,
@@ -339,6 +344,26 @@ export function getPullStatusProjection(
     .get(baseSha, headSha) as PullStatusProjection | null;
 }
 
+export function getCurrentPullStatusProjection(
+  issueId: number,
+): CurrentPullStatusProjection | null {
+  return db
+    .query(
+      `SELECT issue_id, base_sha, head_sha, mergeable, mergeable_state,
+              has_effective_diff, conflict, additions, deletions, changed_files,
+              commits_ahead, base_commits_behind, updated_at
+       FROM pull_status_current_projection
+       WHERE issue_id = ?`,
+    )
+    .get(issueId) as CurrentPullStatusProjection | null;
+}
+
+export function deleteCurrentPullStatusProjection(issueId: number): void {
+  db.run("DELETE FROM pull_status_current_projection WHERE issue_id = ?", [
+    issueId,
+  ]);
+}
+
 export function upsertPullStatusProjection(input: {
   baseSha: string;
   headSha: string;
@@ -377,6 +402,56 @@ export function upsertPullStatusProjection(input: {
       input.deletions,
       input.changedFiles,
       input.commitsAhead,
+      now(),
+    ],
+  );
+}
+
+export function upsertCurrentPullStatusProjection(input: {
+  issueId: number;
+  baseSha: string;
+  headSha: string;
+  mergeable: boolean | null;
+  mergeableState: MergeableState;
+  hasEffectiveDiff: boolean;
+  conflict: boolean;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commitsAhead: number;
+  baseCommitsBehind: number;
+}): void {
+  db.run(
+    `INSERT INTO pull_status_current_projection
+       (issue_id, base_sha, head_sha, mergeable, mergeable_state, has_effective_diff,
+        conflict, additions, deletions, changed_files, commits_ahead, base_commits_behind, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(issue_id) DO UPDATE SET
+       base_sha = excluded.base_sha,
+       head_sha = excluded.head_sha,
+       mergeable = excluded.mergeable,
+       mergeable_state = excluded.mergeable_state,
+       has_effective_diff = excluded.has_effective_diff,
+       conflict = excluded.conflict,
+       additions = excluded.additions,
+       deletions = excluded.deletions,
+       changed_files = excluded.changed_files,
+       commits_ahead = excluded.commits_ahead,
+       base_commits_behind = excluded.base_commits_behind,
+       updated_at = excluded.updated_at`,
+    [
+      input.issueId,
+      input.baseSha,
+      input.headSha,
+      input.mergeable == null ? null : input.mergeable ? 1 : 0,
+      input.mergeableState,
+      input.hasEffectiveDiff ? 1 : 0,
+      input.conflict ? 1 : 0,
+      input.additions,
+      input.deletions,
+      input.changedFiles,
+      input.commitsAhead,
+      input.baseCommitsBehind,
       now(),
     ],
   );

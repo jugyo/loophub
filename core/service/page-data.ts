@@ -45,8 +45,7 @@ export const pageData = {
     // #112: the mini tracker on each linked-PR sub-row needs the run's display state. Selecting it
     // with the page keeps a Workflow event to one refetch — asking per row put one request per row
     // on lh-web's single event loop, and every workflow_run.* / workflow_step.* event invalidated
-    // all of them at once. The rows already resolved these PRs' refs for their own status, so the
-    // SHA-keyed fan-out behind this is a cache hit (core/pull-status-cache.ts).
+    // all of them at once. The linked PR status itself is read from the worker projection.
     const linkedPulls = issueRows.flatMap((issue) =>
       // Same fallback the row renderer uses (web/src/components/dashboard-rows.tsx): a response
       // shape carrying only the singular field still gets its row seeded.

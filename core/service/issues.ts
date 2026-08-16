@@ -220,9 +220,8 @@ export const issues = {
           : targetBranch === opts.workspace;
       });
     }
-    // Enrich each issue's linked PR with status (working / review / mergeable /
-    // diff totals) for the issue-list sub-row. Async git fan-out, bounded by the
-    // pagination slice above; other surfaces keep the sync issueJSON summary.
+    // Enrich each issue's linked PR with the worker's current status projection. A missing or
+    // stale projection remains visible as unknown/zero until the worker catches up.
     // A lookahead page returns one extra row so the caller can decide whether
     // to offer another page. Advance by the visible size so that extra row
     // becomes the first visible row on the next page. Keep the legacy 101-row

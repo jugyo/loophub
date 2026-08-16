@@ -1,6 +1,7 @@
-import { localBranchRef, revParse } from "./git.ts";
+import { commitsAhead, localBranchRef, revParse } from "./git.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
+import { resolvePullBaseSha } from "./pull-base.ts";
 import { pullShaStatus } from "./pull-status-cache.ts";
 import * as S from "./store.ts";
 
@@ -31,6 +32,7 @@ export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
   deletions: number;
   changedFiles: number;
   commitsAhead: number;
+  baseCommitsBehind: number;
 } | null> {
   const [headSha, baseSha] = await Promise.all([
     revParse(pull.local_path, localBranchRef(pull.head_ref)),
@@ -45,6 +47,13 @@ export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
     conflict: status.conflict,
     reviewGate,
   });
+  const forkBaseSha = await resolvePullBaseSha(
+    pull.local_path,
+    S.getPull(pull.issue_id)!,
+  );
+  const baseCommitsBehind = forkBaseSha
+    ? await commitsAhead(pull.local_path, forkBaseSha, baseSha)
+    : 0;
   return {
     baseSha,
     headSha,
@@ -56,5 +65,6 @@ export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
     deletions: status.deletions,
     changedFiles: status.changedFiles,
     commitsAhead: status.commitsAhead,
+    baseCommitsBehind,
   };
 }

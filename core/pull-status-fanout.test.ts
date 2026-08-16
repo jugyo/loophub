@@ -167,6 +167,20 @@ test("the pull sweep persists the SHA projection and the issue list reads it", a
     changedFiles: 7,
     commitsAhead: 6,
   });
+  S.upsertCurrentPullStatusProjection({
+    issueId: pull.issue_id,
+    baseSha: base,
+    headSha: head,
+    mergeable: true,
+    mergeableState: "clean",
+    hasEffectiveDiff: true,
+    conflict: false,
+    additions: 9,
+    deletions: 8,
+    changedFiles: 7,
+    commitsAhead: 6,
+    baseCommitsBehind: 5,
+  });
   calls.mergePreview = 0;
   calls.hasEffectiveDiff = 0;
   const row = S.getIssueById(linkedIssueId)!;
@@ -178,6 +192,7 @@ test("the pull sweep persists the SHA projection and the issue list reads it", a
     deletions: 8,
     changed_files: 7,
     commits_ahead: 6,
+    base_commits_behind: 5,
   });
   expect(calls.mergePreview).toBe(0);
   expect(calls.hasEffectiveDiff).toBe(0);
@@ -198,6 +213,20 @@ test("a projection reapplies the current review gate", async () => {
     commitsAhead: 1,
   });
   const pull = S.openPulls().find((row) => row.head_ref === "feature")!;
+  S.upsertCurrentPullStatusProjection({
+    issueId: pull.issue_id,
+    baseSha: base,
+    headSha: head,
+    mergeable: true,
+    mergeableState: "clean",
+    hasEffectiveDiff: true,
+    conflict: false,
+    additions: 1,
+    deletions: 0,
+    changedFiles: 1,
+    commitsAhead: 1,
+    baseCommitsBehind: 0,
+  });
   const repo = S.getRepoById(pull.repo_id)!;
   const row = S.getIssueById(linkedIssueId)!;
   expect(
@@ -220,4 +249,90 @@ test("a moved head is a new key and reports the new truth", async () => {
   // No effective diff left, so the PR has nothing to merge.
   expect(await M.currentMergeableState(pull)).toBe("no_commits");
   expect(calls.mergePreview).toBeGreaterThan(before);
+
+  await W.sweepPullUpdates();
+  const row = S.getIssueById(linkedIssueId)!;
+  const repo = S.getRepoById(pull.repo_id)!;
+  expect(
+    (await Z.issueListItemJSON(row, repo)).linked_pull_request,
+  ).toMatchObject({
+    mergeable_state: "no_commits",
+    additions: 0,
+    changed_files: 0,
+    commits_ahead: 2,
+  });
+});
+
+test("a closed linked PR without a current projection keeps its historical status", async () => {
+  const repo = S.getRepo("me", "fanout")!;
+  git(["checkout", "-qb", "closed-feature", "main"]);
+  commit("closed.txt", "closed\n", "closed PR");
+  git(["checkout", "-q", "main"]);
+  const closed = S.createIssue(repo.id, "pull", "Closed PR", "", "me");
+  S.createPull(closed.id, "closed-feature", "main", null, linkedIssueId);
+  S.updateIssue(closed.id, { state: "closed" });
+
+  const row = S.getIssueById(linkedIssueId)!;
+  const out = await Z.issueListItemJSON(row, repo);
+  const linked = out.linked_pull_requests?.find(
+    (pull) => pull.number === closed.number,
+  );
+  expect(linked).toMatchObject({
+    mergeable_state: "blocked",
+    additions: 1,
+    changed_files: 1,
+    commits_ahead: 1,
+  });
+});
+
+test("a merged linked PR ignores its retained active projection", async () => {
+  const repo = S.getRepo("me", "fanout")!;
+  git(["checkout", "-qb", "merged-feature", "main"]);
+  commit("merged.txt", "merged\n", "merged PR");
+  git(["checkout", "-q", "main"]);
+  const merged = S.createIssue(repo.id, "pull", "Merged PR", "", "me");
+  S.createPull(merged.id, "merged-feature", "main", null, linkedIssueId);
+  await W.sweepPullUpdates();
+  S.setMerged(merged.id, "merge-sha", "merge");
+
+  const row = S.getIssueById(linkedIssueId)!;
+  const out = await Z.issueListItemJSON(row, repo);
+  const linked = out.linked_pull_requests?.find(
+    (pull) => pull.number === merged.number,
+  );
+  expect(linked).toMatchObject({
+    merged: true,
+    mergeable_state: "unknown",
+    additions: 0,
+    deletions: 0,
+    changed_files: 0,
+  });
+});
+
+test("a missing ref removes the current projection and shows unknown", async () => {
+  const repo = S.getRepo("me", "fanout")!;
+  git(["checkout", "-qb", "missing-feature", "main"]);
+  commit("missing.txt", "missing\n", "missing PR");
+  git(["checkout", "-q", "main"]);
+  const missing = S.createIssue(repo.id, "pull", "Missing PR", "", "me");
+  S.createPull(missing.id, "missing-feature", "main", null, linkedIssueId);
+  await W.sweepPullUpdates();
+  expect(S.getCurrentPullStatusProjection(missing.id)).not.toBeNull();
+
+  git(["branch", "-D", "missing-feature"]);
+  await W.sweepPullUpdates();
+  expect(S.getCurrentPullStatusProjection(missing.id)).toBeNull();
+
+  const row = S.getIssueById(linkedIssueId)!;
+  const out = await Z.issueListItemJSON(row, repo);
+  const linked = out.linked_pull_requests?.find(
+    (pull) => pull.number === missing.number,
+  );
+  expect(linked).toMatchObject({
+    mergeable_state: "unknown",
+    additions: 0,
+    deletions: 0,
+    changed_files: 0,
+    commits_ahead: 0,
+  });
 });

@@ -1486,6 +1486,26 @@ export const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "agent_sessions", "effort", "TEXT");
     },
   },
+  sql(
+    "20260814130000-pull-status-current-projection",
+    `
+    CREATE TABLE IF NOT EXISTS pull_status_current_projection (
+      issue_id          INTEGER PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
+      base_sha          TEXT NOT NULL,
+      head_sha          TEXT NOT NULL,
+      mergeable         INTEGER CHECK (mergeable IS NULL OR mergeable IN (0, 1)),
+      mergeable_state   TEXT NOT NULL,
+      has_effective_diff INTEGER NOT NULL,
+      conflict          INTEGER NOT NULL,
+      additions         INTEGER NOT NULL,
+      deletions         INTEGER NOT NULL,
+      changed_files     INTEGER NOT NULL,
+      commits_ahead     INTEGER NOT NULL,
+      base_commits_behind INTEGER NOT NULL,
+      updated_at        TEXT NOT NULL
+    );
+    `,
+  ),
   {
     id: "20260815194735-invalid-review-head-shas",
     run: (db) => {
