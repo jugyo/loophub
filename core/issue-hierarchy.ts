@@ -25,6 +25,25 @@ export type AttachRejection =
       childHeight: number;
     };
 
+export function attachRejectionMessage(rejection: AttachRejection): string {
+  switch (rejection.kind) {
+    case "not_an_issue":
+      return "parent and child must both be issues";
+    case "cross_repo":
+      return "parent and child must belong to the same repository";
+    case "self":
+      return "an issue cannot be its own parent";
+    case "cycle":
+      return `attaching would create a cycle through issue #${rejection.ancestorNumber}`;
+    case "workspace_mismatch":
+      return `parent and child must use the same workspace: ${rejection.parentWorkspace} != ${rejection.childWorkspace}`;
+    case "parent_too_deep":
+      return `parent would be at depth ${rejection.parentDepth}, but the maximum is ${MAX_ISSUE_DEPTH}`;
+    case "child_subtree_too_tall":
+      return `child subtree would reach depth ${rejection.parentDepth + rejection.childHeight}, but the maximum is ${MAX_ISSUE_DEPTH}`;
+  }
+}
+
 export function effectiveWorkspace(
   targetBranch: string | null,
   defaultBranch: string,

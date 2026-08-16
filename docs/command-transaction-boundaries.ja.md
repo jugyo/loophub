@@ -152,11 +152,14 @@ DB を変更する service procedure と、その transaction owner。`store hel
 
 | procedure | owner | 同一 transaction の DB write | transaction 外 |
 |---|---|---|---|
-| `issues.create` | procedure | issue、labels、acceptance criteria、pane link、`issue.opened` | branch 検証の git read |
+| `issues.create` | procedure | issue、親子関係、labels、acceptance criteria、pane link、`issue.opened` / 親の `issue.updated` | branch 検証の git read |
 | `issues.import` | procedure | issue、GitHub issue link、`issue.opened` | GitHub fetch |
-| `issues.update` | procedure | issue fields、labels と `issue.labeled`、state event、linked PR の close cascade | branch 検証の git read |
+| `issues.update` | procedure | issue fields、workspace cascade、labels と `issue.labeled`、state event、linked PR の close cascade | branch 検証の git read |
 | `issues.addLabels` | procedure | labels、`issue.labeled` | — |
 | `issues.acAdd` / `acSetEnabled` / `acReorder` | procedure | criterion write、issue touch | — |
+| `issues.attachSubIssue` | procedure | child / parent relationship、関係する `issue.updated` | — |
+| `issues.detachSubIssue` | procedure | child / parent relationship、関係する `issue.updated` | — |
+| `issues.reorderSubIssues` | procedure | sub-issue ordinal、関係する `issue.updated` | 順列の検証 |
 | `pulls.create` | procedure（外部 I/O 後の区間） | pull-shaped issue row、pull row、`pull_request.opened` | number-derived head 用の issue number 予約、head / base の SHA read |
 | `pulls.update` | procedure | issue fields、`pull_request.updated` | 応答の `pullJSON` |
 | `pulls.delete` | procedure | PR 関連 row の削除、`pull_request.deleted` | git ref / worktree は削除しない |

@@ -8,6 +8,11 @@ import {
   realGithubIssueDeps,
 } from "../github.ts";
 import {
+  attachRejectionMessage,
+  canHaveSubIssues,
+  rejectAttach,
+} from "../issue-hierarchy.ts";
+import {
   acceptanceCriterionDetailJSON,
   acceptanceCriterionJSON,
   commentJSON,
@@ -309,6 +314,7 @@ export const issues = {
       workspace?: string | null;
       target_branch?: string | null;
       acceptance_criteria?: string[];
+      parent?: number;
     },
     sessionId?: string | null,
     currentPane?: CurrentHerdrPaneContext | null,
@@ -318,16 +324,59 @@ export const issues = {
     if (!input.title) throw new ServiceError(422, "title is required");
     const actor = actorFor(sessionId);
     // The branch validation shells out to git, so it must finish before the DB phase below.
-    const targetBranch = resolveTargetBranch(r, input) ?? null;
+    const targetBranch = resolveTargetBranch(r, input);
+    // Parent and workspace hierarchy reads stay in this transaction so concurrent writers cannot
+    // validate against the same pre-commit tree and create an invalid depth or workspace state.
     return db.transaction(() => {
+      const parent =
+        input.parent == null ? null : S.getIssue(r.id, input.parent);
+      if (input.parent != null && !parent) {
+        throw new ServiceError(404, "Not Found");
+      }
+      const inheritedTargetBranch =
+        targetBranch === undefined
+          ? (parent?.target_branch ?? null)
+          : targetBranch;
       const issue = S.createIssue(
         r.id,
         "issue",
         input.title,
         input.body ?? "",
         actor,
-        targetBranch,
+        inheritedTargetBranch,
       );
+      if (parent) {
+        const parentAncestors = S.listAncestorRows(parent.id, 4);
+        const rejection = rejectAttach({
+          parent: {
+            id: parent.id,
+            number: parent.number,
+            repoId: parent.repo_id,
+            kind: parent.kind,
+            targetBranch: parent.target_branch,
+          },
+          child: {
+            id: issue.id,
+            number: issue.number,
+            repoId: issue.repo_id,
+            kind: issue.kind,
+            targetBranch: inheritedTargetBranch,
+          },
+          parentAncestorNumbers: parentAncestors.map((row) => row.number),
+          childSubtreeHeight: 1,
+          defaultBranch: r.default_branch,
+        });
+        if (rejection) {
+          throw new ServiceError(422, attachRejectionMessage(rejection));
+        }
+        if (!canHaveSubIssues(parentAncestors.length + 1)) {
+          throw new ServiceError(
+            422,
+            `parent would be at depth ${parentAncestors.length + 1}, but the maximum is 3`,
+          );
+        }
+        S.setIssueParent(issue.id, parent.id, S.nextSubIssueOrdinal(parent.id));
+      }
       if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
       // Structured acceptance criteria (#1894): appended in given order, blanks dropped. Each gets a
       // stable id at insert; the markdown `## Acceptance criteria` section is never parsed.
@@ -337,6 +386,9 @@ export const issues = {
       }
       if (currentPane) linkIssueToCurrentPane(r.id, issue.id, currentPane);
       S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
+      if (parent) {
+        S.emitEvent(r.id, "issue.updated", actor, { number: parent.number });
+      }
       return issueJSON(S.getIssue(r.id, issue.number)!, r);
     });
   },
@@ -434,13 +486,36 @@ export const issues = {
     // an issue also closes its open linked PRs, so that cascade shares this one transaction.
     const targetBranch = resolveTargetBranch(r, patch);
 
+    // Workspace validation and descendant updates stay in this transaction for the same reason as
+    // attach: a concurrent writer must observe the committed tree, not a stale hierarchy snapshot.
     return db.transaction(() => {
+      const currentRow = S.getIssue(r.id, row.number);
+      if (!currentRow) throw new ServiceError(404, "Not Found");
+      if (targetBranchChanged && currentRow.parent_issue_id != null) {
+        throw new ServiceError(
+          422,
+          `change the workspace on the root issue #${currentRow.number}`,
+        );
+      }
       const fields: Parameters<typeof S.updateIssue>[1] = {};
       if (patch.title !== undefined) fields.title = patch.title;
       if (patch.body !== undefined) fields.body = patch.body;
       if (state !== undefined) fields.state = state;
       if (targetBranch !== undefined) fields.target_branch = targetBranch;
       if (Object.keys(fields).length) S.updateIssue(row.id, fields);
+      if (targetBranchChanged) {
+        for (const descendantId of S.listDescendantIds(currentRow.id, 4)) {
+          S.updateIssue(descendantId, {
+            target_branch: targetBranch ?? null,
+          });
+          const descendant = S.getIssueById(descendantId);
+          if (descendant) {
+            S.emitEvent(r.id, "issue.updated", actor, {
+              number: descendant.number,
+            });
+          }
+        }
+      }
       if (patch.labels !== undefined) {
         S.setLabels(r.id, row.id, patch.labels);
         S.emitEvent(r.id, "issue.labeled", actor, {
@@ -594,6 +669,122 @@ export const issues = {
       return S.listAcceptanceCriteria(row.id).map((criterion) =>
         acceptanceCriterionDetailJSON(criterion, row.number),
       );
+    });
+  },
+
+  // Hierarchy reads must stay in this transaction: BEGIN IMMEDIATE serializes concurrent writers,
+  // so validating before it could accept two attaches that together create a cycle or exceed the
+  // depth limit.
+  attachSubIssue(
+    name: string,
+    parentNumber: number,
+    childNumber: number,
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const actor = actorFor(sessionId);
+    return db.transaction(() => {
+      const parent = S.getIssue(r.id, parentNumber);
+      const child = S.getIssue(r.id, childNumber);
+      if (!parent || !child) throw new ServiceError(404, "Not Found");
+      const rejection = rejectAttach({
+        parent: {
+          id: parent.id,
+          number: parent.number,
+          repoId: parent.repo_id,
+          kind: parent.kind,
+          targetBranch: parent.target_branch,
+        },
+        child: {
+          id: child.id,
+          number: child.number,
+          repoId: child.repo_id,
+          kind: child.kind,
+          targetBranch: child.target_branch,
+        },
+        parentAncestorNumbers: S.listAncestorRows(parent.id, 4).map(
+          (row) => row.number,
+        ),
+        childSubtreeHeight: S.subtreeHeight(child.id, 4),
+        defaultBranch: r.default_branch,
+      });
+      if (rejection)
+        throw new ServiceError(422, attachRejectionMessage(rejection));
+
+      const oldParentId = child.parent_issue_id;
+      S.setIssueParent(child.id, parent.id, S.nextSubIssueOrdinal(parent.id));
+      const touched = new Set([child.number, parent.number]);
+      if (oldParentId != null && oldParentId !== parent.id) {
+        const oldParent = S.getIssueById(oldParentId);
+        if (oldParent) touched.add(oldParent.number);
+      }
+      for (const number of touched) {
+        S.emitEvent(r.id, "issue.updated", actor, { number });
+      }
+      return issueJSON(S.getIssue(r.id, child.number)!, r);
+    });
+  },
+
+  // The root check and parent change are one transaction so a failed issue.updated event cannot
+  // leave the child detached.
+  detachSubIssue(name: string, childNumber: number, sessionId?: string | null) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const actor = actorFor(sessionId);
+    return db.transaction(() => {
+      const child = S.getIssue(r.id, childNumber);
+      if (!child) throw new ServiceError(404, "Not Found");
+      if (child.parent_issue_id == null) {
+        throw new ServiceError(422, "issue is already a root issue");
+      }
+      const oldParent = S.getIssueById(child.parent_issue_id);
+      S.setIssueParent(child.id, null, null);
+      S.emitEvent(r.id, "issue.updated", actor, { number: child.number });
+      if (oldParent) {
+        S.emitEvent(r.id, "issue.updated", actor, { number: oldParent.number });
+      }
+      return issueJSON(S.getIssue(r.id, child.number)!, r);
+    });
+  },
+
+  // Validation is intentionally outside the transaction, matching acReorder: it only checks the
+  // requested permutation, while the reorder and its events remain one atomic DB phase.
+  reorderSubIssues(
+    name: string,
+    parentNumber: number,
+    orderedChildNumbers: number[],
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const parent = issueOr404(r, parentNumber, "issue");
+    const children = S.listSubIssues(parent.id);
+    const existingNumbers = children.map((row) => row.number);
+    const existingSet = new Set(existingNumbers);
+    const orderedSet = new Set(orderedChildNumbers);
+    const isPermutation =
+      orderedChildNumbers.length === existingNumbers.length &&
+      orderedSet.size === orderedChildNumbers.length &&
+      orderedChildNumbers.every((number) => existingSet.has(number));
+    if (!isPermutation) {
+      throw new ServiceError(
+        422,
+        "order must list every sub-issue number of this issue exactly once",
+      );
+    }
+    const actor = actorFor(sessionId);
+    return db.transaction(() => {
+      S.reorderSubIssues(
+        parent.id,
+        orderedChildNumbers.map(
+          (number) => children.find((row) => row.number === number)!.id,
+        ),
+      );
+      for (const number of [parent.number, ...orderedChildNumbers]) {
+        S.emitEvent(r.id, "issue.updated", actor, { number });
+      }
+      return S.listSubIssues(parent.id).map((row) => issueJSON(row, r));
     });
   },
 };

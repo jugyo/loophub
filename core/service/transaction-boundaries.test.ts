@@ -180,6 +180,28 @@ test("a failed issue.opened event leaves no issue, labels or criteria behind", (
   );
 });
 
+test("a failed sub-issue update event rolls back attach and detach", () => {
+  const parent = svc.issues.create(REPO, { title: "sub-issue parent" });
+  const child = svc.issues.create(REPO, { title: "sub-issue child" });
+
+  expect(() =>
+    whileFailing("issue.updated", () =>
+      svc.issues.attachSubIssue(REPO, parent.number, child.number),
+    ),
+  ).toThrowError(/injected event failure/);
+  expect(S.getIssue(repoId, child.number)!.parent_issue_id).toBeNull();
+
+  svc.issues.attachSubIssue(REPO, parent.number, child.number);
+  expect(() =>
+    whileFailing("issue.updated", () =>
+      svc.issues.detachSubIssue(REPO, child.number),
+    ),
+  ).toThrowError(/injected event failure/);
+  expect(S.getIssue(repoId, child.number)!.parent_issue_id).toBe(
+    S.getIssue(repoId, parent.number)!.id,
+  );
+});
+
 test("a failed pull ref observation leaves no pull-shaped issue", async () => {
   const before = pullCreationCounts();
   let observedHead = "";
