@@ -1262,7 +1262,15 @@ async function workflowRunState(
   const currentHead = liveHead ?? pull?.head_sha ?? null;
   const shaStatus =
     pull?.merged !== 1 && liveHead && liveBase
-      ? await pullShaStatus(repo.local_path, liveBase, liveHead)
+      ? await (async () => {
+          const projection = S.getPullStatusProjection(liveBase, liveHead);
+          return projection
+            ? {
+                conflict: projection.conflict === 1,
+                hasEffectiveDiff: projection.has_effective_diff === 1,
+              }
+            : await pullShaStatus(repo.local_path, liveBase, liveHead);
+        })()
       : null;
   const mergeConflict = shaStatus?.conflict ?? false;
   const effectiveDiff = shaStatus?.hasEffectiveDiff ?? false;

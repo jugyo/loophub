@@ -3697,6 +3697,18 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   const reviewedHead = commit(REPO_PATH, "state.txt", "reviewed\n");
   git(["checkout", "-q", "main"]);
   S.createPull(prIssue.id, "state-head", "main", reviewedHead, issue.id);
+  S.upsertPullStatusProjection({
+    baseSha: gitAt(REPO_PATH, ["rev-parse", "main"]),
+    headSha: reviewedHead,
+    mergeable: true,
+    mergeableState: "clean",
+    hasEffectiveDiff: true,
+    conflict: true,
+    additions: 1,
+    deletions: 0,
+    changedFiles: 1,
+    commitsAhead: 1,
+  });
   const workflow = S.createWorkflow({
     name: "state-wf",
     description: "",
@@ -3761,6 +3773,20 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   });
   expect(byIssue?.verification_status).toBe("unverified");
   expect(byIssue?.merge_ready).toBe(false);
+  expect(byIssue?.merge_conflict).toBe(true);
+
+  S.upsertPullStatusProjection({
+    baseSha: gitAt(REPO_PATH, ["rev-parse", "main"]),
+    headSha: reviewedHead,
+    mergeable: true,
+    mergeableState: "clean",
+    hasEffectiveDiff: true,
+    conflict: false,
+    additions: 1,
+    deletions: 0,
+    changedFiles: 1,
+    commitsAhead: 1,
+  });
 
   const byPull = await svc.workflowRuns.stateForPull(repo.full_name, {
     pull: prIssue.number,
