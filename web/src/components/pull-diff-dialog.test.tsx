@@ -2689,6 +2689,64 @@ describe("DiffFileDialog", () => {
     ).toContain("markdown-diff-block-added");
   });
 
+  it("uses the original and target paths for a renamed Markdown rendered diff", async () => {
+    const requests: { path: string; side: string }[] = [];
+    const renamedFile: PullFile = {
+      filename: "docs/README.md => docs/guide.md",
+      previousFilename: "docs/README.md",
+      headFilename: "docs/guide.md",
+      status: "renamed",
+      additions: 0,
+      deletions: 0,
+      patch: "",
+    };
+    renderDialog({
+      file: renamedFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "docs/guide.md",
+              original_path: "docs/README.md",
+              status: "renamed",
+              additions: 0,
+              deletions: 0,
+              patch: "",
+              lines: [],
+            },
+          ],
+        }),
+        "pulls/fileAtRef": (params) => {
+          requests.push({ path: params.path, side: params.side });
+          return { status: "ok", content: `# ${params.side}\n` };
+        },
+      },
+    });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for docs\/README\.md => docs\/guide\.md/i,
+    });
+    expect(
+      within(dialog).getByRole("button", { name: "Rendered diff" }),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Rendered diff" }),
+    );
+    await screen.findByRole("region", { name: "Base rendered diff" });
+    expect(requests).toEqual(
+      expect.arrayContaining([
+        { path: "docs/README.md", side: "base" },
+        { path: "docs/guide.md", side: "head" },
+      ]),
+    );
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Base" }));
+    await screen.findByRole("heading", { name: "base" });
+  });
+
   it("creates a rendered diff comment and shows its inline conversation", async () => {
     const mdFile: PullFile = {
       filename: "README.md",

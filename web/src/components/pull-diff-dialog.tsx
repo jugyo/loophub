@@ -84,8 +84,7 @@ import {
 const MARKDOWN_FILENAME = /\.(md|markdown)$/i;
 
 // `file.filename` for a rename is git numstat's display label ("old => new" / "dir/{old =>
-// new}"), not a real path. The copy button can use `headFilename`, but the Markdown Preview
-// path still points at `file.filename`, so keep previews off for synthetic rename labels.
+// new}"), not a real path. Use the structured side paths for preview requests.
 const RENAMED_FILENAME = / => /;
 
 function isSyntheticRenameFilename(file: PullFile) {
@@ -108,6 +107,19 @@ function copyFilename(file: PullFile) {
     return renameTargetPath(file.filename) ?? file.filename;
   }
   return file.filename;
+}
+
+function markdownPath(file: PullFile, side: "base" | "head") {
+  return side === "base"
+    ? (file.previousFilename ?? file.filename)
+    : copyFilename(file);
+}
+
+function isMarkdownFile(file: PullFile) {
+  if (isSyntheticRenameFilename(file) && !file.headFilename) return false;
+  return [markdownPath(file, "base"), markdownPath(file, "head")].some((path) =>
+    MARKDOWN_FILENAME.test(path),
+  );
 }
 
 const UNSAFE_COPY_PATH_CHAR = /[\p{Default_Ignorable_Code_Point}\p{Cc}\p{Cf}]/u;
@@ -240,8 +252,7 @@ export function DiffFileDialog({
   const backdropDismiss = useBackdropDismiss(onClose);
   const path = copyFilename(file);
   const copyPath = visibleCopyPath(path);
-  const isMarkdown =
-    MARKDOWN_FILENAME.test(file.filename) && !isSyntheticRenameFilename(file);
+  const isMarkdown = isMarkdownFile(file);
   const mode = isMarkdown ? markdownMode : standardMode;
   const filteredFiles = useMemo(
     () =>
@@ -804,19 +815,14 @@ function FileDiffContent({
         owner={owner}
         repo={repo}
         number={number}
-        path={file.filename}
+        path={file}
         side={mode}
       />
     );
   }
   if (mode === "rendered") {
     return (
-      <RenderedDiffPane
-        owner={owner}
-        repo={repo}
-        number={number}
-        path={file.filename}
-      />
+      <RenderedDiffPane owner={owner} repo={repo} number={number} file={file} />
     );
   }
 
@@ -2031,10 +2037,17 @@ function MarkdownPreviewPane({
   owner: string;
   repo: string;
   number: number;
-  path: string;
+  path: PullFile;
   side: "base" | "head";
 }) {
-  const file = usePullFileAtRef(owner, repo, number, path, side, true);
+  const file = usePullFileAtRef(
+    owner,
+    repo,
+    number,
+    markdownPath(path, side),
+    side,
+    true,
+  );
   return (
     // The pane scrolls itself rather than leaning on the dialog's shared
     // scroller, so the scrollbar belongs to the element that carries the
@@ -2106,16 +2119,31 @@ function RenderedDiffPane({
   owner,
   repo,
   number,
-  path,
+  file,
 }: {
   owner: string;
   repo: string;
   number: number;
-  path: string;
+  file: PullFile;
 }) {
+  const path = copyFilename(file);
   const diff = usePullDiff(owner, repo, number, path);
-  const base = usePullFileAtRef(owner, repo, number, path, "base", true);
-  const head = usePullFileAtRef(owner, repo, number, path, "head", true);
+  const base = usePullFileAtRef(
+    owner,
+    repo,
+    number,
+    markdownPath(file, "base"),
+    "base",
+    true,
+  );
+  const head = usePullFileAtRef(
+    owner,
+    repo,
+    number,
+    markdownPath(file, "head"),
+    "head",
+    true,
+  );
   const feedback = useDiffFeedback(owner, repo, number, { path });
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -32,6 +32,12 @@ beforeAll(async () => {
   writeFileSync(join(repoPath, "new.md"), "# added on feature\n");
   git(["add", "-A"]);
   git(["commit", "-qam", "feature change"]);
+  git(["checkout", "-q", "main"]);
+
+  git(["checkout", "-q", "-b", "rename-feature"]);
+  mkdirSync(join(repoPath, "docs"));
+  git(["mv", "README.md", "docs/README.md"]);
+  git(["commit", "-qm", "rename readme"]);
   git(["checkout", "-q", "main"]);
 
   await svc.repos.create({ path: repoPath, name: "me/proj" });
@@ -88,4 +94,36 @@ test("pulls.fileAtRef 404s for a path outside the PR's diff (not a general file-
   await expect(
     svc.pulls.fileAtRef("me/proj", pr.number, "untouched.md", "head"),
   ).rejects.toMatchObject({ status: 404 });
+});
+
+test("pulls.fileAtRef ignores files added to the base branch after the PR fork", async () => {
+  const pr = await svc.pulls.create("me/proj", {
+    title: "base advanced",
+    body: "base has an unrelated file",
+    head: "feature",
+    base: "main",
+  });
+  writeFileSync(join(repoPath, "unrelated.md"), "# base only\n");
+  git(["add", "unrelated.md"]);
+  git(["commit", "-qm", "base-only change"]);
+
+  await expect(
+    svc.pulls.fileAtRef("me/proj", pr.number, "unrelated.md", "head"),
+  ).rejects.toMatchObject({ status: 404 });
+});
+
+test("pulls.fileAtRef resolves both sides of a renamed file", async () => {
+  const pr = await svc.pulls.create("me/proj", {
+    title: "rename the readme",
+    body: "renames the readme",
+    head: "rename-feature",
+    base: "main",
+  });
+
+  await expect(
+    svc.pulls.fileAtRef("me/proj", pr.number, "docs/README.md", "head"),
+  ).resolves.toEqual({ status: "ok", content: "# base\n" });
+  await expect(
+    svc.pulls.fileAtRef("me/proj", pr.number, "README.md", "base"),
+  ).resolves.toEqual({ status: "ok", content: "# base\n" });
 });

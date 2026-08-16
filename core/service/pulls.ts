@@ -10,6 +10,7 @@ import {
   commitsAhead,
   currentBranch,
   type DiffFile,
+  diffFileSummariesBetween,
   diffFiles,
   diffFilesBetween,
   diffStat,
@@ -18,7 +19,6 @@ import {
   hasEffectiveDiff,
   localBranchRef,
   type PullMergeMethod,
-  pathInDiff,
   remoteUrl,
   revParse,
 } from "../git.ts";
@@ -489,18 +489,33 @@ export const pulls = {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
-    if (
-      !(await pathInDiff(
-        r.local_path,
-        localBranchRef(p.base_ref),
-        localBranchRef(p.head_ref),
-        path,
-      ))
-    ) {
+    const [baseSha, headSha] = await Promise.all([
+      resolvePullDiffBaseSha(r.local_path, p),
+      revParse(r.local_path, localBranchRef(p.head_ref)),
+    ]);
+    if (!baseSha || !headSha) {
+      throw new ServiceError(422, "pull request diff is unavailable");
+    }
+    const diffFileSummaries = await diffFileSummariesBetween(
+      r.local_path,
+      baseSha,
+      headSha,
+    );
+    const changedFile = diffFileSummaries.find(
+      (file) =>
+        (file.headFilename ?? file.filename) === path ||
+        file.previousFilename === path ||
+        file.filename === path,
+    );
+    if (!changedFile) {
       throw new ServiceError(404, "Not Found");
     }
-    const ref = side === "base" ? p.base_ref : p.head_ref;
-    return fileAtRef(r.local_path, localBranchRef(ref), path);
+    const ref = side === "base" ? baseSha : headSha;
+    const sidePath =
+      side === "base"
+        ? (changedFile.previousFilename ?? changedFile.filename)
+        : (changedFile.headFilename ?? changedFile.filename);
+    return fileAtRef(r.local_path, ref, sidePath);
   },
 
   // #406: record the GitHub PR a loophub PR was exported to. Originally an internal step of the
