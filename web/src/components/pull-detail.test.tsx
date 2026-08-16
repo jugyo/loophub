@@ -587,6 +587,37 @@ describe("PullDetail", () => {
     expect(screen.queryByRole("dialog", { name: /Reviews for/ })).toBe(null);
   });
 
+  it("opens a timeline review without a head SHA using an explicit fallback label", async () => {
+    const legacyReview: PullReview = {
+      id: 2,
+      user: { login: "legacy-bot" },
+      author_type: "agent",
+      state: "COMMENT",
+      body: "Historical review",
+      head_sha: null,
+      submitted_at: "2026-06-16T10:00:00Z",
+      duration_seconds: null,
+      ac_results: [],
+    };
+    renderDetail({ "reviews/list": () => [...reviews, legacyReview] });
+
+    const section = (
+      await screen.findByRole("heading", {
+        name: "Comments (2)",
+      })
+    ).closest("section")!;
+    const reviewButton = within(section).getByRole("button", {
+      name: "View review for Unknown commit",
+    });
+    expect(reviewButton).toBeTruthy();
+    fireEvent.click(reviewButton);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for Unknown commit",
+    });
+    expect(within(dialog).getByText("Historical review")).toBeTruthy();
+  });
+
   // #300/#307: the activity entries (commits and reviews) connect along a vertical
   // line, the same pattern the workflow run history uses — but a conversation comment breaks the
   // line and renders as its own card, not on it.
