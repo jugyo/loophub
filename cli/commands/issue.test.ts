@@ -87,6 +87,37 @@ test("lh issue create returns the created issue with --json", () => {
   expect(plain.stdout.trim()).toMatch(/^created #\d+$/);
 });
 
+test("lh issue create --parent creates a sub-issue", () => {
+  const parent = createIssue("CLI parent");
+  const child = lh([
+    "issue",
+    "create",
+    "--repo",
+    "me/proj",
+    "--title",
+    "CLI child",
+    "--parent",
+    String(parent),
+    "--json",
+  ]);
+  expect(child.exitCode, child.stderr).toBe(0);
+  const childNumber = JSON.parse(child.stdout).number;
+
+  const listed = lh([
+    "issue",
+    "list",
+    "--repo",
+    "me/proj",
+    "--state",
+    "all",
+    "--json",
+  ]);
+  expect(listed.exitCode, listed.stderr).toBe(0);
+  expect(
+    JSON.parse(listed.stdout).map((issue: any) => issue.number),
+  ).not.toContain(childNumber);
+});
+
 test("lh issue view exposes display ids for acceptance criteria", () => {
   const created = lh([
     "issue",

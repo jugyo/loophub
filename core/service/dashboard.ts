@@ -31,7 +31,9 @@ export const dashboard = {
     const issueRows: { repo: S.Repo; ref: RepoRef; row: S.IssueRow }[] = [];
     for (const r of S.listRepos("active")) {
       const ref = repoRef(r);
-      for (const row of S.listIssues(r.id, "issue", "open")) {
+      for (const row of S.listIssues(r.id, "issue", "open", "created", {
+        rootsOnly: true,
+      })) {
         issueRows.push({ repo: r, ref, row });
       }
     }

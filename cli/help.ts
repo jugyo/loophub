@@ -14,6 +14,7 @@ Options:
   --body <text>           Markdown issue body; @file reads a file and - reads stdin.
   --label <name,...>      Comma-separated labels.
   --ac <text>             Structured acceptance criterion (repeatable, non-blank).
+  --parent <number>       Parent issue number; the new issue is created as a sub-issue.
   --workspace <name>      Active registered workspace whose branch becomes the target.
   --target-branch <ref>   Existing branch or revision expression used as the target.
   --repo <owner/name>     Repository (defaults to the repository at the current path).

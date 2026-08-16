@@ -212,7 +212,9 @@ export const issues = {
       ISSUE_LIST_LOOKAHEAD_MAX,
     );
     const page = opts.page && opts.page >= 1 ? opts.page : 1;
-    let rows = S.listIssues(r.id, kind, state, opts.sort ?? "created");
+    let rows = S.listIssues(r.id, kind, state, opts.sort ?? "created", {
+      rootsOnly: true,
+    });
     if (labelsFilter.length) {
       const matchingIssueIds = S.issueIdsWithLabels(r.id, labelsFilter);
       rows = rows.filter((row) => matchingIssueIds.has(row.id));
@@ -240,6 +242,19 @@ export const issues = {
         : paginate(rows, perPage, page);
     const issueIds = pageRows.map((row) => row.id);
     return issueListItemsJSON(pageRows, r, {
+      labelsByIssue: S.labelsByIssue(issueIds),
+      commentCountsByIssue: S.commentCountsByIssue(issueIds),
+      linkedPullsByIssue: S.linkedPullsByIssue(issueIds),
+      herdrPanesByIssue: S.issueHerdrPanesByIssue(r.id, issueIds),
+    });
+  },
+
+  async listSubIssues(name: string, number: number) {
+    const r = repoOr404(name);
+    const parent = issueOr404(r, number, "issue");
+    const rows = S.listSubIssues(parent.id);
+    const issueIds = rows.map((row) => row.id);
+    return issueListItemsJSON(rows, r, {
       labelsByIssue: S.labelsByIssue(issueIds),
       commentCountsByIssue: S.commentCountsByIssue(issueIds),
       linkedPullsByIssue: S.linkedPullsByIssue(issueIds),

@@ -1681,6 +1681,10 @@
               "null"
             ]
           },
+          "parent": {
+            "type": "integer",
+            "minimum": 1
+          },
           "session_id": {
             "type": "string",
             "minLength": 1

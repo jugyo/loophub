@@ -217,6 +217,11 @@ export async function run(): Promise<void> {
       .filter(Boolean);
     const body =
       flags.body === undefined ? undefined : await readTextInput(flags.body);
+    const parent =
+      flags.parent === undefined ? undefined : Number(flags.parent);
+    if (parent !== undefined && (!Number.isInteger(parent) || parent < 1)) {
+      fail("--parent requires a positive issue number");
+    }
     const i = await runOp(async () =>
       s.issues.create(
         repo,
@@ -225,6 +230,7 @@ export async function run(): Promise<void> {
           body: body || "",
           labels,
           acceptance_criteria: acceptanceCriteria,
+          parent,
           workspace: flags.workspace,
           target_branch:
             flags.workspace === undefined

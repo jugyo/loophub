@@ -66,6 +66,7 @@ describe("--help", () => {
     expect(result.stdout).toContain("--body <text>");
     expect(result.stdout).toContain("--label <name,...>");
     expect(result.stdout).toContain("--ac <text>");
+    expect(result.stdout).toContain("--parent <number>");
     expect(result.stdout).toContain("--workspace <name>");
     expect(result.stdout).toContain("--target-branch <ref>");
     expect(result.stdout).toContain("--repo <owner/name>");

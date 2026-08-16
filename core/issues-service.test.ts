@@ -878,6 +878,36 @@ test("creating a child inherits its parent workspace and root workspace updates 
   ).toThrow(/root issue/);
 });
 
+test("issues.list returns roots only and listSubIssues keeps enriched child order", async () => {
+  const parent = svc.issues.create("me/proj", { title: "listed parent" });
+  const first = svc.issues.create("me/proj", {
+    title: "listed first",
+    parent: parent.number,
+  });
+  const second = svc.issues.create("me/proj", {
+    title: "listed second",
+    parent: parent.number,
+  });
+
+  for (const state of ["open", "closed", "all"]) {
+    const rows = await svc.issues.list("me/proj", { state });
+    expect(rows.map((row: any) => row.number)).not.toContain(first.number);
+    expect(rows.map((row: any) => row.number)).not.toContain(second.number);
+  }
+
+  const children = await svc.issues.listSubIssues("me/proj", parent.number);
+  expect(children.map((row: any) => row.number)).toEqual([
+    first.number,
+    second.number,
+  ]);
+  expect(children[0]).toMatchObject({
+    title: "listed first",
+    labels: [],
+    comments: 0,
+    linked_pull_requests: [],
+  });
+});
+
 test("issues.acSetEnabled rejects an internal integer id (#1894)", () => {
   const other = S.createRepo("me/ac-scope", "/tmp/ac-scope");
   const foreign = S.createIssue(other.id, "issue", "foreign", "", "me") as any;
