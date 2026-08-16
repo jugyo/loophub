@@ -393,6 +393,38 @@ describe("WorkflowStepTracker", () => {
     ).toBeNull();
   });
 
+  it("keeps the step action when the newest matching agent has no focusable pane", () => {
+    const sessions: HerdrSessions = {
+      ...herdrSessions,
+      repos: herdrSessions.repos.map((repo) => ({
+        ...repo,
+        agents: repo.agents.map((agent) =>
+          agent.id === "w1:p3" ? { ...agent, focusable: false } : agent,
+        ),
+      })),
+    };
+    render(
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state()}
+        herdrSessions={sessions}
+      />,
+    );
+
+    fireEvent.focus(screen.getByText("Execute"));
+    const dialog = screen.getByRole("dialog", {
+      name: "Execute workflow step details",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Open in Herdr" }),
+    );
+    expect(focusHerdrAgent).toHaveBeenCalledWith(
+      { repo: "me/proj", paneId: "w1:p1" },
+      expect.anything(),
+    );
+  });
+
   it("shows why pane actions are unavailable when the Herdr snapshot fails", () => {
     render(
       <WorkflowStepTracker

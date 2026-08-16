@@ -34,6 +34,36 @@ export function latestWorkflowStepAgent(
   return latest;
 }
 
+export function latestFocusableWorkflowStepAgent(
+  data: HerdrSessions | undefined,
+  repo: string | undefined,
+  runId: number,
+  step: "execute" | "verify",
+): HerdrAgent | undefined {
+  const agent = latestWorkflowStepAgent(data, repo, runId, step);
+  if (agent?.focusable) return agent;
+
+  if (!repo) return undefined;
+  const agents =
+    data?.repos?.find((candidate) => candidate.repo === repo)?.agents ?? [];
+  let latest: HerdrAgent | undefined;
+  let latestSequence = -1;
+  for (const candidate of agents) {
+    if (
+      !candidate.focusable ||
+      candidate.workflow?.kind !== "step" ||
+      candidate.workflow.runId !== runId ||
+      candidate.workflow.step !== step ||
+      candidate.workflow.sequence < latestSequence
+    ) {
+      continue;
+    }
+    latest = candidate;
+    latestSequence = candidate.workflow.sequence;
+  }
+  return latest;
+}
+
 /**
  * The herdr session group and agent pane running `owner/repo`'s PR `#pull`, or null when
  * herdr reports none. Shared by the badge below and the PR-detail Herdr section (#609) so

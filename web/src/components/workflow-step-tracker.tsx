@@ -19,7 +19,10 @@ import type {
   WorkflowStepExecution,
 } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
-import { latestWorkflowStepAgent } from "@/components/herdr-badge";
+import {
+  latestFocusableWorkflowStepAgent,
+  latestWorkflowStepAgent,
+} from "@/components/herdr-badge";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { useHoverPopover } from "@/lib/use-hover-popover";
@@ -529,6 +532,15 @@ export function WorkflowStepTracker({
                 state.id,
                 stage.key,
               );
+        const focusableAgent =
+          stage.key === "done"
+            ? undefined
+            : latestFocusableWorkflowStepAgent(
+                herdrSessions,
+                repoFullName,
+                state.id,
+                stage.key,
+              );
         const stageWorking = !tracker.merged && agent?.status === "working";
         return (
           <Fragment key={stage.key}>
@@ -555,7 +567,7 @@ export function WorkflowStepTracker({
               }
               ariaCurrent={isCurrent ? "step" : undefined}
               repo={repoFullName}
-              agent={agent?.focusable ? agent : undefined}
+              agent={focusableAgent}
               herdrUnavailable={herdrUnavailable && stage.key !== "done"}
               onInteract={onStageInteract}
               className={cn(
