@@ -49,7 +49,7 @@ function state(partial: Partial<WorkflowRunState> = {}): WorkflowRunState {
     latest_review: null,
     verification_status: "unverified",
     pr_merged: false,
-    done: false,
+    merge_ready: false,
     merge_conflict: false,
     ...partial,
   };
@@ -290,7 +290,7 @@ describe("WorkflowStepTracker", () => {
     vi.useFakeTimers();
     render(<WorkflowStepTracker state={state()} />);
 
-    for (const label of ["Execute", "Verify", "Done"]) {
+    for (const label of ["Execute", "Verify", "Ready to merge"]) {
       const pill = screen.getByText(label);
       fireEvent.mouseEnter(pill.parentElement!);
       act(() => vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS));
@@ -383,11 +383,11 @@ describe("WorkflowStepTracker", () => {
     ).toBeNull();
 
     fireEvent.blur(screen.getByText("Verify"));
-    fireEvent.focus(screen.getByText("Done"));
+    fireEvent.focus(screen.getByText("Ready to merge"));
     expect(
       within(
         screen.getByRole("dialog", {
-          name: "Done workflow step details",
+          name: "Ready to merge workflow step details",
         }),
       ).queryByRole("button", { name: "Open in Herdr" }),
     ).toBeNull();
@@ -460,11 +460,11 @@ describe("WorkflowStepTracker", () => {
     ).toBeNull();
   });
 
-  it("shows Execute → Verify → Done and colors only the current stage", () => {
+  it("shows Execute → Verify → Ready to merge and colors only the current stage", () => {
     render(<WorkflowStepTracker state={state({ current_step: "execute" })} />);
     const execute = screen.getByText("Execute");
     const verify = screen.getByText("Verify");
-    const done = screen.getByText("Done");
+    const done = screen.getByText("Ready to merge");
     // Current stage is highlighted (primary), the rest are grey.
     expect(execute.getAttribute("aria-current")).toBe("step");
     expect(execute.className).toContain("text-link");
@@ -484,17 +484,17 @@ describe("WorkflowStepTracker", () => {
     );
   });
 
-  it("lights Done green when the pull request is ready to merge", () => {
+  it("lights Ready to merge green when the pull request is ready to merge", () => {
     render(
       <WorkflowStepTracker
         state={state({
           current_step: "verify",
           verification_status: "verified",
-          done: true,
+          merge_ready: true,
         })}
       />,
     );
-    const done = screen.getByText("Done");
+    const done = screen.getByText("Ready to merge");
     expect(done.getAttribute("aria-current")).toBe("step");
     expect(done.className).toContain("text-green");
   });
@@ -505,16 +505,16 @@ describe("WorkflowStepTracker", () => {
         state={state({
           current_step: "verify",
           verification_status: "unverified",
-          done: true,
+          merge_ready: true,
         })}
       />,
     );
 
-    expect(screen.getByText("Done").className).toContain("text-green");
+    expect(screen.getByText("Ready to merge").className).toContain(
+      "text-green",
+    );
     expect(
-      screen.getByLabelText(
-        "The pull request is ready to merge — the run reached Done",
-      ),
+      screen.getByLabelText("The pull request is Ready to merge"),
     ).toBeTruthy();
     expect(screen.queryByLabelText(/Verify passed/)).toBeNull();
   });
@@ -524,18 +524,20 @@ describe("WorkflowStepTracker", () => {
       <WorkflowStepTracker state={state({ current_step: "verify" })} />,
     );
     // Done not reached yet: no checkmark icon in the pill.
-    expect(screen.getByText("Done").querySelector("svg")).toBeNull();
+    expect(screen.getByText("Ready to merge").querySelector("svg")).toBeNull();
     rerender(
       <WorkflowStepTracker
         state={state({
           current_step: "verify",
           verification_status: "verified",
-          done: true,
+          merge_ready: true,
         })}
       />,
     );
     // Done reached: a checkmark precedes the label.
-    expect(screen.getByText("Done").querySelector("svg")).toBeTruthy();
+    expect(
+      screen.getByText("Ready to merge").querySelector("svg"),
+    ).toBeTruthy();
   });
 
   it("does not glow Done even while working once it is reached", () => {
@@ -544,13 +546,13 @@ describe("WorkflowStepTracker", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
-          done: true,
+          merge_ready: true,
         })}
         working
       />,
     );
     // Done is terminal, so it must not carry the working glow.
-    expect(screen.getByText("Done").className).not.toContain(
+    expect(screen.getByText("Ready to merge").className).not.toContain(
       "workflow-stage-glow",
     );
   });
@@ -561,7 +563,7 @@ describe("WorkflowStepTracker", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
-          done: false,
+          merge_ready: false,
           merge_conflict: true,
         })}
         working
@@ -588,7 +590,9 @@ describe("WorkflowStepTracker", () => {
         .textContent,
     ).toContain("Reverify required");
     // Done is not reached: it stays grey, not green.
-    expect(screen.getByText("Done").className).not.toContain("text-green");
+    expect(screen.getByText("Ready to merge").className).not.toContain(
+      "text-green",
+    );
   });
 
   it("does not treat a completed run as reaching Done", () => {
@@ -602,11 +606,15 @@ describe("WorkflowStepTracker", () => {
       />,
     );
     // `status === completed` is not the terminal signal — Done stays unreached (grey, not current).
-    expect(screen.getByText("Done").className).not.toContain("text-green");
+    expect(screen.getByText("Ready to merge").className).not.toContain(
+      "text-green",
+    );
     expect(screen.getByText("Verify").getAttribute("aria-current")).toBe(
       "step",
     );
-    expect(screen.getByText("Done").getAttribute("aria-current")).toBeNull();
+    expect(
+      screen.getByText("Ready to merge").getAttribute("aria-current"),
+    ).toBeNull();
   });
 
   it("shows a merged PR at Done without a stale Verify or Conflict state (#265, PR #242)", () => {
@@ -623,14 +631,16 @@ describe("WorkflowStepTracker", () => {
       />,
     );
 
-    expect(screen.getByText("Done").getAttribute("aria-current")).toBe("step");
-    expect(screen.getByText("Done").className).toContain("text-green");
+    expect(screen.getByText("Merged").getAttribute("aria-current")).toBe(
+      "step",
+    );
+    expect(screen.getByText("Merged").className).toContain("text-green");
     expect(screen.getByText("Verify").getAttribute("aria-current")).toBeNull();
     expect(screen.queryByText("Conflict!")).toBeNull();
     expect(screen.queryByText("needs human")).toBeNull();
     expect(
       screen.getByLabelText(
-        "The pull request was merged — the run reached Done",
+        "The pull request was merged — the workflow is Merged",
       ),
     ).toBeTruthy();
   });
@@ -642,7 +652,7 @@ describe("WorkflowStepTracker", () => {
       />,
     );
     // The terminal pill now reads "Conflict!" (danger red), not "Done".
-    expect(screen.queryByText("Done")).toBeNull();
+    expect(screen.queryByText("Ready to merge")).toBeNull();
     const conflictPill = screen.getByText("Conflict!");
     expect(conflictPill.className).toContain("text-red");
     // A warning icon precedes the label.
@@ -656,7 +666,7 @@ describe("WorkflowStepTracker", () => {
 
   it("keeps the plain Done pill when the PR does not conflict", () => {
     render(<WorkflowStepTracker state={state({ current_step: "execute" })} />);
-    expect(screen.getByText("Done")).toBeTruthy();
+    expect(screen.getByText("Ready to merge")).toBeTruthy();
     expect(screen.queryByText("Conflict!")).toBeNull();
   });
 
@@ -666,7 +676,7 @@ describe("WorkflowStepTracker", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
-          done: false,
+          merge_ready: false,
           merge_conflict: true,
         })}
       />,
@@ -688,7 +698,7 @@ describe("WorkflowStepTracker", () => {
     );
     expect(screen.getByText("needs human")).toBeTruthy();
     expect(screen.getByText("Execute")).toBeTruthy();
-    expect(screen.getByText("Done")).toBeTruthy();
+    expect(screen.getByText("Ready to merge")).toBeTruthy();
   });
 
   it("drops the needs-human marker when the caller marks the run over budget (#1932)", () => {
@@ -724,7 +734,7 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Execute").className).toContain(
       "animate-[workflow-stage-glow",
     );
-    expect(screen.getByText("Done").className).not.toContain(
+    expect(screen.getByText("Ready to merge").className).not.toContain(
       "workflow-stage-glow",
     );
     expect(
@@ -808,11 +818,11 @@ describe("WorkflowStepTracker", () => {
       <WorkflowStepTracker
         owner="me"
         repo="proj"
-        state={state({ verification_status: "verified", done: true })}
+        state={state({ verification_status: "verified", merge_ready: true })}
         herdrSessions={herdrSessions}
       />,
     );
-    const done = screen.getByText("Done");
+    const done = screen.getByText("Ready to merge");
     expect(done.className).toContain("text-green");
     expect(done.querySelector("svg")).toBeTruthy();
   });

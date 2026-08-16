@@ -1570,6 +1570,7 @@ export interface WorkflowRunStateWire {
   workflow_name: string | null;
   status: string; // running | completed (closed PR); legacy rows may read 'stopped' or 'blocked'
   current_step: string; // execute | verify
+  display_stage?: "execute" | "verify" | "ready_to_merge" | "merged";
   active_verify_head_sha: string | null;
   // When the active Verify launch began, read from its `workflow_step.launched` event's
   // `created_at` (#90). Present together with `active_verify_head_sha`; the Web derives the
@@ -1599,11 +1600,9 @@ export interface WorkflowRunStateWire {
   latest_review: WorkflowRunReviewSummaryWire | null;
   verification_status: "unverified" | "verified" | "stale";
   // The linked PR's terminal state. Kept separate from `status === completed`, which also covers
-  // closed-unmerged PRs, and from `done`, which is the pre-merge merge-ready state.
+  // closed-unmerged PRs.
   pr_merged: boolean;
-  // Canonical pre-merge Done state. This remains distinct from the run lifecycle `status` and is
-  // false when a merge conflict blocks the otherwise fresh passing review.
-  done: boolean;
+  merge_ready: boolean;
   merge_conflict: boolean;
 }
 
@@ -1631,6 +1630,7 @@ export interface WorkflowPendingStepLaunchWire {
 export interface WorkflowStepStatusWire {
   run: number;
   current_step: string;
+  display_stage?: "execute" | "verify" | "ready_to_merge" | "merged";
   status: string;
   active_step: string | null;
   rework_count: number;
@@ -1646,8 +1646,8 @@ export interface WorkflowStepStatusWire {
   head_ahead_of_base: boolean;
   head_ahead_of_latest_review: boolean;
   merge_conflict: boolean;
-  // Canonical pre-merge Done state derived from the current HEAD, its pinned review, and PR state.
-  done: boolean;
+  // Canonical pre-merge merge-ready state derived from the current HEAD, its pinned review, and PR state.
+  merge_ready: boolean;
   // The linked PR's own domain state. The run's terminal condition is read from these fields
   // rather than from a close / merge event, so every route lands on the same reconciliation.
   pr_merged: boolean;
@@ -1673,7 +1673,7 @@ export function workflowRunStateJSON(input: {
   activeVerifyHeadSha: string | null;
   activeVerifyStartedAt: string | null;
   prMerged: boolean;
-  done: boolean;
+  mergeReady: boolean;
   mergeConflict: boolean;
   latestStepRuns: WorkflowRunStateWire["latest_step_runs"];
 }): WorkflowRunStateWire {
@@ -1684,6 +1684,11 @@ export function workflowRunStateJSON(input: {
     workflow_name: input.workflowName,
     status: run.status,
     current_step: run.current_step,
+    display_stage: input.prMerged
+      ? "merged"
+      : input.mergeReady
+        ? "ready_to_merge"
+        : (run.current_step as "execute" | "verify"),
     active_verify_head_sha: input.activeVerifyHeadSha,
     active_verify_started_at: input.activeVerifyStartedAt,
     rework_count: run.rework_count,
@@ -1702,7 +1707,7 @@ export function workflowRunStateJSON(input: {
     latest_review: input.latestReview,
     verification_status: input.verificationStatus,
     pr_merged: input.prMerged,
-    done: input.done,
+    merge_ready: input.mergeReady,
     merge_conflict: input.mergeConflict,
   };
 }

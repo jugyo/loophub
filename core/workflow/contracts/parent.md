@@ -17,8 +17,10 @@ uses these shared invariants throughout:
 - Verify is **always a fresh child**; never reuse a verifier session.
 - The run stays `running` after reaching the goal. Reconcile again when a human instruction or event creates a gap.
   Never merge. Closing the linked PR is the run's terminal condition.
-- `observed.done` is the canonical pre-merge Done signal. It is derived by core from the current HEAD, its pinned review,
-  and blocking PR state; do not reconstruct it from `status`, `steps`, pane state, or child prose.
+- `observed.display_stage` is the canonical Workflow display projection. It distinguishes `execute`, `verify`,
+  `ready_to_merge`, and `merged`; `observed.merge_ready` is the pre-merge merge-ready boolean. Both are derived by core
+  from the current HEAD, its pinned review, and blocking PR state; do not reconstruct them from `status`, `steps`, pane
+  state, or child prose.
 - Do not use child-session resume or idle detection.
 
 ## Instruction loop

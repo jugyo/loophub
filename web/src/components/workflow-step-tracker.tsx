@@ -1,11 +1,11 @@
-// Shared Execute → Verify → Done step tracker for a workflow run. Rendered both compact in a PR list
+// Shared Execute → Verify → Ready to merge step tracker for a workflow run. Rendered both compact in a PR list
 // row (LinkedPullSummaryRow) and larger in the issue / PR detail Workflow run section
 // (workflow-run-status.tsx). An optional parent-agent bot connects to the stage pills; hovering it
 // exposes the parent/orchestrator pane action. The current stage is colored, the rest are grey, and
 // traversed connectors fill in to convey progression.
 //
-// `execute` / `verify` are the run's real steps; "Done" is the canonical pre-merge state from core
-// (`done`) — NOT `status === completed`, which means the linked PR closed or merged (#1808). A stale verification keeps the
+// `execute` / `verify` are the run's real steps; "Ready to merge" is the canonical pre-merge state
+// from core (`done`) — NOT `status === completed`, which means the linked PR closed or merged (#1808). A stale verification keeps the
 // Verify label as-is and is conveyed by the pill's amber tone plus its popover status (#1906); a
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker unless the caller
 // already says why with its own "over budget" marker (#1932).
@@ -24,13 +24,16 @@ import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
-import { workflowRunDisplayState } from "@/lib/workflow-run";
+import {
+  workflowDisplayStage,
+  workflowRunDisplayState,
+} from "@/lib/workflow-run";
 import { useFocusHerdrAgent } from "@/queries/terminal";
 
 const STAGES = [
   { key: "execute", label: "Execute" },
   { key: "verify", label: "Verify" },
-  { key: "done", label: "Done" },
+  { key: "done", label: "Ready to merge" },
 ] as const;
 
 type WorkflowTrackerState = {
@@ -64,16 +67,18 @@ export function workflowTrackerState(
   const needsHuman =
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked";
-  const done = state.done;
+  const stage = workflowDisplayStage(state);
+  const done = stage === "ready_to_merge";
   const merged = state.pr_merged;
   const stale =
     state.status === "running" &&
     state.needs_human_reason === null &&
     state.verification_status === "stale";
-  // Merge-ready and merged PRs advance the tracker to Done; otherwise it sits on the run's current
+  // Merge-ready and merged PRs advance the tracker to the final stage; otherwise it sits on the run's current
   // step.
   const stepIndex = state.current_step === "verify" ? 1 : 0;
-  const activeIndex = done || merged ? 2 : stepIndex;
+  const activeIndex =
+    stage === "ready_to_merge" || stage === "merged" ? 2 : stepIndex;
   return { activeIndex, done, merged, stale, needsHuman };
 }
 
@@ -88,10 +93,10 @@ function workflowTrackerTitle(
     return "Workflow run is waiting for a human instruction";
   }
   if (merged) {
-    return "The pull request was merged — the run reached Done";
+    return "The pull request was merged — the workflow is Merged";
   }
   if (done) {
-    return "The pull request is ready to merge — the run reached Done";
+    return "The pull request is Ready to merge";
   }
   if (stale) {
     return "HEAD changed after Verify passed — a fresh Verify is required";
@@ -495,7 +500,7 @@ export function WorkflowStepTracker({
         const isCurrent = index === activeIndex;
         const isPast = index < activeIndex;
         // A PR-level conflict wins the terminal pill regardless of the run's step: an un-mergeable
-        // PR is the most actionable state to surface, so "Done" becomes "Conflict!" (#1659).
+        // PR is the most actionable state to surface, so "Ready to merge" becomes "Conflict!" (#1659).
         const isDoneConflict =
           stage.key === "done" &&
           !tracker.merged &&
@@ -583,7 +588,13 @@ export function WorkflowStepTracker({
               ) : isDoneReached ? (
                 <Check className="size-3" aria-hidden="true" />
               ) : null}
-              {isDoneConflict ? "Conflict!" : stage.label}
+              {isDoneConflict
+                ? "Conflict!"
+                : stage.key === "done" && tracker.merged
+                  ? "Merged"
+                  : stage.key === "done" && tracker.done
+                    ? "Ready to merge"
+                    : stage.label}
             </WorkflowStagePill>
           </Fragment>
         );

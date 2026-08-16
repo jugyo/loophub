@@ -28,7 +28,10 @@ import { WorkflowRunDetailDialog } from "@/components/workflow-run-history-dialo
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
 import { formatCost } from "@/lib/session-usage";
 import { formatDuration } from "@/lib/time";
-import { workflowRunDisplayState } from "@/lib/workflow-run";
+import {
+  workflowDisplayStage,
+  workflowRunDisplayState,
+} from "@/lib/workflow-run";
 import { useHerdrSessions } from "@/queries/terminal";
 import { useWorkflowRunTotalCost } from "@/queries/workflow-runs";
 
@@ -145,15 +148,17 @@ export function WorkflowRunStatusSection({
     : terminalState;
   const status = needsHuman(displayState)
     ? { label: "Needs human", tone: "cost-stopped" as const }
-    : displayState.done
-      ? { label: "Ready to merge", tone: "review-passed" as const }
-      : displayState.status === "running" &&
-          displayState.verification_status === "stale"
-        ? { label: "Reverify required", tone: "review-changes" as const }
-        : (STATUS_META[displayState.status] ?? {
-            label: displayState.status,
-            tone: "unknown" as const,
-          });
+    : workflowDisplayStage(displayState) === "merged"
+      ? { label: "Merged", tone: "review-passed" as const }
+      : workflowDisplayStage(displayState) === "ready_to_merge"
+        ? { label: "Ready to merge", tone: "review-passed" as const }
+        : displayState.status === "running" &&
+            displayState.verification_status === "stale"
+          ? { label: "Reverify required", tone: "review-changes" as const }
+          : (STATUS_META[displayState.status] ?? {
+              label: displayState.status,
+              tone: "unknown" as const,
+            });
   const completed = displayState.status === "completed";
   const isStaleVerification =
     displayState.status === "running" &&

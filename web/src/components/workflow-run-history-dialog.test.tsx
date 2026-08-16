@@ -32,7 +32,7 @@ const RUN: WorkflowRunState = {
   latest_review: null,
   verification_status: "unverified",
   pr_merged: false,
-  done: false,
+  merge_ready: false,
   merge_conflict: false,
 };
 
@@ -202,7 +202,7 @@ describe("Workflow run detail dialog", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("shows Done as the current step after the PR is merged (#265, PR #242)", async () => {
+  it("shows Merged as the current step after the PR is merged (#265, PR #242)", async () => {
     renderSection(
       mockRpcFetch({
         "workflowRuns/agentCosts": () => [],
@@ -223,10 +223,13 @@ describe("Workflow run detail dialog", () => {
     });
     const currentStep = within(dialog).getByText("Current step").parentElement;
     expect(currentStep).not.toBeNull();
-    expect(within(dialog).getByText("Completed")).toBeTruthy();
+    const status = within(dialog).getByText("Status").parentElement;
+    expect(status).not.toBeNull();
+    expect(within(status as HTMLElement).getByText("Merged")).toBeTruthy();
+    expect(within(dialog).queryByText("Completed")).toBeNull();
     expect(within(dialog).queryByText("Running")).toBeNull();
     expect(within(dialog).queryByText("Needs human")).toBeNull();
-    expect(within(currentStep as HTMLElement).getByText("Done")).toBeTruthy();
+    expect(within(currentStep as HTMLElement).getByText("Merged")).toBeTruthy();
     expect(within(currentStep as HTMLElement).queryByText("Verify")).toBeNull();
   });
 

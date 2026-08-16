@@ -61,6 +61,27 @@ export type WorkflowDoneInput = {
   prMerged: boolean;
 };
 
+export type WorkflowDisplayStage =
+  | "execute"
+  | "verify"
+  | "ready_to_merge"
+  | "merged";
+
+export type WorkflowDisplayStageInput = {
+  currentStep: "execute" | "verify";
+  mergeReady: boolean;
+  prMerged: boolean;
+};
+
+/** Project the persisted execution step and PR state into one display stage. */
+export function workflowDisplayStage(
+  input: WorkflowDisplayStageInput,
+): WorkflowDisplayStage {
+  if (input.prMerged) return "merged";
+  if (input.mergeReady) return "ready_to_merge";
+  return input.currentStep;
+}
+
 /**
  * Whether the Workflow has reached its pre-merge Done state.
  *

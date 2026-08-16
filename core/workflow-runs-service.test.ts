@@ -1979,7 +1979,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     fresh: true,
     headSha: headA,
   });
-  expect(status.done).toBe(true);
+  expect(status.merge_ready).toBe(true);
 
   // Done follows the PR-wide gate, not only this run's Verify result. A later human review blocks
   // merge readiness even though the run-owned Verify observation remains fresh and complete.
@@ -1994,7 +1994,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(status.steps.verify.complete).toBe(true);
-  expect(status.done).toBe(false);
+  expect(status.merge_ready).toBe(false);
 
   // Multiple unprocessed events from this run's verifier may be queued. The older event still
   // belongs to the workflow even though its review is no longer latest, so it must reconcile the
@@ -2105,7 +2105,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(continuing.status).toBe("running");
-  expect(continuing.done).toBe(true);
+  expect(continuing.merge_ready).toBe(true);
   expect(continuing.head_sha).toBe(headA);
   expect(continuing.steps.verify.latest_review).toMatchObject({
     event: "pass",
@@ -2123,7 +2123,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(staleStatus.head_sha).toBe(headB);
-  expect(staleStatus.done).toBe(false);
+  expect(staleStatus.merge_ready).toBe(false);
   expect(staleStatus.steps.verify.complete).toBe(false);
   expect(staleStatus.steps.verify.latest_review).toMatchObject({
     fresh: false,
@@ -2152,7 +2152,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(continuing.status).toBe("running");
-  expect(continuing.done).toBe(true);
+  expect(continuing.merge_ready).toBe(true);
   expect(continuing.steps.verify.latest_review).toMatchObject({
     event: "pass",
     fresh: true,
@@ -3760,7 +3760,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     findings_count: 2,
   });
   expect(byIssue?.verification_status).toBe("unverified");
-  expect(byIssue?.done).toBe(false);
+  expect(byIssue?.merge_ready).toBe(false);
 
   const byPull = await svc.workflowRuns.stateForPull(repo.full_name, {
     pull: prIssue.number,
@@ -3779,7 +3779,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(humanApproved?.verification_status).toBe("unverified");
-  expect(humanApproved?.done).toBe(true);
+  expect(humanApproved?.merge_ready).toBe(true);
 
   createWorkflowReview({
     prIssueId: prIssue.id,
@@ -3793,7 +3793,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(verified?.verification_status).toBe("verified");
-  expect(verified?.done).toBe(true);
+  expect(verified?.merge_ready).toBe(true);
   expect(verified?.merge_conflict).toBe(false);
   S.createReview(
     prIssue.id,
@@ -3806,7 +3806,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(blocked?.verification_status).toBe("verified");
-  expect(blocked?.done).toBe(false);
+  expect(blocked?.merge_ready).toBe(false);
   git(["checkout", "-q", "state-head"]);
   const advancedHead = commit(REPO_PATH, "state-next.txt", "changed\n");
   git(["checkout", "-q", "main"]);
@@ -3815,7 +3815,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(stale?.verification_status).toBe("stale");
-  expect(stale?.done).toBe(false);
+  expect(stale?.merge_ready).toBe(false);
   expect(stale?.pr_merged).toBe(false);
 
   commit(REPO_PATH, "state.txt", "base conflict\n");
@@ -3847,7 +3847,6 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     status: "completed",
     current_step: "verify",
     pr_merged: true,
-    done: false,
     merge_conflict: false,
   });
 });

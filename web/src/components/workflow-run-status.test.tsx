@@ -101,7 +101,7 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     latest_review: null,
     verification_status: "unverified",
     pr_merged: false,
-    done: false,
+    merge_ready: false,
     merge_conflict: false,
     ...partial,
   };
@@ -405,9 +405,20 @@ describe("WorkflowRunStatusSection", () => {
       />,
     );
 
-    expect(await screen.findByText("Completed")).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-debug-component="WorkflowRunStatusSection"]',
+        )?.textContent,
+      ).toContain("Merged"),
+    );
     expect(screen.getByText("The Workflow run is completed.")).toBeTruthy();
-    expect(screen.getByText("Done").getAttribute("aria-current")).toBe("step");
+    expect(
+      document
+        .querySelector('[data-debug-component="WorkflowStepTracker"]')
+        ?.querySelector('[data-workflow-stage="done"] span')
+        ?.getAttribute("aria-current"),
+    ).toBe("step");
     expect(screen.queryByText("Running")).toBeNull();
     expect(screen.queryByText("Reverify required")).toBeNull();
     expect(screen.queryByText(/fresh Verify is required/)).toBeNull();
@@ -426,11 +437,17 @@ describe("WorkflowRunStatusSection", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
-          done: true,
+          merge_ready: true,
         })}
       />,
     );
-    expect(await screen.findByText("Ready to merge")).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-debug-component="WorkflowRunStatusSection"]',
+        )?.textContent,
+      ).toContain("Ready to merge"),
+    );
     expect(
       screen.getByText("Verify passed for the current HEAD."),
     ).toBeTruthy();
@@ -458,12 +475,18 @@ describe("WorkflowRunStatusSection", () => {
         state={state({
           current_step: "verify",
           verification_status: "unverified",
-          done: true,
+          merge_ready: true,
         })}
       />,
     );
 
-    expect(await screen.findByText("Ready to merge")).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-debug-component="WorkflowRunStatusSection"]',
+        )?.textContent,
+      ).toContain("Ready to merge"),
+    );
     expect(screen.queryByText("Verified")).toBeNull();
     expect(screen.queryByText(/Verify passed/)).toBeNull();
   });
@@ -472,7 +495,7 @@ describe("WorkflowRunStatusSection", () => {
     const verifiedState = state({
       current_step: "verify",
       verification_status: "verified",
-      done: true,
+      merge_ready: true,
     });
     renderInRouter(
       <WorkflowRunStatusSection
@@ -482,7 +505,17 @@ describe("WorkflowRunStatusSection", () => {
       />,
     );
 
-    const done = await screen.findByText("Done");
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-debug-component="WorkflowRunStatusSection"]',
+        )?.textContent,
+      ).toContain("Ready to merge"),
+    );
+    const done = document
+      .querySelector('[data-debug-component="WorkflowRunStatusSection"]')
+      .querySelector('[data-workflow-stage="done"] span');
+    expect(done).toBeTruthy();
     expect(done.className).toContain("text-green");
     expect(done.querySelector("svg")).toBeTruthy();
   });

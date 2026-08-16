@@ -2385,13 +2385,13 @@ describe("PullDetail", () => {
         latest_review: null,
         verification_status: "verified",
         pr_merged: false,
-        done: true,
+        merge_ready: true,
         merge_conflict: false,
       }),
     });
 
     await screen.findByText("Implementation loop");
-    expect(screen.getByText("Ready to merge")).toBeTruthy();
+    expect(screen.getAllByText("Ready to merge").length).toBeGreaterThan(0);
     expect(
       screen.getByText("Verify passed for the current HEAD."),
     ).toBeTruthy();

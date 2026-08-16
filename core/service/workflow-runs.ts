@@ -100,6 +100,7 @@ import {
 import { staleVerifyChildSessions } from "../workflow/stale-verify.ts";
 import {
   type WorkflowLatestReviewState,
+  workflowDisplayStage,
   workflowDone,
 } from "../workflow/steps.ts";
 import {
@@ -1155,6 +1156,15 @@ async function observeWorkflowRunStatus(
   return {
     run: run.id,
     current_step: run.current_step,
+    display_stage: workflowDisplayStage({
+      currentStep: run.current_step === "verify" ? "verify" : "execute",
+      mergeReady: workflowDone({
+        mergeableState,
+        prClosed: prIssue.state === "closed",
+        prMerged: pull.merged === 1,
+      }),
+      prMerged: pull.merged === 1,
+    }),
     status: run.status,
     active_step: run.active_step,
     rework_count: run.rework_count,
@@ -1177,7 +1187,7 @@ async function observeWorkflowRunStatus(
     head_ahead_of_base: progress.headAheadOfBase,
     head_ahead_of_latest_review: progress.headAheadOfLatestReview,
     merge_conflict: progress.mergeConflict,
-    done: workflowDone({
+    merge_ready: workflowDone({
       mergeableState,
       prClosed: prIssue.state === "closed",
       prMerged: pull.merged === 1,
@@ -1318,7 +1328,7 @@ async function workflowRunState(
       ? (verifyLaunch?.created_at ?? null)
       : null,
     prMerged: pull?.merged === 1,
-    done: workflowDone({
+    mergeReady: workflowDone({
       mergeableState,
       prClosed: prIssue?.state === "closed",
       prMerged: pull?.merged === 1,

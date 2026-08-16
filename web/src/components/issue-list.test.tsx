@@ -1026,7 +1026,7 @@ describe("IssueList workflow run state (#112)", () => {
     latest_review: null,
     verification_status: "unverified",
     pr_merged: false,
-    done: false,
+    merge_ready: false,
     merge_conflict: false,
   });
 

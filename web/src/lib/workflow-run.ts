@@ -1,5 +1,20 @@
 import type { WorkflowRunState } from "@/api/types";
 
+export type WorkflowDisplayStage =
+  | "execute"
+  | "verify"
+  | "ready_to_merge"
+  | "merged";
+
+export function workflowDisplayStage(
+  state: WorkflowRunState,
+): WorkflowDisplayStage {
+  if (state.pr_merged) return "merged";
+  if (state.display_stage) return state.display_stage;
+  if (state.merge_ready) return "ready_to_merge";
+  return state.current_step === "verify" ? "verify" : "execute";
+}
+
 // A PR merge can become visible before the worker reconciles its Workflow run. Keep that brief,
 // valid state from leaking running, hold, or conflict presentation beside the merged terminal state.
 export function workflowRunDisplayState(
@@ -12,6 +27,7 @@ export function workflowRunDisplayState(
     needs_human_reason: null,
     cost_limit_increase_available: false,
     merge_conflict: false,
-    done: false,
+    merge_ready: false,
+    display_stage: "merged",
   };
 }

@@ -10,7 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCost } from "@/lib/session-usage";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
-import { workflowRunDisplayState } from "@/lib/workflow-run";
+import {
+  workflowDisplayStage,
+  workflowRunDisplayState,
+} from "@/lib/workflow-run";
 import {
   useWorkflowRunAgentCosts,
   useWorkflowRunHistory,
@@ -27,6 +30,9 @@ const STATUS_LABELS: Record<string, string> = {
 // A running run holding a needs-human reason is waiting for a human (#1307) — surface that over
 // the plain status, matching the run-status section's badge.
 function statusLabel(state: WorkflowRunState): string {
+  const stage = workflowDisplayStage(state);
+  if (stage === "merged") return "Merged";
+  if (stage === "ready_to_merge") return "Ready to merge";
   if (state.status === "running" && state.needs_human_reason !== null) {
     return "Needs human";
   }
@@ -40,7 +46,10 @@ function displayName(value: string): string {
 }
 
 function currentStepLabel(state: WorkflowRunState): string {
-  return state.pr_merged ? "Done" : displayName(state.current_step);
+  const stage = workflowDisplayStage(state);
+  if (stage === "merged") return "Merged";
+  if (stage === "ready_to_merge") return "Ready to merge";
+  return displayName(state.current_step);
 }
 
 function timestamp(value: string): string {
