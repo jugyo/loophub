@@ -475,7 +475,7 @@ export function WorkflowStepTracker({
     <div
       data-debug-component="WorkflowStepTracker"
       data-workflow-step-tracker
-      className="flex min-w-0 shrink-0 items-center gap-1"
+      className="flex min-w-0 max-w-full flex-wrap items-center gap-1"
       aria-label={stateSummary}
     >
       {showWorkflowNode ? (

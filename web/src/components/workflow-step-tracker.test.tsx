@@ -835,4 +835,15 @@ describe("WorkflowStepTracker", () => {
     rerender(<WorkflowStepTracker state={state()} size="md" />);
     expect(screen.getByText("Execute").className).toContain("text-xs");
   });
+
+  it("keeps the tracker inside a narrow card and allows stages to wrap", () => {
+    render(<WorkflowStepTracker state={state()} size="md" />);
+
+    const tracker = document.querySelector(
+      "[data-workflow-step-tracker]",
+    ) as HTMLElement;
+    expect(tracker.className).toContain("max-w-full");
+    expect(tracker.className).toContain("flex-wrap");
+    expect(tracker.className).not.toContain("shrink-0");
+  });
 });
