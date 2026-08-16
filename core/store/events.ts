@@ -305,19 +305,21 @@ export function workflowRunObservationTrail(input: {
     .query(
       `SELECT * FROM events
        WHERE repo_id = ?
-         AND (
-           ((type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*')
-              AND json_extract(payload, '$.id') = ?)
-           OR (type = 'pull_request.review_submitted'
-              AND json_extract(payload, '$.number') = ?
-              AND json_extract(payload, '$.source_payload_version') = ?
-              AND id > ? AND id < ?)
-         )
+         AND (type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*')
+         AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
+       UNION ALL
+       SELECT * FROM events
+       WHERE repo_id = ?
+         AND type = 'pull_request.review_submitted'
+         AND json_extract(payload, '$.number') = ?
+         AND json_extract(payload, '$.source_payload_version') = ?
+         AND id > ? AND id < ?
        ORDER BY id ASC`,
     )
     .all(
       input.repoId,
       input.runId,
+      input.repoId,
       input.prNumber,
       SOURCE_PAYLOAD_VERSION,
       input.startedEventId,
