@@ -13,7 +13,14 @@
 // it names — stays plain text.
 
 import { Link } from "@tanstack/react-router";
-import { isValidElement, type ReactNode, useMemo, useState } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  type ReactNode,
+  useMemo,
+  useState,
+} from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -208,14 +215,28 @@ function markdownComponents(
       );
     },
     tr({ node, children, ...rest }) {
+      const block = markdownRenderedBlock("table-row", node);
+      const renderedAction = renderedBlockAction?.(block);
+      const cells = Children.toArray(children);
+      const lastCell = cells.at(-1);
+      const rowChildren =
+        renderedAction && isValidElement<{ children?: ReactNode }>(lastCell)
+          ? [
+              ...cells.slice(0, -1),
+              cloneElement(
+                lastCell,
+                undefined,
+                lastCell.props.children,
+                renderedAction,
+              ),
+            ]
+          : children;
       const row = (
         <tr {...rest} className={cn(rest.className, report("table-row", node))}>
-          {children}
+          {rowChildren}
         </tr>
       );
-      const after = renderedBlockAfter?.(
-        markdownRenderedBlock("table-row", node),
-      );
+      const after = renderedBlockAfter?.(block);
       return after ? (
         <>
           {row}

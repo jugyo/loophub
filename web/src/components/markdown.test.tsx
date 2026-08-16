@@ -181,6 +181,43 @@ describe("Markdown", () => {
     expect(container.querySelectorAll("table td")).toHaveLength(2);
   });
 
+  it("renders table row actions inside the last cell without changing table structure", () => {
+    const blocks: MarkdownRenderedBlock[] = [];
+    const { container } = renderWithClient(
+      <Markdown
+        renderedBlockAction={(block) => {
+          blocks.push(block);
+          return block.sourceRange?.startLine === 3 ? (
+            <button
+              type="button"
+              aria-label={`Comment on head lines ${block.sourceRange.startLine}-${block.sourceRange.endLine}`}
+            >
+              +
+            </button>
+          ) : null;
+        }}
+      >
+        {"| Header | Value |\n| --- | --- |\n| first | row |\n| second | row |"}
+      </Markdown>,
+    );
+
+    const table = container.querySelector("table");
+    expect(table?.querySelectorAll("thead > tr")).toHaveLength(1);
+    expect(table?.querySelectorAll("tbody > tr")).toHaveLength(2);
+    expect(table?.querySelectorAll("thead > tr > th")).toHaveLength(2);
+    expect(table?.querySelectorAll("tbody > tr > td")).toHaveLength(4);
+    expect(
+      table
+        ?.querySelector('button[aria-label="Comment on head lines 3-3"]')
+        ?.closest("td"),
+    ).not.toBeNull();
+    expect(blocks).toEqual([
+      { kind: "table-row", sourceRange: { startLine: 1, endLine: 1 } },
+      { kind: "table-row", sourceRange: { startLine: 3, endLine: 3 } },
+      { kind: "table-row", sourceRange: { startLine: 4, endLine: 4 } },
+    ]);
+  });
+
   it("renders GFM task lists with checkboxes", () => {
     const { container } = renderWithClient(
       <Markdown>{"- [x] done\n- [ ] todo"}</Markdown>,
