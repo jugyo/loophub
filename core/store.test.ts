@@ -385,6 +385,60 @@ test("listIssues keeps filters when using the default created sort (#751)", () =
   expect(titles).toEqual(["newest open", "old open"]);
 });
 
+test("issue hierarchy store helpers read and write ordered sub issues", () => {
+  const repo = S.createRepo("me/hierarchy", "/tmp/hierarchy");
+  const root = S.createIssue(repo.id, "issue", "root", "", "me");
+  const child = S.createIssue(repo.id, "issue", "child", "", "me");
+  const closed = S.createIssue(repo.id, "issue", "closed", "", "me");
+  const grandchild = S.createIssue(repo.id, "issue", "grandchild", "", "me");
+
+  S.setIssueParent(child.id, root.id, S.nextSubIssueOrdinal(root.id));
+  S.setIssueParent(closed.id, root.id, S.nextSubIssueOrdinal(root.id));
+  S.setIssueParent(grandchild.id, child.id, S.nextSubIssueOrdinal(child.id));
+  S.updateIssue(closed.id, { state: "closed" });
+
+  expect(S.listSubIssues(root.id).map((issue) => issue.id)).toEqual([
+    child.id,
+    closed.id,
+  ]);
+  expect(S.subIssueSummariesByParent([root.id, child.id])).toEqual(
+    new Map([
+      [root.id, { total: 2, open: 1, closed: 1 }],
+      [child.id, { total: 1, open: 1, closed: 0 }],
+    ]),
+  );
+  expect(S.subIssueSummariesByParent([])).toEqual(new Map());
+  expect(
+    S.listIssues(repo.id, "issue", "all", "created", { rootsOnly: true }).map(
+      (issue) => issue.id,
+    ),
+  ).toEqual([root.id]);
+  expect(S.listIssues(repo.id, "issue", "all")).toHaveLength(4);
+
+  expect(S.listAncestorRows(grandchild.id, 5).map((issue) => issue.id)).toEqual(
+    [child.id, root.id],
+  );
+  expect(S.listDescendantIds(root.id, 5)).toEqual([
+    child.id,
+    closed.id,
+    grandchild.id,
+  ]);
+  expect(S.subtreeHeight(root.id, 5)).toBe(3);
+  expect(S.subtreeHeight(closed.id, 5)).toBe(1);
+  expect(() => S.subtreeHeight(root.id, 2)).toThrow(/exceeded limit/);
+
+  S.reorderSubIssues(root.id, [closed.id, child.id]);
+  expect(S.listSubIssues(root.id).map((issue) => issue.id)).toEqual([
+    closed.id,
+    child.id,
+  ]);
+  S.setIssueParent(closed.id, null, null);
+  expect(S.getIssueById(closed.id)).toMatchObject({
+    parent_issue_id: null,
+    sub_issue_ordinal: null,
+  });
+});
+
 test("one commit can carry several reviews (#208)", () => {
   const repo = S.createRepo("me/reviews", "/tmp/reviews");
   const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;

@@ -21,6 +21,8 @@ export interface IssueRow {
   title: string;
   body: string;
   target_branch: string | null;
+  parent_issue_id: number | null;
+  sub_issue_ordinal: number | null;
   author: string;
   created_at: string;
   updated_at: string;
@@ -260,6 +262,7 @@ export function listIssues(
   kind: "issue" | "pull" | "any",
   state: string,
   sort: "updated" | "created" = "created",
+  opts: { rootsOnly?: boolean } = {},
 ): IssueRow[] {
   const conds = ["repo_id = ?"];
   const params: unknown[] = [repoId];
@@ -271,6 +274,7 @@ export function listIssues(
     conds.push("state = ?");
     params.push(state);
   }
+  if (opts.rootsOnly) conds.push("parent_issue_id IS NULL");
   const orderBy =
     sort === "created"
       ? "created_at DESC, number DESC"
@@ -280,6 +284,156 @@ export function listIssues(
       `SELECT * FROM issues WHERE ${conds.join(" AND ")} ORDER BY ${orderBy}`,
     )
     .all(...params) as IssueRow[];
+}
+
+export function listSubIssues(parentId: number): IssueRow[] {
+  return db
+    .query(
+      `SELECT * FROM issues
+       WHERE parent_issue_id = ?
+       ORDER BY sub_issue_ordinal, id`,
+    )
+    .all(parentId) as IssueRow[];
+}
+
+export interface SubIssueSummary {
+  total: number;
+  open: number;
+  closed: number;
+}
+
+export function subIssueSummariesByParent(
+  parentIds: number[],
+): Map<number, SubIssueSummary> {
+  if (parentIds.length === 0) return new Map();
+  const placeholders = parentIds.map(() => "?").join(", ");
+  const rows = db
+    .query(
+      `SELECT parent_issue_id,
+              COUNT(*) AS total,
+              SUM(CASE WHEN state = 'open' THEN 1 ELSE 0 END) AS open,
+              SUM(CASE WHEN state = 'closed' THEN 1 ELSE 0 END) AS closed
+       FROM issues
+       WHERE parent_issue_id IN (${placeholders})
+       GROUP BY parent_issue_id`,
+    )
+    .all(...parentIds) as (SubIssueSummary & { parent_issue_id: number })[];
+  return new Map(
+    rows.map(({ parent_issue_id, total, open, closed }) => [
+      parent_issue_id,
+      { total, open, closed },
+    ]),
+  );
+}
+
+function requireTraversalLimit(limit: number): void {
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error(
+      `issue hierarchy limit must be a positive integer: ${limit}`,
+    );
+  }
+}
+
+export function listAncestorRows(issueId: number, limit: number): IssueRow[] {
+  requireTraversalLimit(limit);
+  const rows = db
+    .query(
+      `WITH RECURSIVE ancestors AS (
+         SELECT parent_issue_id AS id, 1 AS depth
+         FROM issues WHERE id = ? AND parent_issue_id IS NOT NULL
+         UNION ALL
+         SELECT issues.parent_issue_id, ancestors.depth + 1
+         FROM issues JOIN ancestors ON issues.id = ancestors.id
+         WHERE issues.parent_issue_id IS NOT NULL AND ancestors.depth < ?
+       )
+       SELECT issues.* FROM issues
+       JOIN ancestors ON ancestors.id = issues.id
+       ORDER BY ancestors.depth`,
+    )
+    .all(issueId, limit) as IssueRow[];
+  if (rows.length === limit && rows.at(-1)?.parent_issue_id != null) {
+    throw new Error(`issue ancestor traversal exceeded limit: ${limit}`);
+  }
+  return rows;
+}
+
+export function listDescendantIds(issueId: number, limit: number): number[] {
+  requireTraversalLimit(limit);
+  const rows = db
+    .query(
+      `WITH RECURSIVE descendants AS (
+         SELECT id, 1 AS depth FROM issues WHERE parent_issue_id = ?
+         UNION ALL
+         SELECT issues.id, descendants.depth + 1
+         FROM issues JOIN descendants ON issues.parent_issue_id = descendants.id
+         WHERE descendants.depth <= ?
+       )
+       SELECT id, depth FROM descendants`,
+    )
+    .all(issueId, limit) as { id: number; depth: number }[];
+  if (rows.some((row) => row.depth > limit)) {
+    throw new Error(`issue descendant traversal exceeded limit: ${limit}`);
+  }
+  return rows.filter((row) => row.depth <= limit).map((row) => row.id);
+}
+
+export function subtreeHeight(issueId: number, limit: number): number {
+  requireTraversalLimit(limit);
+  const rows = db
+    .query(
+      `WITH RECURSIVE subtree AS (
+         SELECT id, 1 AS depth FROM issues WHERE id = ?
+         UNION ALL
+         SELECT issues.id, subtree.depth + 1
+         FROM issues JOIN subtree ON issues.parent_issue_id = subtree.id
+         WHERE subtree.depth <= ?
+       )
+       SELECT depth FROM subtree`,
+    )
+    .all(issueId, limit) as { depth: number }[];
+  if (rows.some((row) => row.depth > limit)) {
+    throw new Error(`issue subtree traversal exceeded limit: ${limit}`);
+  }
+  return Math.max(...rows.map((row) => row.depth), 0);
+}
+
+export function nextSubIssueOrdinal(parentId: number): number {
+  return (
+    db
+      .query(
+        `SELECT COALESCE(MAX(sub_issue_ordinal), 0) + 1 AS ordinal
+         FROM issues WHERE parent_issue_id = ?`,
+      )
+      .get(parentId) as { ordinal: number }
+  ).ordinal;
+}
+
+export function setIssueParent(
+  childId: number,
+  parentId: number | null,
+  ordinal: number | null,
+): void {
+  db.run(
+    `UPDATE issues
+     SET parent_issue_id = ?, sub_issue_ordinal = ?, updated_at = ?
+     WHERE id = ?`,
+    [parentId, ordinal, now(), childId],
+  );
+}
+
+export function reorderSubIssues(
+  parentId: number,
+  orderedChildIds: number[],
+): void {
+  db.transaction(() => {
+    orderedChildIds.forEach((id, index) => {
+      db.run(
+        `UPDATE issues SET sub_issue_ordinal = ?, updated_at = ?
+         WHERE id = ? AND parent_issue_id = ?`,
+        [index + 1, now(), id, parentId],
+      );
+    });
+  });
 }
 
 export function updateIssue(

@@ -1557,6 +1557,23 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  addColumn(
+    "20260816131448-issues-parent-issue-id",
+    "issues",
+    "parent_issue_id",
+    "INTEGER REFERENCES issues(id)",
+  ),
+  addColumn(
+    "20260816131448-issues-sub-issue-ordinal",
+    "issues",
+    "sub_issue_ordinal",
+    "INTEGER",
+  ),
+  sql(
+    "20260816131448-issues-parent-index",
+    `CREATE INDEX IF NOT EXISTS idx_issues_parent
+       ON issues(parent_issue_id, sub_issue_ordinal);`,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

@@ -113,7 +113,7 @@ test("migration ID は一意で append-only の宣言順を維持する", () => 
     "002-drop-retired-issue-groups",
     "003-create-issue-search-grams",
   ]);
-  expect(ids.at(-1)).toBe("20260815201510-workflow-step-launch-reservation");
+  expect(ids.at(-1)).toBe("20260816131448-issues-parent-index");
 });
 
 test("新しい migration ID は UTC timestamp と説明名を使う", () => {
@@ -183,6 +183,16 @@ test("重複・不正な migration ID は実行前に失敗する", () => {
 
 test("first boot on an existing database seeds the ledger with every migration", () => {
   expect(appliedIds(D.db)).toEqual([...M.MIGRATIONS.map((m) => m.id)].sort());
+  expect(
+    D.db
+      .query(
+        "SELECT parent_issue_id, sub_issue_ordinal FROM issues ORDER BY id",
+      )
+      .all(),
+  ).toEqual([
+    { parent_issue_id: null, sub_issue_ordinal: null },
+    { parent_issue_id: null, sub_issue_ordinal: null },
+  ]);
 });
 
 test("a later boot re-runs nothing", () => {
