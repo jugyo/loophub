@@ -118,6 +118,87 @@ test("lh issue create --parent creates a sub-issue", () => {
   ).not.toContain(childNumber);
 });
 
+test("lh issue sub commands and hierarchy text output work", () => {
+  const parent = createIssue("sub command parent");
+  const childA = createIssue("sub command child A");
+  const childB = createIssue("sub command child B");
+
+  for (const child of [childA, childB]) {
+    const added = lh([
+      "issue",
+      "sub",
+      "add",
+      String(parent),
+      String(child),
+      "--repo",
+      "me/proj",
+      "--json",
+    ]);
+    expect(added.exitCode, added.stderr).toBe(0);
+  }
+
+  const listed = lh([
+    "issue",
+    "sub",
+    "list",
+    String(parent),
+    "--repo",
+    "me/proj",
+    "--json",
+  ]);
+  expect(listed.exitCode, listed.stderr).toBe(0);
+  expect(JSON.parse(listed.stdout).map((issue: any) => issue.number)).toEqual([
+    childA,
+    childB,
+  ]);
+
+  const reordered = lh([
+    "issue",
+    "sub",
+    "reorder",
+    String(parent),
+    "--order",
+    `${childB},${childA}`,
+    "--repo",
+    "me/proj",
+    "--json",
+  ]);
+  expect(reordered.exitCode, reordered.stderr).toBe(0);
+  expect(
+    JSON.parse(reordered.stdout).map((issue: any) => issue.number),
+  ).toEqual([childB, childA]);
+
+  const closed = lh(["issue", "close", String(childA), "--repo", "me/proj"]);
+  expect(closed.exitCode, closed.stderr).toBe(0);
+  const listText = lh(["issue", "list", "--state", "all", "--repo", "me/proj"]);
+  expect(listText.exitCode, listText.stderr).toBe(0);
+  expect(listText.stdout).toContain(`sub 1/2`);
+  expect(listText.stdout).toContain(
+    "use 'lh issue sub list <n>' to see sub issues",
+  );
+
+  const viewText = lh(["issue", "view", String(childA), "--repo", "me/proj"]);
+  expect(viewText.exitCode, viewText.stderr).toBe(0);
+  expect(viewText.stdout).toContain(`Parent: #${parent}`);
+
+  const parentView = lh(["issue", "view", String(parent), "--repo", "me/proj"]);
+  expect(parentView.exitCode, parentView.stderr).toBe(0);
+  expect(parentView.stdout).toContain("Sub issues");
+  expect(parentView.stdout).toContain(`#${childB} [open] sub command child B`);
+
+  const removed = lh([
+    "issue",
+    "sub",
+    "remove",
+    String(childA),
+    "--repo",
+    "me/proj",
+    "--json",
+  ]);
+  expect(removed.exitCode, removed.stderr).toBe(0);
+  expect(JSON.parse(removed.stdout).number).toBe(childA);
+});
+
 test("lh issue view exposes display ids for acceptance criteria", () => {
   const created = lh([
     "issue",

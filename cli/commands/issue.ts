@@ -78,13 +78,26 @@ export async function run(): Promise<void> {
     const items = await s.issues.list(repo, { state });
     const issues = items.filter((i: any) => !i.pull_request);
     out(issues);
-    if (!flags.json)
+    if (!flags.json) {
+      const summaries = s.issues.subIssueSummaries(
+        repo,
+        issues.map((issue: any) => issue.number),
+      );
+      let hasSubIssues = false;
       issues.forEach((i: any) => {
         const labels = (i.labels || []).map((l: any) => l.name).join(",");
+        const summary = summaries.get(i.number);
+        const suffix = summary?.total
+          ? `\tsub ${summary.closed}/${summary.total}`
+          : "";
+        hasSubIssues ||= Boolean(summary?.total);
         console.log(
-          `#${i.number}\t${i.state}\t${i.title}\t${labels}\t${relativeTime(i.updated_at)}`,
+          `#${i.number}\t${i.state}\t${i.title}\t${labels}\t${relativeTime(i.updated_at)}${suffix}`,
         );
       });
+      if (hasSubIssues)
+        console.log("use 'lh issue sub list <n>' to see sub issues");
+    }
   } else if (sub === "view") {
     // Archived comments stay out of `comment_list` unless asked for (#2494), so a reader gets the
     // comments still in play rather than the ones a human already retired.
@@ -95,12 +108,75 @@ export async function run(): Promise<void> {
     );
     out(i);
     if (!flags.json) {
+      const hierarchy = await runOp(() =>
+        s.issues.hierarchy(repo, Number(rest[0])),
+      );
       let line = `#${i.number} ${i.title} [${i.state}] @${i.user.login}`;
       if (i.linked_pull_request) {
         const pr = i.linked_pull_request;
         line += `\nlinked PR #${pr.number} (${pr.merged ? "merged" : pr.state})`;
       }
-      console.log(`${line}\n\n${i.body}`);
+      if (hierarchy.parents.length > 0) {
+        line += `\nParent: ${hierarchy.parents.map((parent) => `#${parent.number}`).join(" › ")}`;
+      }
+      let text = `${line}\n\n${i.body}`;
+      if (hierarchy.children.length > 0) {
+        text += `\n\nSub issues\n${hierarchy.children
+          .map((child) => `#${child.number} [${child.state}] ${child.title}`)
+          .join("\n")}`;
+      }
+      console.log(text);
+    }
+  } else if (sub === "sub") {
+    const action = rest[0];
+    if (action === "list") {
+      const parent = Number(rest[1]);
+      if (!rest[1]) fail("usage: lh issue sub list <parent>");
+      const items = await runOp(() => s.issues.listSubIssues(repo, parent));
+      out(items);
+      if (!flags.json) {
+        items.forEach((item: any) => {
+          console.log(`#${item.number}\t${item.state}\t${item.title}`);
+        });
+      }
+    } else if (action === "add") {
+      if (!rest[1] || !rest[2])
+        fail("usage: lh issue sub add <parent> <child>");
+      const item = await runOp(async () =>
+        s.issues.attachSubIssue(
+          repo,
+          Number(rest[1]),
+          Number(rest[2]),
+          await writeSession(),
+        ),
+      );
+      out(item);
+      if (!flags.json) console.log(`added #${item.number} as a sub issue`);
+    } else if (action === "remove") {
+      if (!rest[1]) fail("usage: lh issue sub remove <child>");
+      const item = await runOp(async () =>
+        s.issues.detachSubIssue(repo, Number(rest[1]), await writeSession()),
+      );
+      out(item);
+      if (!flags.json) console.log(`removed #${item.number} from its parent`);
+    } else if (action === "reorder") {
+      if (!rest[1] || typeof flags.order !== "string")
+        fail("usage: lh issue sub reorder <parent> --order <child,...>");
+      const order = flags.order.split(",").map((value) => Number(value.trim()));
+      const items = await runOp(async () =>
+        s.issues.reorderSubIssues(
+          repo,
+          Number(rest[1]),
+          order,
+          await writeSession(),
+        ),
+      );
+      out(items);
+      if (!flags.json) console.log(`reordered sub issues for #${rest[1]}`);
+    } else {
+      fail(
+        "usage: lh issue sub list <parent> | add <parent> <child> | remove <child> | reorder <parent> --order <child,...>",
+      );
     }
   } else if (sub === "new") {
     // `lh issue new` files an issue *with an AI session* (#299): it launches the configured
