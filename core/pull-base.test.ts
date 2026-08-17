@@ -376,3 +376,66 @@ test("diff base ignores a fork point the head branch no longer contains", async 
 
   rmSync(path, { recursive: true, force: true });
 });
+
+test("diff base resolves the live base through a shallow boundary when parent objects remain", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-diff-shallow-"));
+  const g = (args: string[]): string => {
+    const result = spawnSync("git", ["-C", path, ...args], {
+      encoding: "utf8",
+    });
+    if (result.status !== 0) throw new Error(result.stderr);
+    return result.stdout.trim();
+  };
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "shared.txt"), "shared\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base"]);
+  const localFork = g(["rev-parse", "main"]);
+
+  g(["checkout", "-q", "-b", "feature"]);
+  writeFileSync(join(path, "feature.txt"), "one\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "first feature commit"]);
+  g(["checkout", "-q", "main"]);
+
+  await svc.repos.create({ path, name: "me/diff-shallow" });
+  const created = await svc.pulls.create("me/diff-shallow", {
+    title: "shallow history",
+    head: "feature",
+    base: "main",
+  });
+  const repo = S.getRepo("me", "diff-shallow")!;
+  const issue = S.getIssue(repo.id, created.number)!;
+  const pull = S.getPull(issue.id)!;
+  expect(pull.base_sha).toBe(localFork);
+
+  writeFileSync(join(path, "base-only.txt"), "from base\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "advance main"]);
+  const advancedMain = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "feature"]);
+  g(["merge", "-q", "main", "-m", "merge main into feature"]);
+  writeFileSync(join(path, "feature.txt"), "two\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "feature after base merge"]);
+  const shallowBoundary = g(["rev-parse", "HEAD"]);
+  writeFileSync(join(path, "feature.txt"), "three\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "feature after shallow boundary"]);
+  g(["checkout", "-q", "main"]);
+
+  // A shallow fetch of the PR head can leave both tips present while hiding the parent chain
+  // that connects them. Git then reports no merge-base even though the parent objects needed to
+  // discover the latest base commit already remain in the object database.
+  writeFileSync(join(path, ".git", "shallow"), `${shallowBoundary}\n`);
+  expect(g(["rev-parse", "--is-shallow-repository"])).toBe("true");
+  expect(
+    spawnSync("git", ["-C", path, "merge-base", "main", "feature"]).status,
+  ).toBe(1);
+
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(advancedMain);
+
+  rmSync(path, { recursive: true, force: true });
+});

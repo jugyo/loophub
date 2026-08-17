@@ -1,4 +1,12 @@
-import { isAncestor, localBranchRef, mergeBase, revParse } from "./git.ts";
+import {
+  isAncestor,
+  isAncestorIgnoringShallow,
+  isShallowRepository,
+  localBranchRef,
+  mergeBase,
+  mergeBaseIgnoringShallow,
+  revParse,
+} from "./git.ts";
 import type { PullRow } from "./store.ts";
 
 // New PRs preserve their exact fork point. Legacy rows have no stored value, so infer the best
@@ -81,6 +89,24 @@ export async function resolvePullDiffBaseShas(
     (await isAncestor(repoPath, pull.base_sha, head))
   ) {
     candidates.push(pull.base_sha);
+  }
+  // A shallow fetch can leave the base and head tips present while hiding the parent chain that
+  // connects them. Retry only when normal ancestry found nothing, and only without the shallow
+  // boundary: this never fetches or mutates the repo, and succeeds only if the parent objects are
+  // already available locally.
+  if (candidates.length === 0 && (await isShallowRepository(repoPath))) {
+    for (const tip of tips) {
+      if (!(await revParse(repoPath, tip))) continue;
+      const mb = await mergeBaseIgnoringShallow(repoPath, tip, head);
+      if (mb && !candidates.includes(mb)) candidates.push(mb);
+    }
+    if (
+      pull.base_sha &&
+      !candidates.includes(pull.base_sha) &&
+      (await isAncestorIgnoringShallow(repoPath, pull.base_sha, head))
+    ) {
+      candidates.push(pull.base_sha);
+    }
   }
   let best: string | null = null;
   for (const candidate of candidates) {

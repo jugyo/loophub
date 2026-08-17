@@ -85,6 +85,11 @@ export async function revParse(
   return sha || null;
 }
 
+export async function isShallowRepository(repoPath: string): Promise<boolean> {
+  const r = await git(repoPath, ["rev-parse", "--is-shallow-repository"]);
+  return r.code === 0 && r.stdout.trim() === "true";
+}
+
 // Human-facing diagnosis when a local branch tip cannot be resolved for merge plumbing.
 // Surfaces collision candidates (`$GIT_DIR/<name>` pseudo-refs, `refs/heads/<name>`, tags) and a
 // fix hint so operators can recover (#39 AC: not only throw, but say what collided and how to fix).
@@ -172,7 +177,26 @@ export async function mergeBase(
   base: string,
   head: string,
 ): Promise<string | null> {
-  const r = await git(repoPath, ["merge-base", base, head]);
+  return mergeBaseWithEnv(repoPath, base, head);
+}
+
+// Retry ancestry traversal without honoring the repository's shallow boundary. This never fetches
+// or mutates the repository; it only exposes parent objects that are already present locally.
+export async function mergeBaseIgnoringShallow(
+  repoPath: string,
+  base: string,
+  head: string,
+): Promise<string | null> {
+  return mergeBaseWithEnv(repoPath, base, head, { GIT_SHALLOW_FILE: "" });
+}
+
+async function mergeBaseWithEnv(
+  repoPath: string,
+  base: string,
+  head: string,
+  env: Record<string, string> = {},
+): Promise<string | null> {
+  const r = await git(repoPath, ["merge-base", base, head], env);
   if (r.code !== 0) return null;
   return r.stdout.trim() || null;
 }
@@ -189,6 +213,19 @@ export async function isAncestor(
     ancestor,
     descendant,
   ]);
+  return r.code === 0;
+}
+
+export async function isAncestorIgnoringShallow(
+  repoPath: string,
+  ancestor: string,
+  descendant: string,
+): Promise<boolean> {
+  const r = await git(
+    repoPath,
+    ["merge-base", "--is-ancestor", ancestor, descendant],
+    { GIT_SHALLOW_FILE: "" },
+  );
   return r.code === 0;
 }
 
