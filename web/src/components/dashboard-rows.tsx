@@ -17,6 +17,7 @@ import { relativeTime } from "@/lib/time";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import type { IssueListFilters } from "@/queries/issues";
+import { canHaveSubIssues } from "../../../core/issue-hierarchy.ts";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
   if (badges.length === 0) return null;
@@ -295,7 +296,7 @@ export function IssueRow({
         <RepoChip label={repoLabel} owner={owner} repo={repo} />
         {issue.sub_issue_summary &&
         issue.sub_issue_summary.total > 0 &&
-        (subIssueDepth ?? issue.depth ?? 1) < 3 &&
+        canHaveSubIssues(subIssueDepth ?? issue.depth ?? 1) &&
         onSubIssueToggle ? (
           <button
             type="button"
