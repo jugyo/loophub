@@ -124,7 +124,6 @@ function mockFetch(
           effort: "medium",
         },
         grok: { model: "grok-4.5", effort: "medium" },
-        cursor: { model: "auto", effort: "" },
         opencode: {
           model: "opencode/big-pickle",
           effort: "medium",
@@ -203,6 +202,9 @@ describe("IssueDetail", () => {
     renderDetail();
 
     expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
+    expect(document.title).toBe(
+      "Issue #12 · ui2: issue detail · me/proj · LoopHub",
+    );
     expect(screen.getByText("Render title, body, labels.")).toBeTruthy();
     expect(screen.getByText("ready-to-build")).toBeTruthy();
     expect(screen.queryByText(/^branch:/)).toBeNull();
@@ -218,6 +220,67 @@ describe("IssueDetail", () => {
       screen.queryByRole("link", { name: "ui2: issue detail PR" }),
     ).toBeNull();
     expect(screen.queryByText("Workflow run")).toBeNull();
+  });
+
+  it("renders direct sub issues with the shared issue row and ancestor breadcrumb", async () => {
+    const child: Issue = {
+      ...issue,
+      number: 13,
+      title: "child issue",
+      linked_pull_request: null,
+      has_open_pull_request: false,
+      ancestors: [
+        { number: 2, title: "top issue", state: "open" },
+        { number: 3, title: "root issue", state: "open" },
+      ],
+    };
+    renderDetail(
+      () => ({
+        ...issue,
+        ancestors: [
+          { number: 2, title: "top issue", state: "open" },
+          { number: 3, title: "root issue", state: "open" },
+        ],
+      }),
+      { "issues/subIssues": () => [child] },
+    );
+
+    expect(await screen.findByText("Sub issues")).toBeTruthy();
+    expect(screen.getByLabelText("Issue #13: child issue")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "#3" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "#2" })).toBeTruthy();
+    expect(screen.getAllByText("›")).toHaveLength(1);
+  });
+
+  it("shows an error when sub issues cannot be loaded", async () => {
+    renderDetail(undefined, {
+      "issues/subIssues": () => {
+        throw new Error("sub issues unavailable");
+      },
+    });
+
+    expect(await screen.findByText("Failed to load sub issues.")).toBeTruthy();
+  });
+
+  it("offers to create a sub issue when the parent has no children", async () => {
+    renderDetail(undefined, { "issues/subIssues": () => [] });
+
+    await screen.findByText("ui2: issue detail");
+    expect(screen.getByText("Sub issues")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ parentIssue: 12 }),
+    );
+  });
+
+  it("hides the sub issue action at the maximum depth", async () => {
+    renderDetail(() => ({ ...issue, depth: 3 }), {
+      "issues/subIssues": () => [],
+    });
+
+    await screen.findByText("ui2: issue detail");
+    expect(screen.queryByRole("button", { name: "New issue" })).toBeNull();
+    expect(screen.queryByText("Sub issues")).toBeNull();
   });
 
   it("opens a linked PR Workflow step pane from the issue detail", async () => {
@@ -672,7 +735,6 @@ describe("IssueDetail", () => {
           number: 28,
           title: "archived attempt",
           state: "closed",
-          agent_runtime: "cursor-agent",
           agent_model: "composer-1",
           total_tokens: 12_000,
           cost_usd: 3.4,

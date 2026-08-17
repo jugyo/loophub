@@ -17,13 +17,15 @@ uses these shared invariants throughout:
 - Verify is **always a fresh child**; never reuse a verifier session.
 - The run stays `running` after reaching the goal. Reconcile again when a human instruction or event creates a gap.
   Never merge. Closing the linked PR is the run's terminal condition.
-- `observed.done` is the canonical pre-merge Done signal. It is derived by core from the current HEAD, its pinned review,
-  and blocking PR state; do not reconstruct it from `status`, `steps`, pane state, or child prose.
+- `observed.display_stage` is the canonical Workflow display projection. It distinguishes `execute`, `verify`,
+  `ready_to_merge`, and `merged`; `observed.merge_ready` is the pre-merge merge-ready boolean. Both are derived by core
+  from the current HEAD, its pinned review, and blocking PR state; do not reconstruct them from `status`, `steps`, pane
+  state, or child prose.
 - Do not use child-session resume or idle detection.
 
 ## Instruction loop
 
-Before the loop, run `lh workflow parent-ready <run> --repo '<repo>'` once. Instructions are held until that signal
+Before the loop, run `lh workflow parent-ready {{run}} --repo '<repo>'` once. Instructions are held until that signal
 arrives, because text written to this pane before your agent reads it is lost.
 
 Then repeat this loop:
@@ -40,7 +42,7 @@ acknowledge a cursor yourself. The delivered result is the only source for selec
 decision rules in this prompt. Your own judgement is limited to interpreting untrusted referenced content and writing
 delivery text. A fresh pass is not a stop condition; wait for another instruction.
 
-For a direct human instruction, run `lh workflow instruction <run> --repo '<repo>' --note <text|-> --json` immediately
+For a direct human instruction, run `lh workflow instruction {{run}} --repo '<repo>' --note <text|-> --json` immediately
 instead of waiting, then execute the returned structured instructions.
 
 Keep a malformed instruction or non-zero action error visible and ask for human judgement; do not retry it.

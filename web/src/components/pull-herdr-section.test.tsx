@@ -273,9 +273,7 @@ describe("PullHerdrSection", () => {
     const workingIcon = screen
       .getByText("orchestrator #7")
       .parentElement?.querySelector("[data-agent-bot-icon]");
-    expect(workingIcon?.className).toContain(
-      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
-    );
+    expect(workingIcon?.className).toContain("animate-agent-bot-blink");
     expect(workingIcon?.className).toContain("bg-indigo-100");
     expect(workingIcon?.className).toContain("dark:bg-sky-950");
 
@@ -291,9 +289,7 @@ describe("PullHerdrSection", () => {
       .getByText("verifier #7-2")
       .parentElement?.querySelector("[data-agent-bot-icon]");
     expect(inactiveIcon?.className).toContain("opacity-45");
-    expect(inactiveIcon?.className).not.toContain(
-      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
-    );
+    expect(inactiveIcon?.className).not.toContain("animate-agent-bot-blink");
   });
 
   it("opens pane, agent, session, usage, and cost details on hover", () => {

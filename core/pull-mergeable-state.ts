@@ -1,6 +1,7 @@
-import { localBranchRef, revParse } from "./git.ts";
+import { commitsAhead, localBranchRef, revParse } from "./git.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
+import { resolvePullBaseSha } from "./pull-base.ts";
 import { pullShaStatus } from "./pull-status-cache.ts";
 import * as S from "./store.ts";
 
@@ -16,11 +17,18 @@ import * as S from "./store.ts";
 // instead of respawning merge-tree per PR per poll.
 export async function currentMergeableState(
   pull: S.OpenPullSweepRow,
+  previousProjection?: S.CurrentPullStatusProjection | null,
 ): Promise<MergeableState> {
-  return (await currentPullStatus(pull))?.mergeable_state ?? "unknown";
+  return (
+    (await currentPullStatus(pull, previousProjection))?.mergeable_state ??
+    "unknown"
+  );
 }
 
-export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
+export async function currentPullStatus(
+  pull: S.OpenPullSweepRow,
+  previousProjection?: S.CurrentPullStatusProjection | null,
+): Promise<{
   baseSha: string;
   headSha: string;
   mergeable: boolean | null;
@@ -31,6 +39,7 @@ export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
   deletions: number;
   changedFiles: number;
   commitsAhead: number;
+  baseCommitsBehind: number;
 } | null> {
   const [headSha, baseSha] = await Promise.all([
     revParse(pull.local_path, localBranchRef(pull.head_ref)),
@@ -38,13 +47,45 @@ export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
   ]);
   if (!headSha || !baseSha) return null;
 
-  const status = await pullShaStatus(pull.local_path, baseSha, headSha);
   const reviewGate = S.computeReviewGate(pull.issue_id, headSha);
+  const reusableProjection =
+    previousProjection?.base_sha === baseSha &&
+    previousProjection.head_sha === headSha
+      ? previousProjection
+      : null;
+  if (reusableProjection) {
+    const decision = resolveMergeable({
+      hasEffectiveDiff: reusableProjection.has_effective_diff === 1,
+      conflict: reusableProjection.conflict === 1,
+      reviewGate,
+    });
+    return {
+      baseSha,
+      headSha,
+      mergeable: decision.mergeable,
+      mergeable_state: decision.mergeable_state,
+      hasEffectiveDiff: reusableProjection.has_effective_diff === 1,
+      conflict: reusableProjection.conflict === 1,
+      additions: reusableProjection.additions,
+      deletions: reusableProjection.deletions,
+      changedFiles: reusableProjection.changed_files,
+      commitsAhead: reusableProjection.commits_ahead,
+      baseCommitsBehind: reusableProjection.base_commits_behind,
+    };
+  }
+  const status = await pullShaStatus(pull.local_path, baseSha, headSha);
   const decision = resolveMergeable({
     hasEffectiveDiff: status.hasEffectiveDiff,
     conflict: status.conflict,
     reviewGate,
   });
+  const forkBaseSha = await resolvePullBaseSha(
+    pull.local_path,
+    S.getPull(pull.issue_id)!,
+  );
+  const baseCommitsBehind = forkBaseSha
+    ? await commitsAhead(pull.local_path, forkBaseSha, baseSha)
+    : 0;
   return {
     baseSha,
     headSha,
@@ -56,5 +97,6 @@ export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
     deletions: status.deletions,
     changedFiles: status.changedFiles,
     commitsAhead: status.commitsAhead,
+    baseCommitsBehind,
   };
 }

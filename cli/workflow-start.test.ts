@@ -2,7 +2,6 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -122,7 +121,6 @@ function fakeRuntime(
   const claude = join(dir, "claude");
   const codex = join(dir, "codex");
   const grok = join(dir, "grok");
-  const cursor = join(dir, "cursor-agent");
   const opencode = join(dir, "opencode");
   const sessionName = herdrSessionName({
     full_name: REPO,
@@ -195,10 +193,6 @@ exit 0
   writeFileSync(codex, '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n');
   writeFileSync(grok, '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n');
   writeFileSync(
-    cursor,
-    '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
-  );
-  writeFileSync(
     opencode,
     '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
   );
@@ -206,7 +200,6 @@ exit 0
   chmodSync(claude, 0o755);
   chmodSync(codex, 0o755);
   chmodSync(grok, 0o755);
-  chmodSync(cursor, 0o755);
   chmodSync(opencode, 0o755);
   return { dir, focusedStatePath, log };
 }
@@ -1104,6 +1097,213 @@ test("fresh Verify discards the verifier left on the old HEAD before launching",
   // real signal — it needs a timeout that matches the work it actually does.
 }, 120_000);
 
+test("a stale Verify cleanup failure records and releases the unspawned launch", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Verify cleanup failure",
+    "--body",
+    "Keep a failed pre-spawn launch retryable",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const started = run([
+    "workflow",
+    "start",
+    issue,
+    "--repo",
+    REPO,
+    "--workflow",
+    "standard",
+    "--no-launch",
+    "--json",
+  ]);
+  expect(started.exitCode, started.stderr).toBe(0);
+  const body = JSON.parse(started.stdout);
+
+  const { DatabaseSync } = REQUIRE(
+    "node:sqlite",
+  ) as typeof import("node:sqlite");
+  const db = new DatabaseSync(join(HOME, "loophub.db"));
+  db.exec(`
+    CREATE TRIGGER hold_after_step_launch_reservation
+    AFTER UPDATE OF launching_session_id ON workflow_runs
+    WHEN NEW.id = ${Number(body.run.id)} AND NEW.launching_session_id IS NOT NULL
+    BEGIN
+      UPDATE workflow_runs
+      SET needs_human_reason = 'Hold inserted after reservation'
+      WHERE id = NEW.id;
+    END;
+  `);
+  const runtime = fakeRuntime();
+  try {
+    const launched = run(
+      [
+        "workflow",
+        "launch-step",
+        "--repo",
+        REPO,
+        "--run",
+        String(body.run.id),
+        "--step",
+        "verify",
+      ],
+      {
+        LOOPHUB_SESSION_ID: body.session_id,
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+        HERDR_PANE_ID: "",
+      },
+    );
+    expect(launched.exitCode).not.toBe(0);
+    expect(launched.stderr).toContain(
+      "error 409: Workflow run is waiting for a human: Hold inserted after reservation",
+    );
+    const row = db
+      .prepare(
+        `SELECT launching_session_id, launch_failure_step,
+                launch_failure_session_id, launch_failed_at
+         FROM workflow_runs WHERE id = ?`,
+      )
+      .get(body.run.id) as {
+      launching_session_id: string | null;
+      launch_failure_step: string | null;
+      launch_failure_session_id: string | null;
+      launch_failed_at: string | null;
+    };
+    expect(row).toMatchObject({
+      launching_session_id: null,
+      launch_failure_step: "verify",
+      launch_failure_session_id: expect.any(String),
+      launch_failed_at: expect.any(String),
+    });
+    const failure = db
+      .prepare(
+        `SELECT type, json_extract(payload, '$.reason') AS reason
+         FROM events
+         WHERE type = 'workflow_step.launch_failed'
+           AND json_extract(payload, '$.id') = ?
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get(body.run.id) as { type: string; reason: string };
+    expect(failure).toEqual({
+      type: "workflow_step.launch_failed",
+      reason:
+        "Workflow run is waiting for a human: Hold inserted after reservation",
+    });
+    expect(existsSync(runtime.log)).toBe(false);
+  } finally {
+    db.exec("DROP TRIGGER IF EXISTS hold_after_step_launch_reservation");
+    db.close();
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("an orphaned launch is visible and can be explicitly recovered", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Orphaned launch recovery",
+    "--body",
+    "Recover a launch whose owner disappeared",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const started = run([
+    "workflow",
+    "start",
+    issue,
+    "--repo",
+    REPO,
+    "--workflow",
+    "standard",
+    "--no-launch",
+    "--json",
+  ]);
+  expect(started.exitCode, started.stderr).toBe(0);
+  const body = JSON.parse(started.stdout);
+  const orphanSession = "33333333-3333-4333-8333-333333333333";
+
+  const { DatabaseSync } = REQUIRE(
+    "node:sqlite",
+  ) as typeof import("node:sqlite");
+  const db = new DatabaseSync(join(HOME, "loophub.db"));
+  db.prepare(
+    `UPDATE workflow_runs
+     SET launching_step = 'verify', launching_session_id = ?,
+         launching_head_sha = ?
+     WHERE id = ?`,
+  ).run(orphanSession, "a".repeat(40), body.run.id);
+
+  try {
+    const status = run([
+      "workflow",
+      "step",
+      "status",
+      String(body.run.id),
+      "--repo",
+      REPO,
+      "--json",
+    ]);
+    expect(status.exitCode, status.stderr).toBe(0);
+    expect(JSON.parse(status.stdout)).toMatchObject({
+      pending_step_launch: {
+        step: "verify",
+        session_id: orphanSession,
+        head_sha: "a".repeat(40),
+      },
+    });
+
+    const recovered = run(
+      [
+        "workflow",
+        "run",
+        "recover-launch",
+        "--repo",
+        REPO,
+        "--run",
+        String(body.run.id),
+        "--reason",
+        "launch owner exited before confirmation",
+        "--json",
+      ],
+      { LOOPHUB_SESSION_ID: body.session_id },
+    );
+    expect(recovered.exitCode, recovered.stderr).toBe(0);
+    expect(JSON.parse(recovered.stdout).run).toMatchObject({
+      id: body.run.id,
+    });
+
+    const failure = db
+      .prepare(
+        `SELECT json_extract(payload, '$.session_id') AS session_id,
+                json_extract(payload, '$.reason') AS reason
+         FROM events
+         WHERE type = 'workflow_step.launch_failed'
+           AND json_extract(payload, '$.id') = ?
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get(body.run.id) as { session_id: string; reason: string };
+    expect(failure).toEqual({
+      session_id: orphanSession,
+      reason: "launch owner exited before confirmation",
+    });
+    expect(
+      db
+        .prepare("SELECT launching_session_id FROM workflow_runs WHERE id = ?")
+        .get(body.run.id),
+    ).toEqual({ launching_session_id: null });
+  } finally {
+    db.close();
+  }
+});
+
 test("workflow start --herdr opens the PR worktree workspace and starts the parent in its tab", () => {
   const issueOut = run([
     "issue",
@@ -1727,70 +1927,6 @@ test("workflow start --grok launches the grok runtime without requiring claude",
     expect(log).not.toContain("--session-id");
     expect(log).toContain("--always-approve");
     expect(log).not.toContain("--force");
-  } finally {
-    rmSync(runtime.dir, { recursive: true, force: true });
-  }
-});
-
-test("workflow start --cursor launches Cursor Agent with its verified flags", () => {
-  const issueOut = run([
-    "issue",
-    "create",
-    "--repo",
-    REPO,
-    "--title",
-    "Cursor parent session",
-    "--body",
-    "Do it with Cursor",
-  ]);
-  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
-  if (!issue) throw new Error(issueOut.stdout);
-  const runtime = fakeRuntime();
-  try {
-    const cursorHome = join(runtime.dir, "home");
-    mkdirSync(cursorHome);
-    const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--cursor",
-        "--herdr",
-      ],
-      {
-        HOME: cursorHome,
-        PATH: `${runtime.dir}:${process.env.PATH}`,
-        HERDR_LOG: runtime.log,
-      },
-    );
-    expect(started.exitCode, started.stderr).toBe(0);
-    const log = readFileSync(runtime.log, "utf8");
-    expect(log).toMatch(/pane send-text \S+ .*\bcursor-agent '/);
-    expect(log).toContain("'--model' 'auto'");
-    expect(log).toContain("--force");
-    expect(log).toContain("'--sandbox' 'disabled'");
-    expect(log).toContain("--approve-mcps");
-    expect(log).not.toContain("--trust");
-    expect(log).not.toContain("--print");
-    expect(log).not.toContain("--session-id");
-    const worktree = started.stdout.match(/worktree\t(.+)/)?.[1]?.trim();
-    expect(worktree).toBeTruthy();
-    const canonicalWorktree = realpathSync(worktree!);
-    const marker = join(
-      cursorHome,
-      ".cursor",
-      "projects",
-      canonicalWorktree.replace(/^\//, "").replaceAll("/", "-"),
-      ".workspace-trusted",
-    );
-    expect(JSON.parse(readFileSync(marker, "utf8"))).toMatchObject({
-      workspacePath: canonicalWorktree,
-      trustMethod: "cli-flag",
-    });
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

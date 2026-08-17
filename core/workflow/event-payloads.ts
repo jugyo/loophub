@@ -104,6 +104,13 @@ export interface WorkflowEventPayloadMap {
       handoff_id: number;
       head_sha: string | null;
     };
+  "workflow_step.launch_failed": WorkflowRunScoped &
+    WorkflowRunSubject & {
+      step: WorkflowStep;
+      session_id: string;
+      head_sha: string | null;
+      reason: string;
+    };
   "workflow_run.turn_done": WorkflowRunScoped &
     WorkflowRunSubject &
     WorkflowRunDelivery & {

@@ -463,7 +463,7 @@ test("herdr snapshot sweep persists the snapshot every tick and logs capture fai
   }
 });
 
-test("pull sweep fires pull_request.updated on head SHA change and no-ops when unchanged", async () => {
+test("pull sweep fires updates for head/base changes and no-ops when unchanged", async () => {
   const repoPath = mkdtempSync(join(tmpdir(), "lh-sweep-"));
   await git(repoPath, ["init", "-q", "-b", "main"]);
   await git(repoPath, ["config", "user.email", "t@t.local"]);
@@ -492,16 +492,24 @@ test("pull sweep fires pull_request.updated on head SHA change and no-ops when u
     );
     expect(countUpdates()).toBe(0);
 
+    await git(repoPath, ["checkout", "-q", "main"]);
+    writeFileSync(join(repoPath, "base-only.txt"), "base update\n");
+    await git(repoPath, ["add", "-A"]);
+    await git(repoPath, ["commit", "-qm", "base update"]);
+    await git(repoPath, ["checkout", "-q", "loophub/issue-x"]);
+    await waitUntil(() => countUpdates() === 1, "pull sweep base update");
+    expect(S.getPull(pull.id)!.head_sha).toBe(initialHead);
+
     writeFileSync(join(repoPath, "f.txt"), "c2\n");
     await git(repoPath, ["commit", "-qam", "c2"]);
     const updatedHead = await revParse(repoPath, "loophub/issue-x");
     await waitUntil(
       () =>
-        S.getPull(pull.id)!.head_sha === updatedHead && countUpdates() === 1,
+        S.getPull(pull.id)!.head_sha === updatedHead && countUpdates() === 2,
       "pull sweep updated head",
     );
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(countUpdates()).toBe(1);
+    expect(countUpdates()).toBe(2);
   } finally {
     stop();
   }
@@ -509,7 +517,7 @@ test("pull sweep fires pull_request.updated on head SHA change and no-ops when u
   writeFileSync(join(repoPath, "f.txt"), "c3\n");
   await git(repoPath, ["commit", "-qam", "c3"]);
   await new Promise((resolve) => setTimeout(resolve, 60));
-  expect(countUpdates()).toBe(1);
+  expect(countUpdates()).toBe(2);
   rmSync(repoPath, { recursive: true, force: true });
 });
 

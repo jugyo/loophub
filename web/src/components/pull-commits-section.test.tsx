@@ -111,9 +111,7 @@ describe("PullCommitsSection", () => {
       })
       .closest("li")!;
     expect(targetedCommit.contains(reviewing)).toBe(true);
-    expect(reviewing.className).toContain(
-      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
-    );
+    expect(reviewing.className).toContain("animate-agent-bot-blink");
     expect(
       within(
         screen

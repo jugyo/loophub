@@ -45,6 +45,7 @@ import type {
   RepoOriginSync,
   SearchResult,
   Stats,
+  SubIssuesPage,
   TerminalLaunchResult,
   Theme,
   WebConfig,
@@ -563,6 +564,7 @@ export function launchTerminalWorkflow(input: {
   // Saved workflow id for the "workflow-run" launch (#1007).
   workflowId?: number;
   targetBranch?: string;
+  parentIssue?: number;
   prompt?: string;
   // One-shot runtime/model/effort overrides from the New issue dropdown (#1275/#1534).
   agent?: CodingAgent;
@@ -734,6 +736,13 @@ export function getIssueDetailPage(
   number: number,
 ) {
   return rpc<IssueDetailPage>("pageData/issueDetail", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+export function getSubIssuesPage(owner: string, repo: string, number: number) {
+  return rpc<SubIssuesPage>("pageData/subIssues", {
     repo: full(owner, repo),
     number,
   });

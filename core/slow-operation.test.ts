@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   configureSlowOperationLogging,
   logDiagnostic,
+  measureDiagnostic,
 } from "./slow-operation.ts";
 
 afterEach(() => {
@@ -21,5 +22,25 @@ describe("diagnostic logging", () => {
     logDiagnostic(message);
 
     expect(log).toHaveBeenCalledWith("[diagnostic] event=test");
+  });
+
+  it("measures a pageData phase only while diagnostics are enabled", async () => {
+    const operation = vi.fn(async () => "result");
+    const log = vi.fn();
+
+    await expect(
+      measureDiagnostic("issueList.serialization", operation),
+    ).resolves.toBe("result");
+    expect(log).not.toHaveBeenCalled();
+
+    configureSlowOperationLogging(log);
+    await expect(
+      measureDiagnostic("issueList.serialization", operation),
+    ).resolves.toBe("result");
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^pageData phase=issueList\.serialization duration_ms=\d+$/,
+      ),
+    );
   });
 });

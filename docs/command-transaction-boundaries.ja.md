@@ -110,7 +110,7 @@ write の間に外部 I/O が挟まっている場合は、read を DB 区間の
   一つの区間で行う
 - `sessions.usageSync` — runtime module が transcript の走査と読み出しと相関を済ませて sync plan を組み、
   その後 executor が cohort ごとの write を一区間にする。cohort は同じ transcript 群を取り合う session の
-  集まり（Cursor の同一 cwd）で、取り合いのない runtime では session 単位になる
+  集まり（同一 cwd）で、取り合いのない runtime では session 単位になる
 - `workflowRuns.start` — run row と `workflow_run.started` を一区間にし、parent contract file の
   書き出しはその後に置く
 
@@ -152,11 +152,14 @@ DB を変更する service procedure と、その transaction owner。`store hel
 
 | procedure | owner | 同一 transaction の DB write | transaction 外 |
 |---|---|---|---|
-| `issues.create` | procedure | issue、labels、acceptance criteria、pane link、`issue.opened` | branch 検証の git read |
+| `issues.create` | procedure | issue、親子関係、labels、acceptance criteria、pane link、`issue.opened` / 親の `issue.updated` | branch 検証の git read |
 | `issues.import` | procedure | issue、GitHub issue link、`issue.opened` | GitHub fetch |
-| `issues.update` | procedure | issue fields、labels と `issue.labeled`、state event、linked PR の close cascade | branch 検証の git read |
+| `issues.update` | procedure | issue fields、workspace cascade、labels と `issue.labeled`、state event、linked PR の close cascade | branch 検証の git read |
 | `issues.addLabels` | procedure | labels、`issue.labeled` | — |
 | `issues.acAdd` / `acSetEnabled` / `acReorder` | procedure | criterion write、issue touch | — |
+| `issues.attachSubIssue` | procedure | child / parent relationship、関係する `issue.updated` | — |
+| `issues.detachSubIssue` | procedure | child / parent relationship、関係する `issue.updated` | — |
+| `issues.reorderSubIssues` | procedure | sub-issue ordinal、関係する `issue.updated` | 順列の検証 |
 | `pulls.create` | procedure（外部 I/O 後の区間） | pull-shaped issue row、pull row、`pull_request.opened` | number-derived head 用の issue number 予約、head / base の SHA read |
 | `pulls.update` | procedure | issue fields、`pull_request.updated` | 応答の `pullJSON` |
 | `pulls.delete` | procedure | PR 関連 row の削除、`pull_request.deleted` | git ref / worktree は削除しない |

@@ -14,6 +14,7 @@ Options:
   --body <text>           Markdown issue body; @file reads a file and - reads stdin.
   --label <name,...>      Comma-separated labels.
   --ac <text>             Structured acceptance criterion (repeatable, non-blank).
+  --parent <number>       Parent issue number; the new issue is created as a sub-issue.
   --workspace <name>      Active registered workspace whose branch becomes the target.
   --target-branch <ref>   Existing branch or revision expression used as the target.
   --repo <owner/name>     Repository (defaults to the repository at the current path).
@@ -46,7 +47,6 @@ Options:
   --claude-code          Launch Claude Code.
   --codex                Launch Codex.
   --grok                 Launch Grok Build.
-  --cursor               Launch Cursor Agent.
   --opencode             Launch OpenCode.
   --model <name>         Override the selected runtime's default model.
   --effort <level>       Override the selected runtime's reasoning effort when supported.
@@ -69,6 +69,20 @@ Options:
   --json                Print the issue, comments, acceptance criteria, and linked PR as JSON.
   --help                Show this help without reading the database.`;
 
+const ISSUE_SUB_DETAILS = `
+
+Usage:
+  lh issue sub list <parent> [options]
+  lh issue sub add <parent> <child> [options]
+  lh issue sub remove <child> [options]
+  lh issue sub reorder <parent> --order <child,...> [options]
+
+Options:
+  --order <child,...>    Complete ordered list of sub-issue numbers (reorder only).
+  --repo <owner/name>    Repository (defaults to the repository at the current path).
+  --json                 Print the result as JSON.
+  --help                 Show this help without changing the database.`;
+
 const SESSION_REGISTER_DETAILS = `
 
 Usage:
@@ -79,7 +93,7 @@ Options:
   --agent <kind>        Agent or launcher kind.
   --session <id>        Runtime session identifier.
   --name <text>         Human-readable session name.
-  --runtime <runtime>   Runtime: claude-code, codex, grok, cursor, or opencode.
+  --runtime <runtime>   Runtime: claude-code, codex, grok, or opencode.
   --model <name>        Runtime model identifier.
   --kind <kind>         Session kind such as dev, review, or issue-create.
   --help                Show this help without changing the database.`;
@@ -307,6 +321,11 @@ export const commandHelp: readonly CommandHelp[] = [
   { path: ["issue", "comment"], description: "Comment on an issue." },
   { path: ["issue", "close"], description: "Close an issue." },
   { path: ["issue", "label"], description: "Add a label to an issue." },
+  {
+    path: ["issue", "sub"],
+    description: "Manage issue hierarchy.",
+    details: ISSUE_SUB_DETAILS,
+  },
   { path: ["session"], description: "Manage agent sessions." },
   {
     path: ["session", "register"],
@@ -448,6 +467,10 @@ export const commandHelp: readonly CommandHelp[] = [
   {
     path: ["workflow", "run", "update"],
     description: "Update a workflow run.",
+  },
+  {
+    path: ["workflow", "run", "recover-launch"],
+    description: "Record and release an orphaned step launch.",
   },
   {
     path: ["workflow", "parent-ready"],

@@ -100,13 +100,54 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     ended_at: null,
     latest_review: null,
     verification_status: "unverified",
-    done: false,
+    pr_merged: false,
+    merge_ready: false,
     merge_conflict: false,
     ...partial,
   };
 }
 
 describe("WorkflowRunStatusSection", () => {
+  it("shows the manifest-backed agent settings and prompt sources", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          workflow_config: {
+            contract_language: "ja",
+            agents: {
+              parent: {
+                runtime: "codex",
+                model: "parent-model",
+                effort: "low",
+              },
+              execute: {
+                runtime: "codex",
+                model: "execute-model",
+                effort: "high",
+              },
+              verify: {
+                runtime: "codex",
+                model: "verify-model",
+                effort: "medium",
+              },
+            },
+            prompt_sources: {
+              execute: "execute-prompt.md",
+              verify: "verify-prompt.md",
+            },
+          },
+        })}
+      />,
+    );
+
+    const config = await screen.findByTestId("workflow-run-config");
+    expect(config.textContent).toContain("execute-model");
+    expect(config.textContent).toContain("execute-prompt.md");
+    expect(config.textContent).toContain("verify-prompt.md");
+  });
+
   it("opens the matching Workflow step pane from the detail tracker", async () => {
     mocks.herdrSessions = {
       repos: [
@@ -179,7 +220,7 @@ describe("WorkflowRunStatusSection", () => {
 
     const workflow = await screen.findByRole("button", { name: "Workflow" });
     const parentBot = workflow.querySelector("[data-agent-bot-icon]");
-    expect(parentBot?.className).toContain("linked-pull-pulse");
+    expect(parentBot?.className).toContain("animate-agent-bot-blink");
     const connector = workflow.parentElement?.nextElementSibling;
     expect(connector?.getAttribute("data-workflow-connector")).toBe(
       "workflow-execute",
@@ -220,7 +261,7 @@ describe("WorkflowRunStatusSection", () => {
     const workflow = await screen.findByRole("button", { name: "Workflow" });
     expect(
       workflow.querySelector("[data-agent-bot-icon]")?.className,
-    ).not.toContain("linked-pull-pulse");
+    ).not.toContain("animate-agent-bot-blink");
   });
 
   it("renders nothing when there is no run", () => {
@@ -388,6 +429,46 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.queryByText(/Verify passed/)).toBeNull();
   });
 
+  it("prioritizes a merged PR over unreconciled running, stale, and held state", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          status: "running",
+          current_step: "verify",
+          pr_merged: true,
+          verification_status: "stale",
+          needs_human_reason: "Cost limit exceeded",
+          cost_limit_increase_available: true,
+        })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-debug-component="WorkflowRunStatusSection"]',
+        )?.textContent,
+      ).toContain("Merged"),
+    );
+    expect(screen.getByText("The Workflow run is completed.")).toBeTruthy();
+    expect(
+      document
+        .querySelector('[data-debug-component="WorkflowStepTracker"]')
+        ?.querySelector('[data-workflow-stage="done"] span')
+        ?.getAttribute("aria-current"),
+    ).toBe("step");
+    expect(screen.queryByText("Running")).toBeNull();
+    expect(screen.queryByText("Reverify required")).toBeNull();
+    expect(screen.queryByText(/fresh Verify is required/)).toBeNull();
+    expect(screen.queryByText("Needs human")).toBeNull();
+    expect(screen.queryByText("needs human")).toBeNull();
+    expect(screen.queryByText("over budget")).toBeNull();
+    expect(screen.queryByText("Cost limit exceeded")).toBeNull();
+    expect(screen.queryByText(/elapsed$/)).toBeNull();
+  });
+
   it("keeps a verified running run free of continuing status text", async () => {
     const { rerender } = renderInRouter(
       <WorkflowRunStatusSection
@@ -396,11 +477,17 @@ describe("WorkflowRunStatusSection", () => {
         state={state({
           current_step: "verify",
           verification_status: "verified",
-          done: true,
+          merge_ready: true,
         })}
       />,
     );
-    expect(await screen.findByText("Ready to merge")).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-debug-component="WorkflowRunStatusSection"]',
+        )?.textContent,
+      ).toContain("Ready to merge"),
+    );
     expect(
       screen.getByText("Verify passed for the current HEAD."),
     ).toBeTruthy();
@@ -428,12 +515,18 @@ describe("WorkflowRunStatusSection", () => {
         state={state({
           current_step: "verify",
           verification_status: "unverified",
-          done: true,
+          merge_ready: true,
         })}
       />,
     );
 
-    expect(await screen.findByText("Ready to merge")).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-debug-component="WorkflowRunStatusSection"]',
+        )?.textContent,
+      ).toContain("Ready to merge"),
+    );
     expect(screen.queryByText("Verified")).toBeNull();
     expect(screen.queryByText(/Verify passed/)).toBeNull();
   });
@@ -442,7 +535,7 @@ describe("WorkflowRunStatusSection", () => {
     const verifiedState = state({
       current_step: "verify",
       verification_status: "verified",
-      done: true,
+      merge_ready: true,
     });
     renderInRouter(
       <WorkflowRunStatusSection
@@ -452,7 +545,17 @@ describe("WorkflowRunStatusSection", () => {
       />,
     );
 
-    const done = await screen.findByText("Done");
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-debug-component="WorkflowRunStatusSection"]',
+        )?.textContent,
+      ).toContain("Ready to merge"),
+    );
+    const done = document
+      .querySelector('[data-debug-component="WorkflowRunStatusSection"]')
+      .querySelector('[data-workflow-stage="done"] span');
+    expect(done).toBeTruthy();
     expect(done.className).toContain("text-green");
     expect(done.querySelector("svg")).toBeTruthy();
   });

@@ -143,6 +143,13 @@ npm run contract         # regenerate docs/rpc-contract.json from web/server/con
 `docs/rpc-contract.json` is a tracked generated file: adding or changing a JSON-RPC method in
 `web/server/contract.ts` means running `npm run contract` and committing the result alongside it.
 
+### Migration development
+
+新しい migration は `npm run migration:new -- descriptive-name` で UTC timestamp の ID と entry
+雛形を生成し、`core/migrations.ts` の `MIGRATIONS` 末尾へ追加する。既存 migration の ID・本文を
+変更したり、配列を並べ替えたりしない。旧形式は既存の 3 桁 numeric prefix、新形式は
+`YYYYMMDDHHMMSS-descriptive-name` とし、同じ ID の重複は自動修正せず明示的なエラーとして解決する。
+
 Lint/format use [Biome](https://biomejs.dev). Config is `biome.json`; the linter is a
 minimal recommended set (type-aware checks stay with `npm run typecheck`).
 

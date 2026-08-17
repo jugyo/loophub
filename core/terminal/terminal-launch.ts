@@ -119,6 +119,7 @@ export interface HerdrLaunchInput {
   // One-shot reasoning effort for New issue launches (#1534). Maps to `lh issue new --effort`.
   effort?: string;
   targetBranch?: string;
+  parentIssue?: number;
   // Optional direct instructions for the issue-create flow, passed as `lh issue new --prompt`.
   prompt?: string;
   // File holding the initial prompt for the launches that run a coding agent directly. See
@@ -174,11 +175,14 @@ export function commandForHerdrLaunch(input: HerdrLaunchInput): string {
     const targetBranchFlag = input.targetBranch
       ? ` --target-branch ${shellArg(input.targetBranch)}`
       : "";
+    const parentIssueFlag = input.parentIssue
+      ? ` --parent ${shellArg(String(input.parentIssue))}`
+      : "";
     const promptFlag = input.prompt
       ? ` --prompt ${shellArg(input.prompt)}`
       : "";
     return withEnv(
-      `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${agentFlag}${modelFlag}${effortFlag}${promptFlag}`,
+      `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${parentIssueFlag}${agentFlag}${modelFlag}${effortFlag}${promptFlag}`,
     );
   }
   if (input.workflow === "workflow-create" && input.promptPath) {
@@ -659,6 +663,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
   // back to its own fresh tab, the same degraded placement the tab-less launch has always had.
   splitPaneId?: string | null;
   model?: string | null;
+  effort?: string | null;
 }): HerdrLaunchPlan {
   const env = {
     LOOPHUB_SESSION_ID: input.sessionId,
@@ -674,6 +679,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
       args: buildRuntimeFlags({
         runtime: input.runtime,
         model: input.model?.trim(),
+        effort: input.effort?.trim(),
         sessionId: input.sessionId,
         systemPromptFile: input.systemPromptPath,
       }),

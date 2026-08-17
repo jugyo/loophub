@@ -61,7 +61,7 @@ in the one-shot flag list.
 | Finding | Disposition |
 |---|---|
 | TUI reject of `--variant` caused immediate pane death when Settings effort was forwarded | **Fixed in this PR** — launch argv no longer forwards effort as `--variant` |
-| Settings showed an OpenCode effort ladder that launch never applied | **Fixed in this PR** — `effortSuggestions` / `defaultEffort` cleared for OpenCode (same posture as Cursor) so Settings does not offer a no-op control |
+| Settings showed an OpenCode effort ladder that launch never applied | **Fixed in this PR** — `effortSuggestions` / `defaultEffort` cleared for OpenCode so Settings does not offer a no-op control |
 | Older `lh` on PATH without OpenCode maps DB `runtime=opencode` to `claude-code` via `normalizeCodingAgent` | **Operational note only** — requires an OpenCode-capable `lh` on PATH after install/merge; not a remaining product defect on this branch; no follow-up issue |
 
 **No remaining unfixed product issues from this verification** after the two code fixes above.

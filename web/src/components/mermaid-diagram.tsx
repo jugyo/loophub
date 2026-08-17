@@ -12,6 +12,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Lightbox } from "@/components/lightbox";
 import { errorMessage } from "@/lib/error-message";
+import { cn } from "@/lib/utils";
 
 let mermaidModulePromise: Promise<typeof import("mermaid").default> | null =
   null;
@@ -102,7 +103,13 @@ async function loadMermaid() {
   return mermaidModulePromise;
 }
 
-export function MermaidDiagram({ chart }: { chart: string }) {
+export function MermaidDiagram({
+  chart,
+  className,
+}: {
+  chart: string;
+  className?: string;
+}) {
   // Mermaid needs a valid DOM id per diagram; useId() can contain colons, which mermaid rejects.
   const renderId = `mermaid-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const [svg, setSvg] = useState<string | null>(null);
@@ -137,7 +144,10 @@ export function MermaidDiagram({ chart }: { chart: string }) {
       <>
         <div
           data-debug-component="MermaidDiagram"
-          className="mermaid-diagram cursor-zoom-in overflow-x-auto"
+          className={cn(
+            "mermaid-diagram cursor-zoom-in overflow-x-auto",
+            className,
+          )}
           role="button"
           tabIndex={0}
           aria-label="Expand diagram"
@@ -174,7 +184,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
   // Loading, or the diagram failed to parse/render: fall back to the plain source so the body
   // never renders blank or crashes the page.
   return (
-    <div>
+    <div className={className}>
       {error && (
         <p className="mb-1 text-destructive text-sm">
           Failed to render Mermaid diagram: {error}

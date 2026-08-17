@@ -272,10 +272,7 @@ function ReviewingBadge({ startedAt }: { startedAt: string | null }) {
       ? Math.round((nowMs - startedAtMs) / 1000)
       : null;
   return (
-    <Badge
-      tone="working"
-      className="shrink-0 animate-[linked-pull-pulse_2.4s_ease-out_infinite]"
-    >
+    <Badge tone="working" className="shrink-0 animate-agent-bot-blink">
       Reviewing
       {elapsedSeconds !== null ? (
         <span

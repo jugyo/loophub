@@ -1,7 +1,6 @@
 import type * as S from "../store.ts";
 import { claudeUsageSync } from "./claude.ts";
 import { codexUsageSync } from "./codex.ts";
-import { cursorUsageSync } from "./cursor.ts";
 import { grokUsageSync } from "./grok.ts";
 import { opencodeUsageSync } from "./opencode.ts";
 import type {
@@ -20,10 +19,8 @@ export type {
   SessionUsageSyncStatus,
 } from "./plan.ts";
 
-// Consulted in order. Cursor plans apply first, as they did before the split, and Claude Code claims
-// whatever the explicit runtimes leave.
+// Consulted in order; Claude Code claims whatever the explicit runtimes leave.
 const MODULES: SessionUsageSyncModule[] = [
-  cursorUsageSync,
   codexUsageSync,
   grokUsageSync,
   opencodeUsageSync,

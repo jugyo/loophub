@@ -17,13 +17,15 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 - Verify は**常に fresh child**として起動し、以前の verifier session を再利用しない。
 - ゴール到達後も run は `running` のままとし、人間の指示や新しい event で gap が生じたら reconcile を再開する。
   merge はしない。linked PR の close が run の terminal condition である。
-- `observed.done` が pre-merge の canonical な Done signal である。core が current HEAD、そこに pin された
-  review、blocking PR state から導出する。`status`、`steps`、pane state、child の文章から再構築しない。
+- `observed.display_stage` が Workflow 表示の canonical な projection であり、`execute`、`verify`、
+  `ready_to_merge`、`merged` を区別する。pre-merge の merge-ready boolean は `observed.merge_ready` である。
+  どちらも core が current HEAD、そこに pin された review、blocking PR state から導出する。`status`、`steps`、
+  pane state、child の文章から再構築しない。
 - child-session resume や idle detection は使わない。
 
 ## Instruction loop
 
-loop に入る前に `lh workflow parent-ready <run> --repo '<repo>'` を 1 回実行する。agent が読み取る前にこの pane へ
+loop に入る前に `lh workflow parent-ready {{run}} --repo '<repo>'` を 1 回実行する。agent が読み取る前にこの pane へ
 書かれた text は失われるため、この signal が届くまで instruction は保留される。
 
 その上で次の loop を繰り返す。
@@ -41,7 +43,7 @@ prompt に重複して持たない。parent 自身の判断は untrusted な参�
 である。fresh pass は停止条件ではなく、次の instruction を待つ。
 
 人間から直接指示された場合は、待たずに
-`lh workflow instruction <run> --repo '<repo>' --note <text|-> --json` を実行し、返された構造化 instructions を実行する。
+`lh workflow instruction {{run}} --repo '<repo>' --note <text|-> --json` を実行し、返された構造化 instructions を実行する。
 
 不正な instruction や action の non-zero error は retry せず、人間へ判断を求める。error は見える状態で保持する。
 

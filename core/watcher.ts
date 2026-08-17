@@ -1,5 +1,4 @@
 import { db } from "./db.ts";
-import { localBranchRef, revParse } from "./git.ts";
 import { currentPullStatus } from "./pull-mergeable-state.ts";
 import * as S from "./store.ts";
 
@@ -10,10 +9,62 @@ export async function sweepPullUpdates(): Promise<any[]> {
   const emitted: any[] = [];
   S.prunePullDiffProjections();
   for (const p of S.openPulls()) {
-    const cur = await revParse(p.local_path, localBranchRef(p.head_ref));
-    if (!cur) continue; // ブランチが見つからない場合はスキップ
-    const status = await currentPullStatus(p);
-    if (status) {
+    const previousProjection = S.getCurrentPullStatusProjection(p.issue_id);
+    const status = await currentPullStatus(p, previousProjection);
+    if (!status) {
+      if (previousProjection) {
+        const event = db.transaction(() => {
+          S.deleteCurrentPullStatusProjection(p.issue_id);
+          S.touchIssue(p.issue_id);
+          return S.emitEvent(p.repo_id, "pull_request.updated", p.author, {
+            number: p.number,
+            sha: null,
+          });
+        });
+        emitted.push(event);
+      }
+      continue; // ref が解決不能な間は stale な projection を公開しない
+    }
+    const projectionChanged =
+      previousProjection !== null &&
+      (previousProjection.base_sha !== status.baseSha ||
+        previousProjection.head_sha !== status.headSha);
+    const cur = status.headSha;
+    if (!p.head_sha) {
+      db.transaction(() => {
+        S.upsertPullStatusProjection({
+          baseSha: status.baseSha,
+          headSha: status.headSha,
+          mergeable: status.mergeable,
+          mergeableState: status.mergeable_state,
+          hasEffectiveDiff: status.hasEffectiveDiff,
+          conflict: status.conflict,
+          additions: status.additions,
+          deletions: status.deletions,
+          changedFiles: status.changedFiles,
+          commitsAhead: status.commitsAhead,
+        });
+        S.upsertCurrentPullStatusProjection({
+          issueId: p.issue_id,
+          baseSha: status.baseSha,
+          headSha: status.headSha,
+          mergeable: status.mergeable,
+          mergeableState: status.mergeable_state,
+          hasEffectiveDiff: status.hasEffectiveDiff,
+          conflict: status.conflict,
+          additions: status.additions,
+          deletions: status.deletions,
+          changedFiles: status.changedFiles,
+          commitsAhead: status.commitsAhead,
+          baseCommitsBehind: status.baseCommitsBehind,
+        });
+        S.setHeadSha(p.issue_id, cur);
+      });
+      continue;
+    }
+    // The projection and the event announcing its SHA pair commit together, so a recorded
+    // projection never suppresses the event a later sweep would otherwise emit for it.
+    const event = db.transaction(() => {
       S.upsertPullStatusProjection({
         baseSha: status.baseSha,
         headSha: status.headSha,
@@ -26,25 +77,31 @@ export async function sweepPullUpdates(): Promise<any[]> {
         changedFiles: status.changedFiles,
         commitsAhead: status.commitsAhead,
       });
-    }
-    if (!p.head_sha) {
-      S.setHeadSha(p.issue_id, cur);
-      continue;
-    }
-    if (cur !== p.head_sha) {
-      // The ref read is done; the observed SHA and the event announcing it commit together, so a
-      // recorded SHA never suppresses the event a later sweep would otherwise emit for it.
-      emitted.push(
-        db.transaction(() => {
-          S.setHeadSha(p.issue_id, cur);
-          S.touchIssue(p.issue_id);
-          return S.emitEvent(p.repo_id, "pull_request.updated", p.author, {
-            number: p.number,
-            sha: cur,
-          });
-        }),
-      );
-    }
+      S.upsertCurrentPullStatusProjection({
+        issueId: p.issue_id,
+        baseSha: status.baseSha,
+        headSha: status.headSha,
+        mergeable: status.mergeable,
+        mergeableState: status.mergeable_state,
+        hasEffectiveDiff: status.hasEffectiveDiff,
+        conflict: status.conflict,
+        additions: status.additions,
+        deletions: status.deletions,
+        changedFiles: status.changedFiles,
+        commitsAhead: status.commitsAhead,
+        baseCommitsBehind: status.baseCommitsBehind,
+      });
+      if (cur !== p.head_sha || projectionChanged) {
+        S.setHeadSha(p.issue_id, cur);
+        S.touchIssue(p.issue_id);
+        return S.emitEvent(p.repo_id, "pull_request.updated", p.author, {
+          number: p.number,
+          sha: cur,
+        });
+      }
+      return null;
+    });
+    if (event) emitted.push(event);
   }
   return emitted;
 }

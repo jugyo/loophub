@@ -117,8 +117,11 @@ export function workflowSubjectMatchSql(input: {
   pr: string;
   issue: string;
 }): string {
+  // A launch failure is an audit record, not a progression signal: selecting it would let the
+  // parent reconcile the cleared reservation into an automatic retry.
   return `(
     ((${input.event}.type GLOB 'workflow_run.*' OR ${input.event}.type GLOB 'workflow_step.*')
+       AND ${input.event}.type <> 'workflow_step.launch_failed'
        AND json_extract(${input.event}.payload, '$.id') = ${input.run})
     OR (${input.event}.type GLOB 'pull_request.*'
        AND json_extract(${input.event}.payload, '$.number') = ${input.pr})
@@ -302,19 +305,21 @@ export function workflowRunObservationTrail(input: {
     .query(
       `SELECT * FROM events
        WHERE repo_id = ?
-         AND (
-           ((type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*')
-              AND json_extract(payload, '$.id') = ?)
-           OR (type = 'pull_request.review_submitted'
-              AND json_extract(payload, '$.number') = ?
-              AND json_extract(payload, '$.source_payload_version') = ?
-              AND id > ? AND id < ?)
-         )
+         AND (type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*')
+         AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
+       UNION ALL
+       SELECT * FROM events
+       WHERE repo_id = ?
+         AND type = 'pull_request.review_submitted'
+         AND json_extract(payload, '$.number') = ?
+         AND json_extract(payload, '$.source_payload_version') = ?
+         AND id > ? AND id < ?
        ORDER BY id ASC`,
     )
     .all(
       input.repoId,
       input.runId,
+      input.repoId,
       input.prNumber,
       SOURCE_PAYLOAD_VERSION,
       input.startedEventId,

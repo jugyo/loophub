@@ -146,13 +146,11 @@ beforeAll(() => {
   const runtime = `#!/bin/sh
 printf 'bin=%s\\n' "$(basename "$0")" > "$RUNTIME_LOG"
 printf 'workspace=%s\\n' "$LOOPHUB_WORKSPACE" >> "$RUNTIME_LOG"
+printf 'parent=%s\\n' "$LOOPHUB_PARENT_ISSUE" >> "$RUNTIME_LOG"
 for arg in "$@"; do printf 'arg=%s\\n' "$arg" >> "$RUNTIME_LOG"; done
-if [ "$(basename "$0")" = "cursor-agent" ]; then
-  printf '%s\\n' '{"type":"result","session_id":"cursor-headless-chat","result":"Created issue"}'
-fi
 exit 0
 `;
-  for (const bin of ["claude", "codex", "grok", "cursor-agent", "opencode"]) {
+  for (const bin of ["claude", "codex", "grok", "opencode"]) {
     const path = join(runtimeDir, bin);
     writeFileSync(path, runtime);
     chmodSync(path, 0o755);
@@ -198,6 +196,13 @@ test("issue new forwards a direct prompt instead of the default filing prompt", 
   expect(result.runtimeLog).not.toContain(
     "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",
   );
+});
+
+test("issue new forwards the parent issue to the runtime environment", () => {
+  const result = issueNew(["--parent", "12"]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.runtimeLog).toContain("parent=12");
 });
 
 test("issue new uses the repo Coding agent override over the app defaults (#1534)", () => {
@@ -273,7 +278,6 @@ test.each([
   ["--claude-code", "claude", "claude-code", "codex"],
   ["--codex", "codex", "codex", "claude-code"],
   ["--grok", "grok", "grok", "claude-code"],
-  ["--cursor", "cursor-agent", "cursor", "claude-code"],
   ["--opencode", "opencode", "opencode", "claude-code"],
 ])("issue new forwards %s and --model to the final %s launch boundary", (flag, expectedBin, expectedRuntime, configuredAgent) => {
   writeConfig({ codingAgent: configuredAgent });
@@ -301,14 +305,6 @@ test.each([
   );
   expect(sessions().at(-1)?.runtime).toBe(expectedRuntime);
   expect(sessions().at(-1)?.model).toBe(model);
-  if (expectedRuntime === "cursor") {
-    expect(result.runtimeLog).toContain("arg=--force");
-    expect(result.runtimeLog).toContain("arg=--sandbox");
-    expect(result.runtimeLog).toContain("arg=disabled");
-    expect(result.runtimeLog).toContain("arg=--approve-mcps");
-    expect(sessions().at(-1)?.external_session).toBe("cursor-headless-chat");
-    expect(result.stdout).toContain("Created issue");
-  }
 });
 
 test("issue new rejects multiple runtime flags before registering or spawning", () => {
@@ -334,6 +330,16 @@ test("issue new rejects a value-less --effort before registering or spawning", (
 
   expect(result.exitCode).not.toBe(0);
   expect(result.stderr).toContain("--effort requires a value");
+  expect(result.runtimeLog).toBe("");
+  expect(result.dbCreated).toBe(false);
+});
+
+test("issue new rejects the removed Cursor runtime option", () => {
+  const result = invalidIssueNew(["--cursor"]);
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("--cursor");
+  expect(result.stderr).toContain("Cursor coding-agent support was removed");
   expect(result.runtimeLog).toBe("");
   expect(result.dbCreated).toBe(false);
 });

@@ -257,6 +257,80 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     result.parent.user_prompt,
   );
 
+  const manifestPath = join(
+    HOME,
+    "runs",
+    "workflow",
+    String(result.run.id),
+    "manifest.json",
+  );
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const manifestText = readFileSync(manifestPath, "utf8");
+  expect(manifest).toMatchObject({
+    manifest_version: 1,
+    agents: {
+      parent: { runtime: "claude-code", model: "opus" },
+      execute: { runtime: "claude-code", model: "opus" },
+      verify: { runtime: "claude-code", model: "opus" },
+    },
+    prompts: {
+      execute: "execute-step-prompt.md",
+      verify: "verify-step-prompt.md",
+    },
+  });
+  expect(manifest.agents.parent.effort).toBe(manifest.agents.execute.effort);
+  expect(manifest.agents.execute.effort).toBe(manifest.agents.verify.effort);
+  const executePromptPath = join(
+    HOME,
+    "runs",
+    "workflow",
+    String(result.run.id),
+    "execute-step-prompt.md",
+  );
+  const executePromptText = readFileSync(executePromptPath, "utf8");
+  writeFileSync(executePromptPath, "Manifest snapshot prompt.\n");
+  const stepInput = await svc.workflowRuns.stepInput(
+    repo.full_name,
+    { run: result.run.id, step: "execute" },
+    result.session_id,
+  );
+  expect(stepInput.user_prompt).toContain("Manifest snapshot prompt.");
+  writeFileSync(manifestPath, '{"manifest_version":1}\n');
+  await expect(
+    svc.workflowRuns.stepInput(
+      repo.full_name,
+      { run: result.run.id, step: "execute" },
+      result.session_id,
+    ),
+  ).rejects.toThrow(new RegExp(`${manifestPath} is invalid`));
+  writeFileSync(manifestPath, manifestText);
+  writeFileSync(executePromptPath, executePromptText);
+  expect(
+    readFileSync(
+      join(
+        HOME,
+        "runs",
+        "workflow",
+        String(result.run.id),
+        "execute-step-prompt.md",
+      ),
+      "utf8",
+    ),
+  ).toBe(workflow.execute_prompt);
+  expect(
+    readFileSync(
+      join(
+        HOME,
+        "runs",
+        "workflow",
+        String(result.run.id),
+        "verify-step-prompt.md",
+      ),
+      "utf8",
+    ),
+  ).toBe(workflow.verify_prompt);
+  expect(gitAt(result.worktree, ["status", "--porcelain"])).toBe("");
+
   // Escalation blocks automatic progress; an explicit resume releases it with a fresh rework budget.
   svc.workflowRuns.awaitHuman(
     repo.full_name,
@@ -281,18 +355,18 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     rework_count: 0,
   });
 
-  // launch-step returns pointers (repo/issue/pr), not synthesized input files, and records the
+  // launch-step returns pointers (repo/run/issue/pr), not synthesized input files, and records the
   // launched child session on confirm.
   const launched = await svc.workflowRuns.launchStep(
     repo.full_name,
     {
       run: result.run.id,
       step: "execute",
-      model: "sonnet",
       note: "Read the issue first.",
     },
     result.session_id,
   );
+  writeFileSync(executePromptPath, executePromptText);
   expect(launched.step).toBe("execute");
   expect(launched.worktree).toBe(result.worktree);
   expect(readFileSync(launched.system_prompt_path, "utf8")).toContain(
@@ -301,6 +375,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(launched.user_prompt).toContain("Plan and implement a small change.");
   expect(launched.pointers).toEqual([
     { label: "repo", value: repo.full_name },
+    { label: "run", value: String(result.run.id) },
     { label: "issue", value: `#${result.issue.number}` },
     { label: "pr", value: `#${result.pr.number}` },
   ]);
@@ -326,9 +401,11 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       step: launched.step,
       sessionId: launched.session_id,
       agentName: launched.agent_name,
+      runtime: launched.runtime,
       pointers: launched.pointers,
       note: "Read the issue first.",
       model: launched.model,
+      effort: launched.effort,
       launchedAt,
     },
     result.session_id,
@@ -339,7 +416,8 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(S.getAgentSession(launched.session_id)?.name).toBe(
     launched.agent_name,
   );
-  expect(S.getAgentSession(launched.session_id)?.model).toBe("sonnet");
+  expect(S.getAgentSession(launched.session_id)?.model).toBe("opus");
+  expect(S.getAgentSession(launched.session_id)?.effort).toBe(launched.effort);
   expect(S.getAgentSession(launched.session_id)?.created_at).toBe(launchedAt);
   expect(
     S.listHandoffs(repo.id, {
@@ -354,6 +432,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
         "",
         "## Inputs",
         `- repo: ${repo.full_name}`,
+        `- run: ${result.run.id}`,
         `- issue: #${result.issue.number}`,
         `- pr: #${result.pr.number}`,
         "",
@@ -532,6 +611,11 @@ test("launch-step anchors every child to the run's registered parent pane", asyn
   expect(unregistered.anchor_pane_id).toBe("w9:pQ");
   expect(unregistered.herdr.paneArgv).toContain("split");
   expect(unregistered.herdr.paneArgv).toContain("w9:pQ");
+  svc.workflowRuns.failStepLaunch(
+    repo.full_name,
+    { run: started.run.id, sessionId: unregistered.session_id },
+    started.session_id,
+  );
 
   svc.workflowInstructions.registerParentPane(repo.full_name, {
     run: started.run.id,
@@ -552,6 +636,11 @@ test("launch-step anchors every child to the run's registered parent pane", asyn
   expect(anchored.anchor_pane_id).toBe("w1:pB");
   expect(anchored.herdr.paneArgv).toContain("w1:pB");
   expect(anchored.herdr.paneArgv).not.toContain("w9:pQ");
+  svc.workflowRuns.failStepLaunch(
+    repo.full_name,
+    { run: started.run.id, sessionId: anchored.session_id },
+    started.session_id,
+  );
 
   // A caller with no pane at all still gets the registered anchor rather than a fresh tab.
   const withoutCallerPane = await svc.workflowRuns.launchStep(
@@ -561,6 +650,11 @@ test("launch-step anchors every child to the run's registered parent pane", asyn
   );
   expect(withoutCallerPane.anchor_pane_id).toBe("w1:pB");
   expect(withoutCallerPane.herdr.paneArgv).toContain("w1:pB");
+  svc.workflowRuns.failStepLaunch(
+    repo.full_name,
+    { run: started.run.id, sessionId: withoutCallerPane.session_id },
+    started.session_id,
+  );
 });
 
 test("start snapshots the contract language for parent and every later step", async () => {
@@ -609,6 +703,11 @@ test("start snapshots the contract language for parent and every later step", as
   );
   expect(execute.user_prompt).toContain("## Step prompt（ユーザー設定）");
   expect(execute.user_prompt).toContain("(none - contract に従ってください)");
+  svc.workflowRuns.failStepLaunch(
+    repo.full_name,
+    { run: started.run.id, sessionId: execute.session_id },
+    started.session_id,
+  );
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "verify" },
@@ -622,6 +721,11 @@ test("start snapshots the contract language for parent and every later step", as
   );
   expect(verify.pointers.at(-1)?.label).toBe(
     "review submission target (do not read the PR)",
+  );
+  svc.workflowRuns.failStepLaunch(
+    repo.full_name,
+    { run: started.run.id, sessionId: verify.session_id },
+    started.session_id,
   );
 
   confirmStepLaunch(
@@ -646,6 +750,7 @@ test("start snapshots the contract language for parent and every later step", as
         "",
         "## 入力",
         `- repo: ${repo.full_name}`,
+        `- run: ${started.run.id}`,
         `- issue: #${issue.number}`,
         `- pr: #${started.pr.number}`,
         "",
@@ -1307,6 +1412,213 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
   ).toMatchObject({ action: "launch_verify" });
 }, 30_000);
 
+test("Verify launch reservations prevent concurrent and replayed launches but allow explicit retries", async () => {
+  const { repo } = freshRepo("me/workflow-verify-launch-reservation");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Reserve Verify launches",
+    "## Acceptance criteria\n- [ ] One verifier per HEAD\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "verify-launch-reservation-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "71717171-7171-4171-8171-717171717171";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const execute = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: execute.session_id,
+      agentName: execute.agent_name,
+      pointers: execute.pointers,
+    },
+    parent,
+  );
+  commit(started.worktree, "reservation.txt", "v1\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    execute.session_id,
+  );
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+
+  const concurrent = await Promise.allSettled([
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "verify" },
+      parent,
+    ),
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "verify" },
+      parent,
+    ),
+  ]);
+  const launched = concurrent.find(
+    (
+      result,
+    ): result is PromiseFulfilledResult<
+      Awaited<ReturnType<typeof svc.workflowRuns.launchStep>>
+    > => result.status === "fulfilled",
+  )?.value;
+  expect(launched).toBeDefined();
+  expect(
+    concurrent.filter((result) => result.status === "rejected"),
+  ).toHaveLength(1);
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
+    launching_step: "verify",
+    launching_session_id: launched!.session_id,
+    launching_head_sha: launched!.head_sha,
+  });
+
+  // A later service call observes the same durable reservation, as it would after a worker restart.
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "verify" },
+      parent,
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+
+  expect(
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({
+    pending_step_launch: {
+      step: "verify",
+      session_id: launched!.session_id,
+      head_sha: launched!.head_sha,
+    },
+  });
+  svc.workflowRuns.recoverStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      reason: "herdr could not create the pane",
+    },
+    parent,
+  );
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
+    launching_session_id: null,
+    launch_failure_step: "verify",
+    launch_failure_session_id: launched!.session_id,
+    launch_failure_head_sha: launched!.head_sha,
+    launch_failed_at: expect.any(String),
+  });
+  expect(
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ pending_step_launch: null });
+  const failure = svc.workflowRuns
+    .history(repo.full_name, { run: started.run.id })
+    .find((event) => event.type === "workflow_step.launch_failed");
+  expect(failure).toMatchObject({
+    label: "Verify step launch failed",
+    description:
+      "Verify step failed before spawn: herdr could not create the pane",
+    significance: "notable",
+    step: "verify",
+  });
+  expect(
+    S.workflowSubjectEventById({
+      repoId: repo.id,
+      runId: started.run.id,
+      issueNumber: issue.number,
+      prNumber: started.pr.number,
+      eventId: failure!.id,
+    }),
+  ).toBeNull();
+  const retry = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  expect(retry.session_id).not.toBe(launched!.session_id);
+  svc.workflowRuns.recoverStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      reason: "runtime preflight failed",
+    },
+    parent,
+  );
+  expect(
+    svc.workflowRuns
+      .history(repo.full_name, { run: started.run.id })
+      .filter((event) => event.type === "workflow_step.launch_failed")
+      .map((event) => event.description),
+  ).toEqual([
+    "Verify step failed before spawn: herdr could not create the pane",
+    "Verify step failed before spawn: runtime preflight failed",
+  ]);
+  const finalRetry = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: finalRetry.session_id,
+      agentName: finalRetry.agent_name,
+      pointers: finalRetry.pointers,
+      headSha: finalRetry.head_sha,
+    },
+    parent,
+  );
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
+    launching_step: null,
+    launching_session_id: null,
+    active_step: "verify",
+    active_session_id: finalRetry.session_id,
+    active_head_sha: finalRetry.head_sha,
+  });
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "verify" },
+      parent,
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: started.run.id, reason: "Reverify explicitly" },
+    parent,
+  );
+  await svc.workflowRuns.resumeAfterHuman(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: started.run.id, step: "verify" },
+      parent,
+    ),
+  ).resolves.toMatchObject({ step: "verify", head_sha: retry.head_sha });
+}, 30_000);
+
 test("a grok run's steps launch grok, not claude (#1521)", async () => {
   const repo = S.getRepo("me", "workflow-run")!;
   const issue = S.createIssue(
@@ -1639,17 +1951,42 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   });
   expect(status.head_ahead_of_base).toBe(true);
   expect(status.steps.execute.complete).toBe(true);
-  expect(
-    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
-  ).toMatchObject({
-    action: "advance_and_verify",
+  const advance = await svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
   });
+  expect(advance).toMatchObject({
+    action: "advance_and_verify",
+    instructions: {
+      commands: [
+        {
+          command: "lh",
+          args: expect.arrayContaining(["run", "advance-to-verify"]),
+        },
+      ],
+    },
+  });
+  expect(advance.instructions.commands).toHaveLength(1);
 
   await svc.workflowRuns.advanceToVerify(
     repo.full_name,
     { run: started.run.id },
     parent,
   );
+  const launchVerify = await svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(launchVerify).toMatchObject({
+    action: "launch_verify",
+    instructions: {
+      commands: [
+        {
+          command: "lh",
+          args: expect.arrayContaining(["launch-step", "--step", "verify"]),
+        },
+      ],
+    },
+  });
+  expect(launchVerify.instructions.commands).toHaveLength(1);
 
   // Verify submits a passing review pinned to the reviewed head.
   const verify = await svc.workflowRuns.launchStep(
@@ -1676,9 +2013,10 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(
     await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
   ).toMatchObject({ action: "wait" });
-  // Verify pointers are the fixed triple plus the review target — never a task/diff file.
+  // Verify pointers include the fixed triple, run identity, and review target — never a task/diff file.
   expect(verify.pointers.map((p) => p.label)).toEqual([
     "repo",
+    "run",
     "issue",
     "base sha",
     "head sha",
@@ -1722,7 +2060,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     fresh: true,
     headSha: headA,
   });
-  expect(status.done).toBe(true);
+  expect(status.merge_ready).toBe(true);
 
   // Done follows the PR-wide gate, not only this run's Verify result. A later human review blocks
   // merge readiness even though the run-owned Verify observation remains fresh and complete.
@@ -1737,7 +2075,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(status.steps.verify.complete).toBe(true);
-  expect(status.done).toBe(false);
+  expect(status.merge_ready).toBe(false);
 
   // Multiple unprocessed events from this run's verifier may be queued. The older event still
   // belongs to the workflow even though its review is no longer latest, so it must reconcile the
@@ -1848,7 +2186,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(continuing.status).toBe("running");
-  expect(continuing.done).toBe(true);
+  expect(continuing.merge_ready).toBe(true);
   expect(continuing.head_sha).toBe(headA);
   expect(continuing.steps.verify.latest_review).toMatchObject({
     event: "pass",
@@ -1866,7 +2204,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(staleStatus.head_sha).toBe(headB);
-  expect(staleStatus.done).toBe(false);
+  expect(staleStatus.merge_ready).toBe(false);
   expect(staleStatus.steps.verify.complete).toBe(false);
   expect(staleStatus.steps.verify.latest_review).toMatchObject({
     fresh: false,
@@ -1895,7 +2233,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(continuing.status).toBe("running");
-  expect(continuing.done).toBe(true);
+  expect(continuing.merge_ready).toBe(true);
   expect(continuing.steps.verify.latest_review).toMatchObject({
     event: "pass",
     fresh: true,
@@ -3440,6 +3778,18 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   const reviewedHead = commit(REPO_PATH, "state.txt", "reviewed\n");
   git(["checkout", "-q", "main"]);
   S.createPull(prIssue.id, "state-head", "main", reviewedHead, issue.id);
+  S.upsertPullStatusProjection({
+    baseSha: gitAt(REPO_PATH, ["rev-parse", "main"]),
+    headSha: reviewedHead,
+    mergeable: true,
+    mergeableState: "clean",
+    hasEffectiveDiff: true,
+    conflict: true,
+    additions: 1,
+    deletions: 0,
+    changedFiles: 1,
+    commitsAhead: 1,
+  });
   const workflow = S.createWorkflow({
     name: "state-wf",
     description: "",
@@ -3503,7 +3853,21 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     findings_count: 2,
   });
   expect(byIssue?.verification_status).toBe("unverified");
-  expect(byIssue?.done).toBe(false);
+  expect(byIssue?.merge_ready).toBe(false);
+  expect(byIssue?.merge_conflict).toBe(true);
+
+  S.upsertPullStatusProjection({
+    baseSha: gitAt(REPO_PATH, ["rev-parse", "main"]),
+    headSha: reviewedHead,
+    mergeable: true,
+    mergeableState: "clean",
+    hasEffectiveDiff: true,
+    conflict: false,
+    additions: 1,
+    deletions: 0,
+    changedFiles: 1,
+    commitsAhead: 1,
+  });
 
   const byPull = await svc.workflowRuns.stateForPull(repo.full_name, {
     pull: prIssue.number,
@@ -3522,7 +3886,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(humanApproved?.verification_status).toBe("unverified");
-  expect(humanApproved?.done).toBe(true);
+  expect(humanApproved?.merge_ready).toBe(true);
 
   createWorkflowReview({
     prIssueId: prIssue.id,
@@ -3536,7 +3900,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(verified?.verification_status).toBe("verified");
-  expect(verified?.done).toBe(true);
+  expect(verified?.merge_ready).toBe(true);
   expect(verified?.merge_conflict).toBe(false);
   S.createReview(
     prIssue.id,
@@ -3549,7 +3913,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(blocked?.verification_status).toBe("verified");
-  expect(blocked?.done).toBe(false);
+  expect(blocked?.merge_ready).toBe(false);
   git(["checkout", "-q", "state-head"]);
   const advancedHead = commit(REPO_PATH, "state-next.txt", "changed\n");
   git(["checkout", "-q", "main"]);
@@ -3558,7 +3922,15 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(stale?.verification_status).toBe("stale");
-  expect(stale?.done).toBe(false);
+  expect(stale?.merge_ready).toBe(false);
+  expect(stale?.pr_merged).toBe(false);
+
+  commit(REPO_PATH, "state.txt", "base conflict\n");
+  const conflicting = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: prIssue.number,
+  });
+  expect(conflicting?.merge_conflict).toBe(true);
+  expect(conflicting?.pr_merged).toBe(false);
 
   S.updateWorkflowRun(run.id, { needsHumanReason: "waiting for guidance" });
   const waiting = await svc.workflowRuns.stateForPull(repo.full_name, {
@@ -3571,6 +3943,93 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     pull: prIssue.number,
   });
   expect(completed?.ended_at).toBe(completedRun?.ended_at);
+
+  // #265 / PR #242 regression: merge is a distinct terminal display fact. It must not be
+  // mistaken for a closed-unmerged run or retain live git conflict state after the merge.
+  S.setMerged(prIssue.id, advancedHead, "merge");
+  const merged = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: prIssue.number,
+  });
+  expect(merged).toMatchObject({
+    status: "completed",
+    current_step: "verify",
+    pr_merged: true,
+    merge_conflict: false,
+  });
+});
+
+test("stateForPull exposes the latest step launch effort and complete token usage", async () => {
+  const repo = S.createRepo("me/workflow-step-details", REPO_PATH);
+  const issue = S.createIssue(repo.id, "issue", "Step details", "body", "me");
+  const pull = S.createIssue(repo.id, "pull", "Step details PR", "body", "me");
+  S.createPull(pull.id, "main", "main", null, issue.id);
+  const workflow = S.createWorkflow({
+    name: "step-details-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "27272727-2727-4272-8272-272727272727";
+  const child = "28282828-2828-4282-8282-282828282828";
+  S.registerAgentSession(parent, "lh-workflow", parent);
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "execute",
+    runtime: "codex",
+    model: "recorded-model",
+    effort: "high",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId: parent,
+  });
+  expect(run.effort).toBe("high");
+  S.emitWorkflowEvent(repo.id, "workflow_run.started", "me", {
+    id: run.id,
+    workflow_id: workflow.id,
+    issue_number: issue.number,
+    pr_number: pull.number,
+    session_id: parent,
+  });
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: run.id,
+      step: "execute",
+      sessionId: child,
+      agentName: `executor #${run.id}-1`,
+      pointers: [],
+    },
+    parent,
+  );
+  expect(S.getAgentSession(child)?.effort).toBe("high");
+  S.upsertSessionUsage(child, {
+    model: "recorded-model",
+    input_tokens: 100,
+    cache_creation_input_tokens: 20,
+    cache_read_input_tokens: 30,
+    output_tokens: 40,
+    cost_usd: 1.25,
+  });
+
+  const state = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: pull.number,
+  });
+  expect(state?.latest_step_runs?.execute).toMatchObject({
+    step: "execute",
+    runtime: "codex",
+    model: "recorded-model",
+    effort: "high",
+    input_tokens: 100,
+    cache_creation_input_tokens: 20,
+    cache_read_input_tokens: 30,
+    output_tokens: 40,
+    cost_usd: 1.25,
+    cost_status: "known",
+  });
 });
 
 test("statesForPulls answers a page's PRs exactly as the per-PR lookup does (#112)", async () => {
@@ -3739,6 +4198,13 @@ test("stateForPull exposes only a Verify launch that has not submitted its revie
       })
     )?.active_verify_head_sha,
   ).toBe(secondHead);
+  expect(
+    (
+      await svc.workflowRuns.stateForPull(repo.full_name, {
+        pull: prIssue.number,
+      })
+    )?.latest_step_runs?.verify?.result,
+  ).toBeNull();
 });
 
 test("human lifecycle intents sanitize reasons and authorize explicit resume (#1307)", async () => {

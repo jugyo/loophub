@@ -123,32 +123,8 @@ const GROK_43_PRICE: UsagePrice = {
   output: 2.5,
 };
 
-function priceForCursorModel(model: string): UsagePrice | null {
-  // Cursor appends parameter selections such as context size in brackets. Strip only that
-  // structured suffix, then match complete model ids so unknown future slugs cannot inherit a
-  // price merely by containing a familiar provider model name.
-  const m = model.replace(/\[[^\]]+\]$/u, "");
-  // Auto can mean Cost, Balance, or Intelligence. The latter modes bill the routed model's API
-  // rate, but Cursor transcripts expose neither the mode nor the routed model. Keep cost unknown
-  // until the session records enough information to select the official rate.
-  if (m === "auto") return null;
-  if (/^gpt-5\.3-codex(?:-(?:low|medium|high|xhigh))?(?:-fast)?$/u.test(m))
-    return GPT_53_CODEX_PRICE;
-  if (
-    /^gpt-5\.6-sol(?:-(?:none|low|medium|high|xhigh|max))?(?:-fast)?$/u.test(m)
-  )
-    return GPT_56_SOL_PRICE;
-  if (/^claude-opus-5(?:-thinking)?(?:-(?:low|medium|high|xhigh))?$/u.test(m))
-    return PRICES.opus;
-  return null;
-}
-
 export function priceForModel(model: string): UsagePrice | null {
   const m = model.toLowerCase();
-  // Explicit Cursor models consume usage at the model's list API price. Match Cursor's known ids
-  // independently from the permissive provider aliases below.
-  if (m.startsWith("cursor:"))
-    return priceForCursorModel(m.slice("cursor:".length));
   if (m.includes("sonnet-5")) return SONNET_5_INTRO_PRICE;
   if (/opus-4-(8|7|6|5)/.test(m)) return PRICES.opus;
   if (

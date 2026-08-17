@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { evaluateWorkflowSteps, workflowDone } from "./steps.ts";
+import {
+  evaluateWorkflowSteps,
+  workflowDisplayStage,
+  workflowDone,
+} from "./steps.ts";
 
 const HEAD = "a".repeat(40);
 const OLD = "b".repeat(40);
@@ -124,6 +128,18 @@ test("Done is a clean open PR", () => {
       prMerged: false,
     }),
   ).toBe(true);
+});
+
+test.each([
+  ["execute", false, false, "execute"],
+  ["verify", false, false, "verify"],
+  ["verify", true, false, "ready_to_merge"],
+  ["verify", true, true, "merged"],
+  ["execute", false, true, "merged"],
+] as const)("display stage prioritizes merged over merge-ready and keeps execution steps separate", (currentStep, mergeReady, prMerged, expected) => {
+  expect(workflowDisplayStage({ currentStep, mergeReady, prMerged })).toBe(
+    expected,
+  );
 });
 
 test.each([

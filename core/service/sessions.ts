@@ -7,7 +7,7 @@ import {
   agentSessionJSON,
   sessionUsageJSON,
 } from "../serialize.ts";
-import { RUNTIME_CURSOR, sessionRuntime } from "../session-runtime.ts";
+import { sessionRuntime } from "../session-runtime.ts";
 import {
   applySessionUsageSync,
   planSessionUsageSync,
@@ -201,11 +201,7 @@ export const sessions = {
   list() {
     return S.listAgentSessions()
       .map((row) => agentSessionJSON(row, { withLinkedTargets: true }))
-      .filter(
-        (session) =>
-          session.runtime === RUNTIME_CURSOR ||
-          (session.usage?.length ?? 0) > 0,
-      );
+      .filter((session) => (session.usage?.length ?? 0) > 0);
   },
 
   costSummary(now = new Date()): AgentCostSummaryWire[] {
@@ -238,8 +234,8 @@ export const sessions = {
   },
 
   usageSync(input: UsageSyncInput = {}): SessionUsageSyncResult {
-    // Default sweep (#1119): scan sessions linked to an open PR and Cursor issue-create sessions
-    // linked to an open issue. `--session <id>` still targets any single session for recompute.
+    // Default sweep scans sessions linked to an open PR. `--session <id>` still targets any single
+    // session for recompute.
     const rows: S.AgentSessionRow[] = input.sessionId
       ? [S.getAgentSession(input.sessionId)].filter(
           (row): row is S.AgentSessionRow => row !== null,

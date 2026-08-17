@@ -9,6 +9,7 @@ export interface AgentSessionRow {
   runtime: string | null;
   kind: string | null;
   model: string | null;
+  effort: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,10 +48,7 @@ export function listAgentSessions(): AgentSessionRow[] {
     .all() as AgentSessionRow[];
 }
 
-// The default usage sweep's candidate set (#1119): sessions linked to an open PR, plus Cursor
-// issue-create sessions linked to an open issue. Cursor's structured headless result normally
-// records the chat id immediately, while this second set also lets maintenance correlate older or
-// interrupted launches from the repository transcript.
+// The default usage sweep's candidate set (#1119): sessions linked to an open PR.
 export function listSessionsForUsageSweep(): AgentSessionRow[] {
   return db
     .query(
@@ -59,12 +57,7 @@ export function listSessionsForUsageSweep(): AgentSessionRow[] {
        JOIN session_links l ON l.session_id = s.id
        JOIN issues i ON i.id = l.issue_id
        LEFT JOIN pulls p ON p.issue_id = i.id
-       WHERE (
-         i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND p.archived_at IS NULL
-       ) OR (
-         i.kind = 'issue' AND i.state = 'open' AND s.runtime = 'cursor'
-         AND s.kind = 'issue-create'
-       )
+       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND p.archived_at IS NULL
        ORDER BY s.updated_at DESC`,
     )
     .all() as AgentSessionRow[];
@@ -81,6 +74,7 @@ export function registerAgentSession(
   kind?: string | null,
   model?: string | null,
   createdAt?: string | null,
+  effort?: string | null,
 ): { session: AgentSessionRow; created: boolean } {
   const existing = getAgentSession(id);
   const t = now();
@@ -94,12 +88,13 @@ export function registerAgentSession(
     // Preserve-on-re-register: an undefined arg keeps the stored value (the service layer relies on
     // this — it forwards name/runtime/kind straight through without `?? null`).
     db.run(
-      `UPDATE agent_sessions SET name = ?, runtime = ?, kind = ?, model = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE agent_sessions SET name = ?, runtime = ?, kind = ?, model = ?, effort = ?, updated_at = ? WHERE id = ?`,
       [
         name !== undefined ? name : existing.name,
         runtime !== undefined ? runtime : existing.runtime,
         kind !== undefined ? kind : existing.kind,
         model !== undefined ? model : existing.model,
+        effort !== undefined ? effort : existing.effort,
         t,
         id,
       ],
@@ -113,8 +108,8 @@ export function registerAgentSession(
     .get(agent, externalSession) as { id: string } | null;
   if (byPair) throw new Error("CONFLICT_PAIR" satisfies RegisterConflict);
   db.query(
-    `INSERT INTO agent_sessions (id, agent, external_session, name, runtime, kind, model, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    `INSERT INTO agent_sessions (id, agent, external_session, name, runtime, kind, model, effort, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
   ).get(
     id,
     agent,
@@ -123,6 +118,7 @@ export function registerAgentSession(
     runtime ?? null,
     kind ?? null,
     model ?? null,
+    effort ?? null,
     createdAt ?? t,
     t,
   );
@@ -240,6 +236,12 @@ export function primaryDevSessionForPull(issueId: number): string | null {
 
 export function pullAgentSummary(issueId: number): PullAgentSummary | null {
   const sessionId = primaryDevSessionForPull(issueId);
+  return sessionId ? pullAgentSummaryForSession(sessionId) : null;
+}
+
+export function pullAgentSummaryForSession(
+  sessionId: string,
+): PullAgentSummary | null {
   if (!sessionId) return null;
   const session = getAgentSession(sessionId);
   if (!session) return null;
@@ -253,6 +255,18 @@ export function pullAgentSummary(issueId: number): PullAgentSummary | null {
         : session.model
           ? [session.model]
           : [],
+  };
+}
+
+export function pullAgentLaunchSummaryForSession(
+  sessionId: string,
+): PullAgentSummary | null {
+  const session = getAgentSession(sessionId);
+  if (!session) return null;
+  return {
+    agent: session.agent,
+    runtime: session.runtime,
+    models: session.model ? [session.model] : [],
   };
 }
 

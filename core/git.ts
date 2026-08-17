@@ -1,6 +1,11 @@
 import { execFile, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  diagnosticLoggingEnabled,
+  logDiagnostic,
+  SLOW_GIT_OPERATION_MS,
+} from "./slow-operation.ts";
 
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -17,15 +22,24 @@ export function runGitSync(
   env: Record<string, string> = {},
 ): GitResult {
   const argv = ["git", ...args];
+  const started = diagnosticLoggingEnabled() ? performance.now() : -1;
   const result = spawnSync(argv[0], argv.slice(1), {
     env: { ...process.env, ...env },
     encoding: "utf8",
   });
-  return {
+  const gitResult = {
     code: result.status ?? 1,
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? "",
   };
+  logSlowGitOperation(
+    args,
+    env,
+    gitResult.code,
+    started,
+    gitRepoFromArgs(args),
+  );
+  return gitResult;
 }
 
 // Run `git -C <repoPath> <args...>` without throwing; we inspect exitCode manually.
@@ -44,6 +58,7 @@ function spawnGit(
 ): Promise<GitResult> {
   const argv = ["git", "-C", repoPath, ...args];
   return new Promise((resolve) => {
+    const started = diagnosticLoggingEnabled() ? performance.now() : -1;
     execFile(
       argv[0],
       argv.slice(1),
@@ -59,10 +74,78 @@ function spawnGit(
             : err
               ? 1
               : 0;
-        resolve({ code, stdout: stdout ?? "", stderr: stderr ?? "" });
+        const gitResult = {
+          code,
+          stdout: stdout ?? "",
+          stderr: stderr ?? "",
+        };
+        logSlowGitOperation(args, env, gitResult.code, started, repoPath);
+        resolve(gitResult);
       },
     );
   });
+}
+
+function logSlowGitOperation(
+  args: string[],
+  _env: Record<string, string>,
+  code: number,
+  started: number,
+  repoPath?: string,
+): void {
+  if (started < 0) return;
+  const durationMs = Math.round(performance.now() - started);
+  if (durationMs < SLOW_GIT_OPERATION_MS) return;
+  const operation = gitSubcommand(args);
+  const repo = repoPath?.split(/[\\/]/).pop() || "unknown";
+  logDiagnostic(
+    () =>
+      `git operation=${operation} repo=${repo} duration_ms=${durationMs} exit_status=${code}`,
+  );
+}
+
+function gitRepoFromArgs(args: string[]): string | undefined {
+  const index = args.indexOf("-C");
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+const GIT_SUBCOMMANDS = new Set([
+  "branch",
+  "check-ref-format",
+  "diff",
+  "for-each-ref",
+  "log",
+  "merge-base",
+  "merge-tree",
+  "rev-list",
+  "rev-parse",
+  "show",
+  "show-ref",
+  "status",
+  "worktree",
+]);
+
+const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
+  "-C",
+  "--config-env",
+  "--exec-path",
+  "--git-dir",
+  "--namespace",
+  "--work-tree",
+  "-c",
+]);
+
+function gitSubcommand(args: string[]): string {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (GIT_GLOBAL_OPTIONS_WITH_VALUE.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("-")) continue;
+    return GIT_SUBCOMMANDS.has(arg) ? arg : "other";
+  }
+  return "other";
 }
 
 // Qualify a local branch name for use as a git revision. A bare name goes through git's ambiguous
@@ -460,21 +543,25 @@ async function diffFilesForRevisions(
     revisions,
     options,
   );
+  const needsAddedPatch = summaries.some(
+    (summary) => summary.status === "copied",
+  );
   const [patch, addedPatch] = await Promise.all([
     git(repoPath, ["diff", ...whitespaceArgs, ...revisions, ...pathspecArgs]),
-    git(repoPath, [
-      "diff",
-      ...whitespaceArgs,
-      "--no-renames",
-      "--diff-filter=A",
-      ...revisions,
-      ...pathspecArgs,
-    ]),
+    needsAddedPatch
+      ? git(repoPath, [
+          "diff",
+          ...whitespaceArgs,
+          "--no-renames",
+          "--diff-filter=A",
+          ...revisions,
+          ...pathspecArgs,
+        ])
+      : Promise.resolve(null),
   ]);
   assertGitSuccess(patch, "git diff patch failed");
-  assertGitSuccess(addedPatch, "git diff added-file patch failed");
   const patches = splitDiffPatches(patch.stdout);
-  const addedPatches = splitDiffPatches(addedPatch.stdout);
+  const addedPatches = addedPatch ? splitDiffPatches(addedPatch.stdout) : [];
   const addedPatchByFile = new Map(
     addedPatches.flatMap((filePatch) => {
       const path = patchHeadPath(filePatch);

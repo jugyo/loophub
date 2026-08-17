@@ -28,6 +28,10 @@ import { WorkflowRunDetailDialog } from "@/components/workflow-run-history-dialo
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
 import { formatCost } from "@/lib/session-usage";
 import { formatDuration } from "@/lib/time";
+import {
+  workflowDisplayStage,
+  workflowRunDisplayState,
+} from "@/lib/workflow-run";
 import { useHerdrSessions } from "@/queries/terminal";
 import { useWorkflowRunTotalCost } from "@/queries/workflow-runs";
 
@@ -50,6 +54,7 @@ const STATUS_META: Record<
 // Waiting for an explicit human instruction (#1307): a running run holding a needs-human reason,
 // or a legacy terminal `blocked` row.
 function needsHuman(state: WorkflowRunState): boolean {
+  state = workflowRunDisplayState(state);
   return (
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked"
@@ -65,6 +70,7 @@ function formatWorkflowRunTotalCost(total: WorkflowRunTotalCost): string {
 }
 
 function WorkflowRunDuration({ state }: { state: WorkflowRunState }) {
+  state = workflowRunDisplayState(state);
   const running = state.status === "running";
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -131,31 +137,36 @@ export function WorkflowRunStatusSection({
   }, [state?.needs_human_reason, acknowledgedCostHold]);
   if (!state) return null;
 
+  const terminalState = workflowRunDisplayState(state);
   const budgetResumePending =
     acknowledgedCostHold !== null &&
-    acknowledgedCostHold.limitUsd === state.cost_limit_usd &&
-    acknowledgedCostHold.reason === state.needs_human_reason &&
-    !state.cost_limit_increase_available;
+    acknowledgedCostHold.limitUsd === terminalState.cost_limit_usd &&
+    acknowledgedCostHold.reason === terminalState.needs_human_reason &&
+    !terminalState.cost_limit_increase_available;
   const displayState = budgetResumePending
-    ? { ...state, needs_human_reason: null }
-    : state;
+    ? { ...terminalState, needs_human_reason: null }
+    : terminalState;
   const status = needsHuman(displayState)
     ? { label: "Needs human", tone: "cost-stopped" as const }
-    : state.done
-      ? { label: "Ready to merge", tone: "review-passed" as const }
-      : state.status === "running" && state.verification_status === "stale"
-        ? { label: "Reverify required", tone: "review-changes" as const }
-        : (STATUS_META[state.status] ?? {
-            label: state.status,
-            tone: "unknown" as const,
-          });
-  const completed = state.status === "completed";
+    : workflowDisplayStage(displayState) === "merged"
+      ? { label: "Merged", tone: "review-passed" as const }
+      : workflowDisplayStage(displayState) === "ready_to_merge"
+        ? { label: "Ready to merge", tone: "review-passed" as const }
+        : displayState.status === "running" &&
+            displayState.verification_status === "stale"
+          ? { label: "Reverify required", tone: "review-changes" as const }
+          : (STATUS_META[displayState.status] ?? {
+              label: displayState.status,
+              tone: "unknown" as const,
+            });
+  const completed = displayState.status === "completed";
   const isStaleVerification =
-    state.status === "running" &&
-    state.needs_human_reason === null &&
-    state.verification_status === "stale";
-  const isVerified = state.verification_status === "verified";
-  const overBudget = state.cost_limit_increase_available;
+    displayState.status === "running" &&
+    displayState.needs_human_reason === null &&
+    displayState.verification_status === "stale";
+  const isVerified =
+    !displayState.pr_merged && displayState.verification_status === "verified";
+  const overBudget = displayState.cost_limit_increase_available;
 
   return (
     <section
@@ -169,9 +180,9 @@ export function WorkflowRunStatusSection({
             <Badge tone={status.tone}>{status.label}</Badge>
           ) : null}
           <span className="font-medium">
-            {state.workflow_name ?? "workflow"}
+            {displayState.workflow_name ?? "workflow"}
           </span>
-          <span className="text-muted-foreground">run {state.id}</span>
+          <span className="text-muted-foreground">run {displayState.id}</span>
         </div>
 
         <WorkflowStepTracker
@@ -184,6 +195,34 @@ export function WorkflowRunStatusSection({
           size="md"
           overBudget={overBudget}
         />
+
+        {state.workflow_config ? (
+          <div
+            data-debug-component="WorkflowRunConfig"
+            data-testid="workflow-run-config"
+            className="border-t pt-3 text-sm"
+          >
+            <h3 className="font-medium">Run configuration</h3>
+            <dl className="mt-2 grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {(["parent", "execute", "verify"] as const).map((role) => {
+                const agent = state.workflow_config?.agents[role];
+                return (
+                  <div className="contents" key={role}>
+                    <dt>{role}</dt>
+                    <dd>
+                      {agent?.runtime} / {agent?.model} / {agent?.effort}
+                    </dd>
+                  </div>
+                );
+              })}
+              <dt>Prompt</dt>
+              <dd>
+                Execute: {state.workflow_config.prompt_sources.execute}; Verify:{" "}
+                {state.workflow_config.prompt_sources.verify}
+              </dd>
+            </dl>
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
           <span className="text-muted-foreground">Total cost</span>
@@ -208,8 +247,8 @@ export function WorkflowRunStatusSection({
           <WorkflowBudgetControl
             owner={owner}
             repo={repo}
-            pull={state.pr_number}
-            state={state}
+            pull={displayState.pr_number}
+            state={displayState}
             onIncreased={setAcknowledgedCostHold}
           />
         ) : null}
@@ -238,12 +277,12 @@ export function WorkflowRunStatusSection({
           data-debug-component="WorkflowRunMetadata"
           className="flex flex-col gap-1 text-sm text-muted-foreground"
         >
-          {state.rework_count > 0 ? (
+          {displayState.rework_count > 0 ? (
             <p>
-              Rework: {state.rework_count}/{state.rework_limit}
+              Rework: {displayState.rework_count}/{displayState.rework_limit}
             </p>
           ) : null}
-          <WorkflowRunDuration state={state} />
+          <WorkflowRunDuration state={displayState} />
         </div>
 
         {showDetail ? (
@@ -263,7 +302,7 @@ export function WorkflowRunStatusSection({
         <WorkflowRunDetailDialog
           owner={owner}
           repo={repo}
-          state={state}
+          state={displayState}
           onClose={() => setDetailOpen(false)}
         />
       ) : null}

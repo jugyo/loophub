@@ -54,6 +54,7 @@ import type {
   SessionLinkedTargetWire,
   SessionSubagentUsageWire,
   SessionUsageWire,
+  SubIssuesPageWire,
   TerminalLaunchBackendWire,
   TerminalLaunchResultWire,
   ThemeWire,
@@ -63,10 +64,12 @@ import type {
   WorkflowContractLanguageWire,
   WorkflowContractsWire,
   WorkflowRunAgentCostWire,
+  WorkflowRunConfigWire,
   WorkflowRunHistoryEventWire,
   WorkflowRunReviewSummaryWire,
   WorkflowRunStateWire,
   WorkflowRunTotalCostWire,
+  WorkflowStepExecutionWire,
   WorkflowStepStatusWire,
   WorkflowWire,
   WorkspaceResolutionWire,
@@ -91,13 +94,12 @@ export type SearchResult = SearchResultWire;
 /**
  * Summary of the pull request linked to an issue. The base fields (including the #783 agent-cost
  * totals) are always present (issue-detail `linked_pull_request`); the rest are populated only on
- * the issue-list response (issueListItemJSON), which runs the git status fan-out per row.
+ * the issue-list response (issueListItemJSON), from the worker's current status projection.
  */
 export type LinkedPull = PullSummaryWire &
   Partial<
     Pick<
       IssueListPullSummaryWire,
-      | "working"
       | "review_state"
       | "mergeable_state"
       | "additions"
@@ -123,6 +125,7 @@ export type IssueComment = CommentWire;
 export type PullReview = ReviewWire;
 
 export type WorkflowStepStatus = WorkflowStepStatusWire;
+export type WorkflowStepExecution = WorkflowStepExecutionWire;
 
 /** A line comment on a PR (GET .../pulls/{number}/comments). */
 export type PullLineComment = ReviewCommentWire;
@@ -274,6 +277,7 @@ export type WorkerCompatibility = WorkerCompatibilityWire;
 /** Display state of a Workflow run linked to an issue / PR (#1008). */
 export type WorkflowRunState = WorkflowRunStateWire;
 export type WorkflowRunAgentCost = WorkflowRunAgentCostWire;
+export type WorkflowRunConfig = WorkflowRunConfigWire;
 export type WorkflowRunTotalCost = WorkflowRunTotalCostWire;
 export type WorkflowRunHistoryEvent = WorkflowRunHistoryEventWire;
 export type WorkflowRunReviewSummary = WorkflowRunReviewSummaryWire;
@@ -283,6 +287,7 @@ export type ReviewAcResult = ReviewAcResultWire;
 export type PullRequest = PullWire;
 export type IssueListPage = IssueListPageWire;
 export type IssueDetailPage = IssueDetailPageWire;
+export type SubIssuesPage = SubIssuesPageWire;
 export type PullDetailPage = PullDetailPageWire;
 
 /** One entry of the PR-detail timeline (#145), as assembled by the backend page query. */

@@ -722,7 +722,7 @@ describe("workflowActionPlan", () => {
       plan({ action: "advance_and_verify", reason: "done" }).commands.map(
         ({ args }) => args[1],
       ),
-    ).toEqual(["run", "launch-step"]);
+    ).toEqual(["run"]);
     expect(
       plan({
         action: "request_rework",

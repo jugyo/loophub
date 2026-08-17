@@ -29,7 +29,10 @@ export function classifyConflictTransition(
 
 export interface ConflictSweepDeps {
   // Compute a PR's current mergeable state. Defaults to the shared live git/review computation.
-  computeState?: (pull: S.OpenPullSweepRow) => Promise<MergeableState>;
+  computeState?: (
+    pull: S.OpenPullSweepRow,
+    previousProjection?: S.CurrentPullStatusProjection | null,
+  ) => Promise<MergeableState>;
 }
 
 export interface ConflictSweepResult {
@@ -48,7 +51,10 @@ export async function sweepPullConflicts(
   const pulls = S.openPulls();
   let emitted = 0;
   for (const pull of pulls) {
-    const state = await computeState(pull);
+    const state = await computeState(
+      pull,
+      S.getCurrentPullStatusProjection(pull.issue_id),
+    );
     // "unknown" means the computation itself failed this tick (e.g. a ref lookup error), not an
     // observed PR state. Recording it would overwrite a stored "clean" and permanently consume
     // the clean -> conflict edge — a conflicted PR can never return to clean — so skip the tick.

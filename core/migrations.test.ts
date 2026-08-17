@@ -105,18 +105,127 @@ function appliedIds(db: import("./db.ts").Db): string[] {
   ).map((row) => row.id);
 }
 
-test("migration ids are unique and ordered by their numeric prefix", () => {
+test("migration ID は一意で append-only の宣言順を維持する", () => {
   const ids = M.MIGRATIONS.map((m) => m.id);
   expect(new Set(ids).size).toBe(ids.length);
-  expect([...ids].sort()).toEqual(ids);
+  expect(ids.slice(0, 3)).toEqual([
+    "001-seed-repo-number-sequences",
+    "002-drop-retired-issue-groups",
+    "003-create-issue-search-grams",
+  ]);
+  expect(ids.at(-1)).toBe("20260816131448-issues-parent-index");
+});
+
+test("新しい migration ID は UTC timestamp と説明名を使う", () => {
+  expect(
+    M.createMigrationId("add-foo-index", new Date("2026-08-14T05:45:17.999Z")),
+  ).toBe("20260814054517-add-foo-index");
+});
+
+test("旧形式と timestamp 形式の migration ID は同じ ledger で宣言順に扱える", () => {
+  const db = D.openDb(join(HOME, "mixed.db"));
+  const ran: string[] = [];
+  expect(
+    M.runMigrations(db, [
+      { id: "001-existing-step", run: () => ran.push("old") },
+      { id: "20260814054517-add-foo-index", run: () => ran.push("new") },
+    ]),
+  ).toEqual(["001-existing-step", "20260814054517-add-foo-index"]);
+  expect(ran).toEqual(["old", "new"]);
+  expect(
+    db
+      .query(
+        "SELECT id FROM schema_migrations WHERE id IN (?, ?) ORDER BY rowid",
+      )
+      .all("001-existing-step", "20260814054517-add-foo-index"),
+  ).toEqual([
+    { id: "001-existing-step" },
+    { id: "20260814054517-add-foo-index" },
+  ]);
+  expect(
+    M.runMigrations(db, [
+      { id: "001-existing-step", run: () => ran.push("again") },
+      { id: "20260814054517-add-foo-index", run: () => ran.push("again") },
+    ]),
+  ).toEqual([]);
+  expect(ran).toEqual(["old", "new"]);
+});
+
+test("重複・不正な migration ID は実行前に失敗する", () => {
+  const db = D.openDb(join(HOME, "invalid-ids.db"));
+  const ran: string[] = [];
+  expect(() =>
+    M.runMigrations(db, [
+      { id: "20260814054517-add-foo-index", run: () => ran.push("first") },
+      { id: "20260814054517-add-foo-index", run: () => ran.push("duplicate") },
+    ]),
+  ).toThrow(/migration ID が重複しています: 20260814054517-add-foo-index/);
+  expect(ran).toEqual([]);
+  expect(() =>
+    M.runMigrations(db, [
+      { id: "not-a-valid-id", run: () => ran.push("invalid") },
+    ]),
+  ).toThrow(/migration ID が不正です: not-a-valid-id/);
+  expect(ran).toEqual([]);
+  expect(() =>
+    M.runMigrations(db, [
+      { id: "12-short-prefix", run: () => ran.push("short") },
+    ]),
+  ).toThrow(/migration ID が不正です: 12-short-prefix/);
+  expect(ran).toEqual([]);
+  expect(() =>
+    M.runMigrations(db, [
+      { id: "1234-long-prefix", run: () => ran.push("long") },
+    ]),
+  ).toThrow(/migration ID が不正です: 1234-long-prefix/);
+  expect(ran).toEqual([]);
 });
 
 test("first boot on an existing database seeds the ledger with every migration", () => {
   expect(appliedIds(D.db)).toEqual([...M.MIGRATIONS.map((m) => m.id)].sort());
+  expect(
+    D.db
+      .query(
+        "SELECT parent_issue_id, sub_issue_ordinal FROM issues ORDER BY id",
+      )
+      .all(),
+  ).toEqual([
+    { parent_issue_id: null, sub_issue_ordinal: null },
+    { parent_issue_id: null, sub_issue_ordinal: null },
+  ]);
 });
 
 test("a later boot re-runs nothing", () => {
   expect(M.runMigrations(D.db)).toEqual([]);
+});
+
+test("不正なレビュー head SHA は無害化し、有効な値は保持する", () => {
+  D.db.exec(`
+    INSERT INTO reviews (issue_id, author, author_type, event, body, head_sha, created_at)
+    VALUES
+      (10, 'bad-length', 'agent', 'COMMENT', '', 'a', 't3'),
+      (10, 'bad-hex', 'agent', 'COMMENT', '', 'g' || printf('%040d', 0), 't3'),
+      (10, 'valid', 'agent', 'COMMENT', '', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 't3');
+  `);
+  const migration = M.MIGRATIONS.find(
+    (candidate) => candidate.id === "20260815194735-invalid-review-head-shas",
+  );
+  if (!migration)
+    throw new Error("invalid review head SHA migration not found");
+  migration.run(D.db);
+
+  expect(
+    D.db
+      .query("SELECT author, head_sha FROM reviews WHERE id > 1 ORDER BY id")
+      .all(),
+  ).toEqual([
+    { author: "bad-length", head_sha: null },
+    { author: "bad-hex", head_sha: null },
+    {
+      author: "valid",
+      head_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
+  ]);
 });
 
 test("the one-time data migrations converged instead of running on every boot", () => {
@@ -232,7 +341,10 @@ test("comment author backfill uses unambiguous session identities", () => {
   ]);
   expect(
     D.db
-      .query(`SELECT author, author_type FROM reviews WHERE id > 1 ORDER BY id`)
+      .query(
+        `SELECT author, author_type FROM reviews
+         WHERE author IN ('dev', 'person', 'shared') ORDER BY id`,
+      )
       .all(),
   ).toEqual([
     { author: "dev", author_type: "agent" },

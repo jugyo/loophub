@@ -392,6 +392,16 @@ describe("queryKeysForEvent", () => {
     }
   });
 
+  it("invalidates expanded sub-issue lists when a child closes", () => {
+    const keys = queryKeysForEvent(
+      ev({ type: "issue.closed", repo: "me/proj", payload: { number: 7 } }),
+    );
+    // subIssues(repo, number) is deliberately nested below this prefix, so a child event refreshes
+    // the parent's expanded list without needing the parent's number in the event.
+    expect(keys).toContainEqual(["issues", "me/proj"]);
+    expect(keys).not.toContainEqual(["issues", "me/proj", "sub", 7]);
+  });
+
   it("invalidates the repo key on repo.* events, which is where it changes (#2263)", () => {
     const keys = queryKeysForEvent(
       ev({

@@ -6,6 +6,11 @@ import type { Db } from "./db.ts";
 // `id` of an existing one — an id is the ledger key that records "this database already ran that
 // step". Editing the body of an already-released migration is equally off-limits; write a new one.
 //
+// 新しい migration を追加するときは `npm run migration:new -- descriptive-name` を実行する。
+// スクリプトが現在の UTC 秒を使った ID と entry の雛形を出力するので、実装した entry を
+// この配列の末尾に追加する。数値 prefix、ランダムな suffix、連番は追加せず、ID の重複は
+// 作者が解決すべき明示的なエラーとして扱う。
+//
 // Ledger choice: a `schema_migrations` table keyed by the migration id, not `PRAGMA user_version`.
 // Every database that predates this module carries `user_version = 0` while having applied an
 // unknown subset of the steps below, so a single monotonic integer cannot express what has already
@@ -21,6 +26,54 @@ import type { Db } from "./db.ts";
 export interface Migration {
   id: string;
   run: (db: Db) => void;
+}
+
+const LEGACY_MIGRATION_ID = /^\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const TIMESTAMP_MIGRATION_ID = /^\d{14}-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MIGRATION_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * 新しい migration の ID を作る。
+ *
+ * migration ID は UTC の秒精度を使い、ランダムな suffix や連番を付けない。同じ秒に別の
+ * migration が作られた場合は、宣言側で重複を解決する。
+ */
+export function createMigrationId(
+  name: string,
+  now: Date = new Date(),
+): string {
+  if (!MIGRATION_NAME.test(name)) {
+    throw new Error(
+      `migration name は lowercase kebab-case で指定してください: ${name}`,
+    );
+  }
+  const timestamp = [
+    now.getUTCFullYear().toString().padStart(4, "0"),
+    (now.getUTCMonth() + 1).toString().padStart(2, "0"),
+    now.getUTCDate().toString().padStart(2, "0"),
+    now.getUTCHours().toString().padStart(2, "0"),
+    now.getUTCMinutes().toString().padStart(2, "0"),
+    now.getUTCSeconds().toString().padStart(2, "0"),
+  ].join("");
+  return `${timestamp}-${name}`;
+}
+
+function validateMigrationIds(migrations: Migration[]): void {
+  const seen = new Set<string>();
+  for (const migration of migrations) {
+    if (
+      !LEGACY_MIGRATION_ID.test(migration.id) &&
+      !TIMESTAMP_MIGRATION_ID.test(migration.id)
+    ) {
+      throw new Error(
+        `migration ID が不正です: ${migration.id}; NNN-name または YYYYMMDDHHMMSS-name を指定してください`,
+      );
+    }
+    if (seen.has(migration.id)) {
+      throw new Error(`migration ID が重複しています: ${migration.id}`);
+    }
+    seen.add(migration.id);
+  }
 }
 
 function columnExists(db: Db, table: string, column: string): boolean {
@@ -1426,6 +1479,113 @@ export const MIGRATIONS: Migration[] = [
     "rework_limit",
     "INTEGER NOT NULL DEFAULT 8",
   ),
+  addColumn(
+    "088-workflow-runs-manifest-version",
+    "workflow_runs",
+    "manifest_version",
+    "INTEGER",
+  ),
+  {
+    id: "089-agent-sessions-effort",
+    run: (db) => {
+      addColumnIfMissing(db, "agent_sessions", "effort", "TEXT");
+    },
+  },
+  {
+    id: "20260814095613-workflow-runs-effort",
+    run: (db) => {
+      addColumnIfMissing(db, "workflow_runs", "effort", "TEXT");
+      addColumnIfMissing(db, "agent_sessions", "effort", "TEXT");
+    },
+  },
+  sql(
+    "20260814130000-pull-status-current-projection",
+    `
+    CREATE TABLE IF NOT EXISTS pull_status_current_projection (
+      issue_id          INTEGER PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
+      base_sha          TEXT NOT NULL,
+      head_sha          TEXT NOT NULL,
+      mergeable         INTEGER CHECK (mergeable IS NULL OR mergeable IN (0, 1)),
+      mergeable_state   TEXT NOT NULL,
+      has_effective_diff INTEGER NOT NULL,
+      conflict          INTEGER NOT NULL,
+      additions         INTEGER NOT NULL,
+      deletions         INTEGER NOT NULL,
+      changed_files     INTEGER NOT NULL,
+      commits_ahead     INTEGER NOT NULL,
+      base_commits_behind INTEGER NOT NULL,
+      updated_at        TEXT NOT NULL
+    );
+    `,
+  ),
+  {
+    id: "20260815194735-invalid-review-head-shas",
+    run: (db) => {
+      db.exec(`
+        UPDATE reviews
+        SET head_sha = NULL
+        WHERE head_sha IS NOT NULL
+          AND (length(head_sha) <> 40 OR head_sha GLOB '*[^0-9A-Fa-f]*');
+      `);
+    },
+  },
+  {
+    id: "20260815201510-workflow-step-launch-reservation",
+    run: (db) => {
+      addColumnIfMissing(db, "workflow_runs", "launching_step", "TEXT");
+      addColumnIfMissing(db, "workflow_runs", "launching_session_id", "TEXT");
+      addColumnIfMissing(db, "workflow_runs", "launching_head_sha", "TEXT");
+      addColumnIfMissing(db, "workflow_runs", "active_head_sha", "TEXT");
+      addColumnIfMissing(db, "workflow_runs", "launch_failure_step", "TEXT");
+      addColumnIfMissing(
+        db,
+        "workflow_runs",
+        "launch_failure_session_id",
+        "TEXT",
+      );
+      addColumnIfMissing(
+        db,
+        "workflow_runs",
+        "launch_failure_head_sha",
+        "TEXT",
+      );
+      addColumnIfMissing(db, "workflow_runs", "launch_failed_at", "TEXT");
+      db.exec(`
+        UPDATE workflow_runs AS run
+        SET active_head_sha = (
+          SELECT json_extract(event.payload, '$.head_sha')
+          FROM events AS event
+          WHERE event.repo_id = run.repo_id
+            AND event.type = 'workflow_step.launched'
+            AND json_extract(event.payload, '$.id') = run.id
+            AND json_extract(event.payload, '$.step') = 'verify'
+            AND json_extract(event.payload, '$.session_id') = run.active_session_id
+          ORDER BY event.id DESC
+          LIMIT 1
+        )
+        WHERE run.active_step = 'verify'
+          AND run.active_session_id IS NOT NULL
+          AND run.active_head_sha IS NULL;
+      `);
+    },
+  },
+  addColumn(
+    "20260816131448-issues-parent-issue-id",
+    "issues",
+    "parent_issue_id",
+    "INTEGER REFERENCES issues(id)",
+  ),
+  addColumn(
+    "20260816131448-issues-sub-issue-ordinal",
+    "issues",
+    "sub_issue_ordinal",
+    "INTEGER",
+  ),
+  sql(
+    "20260816131448-issues-parent-index",
+    `CREATE INDEX IF NOT EXISTS idx_issues_parent
+       ON issues(parent_issue_id, sub_issue_ordinal);`,
+  ),
 ];
 
 const LEDGER_SCHEMA = `
@@ -1451,6 +1611,7 @@ export function runMigrations(
   db: Db,
   migrations: Migration[] = MIGRATIONS,
 ): string[] {
+  validateMigrationIds(migrations);
   db.exec(LEDGER_SCHEMA);
   // Read the ledger once up front so the steady state (everything applied) costs one query and
   // opens no transaction at all.

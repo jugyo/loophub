@@ -16,8 +16,10 @@ import {
 } from "lucide-react";
 import {
   Fragment,
+  type MutableRefObject,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -59,6 +61,12 @@ import {
   singleSelection,
 } from "@/lib/diff-feedback";
 import { errorMessage } from "@/lib/error-message";
+import {
+  type MarkdownDiffFeedbackThreadPlacement,
+  type MarkdownRenderedBlock,
+  markdownDiffAnnotations,
+  markdownDiffFeedbackPlacements,
+} from "@/lib/markdown-source-map";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
@@ -76,8 +84,7 @@ import {
 const MARKDOWN_FILENAME = /\.(md|markdown)$/i;
 
 // `file.filename` for a rename is git numstat's display label ("old => new" / "dir/{old =>
-// new}"), not a real path. The copy button can use `headFilename`, but the Markdown Preview
-// path still points at `file.filename`, so keep previews off for synthetic rename labels.
+// new}"), not a real path. Use the structured side paths for preview requests.
 const RENAMED_FILENAME = / => /;
 
 function isSyntheticRenameFilename(file: PullFile) {
@@ -100,6 +107,19 @@ function copyFilename(file: PullFile) {
     return renameTargetPath(file.filename) ?? file.filename;
   }
   return file.filename;
+}
+
+function markdownPath(file: PullFile, side: "base" | "head") {
+  return side === "base"
+    ? (file.previousFilename ?? file.filename)
+    : copyFilename(file);
+}
+
+function isMarkdownFile(file: PullFile) {
+  if (isSyntheticRenameFilename(file) && !file.headFilename) return false;
+  return [markdownPath(file, "base"), markdownPath(file, "head")].some((path) =>
+    MARKDOWN_FILENAME.test(path),
+  );
 }
 
 const UNSAFE_COPY_PATH_CHAR = /[\p{Default_Ignorable_Code_Point}\p{Cc}\p{Cf}]/u;
@@ -125,7 +145,7 @@ function visibleCopyPath(path: string) {
   }).join("");
 }
 
-type DiffDialogMode = "diff" | "raw" | "base" | "head";
+type DiffDialogMode = "diff" | "raw" | "base" | "head" | "rendered";
 type StandardDiffDialogMode = "diff" | "raw";
 type DiffViewMode = "unified" | "split";
 type SplitRow =
@@ -232,8 +252,7 @@ export function DiffFileDialog({
   const backdropDismiss = useBackdropDismiss(onClose);
   const path = copyFilename(file);
   const copyPath = visibleCopyPath(path);
-  const isMarkdown =
-    MARKDOWN_FILENAME.test(file.filename) && !isSyntheticRenameFilename(file);
+  const isMarkdown = isMarkdownFile(file);
   const mode = isMarkdown ? markdownMode : standardMode;
   const filteredFiles = useMemo(
     () =>
@@ -248,7 +267,7 @@ export function DiffFileDialog({
   );
 
   function selectMode(nextMode: DiffDialogMode) {
-    if (nextMode === "base" || nextMode === "head") {
+    if (nextMode === "base" || nextMode === "head" || nextMode === "rendered") {
       setMarkdownMode(nextMode);
       return;
     }
@@ -458,6 +477,12 @@ export function DiffFileDialog({
                 </ModeButton>
                 {isMarkdown ? (
                   <>
+                    <ModeButton
+                      active={mode === "rendered"}
+                      onClick={() => selectMode("rendered")}
+                    >
+                      Rendered diff
+                    </ModeButton>
                     <ModeButton
                       active={mode === "base"}
                       onClick={() => selectMode("base")}
@@ -790,9 +815,14 @@ function FileDiffContent({
         owner={owner}
         repo={repo}
         number={number}
-        path={file.filename}
+        path={file}
         side={mode}
       />
+    );
+  }
+  if (mode === "rendered") {
+    return (
+      <RenderedDiffPane owner={owner} repo={repo} number={number} file={file} />
     );
   }
 
@@ -2007,10 +2037,17 @@ function MarkdownPreviewPane({
   owner: string;
   repo: string;
   number: number;
-  path: string;
+  path: PullFile;
   side: "base" | "head";
 }) {
-  const file = usePullFileAtRef(owner, repo, number, path, side, true);
+  const file = usePullFileAtRef(
+    owner,
+    repo,
+    number,
+    markdownPath(path, side),
+    side,
+    true,
+  );
   return (
     // The pane scrolls itself rather than leaning on the dialog's shared
     // scroller, so the scrollbar belongs to the element that carries the
@@ -2048,4 +2085,403 @@ function MarkdownPreviewPane({
       )}
     </div>
   );
+}
+
+type RenderedCommentSelection = {
+  side: "LEFT" | "RIGHT";
+  startLine: number;
+  endLine: number;
+};
+
+function isDiffChangedError(error: unknown) {
+  return (
+    error instanceof Error && error.message === "pull request diff has changed"
+  );
+}
+
+function annotationForSelection(
+  annotation: ReturnType<typeof markdownDiffAnnotations>[number] | undefined,
+  selection: RenderedCommentSelection | null,
+) {
+  return Boolean(
+    annotation &&
+      selection &&
+      annotation.commentableRanges.some(
+        (range) =>
+          range.side === selection.side &&
+          range.startLine <= selection.startLine &&
+          range.endLine >= selection.endLine,
+      ),
+  );
+}
+
+function RenderedDiffPane({
+  owner,
+  repo,
+  number,
+  file,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  file: PullFile;
+}) {
+  const path = copyFilename(file);
+  const diff = usePullDiff(owner, repo, number, path);
+  const base = usePullFileAtRef(
+    owner,
+    repo,
+    number,
+    markdownPath(file, "base"),
+    "base",
+    true,
+  );
+  const head = usePullFileAtRef(
+    owner,
+    repo,
+    number,
+    markdownPath(file, "head"),
+    "head",
+    true,
+  );
+  const feedback = useDiffFeedback(owner, repo, number, { path });
+  const reply = useReplyDiffFeedback(owner, repo, number);
+  const reaction = useReactToDiffFeedback(owner, repo, number);
+  const archive = useSetDiffFeedbackArchived(owner, repo, number);
+  const { showError } = useToast();
+  const [selection, setSelection] = useState<RenderedCommentSelection | null>(
+    null,
+  );
+  const [body, setBody] = useState("");
+  const create = useCreateDiffFeedback(
+    owner,
+    repo,
+    number,
+    path,
+    (error, input) => {
+      setSelection({
+        side: input.side,
+        startLine: input.start_line,
+        endLine: input.end_line,
+      });
+      setBody(input.body);
+      showError(errorMessage(error, "Create failed"));
+      if (isDiffChangedError(error)) {
+        void diff.refetch();
+        void base.refetch();
+        void head.refetch();
+      }
+    },
+  );
+  const [baseBlocks, setBaseBlocks] = useState<MarkdownRenderedBlock[]>([]);
+  const [headBlocks, setHeadBlocks] = useState<MarkdownRenderedBlock[]>([]);
+  const baseBlocksRef = useRef<MarkdownRenderedBlock[]>([]);
+  const headBlocksRef = useRef<MarkdownRenderedBlock[]>([]);
+  const registerBlock = useCallback(
+    (ref: MutableRefObject<MarkdownRenderedBlock[]>) =>
+      (block: MarkdownRenderedBlock) => {
+        const key = renderedBlockKey(block);
+        if (!ref.current.some((item) => renderedBlockKey(item) === key)) {
+          ref.current = [...ref.current, block];
+        }
+      },
+    [],
+  );
+
+  useEffect(() => {
+    if (baseBlocksRef.current.length > 0) setBaseBlocks(baseBlocksRef.current);
+    if (headBlocksRef.current.length > 0) setHeadBlocks(headBlocksRef.current);
+  }, [base.data?.content, head.data?.content]);
+
+  const lines = diff.data?.files[0]?.lines ?? [];
+  const baseAnnotations = useMemo(
+    () => markdownDiffAnnotations(baseBlocks, lines),
+    [baseBlocks, lines],
+  );
+  const headAnnotations = useMemo(
+    () => markdownDiffAnnotations(headBlocks, lines),
+    [headBlocks, lines],
+  );
+  const threads = feedback.data?.threads ?? [];
+  const basePlacements = useMemo(
+    () => markdownDiffFeedbackPlacements(baseBlocks, threads),
+    [baseBlocks, threads],
+  );
+  const headPlacements = useMemo(
+    () => markdownDiffFeedbackPlacements(headBlocks, threads),
+    [headBlocks, threads],
+  );
+  const stableFile = diff.data?.files[0];
+  const threadContent = useCallback(
+    (thread: DiffFeedbackThread) => (
+      <ThreadCard
+        owner={owner}
+        repo={repo}
+        thread={thread}
+        busy={reply.isPending}
+        reactionBusy={reaction.isPending}
+        archiveBusy={archive.isPending}
+        onReact={(messageId, emoji) =>
+          reaction.mutate(
+            { messageId, emoji },
+            {
+              onError: (error) =>
+                showError(errorMessage(error, "Reaction failed")),
+            },
+          )
+        }
+        onReply={(replyBody) =>
+          reply.mutate(
+            { threadId: thread.id, body: replyBody },
+            {
+              onError: (error) =>
+                showError(errorMessage(error, "Reply failed")),
+            },
+          )
+        }
+        onArchived={(archived) =>
+          archive.mutate(
+            { threadId: thread.id, archived },
+            {
+              onError: (error) =>
+                showError(errorMessage(error, "Update failed")),
+            },
+          )
+        }
+      />
+    ),
+    [archive, owner, reaction, repo, reply, showError],
+  );
+  const commentComposer =
+    selection && stableFile && diff.data ? (
+      <div className="col-span-2">
+        <DiffCommentComposer
+          selection={{ ...selection, hunk: 0 }}
+          body={body}
+          busy={create.isPending}
+          onBodyChange={setBody}
+          onCancel={() => {
+            setSelection(null);
+            setBody("");
+          }}
+          onSubmit={() => {
+            const submittedBody = body.trim();
+            setSelection(null);
+            setBody("");
+            create.mutate({
+              base_sha: diff.data.base_sha,
+              head_sha: diff.data.head_sha,
+              path: stableFile.path,
+              side: selection.side,
+              start_line: selection.startLine,
+              end_line: selection.endLine,
+              body: submittedBody,
+            });
+          }}
+        />
+      </div>
+    ) : null;
+  const sourceOnlyThreads = useMemo(() => {
+    const unique = new Map<number, DiffFeedbackThread>();
+    for (const placement of [...basePlacements, ...headPlacements]) {
+      if (placement.placement === "source-only") {
+        unique.set(placement.thread.id, placement.thread);
+      }
+    }
+    return [...unique.values()];
+  }, [basePlacements, headPlacements]);
+
+  return (
+    <div
+      data-debug-component="RenderedDiffPane"
+      className="grid min-h-full grid-cols-2 divide-x"
+    >
+      {commentComposer}
+      <RenderedDiffSide
+        side="LEFT"
+        label="Base"
+        file={base}
+        annotations={baseAnnotations}
+        placements={basePlacements}
+        selection={selection}
+        onSelect={setSelection}
+        threadContent={threadContent}
+        registerBlock={registerBlock(baseBlocksRef)}
+      />
+      <RenderedDiffSide
+        side="RIGHT"
+        label="Head"
+        file={head}
+        annotations={headAnnotations}
+        placements={headPlacements}
+        selection={selection}
+        onSelect={setSelection}
+        threadContent={threadContent}
+        registerBlock={registerBlock(headBlocksRef)}
+      />
+      {diff.isError ? (
+        <p className="col-span-2 border-t border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load diff annotations.
+        </p>
+      ) : null}
+      {sourceOnlyThreads.length > 0 ? (
+        <PreviousDiffThreadsSection
+          className="col-span-2 m-2 space-y-2"
+          heading="h4"
+        >
+          {sourceOnlyThreads.map((thread) => (
+            <Fragment key={thread.id}>{threadContent(thread)}</Fragment>
+          ))}
+        </PreviousDiffThreadsSection>
+      ) : null}
+    </div>
+  );
+}
+
+function RenderedDiffSide({
+  side,
+  label,
+  file,
+  annotations,
+  placements,
+  selection,
+  onSelect,
+  threadContent,
+  registerBlock,
+}: {
+  side: "LEFT" | "RIGHT";
+  label: "Base" | "Head";
+  file: ReturnType<typeof usePullFileAtRef>;
+  annotations: ReturnType<typeof markdownDiffAnnotations>;
+  placements: MarkdownDiffFeedbackThreadPlacement[];
+  selection: RenderedCommentSelection | null;
+  onSelect: (selection: RenderedCommentSelection) => void;
+  threadContent: (thread: DiffFeedbackThread) => ReactNode;
+  registerBlock: (block: MarkdownRenderedBlock) => void;
+}) {
+  const changeByBlock = useMemo(() => {
+    const result = new Map<string, "added" | "removed">();
+    for (const annotation of annotations) {
+      const change = annotation.changeKind[side];
+      if (change === "added" || change === "removed") {
+        result.set(renderedBlockKey(annotation.block), change);
+      }
+    }
+    return result;
+  }, [annotations, side]);
+  const annotationsByBlock = useMemo(
+    () =>
+      new Map(
+        annotations.map((annotation) => [
+          renderedBlockKey(annotation.block),
+          annotation,
+        ]),
+      ),
+    [annotations],
+  );
+  const threadsByBlock = useMemo(() => {
+    const result = new Map<string, MarkdownDiffFeedbackThreadPlacement[]>();
+    for (const placement of placements) {
+      if (!placement.block || placement.anchor.side !== side) continue;
+      const key = renderedBlockKey(placement.block);
+      result.set(key, [...(result.get(key) ?? []), placement]);
+    }
+    return result;
+  }, [placements, side]);
+  const blockClassName = useCallback(
+    (block: MarkdownRenderedBlock) => {
+      const key = renderedBlockKey(block);
+      const change = changeByBlock.get(key);
+      return cn(
+        change && `markdown-diff-block-${change}`,
+        threadsByBlock.has(key) && "markdown-diff-block-commented",
+        annotationForSelection(annotationsByBlock.get(key), selection) &&
+          "markdown-diff-block-selected",
+      );
+    },
+    [annotationsByBlock, changeByBlock, selection, threadsByBlock],
+  );
+  const action = useCallback(
+    (block: MarkdownRenderedBlock) => {
+      const annotation = annotationsByBlock.get(renderedBlockKey(block));
+      const ranges =
+        annotation?.commentableRanges.filter((range) => range.side === side) ??
+        [];
+      return ranges.length > 0 ? (
+        <span className="ml-2 inline-flex gap-1 align-middle">
+          {ranges.map((range) => (
+            <button
+              key={`${range.startLine}:${range.endLine}`}
+              type="button"
+              className="rounded-sm bg-blue-600 px-1.5 py-0.5 text-[10px] font-sans text-white hover:bg-blue-700"
+              aria-label={`Comment on ${label.toLowerCase()} lines ${range.startLine}-${range.endLine}`}
+              onClick={() => onSelect(range)}
+            >
+              <Plus className="inline size-3" aria-hidden="true" />
+            </button>
+          ))}
+        </span>
+      ) : null;
+    },
+    [annotationsByBlock, label, onSelect, side],
+  );
+  const after = useCallback(
+    (block: MarkdownRenderedBlock) => {
+      const blockThreads = threadsByBlock.get(renderedBlockKey(block));
+      return blockThreads?.length ? (
+        <div className="mt-2 space-y-2">
+          {blockThreads.map((placement) => (
+            <Fragment key={placement.thread.id}>
+              {threadContent(placement.thread)}
+            </Fragment>
+          ))}
+        </div>
+      ) : null;
+    },
+    [threadContent, threadsByBlock],
+  );
+
+  return (
+    <section aria-label={`${label} rendered diff`} className="min-w-0">
+      <div className="sticky top-0 z-10 border-b bg-background/95 px-3 py-2 text-xs font-semibold backdrop-blur">
+        {label}
+      </div>
+      <div className="markdown-diff-preview min-h-full overflow-y-auto px-3 py-8">
+        {file.isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading rendered diff…
+          </div>
+        ) : file.isError ? (
+          <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+            Failed to load {label.toLowerCase()} preview.
+          </div>
+        ) : file.data?.status === "missing" ? (
+          <p className="text-sm text-muted-foreground">
+            N/A — file does not exist on {label.toLowerCase()}.
+          </p>
+        ) : file.data?.status === "binary" ? (
+          <p className="text-sm text-muted-foreground">
+            N/A — binary file, cannot render as Markdown.
+          </p>
+        ) : (
+          <Markdown
+            key={file.data?.content}
+            typeset
+            className="typeset-diff-preview mx-auto"
+            onRenderedBlock={registerBlock}
+            renderedBlockClassName={blockClassName}
+            renderedBlockAction={action}
+            renderedBlockAfter={after}
+          >
+            {file.data?.content ?? ""}
+          </Markdown>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function renderedBlockKey(block: MarkdownRenderedBlock) {
+  const range = block.sourceRange;
+  return `${block.kind}:${range?.startLine ?? "-"}:${range?.endLine ?? "-"}`;
 }

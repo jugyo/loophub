@@ -246,6 +246,8 @@ CREATE TABLE IF NOT EXISTS issues (
   title       TEXT NOT NULL,
   body        TEXT NOT NULL DEFAULT '',
   target_branch TEXT,
+  parent_issue_id   INTEGER REFERENCES issues(id),
+  sub_issue_ordinal INTEGER,
   author      TEXT NOT NULL,
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL,
@@ -488,6 +490,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   runtime           TEXT,
   kind              TEXT,
   model             TEXT,
+  effort            TEXT,
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL,
   UNIQUE (agent, external_session)
@@ -985,6 +988,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   -- claude-code + the config default model when read.
   runtime            TEXT,
   model              TEXT,
+  effort             TEXT,
   -- Fixed contract language captured when the run starts. Existing rows and databases default to
   -- English so an instance setting change cannot alter an in-progress or historical run.
   contract_language  TEXT NOT NULL DEFAULT 'en',
@@ -1046,6 +1050,12 @@ export function openDb(path: string): Db {
   opened.exec("PRAGMA foreign_keys = ON;");
   opened.exec(SCHEMA);
   runMigrations(opened);
+  // An existing database may still have the pre-hierarchy issues table when SCHEMA is applied.
+  // Create this index after migrations have added its columns.
+  opened.exec(`
+    CREATE INDEX IF NOT EXISTS idx_issues_parent
+      ON issues(parent_issue_id, sub_issue_ordinal);
+  `);
   return opened;
 }
 

@@ -66,6 +66,7 @@ describe("--help", () => {
     expect(result.stdout).toContain("--body <text>");
     expect(result.stdout).toContain("--label <name,...>");
     expect(result.stdout).toContain("--ac <text>");
+    expect(result.stdout).toContain("--parent <number>");
     expect(result.stdout).toContain("--workspace <name>");
     expect(result.stdout).toContain("--target-branch <ref>");
     expect(result.stdout).toContain("--repo <owner/name>");
@@ -90,7 +91,6 @@ describe("--help", () => {
     const result = lh(["issue", "new", "--help"]);
 
     expect(result.exitCode, result.stderr).toBe(0);
-    expect(result.stdout).toContain("--cursor");
     expect(result.stdout).toContain("--opencode");
     expect(result.stdout).toContain("--model <name>");
     expect(result.stdout).toContain("--effort <level>");
@@ -104,7 +104,7 @@ describe("--help", () => {
 
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "--runtime <runtime>   Runtime: claude-code, codex, grok, cursor, or opencode.",
+      "--runtime <runtime>   Runtime: claude-code, codex, grok, or opencode.",
     );
     expect(existsSync(join(home, "loophub.db"))).toBe(false);
   });

@@ -1,13 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { agentEffort, agentModel } from "../../core/config.ts";
-import { ENV_WORKSPACE } from "../../core/environment.ts";
+import { ENV_PARENT_ISSUE, ENV_WORKSPACE } from "../../core/environment.ts";
 import {
   ENV_ISSUE_CREATE_SESSION,
   LH_ISSUE_CREATE_SESSION_AGENT,
   SESSION_KIND_ISSUE_CREATE,
 } from "../../core/session-runtime.ts";
-import { parseCursorHeadlessResult } from "../../core/session-usage.ts";
 import { issueCreatePrompt } from "../../core/workflow/issue-create-prompt.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
@@ -40,7 +39,6 @@ export async function run(): Promise<void> {
         claudeCode: flags["claude-code"] === true,
         codex: flags.codex === true,
         grok: flags.grok === true,
-        cursor: flags.cursor === true,
         opencode: flags.opencode === true,
       });
     } catch (e: any) {
@@ -80,23 +78,100 @@ export async function run(): Promise<void> {
     const items = await s.issues.list(repo, { state });
     const issues = items.filter((i: any) => !i.pull_request);
     out(issues);
-    if (!flags.json)
+    if (!flags.json) {
+      const summaries = s.issues.subIssueSummaries(
+        repo,
+        issues.map((issue: any) => issue.number),
+      );
+      let hasSubIssues = false;
       issues.forEach((i: any) => {
         const labels = (i.labels || []).map((l: any) => l.name).join(",");
+        const summary = summaries.get(i.number);
+        // Show the number of open sub-issues so the summary answers how many remain.
+        const suffix = summary?.total
+          ? `\tsub ${summary.open}/${summary.total}`
+          : "";
+        hasSubIssues ||= Boolean(summary?.total);
         console.log(
-          `#${i.number}\t${i.state}\t${i.title}\t${labels}\t${relativeTime(i.updated_at)}`,
+          `#${i.number}\t${i.state}\t${i.title}\t${labels}\t${relativeTime(i.updated_at)}${suffix}`,
         );
       });
+      if (hasSubIssues)
+        console.log("use 'lh issue sub list <n>' to see sub issues");
+    }
   } else if (sub === "view") {
     const i = await runOp(() => s.issues.get(repo, Number(rest[0])));
     out(i);
     if (!flags.json) {
+      const hierarchy = await runOp(() =>
+        s.issues.hierarchy(repo, Number(rest[0])),
+      );
       let line = `#${i.number} ${i.title} [${i.state}] @${i.user.login}`;
       if (i.linked_pull_request) {
         const pr = i.linked_pull_request;
         line += `\nlinked PR #${pr.number} (${pr.merged ? "merged" : pr.state})`;
       }
-      console.log(`${line}\n\n${i.body}`);
+      if (hierarchy.parents.length > 0) {
+        line += `\nParent: ${hierarchy.parents.map((parent) => `#${parent.number}`).join(" › ")}`;
+      }
+      let text = `${line}\n\n${i.body}`;
+      if (hierarchy.children.length > 0) {
+        text += `\n\nSub issues\n${hierarchy.children
+          .map((child) => `#${child.number} [${child.state}] ${child.title}`)
+          .join("\n")}`;
+      }
+      console.log(text);
+    }
+  } else if (sub === "sub") {
+    const action = rest[0];
+    if (action === "list") {
+      const parent = Number(rest[1]);
+      if (!rest[1]) fail("usage: lh issue sub list <parent>");
+      const items = await runOp(() => s.issues.listSubIssues(repo, parent));
+      out(items);
+      if (!flags.json) {
+        items.forEach((item: any) => {
+          console.log(`#${item.number}\t${item.state}\t${item.title}`);
+        });
+      }
+    } else if (action === "add") {
+      if (!rest[1] || !rest[2])
+        fail("usage: lh issue sub add <parent> <child>");
+      const item = await runOp(async () =>
+        s.issues.attachSubIssue(
+          repo,
+          Number(rest[1]),
+          Number(rest[2]),
+          await writeSession(),
+        ),
+      );
+      out(item);
+      if (!flags.json) console.log(`added #${item.number} as a sub issue`);
+    } else if (action === "remove") {
+      if (!rest[1]) fail("usage: lh issue sub remove <child>");
+      const item = await runOp(async () =>
+        s.issues.detachSubIssue(repo, Number(rest[1]), await writeSession()),
+      );
+      out(item);
+      if (!flags.json) console.log(`removed #${item.number} from its parent`);
+    } else if (action === "reorder") {
+      if (!rest[1] || typeof flags.order !== "string")
+        fail("usage: lh issue sub reorder <parent> --order <child,...>");
+      const order = flags.order.split(",").map((value) => Number(value.trim()));
+      const items = await runOp(async () =>
+        s.issues.reorderSubIssues(
+          repo,
+          Number(rest[1]),
+          order,
+          await writeSession(),
+        ),
+      );
+      out(items);
+      if (!flags.json) console.log(`reordered sub issues for #${rest[1]}`);
+    } else {
+      fail(
+        "usage: lh issue sub list <parent> | add <parent> <child> | remove <child> | reorder <parent> --order <child,...>",
+      );
     }
   } else if (sub === "new") {
     // `lh issue new` files an issue *with an AI session* (#299): it launches the configured
@@ -112,15 +187,22 @@ export async function run(): Promise<void> {
     const r = await runOp(() => s.repos.get(repo));
     const agentCfg = await runOp(() => s.repos.agentConfig(repo));
     const sessionId = randomUUID();
+    const parentIssue =
+      flags.parent === undefined ? undefined : Number(flags.parent);
+    if (
+      parentIssue !== undefined &&
+      (!Number.isInteger(parentIssue) || parentIssue < 1)
+    ) {
+      fail("--parent requires a positive issue number");
+    }
     const slashCommand =
       typeof flags.prompt === "string" && flags.prompt.trim()
         ? flags.prompt
-        : issueCreatePrompt("en");
+        : issueCreatePrompt("en", parentIssue);
     const runtime = resolveDevRuntime({
       claudeCode: flags["claude-code"] === true,
       codex: flags.codex === true,
       grok: flags.grok === true,
-      cursor: flags.cursor === true,
       opencode: flags.opencode === true,
       defaultRuntime: agentCfg.effective.runtime,
     });
@@ -165,8 +247,7 @@ export async function run(): Promise<void> {
     // session reads it and links the session to whatever issue it files (the number is unknown
     // here, so the link is recorded after creation — see the create branch below).
     const proc = spawnSync(runtimeBin, runtimeArgs, {
-      encoding: runtime === "cursor" ? "utf8" : undefined,
-      stdio: runtime === "cursor" ? ["inherit", "pipe", "inherit"] : "inherit",
+      stdio: "inherit",
       cwd: r.local_path,
       env: {
         ...process.env,
@@ -175,6 +256,9 @@ export async function run(): Promise<void> {
           ? {
               [ENV_WORKSPACE]: flags["target-branch"],
             }
+          : {}),
+        ...(parentIssue !== undefined
+          ? { [ENV_PARENT_ISSUE]: String(parentIssue) }
           : {}),
       },
     });
@@ -191,20 +275,6 @@ export async function run(): Promise<void> {
       fail(
         `failed to launch ${runtimeBin}: terminated by signal ${proc.signal}`,
       );
-    }
-    if (runtime === "cursor" && typeof proc.stdout === "string") {
-      const result = parseCursorHeadlessResult(proc.stdout);
-      if (result) {
-        await runOp(() =>
-          s.sessions.recordExternalSession({
-            sessionId,
-            externalSession: result.sessionId,
-          }),
-        );
-        if (result.result) process.stdout.write(`${result.result}\n`);
-      } else if (proc.stdout) {
-        process.stdout.write(proc.stdout);
-      }
     }
     process.exit(proc.status ?? 1);
   } else if (sub === "create") {
@@ -235,6 +305,15 @@ export async function run(): Promise<void> {
       .filter(Boolean);
     const body =
       flags.body === undefined ? undefined : await readTextInput(flags.body);
+    const parent =
+      flags.parent === undefined
+        ? process.env[ENV_PARENT_ISSUE] === undefined
+          ? undefined
+          : Number(process.env[ENV_PARENT_ISSUE])
+        : Number(flags.parent);
+    if (parent !== undefined && (!Number.isInteger(parent) || parent < 1)) {
+      fail("--parent requires a positive issue number");
+    }
     const i = await runOp(async () =>
       s.issues.create(
         repo,
@@ -243,6 +322,7 @@ export async function run(): Promise<void> {
           body: body || "",
           labels,
           acceptance_criteria: acceptanceCriteria,
+          parent,
           workspace: flags.workspace,
           target_branch:
             flags.workspace === undefined

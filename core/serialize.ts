@@ -270,6 +270,7 @@ export interface AgentSessionWire {
   runtime?: string;
   kind?: string;
   model?: string;
+  effort?: string;
   usage?: SessionUsageWire[];
   subagent_usage?: SessionSubagentUsageWire[];
   linked_targets?: SessionLinkedTargetWire[];
@@ -322,7 +323,6 @@ export type PullUsageWire = Pick<
 // linkedPullDetail), which runs the git status fan-out; the issue-detail summary
 // (pullSummary) does not, so those rows stay the plain PullSummaryWire.
 export interface IssueListPullSummaryWire extends PullSummaryWire {
-  working: boolean;
   review_state: S.ReviewState;
   mergeable_state: MergeableState;
   additions: number;
@@ -367,6 +367,18 @@ export function herdrPaneJSON(
   };
 }
 
+export interface SubIssueSummaryWire {
+  total: number;
+  open: number;
+  closed: number;
+}
+
+export interface IssueRefSummaryWire {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+}
+
 export interface IssueWire {
   number: number;
   state: "open" | "closed";
@@ -398,6 +410,12 @@ export interface IssueWire {
   // This is the rubric source for Verify — the markdown `## Acceptance criteria` section is never
   // parsed. Absent on issues that have no structured criteria (they fall back to holistic Verify).
   acceptance_criteria?: AcceptanceCriterionWire[];
+  depth?: number;
+  sub_issue_ordinal?: number | null;
+  sub_issue_summary?: SubIssueSummaryWire;
+  ancestors?: IssueRefSummaryWire[];
+  sub_issues?: IssueWire[];
+  sub_issues_truncated?: boolean;
 }
 
 // The rubric-delivery shape carried on issue view. `id` is the public, repository-scoped
@@ -715,6 +733,7 @@ export function agentSessionJSON(
   if (row.runtime) out.runtime = row.runtime;
   if (row.kind) out.kind = row.kind;
   if (row.model) out.model = row.model;
+  if (row.effort) out.effort = row.effort;
   const usage = S.listSessionUsage(row.id);
   if (usage.length) out.usage = usage.map(sessionUsageJSON);
   const subagentUsage = S.listSessionSubagentUsage(row.id);
@@ -1544,12 +1563,31 @@ export interface WorkflowRunReviewSummaryWire {
   ac_results: ReviewAcResultWire[];
 }
 
+export interface WorkflowStepExecutionWire {
+  step: "execute" | "verify";
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number;
+  status: "running" | "completed" | "unknown";
+  result: string | null;
+  runtime: string | null;
+  model: string | null;
+  effort: string | null;
+  input_tokens: number | null;
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
+  cost_status: "known" | "unknown" | "pending" | "not_recorded";
+}
+
 export interface WorkflowRunStateWire {
   id: number;
   workflow_id: number | null;
   workflow_name: string | null;
   status: string; // running | completed (closed PR); legacy rows may read 'stopped' or 'blocked'
   current_step: string; // execute | verify
+  display_stage?: "execute" | "verify" | "ready_to_merge" | "merged";
   active_verify_head_sha: string | null;
   // When the active Verify launch began, read from its `workflow_step.launched` event's
   // `created_at` (#90). Present together with `active_verify_head_sha`; the Web derives the
@@ -1572,12 +1610,37 @@ export interface WorkflowRunStateWire {
   updated_at: string;
   // Fixed lifecycle end. Unlike `updated_at`, terminal-run maintenance never advances it.
   ended_at: string | null;
+  latest_step_runs?: {
+    execute: WorkflowStepExecutionWire | null;
+    verify: WorkflowStepExecutionWire | null;
+  };
   latest_review: WorkflowRunReviewSummaryWire | null;
   verification_status: "unverified" | "verified" | "stale";
-  // Canonical pre-merge Done state. This remains distinct from the run lifecycle `status` and is
-  // false when a merge conflict blocks the otherwise fresh passing review.
-  done: boolean;
+  // The linked PR's terminal state. Kept separate from `status === completed`, which also covers
+  // closed-unmerged PRs.
+  pr_merged: boolean;
+  merge_ready: boolean;
   merge_conflict: boolean;
+  workflow_config: WorkflowRunConfigWire | null;
+}
+
+export interface WorkflowRunAgentConfigWire {
+  runtime: CodingAgent;
+  model: string;
+  effort: string;
+}
+
+export interface WorkflowRunConfigWire {
+  contract_language: WorkflowContractLanguage;
+  agents: {
+    parent: WorkflowRunAgentConfigWire;
+    execute: WorkflowRunAgentConfigWire;
+    verify: WorkflowRunAgentConfigWire;
+  };
+  prompt_sources: {
+    execute: string;
+    verify: string;
+  };
 }
 
 export interface WorkflowPendingEffectReceiptWire {
@@ -1592,18 +1655,26 @@ export interface WorkflowOutOfBandReviewWire {
   verdict: "feedback" | "request_changes";
 }
 
+export interface WorkflowPendingStepLaunchWire {
+  step: "execute" | "verify";
+  session_id: string;
+  head_sha: string | null;
+}
+
 // Complete observed state the Workflow parent's instructions are decided from. This wire shape
 // remains in core even though its current presentation is CLI-only, so future web consumers share
 // the same source of truth instead of re-declaring it.
 export interface WorkflowStepStatusWire {
   run: number;
   current_step: string;
+  display_stage?: "execute" | "verify" | "ready_to_merge" | "merged";
   status: string;
   active_step: string | null;
   rework_count: number;
   rework_limit: number;
   needs_human_reason: string | null;
   awaiting_human: boolean;
+  pending_step_launch: WorkflowPendingStepLaunchWire | null;
   pending_effect_receipt: WorkflowPendingEffectReceiptWire | null;
   unaddressed_out_of_band_reviews: WorkflowOutOfBandReviewWire[];
   cost_increment_usd: number;
@@ -1612,8 +1683,8 @@ export interface WorkflowStepStatusWire {
   head_ahead_of_base: boolean;
   head_ahead_of_latest_review: boolean;
   merge_conflict: boolean;
-  // Canonical pre-merge Done state derived from the current HEAD, its pinned review, and PR state.
-  done: boolean;
+  // Canonical pre-merge merge-ready state derived from the current HEAD, its pinned review, and PR state.
+  merge_ready: boolean;
   // The linked PR's own domain state. The run's terminal condition is read from these fields
   // rather than from a close / merge event, so every route lands on the same reconciliation.
   pr_merged: boolean;
@@ -1638,8 +1709,11 @@ export function workflowRunStateJSON(input: {
   costLimitIncreaseAvailable: boolean;
   activeVerifyHeadSha: string | null;
   activeVerifyStartedAt: string | null;
-  done: boolean;
+  prMerged: boolean;
+  mergeReady: boolean;
   mergeConflict: boolean;
+  latestStepRuns: WorkflowRunStateWire["latest_step_runs"];
+  workflowConfig: WorkflowRunConfigWire | null;
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1648,6 +1722,11 @@ export function workflowRunStateJSON(input: {
     workflow_name: input.workflowName,
     status: run.status,
     current_step: run.current_step,
+    display_stage: input.prMerged
+      ? "merged"
+      : input.mergeReady
+        ? "ready_to_merge"
+        : (run.current_step as "execute" | "verify"),
     active_verify_head_sha: input.activeVerifyHeadSha,
     active_verify_started_at: input.activeVerifyStartedAt,
     rework_count: run.rework_count,
@@ -1662,10 +1741,13 @@ export function workflowRunStateJSON(input: {
     created_at: run.created_at,
     updated_at: run.updated_at,
     ended_at: run.ended_at,
+    latest_step_runs: input.latestStepRuns,
     latest_review: input.latestReview,
     verification_status: input.verificationStatus,
-    done: input.done,
+    pr_merged: input.prMerged,
+    merge_ready: input.mergeReady,
     merge_conflict: input.mergeConflict,
+    workflow_config: input.workflowConfig,
   };
 }
 
@@ -1940,6 +2022,12 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     description: ({ stepLabel }) =>
       `${stepLabel ?? "Workflow"} step execution started.`,
     significance: "default",
+  },
+  "workflow_step.launch_failed": {
+    label: ({ stepLabel }) => `${stepLabel ?? "Workflow"} step launch failed`,
+    description: ({ stepLabel, payload }) =>
+      `${stepLabel ?? "Workflow"} step failed before spawn: ${payloadString(payload, "reason") ?? "No reason recorded."}`,
+    significance: "notable",
   },
   "workflow_run.turn_done": {
     label: "Turn done declared",
@@ -2354,6 +2442,13 @@ export interface IssueDetailPageWire {
   issue: IssueWire;
   comments: CommentWire[];
   acceptance_criteria: AcceptanceCriterionDetailWire[];
+  workflow_runs: WorkflowRunStateWire[];
+}
+
+export interface SubIssuesPageWire {
+  issues: IssueWire[];
+  truncated: boolean;
+  workflow_runs: WorkflowRunStateWire[];
 }
 
 /** A changed file with its unified-diff patch. */

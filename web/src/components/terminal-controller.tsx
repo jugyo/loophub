@@ -41,6 +41,7 @@ export interface OpenTerminalOptions {
   // dropdown sets it; maps to `lh workflow start ... --workflow-id <id>`.
   workflowId?: number;
   targetBranch?: string;
+  parentIssue?: number;
   // Direct initial prompt for launches that should not invoke a slash-command skill.
   prompt?: string;
   // One-shot agent/model/effort override for the issue-create (New issue) launch. Plain
@@ -131,6 +132,7 @@ export function useTerminalLauncher(): {
           prNumber: opts.prNumber,
           workflowId: opts.workflowId,
           targetBranch: opts.targetBranch,
+          parentIssue: opts.parentIssue,
           prompt: opts.prompt,
           agent: opts.agent,
           model: opts.model,

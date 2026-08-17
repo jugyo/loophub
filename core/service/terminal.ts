@@ -83,6 +83,7 @@ export interface TerminalLaunchInput {
   // workflow dropdown; maps to `lh workflow start ... --workflow-id <id>`.
   workflowId?: number;
   targetBranch?: string;
+  parentIssue?: number;
   prompt?: string;
   // One-shot agent/model/effort overrides from launch pickers (#1275/#1534). Plain buttons leave
   // these unset so the CLI resolves the repo's effective Coding agent config. They map to the
@@ -524,6 +525,8 @@ export const terminal = {
       effort: input.workflow === "issue-create" ? input.effort : undefined,
       targetBranch:
         input.workflow === "issue-create" ? input.targetBranch : undefined,
+      parentIssue:
+        input.workflow === "issue-create" ? input.parentIssue : undefined,
       // `lh issue new` takes the operator's instructions as a `--prompt` flag; github-pr-export
       // (#1892) starts a coding agent whose whole prompt is the generated filing instructions, so
       // those go to a file its command line reads back.

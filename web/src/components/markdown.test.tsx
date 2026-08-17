@@ -31,6 +31,7 @@ vi.mock("@/api/client", async (importOriginal) => ({
   listIssueRefKinds: vi.fn(async () => refKinds.value),
 }));
 
+import type { MarkdownRenderedBlock } from "@/lib/markdown-source-map";
 import { Markdown } from "./markdown";
 
 beforeEach(() => {
@@ -82,6 +83,65 @@ async function renderInRouter(children: ReactNode) {
 }
 
 describe("Markdown", () => {
+  it("reports source ranges for commentable rendered blocks", () => {
+    const blocks: MarkdownRenderedBlock[] = [];
+    const source = [
+      "# Heading",
+      "",
+      "Paragraph",
+      "",
+      "> Quote",
+      "> continued",
+      "",
+      "- item",
+      "  - nested",
+      "",
+      "```ts",
+      "code",
+      "```",
+      "",
+      "| a | b |",
+      "| - | - |",
+      "| 1 | 2 |",
+      "",
+      "![alt](image.png)",
+      "",
+      "```mermaid",
+      "graph TD;",
+      "```",
+    ].join("\n");
+
+    renderWithClient(
+      <Markdown onRenderedBlock={(block) => blocks.push(block)}>
+        {source}
+      </Markdown>,
+    );
+
+    expect(blocks).toEqual([
+      { kind: "heading", sourceRange: { startLine: 1, endLine: 1 } },
+      { kind: "paragraph", sourceRange: { startLine: 3, endLine: 3 } },
+      { kind: "blockquote", sourceRange: { startLine: 5, endLine: 6 } },
+      { kind: "paragraph", sourceRange: { startLine: 5, endLine: 6 } },
+      { kind: "list-item", sourceRange: { startLine: 8, endLine: 9 } },
+      { kind: "list-item", sourceRange: { startLine: 9, endLine: 9 } },
+      { kind: "code-block", sourceRange: { startLine: 11, endLine: 13 } },
+      { kind: "table-row", sourceRange: { startLine: 15, endLine: 15 } },
+      { kind: "table-row", sourceRange: { startLine: 17, endLine: 17 } },
+      { kind: "paragraph", sourceRange: { startLine: 19, endLine: 19 } },
+      { kind: "image", sourceRange: { startLine: 19, endLine: 19 } },
+      { kind: "mermaid", sourceRange: { startLine: 21, endLine: 23 } },
+    ]);
+  });
+
+  it("keeps the default rendered DOM unchanged when mapping is omitted", () => {
+    const { container } = renderWithClient(
+      <Markdown>{"# Heading\n\nParagraph"}</Markdown>,
+    );
+    expect(container.querySelector("h1")?.textContent).toBe("Heading");
+    expect(container.querySelector("p")?.textContent).toBe("Paragraph");
+    expect(container.querySelectorAll("[data-source-range]")).toHaveLength(0);
+  });
+
   it("renders headings, emphasis and links", () => {
     const { container } = renderWithClient(
       <Markdown>
@@ -119,6 +179,43 @@ describe("Markdown", () => {
     );
     expect(container.querySelectorAll("table th")).toHaveLength(2);
     expect(container.querySelectorAll("table td")).toHaveLength(2);
+  });
+
+  it("renders table row actions inside the last cell without changing table structure", () => {
+    const blocks: MarkdownRenderedBlock[] = [];
+    const { container } = renderWithClient(
+      <Markdown
+        renderedBlockAction={(block) => {
+          blocks.push(block);
+          return block.sourceRange?.startLine === 3 ? (
+            <button
+              type="button"
+              aria-label={`Comment on head lines ${block.sourceRange.startLine}-${block.sourceRange.endLine}`}
+            >
+              +
+            </button>
+          ) : null;
+        }}
+      >
+        {"| Header | Value |\n| --- | --- |\n| first | row |\n| second | row |"}
+      </Markdown>,
+    );
+
+    const table = container.querySelector("table");
+    expect(table?.querySelectorAll("thead > tr")).toHaveLength(1);
+    expect(table?.querySelectorAll("tbody > tr")).toHaveLength(2);
+    expect(table?.querySelectorAll("thead > tr > th")).toHaveLength(2);
+    expect(table?.querySelectorAll("tbody > tr > td")).toHaveLength(4);
+    expect(
+      table
+        ?.querySelector('button[aria-label="Comment on head lines 3-3"]')
+        ?.closest("td"),
+    ).not.toBeNull();
+    expect(blocks).toEqual([
+      { kind: "table-row", sourceRange: { startLine: 1, endLine: 1 } },
+      { kind: "table-row", sourceRange: { startLine: 3, endLine: 3 } },
+      { kind: "table-row", sourceRange: { startLine: 4, endLine: 4 } },
+    ]);
   });
 
   it("renders GFM task lists with checkboxes", () => {

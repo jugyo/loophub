@@ -242,7 +242,8 @@ export function PullDetail({
                 label={
                   timelineReviewCommit
                     ? `${timelineReviewCommit.sha.slice(0, 7)}: ${timelineReviewCommit.subject}`
-                    : timelineReview.head_sha.slice(0, 7)
+                    : (timelineReview.head_sha?.slice(0, 7) ??
+                      UNKNOWN_REVIEW_HEAD_LABEL)
                 }
                 reviews={
                   timelineReviewGroup.length > 0
@@ -383,7 +384,7 @@ function PullHeader({
   titleRef: RefObject<HTMLDivElement | null>;
 }) {
   const navigate = useNavigate();
-  usePageTitle([`${owner}/${repo}`, `PR #${pull.number}`, pull.title]);
+  usePageTitle([`PR #${pull.number}`, pull.title, `${owner}/${repo}`]);
 
   const badges = pullDetailBadges(pull);
 
@@ -1427,6 +1428,7 @@ const REVIEW_VERDICT: Record<string, { tone: BadgeTone; label: string }> = {
   REQUEST_CHANGES: { tone: "review-changes", label: "changes requested" },
   COMMENT: { tone: "review-commented", label: "commented" },
 };
+const UNKNOWN_REVIEW_HEAD_LABEL = "Unknown commit";
 
 // One commit in the timeline (#145): the same facts the Commits section rows carry, without the
 // review grouping that section owns. Kept to a plain, low row — non-comment entries recede next
@@ -1482,7 +1484,7 @@ function TimelineReviewItem({
     <article data-debug-component="TimelineReview" className="px-1 py-0.5">
       <button
         type="button"
-        aria-label={`View review for ${review.head_sha.slice(0, 7)}`}
+        aria-label={`View review for ${review.head_sha?.slice(0, 7) ?? UNKNOWN_REVIEW_HEAD_LABEL}`}
         onClick={() => onOpenReview(review)}
         className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded text-left text-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >

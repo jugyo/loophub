@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
-import { ensureCursorWorkspaceTrusted } from "../../core/cursor-workspace.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { buildRuntimeFlags } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
@@ -97,6 +96,47 @@ function workflowIdFlag(): number | undefined {
   return Number(flags["workflow-id"]);
 }
 
+function manifestRunId(): number {
+  return positiveInt(rest[1], "run");
+}
+
+async function manifestCommand(): Promise<void> {
+  const action = rest[0];
+  if (action !== "show" && action !== "path") usage();
+  const runId = manifestRunId();
+  const repo = await resolveRepo();
+  const service = (await svc()).workflowRuns;
+  if (action === "path") {
+    console.log(await runOp(() => service.manifestPath(repo, runId)));
+    return;
+  }
+  const result = await runOp(() => service.manifestView(repo, runId));
+  if (flags.json) {
+    out(result);
+    return;
+  }
+  console.log(`動作条件 (manifest)\t${result.manifest_path}`);
+  console.log(`contract_language\t${result.manifest.contract_language}`);
+  for (const kind of ["parent", "execute", "verify"] as const) {
+    const agent = result.manifest.agents[kind];
+    console.log(`${kind}.runtime\t${agent.runtime}`);
+    console.log(`${kind}.model\t${agent.model}`);
+    console.log(`${kind}.effort\t${agent.effort}`);
+  }
+  console.log("pointer (DB)");
+  for (const pointer of result.pointers) {
+    console.log(`${pointer.label}\t${pointer.value}`);
+  }
+  console.log("workspace (規約から導出)");
+  console.log(`worktree_path\t${result.workspace.worktree_path}`);
+  console.log(`branch\t${result.workspace.branch}`);
+  console.log(`base_branch\t${result.workspace.base_branch}`);
+  console.log("反映タイミング");
+  console.log(`next_child\t${result.change_timing.next_child}`);
+  console.log(`parent\t${result.change_timing.parent}`);
+  console.log(`execute\t${result.change_timing.execute}`);
+}
+
 function commandAvailable(command: string): boolean {
   const result = spawnSync(command, ["--version"], {
     encoding: "utf8",
@@ -121,14 +161,15 @@ function preflightParentLaunch(runtime: CodingAgent): void {
   }
 }
 
-function preflightStepLaunch(runtime: CodingAgent): void {
+function stepLaunchPreflightError(runtime: CodingAgent): string | null {
   if (!commandAvailable("herdr")) {
-    fail("workflow launch-step requires herdr on PATH");
+    return "workflow launch-step requires herdr on PATH";
   }
   const bin = runtimeBin(runtime);
   if (!commandAvailable(bin)) {
-    fail(`workflow launch-step requires ${bin} on PATH`);
+    return `workflow launch-step requires ${bin} on PATH`;
   }
+  return null;
 }
 
 // The Herdr seam core's layoutWorkflowTab drives: one spawnSync per command, bound to the run's
@@ -171,10 +212,12 @@ function parentAgentFlags(input: {
   sessionId: string;
   systemPromptPath: string;
   model: string;
+  effort: string;
 }): string[] {
   return buildRuntimeFlags({
     runtime: input.runtime,
     model: input.model,
+    effort: input.effort,
     sessionId: input.sessionId,
     systemPromptFile: input.systemPromptPath,
   });
@@ -227,15 +270,13 @@ async function launchParentHerdr(input: {
   systemPromptPath: string;
   userPromptPath: string;
   model: string;
+  effort: string;
   // Fire-and-forget (`--herdr`): start the parent agent in its herdr pane and return without the
   // interactive attach, so a non-interactive caller — lh-web's terminal.launch spawns
   // `lh workflow start ... --herdr` headless (#1007) — gets a prompt exit instead of blocking on an
   // attach it has no TTY for.
   detach?: boolean;
 }): Promise<void> {
-  if (input.runtime === "cursor") {
-    ensureCursorWorkspaceTrusted(input.worktree);
-  }
   const env = { LOOPHUB_SESSION_ID: input.sessionId };
   const command = agentCommandLine({
     env,
@@ -311,7 +352,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --cursor | --opencode] [--model <name>] [--herdr] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode] [--model <name>] [--herdr] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -341,7 +382,6 @@ async function startWorkflow(): Promise<void> {
     claudeCode: flags["claude-code"] === true,
     codex: flags.codex === true,
     grok: flags.grok === true,
-    cursor: flags.cursor === true,
     opencode: flags.opencode === true,
     defaultRuntime: agentCfg.effective.runtime,
   });
@@ -395,6 +435,7 @@ async function startWorkflow(): Promise<void> {
     systemPromptPath: result.parent.system_prompt_path,
     userPromptPath: result.parent.user_prompt_path,
     model,
+    effort: result.parent.effort,
     // `--herdr` starts the parent fire-and-forget (no interactive attach) so lh-web can spawn this
     // headless (#1007); without it the CLI attaches for a human at a terminal.
     detach: flags.herdr === true,
@@ -440,18 +481,54 @@ async function launchStep(): Promise<void> {
       actorSessionId,
     ),
   );
-  // Preflight the runtime the run resolved (#516) — claude-code needs `claude`, codex needs `codex`.
-  preflightStepLaunch(result.runtime);
-  if (result.step === "verify") {
-    // This launch is the moment an older Verify child is known to be reviewing a HEAD the run has
-    // moved past — stop it here rather than pay for a review the freshness check will ignore (#61).
-    const stale = await runOp(() =>
-      s.workflowRuns.discardStaleVerifyChildren(
+  const failUnspawnedLaunch = async (message: string): Promise<never> => {
+    await runOp(() =>
+      s.workflowRuns.failStepLaunch(
         repo,
-        { run: result.run.id },
+        {
+          run: result.run.id,
+          sessionId: result.session_id,
+          reason: message,
+        },
         actorSessionId,
       ),
     );
+    fail(message);
+  };
+  const failUnspawnedLaunchWith = async (error: unknown): Promise<never> => {
+    await runOp(() =>
+      s.workflowRuns.failStepLaunch(
+        repo,
+        {
+          run: result.run.id,
+          sessionId: result.session_id,
+          reason: error instanceof Error ? error.message : String(error),
+        },
+        actorSessionId,
+      ),
+    );
+    return runOp(() => {
+      throw error;
+    });
+  };
+  // Preflight the runtime the run resolved (#516) — claude-code needs `claude`, codex needs `codex`.
+  const preflightError = stepLaunchPreflightError(result.runtime);
+  if (preflightError) await failUnspawnedLaunch(preflightError);
+  if (result.step === "verify") {
+    // This launch is the moment an older Verify child is known to be reviewing a HEAD the run has
+    // moved past — stop it here rather than pay for a review the freshness check will ignore (#61).
+    let stale: Awaited<
+      ReturnType<typeof s.workflowRuns.discardStaleVerifyChildren>
+    >;
+    try {
+      stale = await s.workflowRuns.discardStaleVerifyChildren(
+        repo,
+        { run: result.run.id },
+        actorSessionId,
+      );
+    } catch (error) {
+      return await failUnspawnedLaunchWith(error);
+    }
     for (const discarded of stale.discarded) {
       console.log(
         `discarded\t${display(discarded.agent_name ?? discarded.session_id)}`,
@@ -477,6 +554,7 @@ async function launchStep(): Promise<void> {
           run: result.run.id,
           step: result.step,
           sessionId: result.session_id,
+          runtime: result.runtime,
           agentName: result.agent_name,
           executionTarget: {
             provider: "herdr",
@@ -487,14 +565,12 @@ async function launchStep(): Promise<void> {
           headSha: result.head_sha,
           note,
           model: result.model,
+          effort: result.effort,
           launchedAt,
         },
         actorSessionId,
       ),
     );
-  if (result.runtime === "cursor") {
-    ensureCursorWorkspaceTrusted(result.worktree);
-  }
   launchedAt = new Date().toISOString();
   const outcome = await executeHerdrLaunchPlan(result.herdr, async (argv) => {
     const proc = spawnSync(argv[0], argv.slice(1), {
@@ -510,7 +586,7 @@ async function launchStep(): Promise<void> {
   });
   if (outcome.stdout) process.stdout.write(outcome.stdout);
   if (!outcome.ok) {
-    fail(
+    await failUnspawnedLaunch(
       `herdr failed to ${
         outcome.failed === "pane"
           ? "create the step's pane"
@@ -520,7 +596,9 @@ async function launchStep(): Promise<void> {
   }
   const childPaneId = outcome.paneId;
   if (!childPaneId) {
-    fail("herdr returned no valid pane_id for the step's pane");
+    return await failUnspawnedLaunch(
+      "herdr returned no valid pane_id for the step's pane",
+    );
   }
   // The child's command is in its pane once the launch succeeds, so persist that truth before
   // ancillary layout work. Layout is best-effort and must not turn a recorded launch into a
@@ -597,6 +675,11 @@ async function runLifecycle(): Promise<void> {
         sessionId,
       );
     }
+    if (action === "recover-launch") {
+      if (!flags.reason) fail("--reason is required");
+      const reason = await readTextInput(flags.reason);
+      return service.recoverStepLaunch(repo, { run: runId, reason }, sessionId);
+    }
     usage();
     throw new Error("unreachable");
   });
@@ -672,6 +755,12 @@ async function stepStatus(): Promise<void> {
   if (result.needs_human_reason !== null) {
     console.log(`needs_human\t${display(result.needs_human_reason)}`);
   }
+  if (result.pending_step_launch !== null) {
+    const launch = result.pending_step_launch;
+    console.log(
+      `pending_launch\t${display(launch.step)} ${display(launch.session_id)} ${display(launch.head_sha ?? "(no head)")}`,
+    );
+  }
   console.log(`rework\t${result.rework_count}/${result.rework_limit}`);
   if (result.pending_effect_receipt !== null) {
     const receipt = result.pending_effect_receipt;
@@ -685,7 +774,8 @@ async function stepStatus(): Promise<void> {
   console.log(`cost_increment_usd\t${result.cost_increment_usd}`);
   console.log(`cost_limit_usd\t${result.cost_limit_usd}`);
   console.log(`head\t${display(result.head_sha ?? "(unresolved)")}`);
-  console.log(`done\t${result.done}`);
+  console.log(`display_stage\t${result.display_stage}`);
+  console.log(`merge_ready\t${result.merge_ready}`);
   if (result.last_turn_done_at !== null) {
     console.log(`last_turn_done\t${display(result.last_turn_done_at)}`);
   }
@@ -1021,6 +1111,8 @@ export async function run(): Promise<void> {
     else console.log(`archived workflow "${workflow.name}"`);
   } else if (sub === "start") {
     await startWorkflow();
+  } else if (sub === "manifest") {
+    await manifestCommand();
   } else if (sub === "launch-step") {
     await launchStep();
   } else if (sub === "run") {

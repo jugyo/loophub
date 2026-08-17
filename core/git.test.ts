@@ -909,7 +909,7 @@ test("diffFiles preserves statuses for quoted paths", async () => {
   rmSync(p, { recursive: true, force: true });
 });
 
-test("diffFiles fetches normal and added-file patches in batched git calls and preserves special patch lines", async () => {
+test("diffFiles fetches the normal patch and preserves special patch lines", async () => {
   const p = mkdtempSync(join(tmpdir(), "lh-difffiles-single-patch-"));
   await git(p, ["init", "-q", "-b", "main"]);
   await git(p, ["config", "user.email", "t@t.local"]);
@@ -931,7 +931,7 @@ test("diffFiles fetches normal and added-file patches in batched git calls and p
   );
   expect(
     commands.filter((command) => command.startsWith("diff ")),
-  ).toHaveLength(3);
+  ).toHaveLength(2);
   expect(
     files.find((file) => file.filename === "no-newline.txt")?.patch,
   ).toContain("\\ No newline at end of file");
@@ -940,6 +940,19 @@ test("diffFiles fetches normal and added-file patches in batched git calls and p
     deletions: 0,
     patch: expect.stringContaining("Binary files"),
   });
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("diffFiles skips the added-file patch command when there are no copies", async () => {
+  const p = await makeRepo();
+
+  const { commands } = await traceGitCommands(() =>
+    diffFiles(p, "main", "feat"),
+  );
+  expect(
+    commands.filter((command) => command.startsWith("diff ")),
+  ).toHaveLength(2);
 
   rmSync(p, { recursive: true, force: true });
 });
@@ -1046,14 +1059,14 @@ test("repeated git queries run again, including SHA-resolved queries", async () 
   );
   expect(
     cold.commands.filter((command) => command.startsWith("diff ")),
-  ).toHaveLength(3);
+  ).toHaveLength(2);
 
   const warm = await traceGitCommands(() =>
     diffFilesBetween(p, baseSha, headSha),
   );
   expect(
     warm.commands.filter((command) => command.startsWith("diff ")),
-  ).toHaveLength(3);
+  ).toHaveLength(2);
   expect(warm.result).toEqual(cold.result);
 
   // The same question asked by branch name still spawns git: a ref can move under it.
@@ -1063,7 +1076,7 @@ test("repeated git queries run again, including SHA-resolved queries", async () 
   });
   expect(
     byRef.commands.filter((command) => command.startsWith("diff ")),
-  ).toHaveLength(6);
+  ).toHaveLength(4);
 
   // So does anything reporting where the working tree currently is.
   const status = await traceGitCommands(async () => {

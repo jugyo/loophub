@@ -1,35 +1,48 @@
-// Shared Execute → Verify → Done step tracker for a workflow run. Rendered both compact in a PR list
+// Shared Execute → Verify → Ready to merge step tracker for a workflow run. Rendered both compact in a PR list
 // row (LinkedPullSummaryRow) and larger in the issue / PR detail Workflow run section
 // (workflow-run-status.tsx). An optional parent-agent bot connects to the stage pills; hovering it
 // exposes the parent/orchestrator pane action. The current stage is colored, the rest are grey, and
 // traversed connectors fill in to convey progression.
 //
-// `execute` / `verify` are the run's real steps; "Done" is the canonical pre-merge state from core
-// (`done`) — NOT `status === completed`, which means the linked PR closed or merged (#1808). A stale verification keeps the
+// `execute` / `verify` are the run's real steps; "Ready to merge" is the canonical pre-merge state
+// from core (`done`) — NOT `status === completed`, which means the linked PR closed or merged (#1808). A stale verification keeps the
 // Verify label as-is and is conveyed by the pill's amber tone plus its popover status (#1906); a
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker unless the caller
 // already says why with its own "over budget" marker (#1932).
 
 import { Check, Loader2, Terminal, TriangleAlert } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
-import type { HerdrAgent, HerdrSessions, WorkflowRunState } from "@/api/types";
+import type {
+  HerdrAgent,
+  HerdrSessions,
+  WorkflowRunState,
+  WorkflowStepExecution,
+} from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
-import { latestWorkflowStepAgent } from "@/components/herdr-badge";
+import {
+  latestFocusableWorkflowStepAgent,
+  latestWorkflowStepAgent,
+} from "@/components/herdr-badge";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
+import {
+  workflowDisplayStage,
+  workflowRunDisplayState,
+} from "@/lib/workflow-run";
 import { useFocusHerdrAgent } from "@/queries/terminal";
 
 const STAGES = [
   { key: "execute", label: "Execute" },
   { key: "verify", label: "Verify" },
-  { key: "done", label: "Done" },
+  { key: "done", label: "Ready to merge" },
 ] as const;
 
 type WorkflowTrackerState = {
   activeIndex: number;
   done: boolean;
+  merged: boolean;
   stale: boolean;
   needsHuman: boolean;
 };
@@ -53,37 +66,98 @@ function workflowParentAgent(
 export function workflowTrackerState(
   state: WorkflowRunState,
 ): WorkflowTrackerState {
+  state = workflowRunDisplayState(state);
   const needsHuman =
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked";
-  const done = state.done;
+  const stage = workflowDisplayStage(state);
+  const done = stage === "ready_to_merge";
+  const merged = state.pr_merged;
   const stale =
     state.status === "running" &&
     state.needs_human_reason === null &&
     state.verification_status === "stale";
-  // Canonical Done advances the tracker to index 2; otherwise it sits on the run's current step.
+  // Merge-ready and merged PRs advance the tracker to the final stage; otherwise it sits on the run's current
+  // step.
   const stepIndex = state.current_step === "verify" ? 1 : 0;
-  const activeIndex = done ? 2 : stepIndex;
-  return { activeIndex, done, stale, needsHuman };
+  const activeIndex =
+    stage === "ready_to_merge" || stage === "merged" ? 2 : stepIndex;
+  return { activeIndex, done, merged, stale, needsHuman };
 }
 
 function workflowTrackerTitle(
   state: WorkflowRunState,
-  { done, stale, needsHuman }: WorkflowTrackerState,
+  { done, merged, stale, needsHuman }: WorkflowTrackerState,
 ): string {
-  if (state.merge_conflict) {
+  if (!merged && state.merge_conflict) {
     return "Merge conflict — resolve it before this PR can merge";
   }
   if (needsHuman) {
     return "Workflow run is waiting for a human instruction";
   }
+  if (merged) {
+    return "The pull request was merged — the workflow is Merged";
+  }
   if (done) {
-    return "The pull request is ready to merge — the run reached Done";
+    return "The pull request is Ready to merge";
   }
   if (stale) {
     return "HEAD changed after Verify passed — a fresh Verify is required";
   }
   return `Workflow step: ${state.current_step === "verify" ? "Verify" : "Execute"}`;
+}
+
+function durationLabel(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
+}
+
+function StepExecutionDetails({
+  execution,
+}: {
+  execution: WorkflowStepExecution | null;
+}) {
+  if (!execution) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        No execution recorded.
+      </p>
+    );
+  }
+  const tokens =
+    execution.input_tokens === null ||
+    execution.cache_creation_input_tokens === null ||
+    execution.cache_read_input_tokens === null ||
+    execution.output_tokens === null
+      ? "Not recorded"
+      : `${execution.input_tokens + execution.cache_creation_input_tokens + execution.cache_read_input_tokens + execution.output_tokens} tokens`;
+  const cost =
+    execution.cost_status === "known" && execution.cost_usd !== null
+      ? `$${execution.cost_usd.toFixed(4)}`
+      : execution.cost_status === "pending"
+        ? "Pending"
+        : execution.cost_status === "unknown"
+          ? "Unknown"
+          : "Not recorded";
+  return (
+    <dl className="mt-2 grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-1 text-xs">
+      <dt className="text-muted-foreground">Started</dt>
+      <dd>{execution.started_at}</dd>
+      <dt className="text-muted-foreground">Duration</dt>
+      <dd>{durationLabel(execution.duration_seconds)}</dd>
+      <dt className="text-muted-foreground">Tokens</dt>
+      <dd>{tokens}</dd>
+      <dt className="text-muted-foreground">Cost</dt>
+      <dd>{cost}</dd>
+      <dt className="text-muted-foreground">Model</dt>
+      <dd>{execution.model ?? "Not recorded"}</dd>
+      <dt className="text-muted-foreground">Effort</dt>
+      <dd>{execution.effort ?? "Not recorded"}</dd>
+      <dt className="text-muted-foreground">Result</dt>
+      <dd>{execution.result ?? execution.status}</dd>
+    </dl>
+  );
 }
 
 function OpenInHerdrButton({
@@ -98,9 +172,9 @@ function OpenInHerdrButton({
   return (
     <Button
       type="button"
-      variant="secondary"
-      size="sm"
-      className="shrink-0"
+      variant="ghost"
+      size="icon"
+      className="size-7 shrink-0 border border-border"
       aria-label="Open in Herdr"
       title="Open in Herdr"
       disabled={focus.isPending}
@@ -123,7 +197,6 @@ function OpenInHerdrButton({
       ) : (
         <Terminal className="size-3.5" aria-hidden="true" />
       )}
-      Open in Herdr
     </Button>
   );
 }
@@ -190,7 +263,7 @@ function WorkflowNode({
         )}
       >
         <AgentBotIcon
-          working={agent?.status === "working"}
+          working={!state.pr_merged && agent?.status === "working"}
           className={cn(
             size === "md" ? "size-6 [&>svg]:size-3.5" : "size-[18px]",
           )}
@@ -204,28 +277,32 @@ function WorkflowNode({
             aria-label="Workflow details"
             className="rounded-md border bg-background p-3 text-foreground shadow-lg"
           >
-            <div className="border-b pb-2">
-              <div className="truncate text-sm font-semibold">
-                {state.workflow_name ?? "Workflow"}
+            <div className="flex items-start gap-3 border-b pb-2">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">
+                  {state.workflow_name ?? "Workflow"}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Run #{state.id}
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground">
-                Run #{state.id}
-              </div>
+              {repo && agent?.focusable ? (
+                <OpenInHerdrButton repo={repo} agent={agent} />
+              ) : null}
             </div>
             <dl className="mt-2 grid grid-cols-[3.5rem_1fr] gap-x-2 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Status</dt>
-              <dd className="font-medium">{agent?.status ?? state.status}</dd>
+              <dd className="font-medium">
+                {state.pr_merged
+                  ? state.status
+                  : (agent?.status ?? state.status)}
+              </dd>
             </dl>
             <p className="mt-2 text-xs text-muted-foreground">{stateSummary}</p>
             {herdrUnavailable ? (
               <p className="mt-2 text-xs text-destructive">
                 Herdr pane data is unavailable.
               </p>
-            ) : null}
-            {repo && agent?.focusable ? (
-              <div className="mt-2 flex justify-end border-t pt-2">
-                <OpenInHerdrButton repo={repo} agent={agent} />
-              </div>
             ) : null}
           </div>
         </div>
@@ -239,6 +316,7 @@ function WorkflowStagePill({
   runId,
   stateSummary,
   stageStatus,
+  execution,
   ariaCurrent,
   className,
   repo,
@@ -251,6 +329,7 @@ function WorkflowStagePill({
   runId: number;
   stateSummary: string;
   stageStatus: string;
+  execution: WorkflowStepExecution | null;
   ariaCurrent?: "step";
   className: string;
   repo?: string;
@@ -326,21 +405,22 @@ function WorkflowStagePill({
                   Run #{runId}
                 </div>
               </div>
+              {repo && agent ? (
+                <OpenInHerdrButton repo={repo} agent={agent} />
+              ) : null}
             </div>
             <dl className="mt-2 grid grid-cols-[3.5rem_1fr] gap-x-2 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Status</dt>
               <dd className="font-medium">{stageStatus}</dd>
             </dl>
+            {stage.key !== "done" ? (
+              <StepExecutionDetails execution={execution} />
+            ) : null}
             <p className="mt-2 text-xs text-muted-foreground">{stateSummary}</p>
             {herdrUnavailable ? (
               <p className="mt-2 text-xs text-destructive">
                 Herdr pane data is unavailable.
               </p>
-            ) : null}
-            {repo && agent ? (
-              <div className="mt-2 flex justify-end border-t pt-2">
-                <OpenInHerdrButton repo={repo} agent={agent} />
-              </div>
             ) : null}
           </div>
         </div>
@@ -381,13 +461,14 @@ export function WorkflowStepTracker({
    */
   overBudget?: boolean;
 }) {
-  const tracker = workflowTrackerState(state);
+  const displayState = workflowRunDisplayState(state);
+  const tracker = workflowTrackerState(displayState);
   const { activeIndex, done, stale, needsHuman } = tracker;
   const pillSize =
     size === "md" ? "px-2.5 py-1 text-xs" : "px-2 py-0.5 text-[11px]";
   const connectorSize = size === "md" ? "w-4" : "w-2.5";
   const repoFullName = owner && repo ? `${owner}/${repo}` : undefined;
-  const stateSummary = workflowTrackerTitle(state, tracker);
+  const stateSummary = workflowTrackerTitle(displayState, tracker);
   const parentAgent = workflowParentAgent(
     herdrUnavailable ? undefined : herdrSessions,
     repoFullName,
@@ -397,13 +478,13 @@ export function WorkflowStepTracker({
     <div
       data-debug-component="WorkflowStepTracker"
       data-workflow-step-tracker
-      className="flex min-w-0 shrink-0 items-center gap-1"
+      className="flex min-w-0 max-w-full flex-wrap items-center gap-1"
       aria-label={stateSummary}
     >
       {showWorkflowNode ? (
         <>
           <WorkflowNode
-            state={state}
+            state={displayState}
             stateSummary={stateSummary}
             repo={repoFullName}
             agent={parentAgent}
@@ -422,9 +503,12 @@ export function WorkflowStepTracker({
         const isCurrent = index === activeIndex;
         const isPast = index < activeIndex;
         // A PR-level conflict wins the terminal pill regardless of the run's step: an un-mergeable
-        // PR is the most actionable state to surface, so "Done" becomes "Conflict!" (#1659).
-        const isDoneConflict = stage.key === "done" && state.merge_conflict;
-        const isDoneReached = stage.key === "done" && done;
+        // PR is the most actionable state to surface, so "Ready to merge" becomes "Conflict!" (#1659).
+        const isDoneConflict =
+          stage.key === "done" &&
+          !tracker.merged &&
+          displayState.merge_conflict;
+        const isDoneReached = stage.key === "done" && (done || tracker.merged);
         const isStaleVerify = stage.key === "verify" && isCurrent && stale;
         const stageStatus = isDoneConflict
           ? "Conflict"
@@ -448,7 +532,16 @@ export function WorkflowStepTracker({
                 state.id,
                 stage.key,
               );
-        const stageWorking = agent?.status === "working";
+        const focusableAgent =
+          stage.key === "done"
+            ? undefined
+            : latestFocusableWorkflowStepAgent(
+                herdrSessions,
+                repoFullName,
+                state.id,
+                stage.key,
+              );
+        const stageWorking = !tracker.merged && agent?.status === "working";
         return (
           <Fragment key={stage.key}>
             {index > 0 ? (
@@ -467,9 +560,14 @@ export function WorkflowStepTracker({
               runId={state.id}
               stateSummary={stateSummary}
               stageStatus={stageStatus}
+              execution={
+                stage.key === "execute" || stage.key === "verify"
+                  ? (displayState.latest_step_runs?.[stage.key] ?? null)
+                  : null
+              }
               ariaCurrent={isCurrent ? "step" : undefined}
               repo={repoFullName}
-              agent={agent?.focusable ? agent : undefined}
+              agent={focusableAgent}
               herdrUnavailable={herdrUnavailable && stage.key !== "done"}
               onInteract={onStageInteract}
               className={cn(
@@ -502,7 +600,13 @@ export function WorkflowStepTracker({
               ) : isDoneReached ? (
                 <Check className="size-3" aria-hidden="true" />
               ) : null}
-              {isDoneConflict ? "Conflict!" : stage.label}
+              {isDoneConflict
+                ? "Conflict!"
+                : stage.key === "done" && tracker.merged
+                  ? "Merged"
+                  : stage.key === "done" && tracker.done
+                    ? "Ready to merge"
+                    : stage.label}
             </WorkflowStagePill>
           </Fragment>
         );

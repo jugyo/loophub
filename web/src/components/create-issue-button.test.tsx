@@ -13,7 +13,6 @@ vi.mock("@/queries/settings", () => ({
         "claude-code": { model: "opus", effort: "medium" },
         codex: { model: "gpt-5.5", effort: "medium" },
         grok: { model: "grok-code-fast-1", effort: "medium" },
-        cursor: { model: "auto", effort: "" },
         opencode: {
           model: "opencode/big-pickle",
           effort: "",
@@ -112,6 +111,19 @@ describe("CreateIssueButton", () => {
 
     expect(launchTerminal).toHaveBeenCalledWith(
       expect.objectContaining({ targetBranch: "workspace/alpha" }),
+    );
+  });
+
+  it("forwards the parent issue and includes it in the prompt", () => {
+    render(<CreateIssueButton repo="me/proj" parentIssue={12} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentIssue: 12,
+        prompt: expect.stringContaining("sub issue #12"),
+      }),
     );
   });
 

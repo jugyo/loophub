@@ -187,10 +187,7 @@ export function workflowActionPlan(
         command("launch-step", ...scoped, "--step", "verify"),
       ]);
     case "advance_and_verify":
-      return watch([
-        command("run", "advance-to-verify", ...scoped),
-        command("launch-step", ...scoped, "--step", "verify"),
-      ]);
+      return watch([command("run", "advance-to-verify", ...scoped)]);
     case "request_rework":
       return watch([
         command(

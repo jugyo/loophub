@@ -175,6 +175,22 @@ test("workflow runs gain active child, watcher cursor, and cost limit columns", 
   expect(S.getWorkflowRun(30)?.event_cursor).toBe(0);
   expect(cols).toContain("cost_increment_usd");
   expect(cols).toContain("cost_limit_usd");
+  expect(cols).toContain("manifest_version");
+  expect(S.getWorkflowRun(30)?.manifest_version).toBeNull();
+  const created = S.createWorkflowRun({
+    workflowId: 7,
+    repoId: 1,
+    issueNumber: 8,
+    prNumber: 9,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 1,
+    costLimitUsd: 1,
+  });
+  expect(created.manifest_version).toBeNull();
+  expect(
+    S.updateWorkflowRun(created.id, { manifestVersion: 1 })?.manifest_version,
+  ).toBe(1);
 });
 
 test("legacy workflows gain repository scope without reusing deleted ids", () => {

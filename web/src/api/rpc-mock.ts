@@ -21,6 +21,14 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
         status: 200,
         headers: { "content-type": "application/json" },
       });
+    const subIssuesHandler =
+      method === "pageData/subIssues" && handlers["issues/subIssues"]
+        ? async (pageParams: any) => {
+            const result = await handlers["issues/subIssues"](pageParams);
+            if (!Array.isArray(result)) return result;
+            return { issues: result, truncated: false, workflow_runs: [] };
+          }
+        : undefined;
     const pageDataHandler =
       method === "pageData/issueList" && handlers["issues/list"]
         ? async (pageParams: any) => {
@@ -132,7 +140,7 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                 };
               }
             : undefined;
-    const handler = handlers[method] ?? pageDataHandler;
+    const handler = handlers[method] ?? subIssuesHandler ?? pageDataHandler;
     if (!handler) return send({ jsonrpc: "2.0", id: 1, result: {} });
     try {
       const result = await handler(params);

@@ -284,8 +284,7 @@ export const methods: Record<string, MethodDef> = {
     params: params({
       agent: codingAgentEnum,
       model: strNonEmpty,
-      // Cursor has no independent effort setting and persists the empty string as its canonical
-      // value. Runtime-specific validation remains in the settings service.
+      // Runtime-specific validation remains in the settings service.
       effort: str,
       codingAgent: codingAgentEnum,
       devCostLimitUsd,
@@ -512,6 +511,7 @@ export const methods: Record<string, MethodDef> = {
         // `lh workflow start ... --workflow-id <id>`. Required only for that workflow.
         workflowId: positiveInt,
         targetBranch: str,
+        parentIssue: positiveInt,
         prompt: str,
         // One-shot launch overrides (#1275/#1534): force the runtime / model / effort for New
         // issue, or runtime / model for Start workflow, without changing persisted settings.
@@ -534,6 +534,7 @@ export const methods: Record<string, MethodDef> = {
           prNumber: p.prNumber,
           workflowId: p.workflowId,
           targetBranch: p.targetBranch,
+          parentIssue: p.parentIssue,
           prompt: p.prompt,
           agent: p.agent,
           model: p.model,
@@ -749,6 +750,12 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pageData.issueDetail(p.repo, p.number, "me"),
   },
+  "pageData/subIssues": {
+    description: "Get the direct sub issues and workflow states for one issue.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pageData.subIssues(p.repo, p.number),
+  },
   "issues/ac/list": {
     description:
       "List all acceptance criteria for an issue, including disabled criteria.",
@@ -781,6 +788,40 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) =>
       svc.issues.acSetEnabled(p.repo, p.criterion_id, p.enabled, p.number),
   },
+  "issues/sub/attach": {
+    description: "Attach an existing issue as a sub issue.",
+    params: params(
+      { repo, parent: positiveInt, child: positiveInt, session_id: sid },
+      ["repo", "parent", "child"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.issues.attachSubIssue(p.repo, p.parent, p.child, p.session_id),
+  },
+  "issues/sub/detach": {
+    description: "Detach an issue from its parent.",
+    params: params({ repo, child: positiveInt, session_id: sid }, [
+      "repo",
+      "child",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.issues.detachSubIssue(p.repo, p.child, p.session_id),
+  },
+  "issues/sub/reorder": {
+    description: "Reorder the direct sub issues of an issue.",
+    params: params(
+      {
+        repo,
+        parent: positiveInt,
+        order: { type: "array", items: positiveInt },
+        session_id: sid,
+      },
+      ["repo", "parent", "order"],
+    ),
+    result: anyArray,
+    handler: (p) =>
+      svc.issues.reorderSubIssues(p.repo, p.parent, p.order, p.session_id),
+  },
   "issues/create": {
     description: "Open a new issue.",
     params: params(
@@ -790,6 +831,7 @@ export const methods: Record<string, MethodDef> = {
         body: str,
         labels: stringArray,
         target_branch: strOrNull,
+        parent: positiveInt,
         session_id: sid,
       },
       ["repo", "title"],
@@ -803,6 +845,7 @@ export const methods: Record<string, MethodDef> = {
           body: p.body,
           labels: p.labels,
           target_branch: p.target_branch,
+          parent: p.parent,
         },
         p.session_id,
       ),

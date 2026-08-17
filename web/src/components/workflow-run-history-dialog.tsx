@@ -11,6 +11,10 @@ import { Button } from "@/components/ui/button";
 import { formatCost } from "@/lib/session-usage";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import {
+  workflowDisplayStage,
+  workflowRunDisplayState,
+} from "@/lib/workflow-run";
+import {
   useWorkflowRunAgentCosts,
   useWorkflowRunHistory,
 } from "@/queries/workflow-runs";
@@ -26,6 +30,9 @@ const STATUS_LABELS: Record<string, string> = {
 // A running run holding a needs-human reason is waiting for a human (#1307) — surface that over
 // the plain status, matching the run-status section's badge.
 function statusLabel(state: WorkflowRunState): string {
+  const stage = workflowDisplayStage(state);
+  if (stage === "merged") return "Merged";
+  if (stage === "ready_to_merge") return "Ready to merge";
   if (state.status === "running" && state.needs_human_reason !== null) {
     return "Needs human";
   }
@@ -36,6 +43,13 @@ function displayName(value: string): string {
   return value
     .replaceAll("_", " ")
     .replace(/^./u, (character) => character.toUpperCase());
+}
+
+function currentStepLabel(state: WorkflowRunState): string {
+  const stage = workflowDisplayStage(state);
+  if (stage === "merged") return "Merged";
+  if (stage === "ready_to_merge") return "Ready to merge";
+  return displayName(state.current_step);
 }
 
 function timestamp(value: string): string {
@@ -59,6 +73,7 @@ export function WorkflowRunDetailDialog({
   state: WorkflowRunState;
   onClose: () => void;
 }) {
+  const displayState = workflowRunDisplayState(state);
   const history = useWorkflowRunHistory(owner, repo, state.id, true);
   const agents = useWorkflowRunAgentCosts(owner, repo, state.id, true);
   const backdropDismiss = useBackdropDismiss(onClose);
@@ -118,12 +133,12 @@ export function WorkflowRunDetailDialog({
             <div>
               <dt className="text-xs text-muted-foreground">Status</dt>
               <dd className="mt-1">
-                <Badge>{statusLabel(state)}</Badge>
+                <Badge>{statusLabel(displayState)}</Badge>
               </dd>
             </div>
             <Metadata
               label="Current step"
-              value={displayName(state.current_step)}
+              value={currentStepLabel(displayState)}
             />
             <Metadata
               label="Rework"

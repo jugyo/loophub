@@ -15,6 +15,7 @@ import * as syncCmd from "./commands/sync.ts";
 import * as workflowCmd from "./commands/workflow.ts";
 import * as workspaceCmd from "./commands/workspace.ts";
 import * as worktreeCmd from "./commands/worktree.ts";
+import { fail } from "./context.ts";
 import { printCommandHelp } from "./help.ts";
 import { usage } from "./usage.ts";
 
@@ -23,6 +24,9 @@ async function main() {
   if (flags.help) {
     if (!printCommandHelp(pos)) usage();
     return;
+  }
+  if (flags.cursor === true) {
+    fail("unknown option: --cursor (Cursor coding-agent support was removed)");
   }
   if (group === "info") return infoCmd.run();
   if (group === "repo") return repoCmd.run();

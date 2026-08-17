@@ -22,6 +22,8 @@ import {
 import type { Issue, IssueComment, LinkedPull } from "@/api/types";
 import { CommentActionsMenu } from "@/components/comment-archive";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
+import { CreateIssueButton } from "@/components/create-issue-button";
+import { IssueRow } from "@/components/dashboard-rows";
 import {
   DetailHeaderTitle,
   DetailStickyHeader,
@@ -54,8 +56,10 @@ import {
   usePostComment,
   useSetAcceptanceCriterionEnabled,
   useSetIssueState,
+  useSubIssues,
 } from "@/queries/issues";
 import { usePullUsage, useUnarchivePull } from "@/queries/pulls";
+import { canHaveSubIssues } from "../../../core/issue-hierarchy.ts";
 
 export function IssueDetail({
   owner,
@@ -121,6 +125,8 @@ export function IssueDetail({
 
         <LinkedPullSummary owner={owner} repo={repo} issue={issue} />
 
+        <SubIssueSection owner={owner} repo={repo} issue={issue} />
+
         <IssueHerdrSection owner={owner} repo={repo} issue={issue} />
 
         <section
@@ -157,7 +163,7 @@ function IssueHeader({
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
   const state = stateBadge(issue, "issues");
-  usePageTitle([`${owner}/${repo}`, `Issue #${issue.number}`, issue.title]);
+  usePageTitle([`Issue #${issue.number}`, issue.title, `${owner}/${repo}`]);
 
   return (
     <div data-debug-component="IssueHeader" className="flex flex-col gap-3">
@@ -170,6 +176,18 @@ function IssueHeader({
 
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}
+        {issue.ancestors?.map((ancestor, index) => (
+          <span key={ancestor.number} className="flex items-center gap-2">
+            {index > 0 ? <span aria-hidden="true">›</span> : null}
+            <Link
+              to="/r/$owner/$repo/issues/$number"
+              params={{ owner, repo, number: String(ancestor.number) }}
+              className="hover:underline"
+            >
+              #{ancestor.number}
+            </Link>
+          </span>
+        ))}
         <span>
           @{issue.user.login} · opened {relativeTime(issue.created_at)}
         </span>
@@ -221,6 +239,66 @@ function IssueHeader({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function SubIssueSection({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  const query = useSubIssues(owner, repo, issue.number);
+  const subIssues = query.data?.issues ?? [];
+  if (query.isError) {
+    return (
+      <section
+        data-debug-component="SubIssueSection"
+        className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
+      >
+        Failed to load sub issues.
+      </section>
+    );
+  }
+  const canCreateSubIssue = canHaveSubIssues(issue.depth ?? 1);
+  if (subIssues.length === 0 && !canCreateSubIssue) return null;
+  return (
+    <section
+      data-debug-component="SubIssueSection"
+      className="flex flex-col gap-2"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Sub issues
+        </h2>
+        {canCreateSubIssue ? (
+          <CreateIssueButton
+            repo={`${owner}/${repo}`}
+            parentIssue={issue.number}
+            targetBranch={issue.target_branch ?? undefined}
+          />
+        ) : null}
+      </div>
+      <div className="divide-y rounded-md border">
+        {subIssues.map((subIssue) => (
+          <IssueRow
+            key={subIssue.number}
+            owner={owner}
+            repo={repo}
+            issue={subIssue}
+            workflowRunSeeded
+          />
+        ))}
+      </div>
+      {query.data?.truncated ? (
+        <p className="px-2 text-xs text-muted-foreground">
+          Showing first 50 sub issues
+        </p>
+      ) : null}
+    </section>
   );
 }
 

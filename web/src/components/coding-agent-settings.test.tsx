@@ -146,12 +146,5 @@ describe("CodingAgentSettingsList", () => {
         effort: "xhigh",
       }),
     ).toBe("Claude Code · Opus · Extra high");
-    expect(
-      agentConfigSummary({
-        runtime: "cursor" as CodingAgent,
-        model: "auto",
-        effort: "",
-      }),
-    ).toBe("Cursor Agent · Auto");
   });
 });

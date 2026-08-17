@@ -13,11 +13,23 @@
 // it names — stays plain text.
 
 import { Link } from "@tanstack/react-router";
-import { isValidElement, type ReactNode, useMemo, useState } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  type ReactNode,
+  useMemo,
+  useState,
+} from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
+import {
+  type MarkdownRenderedBlock,
+  type MarkdownRenderedBlockKind,
+  markdownRenderedBlock,
+} from "@/lib/markdown-source-map";
 import {
   type IssueRefKind,
   issueRefKey,
@@ -76,37 +88,240 @@ function mermaidChart(children: ReactNode): string | null {
   return typeof text === "string" ? text.replace(/\n$/, "") : "";
 }
 
-const components: Components = {
-  pre({ node, children, ...rest }) {
-    const chart = mermaidChart(children);
-    if (chart !== null) {
-      return <MermaidDiagram chart={chart} />;
-    }
-    return <pre {...rest}>{children}</pre>;
-  },
-  a({ href, title, children }) {
-    const m = href ? REF_HREF.exec(href) : null;
-    const params = m ? refParams(m) : null;
-    if (m && params) {
-      return (
-        <Link
-          to={REF_ROUTES[m[3] as keyof typeof REF_ROUTES]}
-          params={params}
-          className="text-link hover:underline"
+function markdownComponents(
+  onRenderedBlock?: (block: MarkdownRenderedBlock) => void,
+  renderedBlockClassName?: (block: MarkdownRenderedBlock) => string | undefined,
+  renderedBlockAction?: (block: MarkdownRenderedBlock) => ReactNode,
+  renderedBlockAfter?: (block: MarkdownRenderedBlock) => ReactNode,
+): Components {
+  const report = (
+    kind: MarkdownRenderedBlockKind,
+    node: Parameters<NonNullable<Components["p"]>>[0]["node"],
+  ) => {
+    const block = markdownRenderedBlock(kind, node);
+    onRenderedBlock?.(block);
+    return renderedBlockClassName?.(block);
+  };
+  const action = (
+    kind: MarkdownRenderedBlockKind,
+    node: Parameters<NonNullable<Components["p"]>>[0]["node"],
+  ) => renderedBlockAction?.(markdownRenderedBlock(kind, node));
+  const withAfter = (
+    element: ReactNode,
+    kind: MarkdownRenderedBlockKind,
+    node: Parameters<NonNullable<Components["p"]>>[0]["node"],
+  ) =>
+    renderedBlockAfter ? (
+      <>
+        {element}
+        {renderedBlockAfter(markdownRenderedBlock(kind, node))}
+      </>
+    ) : (
+      element
+    );
+
+  return {
+    p({ node, children, ...rest }) {
+      return withAfter(
+        <p {...rest} className={cn(rest.className, report("paragraph", node))}>
+          {children}
+          {action("paragraph", node)}
+        </p>,
+        "paragraph",
+        node,
+      );
+    },
+    h1({ node, children, ...rest }) {
+      return withAfter(
+        <h1 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+          {action("heading", node)}
+        </h1>,
+        "heading",
+        node,
+      );
+    },
+    h2({ node, children, ...rest }) {
+      return withAfter(
+        <h2 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+          {action("heading", node)}
+        </h2>,
+        "heading",
+        node,
+      );
+    },
+    h3({ node, children, ...rest }) {
+      return withAfter(
+        <h3 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+          {action("heading", node)}
+        </h3>,
+        "heading",
+        node,
+      );
+    },
+    h4({ node, children, ...rest }) {
+      return withAfter(
+        <h4 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+          {action("heading", node)}
+        </h4>,
+        "heading",
+        node,
+      );
+    },
+    h5({ node, children, ...rest }) {
+      return withAfter(
+        <h5 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+          {action("heading", node)}
+        </h5>,
+        "heading",
+        node,
+      );
+    },
+    h6({ node, children, ...rest }) {
+      return withAfter(
+        <h6 {...rest} className={cn(rest.className, report("heading", node))}>
+          {children}
+          {action("heading", node)}
+        </h6>,
+        "heading",
+        node,
+      );
+    },
+    li({ node, children, ...rest }) {
+      return withAfter(
+        <li {...rest} className={cn(rest.className, report("list-item", node))}>
+          {children}
+          {action("list-item", node)}
+        </li>,
+        "list-item",
+        node,
+      );
+    },
+    blockquote({ node, children, ...rest }) {
+      return withAfter(
+        <blockquote
+          {...rest}
+          className={cn(rest.className, report("blockquote", node))}
         >
           {children}
-        </Link>
+          {action("blockquote", node)}
+        </blockquote>,
+        "blockquote",
+        node,
       );
-    }
-    // Preserve the link title (`[text](url "title")`); other anchor attributes
-    // are not emitted by react-markdown for Markdown links.
-    return (
-      <a href={href} title={title}>
-        {children}
-      </a>
-    );
-  },
-};
+    },
+    tr({ node, children, ...rest }) {
+      const block = markdownRenderedBlock("table-row", node);
+      const renderedAction = renderedBlockAction?.(block);
+      const cells = Children.toArray(children);
+      const lastCell = cells.at(-1);
+      const rowChildren =
+        renderedAction && isValidElement<{ children?: ReactNode }>(lastCell)
+          ? [
+              ...cells.slice(0, -1),
+              cloneElement(
+                lastCell,
+                undefined,
+                lastCell.props.children,
+                renderedAction,
+              ),
+            ]
+          : children;
+      const row = (
+        <tr {...rest} className={cn(rest.className, report("table-row", node))}>
+          {rowChildren}
+        </tr>
+      );
+      const after = renderedBlockAfter?.(block);
+      return after ? (
+        <>
+          {row}
+          <tr>
+            <td colSpan={100}>{after}</td>
+          </tr>
+        </>
+      ) : (
+        row
+      );
+    },
+    img({ node, src, alt, title }) {
+      const blockClassName = report("image", node);
+      if (!src) return null;
+      if (!renderedBlockAction) {
+        const element = (
+          <img
+            className={blockClassName}
+            src={src}
+            alt={alt ?? ""}
+            title={title}
+          />
+        );
+        return withAfter(element, "image", node);
+      }
+      return (
+        <span
+          className={cn(
+            blockClassName,
+            renderedBlockAction && "inline-flex items-center gap-1",
+          )}
+        >
+          <img src={src} alt={alt ?? ""} title={title} />
+          {action("image", node)}
+        </span>
+      );
+    },
+    pre({ node, children, ...rest }) {
+      const chart = mermaidChart(children);
+      if (chart !== null) {
+        return withAfter(
+          <>
+            <MermaidDiagram chart={chart} className={report("mermaid", node)} />
+            {action("mermaid", node)}
+          </>,
+          "mermaid",
+          node,
+        );
+      }
+      return withAfter(
+        <pre
+          {...rest}
+          className={cn(rest.className, report("code-block", node))}
+        >
+          {children}
+          {action("code-block", node)}
+        </pre>,
+        "code-block",
+        node,
+      );
+    },
+    a({ href, title, children }) {
+      const m = href ? REF_HREF.exec(href) : null;
+      const params = m ? refParams(m) : null;
+      if (m && params) {
+        return (
+          <Link
+            to={REF_ROUTES[m[3] as keyof typeof REF_ROUTES]}
+            params={params}
+            className="text-link hover:underline"
+          >
+            {children}
+          </Link>
+        );
+      }
+      // Preserve the link title (`[text](url "title")`); other anchor attributes
+      // are not emitted by react-markdown for Markdown links.
+      return (
+        <a href={href} title={title}>
+          {children}
+        </a>
+      );
+    },
+  };
+}
 
 export function Markdown({
   children,
@@ -114,12 +329,20 @@ export function Markdown({
   owner,
   repo,
   typeset = false,
+  onRenderedBlock,
+  renderedBlockClassName,
+  renderedBlockAction,
+  renderedBlockAfter,
 }: {
   children: string;
   className?: string;
   owner?: string;
   repo?: string;
   typeset?: boolean;
+  onRenderedBlock?: (block: MarkdownRenderedBlock) => void;
+  renderedBlockClassName?: (block: MarkdownRenderedBlock) => string | undefined;
+  renderedBlockAction?: (block: MarkdownRenderedBlock) => ReactNode;
+  renderedBlockAfter?: (block: MarkdownRenderedBlock) => ReactNode;
 }) {
   // Clicking an embedded image opens it full-size in <ImageLightbox> (#471).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
@@ -146,11 +369,18 @@ export function Markdown({
       ? [remarkGfm, [remarkIssueRefs, { owner, repo, kinds }]]
       : [remarkGfm];
   const componentsWithImg: Components = {
-    ...components,
-    img({ src, alt, title }) {
+    ...markdownComponents(
+      onRenderedBlock,
+      renderedBlockClassName,
+      renderedBlockAction,
+      renderedBlockAfter,
+    ),
+    img({ node, src, alt, title }) {
+      const block = markdownRenderedBlock("image", node);
+      onRenderedBlock?.(block);
       if (!src) return null;
       const open = () => setLightbox({ src, alt: alt ?? "" });
-      return (
+      const image = (
         <img
           src={src}
           alt={alt ?? ""}
@@ -166,11 +396,49 @@ export function Markdown({
           }}
         />
       );
+      const blockClassName = renderedBlockClassName?.(block);
+      const after = renderedBlockAfter?.(block);
+      if (!renderedBlockAction && !after) {
+        return blockClassName ? (
+          <img
+            className={blockClassName}
+            src={src}
+            alt={alt ?? ""}
+            title={title}
+          />
+        ) : (
+          image
+        );
+      }
+      const rendered = renderedBlockAction ? (
+        blockClassName ? (
+          <span className={cn("markdown-diff-image-block", blockClassName)}>
+            {image}
+            {renderedBlockAction(block)}
+          </span>
+        ) : (
+          <span>
+            {image}
+            {renderedBlockAction(block)}
+          </span>
+        )
+      ) : (
+        image
+      );
+      return after ? (
+        <>
+          {rendered}
+          {after}
+        </>
+      ) : (
+        rendered
+      );
     },
   };
   return (
     <div className={cn(typeset ? "typeset" : "markdown-body", className)}>
       <ReactMarkdown
+        passNode
         remarkPlugins={remarkPlugins}
         components={componentsWithImg}
       >

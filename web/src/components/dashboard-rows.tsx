@@ -3,7 +3,7 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
-import { MessageSquare } from "lucide-react";
+import { ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
 import type { Issue, Label, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { OpenIssueHerdrButton } from "@/components/issue-herdr-section";
@@ -17,6 +17,7 @@ import { relativeTime } from "@/lib/time";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import type { IssueListFilters } from "@/queries/issues";
+import { canHaveSubIssues } from "../../../core/issue-hierarchy.ts";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
   if (badges.length === 0) return null;
@@ -245,6 +246,9 @@ export function IssueRow({
   labelState,
   labelWorkspaceFilter,
   workflowRunSeeded = false,
+  subIssueExpanded = false,
+  onSubIssueToggle,
+  subIssueDepth,
 }: {
   owner: string;
   repo: string;
@@ -263,6 +267,10 @@ export function IssueRow({
   labelWorkspaceFilter?: string;
   /** The list this row belongs to already seeded its PRs' run state (#112). */
   workflowRunSeeded?: boolean;
+  /** Controls the optional sub-issue disclosure shown by expandable issue lists. */
+  subIssueExpanded?: boolean;
+  onSubIssueToggle?: () => void;
+  subIssueDepth?: number;
 }) {
   const popover = useHoverPopover();
   // Usually 0–1 linked PRs; when more than one exists they stack vertically, one
@@ -286,6 +294,28 @@ export function IssueRow({
       ) : null}
       <div className="flex items-center gap-2">
         <RepoChip label={repoLabel} owner={owner} repo={repo} />
+        {issue.sub_issue_summary &&
+        issue.sub_issue_summary.total > 0 &&
+        canHaveSubIssues(subIssueDepth ?? issue.depth ?? 1) &&
+        onSubIssueToggle ? (
+          <button
+            type="button"
+            aria-expanded={subIssueExpanded}
+            aria-label={`${subIssueExpanded ? "Collapse" : "Expand"} sub issues`}
+            className="flex shrink-0 items-center gap-1 rounded px-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            onClick={onSubIssueToggle}
+          >
+            {subIssueExpanded ? (
+              <ChevronDown className="size-3" />
+            ) : (
+              <ChevronRight className="size-3" />
+            )}
+            {/* Show open sub-issues so the summary answers how many remain. */}
+            <Badge>
+              sub {issue.sub_issue_summary.open}/{issue.sub_issue_summary.total}
+            </Badge>
+          </button>
+        ) : null}
         <Link
           to="/r/$owner/$repo/issues/$number"
           params={{ owner, repo, number: String(issue.number) }}

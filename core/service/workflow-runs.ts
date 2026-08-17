@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AgentExecutionTarget } from "../agent-control.ts";
 import {
+  agentEffort,
   agentModel,
   type CodingAgent,
   configDir,
@@ -31,15 +32,18 @@ import {
   type WorkflowRunReviewSummaryWire,
   type WorkflowRunStateWire,
   type WorkflowRunTotalCostWire,
+  type WorkflowStepExecutionWire,
   type WorkflowStepStatusWire,
   workflowRunHistoryEventJSON,
   workflowRunStateJSON,
 } from "../serialize.ts";
+import { workflowRunConfigJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import { killPaneForegroundProcess } from "../terminal/herdr-cleanup.ts";
 import {
   buildWorkflowStepHerdrLaunchPlan,
   HERDR_ID,
+  type HerdrLaunchPlan,
 } from "../terminal/terminal-launch.ts";
 import {
   composeWorkflowLaunchPrompt,
@@ -63,6 +67,12 @@ import {
   parseWorkflowHerdrAgentName,
   workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
+import {
+  parseWorkflowManifest,
+  serializeWorkflowManifest,
+  type WorkflowManifest,
+  type WorkflowManifestAgent,
+} from "../workflow/manifest.ts";
 import { workflowMessages } from "../workflow/messages.ts";
 import {
   inlineText,
@@ -77,10 +87,16 @@ import {
   workflowActionPlan,
 } from "../workflow/reconcile.ts";
 import {
+  readStepPromptSidecar,
+  readWorkflowManifest,
+  workflowManifestPath,
   writeParentContract,
   writeParentPrompt,
   writeStepContract,
-  writeStepPrompt,
+  writeStepLaunchContract,
+  writeStepLaunchPrompt,
+  writeStepPromptSidecar,
+  writeWorkflowManifest,
 } from "../workflow/run-files.ts";
 import {
   projectWorkflowRunEvents,
@@ -96,6 +112,7 @@ import {
 import { staleVerifyChildSessions } from "../workflow/stale-verify.ts";
 import {
   type WorkflowLatestReviewState,
+  workflowDisplayStage,
   workflowDone,
 } from "../workflow/steps.ts";
 import {
@@ -151,6 +168,24 @@ export type WorkflowRunStartResult = {
     // The same prompt as it was written for the run's runtime, which the parent launch's command
     // line reads back instead of carrying inline.
     user_prompt_path: string;
+    effort: string;
+  };
+};
+
+export type WorkflowManifestViewResult = {
+  run: { id: number; issue: number; pr: number };
+  manifest_path: string;
+  manifest: WorkflowManifest;
+  pointers: Array<{ label: string; value: string }>;
+  workspace: {
+    worktree_path: string;
+    branch: string;
+    base_branch: string;
+  };
+  change_timing: {
+    next_child: string;
+    parent: string;
+    execute: string;
   };
 };
 
@@ -196,6 +231,7 @@ export type WorkflowLaunchStepResult = {
   // spawning the herdr launch it returns.
   runtime: CodingAgent;
   model: string;
+  effort: string;
   session_id: string;
   worktree: string;
   system_prompt_path: string;
@@ -318,6 +354,96 @@ function workflowRunAgentCosts(
     groups.set(role, group);
   }
   return [...groups.values()];
+}
+
+function latestWorkflowStepRuns(
+  run: S.WorkflowRunRow,
+  projection: WorkflowRunProjection,
+  latestReview: S.ReviewRow | null,
+): {
+  execute: WorkflowStepExecutionWire | null;
+  verify: WorkflowStepExecutionWire | null;
+} {
+  const launches = projection.events.filter(
+    (event) => event.type === "workflow_step.launched",
+  );
+  const result: Record<WorkflowStep, WorkflowStepExecutionWire | null> = {
+    execute: null,
+    verify: null,
+  };
+  for (const step of WORKFLOW_STEPS) {
+    const launch = launches.findLast((event) => event.payload.step === step);
+    if (!launch || typeof launch.payload.session_id !== "string") continue;
+    const session = S.getAgentSession(launch.payload.session_id);
+    const usage = session ? S.listSessionUsage(session.id) : [];
+    const latestReviewSubmission =
+      step === "verify" && latestReview
+        ? projection.reviewSubmissions.get(latestReview.id)?.latest
+        : undefined;
+    const reviewForLaunch =
+      latestReviewSubmission && latestReviewSubmission.id > launch.id
+        ? latestReview
+        : null;
+    const endedEvent = projection.events.find((event) => {
+      if (event.id <= launch.id) return false;
+      if (event.type === "workflow_step.launched") return true;
+      if (
+        step === "verify" &&
+        (event.type === "workflow_run.review_submitted" ||
+          event.type === "pull_request.review_submitted")
+      ) {
+        return true;
+      }
+      return false;
+    });
+    const endedAt = endedEvent?.created_at ?? run.ended_at;
+    const startedMs = Date.parse(launch.created_at);
+    const endedMs = endedAt ? Date.parse(endedAt) : Date.now();
+    const durationSeconds =
+      Number.isFinite(startedMs) && Number.isFinite(endedMs)
+        ? Math.max(0, Math.round((endedMs - startedMs) / 1000))
+        : 0;
+    const hasUnknownCost = usage.some((row) => row.cost_usd === null);
+    const hasUsage = usage.length > 0;
+    result[step] = {
+      step,
+      started_at: launch.created_at,
+      ended_at: endedAt,
+      duration_seconds: durationSeconds,
+      status: endedAt
+        ? "completed"
+        : run.status === "running"
+          ? "running"
+          : "unknown",
+      result:
+        step === "verify" && reviewForLaunch
+          ? reviewForLaunch.event === "PASS"
+            ? "pass"
+            : "request_changes"
+          : null,
+      runtime: session?.runtime ?? null,
+      model: session?.model ?? null,
+      effort: session?.effort ?? null,
+      input_tokens: hasUsage
+        ? usage.reduce((sum, row) => sum + row.input_tokens, 0)
+        : null,
+      cache_creation_input_tokens: hasUsage
+        ? usage.reduce((sum, row) => sum + row.cache_creation_input_tokens, 0)
+        : null,
+      cache_read_input_tokens: hasUsage
+        ? usage.reduce((sum, row) => sum + row.cache_read_input_tokens, 0)
+        : null,
+      output_tokens: hasUsage
+        ? usage.reduce((sum, row) => sum + row.output_tokens, 0)
+        : null,
+      cost_usd:
+        hasUsage && !hasUnknownCost
+          ? usage.reduce((sum, row) => sum + (row.cost_usd ?? 0), 0)
+          : null,
+      cost_status: hasUnknownCost ? "unknown" : hasUsage ? "known" : "pending",
+    };
+  }
+  return result;
 }
 
 export type WorkflowConfirmStepLaunchResult = {
@@ -489,6 +615,70 @@ function runModel(run: S.WorkflowRunRow): string {
   return agentModel(runtime);
 }
 
+function runEffort(run: S.WorkflowRunRow): string | null {
+  if (run.effort?.trim()) return run.effort.trim();
+  const repo = S.getRepoById(run.repo_id);
+  if (!repo) return null;
+  const effective = effectiveRepoAgentConfigFor(repo);
+  return effective.runtime === runRuntime(run)
+    ? effective.effort
+    : agentEffort(runRuntime(run));
+}
+
+type WorkflowLaunchConfig = {
+  contractLanguage: WorkflowContractLanguage;
+  agents: {
+    parent: WorkflowManifestAgent;
+    execute: WorkflowManifestAgent;
+    verify: WorkflowManifestAgent;
+  };
+  stepPrompt: (step: WorkflowStep) => string;
+};
+
+function resolveLaunchConfig(
+  run: S.WorkflowRunRow,
+  workflow: { [K in `${WorkflowStep}_prompt`]: string },
+): WorkflowLaunchConfig {
+  if (run.manifest_version === null) {
+    const runtime = runRuntime(run);
+    const model = runModel(run);
+    const effort = runEffort(run) ?? agentEffort(runtime);
+    return {
+      contractLanguage: runContractLanguage(run),
+      agents: {
+        parent: { runtime, model, effort },
+        execute: { runtime, model, effort },
+        verify: { runtime, model, effort },
+      },
+      stepPrompt: (step) => workflowStepPrompt(workflow, step),
+    };
+  }
+
+  const path = workflowManifestPath(run.id);
+  try {
+    const manifest = parseWorkflowManifest(readWorkflowManifest(run.id));
+    return {
+      contractLanguage: manifest.contract_language,
+      agents: manifest.agents,
+      stepPrompt: (step) =>
+        readStepPromptSidecar(run.id, manifest.prompts[step]),
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new ServiceError(
+      422,
+      `workflow manifest ${path} is invalid: ${reason}`,
+    );
+  }
+}
+
+function launchAgent(
+  config: WorkflowLaunchConfig,
+  step: WorkflowStep | "parent",
+): WorkflowManifestAgent {
+  return config.agents[step];
+}
+
 function runJSON(run: S.WorkflowRunRow): WorkflowRunUpdateResult["run"] {
   return {
     id: run.id,
@@ -563,6 +753,7 @@ function buildStepPointers(input: {
     case "execute":
       return [
         { label: "repo", value: repo },
+        { label: "run", value: String(input.run.id) },
         { label: "issue", value: `#${input.run.issue_number}` },
         { label: "pr", value: `#${input.run.pr_number}` },
         ...(input.reviewId !== undefined
@@ -573,6 +764,7 @@ function buildStepPointers(input: {
       const messages = workflowMessages(input.language);
       return [
         { label: "repo", value: repo },
+        { label: "run", value: String(input.run.id) },
         { label: "issue", value: `#${input.run.issue_number}` },
         { label: "base sha", value: input.baseSha ?? "" },
         { label: "head sha", value: input.headSha ?? "" },
@@ -1051,12 +1243,29 @@ async function observeWorkflowRunStatus(
   return {
     run: run.id,
     current_step: run.current_step,
+    display_stage: workflowDisplayStage({
+      currentStep: run.current_step === "verify" ? "verify" : "execute",
+      mergeReady: workflowDone({
+        mergeableState,
+        prClosed: prIssue.state === "closed",
+        prMerged: pull.merged === 1,
+      }),
+      prMerged: pull.merged === 1,
+    }),
     status: run.status,
     active_step: run.active_step,
     rework_count: run.rework_count,
     rework_limit: run.rework_limit,
     needs_human_reason: run.needs_human_reason,
     awaiting_human: run.needs_human_reason !== null,
+    pending_step_launch:
+      run.launching_step !== null && run.launching_session_id !== null
+        ? {
+            step: workflowStep(run.launching_step),
+            session_id: run.launching_session_id,
+            head_sha: run.launching_head_sha,
+          }
+        : null,
     pending_effect_receipt: pendingEffectReceipt,
     unaddressed_out_of_band_reviews: unaddressedReviews,
     cost_increment_usd: costIncrementUsd,
@@ -1065,7 +1274,7 @@ async function observeWorkflowRunStatus(
     head_ahead_of_base: progress.headAheadOfBase,
     head_ahead_of_latest_review: progress.headAheadOfLatestReview,
     merge_conflict: progress.mergeConflict,
-    done: workflowDone({
+    merge_ready: workflowDone({
       mergeableState,
       prClosed: prIssue.state === "closed",
       prMerged: pull.merged === 1,
@@ -1139,8 +1348,16 @@ async function workflowRunState(
     : [null, null];
   const currentHead = liveHead ?? pull?.head_sha ?? null;
   const shaStatus =
-    liveHead && liveBase
-      ? await pullShaStatus(repo.local_path, liveBase, liveHead)
+    pull?.merged !== 1 && liveHead && liveBase
+      ? await (async () => {
+          const projection = S.getPullStatusProjection(liveBase, liveHead);
+          return projection
+            ? {
+                conflict: projection.conflict === 1,
+                hasEffectiveDiff: projection.has_effective_diff === 1,
+              }
+            : await pullShaStatus(repo.local_path, liveBase, liveHead);
+        })()
       : null;
   const mergeConflict = shaStatus?.conflict ?? false;
   const effectiveDiff = shaStatus?.hasEffectiveDiff ?? false;
@@ -1184,6 +1401,7 @@ async function workflowRunState(
     run.needs_human_reason === null &&
     run.active_step === "verify" &&
     verifyLaunchPending;
+  const latestStepRuns = latestWorkflowStepRuns(run, projection, review);
   return workflowRunStateJSON({
     run,
     workflowName,
@@ -1204,12 +1422,15 @@ async function workflowRunState(
     activeVerifyStartedAt: verifyActive
       ? (verifyLaunch?.created_at ?? null)
       : null,
-    done: workflowDone({
+    prMerged: pull?.merged === 1,
+    mergeReady: workflowDone({
       mergeableState,
       prClosed: prIssue?.state === "closed",
       prMerged: pull?.merged === 1,
     }),
     mergeConflict,
+    latestStepRuns,
+    workflowConfig: workflowRunConfigJSON(run),
   });
 }
 
@@ -1239,6 +1460,27 @@ function assertNoLiveExecuteChild(run: S.WorkflowRunRow, step: WorkflowStep) {
   throw new ServiceError(
     409,
     `Workflow run #${run.id} already has a live Execute session (${run.active_session_id})`,
+  );
+}
+
+function assertNoDuplicateVerifyChild(
+  run: S.WorkflowRunRow,
+  step: WorkflowStep,
+  headSha: string | undefined,
+) {
+  if (
+    step !== "verify" ||
+    run.active_step !== "verify" ||
+    !run.active_session_id
+  ) {
+    return;
+  }
+  if (run.active_head_sha !== headSha) {
+    return;
+  }
+  throw new ServiceError(
+    409,
+    `Workflow run #${run.id} already has a Verify session for ${headSha} (${run.active_session_id})`,
   );
 }
 
@@ -1424,7 +1666,99 @@ function increaseRunCostLimit(
   };
 }
 
+function recordWorkflowStepLaunchFailure(
+  repoId: number,
+  runId: number,
+  sessionId: string,
+  reason: string,
+  actorSessionId: string | null | undefined,
+): S.WorkflowRunRow | null {
+  return db.transaction(() => {
+    const failed = S.failWorkflowStepLaunch(runId, sessionId);
+    if (!failed) return null;
+    const step = workflowStep(failed.launch_failure_step ?? "");
+    S.emitWorkflowEvent(
+      repoId,
+      "workflow_step.launch_failed",
+      actorFor(actorSessionId),
+      {
+        id: failed.id,
+        issue_number: failed.issue_number,
+        pr_number: failed.pr_number,
+        step,
+        session_id: sessionId,
+        head_sha: failed.launch_failure_head_sha,
+        reason,
+      },
+    );
+    return failed;
+  });
+}
+
 export const workflowRuns = {
+  manifestPath(name: string, runId: number): string {
+    const repo = repoOr404(name);
+    const run = workflowRunOr404(runId);
+    if (run.repo_id !== repo.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    return workflowManifestPath(run.id);
+  },
+
+  manifestView(name: string, runId: number): WorkflowManifestViewResult {
+    const repo = repoOr404(name);
+    const run = workflowRunOr404(runId);
+    if (run.repo_id !== repo.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    const path = workflowManifestPath(run.id);
+    let manifest: WorkflowManifest;
+    try {
+      manifest = parseWorkflowManifest(readWorkflowManifest(run.id));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new ServiceError(
+        422,
+        `workflow manifest ${path} is invalid: ${reason}`,
+      );
+    }
+
+    const issue = issueOr404(repo, run.issue_number, "issue");
+    const prIssue = issueOr404(repo, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull) {
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    }
+    const worktree = workflowRunWorktree({
+      repo,
+      prNumber: run.pr_number,
+      headRef: pull.head_ref,
+    });
+    return {
+      run: { id: run.id, issue: issue.number, pr: prIssue.number },
+      manifest_path: path,
+      manifest,
+      pointers: [
+        { label: "repo", value: repo.full_name },
+        { label: "issue", value: `#${issue.number}` },
+        { label: "pr", value: `#${prIssue.number}` },
+      ],
+      workspace: {
+        worktree_path: worktree,
+        branch: pull.head_ref,
+        base_branch: pull.base_ref,
+      },
+      change_timing: {
+        next_child:
+          "manifest と step prompt の変更は次に起動する子から反映されます",
+        parent:
+          "現在の run の parent には反映されません（run 開始時に起動済みです）",
+        execute:
+          "現在の Execute child には反映されません。既存の child を停止してから再起動してください",
+      },
+    };
+  },
+
   async start(
     name: string,
     input: {
@@ -1435,6 +1769,7 @@ export const workflowRuns = {
       // step inherits the same values. Omitted => claude-code + the agent's config default model.
       runtime?: CodingAgent;
       model?: string | null;
+      effort?: string | null;
       lockPid?: number;
     },
     sessionId: string = randomUUID(),
@@ -1444,6 +1779,10 @@ export const workflowRuns = {
     const workflow = workflowByInput(input, r);
     const issue = issueOr404(r, input.issue, "issue");
     const runtime: CodingAgent = input.runtime ?? "claude-code";
+    const effective = effectiveRepoAgentConfigFor(r);
+    const effort =
+      input.effort?.trim() ||
+      (effective.runtime === runtime ? effective.effort : agentEffort(runtime));
     const contractLanguage = workflowContractLanguage();
 
     S.registerAgentSession(
@@ -1453,7 +1792,9 @@ export const workflowRuns = {
       `Workflow #${issue.number} ${issue.title}`,
       runtime,
       "dev",
-      input.model ?? agentModel(runtime),
+      input.model?.trim() || agentModel(runtime),
+      undefined,
+      effort,
     );
 
     const opened = await dev.openPr(
@@ -1534,10 +1875,12 @@ export const workflowRuns = {
           autoMode: true,
           runtime,
           model: input.model?.trim() || null,
+          effort,
           contractLanguage,
           parentSessionId: sessionId,
           costIncrementUsd,
           costLimitUsd: costIncrementUsd,
+          manifestVersion: 1,
         });
         S.emitWorkflowEvent(r.id, "workflow_run.started", actorFor(sessionId), {
           id: created.id,
@@ -1549,14 +1892,45 @@ export const workflowRuns = {
         return created;
       });
 
+      const model = run.model?.trim() || agentModel(runtime);
+      const executePromptName = "execute-step-prompt.md";
+      const verifyPromptName = "verify-step-prompt.md";
+      writeStepPromptSidecar(
+        run.id,
+        "execute",
+        workflowStepPrompt(workflow, "execute"),
+      );
+      writeStepPromptSidecar(
+        run.id,
+        "verify",
+        workflowStepPrompt(workflow, "verify"),
+      );
+      const manifest: WorkflowManifest = {
+        manifest_version: 1,
+        contract_language: contractLanguage,
+        agents: {
+          parent: { runtime, model, effort },
+          execute: { runtime, model, effort },
+          verify: { runtime, model, effort },
+        },
+        prompts: {
+          execute: executePromptName,
+          verify: verifyPromptName,
+        },
+      };
+      writeWorkflowManifest(run.id, serializeWorkflowManifest(manifest));
+      const launchConfig = resolveLaunchConfig(run, workflow);
+      const parentAgent = launchAgent(launchConfig, "parent");
+
       const systemPrompt = renderWorkflowContract(
         {
           template: workflowContractText("parent", contractLanguage),
           step: "parent",
+          run: run.id,
           worktreePath: wtPath,
           baseBranch: pull.base_ref,
         },
-        contractLanguage,
+        launchConfig.contractLanguage,
       );
       const systemPromptPath = writeParentContract(run.id, systemPrompt);
       const userPrompt = parentUserPrompt(
@@ -1568,14 +1942,18 @@ export const workflowRuns = {
           prNumber: opened.number,
           baseRef: pull.base_ref,
         },
-        contractLanguage,
+        launchConfig.contractLanguage,
       );
       // The positional prompt goes to a file the launch's command line reads back, resolved for the
       // run's runtime first: Codex and Grok have no --append-system-prompt-file, so their file
       // carries the contract folded in.
       const userPromptPath = writeParentPrompt(
         run.id,
-        runtimePrompt({ runtime, systemPrompt, prompt: userPrompt }),
+        runtimePrompt({
+          runtime: parentAgent.runtime,
+          systemPrompt,
+          prompt: userPrompt,
+        }),
       );
 
       return {
@@ -1599,6 +1977,7 @@ export const workflowRuns = {
           system_prompt_path: systemPromptPath,
           user_prompt: userPrompt,
           user_prompt_path: userPromptPath,
+          effort: parentAgent.effort,
         },
       };
     } catch (e) {
@@ -2049,6 +2428,8 @@ export const workflowRuns = {
       ? S.getWorkflowById(run.workflow_id)
       : null;
     if (!workflow) throw new ServiceError(404, "Workflow not found");
+    const launchConfig = resolveLaunchConfig(run, workflow);
+    const stepAgent = launchAgent(launchConfig, step);
     issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const pull = S.getPull(prIssue.id);
@@ -2062,6 +2443,7 @@ export const workflowRuns = {
     const reviewId = resolveReworkReview(prIssue.id, step, input.review);
     const headSha =
       step === "verify" ? await worktreeHead(worktree) : undefined;
+    assertNoDuplicateVerifyChild(run, step, headSha);
     const baseSha =
       step === "verify" && headSha
         ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
@@ -2069,7 +2451,7 @@ export const workflowRuns = {
     const pointers = buildStepPointers({
       repoName: r.full_name,
       run,
-      language: runContractLanguage(run),
+      language: launchConfig.contractLanguage,
       step,
       reviewId,
       baseSha,
@@ -2079,9 +2461,10 @@ export const workflowRuns = {
       {
         template: stepContractForLaunch(
           step,
-          workflowContractText(step, runContractLanguage(run)),
+          workflowContractText(step, launchConfig.contractLanguage),
         ),
         step,
+        run: run.id,
         worktreePath: worktree,
         baseBranch: pull.base_ref,
       },
@@ -2089,26 +2472,28 @@ export const workflowRuns = {
         pointers,
         worktreePath: ".",
         baseBranch: pull.base_ref,
-        stepPrompt: workflowStepPrompt(workflow, step),
+        stepPrompt: launchConfig.stepPrompt(step),
         note: input.note,
       },
-      runContractLanguage(run),
+      launchConfig.contractLanguage,
     );
-    const systemPromptPath = writeStepContract(
+    const systemPromptPath = writeStepLaunchContract(
       run.id,
+      childSessionId,
       step,
       composed.systemPrompt,
     );
 
     // The step inherits the parent run's runtime and model (#516) so the whole run stays on one
     // agent; an explicit launch-step --model override still wins when passed.
-    const runtime = runRuntime(run);
-    const model = input.model?.trim() || runModel(run);
+    const runtime = stepAgent.runtime;
+    const model = input.model?.trim() || stepAgent.model;
     // The positional prompt goes to a file the launch's command line reads back, resolved for this
     // runtime first: Codex and Grok have no --append-system-prompt-file, so their file carries the
     // contract folded in.
-    const userPromptPath = writeStepPrompt(
+    const userPromptPath = writeStepLaunchPrompt(
       run.id,
+      childSessionId,
       step,
       runtimePrompt({
         runtime,
@@ -2116,37 +2501,61 @@ export const workflowRuns = {
         prompt: composed.userPrompt,
       }),
     );
-    const sequence = S.reserveWorkflowRunChildSequence(
-      run.id,
-      nextWorkflowChildSequence(run.step_sessions_json),
-    );
-    if (sequence == null) throw new ServiceError(404, "Workflow run not found");
+    const sequence = S.reserveWorkflowStepLaunch(run.id, {
+      step,
+      sessionId: childSessionId,
+      headSha,
+      minimumNextSequence: nextWorkflowChildSequence(run.step_sessions_json),
+    });
+    if (sequence == null) {
+      const current = S.getWorkflowRun(run.id);
+      if (!current) throw new ServiceError(404, "Workflow run not found");
+      assertNoLiveExecuteChild(current, step);
+      assertNoDuplicateVerifyChild(current, step, headSha);
+      throw new ServiceError(
+        409,
+        `Workflow run #${run.id} is already launching ${current.launching_step ?? "a step"} (${current.launching_session_id ?? "unknown session"})`,
+      );
+    }
     // Where the child goes is decided here, from the pane the run's parent launch registered — not
     // from the environment of whoever ran the command. That record is the run's own anchor, so the
     // child lands beside its parent no matter which pane, tab or workspace is focused. A run with no
     // registered pane (parent started outside the recorded launch path) still falls back to the
     // caller's pane, which is better than the tab-create fallback that ignores the run entirely.
     const anchorPaneId = workflowRunParentPaneId(run) ?? input.paneId ?? null;
-    const herdr = buildWorkflowStepHerdrLaunchPlan({
-      repo: { full_name: r.full_name, local_path: r.local_path },
-      runId: run.id,
-      step,
-      sequence,
-      runtime,
-      sessionId: childSessionId,
-      worktree,
-      systemPromptPath,
-      userPromptPath,
-      splitPaneId: anchorPaneId,
-      model,
-    });
-    // Keep confirmation's validation at the persistence boundary, but also validate the generated
-    // plan before the CLI can spawn it. A future naming/normalization change must fail before it can
-    // leave a live child whose session metadata was never recorded.
-    // The label, not the herdr agent name: `agent_name` is the identity LoopHub records and later
-    // parses back (parseWorkflowHerdrAgentName), and since herdr 0.7.5 the herdr-side name is an
-    // opaque slug while the label carries the "executor #<run>-<n>" wording.
-    validateWorkflowStepAgentName(herdr.label, run.id, step);
+    let herdr: HerdrLaunchPlan;
+    try {
+      herdr = buildWorkflowStepHerdrLaunchPlan({
+        repo: { full_name: r.full_name, local_path: r.local_path },
+        runId: run.id,
+        step,
+        sequence,
+        runtime,
+        sessionId: childSessionId,
+        worktree,
+        systemPromptPath,
+        userPromptPath,
+        splitPaneId: anchorPaneId,
+        model,
+        effort: stepAgent.effort,
+      });
+      // Keep confirmation's validation at the persistence boundary, but also validate the generated
+      // plan before the CLI can spawn it. A future naming/normalization change must fail before it can
+      // leave a live child whose session metadata was never recorded.
+      // The label, not the herdr agent name: `agent_name` is the identity LoopHub records and later
+      // parses back (parseWorkflowHerdrAgentName), and since herdr 0.7.5 the herdr-side name is an
+      // opaque slug while the label carries the "executor #<run>-<n>" wording.
+      validateWorkflowStepAgentName(herdr.label, run.id, step);
+    } catch (error) {
+      recordWorkflowStepLaunchFailure(
+        r.id,
+        run.id,
+        childSessionId,
+        error instanceof Error ? error.message : String(error),
+        sessionId,
+      );
+      throw error;
+    }
 
     return {
       run: runJSON(run),
@@ -2154,6 +2563,7 @@ export const workflowRuns = {
       agent_name: herdr.label,
       runtime,
       model,
+      effort: stepAgent.effort,
       session_id: childSessionId,
       worktree,
       system_prompt_path: systemPromptPath,
@@ -2164,6 +2574,71 @@ export const workflowRuns = {
       anchor_pane_id: anchorPaneId,
       herdr,
     };
+  },
+
+  failStepLaunch(
+    name: string,
+    input: { run: number; sessionId: string; reason?: string },
+    actorSessionId?: string | null,
+  ): { run: number; session_id: string } {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    assertParentActor(run, actorSessionId);
+    if (
+      !recordWorkflowStepLaunchFailure(
+        r.id,
+        run.id,
+        input.sessionId,
+        input.reason ?? "Workflow step launch failed before spawn",
+        actorSessionId,
+      )
+    ) {
+      throw new ServiceError(
+        409,
+        "Workflow step launch reservation is not active",
+      );
+    }
+    return { run: run.id, session_id: input.sessionId };
+  },
+
+  recoverStepLaunch(
+    name: string,
+    input: { run: number; reason: string },
+    actorSessionId?: string | null,
+  ): WorkflowRunUpdateResult {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    assertParentActor(run, actorSessionId);
+    const reservedSessionId = run.launching_session_id;
+    if (!reservedSessionId) {
+      throw new ServiceError(
+        409,
+        "Workflow run has no pending step launch to recover",
+      );
+    }
+    const reason = workflowHumanReason(input.reason, "recover launch");
+    const recovered = recordWorkflowStepLaunchFailure(
+      r.id,
+      run.id,
+      reservedSessionId,
+      reason,
+      actorSessionId,
+    );
+    if (!recovered) {
+      throw new ServiceError(
+        409,
+        "Workflow step launch reservation changed before recovery",
+      );
+    }
+    return { run: runJSON(recovered) };
   },
 
   // Stop the Verify children left reviewing a HEAD the run has already moved past — called when a
@@ -2218,12 +2693,14 @@ export const workflowRuns = {
       run: number;
       step: string;
       sessionId: string;
+      runtime?: CodingAgent;
       agentName?: string;
       executionTarget: AgentExecutionTarget;
       pointers: WorkflowInputPointer[];
       headSha?: string;
       note?: string;
       model?: string;
+      effort?: string;
       launchedAt?: string;
     },
     actorSessionId?: string | null,
@@ -2236,6 +2713,12 @@ export const workflowRuns = {
     }
     assertParentActor(run, actorSessionId);
     const step = workflowStep(input.step);
+    const workflow = run.workflow_id
+      ? S.getWorkflowById(run.workflow_id)
+      : null;
+    if (!workflow) throw new ServiceError(404, "Workflow not found");
+    const launchConfig = resolveLaunchConfig(run, workflow);
+    const stepAgent = launchAgent(launchConfig, step);
     const issue = issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const sessionId = input.sessionId;
@@ -2253,7 +2736,7 @@ export const workflowRuns = {
         );
       }
     }
-    const messages = workflowMessages(runContractLanguage(run));
+    const messages = workflowMessages(launchConfig.contractLanguage);
     const handoffBody = [
       messages.handoffLaunchIntro(step, run.id),
       "",
@@ -2270,15 +2753,27 @@ export const workflowRuns = {
     // commit as one — a run that claims an active step must also carry the session and handoff that
     // step was launched with.
     const withActive = db.transaction(() => {
+      if (
+        run.launching_session_id !== null &&
+        (run.launching_session_id !== sessionId ||
+          run.launching_step !== step ||
+          run.launching_head_sha !== (input.headSha ?? null))
+      ) {
+        throw new ServiceError(
+          409,
+          "Workflow step launch reservation belongs to another launch",
+        );
+      }
       S.registerAgentSession(
         sessionId,
         "workflow-step",
         sessionId,
         input.agentName ?? `Workflow ${step} run #${run.id}`,
-        runRuntime(run),
+        input.runtime ?? stepAgent.runtime,
         "workflow-step",
-        input.model?.trim() || runModel(run),
+        input.model?.trim() || stepAgent.model,
         input.launchedAt,
+        input.effort ?? stepAgent.effort,
       );
       S.registerAgentExecutionTarget({
         sessionId,
@@ -2296,8 +2791,12 @@ export const workflowRuns = {
       const activated = S.updateWorkflowRun(run.id, {
         activeStep: step,
         activeSessionId: sessionId,
+        ...(step === "verify" ? { activeHeadSha: input.headSha } : {}),
       });
       if (!activated) throw new ServiceError(404, "Workflow run not found");
+      if (run.launching_session_id === sessionId) {
+        S.releaseWorkflowStepLaunch(run.id, sessionId);
+      }
       const handoff = S.createHandoff({
         repoId: r.id,
         prId: prIssue.id,
@@ -2453,6 +2952,7 @@ export const workflowRuns = {
       ? S.getWorkflowById(run.workflow_id)
       : null;
     if (!workflow) throw new ServiceError(404, "Workflow not found");
+    const launchConfig = resolveLaunchConfig(run, workflow);
     issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const pull = S.getPull(prIssue.id);
@@ -2473,7 +2973,7 @@ export const workflowRuns = {
     const pointers = buildStepPointers({
       repoName: r.full_name,
       run,
-      language: runContractLanguage(run),
+      language: launchConfig.contractLanguage,
       step,
       reviewId,
       baseSha,
@@ -2483,9 +2983,10 @@ export const workflowRuns = {
       {
         template: stepContractForLaunch(
           step,
-          workflowContractText(step, runContractLanguage(run)),
+          workflowContractText(step, launchConfig.contractLanguage),
         ),
         step,
+        run: run.id,
         worktreePath: worktree,
         baseBranch: pull.base_ref,
       },
@@ -2493,10 +2994,10 @@ export const workflowRuns = {
         pointers,
         worktreePath: ".",
         baseBranch: pull.base_ref,
-        stepPrompt: workflowStepPrompt(workflow, step),
+        stepPrompt: launchConfig.stepPrompt(step),
         note: input.note,
       },
-      runContractLanguage(run),
+      launchConfig.contractLanguage,
     );
     const systemPromptPath = writeStepContract(
       run.id,

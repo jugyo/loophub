@@ -10,7 +10,9 @@ import type {
   ReviewCommentRow,
   ReviewResponseRow,
   ReviewRow,
+  WorkflowRunRow,
 } from "./store.ts";
+import { writeWorkflowManifest } from "./workflow/run-files.ts";
 
 // Isolate the DB before serialize.ts -> store.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-serialize-"));
@@ -18,9 +20,42 @@ process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let serialize: typeof import("./serialize.ts");
+let status: typeof import("./serialize-status.ts");
 
 beforeAll(async () => {
   serialize = await import("./serialize.ts");
+  status = await import("./serialize-status.ts");
+});
+
+test("workflowRunConfigJSON reads the run manifest and prompt sources", () => {
+  writeWorkflowManifest(
+    42,
+    JSON.stringify({
+      manifest_version: 1,
+      contract_language: "ja",
+      agents: {
+        parent: { runtime: "codex", model: "parent", effort: "low" },
+        execute: { runtime: "codex", model: "execute", effort: "high" },
+        verify: { runtime: "codex", model: "verify", effort: "medium" },
+      },
+      prompts: { execute: "execute.md", verify: "verify.md" },
+    }),
+  );
+
+  expect(
+    status.workflowRunConfigJSON({
+      id: 42,
+      manifest_version: 1,
+    } as WorkflowRunRow),
+  ).toEqual({
+    contract_language: "ja",
+    agents: {
+      parent: { runtime: "codex", model: "parent", effort: "low" },
+      execute: { runtime: "codex", model: "execute", effort: "high" },
+      verify: { runtime: "codex", model: "verify", effort: "medium" },
+    },
+    prompt_sources: { execute: "execute.md", verify: "verify.md" },
+  });
 });
 
 function eventRow(

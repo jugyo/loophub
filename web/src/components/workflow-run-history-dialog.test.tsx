@@ -31,7 +31,8 @@ const RUN: WorkflowRunState = {
   ended_at: null,
   latest_review: null,
   verification_status: "unverified",
-  done: false,
+  pr_merged: false,
+  merge_ready: false,
   merge_conflict: false,
 };
 
@@ -40,7 +41,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderSection(fetchImpl: typeof fetch) {
+function renderSection(fetchImpl: typeof fetch, state: WorkflowRunState = RUN) {
   vi.stubGlobal("fetch", fetchImpl);
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -50,7 +51,7 @@ function renderSection(fetchImpl: typeof fetch) {
       <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
-        state={RUN}
+        state={state}
         showDetail
       />
     </QueryClientProvider>,
@@ -145,6 +146,7 @@ describe("Workflow run detail dialog", () => {
     });
     expect(within(dialog).getByText("standard · run 7")).toBeTruthy();
     expect(within(dialog).getByText("Current step")).toBeTruthy();
+    expect(within(dialog).getByText("Execute")).toBeTruthy();
     expect(within(dialog).getByText("Rework")).toBeTruthy();
     expect(within(dialog).getByText("1/8")).toBeTruthy();
     expect(within(dialog).getByText("Started")).toBeTruthy();
@@ -198,6 +200,37 @@ describe("Workflow run detail dialog", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows Merged as the current step after the PR is merged (#265, PR #242)", async () => {
+    renderSection(
+      mockRpcFetch({
+        "workflowRuns/agentCosts": () => [],
+        "workflowRuns/history": () => [],
+      }),
+      {
+        ...RUN,
+        status: "running",
+        current_step: "verify",
+        pr_merged: true,
+        needs_human_reason: "waiting for a decision",
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Workflow run 7 detail",
+    });
+    const currentStep = within(dialog).getByText("Current step").parentElement;
+    expect(currentStep).not.toBeNull();
+    const status = within(dialog).getByText("Status").parentElement;
+    expect(status).not.toBeNull();
+    expect(within(status as HTMLElement).getByText("Merged")).toBeTruthy();
+    expect(within(dialog).queryByText("Completed")).toBeNull();
+    expect(within(dialog).queryByText("Running")).toBeNull();
+    expect(within(dialog).queryByText("Needs human")).toBeNull();
+    expect(within(currentStep as HTMLElement).getByText("Merged")).toBeTruthy();
+    expect(within(currentStep as HTMLElement).queryByText("Verify")).toBeNull();
   });
 
   it("shows loading and failure states and closes with the button", async () => {

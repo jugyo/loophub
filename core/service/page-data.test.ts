@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { traceGitCommands } from "../git-trace-test-helper.ts";
 import type { PullTimelineItemWire } from "../serialize.ts";
+import { configureSlowOperationLogging } from "../slow-operation.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-page-data-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -21,6 +22,8 @@ const HUMAN_SESSION = "44444444-4444-4444-8444-444444444444";
 let svc: typeof import("../service.ts");
 let S: typeof import("../store.ts");
 let resolvePullDiffBaseSha: typeof import("../pull-base.ts")["resolvePullDiffBaseSha"];
+let resolvePullDiffOperands: typeof import("./pulls.ts")["resolvePullDiffOperands"];
+let diffFilesBetween: typeof import("../git.ts")["diffFilesBetween"];
 let repoPath: string;
 let repoId: number;
 let prNumber: number;
@@ -42,6 +45,8 @@ beforeAll(async () => {
   svc = await import("../service.ts");
   S = await import("../store.ts");
   ({ resolvePullDiffBaseSha } = await import("../pull-base.ts"));
+  ({ resolvePullDiffOperands } = await import("./pulls.ts"));
+  ({ diffFilesBetween } = await import("../git.ts"));
   repoPath = mkdtempSync(join(tmpdir(), "lh-page-data-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -137,6 +142,38 @@ test("pullDetail carries the diff feedback the screen renders itself", async () 
   ).toEqual(["reverted.txt"]);
 });
 
+test("pageData logs issueList and pullDetail subphases in debug mode", async () => {
+  const logs: string[] = [];
+  configureSlowOperationLogging((message) => logs.push(message));
+  try {
+    await svc.pageData.issueList(REPO);
+    await svc.pageData.pullDetail(REPO, prNumber, "me");
+  } finally {
+    configureSlowOperationLogging();
+  }
+
+  expect(logs).toContainEqual(
+    expect.stringMatching(
+      /^pageData phase=issueList\.issue_selection duration_ms=\d+$/,
+    ),
+  );
+  expect(logs).toContainEqual(
+    expect.stringMatching(
+      /^pageData phase=issueList\.workflow_state_projection duration_ms=\d+$/,
+    ),
+  );
+  expect(logs).toContainEqual(
+    expect.stringMatching(
+      /^pageData phase=pullDetail.diff_base_resolution duration_ms=\d+$/,
+    ),
+  );
+  expect(logs).toContainEqual(
+    expect.stringMatching(
+      /^pageData phase=pullDetail.feedback_assembly duration_ms=\d+$/,
+    ),
+  );
+});
+
 test("pullDetail assembles the PR timeline from data it already fetched", async () => {
   const page = await svc.pageData.pullDetail(REPO, prNumber, "me");
   const ofKind = <TKind extends PullTimelineItemWire["kind"]>(kind: TKind) =>
@@ -195,6 +232,50 @@ test("pullDetail resolves the PR's diff base once", async () => {
   expect(baseResolutions(separate.commands).length).toBeGreaterThan(0);
 });
 
+test("pullDetail の Git critical path を変更前後で計測する", async () => {
+  const measure = async (parallel: boolean) => {
+    const operands = await resolvePullDiffOperands(REPO, prNumber);
+    const readMetadata = () =>
+      Promise.all([
+        svc.pulls.get(REPO, prNumber, {
+          withComments: false,
+          diffBaseShas: operands.baseShas,
+        }),
+        svc.reviews.list(REPO, prNumber),
+        svc.reviews.listComments(REPO, prNumber),
+        svc.comments.list(REPO, prNumber, "me"),
+      ]);
+    if (parallel) {
+      await Promise.all([
+        diffFilesBetween(operands.repoPath, operands.baseSha, operands.headSha),
+        readMetadata(),
+      ]);
+    } else {
+      await diffFilesBetween(
+        operands.repoPath,
+        operands.baseSha,
+        operands.headSha,
+      );
+      await readMetadata();
+    }
+  };
+
+  const before = await traceGitCommands(() => measure(false));
+  const after = await traceGitCommands(() => measure(true));
+  const diffCommandCount = (commands: string[]) =>
+    commands.filter((command) => command.startsWith("diff ")).length;
+  const beforeDiffCommands = diffCommandCount(before.commands);
+  const afterDiffCommands = diffCommandCount(after.commands);
+
+  expect(before.elapsedMs).toBeGreaterThan(0);
+  expect(after.elapsedMs).toBeGreaterThan(0);
+  expect(beforeDiffCommands).toBeGreaterThan(0);
+  expect(afterDiffCommands).toBeGreaterThan(0);
+  console.info(
+    `pullDetail benchmark: sequential=${before.elapsedMs.toFixed(1)}ms/${beforeDiffCommands} diff commands, parallel=${after.elapsedMs.toFixed(1)}ms/${afterDiffCommands} diff commands`,
+  );
+});
+
 test("pullDetail reads the diff feedback as the calling session", async () => {
   const thread = (
     await svc.diffFeedback.list(REPO, prNumber, { orphaned: true })
@@ -223,4 +304,40 @@ test("pullDetail reads the diff feedback as the calling session", async () => {
   expect(
     asStranger.diff_feedback.orphaned_threads[0].messages[0].reactions,
   ).toEqual([{ emoji: "👍", count: 1, reacted: false }]);
+});
+
+test("issue pages include bounded sub-issue wire data and workflow seeds", async () => {
+  const root = S.createIssue(repoId, "issue", "wire root", "", "me");
+  const child = S.createIssue(repoId, "issue", "wire child", "", "me");
+  const grandchild = S.createIssue(
+    repoId,
+    "issue",
+    "wire grandchild",
+    "",
+    "me",
+  );
+  S.setIssueParent(child.id, root.id, S.nextSubIssueOrdinal(root.id));
+  S.setIssueParent(grandchild.id, child.id, S.nextSubIssueOrdinal(child.id));
+
+  const detail = await svc.pageData.issueDetail(REPO, root.number, "me");
+  expect(detail.issue).toMatchObject({
+    number: root.number,
+    depth: 1,
+    ancestors: [],
+    sub_issue_summary: { total: 1, open: 1, closed: 0 },
+  });
+  expect(detail.issue.sub_issues).toHaveLength(1);
+  expect(detail.issue.sub_issues?.[0]).toMatchObject({
+    number: child.number,
+    depth: 2,
+    sub_issue_ordinal: 1,
+    sub_issue_summary: { total: 1, open: 1, closed: 0 },
+  });
+  expect(detail.issue.sub_issues?.[0].sub_issues).toBeUndefined();
+  expect(detail.workflow_runs).toEqual([]);
+
+  const expanded = await svc.pageData.subIssues(REPO, root.number);
+  expect(expanded).toMatchObject({ truncated: false, workflow_runs: [] });
+  expect(expanded.issues).toHaveLength(1);
+  expect(expanded.issues[0].number).toBe(child.number);
 });

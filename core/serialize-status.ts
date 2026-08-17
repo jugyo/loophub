@@ -26,10 +26,13 @@ import {
 import type {
   GithubPullWire,
   IssueListPullSummaryWire,
+  IssueRefSummaryWire,
   IssueWire,
   LinkedIssueWire,
   PullWire,
   ReviewGateWire,
+  SubIssueSummaryWire,
+  WorkflowRunConfigWire,
 } from "./serialize.ts";
 import {
   commentJSON,
@@ -45,6 +48,21 @@ import {
 } from "./serialize.ts";
 import { sessionRuntime } from "./session-runtime.ts";
 import * as S from "./store.ts";
+import { workflowStepSessionIds } from "./workflow/herdr-agents.ts";
+import { parseWorkflowManifest } from "./workflow/manifest.ts";
+import { readWorkflowManifest } from "./workflow/run-files.ts";
+
+export function workflowRunConfigJSON(
+  run: S.WorkflowRunRow,
+): WorkflowRunConfigWire | null {
+  if (run.manifest_version === null) return null;
+  const manifest = parseWorkflowManifest(readWorkflowManifest(run.id));
+  return {
+    contract_language: manifest.contract_language,
+    agents: manifest.agents,
+    prompt_sources: manifest.prompts,
+  };
+}
 
 // Git-derived status fields for a PR row: mergeable state, diff totals, the
 // "working" flag, and review state. Shared by pullJSON (PR list/detail) and the
@@ -201,15 +219,20 @@ async function pullMergeFields(
   };
 }
 
-// Issue list item with its linked PR enriched with status (working / review /
-// mergeable / diff totals) for the issue-list Pattern E sub-row. Async because
-// the status fields need a bounded git fan-out per linked PR; used only by the
-// paginated issues.list path, so issueJSON stays sync for detail/dashboard.
+// Issue list item with its linked PR enriched with the worker's current status projection. The
+// issue-list path never computes SHA-based status on demand; a missing projection is represented
+// as unknown/zero until the worker observes the PR.
 export async function issueListItemJSON(
   row: S.IssueRow,
   repo: S.Repo,
 ): Promise<IssueWire> {
-  const out = issueJSON(row, repo);
+  const out = addIssueHierarchyFields(issueJSON(row, repo), row, {
+    labelsByIssue: new Map(),
+    commentCountsByIssue: new Map(),
+    linkedPullsByIssue: new Map(),
+    herdrPanesByIssue: new Map(),
+    subIssueSummariesByParent: S.subIssueSummariesByParent([row.id]),
+  });
   out.herdr_pane = herdrPaneJSON(S.getIssueHerdrPane(row.id));
   if (row.kind !== "pull") {
     // All linked PRs (usually 0–1, occasionally more — see linkedPullsForIssue),
@@ -229,6 +252,20 @@ export interface IssueListSelection {
   commentCountsByIssue: Map<number, number>;
   linkedPullsByIssue: Map<number, S.LinkedPullIssueRow[]>;
   herdrPanesByIssue: Map<number, S.IssueHerdrPane>;
+  subIssueSummariesByParent?: Map<number, S.SubIssueSummary>;
+}
+
+function addIssueHierarchyFields(
+  out: IssueWire,
+  row: S.IssueRow,
+  selected?: IssueListSelection,
+  depth = 1,
+): IssueWire {
+  out.depth = depth;
+  out.sub_issue_ordinal = row.sub_issue_ordinal;
+  const summary = selected?.subIssueSummariesByParent?.get(row.id);
+  if (summary) out.sub_issue_summary = summary satisfies SubIssueSummaryWire;
+  return out;
 }
 
 export async function issueListItemsJSON(
@@ -246,10 +283,14 @@ export async function issueListItemsJSON(
   );
   const detailByPull = new Map(linkedDetails);
   return rows.map((row) => {
-    const out = issueJSON(row, undefined, {
-      labels: selected.labelsByIssue.get(row.id) ?? [],
-      comments: selected.commentCountsByIssue.get(row.id) ?? 0,
-    });
+    const out = addIssueHierarchyFields(
+      issueJSON(row, undefined, {
+        labels: selected.labelsByIssue.get(row.id) ?? [],
+        comments: selected.commentCountsByIssue.get(row.id) ?? 0,
+      }),
+      row,
+      selected,
+    );
     out.herdr_pane = herdrPaneJSON(
       selected.herdrPanesByIssue.get(row.id) ?? null,
     );
@@ -267,9 +308,50 @@ async function linkedPullDetail(
   repo: S.Repo,
   pr: S.LinkedPullIssueRow,
 ): Promise<IssueListPullSummaryWire> {
-  const status = await pullStatusFields(repo, pr);
+  const pull = S.getPull(pr.id)!;
+  const active =
+    pr.state === "open" && pull.merged === 0 && pull.archived_at === null;
+  // Active status is owned by the worker's current projection. Keeping ref observation out of this
+  // request path is what makes a projection hit a DB-only read; the worker sweep updates the SHA
+  // pair after a ref move, and the existing worker compatibility warning exposes a stopped worker.
+  const projection = active ? S.getCurrentPullStatusProjection(pr.id) : null;
+  const reviewStatus = S.computeReviewStatus(
+    pr.id,
+    projection?.head_sha ?? pull.head_sha,
+  );
+  // The worker intentionally sweeps only open, unmerged, unarchived PRs. Once a PR leaves that
+  // state, always preserve the historical detail/list contract through the existing status path;
+  // an old current projection must not make a merged or closed PR look active again.
+  const historicalStatus = !active ? await pullStatusFields(repo, pr) : null;
+  const mergeableState = historicalStatus
+    ? historicalStatus.mergeable_state
+    : projection
+      ? resolveMergeable({
+          hasEffectiveDiff: projection.has_effective_diff === 1,
+          conflict: projection.conflict === 1,
+          reviewGate: reviewStatus.gate,
+        }).mergeable_state
+      : "unknown";
+  const baseCommitsBehind = historicalStatus
+    ? historicalStatus.forkBaseSha && historicalStatus.baseSha
+      ? await commitsAhead(
+          repo.local_path,
+          historicalStatus.forkBaseSha,
+          historicalStatus.baseSha,
+        )
+      : 0
+    : (projection?.base_commits_behind ?? 0);
   const usageTotals = S.sessionUsageTotalsForIssue(pr.id);
-  const agent = S.pullAgentSummary(pr.id);
+  const workflowRun = S.latestWorkflowRunForPull(repo.id, pr.number);
+  const executeSessionId =
+    workflowRun && workflowRun.manifest_version !== null
+      ? workflowStepSessionIds(workflowRun.step_sessions_json, "execute").at(-1)
+      : undefined;
+  const agent =
+    (executeSessionId
+      ? (S.pullAgentLaunchSummaryForSession(executeSessionId) ??
+        S.pullAgentSummaryForSession(executeSessionId))
+      : null) ?? S.pullAgentSummary(pr.id);
   const runtime = agent ? sessionRuntime(agent) : null;
   const model = agent?.models.length ? agent.models.join(", ") : null;
   // #882: total work duration for the sub-row, computed with the same pullWorkDuration used by the
@@ -279,32 +361,28 @@ async function linkedPullDetail(
   const workTotal = pullWorkDuration(
     repo,
     pr,
-    status.pull,
+    pull,
     S.primaryDevSessionForPull(pr.id),
   ).total;
-  const base_commits_behind =
-    status.forkBaseSha && status.baseSha
-      ? await commitsAhead(repo.local_path, status.forkBaseSha, status.baseSha)
-      : 0;
   // #2147: the latest workflow run's rework count, so the issue list can show how many
   // Execute -> Verify loops the PR has taken. `workflow_runs` is indexed on (workflow_id, status)
   // only, so this scans the table — cheap against a table that holds one row per run and far below
   // the git fan-out this sub-row already pays. The list never asks Web to fetch run state per PR.
-  const workflowRun = S.latestWorkflowRunForPull(repo.id, pr.number);
   return {
     number: pr.number,
     title: pr.title,
     state: pr.state,
     merged: !!pr.merged,
     html_url: linkedRef(repo, "pulls", pr.number).html_url,
-    working: status.working,
-    review_state: status.review_state,
-    mergeable_state: status.mergeable_state,
-    additions: status.additions,
-    deletions: status.deletions,
-    changed_files: status.changed_files,
-    commits_ahead: status.commits_ahead,
-    base_commits_behind,
+    review_state: historicalStatus?.review_state ?? reviewStatus.state,
+    mergeable_state: mergeableState,
+    additions: historicalStatus?.additions ?? projection?.additions ?? 0,
+    deletions: historicalStatus?.deletions ?? projection?.deletions ?? 0,
+    changed_files:
+      historicalStatus?.changed_files ?? projection?.changed_files ?? 0,
+    commits_ahead:
+      historicalStatus?.commits_ahead ?? projection?.commits_ahead ?? 0,
+    base_commits_behind: baseCommitsBehind,
     ...(runtime ? { agent_runtime: runtime } : {}),
     ...(model ? { agent_model: model } : {}),
     // #629: the exported GitHub PR (if any), so the issue-list linked-PR sub-row can show a GH badge.
@@ -340,6 +418,26 @@ export async function issueDetailJSON(
   repo: S.Repo,
 ): Promise<IssueWire> {
   const out = issueJSON(row, row.kind === "pull" ? repo : undefined);
+  const summary = S.subIssueSummariesByParent([row.id]).get(row.id);
+  addIssueHierarchyFields(
+    out,
+    row,
+    {
+      labelsByIssue: new Map(),
+      commentCountsByIssue: new Map(),
+      linkedPullsByIssue: new Map(),
+      herdrPanesByIssue: new Map(),
+      subIssueSummariesByParent: summary
+        ? new Map([[row.id, summary]])
+        : new Map(),
+    },
+    S.listAncestorRows(row.id, 2).length + 1,
+  );
+  const ancestors: IssueRefSummaryWire[] = S.listAncestorRows(row.id, 2)
+    .reverse()
+    .map(({ number, title, state }) => ({ number, title, state }));
+  addIssueHierarchyFields(out, row, undefined, ancestors.length + 1);
+  out.ancestors = ancestors;
   if (row.kind !== "pull") {
     const linked = S.allLinkedPullsForIssue(row.id);
     const archived = S.archivedLinkedPullsForIssue(row.id);
@@ -362,6 +460,20 @@ export async function issueDetailJSON(
     );
     out.archived_pull_requests_truncated =
       archived.length > S.MAX_ISSUE_DETAIL_PULLS;
+    const children = S.listSubIssues(row.id);
+    const childRows = children.slice(0, S.MAX_ISSUE_DETAIL_SUB_ISSUES);
+    const childIds = childRows.map((child) => child.id);
+    out.sub_issues = await issueListItemsJSON(childRows, repo, {
+      labelsByIssue: S.labelsByIssue(childIds),
+      commentCountsByIssue: S.commentCountsByIssue(childIds),
+      linkedPullsByIssue: S.linkedPullsByIssue(childIds),
+      herdrPanesByIssue: S.issueHerdrPanesByIssue(repo.id, childIds),
+      subIssueSummariesByParent: S.subIssueSummariesByParent(childIds),
+    });
+    for (const child of out.sub_issues) {
+      child.depth = (out.depth ?? 1) + 1;
+    }
+    out.sub_issues_truncated = children.length > S.MAX_ISSUE_DETAIL_SUB_ISSUES;
   }
   return out;
 }

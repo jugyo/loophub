@@ -799,6 +799,115 @@ test("issues.acReorder rejects an order that is not a full permutation", () => {
   );
 });
 
+test("sub-issue service procedures attach, detach, and reorder by public numbers", () => {
+  const parent = svc.issues.create("me/proj", { title: "parent" });
+  const first = svc.issues.create("me/proj", { title: "first" });
+  const second = svc.issues.create("me/proj", { title: "second" });
+
+  svc.issues.attachSubIssue("me/proj", parent.number, first.number);
+  svc.issues.attachSubIssue("me/proj", parent.number, second.number);
+  const repo = S.getRepo("me", "proj")!;
+  const parentRow = S.getIssue(repo.id, parent.number)!;
+  expect(S.listSubIssues(parentRow.id).map((row) => row.number)).toEqual([
+    first.number,
+    second.number,
+  ]);
+
+  const reordered = svc.issues.reorderSubIssues("me/proj", parent.number, [
+    second.number,
+    first.number,
+  ]) as any[];
+  expect(reordered.map((row) => row.number)).toEqual([
+    second.number,
+    first.number,
+  ]);
+
+  svc.issues.detachSubIssue("me/proj", first.number);
+  expect(S.getIssue(repo.id, first.number)!.parent_issue_id).toBeNull();
+  expect(() => svc.issues.detachSubIssue("me/proj", first.number)).toThrow(
+    /already a root issue/,
+  );
+});
+
+test("sub-issue service rejects cycles, depth violations, and partial reorder", () => {
+  const root = svc.issues.create("me/proj", { title: "hierarchy root" });
+  const child = svc.issues.create("me/proj", { title: "hierarchy child" });
+  const grandchild = svc.issues.create("me/proj", {
+    title: "hierarchy grandchild",
+  });
+  const leaf = svc.issues.create("me/proj", { title: "hierarchy leaf" });
+  svc.issues.attachSubIssue("me/proj", root.number, child.number);
+  svc.issues.attachSubIssue("me/proj", child.number, grandchild.number);
+  expect(() =>
+    svc.issues.attachSubIssue("me/proj", grandchild.number, root.number),
+  ).toThrow(/cycle/);
+  expect(() =>
+    svc.issues.attachSubIssue("me/proj", grandchild.number, leaf.number),
+  ).toThrow(/depth/);
+  expect(() => svc.issues.reorderSubIssues("me/proj", root.number, [])).toThrow(
+    /every sub-issue/,
+  );
+});
+
+test("creating a child inherits its parent workspace and root workspace updates cascade", () => {
+  const parent = svc.issues.create("me/proj", {
+    title: "workspace parent",
+    target_branch: "integration/stack",
+  });
+  const child = svc.issues.create("me/proj", {
+    title: "workspace child",
+    parent: parent.number,
+  });
+  const grandchild = svc.issues.create("me/proj", {
+    title: "workspace grandchild",
+    parent: child.number,
+  });
+  expect(
+    S.getIssue(S.getRepo("me", "proj")!.id, child.number)!.target_branch,
+  ).toBe("integration/stack");
+
+  svc.issues.update("me/proj", parent.number, { target_branch: "main" });
+  const repo = S.getRepo("me", "proj")!;
+  expect(S.getIssue(repo.id, parent.number)!.target_branch).toBe("main");
+  expect(S.getIssue(repo.id, child.number)!.target_branch).toBe("main");
+  expect(S.getIssue(repo.id, grandchild.number)!.target_branch).toBe("main");
+  expect(() =>
+    svc.issues.update("me/proj", child.number, {
+      target_branch: "integration/stack",
+    }),
+  ).toThrow(/root issue/);
+});
+
+test("issues.list returns roots only and listSubIssues keeps enriched child order", async () => {
+  const parent = svc.issues.create("me/proj", { title: "listed parent" });
+  const first = svc.issues.create("me/proj", {
+    title: "listed first",
+    parent: parent.number,
+  });
+  const second = svc.issues.create("me/proj", {
+    title: "listed second",
+    parent: parent.number,
+  });
+
+  for (const state of ["open", "closed", "all"]) {
+    const rows = await svc.issues.list("me/proj", { state });
+    expect(rows.map((row: any) => row.number)).not.toContain(first.number);
+    expect(rows.map((row: any) => row.number)).not.toContain(second.number);
+  }
+
+  const children = await svc.issues.listSubIssues("me/proj", parent.number);
+  expect(children.map((row: any) => row.number)).toEqual([
+    first.number,
+    second.number,
+  ]);
+  expect(children[0]).toMatchObject({
+    title: "listed first",
+    labels: [],
+    comments: 0,
+    linked_pull_requests: [],
+  });
+});
+
 test("issues.acSetEnabled rejects an internal integer id (#1894)", () => {
   const other = S.createRepo("me/ac-scope", "/tmp/ac-scope");
   const foreign = S.createIssue(other.id, "issue", "foreign", "", "me") as any;

@@ -36,34 +36,6 @@ function lh(args: string[]) {
   );
 }
 
-test("session list identifies the persisted runtime and model", () => {
-  const id = "99999999-0000-0000-0000-000000000001";
-  const registered = lh([
-    "session",
-    "register",
-    "--id",
-    id,
-    "--agent",
-    "workflow-step",
-    "--session",
-    "cursor-chat",
-    "--runtime",
-    "cursor",
-    "--model",
-    "gpt-5.3-codex-high",
-  ]);
-  expect(registered.status, registered.stderr).toBe(0);
-  const synced = lh(["session", "usage", "sync", "--session", id]);
-  expect(synced.status, synced.stderr).toBe(0);
-  expect(synced.stdout).toContain(`${id}\tmissing\t0 message(s)`);
-
-  const listed = lh(["session", "list"]);
-  expect(listed.status, listed.stderr).toBe(0);
-  expect(listed.stdout).toContain(
-    `${id}\tworkflow-step\truntime=cursor\tmodel=gpt-5.3-codex-high\tsession=cursor-chat`,
-  );
-});
-
 test("session list only infers Claude Code for historical build agents", () => {
   const reviewerId = "99999999-0000-0000-0000-000000000002";
   const buildId = "99999999-0000-0000-0000-000000000003";
