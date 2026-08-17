@@ -45,6 +45,7 @@ import type {
   RepoOriginSync,
   SearchResult,
   Stats,
+  SubIssuesPage,
   TerminalLaunchResult,
   Theme,
   WebConfig,
@@ -734,6 +735,13 @@ export function getIssueDetailPage(
   number: number,
 ) {
   return rpc<IssueDetailPage>("pageData/issueDetail", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+export function getSubIssuesPage(owner: string, repo: string, number: number) {
+  return rpc<SubIssuesPage>("pageData/subIssues", {
     repo: full(owner, repo),
     number,
   });

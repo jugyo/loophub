@@ -222,6 +222,53 @@ describe("IssueDetail", () => {
     expect(screen.queryByText("Workflow run")).toBeNull();
   });
 
+  it("renders direct sub issues with the shared issue row and ancestor breadcrumb", async () => {
+    const child: Issue = {
+      ...issue,
+      number: 13,
+      title: "child issue",
+      linked_pull_request: null,
+      has_open_pull_request: false,
+      ancestors: [
+        { number: 2, title: "top issue", state: "open" },
+        { number: 3, title: "root issue", state: "open" },
+      ],
+    };
+    renderDetail(
+      () => ({
+        ...issue,
+        ancestors: [
+          { number: 2, title: "top issue", state: "open" },
+          { number: 3, title: "root issue", state: "open" },
+        ],
+      }),
+      { "issues/subIssues": () => [child] },
+    );
+
+    expect(await screen.findByText("Sub issues")).toBeTruthy();
+    expect(screen.getByLabelText("Issue #13: child issue")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "#3" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "#2" })).toBeTruthy();
+    expect(screen.getAllByText("›")).toHaveLength(1);
+  });
+
+  it("shows an error when sub issues cannot be loaded", async () => {
+    renderDetail(undefined, {
+      "issues/subIssues": () => {
+        throw new Error("sub issues unavailable");
+      },
+    });
+
+    expect(await screen.findByText("Failed to load sub issues.")).toBeTruthy();
+  });
+
+  it("does not render an empty sub issue section", async () => {
+    renderDetail(undefined, { "issues/subIssues": () => [] });
+
+    await screen.findByText("ui2: issue detail");
+    expect(screen.queryByText("Sub issues")).toBeNull();
+  });
+
   it("opens a linked PR Workflow step pane from the issue detail", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderDetail(undefined, {
