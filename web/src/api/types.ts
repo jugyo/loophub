@@ -64,6 +64,7 @@ import type {
   WorkflowContractLanguageWire,
   WorkflowContractsWire,
   WorkflowRunAgentCostWire,
+  WorkflowRunConfigWire,
   WorkflowRunHistoryEventWire,
   WorkflowRunReviewSummaryWire,
   WorkflowRunStateWire,
@@ -276,6 +277,7 @@ export type WorkerCompatibility = WorkerCompatibilityWire;
 /** Display state of a Workflow run linked to an issue / PR (#1008). */
 export type WorkflowRunState = WorkflowRunStateWire;
 export type WorkflowRunAgentCost = WorkflowRunAgentCostWire;
+export type WorkflowRunConfig = WorkflowRunConfigWire;
 export type WorkflowRunTotalCost = WorkflowRunTotalCostWire;
 export type WorkflowRunHistoryEvent = WorkflowRunHistoryEventWire;
 export type WorkflowRunReviewSummary = WorkflowRunReviewSummaryWire;

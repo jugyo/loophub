@@ -1479,6 +1479,18 @@ export const MIGRATIONS: Migration[] = [
     "rework_limit",
     "INTEGER NOT NULL DEFAULT 8",
   ),
+  addColumn(
+    "088-workflow-runs-manifest-version",
+    "workflow_runs",
+    "manifest_version",
+    "INTEGER",
+  ),
+  {
+    id: "089-agent-sessions-effort",
+    run: (db) => {
+      addColumnIfMissing(db, "agent_sessions", "effort", "TEXT");
+    },
+  },
   {
     id: "20260814095613-workflow-runs-effort",
     run: (db) => {

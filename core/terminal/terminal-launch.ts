@@ -663,6 +663,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
   // back to its own fresh tab, the same degraded placement the tab-less launch has always had.
   splitPaneId?: string | null;
   model?: string | null;
+  effort?: string | null;
 }): HerdrLaunchPlan {
   const env = {
     LOOPHUB_SESSION_ID: input.sessionId,
@@ -678,6 +679,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
       args: buildRuntimeFlags({
         runtime: input.runtime,
         model: input.model?.trim(),
+        effort: input.effort?.trim(),
         sessionId: input.sessionId,
         systemPromptFile: input.systemPromptPath,
       }),

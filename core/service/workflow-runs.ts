@@ -37,6 +37,7 @@ import {
   workflowRunHistoryEventJSON,
   workflowRunStateJSON,
 } from "../serialize.ts";
+import { workflowRunConfigJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import { killPaneForegroundProcess } from "../terminal/herdr-cleanup.ts";
 import {
@@ -66,6 +67,12 @@ import {
   parseWorkflowHerdrAgentName,
   workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
+import {
+  parseWorkflowManifest,
+  serializeWorkflowManifest,
+  type WorkflowManifest,
+  type WorkflowManifestAgent,
+} from "../workflow/manifest.ts";
 import { workflowMessages } from "../workflow/messages.ts";
 import {
   inlineText,
@@ -80,11 +87,16 @@ import {
   workflowActionPlan,
 } from "../workflow/reconcile.ts";
 import {
+  readStepPromptSidecar,
+  readWorkflowManifest,
+  workflowManifestPath,
   writeParentContract,
   writeParentPrompt,
   writeStepContract,
   writeStepLaunchContract,
   writeStepLaunchPrompt,
+  writeStepPromptSidecar,
+  writeWorkflowManifest,
 } from "../workflow/run-files.ts";
 import {
   projectWorkflowRunEvents,
@@ -156,6 +168,24 @@ export type WorkflowRunStartResult = {
     // The same prompt as it was written for the run's runtime, which the parent launch's command
     // line reads back instead of carrying inline.
     user_prompt_path: string;
+    effort: string;
+  };
+};
+
+export type WorkflowManifestViewResult = {
+  run: { id: number; issue: number; pr: number };
+  manifest_path: string;
+  manifest: WorkflowManifest;
+  pointers: Array<{ label: string; value: string }>;
+  workspace: {
+    worktree_path: string;
+    branch: string;
+    base_branch: string;
+  };
+  change_timing: {
+    next_child: string;
+    parent: string;
+    execute: string;
   };
 };
 
@@ -201,6 +231,7 @@ export type WorkflowLaunchStepResult = {
   // spawning the herdr launch it returns.
   runtime: CodingAgent;
   model: string;
+  effort: string;
   session_id: string;
   worktree: string;
   system_prompt_path: string;
@@ -592,6 +623,60 @@ function runEffort(run: S.WorkflowRunRow): string | null {
   return effective.runtime === runRuntime(run)
     ? effective.effort
     : agentEffort(runRuntime(run));
+}
+
+type WorkflowLaunchConfig = {
+  contractLanguage: WorkflowContractLanguage;
+  agents: {
+    parent: WorkflowManifestAgent;
+    execute: WorkflowManifestAgent;
+    verify: WorkflowManifestAgent;
+  };
+  stepPrompt: (step: WorkflowStep) => string;
+};
+
+function resolveLaunchConfig(
+  run: S.WorkflowRunRow,
+  workflow: { [K in `${WorkflowStep}_prompt`]: string },
+): WorkflowLaunchConfig {
+  if (run.manifest_version === null) {
+    const runtime = runRuntime(run);
+    const model = runModel(run);
+    const effort = runEffort(run) ?? agentEffort(runtime);
+    return {
+      contractLanguage: runContractLanguage(run),
+      agents: {
+        parent: { runtime, model, effort },
+        execute: { runtime, model, effort },
+        verify: { runtime, model, effort },
+      },
+      stepPrompt: (step) => workflowStepPrompt(workflow, step),
+    };
+  }
+
+  const path = workflowManifestPath(run.id);
+  try {
+    const manifest = parseWorkflowManifest(readWorkflowManifest(run.id));
+    return {
+      contractLanguage: manifest.contract_language,
+      agents: manifest.agents,
+      stepPrompt: (step) =>
+        readStepPromptSidecar(run.id, manifest.prompts[step]),
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new ServiceError(
+      422,
+      `workflow manifest ${path} is invalid: ${reason}`,
+    );
+  }
+}
+
+function launchAgent(
+  config: WorkflowLaunchConfig,
+  step: WorkflowStep | "parent",
+): WorkflowManifestAgent {
+  return config.agents[step];
 }
 
 function runJSON(run: S.WorkflowRunRow): WorkflowRunUpdateResult["run"] {
@@ -1343,6 +1428,7 @@ async function workflowRunState(
     }),
     mergeConflict,
     latestStepRuns,
+    workflowConfig: workflowRunConfigJSON(run),
   });
 }
 
@@ -1608,6 +1694,69 @@ function recordWorkflowStepLaunchFailure(
 }
 
 export const workflowRuns = {
+  manifestPath(name: string, runId: number): string {
+    const repo = repoOr404(name);
+    const run = workflowRunOr404(runId);
+    if (run.repo_id !== repo.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    return workflowManifestPath(run.id);
+  },
+
+  manifestView(name: string, runId: number): WorkflowManifestViewResult {
+    const repo = repoOr404(name);
+    const run = workflowRunOr404(runId);
+    if (run.repo_id !== repo.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    const path = workflowManifestPath(run.id);
+    let manifest: WorkflowManifest;
+    try {
+      manifest = parseWorkflowManifest(readWorkflowManifest(run.id));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new ServiceError(
+        422,
+        `workflow manifest ${path} is invalid: ${reason}`,
+      );
+    }
+
+    const issue = issueOr404(repo, run.issue_number, "issue");
+    const prIssue = issueOr404(repo, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull) {
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    }
+    const worktree = workflowRunWorktree({
+      repo,
+      prNumber: run.pr_number,
+      headRef: pull.head_ref,
+    });
+    return {
+      run: { id: run.id, issue: issue.number, pr: prIssue.number },
+      manifest_path: path,
+      manifest,
+      pointers: [
+        { label: "repo", value: repo.full_name },
+        { label: "issue", value: `#${issue.number}` },
+        { label: "pr", value: `#${prIssue.number}` },
+      ],
+      workspace: {
+        worktree_path: worktree,
+        branch: pull.head_ref,
+        base_branch: pull.base_ref,
+      },
+      change_timing: {
+        next_child:
+          "manifest と step prompt の変更は次に起動する子から反映されます",
+        parent:
+          "現在の run の parent には反映されません（run 開始時に起動済みです）",
+        execute:
+          "現在の Execute child には反映されません。既存の child を停止してから再起動してください",
+      },
+    };
+  },
+
   async start(
     name: string,
     input: {
@@ -1641,7 +1790,9 @@ export const workflowRuns = {
       `Workflow #${issue.number} ${issue.title}`,
       runtime,
       "dev",
-      input.model ?? agentModel(runtime),
+      input.model?.trim() || agentModel(runtime),
+      undefined,
+      effort,
     );
 
     const opened = await dev.openPr(
@@ -1727,6 +1878,7 @@ export const workflowRuns = {
           parentSessionId: sessionId,
           costIncrementUsd,
           costLimitUsd: costIncrementUsd,
+          manifestVersion: 1,
         });
         S.emitWorkflowEvent(r.id, "workflow_run.started", actorFor(sessionId), {
           id: created.id,
@@ -1738,6 +1890,36 @@ export const workflowRuns = {
         return created;
       });
 
+      const model = run.model?.trim() || agentModel(runtime);
+      const executePromptName = "execute-step-prompt.md";
+      const verifyPromptName = "verify-step-prompt.md";
+      writeStepPromptSidecar(
+        run.id,
+        "execute",
+        workflowStepPrompt(workflow, "execute"),
+      );
+      writeStepPromptSidecar(
+        run.id,
+        "verify",
+        workflowStepPrompt(workflow, "verify"),
+      );
+      const manifest: WorkflowManifest = {
+        manifest_version: 1,
+        contract_language: contractLanguage,
+        agents: {
+          parent: { runtime, model, effort },
+          execute: { runtime, model, effort },
+          verify: { runtime, model, effort },
+        },
+        prompts: {
+          execute: executePromptName,
+          verify: verifyPromptName,
+        },
+      };
+      writeWorkflowManifest(run.id, serializeWorkflowManifest(manifest));
+      const launchConfig = resolveLaunchConfig(run, workflow);
+      const parentAgent = launchAgent(launchConfig, "parent");
+
       const systemPrompt = renderWorkflowContract(
         {
           template: workflowContractText("parent", contractLanguage),
@@ -1745,7 +1927,7 @@ export const workflowRuns = {
           worktreePath: wtPath,
           baseBranch: pull.base_ref,
         },
-        contractLanguage,
+        launchConfig.contractLanguage,
       );
       const systemPromptPath = writeParentContract(run.id, systemPrompt);
       const userPrompt = parentUserPrompt(
@@ -1757,14 +1939,18 @@ export const workflowRuns = {
           prNumber: opened.number,
           baseRef: pull.base_ref,
         },
-        contractLanguage,
+        launchConfig.contractLanguage,
       );
       // The positional prompt goes to a file the launch's command line reads back, resolved for the
       // run's runtime first: Codex and Grok have no --append-system-prompt-file, so their file
       // carries the contract folded in.
       const userPromptPath = writeParentPrompt(
         run.id,
-        runtimePrompt({ runtime, systemPrompt, prompt: userPrompt }),
+        runtimePrompt({
+          runtime: parentAgent.runtime,
+          systemPrompt,
+          prompt: userPrompt,
+        }),
       );
 
       return {
@@ -1788,6 +1974,7 @@ export const workflowRuns = {
           system_prompt_path: systemPromptPath,
           user_prompt: userPrompt,
           user_prompt_path: userPromptPath,
+          effort: parentAgent.effort,
         },
       };
     } catch (e) {
@@ -2238,6 +2425,8 @@ export const workflowRuns = {
       ? S.getWorkflowById(run.workflow_id)
       : null;
     if (!workflow) throw new ServiceError(404, "Workflow not found");
+    const launchConfig = resolveLaunchConfig(run, workflow);
+    const stepAgent = launchAgent(launchConfig, step);
     issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const pull = S.getPull(prIssue.id);
@@ -2259,7 +2448,7 @@ export const workflowRuns = {
     const pointers = buildStepPointers({
       repoName: r.full_name,
       run,
-      language: runContractLanguage(run),
+      language: launchConfig.contractLanguage,
       step,
       reviewId,
       baseSha,
@@ -2269,7 +2458,7 @@ export const workflowRuns = {
       {
         template: stepContractForLaunch(
           step,
-          workflowContractText(step, runContractLanguage(run)),
+          workflowContractText(step, launchConfig.contractLanguage),
         ),
         step,
         worktreePath: worktree,
@@ -2279,10 +2468,10 @@ export const workflowRuns = {
         pointers,
         worktreePath: ".",
         baseBranch: pull.base_ref,
-        stepPrompt: workflowStepPrompt(workflow, step),
+        stepPrompt: launchConfig.stepPrompt(step),
         note: input.note,
       },
-      runContractLanguage(run),
+      launchConfig.contractLanguage,
     );
     const systemPromptPath = writeStepLaunchContract(
       run.id,
@@ -2293,8 +2482,8 @@ export const workflowRuns = {
 
     // The step inherits the parent run's runtime and model (#516) so the whole run stays on one
     // agent; an explicit launch-step --model override still wins when passed.
-    const runtime = runRuntime(run);
-    const model = input.model?.trim() || runModel(run);
+    const runtime = stepAgent.runtime;
+    const model = input.model?.trim() || stepAgent.model;
     // The positional prompt goes to a file the launch's command line reads back, resolved for this
     // runtime first: Codex and Grok have no --append-system-prompt-file, so their file carries the
     // contract folded in.
@@ -2344,6 +2533,7 @@ export const workflowRuns = {
         userPromptPath,
         splitPaneId: anchorPaneId,
         model,
+        effort: stepAgent.effort,
       });
       // Keep confirmation's validation at the persistence boundary, but also validate the generated
       // plan before the CLI can spawn it. A future naming/normalization change must fail before it can
@@ -2369,6 +2559,7 @@ export const workflowRuns = {
       agent_name: herdr.label,
       runtime,
       model,
+      effort: stepAgent.effort,
       session_id: childSessionId,
       worktree,
       system_prompt_path: systemPromptPath,
@@ -2498,12 +2689,14 @@ export const workflowRuns = {
       run: number;
       step: string;
       sessionId: string;
+      runtime?: CodingAgent;
       agentName?: string;
       executionTarget: AgentExecutionTarget;
       pointers: WorkflowInputPointer[];
       headSha?: string;
       note?: string;
       model?: string;
+      effort?: string;
       launchedAt?: string;
     },
     actorSessionId?: string | null,
@@ -2516,6 +2709,12 @@ export const workflowRuns = {
     }
     assertParentActor(run, actorSessionId);
     const step = workflowStep(input.step);
+    const workflow = run.workflow_id
+      ? S.getWorkflowById(run.workflow_id)
+      : null;
+    if (!workflow) throw new ServiceError(404, "Workflow not found");
+    const launchConfig = resolveLaunchConfig(run, workflow);
+    const stepAgent = launchAgent(launchConfig, step);
     const issue = issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const sessionId = input.sessionId;
@@ -2533,7 +2732,7 @@ export const workflowRuns = {
         );
       }
     }
-    const messages = workflowMessages(runContractLanguage(run));
+    const messages = workflowMessages(launchConfig.contractLanguage);
     const handoffBody = [
       messages.handoffLaunchIntro(step, run.id),
       "",
@@ -2566,11 +2765,11 @@ export const workflowRuns = {
         "workflow-step",
         sessionId,
         input.agentName ?? `Workflow ${step} run #${run.id}`,
-        runRuntime(run),
+        input.runtime ?? stepAgent.runtime,
         "workflow-step",
-        input.model?.trim() || runModel(run),
+        input.model?.trim() || stepAgent.model,
         input.launchedAt,
-        runEffort(run),
+        input.effort ?? stepAgent.effort,
       );
       S.registerAgentExecutionTarget({
         sessionId,
@@ -2749,6 +2948,7 @@ export const workflowRuns = {
       ? S.getWorkflowById(run.workflow_id)
       : null;
     if (!workflow) throw new ServiceError(404, "Workflow not found");
+    const launchConfig = resolveLaunchConfig(run, workflow);
     issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const pull = S.getPull(prIssue.id);
@@ -2769,7 +2969,7 @@ export const workflowRuns = {
     const pointers = buildStepPointers({
       repoName: r.full_name,
       run,
-      language: runContractLanguage(run),
+      language: launchConfig.contractLanguage,
       step,
       reviewId,
       baseSha,
@@ -2779,7 +2979,7 @@ export const workflowRuns = {
       {
         template: stepContractForLaunch(
           step,
-          workflowContractText(step, runContractLanguage(run)),
+          workflowContractText(step, launchConfig.contractLanguage),
         ),
         step,
         worktreePath: worktree,
@@ -2789,10 +2989,10 @@ export const workflowRuns = {
         pointers,
         worktreePath: ".",
         baseBranch: pull.base_ref,
-        stepPrompt: workflowStepPrompt(workflow, step),
+        stepPrompt: launchConfig.stepPrompt(step),
         note: input.note,
       },
-      runContractLanguage(run),
+      launchConfig.contractLanguage,
     );
     const systemPromptPath = writeStepContract(
       run.id,

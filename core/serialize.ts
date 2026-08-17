@@ -1621,6 +1621,26 @@ export interface WorkflowRunStateWire {
   pr_merged: boolean;
   merge_ready: boolean;
   merge_conflict: boolean;
+  workflow_config: WorkflowRunConfigWire | null;
+}
+
+export interface WorkflowRunAgentConfigWire {
+  runtime: CodingAgent;
+  model: string;
+  effort: string;
+}
+
+export interface WorkflowRunConfigWire {
+  contract_language: WorkflowContractLanguage;
+  agents: {
+    parent: WorkflowRunAgentConfigWire;
+    execute: WorkflowRunAgentConfigWire;
+    verify: WorkflowRunAgentConfigWire;
+  };
+  prompt_sources: {
+    execute: string;
+    verify: string;
+  };
 }
 
 export interface WorkflowPendingEffectReceiptWire {
@@ -1693,6 +1713,7 @@ export function workflowRunStateJSON(input: {
   mergeReady: boolean;
   mergeConflict: boolean;
   latestStepRuns: WorkflowRunStateWire["latest_step_runs"];
+  workflowConfig: WorkflowRunConfigWire | null;
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1726,6 +1747,7 @@ export function workflowRunStateJSON(input: {
     pr_merged: input.prMerged,
     merge_ready: input.mergeReady,
     merge_conflict: input.mergeConflict,
+    workflow_config: input.workflowConfig,
   };
 }
 
