@@ -69,6 +69,7 @@ import {
   type MarkdownRenderedBlock,
   markdownDiffAnnotations,
   markdownDiffFeedbackPlacements,
+  markdownUnifiedBlockOrder,
 } from "@/lib/markdown-source-map";
 import {
   pullFileViewState,
@@ -592,36 +593,36 @@ export function DiffFileDialog({
                 ) : null}
               </div>
               {mode === "diff" ? (
-                <>
-                  <div
-                    className="flex overflow-hidden rounded-md border text-xs"
-                    aria-label="Diff whitespace"
+                <div
+                  className="flex overflow-hidden rounded-md border text-xs"
+                  aria-label="Diff whitespace"
+                >
+                  <ModeButton
+                    active={ignoreWhitespace}
+                    onClick={() => setIgnoreWhitespace((value) => !value)}
                   >
-                    <ModeButton
-                      active={ignoreWhitespace}
-                      onClick={() => setIgnoreWhitespace((value) => !value)}
-                    >
-                      Ignore whitespace
-                    </ModeButton>
-                  </div>
-                  <div
-                    className="flex overflow-hidden rounded-md border text-xs"
-                    aria-label="Diff view"
+                    Ignore whitespace
+                  </ModeButton>
+                </div>
+              ) : null}
+              {mode === "diff" || mode === "rendered" ? (
+                <div
+                  className="flex overflow-hidden rounded-md border text-xs"
+                  aria-label="Diff view"
+                >
+                  <ModeButton
+                    active={diffViewMode === "unified"}
+                    onClick={() => setDiffViewMode("unified")}
                   >
-                    <ModeButton
-                      active={diffViewMode === "unified"}
-                      onClick={() => setDiffViewMode("unified")}
-                    >
-                      Unified
-                    </ModeButton>
-                    <ModeButton
-                      active={diffViewMode === "split"}
-                      onClick={() => setDiffViewMode("split")}
-                    >
-                      Split
-                    </ModeButton>
-                  </div>
-                </>
+                    Unified
+                  </ModeButton>
+                  <ModeButton
+                    active={diffViewMode === "split"}
+                    onClick={() => setDiffViewMode("split")}
+                  >
+                    Split
+                  </ModeButton>
+                </div>
               ) : null}
               {/* The record is append-only, so a file whose commits moved on comes back unchecked:
                   ticking it again pins the version now on screen (#2502). */}
@@ -936,7 +937,13 @@ function FileDiffContent({
   }
   if (mode === "rendered") {
     return (
-      <RenderedDiffPane owner={owner} repo={repo} number={number} file={file} />
+      <RenderedDiffPane
+        owner={owner}
+        repo={repo}
+        number={number}
+        file={file}
+        viewMode={diffViewMode}
+      />
     );
   }
 
@@ -2234,11 +2241,13 @@ function RenderedDiffPane({
   repo,
   number,
   file,
+  viewMode,
 }: {
   owner: string;
   repo: string;
   number: number;
   file: PullFile;
+  viewMode: DiffViewMode;
 }) {
   const path = copyFilename(file);
   const diff = usePullDiff(owner, repo, number, path);
@@ -2307,7 +2316,9 @@ function RenderedDiffPane({
     if (headBlocksRef.current.length > 0) setHeadBlocks(headBlocksRef.current);
   }, [base.data?.content, head.data?.content]);
 
-  const lines = diff.data?.files[0]?.lines ?? [];
+  const lines = Array.isArray(diff.data?.files)
+    ? (diff.data.files[0]?.lines ?? [])
+    : [];
   const baseAnnotations = useMemo(
     () => markdownDiffAnnotations(baseBlocks, lines),
     [baseBlocks, lines],
@@ -2325,7 +2336,10 @@ function RenderedDiffPane({
     () => markdownDiffFeedbackPlacements(headBlocks, threads),
     [headBlocks, threads],
   );
-  const stableFile = diff.data?.files[0];
+  const stableFile = Array.isArray(diff.data?.files)
+    ? diff.data.files[0]
+    : undefined;
+  const fullWidthClass = viewMode === "split" ? "col-span-2" : "col-span-1";
   const threadContent = useCallback(
     (thread: DiffFeedbackThread) => (
       <ThreadCard
@@ -2368,7 +2382,7 @@ function RenderedDiffPane({
   );
   const commentComposer =
     selection && stableFile && diff.data ? (
-      <div className="col-span-2">
+      <div className={fullWidthClass}>
         <DiffCommentComposer
           selection={{ ...selection, hunk: 0 }}
           body={body}
@@ -2397,24 +2411,29 @@ function RenderedDiffPane({
     ) : null;
   const sourceOnlyThreads = useMemo(() => {
     const unique = new Map<number, DiffFeedbackThread>();
-    for (const placement of [...basePlacements, ...headPlacements]) {
-      if (placement.placement === "source-only") {
-        unique.set(placement.thread.id, placement.thread);
+    for (const [side, placements] of [
+      ["LEFT", basePlacements],
+      ["RIGHT", headPlacements],
+    ] as const) {
+      for (const placement of placements) {
+        if (
+          placement.anchor.side === side &&
+          placement.placement === "source-only"
+        ) {
+          unique.set(placement.thread.id, placement.thread);
+        }
       }
     }
     return [...unique.values()];
   }, [basePlacements, headPlacements]);
-
-  return (
-    <div
-      data-debug-component="RenderedDiffPane"
-      className="grid min-h-full grid-cols-2 divide-x"
-    >
-      {commentComposer}
+  const renderedSides = (
+    <>
       <RenderedDiffSide
         side="LEFT"
         label="Base"
         file={base}
+        lines={lines}
+        unified={viewMode === "unified"}
         annotations={baseAnnotations}
         placements={basePlacements}
         selection={selection}
@@ -2426,6 +2445,8 @@ function RenderedDiffPane({
         side="RIGHT"
         label="Head"
         file={head}
+        lines={lines}
+        unified={viewMode === "unified"}
         annotations={headAnnotations}
         placements={headPlacements}
         selection={selection}
@@ -2433,14 +2454,44 @@ function RenderedDiffPane({
         threadContent={threadContent}
         registerBlock={registerBlock(headBlocksRef)}
       />
+    </>
+  );
+
+  return (
+    <div
+      data-debug-component="RenderedDiffPane"
+      data-view-mode={viewMode}
+      className={cn(
+        "min-h-full",
+        viewMode === "split" ? "grid grid-cols-2 divide-x" : "flex flex-col",
+      )}
+    >
+      {commentComposer}
+      {viewMode === "unified" ? (
+        <section aria-label="Unified rendered diff" className="min-w-0">
+          <div className="sticky top-0 z-10 border-b bg-background/95 px-3 py-2 text-xs font-semibold backdrop-blur">
+            Unified
+          </div>
+          <div className="markdown-diff-preview flex min-h-full flex-col overflow-y-auto px-3 py-8">
+            {renderedSides}
+          </div>
+        </section>
+      ) : (
+        renderedSides
+      )}
       {diff.isError ? (
-        <p className="col-span-2 border-t border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+        <p
+          className={cn(
+            fullWidthClass,
+            "border-t border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive",
+          )}
+        >
           Failed to load diff annotations.
         </p>
       ) : null}
       {sourceOnlyThreads.length > 0 ? (
         <PreviousDiffThreadsSection
-          className="col-span-2 m-2 space-y-2"
+          className={cn(fullWidthClass, "m-2 space-y-2")}
           heading="h4"
         >
           {sourceOnlyThreads.map((thread) => (
@@ -2456,6 +2507,8 @@ function RenderedDiffSide({
   side,
   label,
   file,
+  lines,
+  unified,
   annotations,
   placements,
   selection,
@@ -2466,6 +2519,8 @@ function RenderedDiffSide({
   side: "LEFT" | "RIGHT";
   label: "Base" | "Head";
   file: ReturnType<typeof usePullFileAtRef>;
+  lines: Parameters<typeof markdownUnifiedBlockOrder>[1];
+  unified: boolean;
   annotations: ReturnType<typeof markdownDiffAnnotations>;
   placements: MarkdownDiffFeedbackThreadPlacement[];
   selection: RenderedCommentSelection | null;
@@ -2502,6 +2557,11 @@ function RenderedDiffSide({
     }
     return result;
   }, [placements, side]);
+  const orderForBlock = useCallback(
+    (block: MarkdownRenderedBlock) =>
+      unified ? markdownUnifiedBlockOrder(block, lines, side) : null,
+    [lines, side, unified],
+  );
   const blockClassName = useCallback(
     (block: MarkdownRenderedBlock) => {
       const key = renderedBlockKey(block);
@@ -2509,11 +2569,31 @@ function RenderedDiffSide({
       return cn(
         change && `markdown-diff-block-${change}`,
         threadsByBlock.has(key) && "markdown-diff-block-commented",
-        annotationForSelection(annotationsByBlock.get(key), selection) &&
+        selection?.side === side &&
+          annotationForSelection(annotationsByBlock.get(key), selection) &&
           "markdown-diff-block-selected",
+        unified &&
+          (orderForBlock(block) == null
+            ? "markdown-diff-unified-block-hidden"
+            : "markdown-diff-unified-block-visible"),
       );
     },
-    [annotationsByBlock, changeByBlock, selection, threadsByBlock],
+    [
+      annotationsByBlock,
+      changeByBlock,
+      orderForBlock,
+      selection,
+      side,
+      threadsByBlock,
+      unified,
+    ],
+  );
+  const blockStyle = useCallback(
+    (block: MarkdownRenderedBlock) => {
+      const order = orderForBlock(block);
+      return order == null ? undefined : { order: order * 2 };
+    },
+    [orderForBlock],
   );
   const action = useCallback(
     (block: MarkdownRenderedBlock) => {
@@ -2542,8 +2622,15 @@ function RenderedDiffSide({
   const after = useCallback(
     (block: MarkdownRenderedBlock) => {
       const blockThreads = threadsByBlock.get(renderedBlockKey(block));
+      const order = orderForBlock(block);
       return blockThreads?.length ? (
-        <div className="mt-2 space-y-2">
+        <div
+          className={cn(
+            "mt-2 space-y-2",
+            unified && "markdown-diff-unified-thread-group",
+          )}
+          style={order == null ? undefined : { order: order * 2 + 1 }}
+        >
           {blockThreads.map((placement) => (
             <Fragment key={placement.thread.id}>
               {threadContent(placement.thread)}
@@ -2552,15 +2639,26 @@ function RenderedDiffSide({
         </div>
       ) : null;
     },
-    [threadContent, threadsByBlock],
+    [orderForBlock, threadContent, threadsByBlock, unified],
   );
 
   return (
-    <section aria-label={`${label} rendered diff`} className="min-w-0">
-      <div className="sticky top-0 z-10 border-b bg-background/95 px-3 py-2 text-xs font-semibold backdrop-blur">
-        {label}
-      </div>
-      <div className="markdown-diff-preview min-h-full overflow-y-auto px-3 py-8">
+    <section
+      aria-label={`${label} rendered diff`}
+      className={cn("min-w-0", unified && "contents")}
+    >
+      {unified ? null : (
+        <div className="sticky top-0 z-10 border-b bg-background/95 px-3 py-2 text-xs font-semibold backdrop-blur">
+          {label}
+        </div>
+      )}
+      <div
+        className={cn(
+          unified
+            ? "contents"
+            : "markdown-diff-preview min-h-full overflow-y-auto px-3 py-8",
+        )}
+      >
         {file.isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" /> Loading rendered diff…
@@ -2581,9 +2679,15 @@ function RenderedDiffSide({
           <Markdown
             key={file.data?.content}
             typeset
-            className="typeset-diff-preview mx-auto"
+            className={cn(
+              "typeset-diff-preview mx-auto",
+              unified
+                ? "markdown-diff-unified-document contents"
+                : "markdown-diff-split-document",
+            )}
             onRenderedBlock={registerBlock}
             renderedBlockClassName={blockClassName}
+            renderedBlockStyle={blockStyle}
             renderedBlockAction={action}
             renderedBlockAfter={after}
           >

@@ -251,6 +251,28 @@
   max-width: 100%;
 }
 
+/* Unified diff renders two Markdown trees through display: contents into one
+   flex column. Give every ordered block and its thread group the same reading
+   track; otherwise auto inline margins shrink each flex item to its content. */
+.typeset-diff-preview.markdown-diff-unified-document
+  > :where(
+    .markdown-diff-unified-block-visible,
+    .markdown-diff-unified-thread-group
+  ) {
+  box-sizing: border-box;
+  margin-block-start: 0.75rem;
+  width: min(100%, 46rem);
+}
+
+/* Split diff keeps each pane independent, but every top-level block still
+   shares one reading track. This overrides intrinsic table and image widths
+   without changing their nested overflow behavior. */
+.typeset-diff-preview.markdown-diff-split-document > :where(*) {
+  box-sizing: border-box;
+  max-width: none;
+  width: min(100%, 46rem);
+}
+
 /* A composite block expands so its nested table can use the wide track, but
    prose sharing that block keeps the normal reading measure. */
 .typeset-diff-preview

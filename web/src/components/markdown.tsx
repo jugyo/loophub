@@ -15,6 +15,7 @@
 import { Link } from "@tanstack/react-router";
 import {
   Children,
+  type CSSProperties,
   cloneElement,
   isValidElement,
   type ReactNode,
@@ -91,6 +92,9 @@ function mermaidChart(children: ReactNode): string | null {
 function markdownComponents(
   onRenderedBlock?: (block: MarkdownRenderedBlock) => void,
   renderedBlockClassName?: (block: MarkdownRenderedBlock) => string | undefined,
+  renderedBlockStyle?: (
+    block: MarkdownRenderedBlock,
+  ) => CSSProperties | undefined,
   renderedBlockAction?: (block: MarkdownRenderedBlock) => ReactNode,
   renderedBlockAfter?: (block: MarkdownRenderedBlock) => ReactNode,
 ): Components {
@@ -106,6 +110,10 @@ function markdownComponents(
     kind: MarkdownRenderedBlockKind,
     node: Parameters<NonNullable<Components["p"]>>[0]["node"],
   ) => renderedBlockAction?.(markdownRenderedBlock(kind, node));
+  const style = (
+    kind: MarkdownRenderedBlockKind,
+    node: Parameters<NonNullable<Components["p"]>>[0]["node"],
+  ) => renderedBlockStyle?.(markdownRenderedBlock(kind, node));
   const withAfter = (
     element: ReactNode,
     kind: MarkdownRenderedBlockKind,
@@ -123,7 +131,11 @@ function markdownComponents(
   return {
     p({ node, children, ...rest }) {
       return withAfter(
-        <p {...rest} className={cn(rest.className, report("paragraph", node))}>
+        <p
+          {...rest}
+          className={cn(rest.className, report("paragraph", node))}
+          style={style("paragraph", node)}
+        >
           {children}
           {action("paragraph", node)}
         </p>,
@@ -133,7 +145,11 @@ function markdownComponents(
     },
     h1({ node, children, ...rest }) {
       return withAfter(
-        <h1 {...rest} className={cn(rest.className, report("heading", node))}>
+        <h1
+          {...rest}
+          className={cn(rest.className, report("heading", node))}
+          style={style("heading", node)}
+        >
           {children}
           {action("heading", node)}
         </h1>,
@@ -143,7 +159,11 @@ function markdownComponents(
     },
     h2({ node, children, ...rest }) {
       return withAfter(
-        <h2 {...rest} className={cn(rest.className, report("heading", node))}>
+        <h2
+          {...rest}
+          className={cn(rest.className, report("heading", node))}
+          style={style("heading", node)}
+        >
           {children}
           {action("heading", node)}
         </h2>,
@@ -153,7 +173,11 @@ function markdownComponents(
     },
     h3({ node, children, ...rest }) {
       return withAfter(
-        <h3 {...rest} className={cn(rest.className, report("heading", node))}>
+        <h3
+          {...rest}
+          className={cn(rest.className, report("heading", node))}
+          style={style("heading", node)}
+        >
           {children}
           {action("heading", node)}
         </h3>,
@@ -163,7 +187,11 @@ function markdownComponents(
     },
     h4({ node, children, ...rest }) {
       return withAfter(
-        <h4 {...rest} className={cn(rest.className, report("heading", node))}>
+        <h4
+          {...rest}
+          className={cn(rest.className, report("heading", node))}
+          style={style("heading", node)}
+        >
           {children}
           {action("heading", node)}
         </h4>,
@@ -173,7 +201,11 @@ function markdownComponents(
     },
     h5({ node, children, ...rest }) {
       return withAfter(
-        <h5 {...rest} className={cn(rest.className, report("heading", node))}>
+        <h5
+          {...rest}
+          className={cn(rest.className, report("heading", node))}
+          style={style("heading", node)}
+        >
           {children}
           {action("heading", node)}
         </h5>,
@@ -183,7 +215,11 @@ function markdownComponents(
     },
     h6({ node, children, ...rest }) {
       return withAfter(
-        <h6 {...rest} className={cn(rest.className, report("heading", node))}>
+        <h6
+          {...rest}
+          className={cn(rest.className, report("heading", node))}
+          style={style("heading", node)}
+        >
           {children}
           {action("heading", node)}
         </h6>,
@@ -193,11 +229,41 @@ function markdownComponents(
     },
     li({ node, children, ...rest }) {
       return withAfter(
-        <li {...rest} className={cn(rest.className, report("list-item", node))}>
+        <li
+          {...rest}
+          className={cn(rest.className, report("list-item", node))}
+          style={style("list-item", node)}
+        >
           {children}
           {action("list-item", node)}
         </li>,
         "list-item",
+        node,
+      );
+    },
+    ul({ node, children, ...rest }) {
+      return withAfter(
+        <ul
+          {...rest}
+          className={cn(rest.className, report("list", node))}
+          style={style("list", node)}
+        >
+          {children}
+        </ul>,
+        "list",
+        node,
+      );
+    },
+    ol({ node, children, ...rest }) {
+      return withAfter(
+        <ol
+          {...rest}
+          className={cn(rest.className, report("list", node))}
+          style={style("list", node)}
+        >
+          {children}
+        </ol>,
+        "list",
         node,
       );
     },
@@ -206,11 +272,25 @@ function markdownComponents(
         <blockquote
           {...rest}
           className={cn(rest.className, report("blockquote", node))}
+          style={style("blockquote", node)}
         >
           {children}
           {action("blockquote", node)}
         </blockquote>,
         "blockquote",
+        node,
+      );
+    },
+    table({ node, children, ...rest }) {
+      return withAfter(
+        <table
+          {...rest}
+          className={cn(rest.className, report("table", node))}
+          style={style("table", node)}
+        >
+          {children}
+        </table>,
+        "table",
         node,
       );
     },
@@ -232,7 +312,11 @@ function markdownComponents(
             ]
           : children;
       const row = (
-        <tr {...rest} className={cn(rest.className, report("table-row", node))}>
+        <tr
+          {...rest}
+          className={cn(rest.className, report("table-row", node))}
+          style={style("table-row", node)}
+        >
           {rowChildren}
         </tr>
       );
@@ -255,6 +339,7 @@ function markdownComponents(
         const element = (
           <img
             className={blockClassName}
+            style={style("image", node)}
             src={src}
             alt={alt ?? ""}
             title={title}
@@ -268,6 +353,7 @@ function markdownComponents(
             blockClassName,
             renderedBlockAction && "inline-flex items-center gap-1",
           )}
+          style={style("image", node)}
         >
           <img src={src} alt={alt ?? ""} title={title} />
           {action("image", node)}
@@ -277,11 +363,28 @@ function markdownComponents(
     pre({ node, children, ...rest }) {
       const chart = mermaidChart(children);
       if (chart !== null) {
+        const blockClassName = report("mermaid", node);
+        const blockStyle = style("mermaid", node);
+        const blockAction = action("mermaid", node);
         return withAfter(
-          <>
-            <MermaidDiagram chart={chart} className={report("mermaid", node)} />
-            {action("mermaid", node)}
-          </>,
+          renderedBlockAction ? (
+            <div
+              className={cn(
+                "markdown-mermaid-block flex items-start gap-1",
+                blockClassName,
+              )}
+              style={blockStyle}
+            >
+              <MermaidDiagram chart={chart} className="min-w-0 flex-1" />
+              {blockAction}
+            </div>
+          ) : (
+            <MermaidDiagram
+              chart={chart}
+              className={blockClassName}
+              style={blockStyle}
+            />
+          ),
           "mermaid",
           node,
         );
@@ -290,6 +393,7 @@ function markdownComponents(
         <pre
           {...rest}
           className={cn(rest.className, report("code-block", node))}
+          style={style("code-block", node)}
         >
           {children}
           {action("code-block", node)}
@@ -331,6 +435,7 @@ export function Markdown({
   typeset = false,
   onRenderedBlock,
   renderedBlockClassName,
+  renderedBlockStyle,
   renderedBlockAction,
   renderedBlockAfter,
 }: {
@@ -341,6 +446,9 @@ export function Markdown({
   typeset?: boolean;
   onRenderedBlock?: (block: MarkdownRenderedBlock) => void;
   renderedBlockClassName?: (block: MarkdownRenderedBlock) => string | undefined;
+  renderedBlockStyle?: (
+    block: MarkdownRenderedBlock,
+  ) => CSSProperties | undefined;
   renderedBlockAction?: (block: MarkdownRenderedBlock) => ReactNode;
   renderedBlockAfter?: (block: MarkdownRenderedBlock) => ReactNode;
 }) {
@@ -372,6 +480,7 @@ export function Markdown({
     ...markdownComponents(
       onRenderedBlock,
       renderedBlockClassName,
+      renderedBlockStyle,
       renderedBlockAction,
       renderedBlockAfter,
     ),
@@ -397,11 +506,13 @@ export function Markdown({
         />
       );
       const blockClassName = renderedBlockClassName?.(block);
+      const blockStyle = renderedBlockStyle?.(block);
       const after = renderedBlockAfter?.(block);
       if (!renderedBlockAction && !after) {
-        return blockClassName ? (
+        return blockClassName || blockStyle ? (
           <img
             className={blockClassName}
+            style={blockStyle}
             src={src}
             alt={alt ?? ""}
             title={title}
@@ -412,12 +523,15 @@ export function Markdown({
       }
       const rendered = renderedBlockAction ? (
         blockClassName ? (
-          <span className={cn("markdown-diff-image-block", blockClassName)}>
+          <span
+            className={cn("markdown-diff-image-block", blockClassName)}
+            style={blockStyle}
+          >
             {image}
             {renderedBlockAction(block)}
           </span>
         ) : (
-          <span>
+          <span style={blockStyle}>
             {image}
             {renderedBlockAction(block)}
           </span>

@@ -276,6 +276,14 @@
   color: #f85149;
 }
 
+/* Unified rendered diff keeps both complete Markdown trees mounted so source ranges, selections,
+   and inline threads stay stable. Only top-level blocks participate in the shared ordered column;
+   nested blocks retain their native list, quote, and table layout. */
+.markdown-diff-unified-document
+  > .markdown-diff-unified-block-hidden {
+  display: none;
+}
+
 /* Rendered Markdown (issue / PR / comment bodies). Tailwind's preflight strips
    default element styles, so GFM output needs explicit rules. Scoped to
    .markdown-body so it never leaks into the rest of the UI. */

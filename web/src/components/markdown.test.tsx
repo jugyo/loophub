@@ -122,9 +122,12 @@ describe("Markdown", () => {
       { kind: "paragraph", sourceRange: { startLine: 3, endLine: 3 } },
       { kind: "blockquote", sourceRange: { startLine: 5, endLine: 6 } },
       { kind: "paragraph", sourceRange: { startLine: 5, endLine: 6 } },
+      { kind: "list", sourceRange: { startLine: 8, endLine: 9 } },
       { kind: "list-item", sourceRange: { startLine: 8, endLine: 9 } },
+      { kind: "list", sourceRange: { startLine: 9, endLine: 9 } },
       { kind: "list-item", sourceRange: { startLine: 9, endLine: 9 } },
       { kind: "code-block", sourceRange: { startLine: 11, endLine: 13 } },
+      { kind: "table", sourceRange: { startLine: 15, endLine: 17 } },
       { kind: "table-row", sourceRange: { startLine: 15, endLine: 15 } },
       { kind: "table-row", sourceRange: { startLine: 17, endLine: 17 } },
       { kind: "paragraph", sourceRange: { startLine: 19, endLine: 19 } },
@@ -171,6 +174,28 @@ describe("Markdown", () => {
     const mock = container.querySelector('[data-testid="mermaid-mock"]');
     expect(mock?.textContent).toBe("graph TD;\nA-->B;");
     expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("keeps a Mermaid action inside the styled rendered block", () => {
+    renderWithClient(
+      <Markdown
+        renderedBlockClassName={() => "mapped-mermaid"}
+        renderedBlockStyle={() => ({ order: 7 })}
+        renderedBlockAction={(block) => (
+          <button type="button">Comment on {block.kind}</button>
+        )}
+      >
+        {"```mermaid\ngraph TD;\nA-->B;\n```"}
+      </Markdown>,
+    );
+
+    const diagram = screen.getByTestId("mermaid-mock");
+    const block = diagram.closest(".markdown-mermaid-block");
+    expect(block?.classList).toContain("mapped-mermaid");
+    expect((block as HTMLElement | null)?.style.order).toBe("7");
+    expect(block?.querySelector("button")?.textContent).toBe(
+      "Comment on mermaid",
+    );
   });
 
   it("renders GFM tables", () => {

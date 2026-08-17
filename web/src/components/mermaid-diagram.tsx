@@ -9,7 +9,14 @@
 // renderer, not from the user-supplied Markdown source directly. The lightbox re-injects the same
 // already-sanitized SVG string (with its ids rewritten — see forLightbox — to avoid DOM id
 // collisions with the inline copy), so it carries no additional XSS risk.
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Lightbox } from "@/components/lightbox";
 import { errorMessage } from "@/lib/error-message";
 import { cn } from "@/lib/utils";
@@ -106,9 +113,11 @@ async function loadMermaid() {
 export function MermaidDiagram({
   chart,
   className,
+  style,
 }: {
   chart: string;
   className?: string;
+  style?: CSSProperties;
 }) {
   // Mermaid needs a valid DOM id per diagram; useId() can contain colons, which mermaid rejects.
   const renderId = `mermaid-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
@@ -148,6 +157,7 @@ export function MermaidDiagram({
             "mermaid-diagram cursor-zoom-in overflow-x-auto",
             className,
           )}
+          style={style}
           role="button"
           tabIndex={0}
           aria-label="Expand diagram"
@@ -184,7 +194,7 @@ export function MermaidDiagram({
   // Loading, or the diagram failed to parse/render: fall back to the plain source so the body
   // never renders blank or crashes the page.
   return (
-    <div className={className}>
+    <div className={className} style={style}>
       {error && (
         <p className="mb-1 text-destructive text-sm">
           Failed to render Mermaid diagram: {error}

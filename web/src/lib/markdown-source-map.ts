@@ -14,9 +14,11 @@ export type MarkdownSourceRange = {
 export type MarkdownRenderedBlockKind =
   | "paragraph"
   | "heading"
+  | "list"
   | "list-item"
   | "blockquote"
   | "code-block"
+  | "table"
   | "table-row"
   | "image"
   | "mermaid";
@@ -237,6 +239,45 @@ export function markdownDiffFeedbackPlacements(
       block,
     };
   });
+}
+
+/**
+ * Place one side's rendered block in a unified Markdown diff.
+ *
+ * LEFT contributes deleted blocks only. RIGHT contributes added blocks and the surrounding
+ * context, preferring an addition's patch position when one block also contains context. A
+ * context-only RIGHT block uses its last patch position so it does not precede a deletion within
+ * the same multi-line block. The returned patch-line index lets both independently rendered
+ * documents share one ordered column.
+ */
+export function markdownUnifiedBlockOrder(
+  block: MarkdownRenderedBlock,
+  lines: DiffLine[],
+  side: MarkdownDiffSide,
+): number | null {
+  const range = block.sourceRange;
+  if (!range) return null;
+
+  const coordinate = side === "LEFT" ? "left_line" : "right_line";
+  const preferredKind = side === "LEFT" ? "deletion" : "addition";
+  let contextIndex: number | null = null;
+
+  for (const [index, line] of lines.entries()) {
+    const sourceLine = line[coordinate];
+    if (
+      sourceLine == null ||
+      sourceLine < range.startLine ||
+      sourceLine > range.endLine
+    ) {
+      continue;
+    }
+    if (line.kind === preferredKind) return index;
+    if (side === "RIGHT" && line.kind === "context") {
+      contextIndex = index;
+    }
+  }
+
+  return contextIndex;
 }
 
 function changeKindFor(

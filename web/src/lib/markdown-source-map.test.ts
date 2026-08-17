@@ -5,6 +5,7 @@ import {
   markdownDiffFeedbackPlacements,
   markdownRenderedBlock,
   markdownSourceRange,
+  markdownUnifiedBlockOrder,
 } from "./markdown-source-map";
 
 function thread(
@@ -151,6 +152,79 @@ describe("markdown source mapping", () => {
         [{ kind: "addition", text: "", left_line: null, right_line: 1 }],
       ),
     ).toEqual([]);
+  });
+
+  it("orders unified deletion, addition, and context blocks across multiple hunks", () => {
+    const lines = [
+      { kind: "hunk" as const, text: "", left_line: null, right_line: null },
+      { kind: "context" as const, text: "", left_line: 1, right_line: 1 },
+      { kind: "deletion" as const, text: "", left_line: 2, right_line: null },
+      { kind: "addition" as const, text: "", left_line: null, right_line: 2 },
+      { kind: "context" as const, text: "", left_line: 3, right_line: 3 },
+      { kind: "hunk" as const, text: "", left_line: null, right_line: null },
+      { kind: "deletion" as const, text: "", left_line: 10, right_line: null },
+      { kind: "addition" as const, text: "", left_line: null, right_line: 10 },
+    ];
+    const block = (line: number) =>
+      markdownRenderedBlock("paragraph", {
+        position: {
+          start: { line, column: 1 },
+          end: { line, column: 1 },
+        },
+      });
+
+    expect(markdownUnifiedBlockOrder(block(1), lines, "LEFT")).toBeNull();
+    expect(markdownUnifiedBlockOrder(block(1), lines, "RIGHT")).toBe(1);
+    expect(markdownUnifiedBlockOrder(block(2), lines, "LEFT")).toBe(2);
+    expect(markdownUnifiedBlockOrder(block(2), lines, "RIGHT")).toBe(3);
+    expect(markdownUnifiedBlockOrder(block(10), lines, "LEFT")).toBe(6);
+    expect(markdownUnifiedBlockOrder(block(10), lines, "RIGHT")).toBe(7);
+    expect(
+      markdownUnifiedBlockOrder(
+        markdownRenderedBlock("paragraph", undefined),
+        lines,
+        "RIGHT",
+      ),
+    ).toBeNull();
+  });
+
+  it("places a changed multi-line head block at its addition instead of earlier context", () => {
+    const block = markdownRenderedBlock("paragraph", {
+      position: {
+        start: { line: 1, column: 1 },
+        end: { line: 2, column: 1 },
+      },
+    });
+    const lines = [
+      { kind: "context" as const, text: "", left_line: 1, right_line: 1 },
+      { kind: "deletion" as const, text: "", left_line: 2, right_line: null },
+      { kind: "addition" as const, text: "", left_line: null, right_line: 2 },
+    ];
+
+    expect(markdownUnifiedBlockOrder(block, lines, "RIGHT")).toBe(2);
+  });
+
+  it("places a multi-line head context after an internal deletion", () => {
+    const baseBlock = markdownRenderedBlock("paragraph", {
+      position: {
+        start: { line: 1, column: 1 },
+        end: { line: 3, column: 1 },
+      },
+    });
+    const headBlock = markdownRenderedBlock("paragraph", {
+      position: {
+        start: { line: 1, column: 1 },
+        end: { line: 2, column: 1 },
+      },
+    });
+    const lines = [
+      { kind: "context" as const, text: "", left_line: 1, right_line: 1 },
+      { kind: "deletion" as const, text: "", left_line: 2, right_line: null },
+      { kind: "context" as const, text: "", left_line: 3, right_line: 2 },
+    ];
+
+    expect(markdownUnifiedBlockOrder(baseBlock, lines, "LEFT")).toBe(1);
+    expect(markdownUnifiedBlockOrder(headBlock, lines, "RIGHT")).toBe(2);
   });
 
   it("prefers a resolved anchor and places a current thread in the smallest block", () => {

@@ -2748,7 +2748,7 @@ describe("DiffFileDialog", () => {
     expect(await within(dialog).findByText("# new")).toBeTruthy();
   });
 
-  it("shows a labelled two-pane rendered diff with source annotations", async () => {
+  it("defaults rendered diff to unified and switches to the existing split view", async () => {
     const mdFile: PullFile = {
       filename: "README.md",
       status: "modified",
@@ -2815,17 +2815,281 @@ describe("DiffFileDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
 
     expect(
-      await screen.findByRole("region", { name: "Base rendered diff" }),
+      screen
+        .getByRole("button", { name: "Unified" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    const renderedPane = document.querySelector(
+      '[data-debug-component="RenderedDiffPane"]',
+    );
+    expect(renderedPane?.getAttribute("data-view-mode")).toBe("unified");
+    expect(renderedPane?.classList).toContain("flex");
+    expect(
+      await screen.findByRole("region", { name: "Unified rendered diff" }),
     ).toBeTruthy();
+    const baseRegion = await screen.findByRole("region", {
+      name: "Base rendered diff",
+    });
+    const headRegion = screen.getByRole("region", {
+      name: "Head rendered diff",
+    });
     expect(
-      screen.getByRole("region", { name: "Head rendered diff" }),
+      baseRegion.compareDocumentPosition(headRegion) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Old" }).className).toContain(
+        "markdown-diff-block-removed",
+      );
+      expect(screen.getByRole("heading", { name: "New" }).className).toContain(
+        "markdown-diff-block-added",
+      );
+    });
+    const unifiedTrackRule = postcss
+      .parse(typesetCss)
+      .nodes.find(
+        (node) =>
+          node.type === "rule" &&
+          node.selector.includes("markdown-diff-unified-block-visible"),
+      );
+    expect(unifiedTrackRule?.toString()).toContain(
+      "markdown-diff-unified-thread-group",
+    );
+    expect(unifiedTrackRule?.toString()).toContain("width: min(100%, 46rem)");
+    expect(unifiedTrackRule?.toString()).toContain(
+      "margin-block-start: 0.75rem",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(renderedPane?.getAttribute("data-view-mode")).toBe("split");
+    expect(renderedPane?.classList).toContain("grid");
+    expect(renderedPane?.classList).toContain("grid-cols-2");
     expect(
-      (await screen.findByRole("heading", { name: "Old" })).className,
-    ).toContain("markdown-diff-block-removed");
+      screen
+        .getByRole("button", { name: "Split" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    const splitDocuments = document.querySelectorAll(
+      ".typeset-diff-preview.markdown-diff-split-document",
+    );
+    expect(splitDocuments).toHaveLength(2);
+    const splitTrackRule = postcss
+      .parse(typesetCss)
+      .nodes.find(
+        (node) =>
+          node.type === "rule" &&
+          node.selector.includes("markdown-diff-split-document"),
+      );
+    expect(splitTrackRule?.toString()).toContain("width: min(100%, 46rem)");
+    expect(splitTrackRule?.toString()).toContain("max-width: none");
+  });
+
+  it("interleaves rendered blocks from multiple hunks in source diff order", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 2,
+      deletions: 2,
+      patch:
+        "@@ -1,2 +1,2 @@\n-# Old first\n+# New first\n context\n@@ -5 +5 @@\n-## Old second\n+## New second",
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "README.md",
+              original_path: null,
+              status: "modified",
+              additions: 2,
+              deletions: 2,
+              patch: mdFile.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1,2 +1,2 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-# Old first",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+# New first",
+                  left_line: null,
+                  right_line: 1,
+                },
+                {
+                  kind: "context",
+                  text: " context",
+                  left_line: 2,
+                  right_line: 2,
+                },
+                {
+                  kind: "hunk",
+                  text: "@@ -5 +5 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-## Old second",
+                  left_line: 5,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+## New second",
+                  left_line: null,
+                  right_line: 5,
+                },
+              ],
+            },
+          ],
+        }),
+        "pulls/fileAtRef": (params) => ({
+          status: "ok",
+          content:
+            params.side === "base"
+              ? "# Old first\ncontext\n\n\n## Old second\n"
+              : "# New first\ncontext\n\n\n## New second\n",
+        }),
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    await screen.findByRole("heading", { name: "New second" });
+
+    const orderedBlocks = Array.from(
+      document.querySelectorAll(
+        ".markdown-diff-unified-document > .markdown-diff-unified-block-visible",
+      ),
+    ).sort(
+      (left, right) =>
+        Number((left as HTMLElement).style.order) -
+        Number((right as HTMLElement).style.order),
+    );
+    expect(orderedBlocks.map((block) => block.textContent?.trim())).toEqual([
+      expect.stringContaining("Old first"),
+      expect.stringContaining("New first"),
+      expect.stringContaining("context"),
+      expect.stringContaining("Old second"),
+      expect.stringContaining("New second"),
+    ]);
     expect(
-      (await screen.findByRole("heading", { name: "New" })).className,
-    ).toContain("markdown-diff-block-added");
+      document.querySelectorAll(
+        ".markdown-diff-unified-document > .markdown-diff-unified-block-hidden",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps each Mermaid comment action inside its ordered unified block", async () => {
+    const baseDiagram = ["```mermaid", "flowchart TD", "  A --> B", "```"];
+    const headDiagram = ["```mermaid", "flowchart TD", "  A --> C", "```"];
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 4,
+      deletions: 4,
+      patch: [
+        "@@ -1,6 +1,6 @@",
+        " # Diagram",
+        " ",
+        ...baseDiagram.map((line) => `-${line}`),
+        ...headDiagram.map((line) => `+${line}`),
+      ].join("\n"),
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "README.md",
+              original_path: null,
+              status: "modified",
+              additions: 4,
+              deletions: 4,
+              patch: mdFile.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1,6 +1,6 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "context",
+                  text: " # Diagram",
+                  left_line: 1,
+                  right_line: 1,
+                },
+                {
+                  kind: "context",
+                  text: " ",
+                  left_line: 2,
+                  right_line: 2,
+                },
+                ...baseDiagram.map((line, index) => ({
+                  kind: "deletion" as const,
+                  text: `-${line}`,
+                  left_line: index + 3,
+                  right_line: null,
+                })),
+                ...headDiagram.map((line, index) => ({
+                  kind: "addition" as const,
+                  text: `+${line}`,
+                  left_line: null,
+                  right_line: index + 3,
+                })),
+              ],
+            },
+          ],
+        }),
+        "pulls/fileAtRef": (params) => ({
+          status: "ok",
+          content: [
+            "# Diagram",
+            "",
+            ...(params.side === "base" ? baseDiagram : headDiagram),
+            "",
+          ].join("\n"),
+        }),
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    const baseButton = await screen.findByRole("button", {
+      name: "Comment on base lines 3-6",
+    });
+    const headButton = screen.getByRole("button", {
+      name: "Comment on head lines 3-6",
+    });
+    const baseBlock = baseButton.closest(".markdown-mermaid-block");
+    const headBlock = headButton.closest(".markdown-mermaid-block");
+
+    expect(
+      baseBlock?.querySelector(".mermaid-diagram, pre code.language-mermaid"),
+    ).not.toBeNull();
+    expect(
+      headBlock?.querySelector(".mermaid-diagram, pre code.language-mermaid"),
+    ).not.toBeNull();
+    expect(baseBlock?.classList).toContain("markdown-diff-block-removed");
+    expect(headBlock?.classList).toContain("markdown-diff-block-added");
+    expect(Number((baseBlock as HTMLElement).style.order)).toBeLessThan(
+      Number((headBlock as HTMLElement).style.order),
+    );
+    expect(baseButton.parentElement?.parentElement).toBe(baseBlock);
+    expect(headButton.parentElement?.parentElement).toBe(headBlock);
   });
 
   it("uses the original and target paths for a renamed Markdown rendered diff", async () => {
@@ -2884,6 +3148,535 @@ describe("DiffFileDialog", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Base" }));
     await screen.findByRole("heading", { name: "base" });
+  });
+
+  it("keeps a head selection off an unrelated base block with the same line number", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 2,
+      deletions: 0,
+      patch:
+        "@@ -1,3 +1,5 @@\n+Inserted intro\n+\n # Shared\n \n Base paragraph",
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "README.md",
+              original_path: null,
+              status: "modified",
+              additions: 2,
+              deletions: 0,
+              patch: mdFile.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1,3 +1,5 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+Inserted intro",
+                  left_line: null,
+                  right_line: 1,
+                },
+                {
+                  kind: "addition",
+                  text: "+",
+                  left_line: null,
+                  right_line: 2,
+                },
+                {
+                  kind: "context",
+                  text: " # Shared",
+                  left_line: 1,
+                  right_line: 3,
+                },
+                {
+                  kind: "context",
+                  text: " ",
+                  left_line: 2,
+                  right_line: 4,
+                },
+                {
+                  kind: "context",
+                  text: " Base paragraph",
+                  left_line: 3,
+                  right_line: 5,
+                },
+              ],
+            },
+          ],
+        }),
+        "pulls/fileAtRef": (params) => ({
+          status: "ok",
+          content:
+            params.side === "base"
+              ? "# Shared\n\nBase paragraph\n"
+              : "Inserted intro\n\n# Shared\n\nBase paragraph\n",
+        }),
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Comment on head lines 3-3" }),
+    );
+    const baseRegion = screen.getByRole("region", {
+      name: "Base rendered diff",
+    });
+    const headRegion = screen.getByRole("region", {
+      name: "Head rendered diff",
+    });
+    const expectOnlyHeadSelected = () => {
+      expect(
+        within(headRegion).getByRole("heading", { name: "Shared" }).className,
+      ).toContain("markdown-diff-block-selected");
+      expect(
+        within(baseRegion).getByText("Base paragraph").className,
+      ).not.toContain("markdown-diff-block-selected");
+    };
+
+    expectOnlyHeadSelected();
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expectOnlyHeadSelected();
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+    expectOnlyHeadSelected();
+  });
+
+  it.each([
+    {
+      status: "added" as const,
+      missingSide: "base",
+      availableSide: "head",
+    },
+    {
+      status: "removed" as const,
+      missingSide: "head",
+      availableSide: "base",
+    },
+  ])("shows the missing and available sides of a $status file in both rendered views", async ({
+    status,
+    missingSide,
+    availableSide,
+  }) => {
+    const changedFile: PullFile = {
+      filename: "README.md",
+      status,
+      additions: status === "added" ? 1 : 0,
+      deletions: status === "removed" ? 1 : 0,
+      patch:
+        status === "added"
+          ? "@@ -0,0 +1 @@\n+# Added"
+          : "@@ -1 +0,0 @@\n-# Removed",
+    };
+    renderDialog({
+      file: changedFile,
+      handlers: {
+        "pulls/fileAtRef": (params) =>
+          params.side === missingSide
+            ? { status: "missing" }
+            : { status: "ok", content: `# ${availableSide}\n` },
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    expect(
+      await screen.findByText(`N/A — file does not exist on ${missingSide}.`),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: availableSide })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(
+      screen.getByText(`N/A — file does not exist on ${missingSide}.`),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: availableSide })).toBeTruthy();
+  });
+
+  it("keeps binary, loading, and fetch failure states visible in both rendered views", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-old\n+new",
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/diff": () => {
+          throw new RpcFault(500, "diff unavailable");
+        },
+        "pulls/fileAtRef": (params) => {
+          if (params.side === "base") return { status: "binary" };
+          return new Promise(() => {});
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    expect(
+      await screen.findByText("N/A — binary file, cannot render as Markdown."),
+    ).toBeTruthy();
+    expect(screen.getByText("Loading rendered diff…")).toBeTruthy();
+    expect(
+      await screen.findByText("Failed to load diff annotations."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(
+      screen.getByText("N/A — binary file, cannot render as Markdown."),
+    ).toBeTruthy();
+    expect(screen.getByText("Loading rendered diff…")).toBeTruthy();
+    expect(screen.getByText("Failed to load diff annotations.")).toBeTruthy();
+  });
+
+  it("keeps a rendered content failure visible after switching views", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-old\n+new",
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/fileAtRef": () => {
+          throw new RpcFault(500, "content unavailable");
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    expect(
+      await screen.findByText("Failed to load base preview."),
+    ).toBeTruthy();
+    expect(screen.getByText("Failed to load head preview.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(screen.getByText("Failed to load base preview.")).toBeTruthy();
+    expect(screen.getByText("Failed to load head preview.")).toBeTruthy();
+  });
+
+  it("keeps list and table container threads visible in both rendered views", async () => {
+    const baseContent = [
+      "- Base item",
+      "",
+      "| Header |",
+      "| --- |",
+      "| Base value |",
+    ].join("\n");
+    const headContent = [
+      "- Head item",
+      "",
+      "| Header |",
+      "| --- |",
+      "| Head value |",
+    ].join("\n");
+    const patch = [
+      "@@ -1,5 +1,5 @@",
+      "-- Base item",
+      "+- Head item",
+      " ",
+      " | Header |",
+      " | --- |",
+      "-| Base value |",
+      "+| Head value |",
+    ].join("\n");
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 2,
+      deletions: 2,
+      patch,
+    };
+    const listThread = feedbackThread({
+      anchor: {
+        ...feedbackThread().anchor,
+        path: "README.md",
+        start_line: 1,
+        end_line: 1,
+      },
+      messages: [
+        {
+          ...feedbackThread().messages[0],
+          body: "List thread",
+        },
+      ],
+    });
+    const tableThread = feedbackThread({
+      id: 2,
+      anchor: {
+        ...feedbackThread().anchor,
+        path: "README.md",
+        start_line: 4,
+        end_line: 4,
+      },
+      messages: [
+        {
+          ...feedbackThread().messages[0],
+          id: 12,
+          thread_id: 2,
+          body: "Table delimiter thread",
+        },
+      ],
+    });
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "README.md",
+              original_path: null,
+              status: "modified",
+              additions: 2,
+              deletions: 2,
+              patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1,5 +1,5 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-- Base item",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+- Head item",
+                  left_line: null,
+                  right_line: 1,
+                },
+                {
+                  kind: "context",
+                  text: " ",
+                  left_line: 2,
+                  right_line: 2,
+                },
+                {
+                  kind: "context",
+                  text: " | Header |",
+                  left_line: 3,
+                  right_line: 3,
+                },
+                {
+                  kind: "context",
+                  text: " | --- |",
+                  left_line: 4,
+                  right_line: 4,
+                },
+                {
+                  kind: "deletion",
+                  text: "-| Base value |",
+                  left_line: 5,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+| Head value |",
+                  left_line: null,
+                  right_line: 5,
+                },
+              ],
+            },
+          ],
+        }),
+        "pulls/fileAtRef": (params) => ({
+          status: "ok",
+          content: params.side === "base" ? baseContent : headContent,
+        }),
+        "diffFeedback/list": () => ({
+          threads: [listThread, tableThread],
+        }),
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+
+    const assertContainerThreads = async (unified: boolean) => {
+      const listCard = await screen.findByLabelText("Diff thread 1");
+      const tableCard = screen.getByLabelText("Diff thread 2");
+      expect(listCard.parentElement?.previousElementSibling?.tagName).toBe(
+        "UL",
+      );
+      expect(tableCard.parentElement?.previousElementSibling?.tagName).toBe(
+        "TABLE",
+      );
+      expect(
+        listCard.parentElement?.classList.contains(
+          "markdown-diff-unified-thread-group",
+        ),
+      ).toBe(unified);
+      expect(
+        tableCard.parentElement?.classList.contains(
+          "markdown-diff-unified-thread-group",
+        ),
+      ).toBe(unified);
+      expect(screen.queryByLabelText("Previous diff threads")).toBeNull();
+    };
+
+    await assertContainerThreads(true);
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    await assertContainerThreads(false);
+  });
+
+  it("does not duplicate side-specific rendered threads as previous threads", async () => {
+    const baseContent = "# Shared\n\n# Base only\n";
+    const headContent = "# Shared\n\n\n\n# Head only\n";
+    const patch = [
+      "@@ -1,3 +1,5 @@",
+      " # Shared",
+      "-",
+      "-# Base only",
+      "+",
+      "+",
+      "+",
+      "+# Head only",
+    ].join("\n");
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 4,
+      deletions: 2,
+      patch,
+    };
+    const baseThread = feedbackThread({
+      anchor: {
+        ...feedbackThread().anchor,
+        path: "README.md",
+        side: "LEFT",
+        start_line: 3,
+        end_line: 3,
+      },
+      messages: [
+        {
+          ...feedbackThread().messages[0],
+          body: "Base-only thread",
+        },
+      ],
+    });
+    const headThread = feedbackThread({
+      id: 2,
+      anchor: {
+        ...feedbackThread().anchor,
+        path: "README.md",
+        side: "RIGHT",
+        start_line: 5,
+        end_line: 5,
+      },
+      messages: [
+        {
+          ...feedbackThread().messages[0],
+          id: 12,
+          thread_id: 2,
+          body: "Head-only thread",
+        },
+      ],
+    });
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "README.md",
+              original_path: null,
+              status: "modified",
+              additions: 4,
+              deletions: 2,
+              patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1,3 +1,5 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "context",
+                  text: " # Shared",
+                  left_line: 1,
+                  right_line: 1,
+                },
+                {
+                  kind: "deletion",
+                  text: "-",
+                  left_line: 2,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-# Base only",
+                  left_line: 3,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+",
+                  left_line: null,
+                  right_line: 2,
+                },
+                {
+                  kind: "addition",
+                  text: "+",
+                  left_line: null,
+                  right_line: 3,
+                },
+                {
+                  kind: "addition",
+                  text: "+",
+                  left_line: null,
+                  right_line: 4,
+                },
+                {
+                  kind: "addition",
+                  text: "+# Head only",
+                  left_line: null,
+                  right_line: 5,
+                },
+              ],
+            },
+          ],
+        }),
+        "pulls/fileAtRef": (params) => ({
+          status: "ok",
+          content: params.side === "base" ? baseContent : headContent,
+        }),
+        "diffFeedback/list": () => ({
+          threads: [baseThread, headThread],
+        }),
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+
+    const assertInlineOnly = async () => {
+      expect(await screen.findByText("Base-only thread")).toBeTruthy();
+      expect(screen.getByText("Head-only thread")).toBeTruthy();
+      expect(screen.getAllByLabelText("Diff thread 1")).toHaveLength(1);
+      expect(screen.getAllByLabelText("Diff thread 2")).toHaveLength(1);
+      expect(screen.queryByLabelText("Previous diff threads")).toBeNull();
+    };
+
+    await assertInlineOnly();
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    await assertInlineOnly();
   });
 
   it("creates a rendered diff comment and shows its inline conversation", async () => {
@@ -2997,9 +3790,35 @@ describe("DiffFileDialog", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Comment on head lines 1-1" }),
     );
+    expect(screen.getByRole("heading", { name: "New" }).className).toContain(
+      "markdown-diff-block-selected",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Old" }).className,
+    ).not.toContain("markdown-diff-block-selected");
     fireEvent.change(screen.getByLabelText("Diff comment"), {
       target: { value: "Rendered feedback" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(
+      (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
+    ).toBe("Rendered feedback");
+    expect(screen.getByRole("heading", { name: "New" }).className).toContain(
+      "markdown-diff-block-selected",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Old" }).className,
+    ).not.toContain("markdown-diff-block-selected");
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+    expect(
+      (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
+    ).toBe("Rendered feedback");
+    expect(screen.getByRole("heading", { name: "New" }).className).toContain(
+      "markdown-diff-block-selected",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Old" }).className,
+    ).not.toContain("markdown-diff-block-selected");
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     await waitFor(() =>
@@ -3094,7 +3913,8 @@ ${Array.from({ length: 120 }, (_, index) => `Long paragraph ${index + 1}.`).join
     expect(headPane?.querySelector("pre code.language-mermaid")).not.toBeNull();
     expect(headPane?.textContent).toContain("Long paragraph 120.");
     expect(
-      headPane
+      document
+        .querySelector("[aria-label='Unified rendered diff']")
         ?.querySelector(".markdown-diff-preview")
         ?.classList.contains("overflow-y-auto"),
     ).toBe(true);
