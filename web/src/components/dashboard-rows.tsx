@@ -310,6 +310,7 @@ export function IssueRow({
             ) : (
               <ChevronRight className="size-3" />
             )}
+            {/* Show open sub-issues so the summary answers how many remain. */}
             <Badge>
               sub {issue.sub_issue_summary.open}/{issue.sub_issue_summary.total}
             </Badge>

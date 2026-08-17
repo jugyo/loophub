@@ -105,6 +105,23 @@ function subIssueSummary(total = 1) {
 }
 
 describe("IssueList", () => {
+  it("shows open sub-issues as the summary numerator", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [
+          issue({
+            sub_issue_summary: { total: 3, open: 2, closed: 1 },
+          }),
+        ],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("sub 2/3")).toBeTruthy();
+  });
+
   it("keeps sub issues collapsed and fetches each expanded level once", async () => {
     let subIssueCalls = 0;
     vi.stubGlobal(
