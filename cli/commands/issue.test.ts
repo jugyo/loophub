@@ -118,7 +118,7 @@ test("lh issue create --parent creates a sub-issue", () => {
   ).not.toContain(childNumber);
 });
 
-test("lh issue sub commands and hierarchy text output work", () => {
+test("lh issue sub commands, hierarchy text, and open summary output work", () => {
   const parent = createIssue("sub command parent");
   const childA = createIssue("sub command child A");
   const childB = createIssue("sub command child B");
@@ -170,9 +170,21 @@ test("lh issue sub commands and hierarchy text output work", () => {
 
   const closed = lh(["issue", "close", String(childA), "--repo", "me/proj"]);
   expect(closed.exitCode, closed.stderr).toBe(0);
+  const childC = createIssue("sub command child C");
+  const added = lh([
+    "issue",
+    "sub",
+    "add",
+    String(parent),
+    String(childC),
+    "--repo",
+    "me/proj",
+    "--json",
+  ]);
+  expect(added.exitCode, added.stderr).toBe(0);
   const listText = lh(["issue", "list", "--state", "all", "--repo", "me/proj"]);
   expect(listText.exitCode, listText.stderr).toBe(0);
-  expect(listText.stdout).toContain(`sub 1/2`);
+  expect(listText.stdout).toContain(`sub 2/3`);
   expect(listText.stdout).toContain(
     "use 'lh issue sub list <n>' to see sub issues",
   );

@@ -87,8 +87,9 @@ export async function run(): Promise<void> {
       issues.forEach((i: any) => {
         const labels = (i.labels || []).map((l: any) => l.name).join(",");
         const summary = summaries.get(i.number);
+        // Show the number of open sub-issues so the summary answers how many remain.
         const suffix = summary?.total
-          ? `\tsub ${summary.closed}/${summary.total}`
+          ? `\tsub ${summary.open}/${summary.total}`
           : "";
         hasSubIssues ||= Boolean(summary?.total);
         console.log(
