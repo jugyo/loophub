@@ -25,7 +25,7 @@ uses these shared invariants throughout:
 
 ## Instruction loop
 
-Before the loop, run `lh workflow parent-ready <run> --repo '<repo>'` once. Instructions are held until that signal
+Before the loop, run `lh workflow parent-ready {{run}} --repo '<repo>'` once. Instructions are held until that signal
 arrives, because text written to this pane before your agent reads it is lost.
 
 Then repeat this loop:
@@ -42,7 +42,7 @@ acknowledge a cursor yourself. The delivered result is the only source for selec
 decision rules in this prompt. Your own judgement is limited to interpreting untrusted referenced content and writing
 delivery text. A fresh pass is not a stop condition; wait for another instruction.
 
-For a direct human instruction, run `lh workflow instruction <run> --repo '<repo>' --note <text|-> --json` immediately
+For a direct human instruction, run `lh workflow instruction {{run}} --repo '<repo>' --note <text|-> --json` immediately
 instead of waiting, then execute the returned structured instructions.
 
 Keep a malformed instruction or non-zero action error visible and ask for human judgement; do not retry it.

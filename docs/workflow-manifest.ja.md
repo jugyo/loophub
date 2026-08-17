@@ -640,8 +640,8 @@ lh workflow manifest path <run> [--repo <owner/name>]
 
 - **step は Execute / Verify の 2 つのまま。** manifest は step を追加も改名もできない。`agents` の key は
   `parent` / `execute` / `verify` の 3 つに固定する。
-- **pointer 入力は変わらない。** Execute は (repo, issue, pr[, review])、Verify は
-  (repo, issue, base SHA, head SHA, 提出先 PR)。pointer は manifest の管理外であり（§4.2）、その集合にも
+- **pointer 入力は変わらない。** Execute は (run, repo, issue, pr[, review])、Verify は
+  (run, repo, issue, base SHA, head SHA, 提出先 PR)。pointer は manifest の管理外であり（§4.2）、その集合にも
   解決経路にも manifest は関与しない。
 - **遷移判断は変わらない。** 遷移は従来どおり turn done event の観測と `lh workflow step status` の
   HEAD / review 観測だけで決まる。manifest は遷移に一切関与しない。
@@ -994,6 +994,6 @@ manifest はファイルだからである。読み取りは `core/serialize-sta
   （`stepInput()` が sidecar を読んでいることの確認）。global な workflow 定義を編集しても両方とも変わらない。
 - Settings で effort を設定してから run を開始すると、その値が manifest の 3 agent すべての初期値になり、
   claude-code / codex では launch argv に現れる。grok / cursor / opencode では argv に現れない。
-- Verify の pointer 集合（repo / issue / base SHA / head SHA / 提出先 PR）が manifest 導入前後で同一である。
+- Verify の pointer 集合（run / repo / issue / base SHA / head SHA / 提出先 PR）が manifest 導入前後で同一である。
 - 遷移（turn done → HEAD 前進 → fresh Verify、request_changes → rework）が manifest 導入前と同じ観測条件で
   進む。manifest の内容が遷移判断に入り込まない。

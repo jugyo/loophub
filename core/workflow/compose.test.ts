@@ -13,12 +13,14 @@ const CONTRACT_DIR = join(import.meta.dirname, "contracts");
 
 const executePointers = [
   { label: "repo", value: "me/proj" },
+  { label: "run", value: "7" },
   { label: "issue", value: "#42" },
   { label: "pr", value: "#7" },
 ];
 
 const verifyPointers = [
   { label: "repo", value: "me/proj" },
+  { label: "run", value: "7" },
   { label: "issue", value: "#42" },
   { label: "base sha", value: "b".repeat(40) },
   { label: "head sha", value: "a".repeat(40) },
@@ -29,6 +31,7 @@ test("keeps contract and user prompt in separate channels", () => {
     {
       template: readFileSync(join(CONTRACT_DIR, "execute.md"), "utf8"),
       step: "execute",
+      run: 7,
       worktreePath: "/tmp/worktree",
       baseBranch: "main",
     },
@@ -53,6 +56,7 @@ test("keeps a Verify step prompt additive to the contract", () => {
     {
       template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
       step: "verify",
+      run: 7,
       worktreePath: "/tmp/worktree",
       baseBranch: "main",
     },
@@ -73,8 +77,10 @@ test("keeps a Verify step prompt additive to the contract", () => {
 test("renders contract inputs and template placeholders into the system prompt", () => {
   const contract = renderWorkflowContract(
     {
-      template: "STEP={{step}} WORKTREE={{worktreePath}} BASE={{baseBranch}}",
+      template:
+        "STEP={{step}} RUN={{run}} WORKTREE={{worktreePath}} BASE={{baseBranch}}",
       step: "verify",
+      run: 56,
       worktreePath: "/tmp/worktree",
       baseBranch: "main",
     },
@@ -84,7 +90,9 @@ test("renders contract inputs and template placeholders into the system prompt",
   expect(contract).toContain("step: verify");
   expect(contract).toContain("worktree: /tmp/worktree");
   expect(contract).toContain("base branch: main");
-  expect(contract).toContain("STEP=verify WORKTREE=/tmp/worktree BASE=main");
+  expect(contract).toContain(
+    "STEP=verify RUN=56 WORKTREE=/tmp/worktree BASE=main",
+  );
 });
 
 test("every rendered contract carries the configured-language instruction", () => {
@@ -98,6 +106,7 @@ test("every rendered contract carries the configured-language instruction", () =
             "utf8",
           ),
           step,
+          run: 7,
           worktreePath: "/tmp/worktree",
           baseBranch: "main",
         },
@@ -181,6 +190,7 @@ test("parent/step contracts do not introduce slash commands", () => {
     {
       template: readFileSync(join(CONTRACT_DIR, "execute.md"), "utf8"),
       step: "execute",
+      run: 7,
       worktreePath: "/tmp/worktree",
       baseBranch: "main",
     },

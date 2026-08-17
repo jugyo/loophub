@@ -11,6 +11,7 @@ export const WORKFLOW_STEPS: readonly WorkflowStep[] = [
 export type WorkflowContractRenderInput = {
   template: string;
   step: WorkflowStep | "parent";
+  run: number;
   worktreePath: string;
   baseBranch: string;
 };
@@ -53,6 +54,7 @@ export function renderWorkflowContract(
   const messages = workflowMessages(language);
   const rendered = input.template
     .replaceAll("{{step}}", input.step)
+    .replaceAll("{{run}}", String(input.run))
     .replaceAll("{{worktreePath}}", input.worktreePath)
     .replaceAll("{{baseBranch}}", input.baseBranch);
   return [
