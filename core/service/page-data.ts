@@ -6,6 +6,7 @@ import type {
   PullTimelineItemWire,
   SubIssuesPageWire,
 } from "../serialize.ts";
+import { measureDiagnostic } from "../slow-operation.ts";
 import { comments } from "./comments.ts";
 import { diffFeedbackForDiff } from "./diff-feedback.ts";
 import { issues } from "./issues.ts";
@@ -31,18 +32,26 @@ export const pageData = {
     } = {},
   ): Promise<IssueListPageWire> {
     const [issueRows, repo, workspaceRows, labelRows] = await Promise.all([
-      issues.list(name, {
-        kind: "issue",
-        state: opts.state,
-        labels: opts.labels,
-        workspace: opts.workspace,
-        lookahead: opts.lookahead,
-        page: opts.page,
-        perPage: opts.perPage,
-      }),
-      repos.get(name),
-      workspaces.list(name),
-      opts.includeLabels ? labels.list(name) : [],
+      measureDiagnostic("issueList.issue_selection", () =>
+        issues.list(name, {
+          kind: "issue",
+          state: opts.state,
+          labels: opts.labels,
+          workspace: opts.workspace,
+          lookahead: opts.lookahead,
+          page: opts.page,
+          perPage: opts.perPage,
+        }),
+      ),
+      measureDiagnostic("issueList.repository_metadata", async () =>
+        repos.get(name),
+      ),
+      measureDiagnostic("issueList.workspace_metadata", async () =>
+        workspaces.list(name),
+      ),
+      measureDiagnostic("issueList.label_metadata", async () =>
+        opts.includeLabels ? labels.list(name) : [],
+      ),
     ]);
     // #112: the mini tracker on each linked-PR sub-row needs the run's display state. Selecting it
     // with the page keeps a Workflow event to one refetch — asking per row put one request per row
@@ -56,15 +65,17 @@ export const pageData = {
         (issue.linked_pull_request ? [issue.linked_pull_request] : [])
       ).map((pull) => pull.number),
     );
-    return {
+    const workflow_runs = await measureDiagnostic(
+      "issueList.workflow_state_projection",
+      () => workflowRuns.statesForPulls(name, { pulls: linkedPulls }),
+    );
+    return measureDiagnostic("issueList.serialization", async () => ({
       issues: issueRows,
       repo,
       workspaces: workspaceRows,
       labels: labelRows,
-      workflow_runs: await workflowRuns.statesForPulls(name, {
-        pulls: linkedPulls,
-      }),
-    };
+      workflow_runs,
+    }));
   },
 
   async issueDetail(
@@ -133,30 +144,45 @@ export const pageData = {
     // commit list on the PR row, and the diff feedback anchors — sits on the same base, so
     // resolve it once here and hand it to the rest (#123). The resolution is the request's one
     // The operands are ref names, so resolve the live diff base once for this request.
-    const operands = await resolvePullDiffOperands(name, number);
+    const operands = await measureDiagnostic(
+      "pullDetail.diff_base_resolution",
+      () => resolvePullDiffOperands(name, number),
+    );
     const [files, [pull, reviewRows, lineComments, commentRows]] =
       await Promise.all([
-        diffFilesBetween(operands.repoPath, operands.baseSha, operands.headSha),
-        Promise.all([
-          pulls.get(name, number, {
-            withComments: false,
-            diffBaseShas: operands.baseShas,
-          }),
-          reviews.list(name, number),
-          reviews.listComments(name, number),
-          comments.list(name, number, actor),
-        ]),
+        measureDiagnostic("pullDetail.patch_generation", () =>
+          diffFilesBetween(
+            operands.repoPath,
+            operands.baseSha,
+            operands.headSha,
+          ),
+        ),
+        measureDiagnostic("pullDetail.metadata", () =>
+          Promise.all([
+            pulls.get(name, number, {
+              withComments: false,
+              diffBaseShas: operands.baseShas,
+            }),
+            reviews.list(name, number),
+            reviews.listComments(name, number),
+            comments.list(name, number, actor),
+          ]),
+        ),
       ]);
     const diff = { ...operands, files };
     pull.comment_list = commentRows;
     // Read the threads as the caller, not as the page: `diffFeedback/list` resolves its actor
     // from the session, and a mismatch would show a reader their own reactions as unreacted.
-    const orphaned = diffFeedbackForDiff(
-      name,
-      number,
-      diff,
-      { orphaned: true },
-      actorFor(sessionId),
+    const orphaned = await measureDiagnostic(
+      "pullDetail.feedback_assembly",
+      async () =>
+        diffFeedbackForDiff(
+          name,
+          number,
+          diff,
+          { orphaned: true },
+          actorFor(sessionId),
+        ),
     );
     // #145: the whole PR activity as one chronological list, folded out of data this request
     // already fetched — the git commit list on the PR row, reviews and comments —
@@ -181,7 +207,7 @@ export const pageData = {
         comment,
       })),
     ].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-    return {
+    return measureDiagnostic("pullDetail.serialization", async () => ({
       pull,
       files: diff.files,
       reviews: reviewRows,
@@ -192,6 +218,6 @@ export const pageData = {
         comment_counts: orphaned.comment_counts,
         orphaned_threads: orphaned.threads,
       },
-    };
+    }));
   },
 };
