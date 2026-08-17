@@ -564,6 +564,7 @@ export function launchTerminalWorkflow(input: {
   // Saved workflow id for the "workflow-run" launch (#1007).
   workflowId?: number;
   targetBranch?: string;
+  parentIssue?: number;
   prompt?: string;
   // One-shot runtime/model/effort overrides from the New issue dropdown (#1275/#1534).
   agent?: CodingAgent;

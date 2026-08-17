@@ -20,10 +20,12 @@ function launchSuffix(): string {
 export function CreateIssueButton({
   repo,
   targetBranch,
+  parentIssue,
   disabled = false,
 }: {
   repo: string;
   targetBranch?: string;
+  parentIssue?: number;
   disabled?: boolean;
 }) {
   const { launchTerminal } = useTerminalLauncher();
@@ -33,7 +35,11 @@ export function CreateIssueButton({
       repo,
       label: `New issue - ${launchSuffix()}`,
       workflow: "issue-create",
-      prompt: issueCreatePrompt(settings?.workflowContractLanguage),
+      prompt: issueCreatePrompt(
+        settings?.workflowContractLanguage,
+        parentIssue,
+      ),
+      ...(parentIssue ? { parentIssue } : {}),
       ...(targetBranch ? { targetBranch } : {}),
     });
   }

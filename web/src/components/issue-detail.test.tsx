@@ -262,10 +262,24 @@ describe("IssueDetail", () => {
     expect(await screen.findByText("Failed to load sub issues.")).toBeTruthy();
   });
 
-  it("does not render an empty sub issue section", async () => {
+  it("offers to create a sub issue when the parent has no children", async () => {
     renderDetail(undefined, { "issues/subIssues": () => [] });
 
     await screen.findByText("ui2: issue detail");
+    expect(screen.getByText("Sub issues")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ parentIssue: 12 }),
+    );
+  });
+
+  it("hides the sub issue action at the maximum depth", async () => {
+    renderDetail(() => ({ ...issue, depth: 3 }), {
+      "issues/subIssues": () => [],
+    });
+
+    await screen.findByText("ui2: issue detail");
+    expect(screen.queryByRole("button", { name: "New issue" })).toBeNull();
     expect(screen.queryByText("Sub issues")).toBeNull();
   });
 

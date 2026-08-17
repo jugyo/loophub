@@ -114,6 +114,19 @@ describe("CreateIssueButton", () => {
     );
   });
 
+  it("forwards the parent issue and includes it in the prompt", () => {
+    render(<CreateIssueButton repo="me/proj" parentIssue={12} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentIssue: 12,
+        prompt: expect.stringContaining("sub issue #12"),
+      }),
+    );
+  });
+
   it("keeps a long workspace name out of the action button", () => {
     render(
       <CreateIssueButton

@@ -18,6 +18,13 @@ Check for likely duplicate issues before filing. Once enough information is avai
 };
 
 /** Return the New issue prompt, falling back to English for unknown settings. */
-export function issueCreatePrompt(language: unknown): string {
-  return language === "ja" ? ISSUE_CREATE_PROMPTS.ja : ISSUE_CREATE_PROMPTS.en;
+export function issueCreatePrompt(
+  language: unknown,
+  parentIssue?: number,
+): string {
+  const isJapanese = language === "ja";
+  const prompt = isJapanese ? ISSUE_CREATE_PROMPTS.ja : ISSUE_CREATE_PROMPTS.en;
+  return parentIssue === undefined
+    ? prompt
+    : `${prompt}\n\n${isJapanese ? `#${parentIssue} の sub issue として、親の acceptance criteria に収まる粒度で起票してください。` : `Create it as sub issue #${parentIssue}, at a granularity that fits within the parent's acceptance criteria.`}`;
 }

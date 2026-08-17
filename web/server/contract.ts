@@ -511,6 +511,7 @@ export const methods: Record<string, MethodDef> = {
         // `lh workflow start ... --workflow-id <id>`. Required only for that workflow.
         workflowId: positiveInt,
         targetBranch: str,
+        parentIssue: positiveInt,
         prompt: str,
         // One-shot launch overrides (#1275/#1534): force the runtime / model / effort for New
         // issue, or runtime / model for Start workflow, without changing persisted settings.
@@ -533,6 +534,7 @@ export const methods: Record<string, MethodDef> = {
           prNumber: p.prNumber,
           workflowId: p.workflowId,
           targetBranch: p.targetBranch,
+          parentIssue: p.parentIssue,
           prompt: p.prompt,
           agent: p.agent,
           model: p.model,
