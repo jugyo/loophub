@@ -355,7 +355,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     rework_count: 0,
   });
 
-  // launch-step returns pointers (repo/issue/pr), not synthesized input files, and records the
+  // launch-step returns pointers (repo/run/issue/pr), not synthesized input files, and records the
   // launched child session on confirm.
   const launched = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -375,6 +375,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   expect(launched.user_prompt).toContain("Plan and implement a small change.");
   expect(launched.pointers).toEqual([
     { label: "repo", value: repo.full_name },
+    { label: "run", value: String(result.run.id) },
     { label: "issue", value: `#${result.issue.number}` },
     { label: "pr", value: `#${result.pr.number}` },
   ]);
@@ -431,6 +432,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
         "",
         "## Inputs",
         `- repo: ${repo.full_name}`,
+        `- run: ${result.run.id}`,
         `- issue: #${result.issue.number}`,
         `- pr: #${result.pr.number}`,
         "",
@@ -748,6 +750,7 @@ test("start snapshots the contract language for parent and every later step", as
         "",
         "## 入力",
         `- repo: ${repo.full_name}`,
+        `- run: ${started.run.id}`,
         `- issue: #${issue.number}`,
         `- pr: #${started.pr.number}`,
         "",
@@ -2010,9 +2013,10 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(
     await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
   ).toMatchObject({ action: "wait" });
-  // Verify pointers are the fixed triple plus the review target — never a task/diff file.
+  // Verify pointers include the fixed triple, run identity, and review target — never a task/diff file.
   expect(verify.pointers.map((p) => p.label)).toEqual([
     "repo",
+    "run",
     "issue",
     "base sha",
     "head sha",

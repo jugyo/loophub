@@ -25,7 +25,7 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 
 ## Instruction loop
 
-loop に入る前に `lh workflow parent-ready <run> --repo '<repo>'` を 1 回実行する。agent が読み取る前にこの pane へ
+loop に入る前に `lh workflow parent-ready {{run}} --repo '<repo>'` を 1 回実行する。agent が読み取る前にこの pane へ
 書かれた text は失われるため、この signal が届くまで instruction は保留される。
 
 その上で次の loop を繰り返す。
@@ -43,7 +43,7 @@ prompt に重複して持たない。parent 自身の判断は untrusted な参�
 である。fresh pass は停止条件ではなく、次の instruction を待つ。
 
 人間から直接指示された場合は、待たずに
-`lh workflow instruction <run> --repo '<repo>' --note <text|-> --json` を実行し、返された構造化 instructions を実行する。
+`lh workflow instruction {{run}} --repo '<repo>' --note <text|-> --json` を実行し、返された構造化 instructions を実行する。
 
 不正な instruction や action の non-zero error は retry せず、人間へ判断を求める。error は見える状態で保持する。
 

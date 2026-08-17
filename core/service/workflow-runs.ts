@@ -753,6 +753,7 @@ function buildStepPointers(input: {
     case "execute":
       return [
         { label: "repo", value: repo },
+        { label: "run", value: String(input.run.id) },
         { label: "issue", value: `#${input.run.issue_number}` },
         { label: "pr", value: `#${input.run.pr_number}` },
         ...(input.reviewId !== undefined
@@ -763,6 +764,7 @@ function buildStepPointers(input: {
       const messages = workflowMessages(input.language);
       return [
         { label: "repo", value: repo },
+        { label: "run", value: String(input.run.id) },
         { label: "issue", value: `#${input.run.issue_number}` },
         { label: "base sha", value: input.baseSha ?? "" },
         { label: "head sha", value: input.headSha ?? "" },
@@ -1924,6 +1926,7 @@ export const workflowRuns = {
         {
           template: workflowContractText("parent", contractLanguage),
           step: "parent",
+          run: run.id,
           worktreePath: wtPath,
           baseBranch: pull.base_ref,
         },
@@ -2461,6 +2464,7 @@ export const workflowRuns = {
           workflowContractText(step, launchConfig.contractLanguage),
         ),
         step,
+        run: run.id,
         worktreePath: worktree,
         baseBranch: pull.base_ref,
       },
@@ -2982,6 +2986,7 @@ export const workflowRuns = {
           workflowContractText(step, launchConfig.contractLanguage),
         ),
         step,
+        run: run.id,
         worktreePath: worktree,
         baseBranch: pull.base_ref,
       },
