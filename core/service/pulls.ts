@@ -120,6 +120,58 @@ export async function pullDiffFiles(
     DiffFile & { last_changed_at?: string; last_changed_sha?: string }
   >;
 }> {
+  const operands = await resolvePullDiffOperands(name, number);
+  return {
+    ...operands,
+    files: await diffFilesWithLastChanged(operands),
+  };
+}
+
+/**
+ * The diff's files, each stamped with the date of the newest PR commit that touched it. The
+ * stamp comes from a second git call, so it runs alongside the diff instead of after it, and a
+ * failure only costs the dates.
+ */
+export async function diffFilesWithLastChanged(operands: {
+  repoPath: string;
+  baseSha: string;
+  baseShas: string[];
+  headSha: string;
+}): Promise<
+  Array<DiffFile & { last_changed_at?: string; last_changed_sha?: string }>
+> {
+  const [files, lastChangedCommits] = await Promise.all([
+    diffFilesBetween(operands.repoPath, operands.baseSha, operands.headSha),
+    lastChangedCommitsByFile(
+      operands.repoPath,
+      operands.baseShas,
+      operands.headSha,
+    ).catch((): Record<string, LastChangedCommit> => ({})),
+  ]);
+  return files.map((file) => {
+    const lastChanged =
+      lastChangedCommits[file.headFilename ?? file.filename];
+    return {
+      ...file,
+      ...(lastChanged
+        ? {
+            last_changed_at: lastChanged.date,
+            last_changed_sha: lastChanged.sha,
+          }
+        : {}),
+    };
+  });
+}
+
+export async function resolvePullDiffOperands(
+  name: string,
+  number: number,
+): Promise<{
+  repoPath: string;
+  baseSha: string;
+  baseShas: string[];
+  headSha: string;
+}> {
   const r = repoOr404(name);
   const row = issueOr404(r, number, "pull");
   const p = S.getPull(row.id)!;
@@ -134,29 +186,11 @@ export async function pullDiffFiles(
   const baseSha = baseShas[0];
   if (!baseSha || !headSha)
     throw new ServiceError(422, "pull request diff is unavailable");
-  const [files, lastChangedCommits] = await Promise.all([
-    diffFilesBetween(r.local_path, baseSha, headSha),
-    lastChangedCommitsByFile(r.local_path, baseShas, headSha).catch(
-      (): Record<string, LastChangedCommit> => ({}),
-    ),
-  ]);
   return {
+    repoPath: r.local_path,
     baseSha,
     baseShas,
     headSha,
-    files: files.map((file) => {
-      const lastChanged =
-        lastChangedCommits[file.headFilename ?? file.filename];
-      return {
-        ...file,
-        ...(lastChanged
-          ? {
-              last_changed_at: lastChanged.date,
-              last_changed_sha: lastChanged.sha,
-            }
-          : {}),
-      };
-    }),
   };
 }
 

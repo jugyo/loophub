@@ -497,21 +497,25 @@ async function diffFilesForRevisions(
     revisions,
     options,
   );
+  const needsAddedPatch = summaries.some(
+    (summary) => summary.status === "copied",
+  );
   const [patch, addedPatch] = await Promise.all([
     git(repoPath, ["diff", ...whitespaceArgs, ...revisions, ...pathspecArgs]),
-    git(repoPath, [
-      "diff",
-      ...whitespaceArgs,
-      "--no-renames",
-      "--diff-filter=A",
-      ...revisions,
-      ...pathspecArgs,
-    ]),
+    needsAddedPatch
+      ? git(repoPath, [
+          "diff",
+          ...whitespaceArgs,
+          "--no-renames",
+          "--diff-filter=A",
+          ...revisions,
+          ...pathspecArgs,
+        ])
+      : Promise.resolve(null),
   ]);
   assertGitSuccess(patch, "git diff patch failed");
-  assertGitSuccess(addedPatch, "git diff added-file patch failed");
   const patches = splitDiffPatches(patch.stdout);
-  const addedPatches = splitDiffPatches(addedPatch.stdout);
+  const addedPatches = addedPatch ? splitDiffPatches(addedPatch.stdout) : [];
   const addedPatchByFile = new Map(
     addedPatches.flatMap((filePatch) => {
       const path = patchHeadPath(filePatch);

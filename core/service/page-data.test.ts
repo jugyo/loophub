@@ -21,6 +21,8 @@ const HUMAN_SESSION = "44444444-4444-4444-8444-444444444444";
 let svc: typeof import("../service.ts");
 let S: typeof import("../store.ts");
 let resolvePullDiffBaseSha: typeof import("../pull-base.ts")["resolvePullDiffBaseSha"];
+let resolvePullDiffOperands: typeof import("./pulls.ts")["resolvePullDiffOperands"];
+let diffFilesBetween: typeof import("../git.ts")["diffFilesBetween"];
 let repoPath: string;
 let repoId: number;
 let prNumber: number;
@@ -42,6 +44,8 @@ beforeAll(async () => {
   svc = await import("../service.ts");
   S = await import("../store.ts");
   ({ resolvePullDiffBaseSha } = await import("../pull-base.ts"));
+  ({ resolvePullDiffOperands } = await import("./pulls.ts"));
+  ({ diffFilesBetween } = await import("../git.ts"));
   repoPath = mkdtempSync(join(tmpdir(), "lh-page-data-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -301,6 +305,50 @@ test("pullDetail resolves the PR's diff base once", async () => {
     svc.diffFeedback.list(REPO, prNumber, { orphaned: true }),
   );
   expect(baseResolutions(separate.commands).length).toBeGreaterThan(0);
+});
+
+test("pullDetail の Git critical path を変更前後で計測する", async () => {
+  const measure = async (parallel: boolean) => {
+    const operands = await resolvePullDiffOperands(REPO, prNumber);
+    const readMetadata = () =>
+      Promise.all([
+        svc.pulls.get(REPO, prNumber, {
+          withComments: false,
+          diffBaseShas: operands.baseShas,
+        }),
+        svc.reviews.list(REPO, prNumber),
+        svc.reviews.listComments(REPO, prNumber),
+        svc.comments.list(REPO, prNumber, "me"),
+      ]);
+    if (parallel) {
+      await Promise.all([
+        diffFilesBetween(operands.repoPath, operands.baseSha, operands.headSha),
+        readMetadata(),
+      ]);
+    } else {
+      await diffFilesBetween(
+        operands.repoPath,
+        operands.baseSha,
+        operands.headSha,
+      );
+      await readMetadata();
+    }
+  };
+
+  const before = await traceGitCommands(() => measure(false));
+  const after = await traceGitCommands(() => measure(true));
+  const diffCommandCount = (commands: string[]) =>
+    commands.filter((command) => command.startsWith("diff ")).length;
+  const beforeDiffCommands = diffCommandCount(before.commands);
+  const afterDiffCommands = diffCommandCount(after.commands);
+
+  expect(before.elapsedMs).toBeGreaterThan(0);
+  expect(after.elapsedMs).toBeGreaterThan(0);
+  expect(beforeDiffCommands).toBeGreaterThan(0);
+  expect(afterDiffCommands).toBeGreaterThan(0);
+  console.info(
+    `pullDetail benchmark: sequential=${before.elapsedMs.toFixed(1)}ms/${beforeDiffCommands} diff commands, parallel=${after.elapsedMs.toFixed(1)}ms/${afterDiffCommands} diff commands`,
+  );
 });
 
 test("pullDetail reads the diff feedback as the calling session", async () => {
