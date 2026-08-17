@@ -298,7 +298,7 @@ beforeAll(() => {
   if (workflow.exitCode !== 0) throw new Error(workflow.stderr);
 });
 
-test("workflow turn done resolves explicit, launched, and cwd repo contexts", () => {
+test("workflow turn done requires run and resolves explicit and cwd repo contexts", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -350,11 +350,8 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
 
   // Worktree cwd alone is enough: resolveRepo infers the registered owner/name (#1595).
   const fromWorktree = run(
-    ["workflow", "turn", "done"],
-    {
-      ...sessionEnv,
-      LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
-    },
+    ["workflow", "turn", "done", "--run", String(runResult.run.id)],
+    sessionEnv,
     runResult.worktree,
   );
   expect(fromWorktree.exitCode, fromWorktree.stderr).toBe(0);
@@ -362,13 +359,37 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
     `declared turn done for Workflow run #${runResult.run.id}`,
   );
 
-  // Outside any registered root/worktree, repo context is still required.
-  const missingRepoContext = run(
+  // Legacy Workflow env cannot silently select a run.
+  const missingRun = run(
     ["workflow", "turn", "done"],
     {
       ...sessionEnv,
       LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
     },
+    runResult.worktree,
+  );
+  expect(missingRun.exitCode).not.toBe(0);
+  expect(missingRun.stderr).toContain("--run must be a positive integer");
+
+  for (const command of ["escalate", "escalate-human"]) {
+    const missingEscalationRun = run(
+      ["workflow", command, "--reason", "Need input"],
+      {
+        ...sessionEnv,
+        LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
+      },
+      runResult.worktree,
+    );
+    expect(missingEscalationRun.exitCode).not.toBe(0);
+    expect(missingEscalationRun.stderr).toContain(
+      "--run must be a positive integer",
+    );
+  }
+
+  // Outside any registered root/worktree, repo context is still required.
+  const missingRepoContext = run(
+    ["workflow", "turn", "done", "--run", String(runResult.run.id)],
+    sessionEnv,
     HOME,
   );
   expect(missingRepoContext.exitCode).not.toBe(0);
@@ -376,12 +397,16 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
 
   // A wrong repo context resolves a repo, but the run does not belong to it.
   const wrongRepoContext = run(
-    ["workflow", "turn", "done"],
-    {
-      ...sessionEnv,
-      LOOPHUB_WORKFLOW_REPO: OTHER_REPO,
-      LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
-    },
+    [
+      "workflow",
+      "turn",
+      "done",
+      "--repo",
+      OTHER_REPO,
+      "--run",
+      String(runResult.run.id),
+    ],
+    sessionEnv,
     runResult.worktree,
   );
   expect(wrongRepoContext.exitCode).not.toBe(0);
@@ -389,22 +414,7 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
     "error 404: Workflow run not found for repo",
   );
 
-  // The launched-session env context (LOOPHUB_WORKFLOW_REPO/RUN) resolves the target.
-  const launched = run(
-    ["workflow", "turn", "done"],
-    {
-      ...sessionEnv,
-      LOOPHUB_WORKFLOW_REPO: REPO,
-      LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
-    },
-    runResult.worktree,
-  );
-  expect(launched.exitCode, launched.stderr).toBe(0);
-  expect(launched.stdout).toContain(
-    `declared turn done for Workflow run #${runResult.run.id}`,
-  );
-
-  // Explicit flags win over a misleading env context.
+  // Explicit flags are unaffected by legacy Workflow env values.
   const explicit = run(
     [
       "workflow",
@@ -425,11 +435,8 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
 
   // cwd repo resolution when only the run id is supplied.
   const cwd = run(
-    ["workflow", "turn", "done"],
-    {
-      ...sessionEnv,
-      LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
-    },
+    ["workflow", "turn", "done", "--run", String(runResult.run.id)],
+    sessionEnv,
     REPO_PATH,
   );
   expect(cwd.exitCode, cwd.stderr).toBe(0);

@@ -1,5 +1,6 @@
 import type { WorkflowContractLanguage } from "./contracts.ts";
 import { workflowMessages } from "./messages.ts";
+import { shellArg } from "./prompts.ts";
 
 export type WorkflowStep = "execute" | "verify";
 
@@ -10,6 +11,7 @@ export const WORKFLOW_STEPS: readonly WorkflowStep[] = [
 
 export type WorkflowContractRenderInput = {
   template: string;
+  repo: string;
   step: WorkflowStep | "parent";
   run: number;
   worktreePath: string;
@@ -52,11 +54,17 @@ export function renderWorkflowContract(
   language: WorkflowContractLanguage,
 ): string {
   const messages = workflowMessages(language);
-  const rendered = input.template
-    .replaceAll("{{step}}", input.step)
-    .replaceAll("{{run}}", String(input.run))
-    .replaceAll("{{worktreePath}}", input.worktreePath)
-    .replaceAll("{{baseBranch}}", input.baseBranch);
+  const replacements = {
+    repo: shellArg(input.repo),
+    step: input.step,
+    run: String(input.run),
+    worktreePath: input.worktreePath,
+    baseBranch: input.baseBranch,
+  };
+  const rendered = input.template.replace(
+    /\{\{(repo|step|run|worktreePath|baseBranch)\}\}/g,
+    (_, key: keyof typeof replacements) => replacements[key],
+  );
   return [
     ...messages.contractContext(input),
     "",

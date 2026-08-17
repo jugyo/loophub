@@ -256,8 +256,8 @@ Usage:
   lh workflow turn done [options]
 
 Options:
-  --run <id>            Workflow run (defaults to LOOPHUB_WORKFLOW_RUN).
-  --repo <owner/name>   Repository (defaults to LOOPHUB_WORKFLOW_REPO, then the current path).
+  --run <id>            Workflow run (required).
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
   --session-id <uuid>   Attribute the declaration to a registered agent session.
   --json                Print the recorded turn as JSON.
   --help                Show this help without changing the database.`;
@@ -269,8 +269,8 @@ Usage:
 
 Options:
   --reason <text|@file|-> Short summary; @file reads a file and - reads stdin (required).
-  --run <id>            Workflow run (defaults to LOOPHUB_WORKFLOW_RUN).
-  --repo <owner/name>   Repository (defaults to LOOPHUB_WORKFLOW_REPO, then the current path).
+  --run <id>            Workflow run (required).
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
   --session-id <uuid>   Attribute the escalation to a registered agent session.
   --json                Print the recorded escalation as JSON.
   --help                Show this help without changing the database.`;

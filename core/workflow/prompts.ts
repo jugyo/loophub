@@ -2,7 +2,7 @@ import type { WorkflowStep } from "./compose.ts";
 import type { WorkflowContractLanguage } from "./contracts.ts";
 import { workflowMessages } from "./messages.ts";
 
-function shellArg(value: string): string {
+export function shellArg(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 

@@ -2070,6 +2070,7 @@ export const workflowRuns = {
       const systemPrompt = renderWorkflowContract(
         {
           template: workflowContractText("parent", contractLanguage),
+          repo: r.full_name,
           step: "parent",
           run: run.id,
           worktreePath: wtPath,
@@ -2707,6 +2708,7 @@ export const workflowRuns = {
           step,
           workflowContractText(step, launchConfig.contractLanguage),
         ),
+        repo: r.full_name,
         step,
         run: run.id,
         worktreePath: worktree,
@@ -3230,6 +3232,7 @@ export const workflowRuns = {
           step,
           workflowContractText(step, launchConfig.contractLanguage),
         ),
+        repo: r.full_name,
         step,
         run: run.id,
         worktreePath: worktree,

@@ -12,7 +12,7 @@ usage that they do not provide, consult `lh --help` or the relevant subcommand's
 
 ## Inputs and procedure
 
-- `issue` — read it yourself with `lh issue view <n> --repo '<repo>' --json`.
+- `issue` — read it yourself with `lh issue view <n> --repo {{repo}} --json`.
 - `base sha` — the base commit of the review subject.
 - `head sha` — the head commit of the review subject.
 
@@ -71,7 +71,7 @@ section.
 Submit exactly one review, pinned to the reviewed head:
 
 ```
-lh pr review submit <pr> --repo '<repo>' --commit <head sha> \
+lh pr review submit <pr> --repo {{repo}} --commit <head sha> \
   --event pass|request_changes --body '<why>' \
   [--comments <json|file>] [--ac-results <json|file>]
 ```

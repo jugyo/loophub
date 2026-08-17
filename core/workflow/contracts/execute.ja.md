@@ -39,7 +39,7 @@ Markdown 本文や review、comment、handoff などの自由テキストを `lh
   PR に最小限の実装を行います。Issue body の書き換えは不要です。次の Verify や人間に有用なら PR body
   または comment を更新します。
 - **質問だけ、または人間の判断待ち** — pane に具体的な質問全文を示し、
-  `lh workflow escalate --repo '<repo>' --run {{run}} --reason <short summary>` を実行して、同じ pane で
+  `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>` を実行して、同じ pane で
   応答を待ちます。
 - **確認のみ、またはドメイン変更不要** — 必要な PR body / comment / attachment 操作だけを行い、
   実行手順 6 の metadata-only completion として扱います。source の修正が不要なら編集前の着手返信は
@@ -56,10 +56,10 @@ Markdown 本文や review、comment、handoff などの自由テキストを `lh
 5. 実装を現在の head branch に commit します。コミットは追記的に行い、push 済みの履歴は
    書き換えません（amend / rebase / force-push を避ける）。公開済み履歴の書き換えは既存の
    PR・レビュー・コミットリンクを壊すためです。続いて、PR の title と body の両方を
-   `lh pr update <pr> --repo '<repo>' --title <title> --body ...` で更新し、body に summary、
+   `lh pr update <pr> --repo {{repo}} --title <title> --body ...` で更新し、body に summary、
    acceptance criteria、test plan、evidence を含めます。必要に応じて attachment / comment を追加します。
 6. code change は commit してから、turn ごとに
-   `lh workflow turn done --repo '<repo>' --run {{run}}` を 1 回実行します。確認や metadata 更新だけで
+   `lh workflow turn done --repo {{repo}} --run {{run}}` を 1 回実行します。確認や metadata 更新だけで
    HEAD を進める必要がない turn に限り、commit なしで実行できます。
 
 ## 禁止事項

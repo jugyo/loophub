@@ -43,7 +43,7 @@ When passing Markdown bodies, reviews, comments, or handoffs to `lh`, do not emb
   the Issue / PR, make the smallest implementation against the same Issue and PR. You do not need
   to rewrite the Issue body. Update the PR body or comments when useful to the next Verify or a human.
 - **Question-only or blocked on a human decision** — present the full concrete question in the pane,
-  run `lh workflow escalate --repo '<repo>' --run {{run}} --reason <short summary>`, and wait for the
+  run `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>`, and wait for the
   response in the same pane.
 - **Confirmation or no domain change required** — perform only the needed PR body, comment, or
   attachment operations and treat it as the metadata-only completion described in step 6.
@@ -59,9 +59,9 @@ When passing Markdown bodies, reviews, comments, or handoffs to `lh`, do not emb
 3. Implement a focused change that matches the surrounding naming, types, tests, and style.
 4. Get the repository's standard tests, lint, and typecheck green.
 5. Commit the implementation on the current head branch. Update both the PR title and body with
-   `lh pr update <pr> --repo '<repo>' --title <title> --body ...`, including the summary, acceptance
+   `lh pr update <pr> --repo {{repo}} --title <title> --body ...`, including the summary, acceptance
    criteria, test plan, and evidence. Add attachments or comments as needed.
-6. Commit any code change, then run `lh workflow turn done --repo '<repo>' --run {{run}}` exactly once
+6. Commit any code change, then run `lh workflow turn done --repo {{repo}} --run {{run}}` exactly once
    per turn. Running it without a commit is valid only for a confirmation or metadata-only turn that
    requires no HEAD advance.
 

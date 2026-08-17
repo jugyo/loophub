@@ -11,7 +11,7 @@ PR comments、implementer の description は読みません。source は編集�
 
 ## 入力と検証手順
 
-- `issue` — `lh issue view <n> --repo '<repo>' --json` で自分で読みます。
+- `issue` — `lh issue view <n> --repo {{repo}} --json` で自分で読みます。
 - `base sha` — review 対象の base commit。
 - `head sha` — review 対象の head commit。
 
@@ -69,7 +69,7 @@ review に統合し、rubric の採点も自分で行います。fan out しな�
 review した head に pin した review を正確に 1 件提出します。
 
 ```
-lh pr review submit <pr> --repo '<repo>' --commit <head sha> \
+lh pr review submit <pr> --repo {{repo}} --commit <head sha> \
   --event pass|request_changes --body '<why>' \
   [--comments <json|file>] [--ac-results <json|file>]
 ```

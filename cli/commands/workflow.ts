@@ -846,16 +846,12 @@ async function instruction(): Promise<void> {
     console.log(`event\t#${result.event.id} ${result.event.type}`);
 }
 
-// The Execute child's payload-less turn-done declaration (#1358). Target resolution mirrors the
-// launched-session environment (LOOPHUB_WORKFLOW_*), so the child needs no flags.
+// The Execute child's payload-less turn-done declaration (#1358). The rendered contract supplies
+// the run explicitly; repo resolution can still use the child's worktree cwd.
 async function turnDone(): Promise<void> {
   if (rest[0] !== "done") usage();
-  const runId = positiveInt(
-    flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
-    "--run or LOOPHUB_WORKFLOW_RUN",
-  );
-  const repo =
-    flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
+  const runId = positiveInt(flags.run, "--run");
+  const repo = flags.repo ?? (await resolveRepo());
   const result = await runOp(async () =>
     (await svc()).workflowRuns.turnDone(
       repo,
@@ -895,12 +891,8 @@ async function parentReady(): Promise<void> {
 async function escalate(): Promise<void> {
   if (!flags.reason) fail("--reason is required");
   const reason = await readTextInput(flags.reason);
-  const runId = positiveInt(
-    flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
-    "--run or LOOPHUB_WORKFLOW_RUN",
-  );
-  const repo =
-    flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
+  const runId = positiveInt(flags.run, "--run");
+  const repo = flags.repo ?? (await resolveRepo());
   const result = await runOp(async () =>
     (await svc()).workflowRuns.escalate(
       repo,
@@ -946,12 +938,8 @@ async function deliver(): Promise<void> {
 async function escalateHuman(): Promise<void> {
   if (!flags.reason) fail("--reason is required");
   const reason = await readTextInput(flags.reason);
-  const runId = positiveInt(
-    flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
-    "--run or LOOPHUB_WORKFLOW_RUN",
-  );
-  const repo =
-    flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
+  const runId = positiveInt(flags.run, "--run");
+  const repo = flags.repo ?? (await resolveRepo());
   const result = await runOp(async () =>
     (await svc()).workflowEscalation.escalateHuman(
       repo,

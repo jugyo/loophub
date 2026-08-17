@@ -30,6 +30,7 @@ test("keeps contract and user prompt in separate channels", () => {
   const composed = composeWorkflowLaunchPrompt(
     {
       template: readFileSync(join(CONTRACT_DIR, "execute.md"), "utf8"),
+      repo: "me/proj",
       step: "execute",
       run: 7,
       worktreePath: "/tmp/worktree",
@@ -55,6 +56,7 @@ test("keeps a Verify step prompt additive to the contract", () => {
   const composed = composeWorkflowLaunchPrompt(
     {
       template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
+      repo: "me/proj",
       step: "verify",
       run: 7,
       worktreePath: "/tmp/worktree",
@@ -78,7 +80,8 @@ test("renders contract inputs and template placeholders into the system prompt",
   const contract = renderWorkflowContract(
     {
       template:
-        "STEP={{step}} RUN={{run}} WORKTREE={{worktreePath}} BASE={{baseBranch}}",
+        "REPO={{repo}} STEP={{step}} RUN={{run}} WORKTREE={{worktreePath}} BASE={{baseBranch}}",
+      repo: "me/proj",
       step: "verify",
       run: 56,
       worktreePath: "/tmp/worktree",
@@ -91,8 +94,25 @@ test("renders contract inputs and template placeholders into the system prompt",
   expect(contract).toContain("worktree: /tmp/worktree");
   expect(contract).toContain("base branch: main");
   expect(contract).toContain(
-    "STEP=verify RUN=56 WORKTREE=/tmp/worktree BASE=main",
+    "REPO='me/proj' STEP=verify RUN=56 WORKTREE=/tmp/worktree BASE=main",
   );
+});
+
+test("shell-quotes repo placeholders without re-expanding their value", () => {
+  const contract = renderWorkflowContract(
+    {
+      template: "REPO={{repo}} RUN={{run}}",
+      repo: "me/it's-{{run}}",
+      step: "execute",
+      run: 56,
+      worktreePath: "/tmp/worktree",
+      baseBranch: "main",
+    },
+    "en",
+  );
+
+  expect(contract).toContain(`REPO='me/it'\\''s-{{run}}' RUN=56`);
+  expect(contract).not.toContain("me/it's-56");
 });
 
 test("every rendered contract carries the configured-language instruction", () => {
@@ -105,6 +125,7 @@ test("every rendered contract carries the configured-language instruction", () =
             join(CONTRACT_DIR, `${step}${suffix}.md`),
             "utf8",
           ),
+          repo: "me/proj",
           step,
           run: 7,
           worktreePath: "/tmp/worktree",
@@ -115,6 +136,8 @@ test("every rendered contract carries the configured-language instruction", () =
       expect(contract).toContain(
         workflowMessages(language).languageInstruction,
       );
+      expect(contract).not.toContain("{{repo}}");
+      expect(contract).toContain("--repo 'me/proj'");
       expect(contract).toContain(
         language === "en"
           ? "pull request titles and bodies"
@@ -189,6 +212,7 @@ test("parent/step contracts do not introduce slash commands", () => {
   const composed = composeWorkflowLaunchPrompt(
     {
       template: readFileSync(join(CONTRACT_DIR, "execute.md"), "utf8"),
+      repo: "me/proj",
       step: "execute",
       run: 7,
       worktreePath: "/tmp/worktree",

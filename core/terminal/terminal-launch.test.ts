@@ -478,7 +478,7 @@ describe("herdr terminal launch", () => {
     ).toMatchObject({ ok: false, failed: "agent", paneId: "w1:p5" });
   });
 
-  test("builds Workflow step Herdr split launch argv and ambient env", () => {
+  test("builds Workflow step Herdr split launch with only session correlation env", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 12,
@@ -503,17 +503,15 @@ describe("herdr terminal launch", () => {
     expect(plan.paneArgv[plan.paneArgv.indexOf("--cwd") + 1]).toBe(
       "/repo/worktrees/pr-7",
     );
-    // The ambient LOOPHUB_* env is set on that pane, not folded into a shell command line.
+    // Session correlation remains ambient on the pane and in the shell command.
     expect(plan.paneArgv).toContain(
       "LOOPHUB_SESSION_ID=11111111-1111-4111-8111-111111111111",
     );
-    expect(plan.paneArgv).toContain("LOOPHUB_WORKFLOW_RUN=12");
     expect(plan.command).toContain(
       "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
     );
-    expect(plan.command).toContain("LOOPHUB_WORKFLOW_REPO='jugyo/loophub'");
-    expect(plan.command).toContain("LOOPHUB_WORKFLOW_RUN='12'");
-    expect(plan.command).toContain("LOOPHUB_WORKFLOW_STEP='execute'");
+    expect(plan.paneArgv.join(" ")).not.toContain("LOOPHUB_WORKFLOW_");
+    expect(plan.command).not.toContain("LOOPHUB_WORKFLOW_");
     expect(plan.command).toContain(
       "claude '--session-id' '11111111-1111-4111-8111-111111111111'",
     );

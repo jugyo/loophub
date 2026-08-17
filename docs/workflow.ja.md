@@ -45,7 +45,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 |------|------|------|
 | 親 → Execute | input: issue / PR の参照。rework 時は対応すべき review の id | 起動プロンプト、または生きている pane への注入（instruction） |
 | Execute → 世界 | commits、PR body・attachment・comment | git / domain（lh CLI で自分で読み書き） |
-| Execute → 親 | ターン完了の宣言（payload なし） | `lh workflow turn done` が event を記録（fact）。worker が state と合わせて instruction にする |
+| Execute → 親 | ターン完了の宣言（payload なし） | `lh workflow turn done --run <run>` が event を記録（fact）。worker が state と合わせて instruction にする |
 | 親 → Verify | input: (issue 参照, base SHA, head SHA) の 3 ポインタ | 起動プロンプト。合成ファイルなし |
 | Verify → 世界 | pass / request_changes ＋ findings | head SHA に pin された PR review（fact） |
 | 世界 → 親 | turn done、workflow review 登録、GitHub PR feedback の観測 | worker が event 順に観測済み state と action を生成し、parent pane へ注入する |
@@ -62,7 +62,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
     ├─ Execute child を起動（input: repo / issue / pr のポインタ）
     │    責務: 計画 → 実装 → テスト/evidence → 振り返り
     │    出力: commits + 通常の PR body / attachment / comment 操作
-    │    宣言: `lh workflow turn done`（payload なし）
+    │    宣言: `lh workflow turn done --run <run>`（payload なし）
     │
     ├─ turn done ＋ HEAD 前進を観測 → Verify child を fresh 起動
     │    input: (issue 参照, base SHA, head SHA)
@@ -225,7 +225,7 @@ contract を検証する。
 3. 実装し、repo 標準の test / lint / typecheck を green にする。
 4. 結果を **ドメイン状態** に書く: commits、`lh pr update` による PR body、`lh attachment add`、
    `lh pr comment`。
-5. ターン完了を `lh workflow turn done`（payload なし）で宣言する。**commit 前に宣言しても run は
+5. ターン完了を `lh workflow turn done --run <run>`（payload なし）で宣言する。**commit 前に宣言しても run は
    進まない**（親が HEAD 前進を観測しないため）。
 
 human follow-up が source の修正を要求する場合、Execute は対象を読んだ後、PR comment には編集前に
@@ -240,7 +240,7 @@ follow-up では、編集前の着手返信を必須としない。
 `orchestrator:` 注入や launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
 continuing instruction など）は、自然に Issue / PR への追加要望と読めるならそのように扱い、同じ
 issue・PR に対して実装する。完了後は通常の Execute と同じく **commit（ドメイン変更がある場合）→
-必要なら PR body / comment / attachment の更新 → `lh workflow turn done`** に戻る。rework
+必要なら PR body / comment / attachment の更新 → `lh workflow turn done --run <run>`** に戻る。rework
 （`address review <id>`）は review 対応であり追加要望とは別だが、どちらも完了後の経路は同じ。
 質問のみ・判断待ちは escalate して同 pane で待機し、確認のみや HEAD を進めない更新（PR body 等）は
 commit せず turn done してよい（親は HEAD 不変なら既存 pass を維持し、HEAD 前進時だけ fresh Verify
@@ -302,8 +302,8 @@ Workflow 専用の freshness / dirty / checkpoint 状態は追加しない。
 
 ## 6. 完了宣言（turn done）
 
-Execute は `lh workflow turn done`（payload なし）でターン完了を宣言する。情報不足や人間の判断が必要な
-場合は、質問全文を自分の pane に提示し、`lh workflow escalate --reason <short summary>` を宣言して、
+Execute は `lh workflow turn done --run <run>`（payload なし）でターン完了を宣言する。情報不足や人間の判断が必要な
+場合は、質問全文を自分の pane に提示し、`lh workflow escalate --run <run> --reason <short summary>` を宣言して、
 同じ pane で人間の回答・指示を待つ。reason は `await-human` と同じ inline text（必須、最大 500 文字）
 であり、質問内容の短い要約を入れる。engine はこれらをそれぞれ `workflow_run.turn_done`、
 `workflow_run.escalated` event として
@@ -426,9 +426,9 @@ lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note
 lh workflow run advance-to-verify|request-rework|await-human|resume --run <id>
 lh workflow run increase-cost-limit --run <id> --expected-limit <usd>
 lh workflow deliver --run <id> --text <single-line-instruction> # 最新 Execute を activate して指示を注入
-lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
-lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
-lh workflow escalate-human --reason <text> [--run <id>] # 親 agent のリンク済み PR への comment を冪等に記録
+lh workflow turn done --run <id>          # Execute child がターン完了を宣言（payload なし）
+lh workflow escalate --reason <text> --run <id> # Execute child が人間の判断の必要性を宣言
+lh workflow escalate-human --reason <text> --run <id> # 親 agent のリンク済み PR への comment を冪等に記録
 lh workflow instruction <run> (--event <id> --requires-changes true|false | --note <text|->) --json # 親の入力（GitHub reference の判断 / 人間の直接指示）に対する instruction を返す
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測

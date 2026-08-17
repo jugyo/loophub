@@ -380,8 +380,8 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     { label: "issue", value: `#${result.issue.number}` },
     { label: "pr", value: `#${result.pr.number}` },
   ]);
-  expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_RUN=");
-  expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_STEP='execute'");
+  expect(launched.herdr.command).not.toContain("LOOPHUB_WORKFLOW_");
+  expect(launched.herdr.command).toContain("LOOPHUB_SESSION_ID=");
   expect(launched.herdr.command).toContain("'--permission-mode' 'auto'");
   // The step's prompt travels the same way: written to a file, read back by the typed command line.
   const stepPromptPath = /"\$\(cat '([^']+)'\)"/.exec(
