@@ -99,6 +99,14 @@ describe("CodingAgentSettingsList", () => {
     expect(onSaveModel).toHaveBeenCalledWith("codex", "gpt-5.5", "minimal");
   });
 
+  it("selects an agent when its name is clicked", () => {
+    const { onSelectAgent } = renderList();
+
+    fireEvent.click(screen.getByText("Codex"));
+
+    expect(onSelectAgent).toHaveBeenCalledWith("codex");
+  });
+
   // The repo override stores an empty model/effort as "use the runtime default", so that screen
   // needs a way back to it even once a concrete model is saved.
   it("offers a Default entry for a saved model only when the caller allows it", async () => {

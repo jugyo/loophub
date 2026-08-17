@@ -94,6 +94,7 @@ export function CodingAgentSettingsList({
             className="flex items-center gap-4 border-b px-3 py-3 last:border-b-0"
           >
             <input
+              id={`${name}-${agent}`}
               type="radio"
               name={name}
               value={agent}
@@ -103,7 +104,12 @@ export function CodingAgentSettingsList({
               className="size-4 accent-primary"
               onChange={() => onSelectAgent(agent)}
             />
-            <span className="w-32 shrink-0 font-medium">{agentLabel}</span>
+            <label
+              htmlFor={`${name}-${agent}`}
+              className="w-32 shrink-0 font-medium"
+            >
+              {agentLabel}
+            </label>
             <AgentModelDropdown
               agentLabel={agentLabel}
               model={model}
