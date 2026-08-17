@@ -1,3 +1,4 @@
+import { diffFilesBetween } from "../git.ts";
 import type {
   IssueDetailPageWire,
   IssueListPageWire,
@@ -9,7 +10,7 @@ import { comments } from "./comments.ts";
 import { diffFeedbackForDiff } from "./diff-feedback.ts";
 import { issues } from "./issues.ts";
 import { labels } from "./labels.ts";
-import { pullDiffFiles, pulls } from "./pulls.ts";
+import { pulls, resolvePullDiffOperands } from "./pulls.ts";
 import { repos } from "./repos.ts";
 import { reviews } from "./reviews.ts";
 import { actorFor } from "./shared.ts";
@@ -132,16 +133,21 @@ export const pageData = {
     // commit list on the PR row, and the diff feedback anchors — sits on the same base, so
     // resolve it once here and hand it to the rest (#123). The resolution is the request's one
     // The operands are ref names, so resolve the live diff base once for this request.
-    const diff = await pullDiffFiles(name, number);
-    const [pull, reviewRows, lineComments, commentRows] = await Promise.all([
-      pulls.get(name, number, {
-        withComments: false,
-        diffBaseShas: diff.baseShas,
-      }),
-      reviews.list(name, number),
-      reviews.listComments(name, number),
-      comments.list(name, number, actor),
-    ]);
+    const operands = await resolvePullDiffOperands(name, number);
+    const [files, [pull, reviewRows, lineComments, commentRows]] =
+      await Promise.all([
+        diffFilesBetween(operands.repoPath, operands.baseSha, operands.headSha),
+        Promise.all([
+          pulls.get(name, number, {
+            withComments: false,
+            diffBaseShas: operands.baseShas,
+          }),
+          reviews.list(name, number),
+          reviews.listComments(name, number),
+          comments.list(name, number, actor),
+        ]),
+      ]);
+    const diff = { ...operands, files };
     pull.comment_list = commentRows;
     // Read the threads as the caller, not as the page: `diffFeedback/list` resolves its actor
     // from the session, and a mismatch would show a reader their own reactions as unreacted.

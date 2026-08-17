@@ -113,6 +113,26 @@ export async function pullDiffFiles(
   headSha: string;
   files: DiffFile[];
 }> {
+  const operands = await resolvePullDiffOperands(name, number);
+  return {
+    ...operands,
+    files: await diffFilesBetween(
+      operands.repoPath,
+      operands.baseSha,
+      operands.headSha,
+    ),
+  };
+}
+
+export async function resolvePullDiffOperands(
+  name: string,
+  number: number,
+): Promise<{
+  repoPath: string;
+  baseSha: string;
+  baseShas: string[];
+  headSha: string;
+}> {
   const r = repoOr404(name);
   const row = issueOr404(r, number, "pull");
   const p = S.getPull(row.id)!;
@@ -128,10 +148,10 @@ export async function pullDiffFiles(
   if (!baseSha || !headSha)
     throw new ServiceError(422, "pull request diff is unavailable");
   return {
+    repoPath: r.local_path,
     baseSha,
     baseShas,
     headSha,
-    files: await diffFilesBetween(r.local_path, baseSha, headSha),
   };
 }
 
