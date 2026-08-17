@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import { ServiceError } from "../errors.ts";
 
-// The expected `herdr tab create` output is one small JSON object; anything past this cap is
-// discarded so a misbehaving herdr streaming output can't grow lh-web memory unbounded.
-const HERDR_CAPTURE_MAX_BYTES = 64 * 1024;
+// Pane listings grow with the session's retained workspaces and can legitimately exceed 64 KiB.
+// Keep captures bounded, but leave enough room for the complete JSON instead of silently handing
+// parsers a truncated document that makes every agent in a busy repo disappear.
+const HERDR_CAPTURE_MAX_BYTES = 1024 * 1024;
+const HERDR_SERVER_READY_MAX_BYTES = 64 * 1024;
 const HERDR_SERVER_READY = "herdr server running;";
 
 export class HerdrExitError extends ServiceError {
@@ -175,7 +177,7 @@ export function startHerdrSession(
 
     const consumeOutput = (chunk: Buffer) => {
       output = `${output}${chunk.toString("utf8")}`.slice(
-        -HERDR_CAPTURE_MAX_BYTES,
+        -HERDR_SERVER_READY_MAX_BYTES,
       );
       if (!output.includes(HERDR_SERVER_READY)) return;
       settle(() => {

@@ -194,6 +194,72 @@ test("terminal.sessions reports running repos independently from visible agent g
   }
 });
 
+test("terminal.sessions keeps a working agent after a pane listing exceeds 64 KiB", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/large-pane-list",
+  });
+  const sessionName = herdrSessionName(repo);
+  const pull = 424;
+  const panes: Array<{
+    agent: string;
+    agent_status: string;
+    label: string;
+    pane_id: string;
+    terminal_title: string;
+    foreground_cwd?: string;
+  }> = Array.from({ length: 120 }, (_, index) => ({
+    agent: "codex",
+    agent_status: "done",
+    label: `old agent ${index}`,
+    pane_id: `w1:p${index}`,
+    terminal_title: "x".repeat(600),
+  }));
+  panes.push({
+    agent: "codex",
+    agent_status: "working",
+    label: "current agent",
+    pane_id: "w1:p-current",
+    terminal_title: "working",
+    foreground_cwd: worktreePath(worktreeRoot(), repo.full_name, pull),
+  });
+  const paneList = JSON.stringify({ result: { panes, type: "pane_list" } });
+  expect(Buffer.byteLength(paneList)).toBeGreaterThan(64 * 1024);
+  const paneListPath = join(HOME, "large-pane-list.json");
+  writeFileSync(paneListPath, paneList);
+  const sessionList = JSON.stringify({
+    sessions: [{ name: sessionName, running: true }],
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `if [ "$2" = "${sessionName}" ]; then cat '${paneListPath}'; exit 0; fi`,
+      "exit 1",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await snapshotAndReadSessions();
+    const group = result.repos.find(
+      (candidate) => candidate.repo === repo.full_name,
+    );
+    expect(group?.agents.at(-1)).toMatchObject({
+      name: "current agent",
+      status: "working",
+      pull,
+    });
+    expect(group?.pull_workspaces).toEqual([
+      { pull, pane_id: "w1:p-current", status: "working" },
+    ]);
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
 test("terminal.sessions snapshot fails when herdr is not on PATH", async () => {
   process.env.PATH = EMPTY_BIN;
   try {
