@@ -16,7 +16,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
+import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { Issue, LinkedPull } from "@/api/types";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -100,7 +100,127 @@ function rpcCalls(method: string): { method: string; params: any }[] {
     .filter((body) => body.method === method);
 }
 
+function subIssueSummary(total = 1) {
+  return { total, open: total, closed: 0 };
+}
+
 describe("IssueList", () => {
+  it("keeps sub issues collapsed and fetches each expanded level once", async () => {
+    let subIssueCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [
+          issue({ number: 1, sub_issue_summary: subIssueSummary() }),
+        ],
+        "issues/subIssues": ({ number }) => {
+          subIssueCalls += 1;
+          if (number === 1) {
+            return [
+              issue({
+                number: 2,
+                title: "Child issue",
+                depth: 2,
+                sub_issue_summary: subIssueSummary(),
+              }),
+            ];
+          }
+          return [issue({ number: 3, title: "Grandchild issue", depth: 3 })];
+        },
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("Fix the thing")).toBeTruthy();
+    expect(screen.queryByText("Child issue")).toBeNull();
+    expect(subIssueCalls).toBe(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand sub issues" }));
+    expect(await screen.findByText("Child issue")).toBeTruthy();
+    expect(subIssueCalls).toBe(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: /sub issues/ }),
+      ).toHaveLength(2),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /sub issues/ })[1]);
+    expect(await screen.findByText("Grandchild issue")).toBeTruthy();
+    expect(subIssueCalls).toBe(2);
+    expect(
+      screen.queryAllByRole("button", { name: "Expand sub issues" }),
+    ).toHaveLength(0);
+  });
+
+  it.each([
+    {
+      name: "loading",
+      handler: () => new Promise(() => undefined),
+      text: "Loading…",
+    },
+    {
+      name: "error",
+      handler: () => {
+        throw new RpcFault(500, "sub issue failure");
+      },
+      text: "Failed to load sub issues.",
+    },
+    {
+      name: "empty",
+      handler: () => [],
+      text: "No sub issues",
+    },
+  ])("renders the $name sub-issue state", async ({ handler, text }) => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [issue({ sub_issue_summary: subIssueSummary() })],
+        "issues/subIssues": handler,
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Expand sub issues" }),
+    );
+    expect(await screen.findByText(text)).toBeTruthy();
+  });
+
+  it("shows truncation and stops malformed recursive data", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [
+          issue({ number: 1, sub_issue_summary: subIssueSummary() }),
+        ],
+        "issues/subIssues": () => ({
+          issues: [
+            issue({
+              number: 1,
+              title: "Cyclic issue",
+              depth: 2,
+              sub_issue_summary: subIssueSummary(),
+            }),
+          ],
+          truncated: true,
+          workflow_runs: [],
+        }),
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Expand sub issues" }),
+    );
+    expect(await screen.findByText("Cyclic issue")).toBeTruthy();
+    expect(screen.getByText("階層が不正")).toBeTruthy();
+    expect(screen.getByText("Showing first 50 sub issues")).toBeTruthy();
+    expect(
+      screen.queryAllByRole("button", { name: "Expand sub issues" }),
+    ).toHaveLength(0);
+  });
+
   describe.each([
     {
       surface: "the repo top workspace-filter branch",
