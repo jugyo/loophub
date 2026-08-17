@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import type * as SqliteNS from "node:sqlite";
 import { dbPath } from "./config.ts";
 import { runMigrations } from "./migrations.ts";
@@ -1069,6 +1069,16 @@ CREATE TABLE IF NOT EXISTS workflow_event_effects (
  * schema, then any migration this database has not recorded yet.
  */
 export function openDb(path: string): Db {
+  if (
+    process.env.VITEST === "true" &&
+    !process.env.LOOPHUB_HOME &&
+    !process.env.LOOPHUB_DB &&
+    resolve(path) === resolve(dbPath())
+  ) {
+    throw new Error(
+      "Refusing to open the default LoopHub database during Vitest. Set LOOPHUB_HOME and LOOPHUB_DB to an isolated temporary directory before importing runtime modules.",
+    );
+  }
   mkdirSync(dirname(path), { recursive: true });
   const opened = new Db(path);
   opened.exec("PRAGMA journal_mode = WAL;");

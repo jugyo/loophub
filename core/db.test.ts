@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
@@ -16,6 +16,23 @@ beforeAll(async () => {
 
 afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
+});
+
+test("Vitest refuses to open the default LoopHub database", () => {
+  const isolatedHome = process.env.LOOPHUB_HOME;
+  const isolatedDb = process.env.LOOPHUB_DB;
+  delete process.env.LOOPHUB_HOME;
+  delete process.env.LOOPHUB_DB;
+  try {
+    expect(() => D.openDb(join(homedir(), ".loophub", "loophub.db"))).toThrow(
+      "Set LOOPHUB_HOME and LOOPHUB_DB to an isolated temporary directory",
+    );
+  } finally {
+    if (isolatedHome === undefined) delete process.env.LOOPHUB_HOME;
+    else process.env.LOOPHUB_HOME = isolatedHome;
+    if (isolatedDb === undefined) delete process.env.LOOPHUB_DB;
+    else process.env.LOOPHUB_DB = isolatedDb;
+  }
 });
 
 test("busy_timeout is set so concurrent writers wait instead of failing immediately", () => {
