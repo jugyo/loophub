@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { traceGitCommands } from "../git-trace-test-helper.ts";
 import type { PullTimelineItemWire } from "../serialize.ts";
+import { configureSlowOperationLogging } from "../slow-operation.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-page-data-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -144,6 +145,38 @@ test("pullDetail carries the diff feedback the screen renders itself", async () 
   expect(
     page.diff_feedback.orphaned_threads.map((thread) => thread.anchor.path),
   ).toEqual(["reverted.txt"]);
+});
+
+test("pageData logs issueList and pullDetail subphases in debug mode", async () => {
+  const logs: string[] = [];
+  configureSlowOperationLogging((message) => logs.push(message));
+  try {
+    await svc.pageData.issueList(REPO);
+    await svc.pageData.pullDetail(REPO, prNumber, "me");
+  } finally {
+    configureSlowOperationLogging();
+  }
+
+  expect(logs).toContainEqual(
+    expect.stringMatching(
+      /^pageData phase=issueList\.issue_selection duration_ms=\d+$/,
+    ),
+  );
+  expect(logs).toContainEqual(
+    expect.stringMatching(
+      /^pageData phase=issueList\.workflow_state_projection duration_ms=\d+$/,
+    ),
+  );
+  expect(logs).toContainEqual(
+    expect.stringMatching(
+      /^pageData phase=pullDetail.diff_base_resolution duration_ms=\d+$/,
+    ),
+  );
+  expect(logs).toContainEqual(
+    expect.stringMatching(
+      /^pageData phase=pullDetail.feedback_assembly duration_ms=\d+$/,
+    ),
+  );
 });
 
 test("pullDetail assembles the PR timeline from data it already fetched", async () => {
