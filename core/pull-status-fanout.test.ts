@@ -6,14 +6,21 @@
 // moved ref is a different key and never serves the stale answer.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 // Counts the fan-out's git-facing calls. Wrapping the exports pull-status-cache.ts imports (rather
 // than the subprocess) keeps every command real while making "did this respawn?" observable.
-const calls = vi.hoisted(() => ({ mergePreview: 0, hasEffectiveDiff: 0 }));
+const calls = vi.hoisted(() => ({
+  diffStat: 0,
+  mergePreview: 0,
+  hasEffectiveDiff: 0,
+  commitsAhead: 0,
+  revParse: 0,
+}));
 
 vi.mock("./git.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./git.ts")>();
@@ -26,6 +33,18 @@ vi.mock("./git.ts", async (importOriginal) => {
     hasEffectiveDiff: (...args: Parameters<typeof actual.hasEffectiveDiff>) => {
       calls.hasEffectiveDiff++;
       return actual.hasEffectiveDiff(...args);
+    },
+    diffStat: (...args: Parameters<typeof actual.diffStat>) => {
+      calls.diffStat++;
+      return actual.diffStat(...args);
+    },
+    commitsAhead: (...args: Parameters<typeof actual.commitsAhead>) => {
+      calls.commitsAhead++;
+      return actual.commitsAhead(...args);
+    },
+    revParse: (...args: Parameters<typeof actual.revParse>) => {
+      calls.revParse++;
+      return actual.revParse(...args);
     },
   };
 });
@@ -89,8 +108,11 @@ beforeAll(async () => {
 
 beforeEach(() => {
   C.clearPullShaStatusCache();
+  calls.diffStat = 0;
   calls.mergePreview = 0;
   calls.hasEffectiveDiff = 0;
+  calls.commitsAhead = 0;
+  calls.revParse = 0;
 });
 
 afterAll(() => {
@@ -197,6 +219,69 @@ test("the pull sweep persists the SHA projection and the issue list reads it", a
   expect(calls.mergePreview).toBe(0);
   expect(calls.hasEffectiveDiff).toBe(0);
 });
+
+test("an unchanged pull sweep reuses the current projection", async () => {
+  const benchmarkIssues: number[] = [];
+  const tracePath = join(HOME, "git-trace.json");
+  const mainSha = (await G.revParse(repoPath, "main"))!;
+  for (let i = 1; i < 10; i++) {
+    const branch = `benchmark-feature-${i}`;
+    git(["checkout", "-qb", branch, "main"]);
+    commit(`benchmark-${i}.txt`, `${i}\n`, `benchmark ${i}`);
+    git(["checkout", "-q", "main"]);
+    const issue = S.createIssue(
+      S.getRepo("me", "fanout")!.id,
+      "pull",
+      `Benchmark PR ${i}`,
+      "",
+      "me",
+    );
+    S.createPull(issue.id, branch, "main", null, null, null, mainSha);
+    benchmarkIssues.push(issue.id);
+  }
+
+  try {
+    expect(S.openPulls()).toHaveLength(10);
+    for (const pull of S.openPulls())
+      S.deleteCurrentPullStatusProjection(pull.issue_id);
+    C.clearPullShaStatusCache();
+    process.env.GIT_TRACE2_EVENT = tracePath;
+
+    writeFileSync(tracePath, "");
+    const baselineStartedAt = performance.now();
+    await W.sweepPullUpdates();
+    const baselineMs = performance.now() - baselineStartedAt;
+    const countGitCommands = () =>
+      readFileSync(tracePath, "utf8")
+        .split("\n")
+        .filter((line) => {
+          try {
+            return JSON.parse(line).event === "version";
+          } catch {
+            return false;
+          }
+        }).length;
+    const baselineCommands = countGitCommands();
+
+    writeFileSync(tracePath, "");
+    const unchangedStartedAt = performance.now();
+    await W.sweepPullUpdates();
+    const unchangedMs = performance.now() - unchangedStartedAt;
+    const unchangedCommands = countGitCommands();
+
+    console.info(
+      `10 open PR unchanged sweep: baseline=${baselineCommands} git commands/${baselineMs.toFixed(1)}ms; ` +
+        `unchanged=${unchangedCommands} git commands/${unchangedMs.toFixed(1)}ms`,
+    );
+    expect(baselineCommands).toBeGreaterThan(unchangedCommands);
+    expect(unchangedMs).toBeGreaterThanOrEqual(0);
+    expect(baselineMs).toBeGreaterThanOrEqual(0);
+  } finally {
+    delete process.env.GIT_TRACE2_EVENT;
+    for (const issueId of benchmarkIssues)
+      S.updateIssue(issueId, { state: "closed" });
+  }
+}, 15_000);
 
 test("a projection reapplies the current review gate", async () => {
   const [base, head] = await shas();

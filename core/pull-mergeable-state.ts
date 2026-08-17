@@ -17,11 +17,18 @@ import * as S from "./store.ts";
 // instead of respawning merge-tree per PR per poll.
 export async function currentMergeableState(
   pull: S.OpenPullSweepRow,
+  previousProjection?: S.CurrentPullStatusProjection | null,
 ): Promise<MergeableState> {
-  return (await currentPullStatus(pull))?.mergeable_state ?? "unknown";
+  return (
+    (await currentPullStatus(pull, previousProjection))?.mergeable_state ??
+    "unknown"
+  );
 }
 
-export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
+export async function currentPullStatus(
+  pull: S.OpenPullSweepRow,
+  previousProjection?: S.CurrentPullStatusProjection | null,
+): Promise<{
   baseSha: string;
   headSha: string;
   mergeable: boolean | null;
@@ -40,8 +47,33 @@ export async function currentPullStatus(pull: S.OpenPullSweepRow): Promise<{
   ]);
   if (!headSha || !baseSha) return null;
 
-  const status = await pullShaStatus(pull.local_path, baseSha, headSha);
   const reviewGate = S.computeReviewGate(pull.issue_id, headSha);
+  const reusableProjection =
+    previousProjection?.base_sha === baseSha &&
+    previousProjection.head_sha === headSha
+      ? previousProjection
+      : null;
+  if (reusableProjection) {
+    const decision = resolveMergeable({
+      hasEffectiveDiff: reusableProjection.has_effective_diff === 1,
+      conflict: reusableProjection.conflict === 1,
+      reviewGate,
+    });
+    return {
+      baseSha,
+      headSha,
+      mergeable: decision.mergeable,
+      mergeable_state: decision.mergeable_state,
+      hasEffectiveDiff: reusableProjection.has_effective_diff === 1,
+      conflict: reusableProjection.conflict === 1,
+      additions: reusableProjection.additions,
+      deletions: reusableProjection.deletions,
+      changedFiles: reusableProjection.changed_files,
+      commitsAhead: reusableProjection.commits_ahead,
+      baseCommitsBehind: reusableProjection.base_commits_behind,
+    };
+  }
+  const status = await pullShaStatus(pull.local_path, baseSha, headSha);
   const decision = resolveMergeable({
     hasEffectiveDiff: status.hasEffectiveDiff,
     conflict: status.conflict,
