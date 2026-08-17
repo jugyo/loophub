@@ -246,6 +246,7 @@ export const issues = {
       commentCountsByIssue: S.commentCountsByIssue(issueIds),
       linkedPullsByIssue: S.linkedPullsByIssue(issueIds),
       herdrPanesByIssue: S.issueHerdrPanesByIssue(r.id, issueIds),
+      subIssueSummariesByParent: S.subIssueSummariesByParent(issueIds),
     });
   },
 
@@ -259,6 +260,7 @@ export const issues = {
       commentCountsByIssue: S.commentCountsByIssue(issueIds),
       linkedPullsByIssue: S.linkedPullsByIssue(issueIds),
       herdrPanesByIssue: S.issueHerdrPanesByIssue(r.id, issueIds),
+      subIssueSummariesByParent: S.subIssueSummariesByParent(issueIds),
     });
   },
 

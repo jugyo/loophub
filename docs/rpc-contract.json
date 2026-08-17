@@ -1567,6 +1567,31 @@
       }
     },
     {
+      "name": "pageData/subIssues",
+      "description": "Get the direct sub issues and workflow states for one issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "issues/ac/list",
       "description": "List all acceptance criteria for an issue, including disabled criteria.",
       "params": {
@@ -1653,6 +1678,106 @@
       },
       "result": {
         "type": "object"
+      }
+    },
+    {
+      "name": "issues/sub/attach",
+      "description": "Attach an existing issue as a sub issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parent": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "child": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "parent",
+          "child"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/sub/detach",
+      "description": "Detach an issue from its parent.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "child": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "child"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/sub/reorder",
+      "description": "Reorder the direct sub issues of an issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parent": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "parent",
+          "order"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
       }
     },
     {

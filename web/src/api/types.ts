@@ -56,6 +56,7 @@ import type {
   SessionLinkedTargetWire,
   SessionSubagentUsageWire,
   SessionUsageWire,
+  SubIssuesPageWire,
   TerminalLaunchBackendWire,
   TerminalLaunchResultWire,
   ThemeWire,
@@ -287,6 +288,7 @@ export type ReviewAcResult = ReviewAcResultWire;
 export type PullRequest = PullWire;
 export type IssueListPage = IssueListPageWire;
 export type IssueDetailPage = IssueDetailPageWire;
+export type SubIssuesPage = SubIssuesPageWire;
 export type PullDetailPage = PullDetailPageWire;
 
 /** One entry of the PR-detail timeline (#145), as assembled by the backend page query. */

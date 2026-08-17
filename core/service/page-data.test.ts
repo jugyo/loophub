@@ -332,3 +332,39 @@ test("pullDetail reads the diff feedback as the calling session", async () => {
     asStranger.diff_feedback.orphaned_threads[0].messages[0].reactions,
   ).toEqual([{ emoji: "👍", count: 1, reacted: false }]);
 });
+
+test("issue pages include bounded sub-issue wire data and workflow seeds", async () => {
+  const root = S.createIssue(repoId, "issue", "wire root", "", "me");
+  const child = S.createIssue(repoId, "issue", "wire child", "", "me");
+  const grandchild = S.createIssue(
+    repoId,
+    "issue",
+    "wire grandchild",
+    "",
+    "me",
+  );
+  S.setIssueParent(child.id, root.id, S.nextSubIssueOrdinal(root.id));
+  S.setIssueParent(grandchild.id, child.id, S.nextSubIssueOrdinal(child.id));
+
+  const detail = await svc.pageData.issueDetail(REPO, root.number, "me");
+  expect(detail.issue).toMatchObject({
+    number: root.number,
+    depth: 1,
+    ancestors: [],
+    sub_issue_summary: { total: 1, open: 1, closed: 0 },
+  });
+  expect(detail.issue.sub_issues).toHaveLength(1);
+  expect(detail.issue.sub_issues?.[0]).toMatchObject({
+    number: child.number,
+    depth: 2,
+    sub_issue_ordinal: 1,
+    sub_issue_summary: { total: 1, open: 1, closed: 0 },
+  });
+  expect(detail.issue.sub_issues?.[0].sub_issues).toBeUndefined();
+  expect(detail.workflow_runs).toEqual([]);
+
+  const expanded = await svc.pageData.subIssues(REPO, root.number);
+  expect(expanded).toMatchObject({ truncated: false, workflow_runs: [] });
+  expect(expanded.issues).toHaveLength(1);
+  expect(expanded.issues[0].number).toBe(child.number);
+});

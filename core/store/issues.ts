@@ -11,6 +11,7 @@ import { indexIssueSearch } from "./search.ts";
 
 export const ISSUE_CREATE_CLAIM_PURPOSE = "issue-create-lifecycle";
 export const ISSUE_FILED_FROM_RELATIONSHIP = "filed-from";
+export const MAX_ISSUE_DETAIL_SUB_ISSUES = 50;
 
 export interface IssueRow {
   id: number;
