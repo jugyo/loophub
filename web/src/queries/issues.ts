@@ -14,6 +14,7 @@ import {
   getIssue,
   getIssueDetailPage,
   getIssueListPage,
+  getSubIssuesPage,
   listAcceptanceCriteria,
   listIssueComments,
   listIssueRefKinds,
@@ -177,6 +178,30 @@ export function useIssueDetailPage(
       );
       return data;
     },
+  });
+}
+
+export function useSubIssues(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: queryKeys.subIssues(full(owner, repo), number),
+    queryFn: async () => {
+      const data = await getSubIssuesPage(owner, repo, number);
+      const repoFull = full(owner, repo);
+      for (const run of data.workflow_runs) {
+        qc.setQueryData(
+          queryKeys.workflowRunForPull(repoFull, run.pr_number),
+          run,
+        );
+      }
+      return data;
+    },
+    enabled,
   });
 }
 

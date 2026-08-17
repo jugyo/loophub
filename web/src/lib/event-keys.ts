@@ -24,6 +24,8 @@ export const queryKeys = {
   repoMergeMode: (full: string) => ["repo-merge-mode", full] as const,
   labels: (full: string) => ["labels", full] as const,
   issues: (full: string) => ["issues", full] as const,
+  subIssues: (full: string, number: number) =>
+    [...queryKeys.issues(full), "sub", number] as const,
   issue: (full: string, number: number) => ["issue", full, number] as const,
   issueComments: (full: string, number: number) =>
     ["issue-comments", full, number] as const,
