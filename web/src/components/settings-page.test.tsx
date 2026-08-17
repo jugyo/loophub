@@ -56,6 +56,7 @@ function renderSettings(
         codingAgent,
         devCostLimitUsd,
         workflowContractLanguage: "en",
+        publicOrigin: null,
       }),
       "settings/update": (params) => {
         if (params.agent && params.model !== undefined) {
@@ -73,6 +74,7 @@ function renderSettings(
           codingAgent,
           devCostLimitUsd,
           workflowContractLanguage: "en",
+          publicOrigin: null,
         };
       },
     }),
@@ -203,10 +205,26 @@ describe("SettingsPage", () => {
     )) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe("12.50"));
     fireEvent.change(input, { target: { value: "7.25" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(
+      within(input.closest("form")!).getByRole("button", { name: "Save" }),
+    );
     await waitFor(() =>
       expect(rpcCall("settings/update")?.params).toMatchObject({
         devCostLimitUsd: 7.25,
+      }),
+    );
+  });
+
+  it("shows and saves the exact public origin", async () => {
+    renderSettings();
+    const input = await screen.findByLabelText("Public origin");
+    fireEvent.change(input, { target: { value: "https://loop.example.com" } });
+    fireEvent.click(
+      within(input.closest("form")!).getByRole("button", { name: "Save" }),
+    );
+    await waitFor(() =>
+      expect(rpcCall("settings/update")?.params).toMatchObject({
+        publicOrigin: "https://loop.example.com",
       }),
     );
   });

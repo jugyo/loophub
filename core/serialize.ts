@@ -63,6 +63,7 @@ export interface GlobalSettingsWire {
   notificationSound: boolean;
   theme: Theme | null;
   workflowContractLanguage: WorkflowContractLanguage;
+  publicOrigin: string | null;
 }
 
 export interface RepoWire {

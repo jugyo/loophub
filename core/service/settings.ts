@@ -27,6 +27,7 @@ import { actorFor } from "./shared.ts";
 const CODING_AGENTS_SENTENCE = CODING_AGENTS.join(", ");
 const THEME_KEY = "theme";
 const WORKFLOW_CONTRACT_LANGUAGE_KEY = "workflow_contract_language";
+const PUBLIC_ORIGIN_KEY = "public_origin";
 
 export function theme(): Theme | null {
   const value = S.getInstanceSetting(THEME_KEY);
@@ -36,6 +37,37 @@ export function theme(): Theme | null {
 export function workflowContractLanguage(): WorkflowContractLanguage {
   const value = S.getInstanceSetting(WORKFLOW_CONTRACT_LANGUAGE_KEY);
   return value === "ja" ? "ja" : "en";
+}
+
+export function publicOrigin(): string | null {
+  return S.getInstanceSetting(PUBLIC_ORIGIN_KEY) || null;
+}
+
+function validatePublicOrigin(value: unknown): asserts value is string | null {
+  if (value === null) return;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new ServiceError(
+      422,
+      "publicOrigin must be a valid HTTPS origin or null",
+    );
+  }
+  const trimmed = value.trim();
+  try {
+    const parsed = new URL(trimmed);
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.origin !== trimmed ||
+      parsed.username ||
+      parsed.password
+    ) {
+      throw new Error();
+    }
+  } catch {
+    throw new ServiceError(
+      422,
+      "publicOrigin must be a valid HTTPS origin or null",
+    );
+  }
 }
 
 interface AgentSettingsShape {
@@ -99,6 +131,7 @@ export const settings = {
       notificationSound: notificationSound(),
       theme: theme(),
       workflowContractLanguage: workflowContractLanguage(),
+      publicOrigin: publicOrigin(),
     };
   },
 
@@ -116,6 +149,7 @@ export const settings = {
       notificationSound?: boolean;
       theme?: Theme;
       workflowContractLanguage?: WorkflowContractLanguage;
+      publicOrigin?: string | null;
     },
     sessionId?: string | null,
   ): GlobalSettingsWire {
@@ -162,6 +196,8 @@ export const settings = {
         "workflowContractLanguage must be one of: en, ja",
       );
     }
+    if (input.publicOrigin !== undefined)
+      validatePublicOrigin(input.publicOrigin);
 
     if (input.model !== undefined) {
       const agent = input.agent;
@@ -195,6 +231,13 @@ export const settings = {
           WORKFLOW_CONTRACT_LANGUAGE_KEY,
           input.workflowContractLanguage,
         );
+      }
+      if (input.publicOrigin !== undefined) {
+        if (input.publicOrigin === null) {
+          S.setInstanceSetting(PUBLIC_ORIGIN_KEY, "");
+        } else {
+          S.setInstanceSetting(PUBLIC_ORIGIN_KEY, input.publicOrigin.trim());
+        }
       }
       S.emitEvent(null, "settings.updated", actor, input);
     });

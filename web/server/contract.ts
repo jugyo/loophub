@@ -273,14 +273,14 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, notificationSound, theme, workflowContractLanguage).",
+      "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, notificationSound, theme, workflowContractLanguage, publicOrigin).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
   },
   "settings/update": {
     description:
-      "Update instance-level settings. model/effort require agent; theme and workflowContractLanguage are DB-backed.",
+      "Update instance-level settings. model/effort require agent; theme, workflowContractLanguage, and publicOrigin are DB-backed.",
     params: params({
       agent: codingAgentEnum,
       model: strNonEmpty,
@@ -291,6 +291,7 @@ export const methods: Record<string, MethodDef> = {
       notificationSound: { type: "boolean" },
       theme: { enum: THEME_IDS },
       workflowContractLanguage: { enum: ["en", "ja"] },
+      publicOrigin: strOrNull,
       session_id: sid,
     }),
     result: anyObject,
@@ -305,6 +306,7 @@ export const methods: Record<string, MethodDef> = {
           notificationSound: p.notificationSound,
           theme: p.theme,
           workflowContractLanguage: p.workflowContractLanguage,
+          publicOrigin: p.publicOrigin,
         },
         p.session_id,
       ),

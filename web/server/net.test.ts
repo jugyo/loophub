@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { setInstanceSetting } from "../../core/store/instance-settings.ts";
 import { isAllowedOrigin, isLoopbackHost } from "./net.ts";
 
 test("isLoopbackHost recognizes loopback hostnames only", () => {
@@ -25,4 +26,11 @@ test("isAllowedOrigin allows absent/loopback origins and rejects cross-origin (C
 
   // Malformed Origin rejects rather than throws.
   expect(isAllowedOrigin("not a url")).toBe(false);
+});
+
+test("isAllowedOrigin allows only the configured public origin", () => {
+  setInstanceSetting("public_origin", "https://loop.example.com");
+  expect(isAllowedOrigin("https://loop.example.com")).toBe(true);
+  expect(isAllowedOrigin("https://other.example.com")).toBe(false);
+  setInstanceSetting("public_origin", "");
 });

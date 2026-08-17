@@ -502,6 +502,7 @@ export interface UpdateSettingsInput {
   notificationSound?: boolean;
   theme?: Theme;
   workflowContractLanguage?: GlobalSettings["workflowContractLanguage"];
+  publicOrigin?: string | null;
 }
 
 export function updateSettings(

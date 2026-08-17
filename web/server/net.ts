@@ -2,6 +2,8 @@
 // WebSocket bridge (removed in #564) since http.ts's RPC CSRF defense depends on the same
 // loopback/Origin logic independent of the terminal feature.
 
+import { getInstanceSetting } from "../../core/store/instance-settings.ts";
+
 // Loopback hostnames. Used both for the bind-address check (index.ts) and the RPC Origin check
 // (http.ts) — anything that must only ever trust connections staying on the local host.
 export function isLoopbackHost(hostname: string): boolean {
@@ -21,6 +23,8 @@ export function isLoopbackHost(hostname: string): boolean {
 export function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
   try {
+    const configured = getInstanceSetting("public_origin");
+    if (configured && origin === configured) return true;
     return isLoopbackHost(new URL(origin).hostname);
   } catch {
     return false; // malformed Origin → reject

@@ -458,7 +458,7 @@
     },
     {
       "name": "settings/get",
-      "description": "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, notificationSound, theme, workflowContractLanguage).",
+      "description": "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, notificationSound, theme, workflowContractLanguage, publicOrigin).",
       "params": {
         "type": "object",
         "properties": {},
@@ -471,7 +471,7 @@
     },
     {
       "name": "settings/update",
-      "description": "Update instance-level settings. model/effort require agent; theme and workflowContractLanguage are DB-backed.",
+      "description": "Update instance-level settings. model/effort require agent; theme, workflowContractLanguage, and publicOrigin are DB-backed.",
       "params": {
         "type": "object",
         "properties": {
@@ -524,6 +524,12 @@
             "enum": [
               "en",
               "ja"
+            ]
+          },
+          "publicOrigin": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "session_id": {

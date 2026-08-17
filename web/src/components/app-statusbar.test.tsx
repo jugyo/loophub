@@ -250,7 +250,9 @@ describe("AppStatusbar", () => {
       "Task over-budget limit in USD",
     ) as HTMLInputElement;
     fireEvent.change(costInput, { target: { value: "7.25" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(
+      within(costInput.closest("form")!).getByRole("button", { name: "Save" }),
+    );
 
     await waitFor(() =>
       expect(within(statusbar).getByText("$7.25")).toBeTruthy(),
