@@ -875,7 +875,19 @@ export async function mergePreview(
   base: string,
   head: string,
 ): Promise<MergePreview> {
-  const r = await git(repoPath, ["merge-tree", "--write-tree", base, head]);
+  let r = await git(repoPath, ["merge-tree", "--write-tree", base, head]);
+  // A shallow boundary can make two related commits look unrelated even when every parent object
+  // needed for the merge is already present locally through another ref. Retry that one failure
+  // without the boundary; Git still fails visibly if any required object is actually missing.
+  if (
+    r.code !== 0 &&
+    r.stderr.includes("refusing to merge unrelated histories") &&
+    (await isShallowRepository(repoPath))
+  ) {
+    r = await git(repoPath, ["merge-tree", "--write-tree", base, head], {
+      GIT_SHALLOW_FILE: "",
+    });
+  }
   const tree = r.stdout.split("\n")[0]?.trim() || null;
   const conflictTree = tree && /^[0-9a-f]{40,64}$/u.test(tree);
   if (r.code !== 0 && (r.code !== 1 || !conflictTree)) {

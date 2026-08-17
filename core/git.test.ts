@@ -1105,6 +1105,31 @@ test("mergePreview accepts a disambiguated base under a shadowing $GIT_DIR file 
   rmSync(p, { recursive: true, force: true });
 });
 
+test("mergePreview uses locally present parents hidden by a shallow boundary", async () => {
+  const p = await makeRepo();
+  const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
+  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
+
+  // Keep both commits and their trees, but make Git stop ancestry traversal at the feature tip.
+  // This matches a shallow PR-head fetch whose parent objects are already present through another
+  // ref: ordinary merge-tree reports unrelated histories even though it can perform the merge.
+  writeFileSync(join(p, ".git", "shallow"), `${headSha}\n`);
+  const ordinary = await git(p, [
+    "merge-tree",
+    "--write-tree",
+    baseSha,
+    headSha,
+  ]);
+  expect(ordinary.code).not.toBe(0);
+  expect(ordinary.stderr).toContain("refusing to merge unrelated histories");
+
+  const preview = await mergePreview(p, baseSha, headSha);
+  expect(preview.conflict).toBe(false);
+  expect(preview.tree).toMatch(/^[0-9a-f]{40,64}$/);
+
+  rmSync(p, { recursive: true, force: true });
+});
+
 // #39 AC-3: unresolved ref errors name collision candidates and a recommended fix.
 test("describeUnresolvedRevision lists $GIT_DIR collision candidates and a fix hint (#39)", async () => {
   const p = await makeRepo();
