@@ -10,7 +10,7 @@ export async function sweepPullUpdates(): Promise<any[]> {
   S.prunePullDiffProjections();
   for (const p of S.openPulls()) {
     const previousProjection = S.getCurrentPullStatusProjection(p.issue_id);
-    const status = await currentPullStatus(p);
+    const status = await currentPullStatus(p, previousProjection);
     if (!status) {
       if (previousProjection) {
         const event = db.transaction(() => {
