@@ -24,6 +24,7 @@ function lh(args: string[], env: Record<string, string> = {}) {
     HERDR_SESSION: _herdrSession,
     LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH: _launchId,
     LOOPHUB_WORKSPACE: _workspace,
+    LOOPHUB_PARENT_ISSUE: _parentIssue,
     ...baseEnv
   } = process.env;
   const r = spawnSync(
@@ -203,6 +204,15 @@ test("lh issue create defaults the target branch from LOOPHUB_WORKSPACE", () => 
   });
 
   expect(viewJSON(issueNumber).target_branch).toBe("integration/stack");
+});
+
+test("lh issue create defaults the parent from LOOPHUB_PARENT_ISSUE", () => {
+  const parent = createIssue("parent from env", "");
+  const child = createIssueWithEnv("child from env", {
+    LOOPHUB_PARENT_ISSUE: String(parent),
+  });
+
+  expect(viewJSON(child).ancestors?.[0]?.number).toBe(parent);
 });
 
 test("lh issue create explicit target branch overrides LOOPHUB_WORKSPACE", () => {

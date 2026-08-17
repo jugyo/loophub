@@ -6,6 +6,15 @@ test("unknown languages fall back to the English prompt", () => {
   expect(issueCreatePrompt("fr")).toBe(issueCreatePrompt("en"));
 });
 
+test("adds the parent issue instruction in the selected language", () => {
+  expect(issueCreatePrompt("en", 12)).toContain(
+    "Create it as sub issue #12, at a granularity that fits within the parent's acceptance criteria.",
+  );
+  expect(issueCreatePrompt("ja", 12)).toContain(
+    "#12 の sub issue として、親の acceptance criteria に収まる粒度で起票してください。",
+  );
+});
+
 test("both prompts state the responsibility boundary before the filing instructions", () => {
   for (const language of ["en", "ja"]) {
     const prompt = issueCreatePrompt(language);

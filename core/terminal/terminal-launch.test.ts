@@ -150,6 +150,16 @@ describe("herdr terminal launch", () => {
     );
   });
 
+  test("adds the parent issue to New Issue launches", () => {
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "issue-create",
+        parentIssue: 12,
+      }),
+    ).toBe("lh issue new --repo 'jugyo/loophub' --parent '12'");
+  });
+
   test("passes a direct issue filing prompt to New Issue launches", () => {
     expect(
       commandForHerdrLaunch({

@@ -1002,6 +1002,10 @@
           "targetBranch": {
             "type": "string"
           },
+          "parentIssue": {
+            "type": "integer",
+            "minimum": 1
+          },
           "prompt": {
             "type": "string"
           },

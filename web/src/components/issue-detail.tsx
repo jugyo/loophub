@@ -25,6 +25,7 @@ import {
   CommentActionsMenu,
 } from "@/components/comment-archive";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
+import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
 import {
   DetailHeaderTitle,
@@ -62,6 +63,7 @@ import {
   useSubIssues,
 } from "@/queries/issues";
 import { usePullUsage, useUnarchivePull } from "@/queries/pulls";
+import { canHaveSubIssues } from "../../../core/issue-hierarchy.ts";
 
 export function IssueDetail({
   owner,
@@ -266,13 +268,25 @@ function SubIssueSection({
       </section>
     );
   }
-  if (subIssues.length === 0) return null;
+  const canCreateSubIssue = canHaveSubIssues(issue.depth ?? 1);
+  if (subIssues.length === 0 && !canCreateSubIssue) return null;
   return (
     <section
       data-debug-component="SubIssueSection"
       className="flex flex-col gap-2"
     >
-      <h2 className="text-sm font-medium text-muted-foreground">Sub issues</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Sub issues
+        </h2>
+        {canCreateSubIssue ? (
+          <CreateIssueButton
+            repo={`${owner}/${repo}`}
+            parentIssue={issue.number}
+            targetBranch={issue.target_branch ?? undefined}
+          />
+        ) : null}
+      </div>
       <div className="divide-y rounded-md border">
         {subIssues.map((subIssue) => (
           <IssueRow

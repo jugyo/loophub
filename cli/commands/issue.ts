@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { agentEffort, agentModel } from "../../core/config.ts";
-import { ENV_WORKSPACE } from "../../core/environment.ts";
+import { ENV_PARENT_ISSUE, ENV_WORKSPACE } from "../../core/environment.ts";
 import {
   ENV_ISSUE_CREATE_SESSION,
   LH_ISSUE_CREATE_SESSION_AGENT,
@@ -192,10 +192,18 @@ export async function run(): Promise<void> {
     const r = await runOp(() => s.repos.get(repo));
     const agentCfg = await runOp(() => s.repos.agentConfig(repo));
     const sessionId = randomUUID();
+    const parentIssue =
+      flags.parent === undefined ? undefined : Number(flags.parent);
+    if (
+      parentIssue !== undefined &&
+      (!Number.isInteger(parentIssue) || parentIssue < 1)
+    ) {
+      fail("--parent requires a positive issue number");
+    }
     const slashCommand =
       typeof flags.prompt === "string" && flags.prompt.trim()
         ? flags.prompt
-        : issueCreatePrompt("en");
+        : issueCreatePrompt("en", parentIssue);
     const runtime = resolveDevRuntime({
       claudeCode: flags["claude-code"] === true,
       codex: flags.codex === true,
@@ -254,6 +262,9 @@ export async function run(): Promise<void> {
               [ENV_WORKSPACE]: flags["target-branch"],
             }
           : {}),
+        ...(parentIssue !== undefined
+          ? { [ENV_PARENT_ISSUE]: String(parentIssue) }
+          : {}),
       },
     });
     if (proc.error) {
@@ -300,7 +311,11 @@ export async function run(): Promise<void> {
     const body =
       flags.body === undefined ? undefined : await readTextInput(flags.body);
     const parent =
-      flags.parent === undefined ? undefined : Number(flags.parent);
+      flags.parent === undefined
+        ? process.env[ENV_PARENT_ISSUE] === undefined
+          ? undefined
+          : Number(process.env[ENV_PARENT_ISSUE])
+        : Number(flags.parent);
     if (parent !== undefined && (!Number.isInteger(parent) || parent < 1)) {
       fail("--parent requires a positive issue number");
     }

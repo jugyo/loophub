@@ -146,6 +146,7 @@ beforeAll(() => {
   const runtime = `#!/bin/sh
 printf 'bin=%s\\n' "$(basename "$0")" > "$RUNTIME_LOG"
 printf 'workspace=%s\\n' "$LOOPHUB_WORKSPACE" >> "$RUNTIME_LOG"
+printf 'parent=%s\\n' "$LOOPHUB_PARENT_ISSUE" >> "$RUNTIME_LOG"
 for arg in "$@"; do printf 'arg=%s\\n' "$arg" >> "$RUNTIME_LOG"; done
 exit 0
 `;
@@ -195,6 +196,13 @@ test("issue new forwards a direct prompt instead of the default filing prompt", 
   expect(result.runtimeLog).not.toContain(
     "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",
   );
+});
+
+test("issue new forwards the parent issue to the runtime environment", () => {
+  const result = issueNew(["--parent", "12"]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.runtimeLog).toContain("parent=12");
 });
 
 test("issue new uses the repo Coding agent override over the app defaults (#1534)", () => {
