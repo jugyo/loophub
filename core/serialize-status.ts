@@ -26,10 +26,12 @@ import {
 import type {
   GithubPullWire,
   IssueListPullSummaryWire,
+  IssueRefSummaryWire,
   IssueWire,
   LinkedIssueWire,
   PullWire,
   ReviewGateWire,
+  SubIssueSummaryWire,
 } from "./serialize.ts";
 import {
   commentJSON,
@@ -208,7 +210,13 @@ export async function issueListItemJSON(
   row: S.IssueRow,
   repo: S.Repo,
 ): Promise<IssueWire> {
-  const out = issueJSON(row, repo);
+  const out = addIssueHierarchyFields(issueJSON(row, repo), row, {
+    labelsByIssue: new Map(),
+    commentCountsByIssue: new Map(),
+    linkedPullsByIssue: new Map(),
+    herdrPanesByIssue: new Map(),
+    subIssueSummariesByParent: S.subIssueSummariesByParent([row.id]),
+  });
   out.herdr_pane = herdrPaneJSON(S.getIssueHerdrPane(row.id));
   if (row.kind !== "pull") {
     // All linked PRs (usually 0–1, occasionally more — see linkedPullsForIssue),
@@ -228,6 +236,20 @@ export interface IssueListSelection {
   commentCountsByIssue: Map<number, number>;
   linkedPullsByIssue: Map<number, S.LinkedPullIssueRow[]>;
   herdrPanesByIssue: Map<number, S.IssueHerdrPane>;
+  subIssueSummariesByParent?: Map<number, S.SubIssueSummary>;
+}
+
+function addIssueHierarchyFields(
+  out: IssueWire,
+  row: S.IssueRow,
+  selected?: IssueListSelection,
+  depth = 1,
+): IssueWire {
+  out.depth = depth;
+  out.sub_issue_ordinal = row.sub_issue_ordinal;
+  const summary = selected?.subIssueSummariesByParent?.get(row.id);
+  if (summary) out.sub_issue_summary = summary satisfies SubIssueSummaryWire;
+  return out;
 }
 
 export async function issueListItemsJSON(
@@ -245,10 +267,14 @@ export async function issueListItemsJSON(
   );
   const detailByPull = new Map(linkedDetails);
   return rows.map((row) => {
-    const out = issueJSON(row, undefined, {
-      labels: selected.labelsByIssue.get(row.id) ?? [],
-      comments: selected.commentCountsByIssue.get(row.id) ?? 0,
-    });
+    const out = addIssueHierarchyFields(
+      issueJSON(row, undefined, {
+        labels: selected.labelsByIssue.get(row.id) ?? [],
+        comments: selected.commentCountsByIssue.get(row.id) ?? 0,
+      }),
+      row,
+      selected,
+    );
     out.herdr_pane = herdrPaneJSON(
       selected.herdrPanesByIssue.get(row.id) ?? null,
     );
@@ -368,6 +394,26 @@ export async function issueDetailJSON(
   repo: S.Repo,
 ): Promise<IssueWire> {
   const out = issueJSON(row, row.kind === "pull" ? repo : undefined);
+  const summary = S.subIssueSummariesByParent([row.id]).get(row.id);
+  addIssueHierarchyFields(
+    out,
+    row,
+    {
+      labelsByIssue: new Map(),
+      commentCountsByIssue: new Map(),
+      linkedPullsByIssue: new Map(),
+      herdrPanesByIssue: new Map(),
+      subIssueSummariesByParent: summary
+        ? new Map([[row.id, summary]])
+        : new Map(),
+    },
+    S.listAncestorRows(row.id, 2).length + 1,
+  );
+  const ancestors: IssueRefSummaryWire[] = S.listAncestorRows(row.id, 2)
+    .reverse()
+    .map(({ number, title, state }) => ({ number, title, state }));
+  addIssueHierarchyFields(out, row, undefined, ancestors.length + 1);
+  out.ancestors = ancestors;
   if (row.kind !== "pull") {
     const linked = S.allLinkedPullsForIssue(row.id);
     const archived = S.archivedLinkedPullsForIssue(row.id);
@@ -390,6 +436,20 @@ export async function issueDetailJSON(
     );
     out.archived_pull_requests_truncated =
       archived.length > S.MAX_ISSUE_DETAIL_PULLS;
+    const children = S.listSubIssues(row.id);
+    const childRows = children.slice(0, S.MAX_ISSUE_DETAIL_SUB_ISSUES);
+    const childIds = childRows.map((child) => child.id);
+    out.sub_issues = await issueListItemsJSON(childRows, repo, {
+      labelsByIssue: S.labelsByIssue(childIds),
+      commentCountsByIssue: S.commentCountsByIssue(childIds),
+      linkedPullsByIssue: S.linkedPullsByIssue(childIds),
+      herdrPanesByIssue: S.issueHerdrPanesByIssue(repo.id, childIds),
+      subIssueSummariesByParent: S.subIssueSummariesByParent(childIds),
+    });
+    for (const child of out.sub_issues) {
+      child.depth = (out.depth ?? 1) + 1;
+    }
+    out.sub_issues_truncated = children.length > S.MAX_ISSUE_DETAIL_SUB_ISSUES;
   }
   return out;
 }

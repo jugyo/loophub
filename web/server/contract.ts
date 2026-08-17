@@ -748,6 +748,12 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pageData.issueDetail(p.repo, p.number, "me"),
   },
+  "pageData/subIssues": {
+    description: "Get the direct sub issues and workflow states for one issue.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pageData.subIssues(p.repo, p.number),
+  },
   "issues/ac/list": {
     description:
       "List all acceptance criteria for an issue, including disabled criteria.",
@@ -779,6 +785,40 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) =>
       svc.issues.acSetEnabled(p.repo, p.criterion_id, p.enabled, p.number),
+  },
+  "issues/sub/attach": {
+    description: "Attach an existing issue as a sub issue.",
+    params: params(
+      { repo, parent: positiveInt, child: positiveInt, session_id: sid },
+      ["repo", "parent", "child"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.issues.attachSubIssue(p.repo, p.parent, p.child, p.session_id),
+  },
+  "issues/sub/detach": {
+    description: "Detach an issue from its parent.",
+    params: params({ repo, child: positiveInt, session_id: sid }, [
+      "repo",
+      "child",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.issues.detachSubIssue(p.repo, p.child, p.session_id),
+  },
+  "issues/sub/reorder": {
+    description: "Reorder the direct sub issues of an issue.",
+    params: params(
+      {
+        repo,
+        parent: positiveInt,
+        order: { type: "array", items: positiveInt },
+        session_id: sid,
+      },
+      ["repo", "parent", "order"],
+    ),
+    result: anyArray,
+    handler: (p) =>
+      svc.issues.reorderSubIssues(p.repo, p.parent, p.order, p.session_id),
   },
   "issues/create": {
     description: "Open a new issue.",

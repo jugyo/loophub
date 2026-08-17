@@ -3,6 +3,7 @@ import type {
   IssueListPageWire,
   PullDetailPageWire,
   PullTimelineItemWire,
+  SubIssuesPageWire,
 } from "../serialize.ts";
 import { comments } from "./comments.ts";
 import { diffFeedbackForDiff } from "./diff-feedback.ts";
@@ -82,10 +83,42 @@ export const pageData = {
     issue.acceptance_criteria = acceptanceCriteria
       .filter((criterion) => criterion.enabled)
       .map(({ enabled: _enabled, ...criterion }) => criterion);
+    const pulls = (issue.sub_issues ?? []).flatMap((child) =>
+      (
+        child.linked_pull_requests ??
+        (child.linked_pull_request ? [child.linked_pull_request] : [])
+      ).map((pull) => pull.number),
+    );
+    pulls.push(
+      ...(
+        issue.linked_pull_requests ??
+        (issue.linked_pull_request ? [issue.linked_pull_request] : [])
+      ).map((pull) => pull.number),
+    );
     return {
       issue,
       comments: commentRows,
       acceptance_criteria: acceptanceCriteria,
+      workflow_runs: await workflowRuns.statesForPulls(name, { pulls }),
+    };
+  },
+
+  async subIssues(name: string, number: number): Promise<SubIssuesPageWire> {
+    const parent = await issues.get(name, number, {
+      withComments: false,
+      withAcceptanceCriteria: false,
+    });
+    const rows = (parent.sub_issues ?? []).slice();
+    const pulls = rows.flatMap((issue) =>
+      (
+        issue.linked_pull_requests ??
+        (issue.linked_pull_request ? [issue.linked_pull_request] : [])
+      ).map((pull) => pull.number),
+    );
+    return {
+      issues: rows,
+      truncated: parent.sub_issues_truncated ?? false,
+      workflow_runs: await workflowRuns.statesForPulls(name, { pulls }),
     };
   },
 

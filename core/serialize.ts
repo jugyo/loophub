@@ -367,6 +367,18 @@ export function herdrPaneJSON(
   };
 }
 
+export interface SubIssueSummaryWire {
+  total: number;
+  open: number;
+  closed: number;
+}
+
+export interface IssueRefSummaryWire {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+}
+
 export interface IssueWire {
   number: number;
   state: "open" | "closed";
@@ -398,6 +410,12 @@ export interface IssueWire {
   // This is the rubric source for Verify — the markdown `## Acceptance criteria` section is never
   // parsed. Absent on issues that have no structured criteria (they fall back to holistic Verify).
   acceptance_criteria?: AcceptanceCriterionWire[];
+  depth?: number;
+  sub_issue_ordinal?: number | null;
+  sub_issue_summary?: SubIssueSummaryWire;
+  ancestors?: IssueRefSummaryWire[];
+  sub_issues?: IssueWire[];
+  sub_issues_truncated?: boolean;
 }
 
 // The rubric-delivery shape carried on issue view. `id` is the public, repository-scoped
@@ -2402,6 +2420,13 @@ export interface IssueDetailPageWire {
   issue: IssueWire;
   comments: CommentWire[];
   acceptance_criteria: AcceptanceCriterionDetailWire[];
+  workflow_runs: WorkflowRunStateWire[];
+}
+
+export interface SubIssuesPageWire {
+  issues: IssueWire[];
+  truncated: boolean;
+  workflow_runs: WorkflowRunStateWire[];
 }
 
 /** A changed file with its unified-diff patch. */
