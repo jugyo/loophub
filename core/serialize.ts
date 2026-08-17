@@ -2048,6 +2048,18 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
       `Execute requested human guidance: ${payloadString(payload, "reason") ?? "No reason recorded."}`,
     significance: "notable",
   },
+  "workflow_run.delivery_queued": {
+    label: "Agent instruction queued",
+    description: ({ payload }) =>
+      `An instruction is waiting for the ${payloadString(payload, "target") ?? "target"} agent to start.`,
+    significance: "routine",
+  },
+  "workflow_run.delivery_completed": {
+    label: "Agent instruction delivered",
+    description: ({ payload }) =>
+      `A queued instruction was delivered to the ${payloadString(payload, "target") ?? "target"} agent.`,
+    significance: "routine",
+  },
   "workflow_run.cost_exceeded": {
     label: "Cost limit exceeded",
     description: ({ payload }) => {

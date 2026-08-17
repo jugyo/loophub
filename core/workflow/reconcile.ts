@@ -3,7 +3,9 @@ import type {
   WorkflowPendingEffectReceiptWire,
   WorkflowStepStatusWire,
 } from "../serialize.ts";
+import type { WorkflowCommentTarget } from "./comment-routing.ts";
 import type { WorkflowStep } from "./compose.ts";
+import type { WorkflowPendingDelivery } from "./run-projection.ts";
 import type { WorkflowStepStatuses } from "./steps.ts";
 
 export type WorkflowReconcileInput = {
@@ -30,19 +32,42 @@ export type WorkflowReconcileInput = {
   verifyLaunchedAfterTurnDone: boolean;
   steps: WorkflowStepStatuses;
   wake: WorkflowWakeInput | null;
+  outOfBandReviewTargets?: Readonly<
+    Record<number, readonly WorkflowCommentTarget[]>
+  >;
 };
 
 export type WorkflowWakeInput =
   | { kind: "execute_escalation"; reason: string }
   | { kind: "github_reference"; eventId: number; references: readonly string[] }
   | { kind: "github_feedback" }
-  | { kind: "diff_feedback"; threadId: number; commentId: number }
-  | { kind: "pr_comment"; commentId: number }
-  | { kind: "out_of_band_review"; reviewId: number }
+  | {
+      kind: "diff_feedback";
+      threadId: number;
+      commentId: number;
+      targets: readonly WorkflowCommentTarget[];
+    }
+  | {
+      kind: "pr_comment";
+      commentId: number;
+      targets: readonly WorkflowCommentTarget[];
+    }
+  | {
+      kind: "out_of_band_review";
+      reviewId: number;
+      targets: readonly WorkflowCommentTarget[];
+    }
   | { kind: "cost_limit_increased" }
   | { kind: "rework_limit_increased" }
   | { kind: "human_instruction" }
-  | { kind: "cost_exceeded"; eventId: number };
+  | { kind: "cost_exceeded"; eventId: number }
+  | {
+      kind: "queued_delivery";
+      delivery: WorkflowPendingDelivery;
+      target_available: boolean;
+    }
+  | { kind: "pending_delivery_ready"; delivery: WorkflowPendingDelivery }
+  | { kind: "delivery_queue_drained" };
 
 export type WorkflowEscalationContext = {
   current_step: WorkflowStep;
@@ -54,11 +79,12 @@ export type WorkflowEscalationContext = {
 
 export type WorkflowNextAction =
   | { action: "complete"; reason: string }
-  | { action: "launch_execute"; reason: string }
+  | { action: "launch_execute"; reason: string; delivery_id?: string }
   | {
       action: "launch_verify";
       reason: string;
       transition: "resume_verify" | null;
+      delivery_id?: string;
     }
   | { action: "advance_and_verify"; reason: string }
   | {
@@ -76,6 +102,7 @@ export type WorkflowNextAction =
       reason: string;
       delivery_reason: "out_of_band_review";
       review_id: number;
+      targets: readonly WorkflowCommentTarget[];
     }
   | {
       // A diff comment names its own subject, so the delivery text is fixed like rework's: the
@@ -85,12 +112,14 @@ export type WorkflowNextAction =
       delivery_reason: "diff_feedback";
       thread_id: number;
       comment_id: number;
+      targets: readonly WorkflowCommentTarget[];
     }
   | {
       action: "deliver";
       reason: string;
       delivery_reason: "pr_comment";
       comment_id: number;
+      targets: readonly WorkflowCommentTarget[];
     }
   | {
       action: "deliver";
@@ -108,6 +137,13 @@ export type WorkflowNextAction =
       references: readonly string[];
     }
   | { action: "cost_hold"; reason: string; event_id: number }
+  | {
+      action: "deliver_pending";
+      reason: string;
+      delivery_id: string;
+      target: WorkflowCommentTarget;
+      text: string;
+    }
   | { action: "wait"; reason: string }
   | {
       action: "escalate";
@@ -178,13 +214,27 @@ export function workflowActionPlan(
         after: "stop",
       };
     case "launch_execute":
-      return watch([command("launch-step", ...scoped, "--step", "execute")]);
+      return watch([
+        command(
+          "launch-step",
+          ...scoped,
+          "--step",
+          "execute",
+          ...(action.delivery_id ? ["--delivery-id", action.delivery_id] : []),
+        ),
+      ]);
     case "launch_verify":
       return watch([
         ...(action.transition === "resume_verify"
           ? [command("run", "resume", ...scoped, "--step", "verify")]
           : []),
-        command("launch-step", ...scoped, "--step", "verify"),
+        command(
+          "launch-step",
+          ...scoped,
+          "--step",
+          "verify",
+          ...(action.delivery_id ? ["--delivery-id", action.delivery_id] : []),
+        ),
       ]);
     case "advance_and_verify":
       return watch([command("run", "advance-to-verify", ...scoped)]);
@@ -205,6 +255,13 @@ export function workflowActionPlan(
         ),
       ]);
     case "deliver": {
+      const deliveries = (
+        text: string,
+        targets: readonly WorkflowCommentTarget[],
+      ) =>
+        targets.map((target) =>
+          command("deliver", ...scoped, "--target", target, "--text", text),
+        );
       if (action.delivery_reason === "diff_feedback") {
         return watch([
           {
@@ -222,11 +279,9 @@ export function workflowActionPlan(
               context.repo,
             ],
           },
-          command(
-            "deliver",
-            ...scoped,
-            "--text",
+          ...deliveries(
             `orchestrator: address diff feedback thread ${action.thread_id} comment ${action.comment_id}`,
+            action.targets,
           ),
         ]);
       }
@@ -247,11 +302,9 @@ export function workflowActionPlan(
               context.repo,
             ],
           },
-          command(
-            "deliver",
-            ...scoped,
-            "--text",
+          ...deliveries(
             `orchestrator: address PR comment ${action.comment_id}`,
+            action.targets,
           ),
         ]);
       }
@@ -265,17 +318,24 @@ export function workflowActionPlan(
           ),
         ]);
       }
-      const deliver = command("deliver", ...scoped);
-      deliver.input = {
-        argument: "--text",
-        source: "delivery_instruction",
-      };
+      const targets =
+        action.delivery_reason === "out_of_band_review"
+          ? action.targets
+          : (["executor"] as const);
+      const deliver = targets.map((target) => {
+        const instruction = command("deliver", ...scoped, "--target", target);
+        instruction.input = {
+          argument: "--text",
+          source: "delivery_instruction",
+        };
+        return instruction;
+      });
       return watch(
         [
           ...("transition" in action && action.transition === "resume_execute"
             ? [command("run", "resume", ...scoped, "--step", "execute")]
             : []),
-          deliver,
+          ...deliver,
         ],
         "parent_judgement",
       );
@@ -308,6 +368,19 @@ export function workflowActionPlan(
     case "cost_hold":
       return watch([
         command("cost-hold", ...scoped, "--event", String(action.event_id)),
+      ]);
+    case "deliver_pending":
+      return watch([
+        command(
+          "deliver",
+          ...scoped,
+          "--delivery-id",
+          action.delivery_id,
+          "--target",
+          action.target,
+          "--text",
+          action.text,
+        ),
       ]);
     case "wait":
       return watch([]);
@@ -457,6 +530,55 @@ export function reconcileWorkflow(
     };
   }
 
+  if (input.wake?.kind === "pending_delivery_ready") {
+    return {
+      action: "deliver_pending",
+      reason: `A queued comment instruction can now reach ${input.wake.delivery.target}.`,
+      delivery_id: input.wake.delivery.id,
+      target: input.wake.delivery.target,
+      text: input.wake.delivery.text,
+    };
+  }
+
+  if (input.wake?.kind === "queued_delivery") {
+    if (input.wake.target_available) {
+      return {
+        action: "deliver_pending",
+        reason: `A queued comment instruction can now reach ${input.wake.delivery.target}.`,
+        delivery_id: input.wake.delivery.id,
+        target: input.wake.delivery.target,
+        text: input.wake.delivery.text,
+      };
+    }
+    if (input.wake.delivery.target === "verifier") {
+      return {
+        action: "launch_verify",
+        reason: "A queued verifier instruction requires a fresh Verify child.",
+        transition: null,
+        delivery_id: input.wake.delivery.id,
+      };
+    }
+    if (input.wake.delivery.target === "executor") {
+      return {
+        action: "launch_execute",
+        reason: "A queued executor instruction requires an Execute child.",
+        delivery_id: input.wake.delivery.id,
+      };
+    }
+    return {
+      action: "wait",
+      reason:
+        "The queued orchestrator instruction has no registered parent session.",
+    };
+  }
+
+  if (input.wake?.kind === "delivery_queue_drained") {
+    return {
+      action: "wait",
+      reason: "Queued comment instruction delivery is complete.",
+    };
+  }
+
   if (input.wake?.kind === "rework_limit_increased") {
     const review = input.steps.verify.latest_review;
     if (
@@ -512,26 +634,28 @@ export function reconcileWorkflow(
     };
   }
 
-  // One diff comment produces one run event, and the worker delivers each event's instruction
-  // exactly once, so the comment is handed to Execute once. Nothing here re-scans open threads: an undelivered comment
-  // is visible on the PR and a human can post it again, which is cheaper than a redelivery rule
-  // that also has to decide when a thread stops being new work.
+  // One diff comment produces one run event, and the worker delivers each event's instructions
+  // exactly once. Nothing here re-scans open threads: an undelivered comment is visible on the PR
+  // and a human can post it again, which is cheaper than a redelivery rule that also has to decide
+  // when a thread stops being new work.
   if (input.wake?.kind === "diff_feedback") {
     return {
       action: "deliver",
-      reason: `Diff feedback conversation ${input.wake.threadId} has a new comment for Execute.`,
+      reason: `Diff feedback conversation ${input.wake.threadId} has new workflow-agent input.`,
       delivery_reason: "diff_feedback",
       thread_id: input.wake.threadId,
       comment_id: input.wake.commentId,
+      targets: input.wake.targets,
     };
   }
 
   if (input.wake?.kind === "pr_comment") {
     return {
       action: "deliver",
-      reason: `PR comment ${input.wake.commentId} has new input for Execute.`,
+      reason: `PR comment ${input.wake.commentId} has new workflow-agent input.`,
       delivery_reason: "pr_comment",
       comment_id: input.wake.commentId,
+      targets: input.wake.targets,
     };
   }
 
@@ -541,6 +665,7 @@ export function reconcileWorkflow(
       reason: `Out-of-band review ${input.wake.reviewId} requires Execute work.`,
       delivery_reason: "out_of_band_review",
       review_id: input.wake.reviewId,
+      targets: input.wake.targets,
     };
   }
 
@@ -565,9 +690,12 @@ export function reconcileWorkflow(
   if (outOfBandReview) {
     return {
       action: "deliver",
-      reason: `Out-of-band review ${outOfBandReview.id} (${outOfBandReview.verdict}) has not been addressed.`,
+      reason: `Out-of-band review ${outOfBandReview.id} (${outOfBandReview.verdict}) has not been addressed by its target workflow agents.`,
       delivery_reason: "out_of_band_review",
       review_id: outOfBandReview.id,
+      targets: input.outOfBandReviewTargets?.[outOfBandReview.id] ?? [
+        "executor",
+      ],
     };
   }
 

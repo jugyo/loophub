@@ -110,8 +110,21 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     { issue: issue.number, workflowId: workflow.id },
     parent,
   );
+  const headSha = spawnSync(
+    "git",
+    ["-C", started.worktree, "rev-parse", "HEAD"],
+    { encoding: "utf8" },
+  ).stdout.trim();
   const oldSession = "22222222-2222-4222-8222-222222222222";
   const latestSession = "33333333-3333-4333-8333-333333333333";
+  const verifySession = "55555555-5555-4555-8555-555555555555";
+  svc.workflowInstructions.registerParentPane(repo.full_name, {
+    run: started.run.id,
+    launch_id: parent,
+    session_name: "test-session",
+    pane_id: "w1:p0",
+    launched_at: new Date().toISOString(),
+  });
   svc.workflowRuns.confirmStepLaunch(
     repo.full_name,
     {
@@ -128,6 +141,306 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     },
     parent,
   );
+  const queued = await svc.workflowRuns.deliver(
+    repo.full_name,
+    {
+      run: started.run.id,
+      text: "orchestrator: address PR comment 19",
+      target: "verifier",
+    },
+    parent,
+  );
+  expect(queued).toMatchObject({
+    run: started.run.id,
+    queued: true,
+    target: "verifier",
+    text: "orchestrator: address PR comment 19",
+  });
+  if (!("queued" in queued)) throw new Error("delivery was not queued");
+  const queuedEvent = S.eventsForWorkflowRun(repo.id, started.run.id).findLast(
+    (event) =>
+      event.type === "workflow_run.delivery_queued" &&
+      JSON.parse(event.payload).delivery_id === queued.delivery_id,
+  );
+  expect(queuedEvent).toBeDefined();
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: queuedEvent!.id,
+    }),
+  ).toMatchObject({
+    action: "launch_verify",
+    delivery_id: queued.delivery_id,
+  });
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verifySession,
+      agentName: `verifier #${started.run.id}-2`,
+      executionTarget: {
+        provider: "herdr",
+        targetId: "w1:p3",
+        context: "test-session",
+      },
+      pointers: [],
+      headSha,
+    },
+    parent,
+  );
+  const verifyLaunch = S.eventsForWorkflowRun(repo.id, started.run.id).findLast(
+    (event) =>
+      event.type === "workflow_step.launched" &&
+      JSON.parse(event.payload).step === "verify",
+  );
+  expect(verifyLaunch).toBeDefined();
+  const concurrentComment = svc.comments.createHumanForPull(
+    repo.full_name,
+    started.pr.number,
+    "Please handle this new comment.",
+  );
+  const concurrentCommentEvent = S.eventsForPull(
+    repo.id,
+    started.pr.number,
+    null,
+  ).findLast(
+    (event) =>
+      event.type === "pull_request.commented" &&
+      JSON.parse(event.payload).comment_id === concurrentComment.id,
+  );
+  expect(concurrentCommentEvent).toBeDefined();
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: concurrentCommentEvent!.id,
+    }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "pr_comment",
+    comment_id: concurrentComment.id,
+    targets: ["executor"],
+  });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: verifyLaunch!.id,
+    }),
+  ).toMatchObject({
+    action: "deliver_pending",
+    delivery_id: queued.delivery_id,
+    target: "verifier",
+  });
+  await expect(
+    svc.workflowRuns.deliver(
+      repo.full_name,
+      {
+        run: started.run.id,
+        text: queued.text,
+        target: queued.target,
+        deliveryId: queued.delivery_id,
+      },
+      parent,
+    ),
+  ).resolves.toMatchObject({
+    agent_name: `verifier #${started.run.id}-2`,
+    session_id: verifySession,
+  });
+  expect(
+    S.eventsForWorkflowRun(repo.id, started.run.id).filter(
+      (event) => event.type === "workflow_run.delivery_completed",
+    ),
+  ).toHaveLength(1);
+  await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    { event: "PASS", body: "Verification complete." },
+    verifySession,
+  );
+  const humanReviewer = "77777777-7777-4777-8777-777777777777";
+  S.registerAgentSession(humanReviewer, "me", humanReviewer, "human");
+  const feedbackReview = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    { event: "FEEDBACK", body: "@verifier please inspect this feedback." },
+    humanReviewer,
+  );
+  const feedbackReviewEvent = S.eventsForPull(
+    repo.id,
+    started.pr.number,
+    null,
+  ).findLast(
+    (event) =>
+      event.type === "pull_request.review_submitted" &&
+      JSON.parse(event.payload).review_id === feedbackReview.id,
+  );
+  expect(feedbackReviewEvent).toBeDefined();
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: feedbackReviewEvent!.id,
+    }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "out_of_band_review",
+    review_id: feedbackReview.id,
+    targets: ["verifier"],
+  });
+  const queuedAfterReview = await svc.workflowRuns.deliver(
+    repo.full_name,
+    {
+      run: started.run.id,
+      text: `orchestrator: address review ${feedbackReview.id}`,
+      target: "verifier",
+    },
+    parent,
+  );
+  expect(queuedAfterReview).toMatchObject({
+    queued: true,
+    target: "verifier",
+  });
+  if (!("queued" in queuedAfterReview)) {
+    throw new Error("post-review delivery was not queued");
+  }
+  expect(readFileSync(HERDR_LOG, "utf8")).not.toContain(
+    `orchestrator: address review ${feedbackReview.id}`,
+  );
+  const queuedAfterReviewEvent = S.eventsForWorkflowRun(
+    repo.id,
+    started.run.id,
+  ).findLast(
+    (event) =>
+      event.type === "workflow_run.delivery_queued" &&
+      JSON.parse(event.payload).delivery_id === queuedAfterReview.delivery_id,
+  );
+  expect(queuedAfterReviewEvent).toBeDefined();
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: queuedAfterReviewEvent!.id,
+    }),
+  ).toMatchObject({
+    action: "launch_verify",
+    delivery_id: queuedAfterReview.delivery_id,
+  });
+  const freshLaunch = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      deliveryId: queuedAfterReview.delivery_id,
+    },
+    parent,
+  );
+  const freshVerifySession = freshLaunch.session_id;
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: freshVerifySession,
+      agentName: freshLaunch.agent_name,
+      executionTarget: {
+        provider: "herdr",
+        targetId: "w1:p5",
+        context: "test-session",
+      },
+      pointers: freshLaunch.pointers,
+      headSha: freshLaunch.head_sha,
+    },
+    parent,
+  );
+  const freshVerifyLaunch = S.eventsForWorkflowRun(
+    repo.id,
+    started.run.id,
+  ).findLast(
+    (event) =>
+      event.type === "workflow_step.launched" &&
+      JSON.parse(event.payload).session_id === freshVerifySession,
+  );
+  expect(freshVerifyLaunch).toBeDefined();
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: freshVerifyLaunch!.id,
+    }),
+  ).toMatchObject({
+    action: "deliver_pending",
+    delivery_id: queuedAfterReview.delivery_id,
+    target: "verifier",
+  });
+  await expect(
+    svc.workflowRuns.deliver(
+      repo.full_name,
+      {
+        run: started.run.id,
+        text: queuedAfterReview.text,
+        target: queuedAfterReview.target,
+        deliveryId: queuedAfterReview.delivery_id,
+      },
+      parent,
+    ),
+  ).resolves.toMatchObject({
+    agent_name: freshLaunch.agent_name,
+    pane_id: "w1:p5",
+    session_id: freshVerifySession,
+  });
+  expect(readFileSync(HERDR_LOG, "utf8")).toContain(
+    `pane send-text w1:p5 \u001b[200~orchestrator: address review ${feedbackReview.id}\u001b[201~`,
+  );
+  const completedAfterReviewEvent = S.eventsForWorkflowRun(
+    repo.id,
+    started.run.id,
+  ).findLast(
+    (event) =>
+      event.type === "workflow_run.delivery_completed" &&
+      JSON.parse(event.payload).delivery_id === queuedAfterReview.delivery_id,
+  );
+  expect(completedAfterReviewEvent).toBeDefined();
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: completedAfterReviewEvent!.id,
+    }),
+  ).toMatchObject({
+    action: "wait",
+    reason: "Queued comment instruction delivery is complete.",
+  });
+  await expect(
+    svc.workflowRuns.deliver(
+      repo.full_name,
+      {
+        run: started.run.id,
+        text: "orchestrator: verify the comment",
+        target: "verifier",
+      },
+      parent,
+    ),
+  ).resolves.toMatchObject({
+    agent_name: freshLaunch.agent_name,
+    pane_id: "w1:p5",
+    session_id: freshVerifySession,
+  });
+  const verifierCliResult = runCli(
+    [
+      "workflow",
+      "deliver",
+      "--repo",
+      repo.full_name,
+      "--run",
+      String(started.run.id),
+      "--target",
+      "verifier",
+      "--text",
+      "orchestrator: verify the comment",
+    ],
+    parent,
+  );
+  expect(verifierCliResult.exitCode, verifierCliResult.stderr).toBe(0);
+  expect(verifierCliResult.stdout).toContain(
+    `delivered instruction to ${freshLaunch.agent_name}`,
+  );
+  expect(verifierCliResult.stdout).toContain("pane\tw1:p5");
   svc.workflowRuns.confirmStepLaunch(
     repo.full_name,
     {
@@ -176,6 +489,46 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     target_id: "w1:p2",
     context: "test-session",
   });
+  await expect(
+    svc.workflowRuns.deliver(
+      repo.full_name,
+      {
+        run: started.run.id,
+        text: "orchestrator: verify after executor delivery",
+        target: "verifier",
+      },
+      parent,
+    ),
+  ).resolves.toMatchObject({
+    agent_name: freshLaunch.agent_name,
+    pane_id: "w1:p5",
+    session_id: freshVerifySession,
+  });
+
+  await expect(
+    svc.workflowRuns.deliver(
+      repo.full_name,
+      {
+        run: started.run.id,
+        text: "orchestrator: coordinate the comment",
+        target: "orchestrator",
+      },
+      parent,
+    ),
+  ).resolves.toMatchObject({ pane_id: "w1:p0", session_id: parent });
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
+    active_step: "execute",
+    active_session_id: latestSession,
+  });
+  expect(readFileSync(HERDR_LOG, "utf8")).toContain("pane send-text w1:p5");
+  expect(readFileSync(HERDR_LOG, "utf8")).toContain("pane send-text w1:p0");
+  await expect(
+    svc.workflowRuns.deliver(
+      repo.full_name,
+      { run: started.run.id, text: "invalid", target: "reviewer" },
+      parent,
+    ),
+  ).rejects.toThrowError(/delivery target must be one of/);
 
   process.env.HERDR_TEST_FAIL_SUBMIT = "1";
   await expect(
@@ -205,7 +558,6 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     `delivered instruction to executor #${started.run.id}-2`,
   );
   expect(cliResult.stdout).toContain("pane\tw1:p2");
-
   const unaddressedSession = "44444444-4444-4444-8444-444444444444";
   S.registerAgentSession(
     unaddressedSession,

@@ -44,7 +44,13 @@ import {
   buildWorkflowStepHerdrLaunchPlan,
   HERDR_ID,
   type HerdrLaunchPlan,
+  herdrSessionName,
 } from "../terminal/terminal-launch.ts";
+import {
+  WORKFLOW_COMMENT_TARGETS,
+  type WorkflowCommentTarget,
+  workflowCommentTargets,
+} from "../workflow/comment-routing.ts";
 import {
   composeWorkflowLaunchPrompt,
   renderWorkflowContract,
@@ -510,13 +516,21 @@ export type WorkflowTurnDoneResult = {
 
 export type WorkflowEscalateResult = WorkflowTurnDoneResult;
 
-export type WorkflowDeliverResult = {
-  run: number;
-  agent_name: string;
-  pane_id: string;
-  session_id: string;
-  text: string;
-};
+export type WorkflowDeliverResult =
+  | {
+      run: number;
+      agent_name: string;
+      pane_id: string;
+      session_id: string;
+      text: string;
+    }
+  | {
+      run: number;
+      queued: true;
+      delivery_id: string;
+      target: WorkflowCommentTarget;
+      text: string;
+    };
 
 export type WorkflowStepInputResult = {
   run: WorkflowRunUpdateResult["run"];
@@ -941,6 +955,7 @@ function turnDoneObservation(
 function workflowWakeObservation(input: {
   run: S.WorkflowRunRow;
   prIssueId: number;
+  projection: WorkflowRunProjection;
   event: LoopEvent | null;
   role: WorkflowSubjectEventRole | null;
   requiresChanges: boolean | undefined;
@@ -986,6 +1001,45 @@ function workflowWakeObservation(input: {
     );
   }
   if (role !== "instruction") return null;
+  if (event.type === "workflow_run.delivery_queued") {
+    const deliveryId = payload.delivery_id;
+    const delivery =
+      typeof deliveryId === "string"
+        ? input.projection.pendingDeliveries.find(
+            (pending) => pending.id === deliveryId,
+          )
+        : undefined;
+    if (!delivery) return { kind: "delivery_queue_drained" };
+    return {
+      kind: "queued_delivery",
+      delivery,
+      target_available: Boolean(
+        workflowTargetSessionId(
+          input.run,
+          delivery.target,
+          input.prIssueId,
+          input.projection,
+        ),
+      ),
+    };
+  }
+  if (
+    event.type === "workflow_run.delivery_completed" ||
+    event.type === "workflow_step.launched"
+  ) {
+    const delivery = input.projection.pendingDeliveries.find((pending) =>
+      workflowTargetSessionId(
+        input.run,
+        pending.target,
+        input.prIssueId,
+        input.projection,
+      ),
+    );
+    if (delivery) return { kind: "pending_delivery_ready", delivery };
+    if (event.type === "workflow_run.delivery_completed") {
+      return { kind: "delivery_queue_drained" };
+    }
+  }
   if (
     event.type === "workflow_run.diff_feedback" ||
     event.type === "pull_request.diff_feedback_created" ||
@@ -1006,7 +1060,19 @@ function workflowWakeObservation(input: {
         `workflow event #${eventId} has no diff feedback comment`,
       );
     }
-    return { kind: "diff_feedback", threadId, commentId };
+    const message = S.getDiffFeedbackMessage(commentId);
+    const thread = message ? S.getDiffFeedbackThread(message.thread_id) : null;
+    const fallbackBody = typeof payload.body === "string" ? payload.body : "";
+    const bodies =
+      message && thread?.issue_id === input.prIssueId
+        ? [message.body]
+        : [fallbackBody];
+    return {
+      kind: "diff_feedback",
+      threadId,
+      commentId,
+      targets: workflowCommentTargets(bodies),
+    };
   }
   if (
     event.type === "workflow_run.pr_comment" ||
@@ -1027,7 +1093,15 @@ function workflowWakeObservation(input: {
         `workflow event #${eventId} has no PR comment id`,
       );
     }
-    return { kind: "pr_comment", commentId };
+    const comment = S.getComment(commentId);
+    const fallbackBody = typeof payload.body === "string" ? payload.body : "";
+    const bodies =
+      comment?.issue_id === input.prIssueId ? [comment.body] : [fallbackBody];
+    return {
+      kind: "pr_comment",
+      commentId,
+      targets: workflowCommentTargets(bodies),
+    };
   }
   if (event.type === "workflow_run.cost_limit_increased") {
     return { kind: "cost_limit_increased" };
@@ -1052,11 +1126,24 @@ function workflowWakeObservation(input: {
         `workflow event #${eventId} has no review id`,
       );
     }
-    if (!S.listReviews(input.prIssueId).some((r) => r.id === reviewId)) {
+    const review = S.listReviews(input.prIssueId).find(
+      (row) => row.id === reviewId,
+    );
+    if (!review) {
       throw new ServiceError(
         404,
         `review #${reviewId} not found on workflow run PR`,
       );
+    }
+    if (
+      review.author_type === "human" &&
+      !isWorkflowRunVerifyReview(review, input.run.id, input.projection)
+    ) {
+      return {
+        kind: "out_of_band_review",
+        reviewId,
+        targets: workflowReviewCommentTargets(input.prIssueId, reviewId),
+      };
     }
     // Review ownership and whether it remains unaddressed are observed by status. The event only
     // wakes reconciliation, so both run-owned and out-of-band reviews use the current status.
@@ -1065,6 +1152,64 @@ function workflowWakeObservation(input: {
   // Close, merge, conflict and every other subject event is a timing signal only: the PR's own
   // state, git and the review rows remain the truth reconciliation reads.
   return null;
+}
+
+function workflowReviewCommentTargets(
+  prIssueId: number,
+  reviewId: number,
+): WorkflowCommentTarget[] {
+  const review = S.listReviews(prIssueId).find((row) => row.id === reviewId);
+  if (!review) return ["executor"];
+  const lineComments = S.listReviewComments(prIssueId).filter(
+    (comment) => comment.review_id === reviewId,
+  );
+  return workflowCommentTargets([
+    review.body,
+    ...lineComments.map((comment) => comment.body),
+  ]);
+}
+
+function workflowCommentTarget(
+  value: string | undefined,
+): WorkflowCommentTarget {
+  const target = value ?? "executor";
+  if (!(WORKFLOW_COMMENT_TARGETS as readonly string[]).includes(target)) {
+    throw new ServiceError(
+      422,
+      `workflow delivery target must be one of: ${WORKFLOW_COMMENT_TARGETS.join(", ")}`,
+    );
+  }
+  return target as WorkflowCommentTarget;
+}
+
+function workflowTargetSessionId(
+  run: S.WorkflowRunRow,
+  target: WorkflowCommentTarget,
+  prIssueId: number,
+  projection: WorkflowRunProjection,
+): string | undefined {
+  if (target === "orchestrator") return run.parent_session_id ?? undefined;
+  if (target === "verifier") {
+    // Verify session history is append-only. A review ends the latest launch without clearing its
+    // stored session, so event order — not the last active role or session id — determines liveness.
+    const launch = projection.latestVerifyLaunch;
+    if (
+      !launch ||
+      run.status !== "running" ||
+      run.needs_human_reason !== null
+    ) {
+      return undefined;
+    }
+    const review = latestWorkflowRunReview(prIssueId, run.id, projection);
+    const submitted = review
+      ? projection.reviewSubmissions.get(review.id)?.latest
+      : undefined;
+    if (submitted && submitted.id > launch.id) return undefined;
+    return typeof launch.payload.session_id === "string"
+      ? launch.payload.session_id
+      : undefined;
+  }
+  return workflowStepSessionIds(run.step_sessions_json, "execute").at(-1);
 }
 
 function outOfBandReviewVerdict(
@@ -2137,7 +2282,12 @@ export const workflowRuns = {
 
   async deliver(
     name: string,
-    input: { run: number; text: string },
+    input: {
+      run: number;
+      text: string;
+      target?: string;
+      deliveryId?: string;
+    },
     sessionId?: string | null,
   ): Promise<WorkflowDeliverResult> {
     const { repo, run } = lifecycleRun(name, input.run, sessionId);
@@ -2146,39 +2296,104 @@ export const workflowRuns = {
     if (!text) {
       throw new ServiceError(422, "workflow deliver requires non-empty text");
     }
-
-    const executeSessionId = workflowStepSessionIds(
-      run.step_sessions_json,
-      "execute",
-    ).at(-1);
-    if (!executeSessionId) {
-      throw new ServiceError(
-        404,
-        `No Execute session found for Workflow run #${run.id}`,
+    const targetRole = workflowCommentTarget(input.target);
+    const projection = workflowRunEventProjection(run);
+    if (input.deliveryId) {
+      const pending = projection.pendingDeliveries.find(
+        (delivery) => delivery.id === input.deliveryId,
       );
+      if (!pending || pending.target !== targetRole || pending.text !== text) {
+        throw new ServiceError(409, "workflow delivery is no longer pending");
+      }
     }
-    const session = S.getAgentSession(executeSessionId);
-    const target = S.getAgentExecutionTarget(executeSessionId);
+    const prIssue = issueOr404(repo, run.pr_number, "pull");
+    const targetSessionId = workflowTargetSessionId(
+      run,
+      targetRole,
+      prIssue.id,
+      projection,
+    );
+    if (!targetSessionId) {
+      if (input.deliveryId) {
+        throw new ServiceError(
+          409,
+          `${targetRole} session is not available for queued delivery`,
+        );
+      }
+      const deliveryId = randomUUID();
+      S.emitWorkflowEvent(
+        repo.id,
+        "workflow_run.delivery_queued",
+        actorFor(sessionId),
+        {
+          id: run.id,
+          issue_number: run.issue_number,
+          pr_number: run.pr_number,
+          delivery_id: deliveryId,
+          target: targetRole,
+          text,
+        },
+      );
+      return {
+        run: run.id,
+        queued: true,
+        delivery_id: deliveryId,
+        target: targetRole,
+        text,
+      };
+    }
+    const session = S.getAgentSession(targetSessionId);
+    const target =
+      targetRole === "orchestrator"
+        ? (() => {
+            const paneId = workflowRunParentPaneId(run);
+            return paneId
+              ? {
+                  provider: "herdr" as const,
+                  targetId: paneId,
+                  context: herdrSessionName(repo),
+                }
+              : null;
+          })()
+        : S.getAgentExecutionTarget(targetSessionId);
     if (!session || !target) {
       throw new ServiceError(
         422,
-        `Execute session ${executeSessionId} has no execution target`,
+        `${targetRole} session ${targetSessionId} has no execution target`,
       );
     }
-    workflowRuns.activateStep(
-      name,
-      { run: run.id, step: "execute", sessionId: executeSessionId },
-      sessionId,
-    );
-    await agentControl(repo.local_path, executionTarget(target)).inputText(
-      executionTarget(target),
+    if (targetRole === "executor") {
+      workflowRuns.activateStep(
+        name,
+        { run: run.id, step: "execute", sessionId: targetSessionId },
+        sessionId,
+      );
+    }
+    const agentTarget =
+      "target_id" in target ? executionTarget(target) : target;
+    await agentControl(repo.local_path, agentTarget).inputText(
+      agentTarget,
       text,
     );
+    if (input.deliveryId) {
+      S.emitWorkflowEvent(
+        repo.id,
+        "workflow_run.delivery_completed",
+        actorFor(sessionId),
+        {
+          id: run.id,
+          issue_number: run.issue_number,
+          pr_number: run.pr_number,
+          delivery_id: input.deliveryId,
+          target: targetRole,
+        },
+      );
+    }
     return {
       run: run.id,
-      agent_name: session.name ?? executeSessionId,
-      pane_id: target.target_id,
-      session_id: executeSessionId,
+      agent_name: session.name ?? targetSessionId,
+      pane_id: agentTarget.targetId,
+      session_id: targetSessionId,
       text,
     };
   },
@@ -2410,6 +2625,7 @@ export const workflowRuns = {
       note?: string;
       review?: number;
       model?: string | null;
+      deliveryId?: string;
       // Fallback anchor for a run whose parent pane was never registered — the caller's own pane, if
       // it has one. The registered parent pane wins whenever there is one; see anchorPaneId below.
       paneId?: string | null;
@@ -2436,6 +2652,23 @@ export const workflowRuns = {
     const stepAgent = launchAgent(launchConfig, step);
     issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
+    const projection = workflowRunEventProjection(run);
+    const pendingDelivery = input.deliveryId
+      ? projection.pendingDeliveries.find(
+          (delivery) => delivery.id === input.deliveryId,
+        )
+      : undefined;
+    if (
+      input.deliveryId &&
+      (!pendingDelivery ||
+        pendingDelivery.target !==
+          (step === "verify" ? "verifier" : "executor"))
+    ) {
+      throw new ServiceError(
+        409,
+        "workflow delivery no longer requires this step launch",
+      );
+    }
     const pull = S.getPull(prIssue.id);
     if (!pull)
       throw new ServiceError(404, `pull request #${run.pr_number} not found`);
@@ -2447,7 +2680,14 @@ export const workflowRuns = {
     const reviewId = resolveReworkReview(prIssue.id, step, input.review);
     const headSha =
       step === "verify" ? await worktreeHead(worktree) : undefined;
-    assertNoDuplicateVerifyChild(run, step, headSha);
+    const replacesCompletedVerifier =
+      step === "verify" &&
+      pendingDelivery !== undefined &&
+      workflowTargetSessionId(run, "verifier", prIssue.id, projection) ===
+        undefined;
+    if (!replacesCompletedVerifier) {
+      assertNoDuplicateVerifyChild(run, step, headSha);
+    }
     const baseSha =
       step === "verify" && headSha
         ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
@@ -2510,6 +2750,7 @@ export const workflowRuns = {
       sessionId: childSessionId,
       headSha,
       minimumNextSequence: nextWorkflowChildSequence(run.step_sessions_json),
+      replaceCompletedVerify: replacesCompletedVerifier,
     });
     if (sequence == null) {
       const current = S.getWorkflowRun(run.id);
@@ -3083,11 +3324,8 @@ export const workflowRuns = {
           markedWorkflowSourceExists(r.id),
         )
       : null;
-    const observedState = await observeWorkflowRunStatus(
-      r,
-      run,
-      workflowRunEventProjection(run),
-    );
+    const projection = workflowRunEventProjection(run);
+    const observedState = await observeWorkflowRunStatus(r, run, projection);
     const prIssue = issueOr404(r, run.pr_number, "pull");
     // Terminal condition: once the linked PR is closed there is nothing left to reconcile. Merge
     // closes the PR and reaches this same path.
@@ -3135,12 +3373,19 @@ export const workflowRuns = {
       turnDoneForActiveExecute: observed.turn_done_for_active_execute,
       verifyLaunchedAfterTurnDone: observed.verify_launched_after_turn_done,
       steps: observed.steps,
+      outOfBandReviewTargets: Object.fromEntries(
+        observed.unaddressed_out_of_band_reviews.map((review) => [
+          review.id,
+          workflowReviewCommentTargets(prIssue.id, review.id),
+        ]),
+      ),
       wake:
         input.note !== undefined
           ? { kind: "human_instruction" }
           : workflowWakeObservation({
               run,
               prIssueId: prIssue.id,
+              projection,
               event: wakeEvent,
               role: wakeRole,
               requiresChanges: input.requiresChanges,

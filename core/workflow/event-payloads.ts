@@ -1,4 +1,5 @@
 import type { GithubPrFeedbackKind } from "../github.ts";
+import type { WorkflowCommentTarget } from "./comment-routing.ts";
 import type { WorkflowStep } from "./compose.ts";
 
 /**
@@ -153,6 +154,17 @@ export interface WorkflowEventPayloadMap {
       increment_usd: number;
       previous_limit_usd: number;
       current_limit_usd: number;
+    };
+  "workflow_run.delivery_queued": WorkflowRunScoped &
+    WorkflowRunSubject & {
+      delivery_id: string;
+      target: WorkflowCommentTarget;
+      text: string;
+    };
+  "workflow_run.delivery_completed": WorkflowRunScoped &
+    WorkflowRunSubject & {
+      delivery_id: string;
+      target: WorkflowCommentTarget;
     };
   /**
    * Legacy notification twins, retained for typed reads of persisted rows. Nothing writes them any

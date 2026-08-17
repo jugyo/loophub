@@ -132,6 +132,7 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
     action: "deliver",
     delivery_reason: "pr_comment",
     comment_id: human.id,
+    targets: ["executor"],
   });
   // An agent's own comment is selected too, but reconciles to state observation only.
   const agentWake = await svc.workflowRuns.next(repoName, {
@@ -157,6 +158,37 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
 
   const detail = await svc.pulls.get(repoName, prNumber);
   expect(detail.comment_list).toEqual([human, agent, system]);
+});
+
+test("routes one PR comment to each distinct mentioned workflow agent", async () => {
+  const comment = svc.comments.createHumanForPull(
+    repoName,
+    prNumber,
+    "@verifier please check this; @lh and @loophub please coordinate; @executor please update it.",
+  );
+  const source = store
+    .eventsForPull(repoId, prNumber, null)
+    .find(
+      (event) =>
+        event.type === "pull_request.commented" &&
+        JSON.parse(event.payload).comment_id === comment.id,
+    );
+
+  expect(source).toBeDefined();
+  const next = await svc.workflowRuns.next(repoName, {
+    run: runId,
+    event: source!.id,
+  });
+  expect(next).toMatchObject({
+    action: "deliver",
+    delivery_reason: "pr_comment",
+    targets: ["verifier", "orchestrator", "executor"],
+  });
+  expect(next.instructions.commands.slice(1).map(({ args }) => args)).toEqual(
+    ["verifier", "orchestrator", "executor"].map((target) =>
+      expect.arrayContaining(["--target", target]),
+    ),
+  );
 });
 
 test("agent PR comments create a notification; human and system posts do not", () => {

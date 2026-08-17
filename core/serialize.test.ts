@@ -162,6 +162,8 @@ describe("workflowRunHistoryEventJSON significance", () => {
   test("flow-driving communication is routine", () => {
     expect(significanceOf("workflow_run.turn_done")).toBe("routine");
     expect(significanceOf("workflow_run.usage_updated")).toBe("routine");
+    expect(significanceOf("workflow_run.delivery_queued")).toBe("routine");
+    expect(significanceOf("workflow_run.delivery_completed")).toBe("routine");
     // Step activation and the human-instructed resume are the parent's own bookkeeping.
     expect(
       significanceOf("workflow_run.updated", {
@@ -348,6 +350,22 @@ const RENDERED_EVENT_CASES: Array<{
     label: "Human guidance requested",
     description: "Execute requested human guidance: help",
     significance: "notable",
+  },
+  {
+    name: "delivery_queued",
+    type: "workflow_run.delivery_queued",
+    payload: { target: "verifier" },
+    label: "Agent instruction queued",
+    description: "An instruction is waiting for the verifier agent to start.",
+    significance: "routine",
+  },
+  {
+    name: "delivery_completed",
+    type: "workflow_run.delivery_completed",
+    payload: { target: "verifier" },
+    label: "Agent instruction delivered",
+    description: "A queued instruction was delivered to the verifier agent.",
+    significance: "routine",
   },
   {
     name: "escalated/no-reason",

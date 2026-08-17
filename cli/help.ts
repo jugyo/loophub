@@ -512,7 +512,8 @@ export const commandHelp: readonly CommandHelp[] = [
   },
   {
     path: ["workflow", "deliver"],
-    description: "Deliver an instruction to the latest Execute child.",
+    description:
+      "Deliver an instruction to a workflow agent (default: executor).",
   },
   {
     path: ["workflow", "escalate-human"],

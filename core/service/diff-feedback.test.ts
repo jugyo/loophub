@@ -129,7 +129,7 @@ afterAll(() => {
 });
 
 test("a diff comment stores its current location and anchor event immediately", async () => {
-  const created = await createThread("Why is this changed?");
+  const created = await createThread("@verifier and @lh: why is this changed?");
   const listed = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
   const location = S.listDiffFeedbackLocations(
     S.getIssue(repoId, prNumber)!.id,
@@ -185,6 +185,7 @@ test("the running run takes the comment from the source event, with no twin", as
     action: "deliver",
     delivery_reason: "diff_feedback",
     thread_id: thread.id,
+    targets: ["verifier", "orchestrator"],
   });
 });
 

@@ -1,3 +1,7 @@
+import {
+  WORKFLOW_COMMENT_TARGETS,
+  type WorkflowCommentTarget,
+} from "./comment-routing.ts";
 import type { WorkflowStep } from "./compose.ts";
 import {
   parseWorkflowEventPayload,
@@ -45,6 +49,12 @@ export interface WorkflowReviewSubmission {
   latest: WorkflowRunEvent;
 }
 
+export interface WorkflowPendingDelivery {
+  id: string;
+  target: WorkflowCommentTarget;
+  text: string;
+}
+
 export interface WorkflowRunProjection {
   /** Every run event, oldest first, as the store returned them. */
   events: WorkflowRunEvent[];
@@ -72,6 +82,8 @@ export interface WorkflowRunProjection {
    * walk this instead of the whole trail.
    */
   phaseTransitions: { id: number; step: WorkflowStep }[];
+  /** Comment instructions waiting for their target role's first child session. */
+  pendingDeliveries: WorkflowPendingDelivery[];
 }
 
 export function projectWorkflowRunEvents(
@@ -82,6 +94,7 @@ export function projectWorkflowRunEvents(
   const reviewSubmissions = new Map<number, WorkflowReviewSubmission>();
   const phaseTransitions: { id: number; step: WorkflowStep }[] = [];
   const verifyLaunches: WorkflowRunEvent[] = [];
+  const pendingDeliveries = new Map<string, WorkflowPendingDelivery>();
   let latestExecuteRound: WorkflowRunEvent | null = null;
 
   for (const row of rows) {
@@ -95,6 +108,24 @@ export function projectWorkflowRunEvents(
     const payload = event.payload;
     if (event.type === "workflow_run.turn_done") {
       turnDones.push(event);
+    } else if (event.type === "workflow_run.delivery_queued") {
+      const { delivery_id: id, target, text } = payload;
+      if (
+        typeof id === "string" &&
+        typeof target === "string" &&
+        (WORKFLOW_COMMENT_TARGETS as readonly string[]).includes(target) &&
+        typeof text === "string"
+      ) {
+        pendingDeliveries.set(id, {
+          id,
+          target: target as WorkflowCommentTarget,
+          text,
+        });
+      }
+    } else if (event.type === "workflow_run.delivery_completed") {
+      if (typeof payload.delivery_id === "string") {
+        pendingDeliveries.delete(payload.delivery_id);
+      }
     } else if (event.type === "workflow_step.launched") {
       if (payload.step === "verify") verifyLaunches.push(event);
       if (payload.step === "execute") latestExecuteRound = event;
@@ -142,6 +173,7 @@ export function projectWorkflowRunEvents(
     latestExecuteRound,
     reviewSubmissions,
     phaseTransitions,
+    pendingDeliveries: [...pendingDeliveries.values()],
   };
 }
 

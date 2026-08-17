@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -2827,16 +2828,86 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     "This review predates the run-scoped submission boundary.",
     reviewedHead,
   );
+  const humanReviewer = randomUUID();
+  S.registerAgentSession(humanReviewer, "me", humanReviewer, "human");
+  const passingReview = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "PASS",
+      headSha: reviewedHead,
+      body: "@verifier please confirm this passing review.",
+    },
+    humanReviewer,
+  );
+  S.createReviewComment(prIssue.id, passingReview.id, "human", "human", {
+    path: "before-feedback.txt",
+    line: 1,
+    side: "RIGHT",
+    body: "@lh please note this line comment.",
+  });
+  const passingReviewEvent = S.listEvents(0, repo.id, 500).find(
+    (event) =>
+      event.type === "pull_request.review_submitted" &&
+      (JSON.parse(event.payload) as { review_id?: unknown }).review_id ===
+        passingReview.id,
+  );
+  expect(passingReviewEvent).toBeDefined();
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: passingReviewEvent!.id,
+    }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "out_of_band_review",
+    review_id: passingReview.id,
+    targets: ["verifier", "orchestrator"],
+  });
+  const commentReview = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "COMMENT",
+      headSha: reviewedHead,
+      body: "@verifier please inspect this non-substantive review.",
+    },
+    humanReviewer,
+  );
+  const commentReviewEvent = S.listEvents(0, repo.id, 500).find(
+    (event) =>
+      event.type === "pull_request.review_submitted" &&
+      (JSON.parse(event.payload) as { review_id?: unknown }).review_id ===
+        commentReview.id,
+  );
+  expect(commentReviewEvent).toBeDefined();
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: commentReviewEvent!.id,
+    }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "out_of_band_review",
+    review_id: commentReview.id,
+    targets: ["verifier"],
+  });
   const feedback = await svc.reviews.create(
     repo.full_name,
     started.pr.number,
     {
       event: "FEEDBACK",
       headSha: reviewedHead,
-      body: "Please account for this.",
+      body: "@verifier please account for this.",
     },
     "human-observer",
   );
+  S.createReviewComment(prIssue.id, feedback.id, "human-observer", "human", {
+    path: "before-feedback.txt",
+    line: 1,
+    side: "RIGHT",
+    body: "@lh please coordinate this line comment.",
+  });
   const requestedChanges = await svc.reviews.create(
     repo.full_name,
     started.pr.number,
@@ -2880,6 +2951,7 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     action: "deliver",
     delivery_reason: "out_of_band_review",
     review_id: feedback.id,
+    targets: ["verifier", "orchestrator"],
   });
 
   // A turn done with the same HEAD observed at review submission does not address feedback pinned

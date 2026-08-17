@@ -474,6 +474,7 @@ async function launchStep(): Promise<void> {
         step,
         note,
         review,
+        deliveryId: flags["delivery-id"],
         // The step inherits the parent run's model; only forward an explicit --model override.
         model: explicitModelFlag(),
         paneId,
@@ -922,12 +923,20 @@ async function deliver(): Promise<void> {
   const result = await runOp(async () =>
     (await svc()).workflowRuns.deliver(
       repo,
-      { run: runId, text },
+      {
+        run: runId,
+        text,
+        target: flags.target,
+        deliveryId: flags["delivery-id"],
+      },
       await writeSession(),
     ),
   );
   if (flags.json) out(result);
-  else {
+  else if ("queued" in result) {
+    console.log(`queued instruction for ${result.target}`);
+    console.log(`delivery\t${result.delivery_id}`);
+  } else {
     console.log(`delivered instruction to ${result.agent_name}`);
     console.log(`pane\t${result.pane_id}`);
     console.log(`session\t${result.session_id}`);

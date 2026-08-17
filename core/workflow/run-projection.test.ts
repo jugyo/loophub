@@ -82,6 +82,32 @@ test("a review's first and latest submission are kept apart", () => {
   expect(projection.reviewSubmissions.get(9)).toBeUndefined();
 });
 
+test("comment deliveries remain pending until their completion event", () => {
+  const trail = [
+    row("workflow_run.delivery_queued", {
+      id: 1,
+      delivery_id: "first",
+      target: "verifier",
+      text: "first instruction",
+    }),
+    row("workflow_run.delivery_queued", {
+      id: 1,
+      delivery_id: "second",
+      target: "executor",
+      text: "second instruction",
+    }),
+    row("workflow_run.delivery_completed", {
+      id: 1,
+      delivery_id: "first",
+      target: "verifier",
+    }),
+  ];
+
+  expect(projectWorkflowRunEvents(trail).pendingDeliveries).toEqual([
+    { id: "second", target: "executor", text: "second instruction" },
+  ]);
+});
+
 test("phase follows current_step and ignores an activate_step reactivation (#1873)", () => {
   const trail = [
     row("workflow_run.started", { id: 1 }),

@@ -546,20 +546,31 @@ describe("reconcileWorkflow", () => {
       { action: "cost_hold", event_id: 91 },
     ],
     [
-      { kind: "out_of_band_review", reviewId: 42 },
+      {
+        kind: "out_of_band_review",
+        reviewId: 42,
+        targets: ["executor"],
+      },
       {
         action: "deliver",
         delivery_reason: "out_of_band_review",
         review_id: 42,
+        targets: ["executor"],
       },
     ],
     [
-      { kind: "diff_feedback", threadId: 73, commentId: 108 },
+      {
+        kind: "diff_feedback",
+        threadId: 73,
+        commentId: 108,
+        targets: ["executor"],
+      },
       {
         action: "deliver",
         delivery_reason: "diff_feedback",
         thread_id: 73,
         comment_id: 108,
+        targets: ["executor"],
       },
     ],
     [
@@ -572,6 +583,52 @@ describe("reconcileWorkflow", () => {
     ],
   ] as const)("returns the action represented by wake input", (wake, action) => {
     expect(reconcileWorkflow(observed({ wake }))).toMatchObject(action);
+  });
+
+  test("delivers a queued comment when its target session becomes available", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          wake: {
+            kind: "pending_delivery_ready",
+            delivery: {
+              id: "delivery-1",
+              target: "verifier",
+              text: "orchestrator: address PR comment 19",
+            },
+          },
+        }),
+      ),
+    ).toEqual({
+      action: "deliver_pending",
+      reason: "A queued comment instruction can now reach verifier.",
+      delivery_id: "delivery-1",
+      target: "verifier",
+      text: "orchestrator: address PR comment 19",
+    });
+  });
+
+  test("launches a fresh verifier for a queued instruction without one", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          wake: {
+            kind: "queued_delivery",
+            delivery: {
+              id: "delivery-1",
+              target: "verifier",
+              text: "orchestrator: address PR comment 19",
+            },
+            target_available: false,
+          },
+        }),
+      ),
+    ).toEqual({
+      action: "launch_verify",
+      reason: "A queued verifier instruction requires a fresh Verify child.",
+      transition: null,
+      delivery_id: "delivery-1",
+    });
   });
 
   test("resumes a human hold before delivering a human instruction", () => {
@@ -734,6 +791,36 @@ describe("workflowActionPlan", () => {
       plan({ action: "cost_hold", reason: "cost", event_id: 11 }).commands[0]
         ?.args,
     ).toContain("11");
+    expect(
+      plan({
+        action: "launch_verify",
+        reason: "queued",
+        transition: null,
+        delivery_id: "delivery-1",
+      }).commands[0]?.args,
+    ).toContain("delivery-1");
+    expect(
+      plan({
+        action: "deliver_pending",
+        reason: "ready",
+        delivery_id: "delivery-1",
+        target: "verifier",
+        text: "orchestrator: address PR comment 19",
+      }).commands[0]?.args,
+    ).toEqual([
+      "workflow",
+      "deliver",
+      "--repo",
+      "me/repo",
+      "--run",
+      "42",
+      "--delivery-id",
+      "delivery-1",
+      "--target",
+      "verifier",
+      "--text",
+      "orchestrator: address PR comment 19",
+    ]);
   });
 
   test("reacts to a diff comment before delivering its fixed instruction", () => {
@@ -743,6 +830,7 @@ describe("workflowActionPlan", () => {
       delivery_reason: "diff_feedback",
       thread_id: 73,
       comment_id: 108,
+      targets: ["executor"],
     });
     expect(diffFeedback).toMatchObject({
       boundary: "mechanical",
@@ -804,6 +892,7 @@ describe("workflowActionPlan", () => {
       reason: "new PR comment",
       delivery_reason: "pr_comment",
       comment_id: 19,
+      targets: ["executor"],
     });
     expect(comment).toMatchObject({ boundary: "mechanical", after: "watch" });
     expect(comment.commands).toHaveLength(2);
