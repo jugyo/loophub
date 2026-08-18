@@ -262,7 +262,9 @@ function renderDetail(
     component: () => (
       <ToastProvider>
         <ToastViewport />
-        <PullDetail owner="me" repo="proj" number={30} />
+        <main data-debug-component="RouteContent">
+          <PullDetail owner="me" repo="proj" number={30} />
+        </main>
       </ToastProvider>
     ),
   });
@@ -487,6 +489,138 @@ describe("PullDetail", () => {
     });
     expect(row).toBeTruthy();
     expect(within(row).queryByText(/ago$/)).toBeNull();
+  });
+
+  it("shows the button when the scrollport grows after the initial render", async () => {
+    let notifyResize: (() => void) | undefined;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          notifyResize = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const { container } = renderDetail();
+    await screen.findByRole("heading", { name: /Files changed/ });
+    const scrollContainer = container.querySelector<HTMLElement>(
+      'main[data-debug-component="RouteContent"]',
+    );
+    if (!scrollContainer) throw new Error("Scroll container not found");
+    const timeline = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullMainContent"]',
+    );
+    if (!timeline) throw new Error("Timeline not found");
+    vi.spyOn(timeline, "getBoundingClientRect").mockReturnValue({
+      left: 100,
+      width: 800,
+    } as DOMRect);
+    Object.defineProperties(scrollContainer, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 1200 },
+      scrollTop: { configurable: true, value: 0 },
+    });
+
+    act(() => notifyResize?.());
+
+    const button = await screen.findByRole("button", {
+      name: "ページ下部へ移動",
+    });
+    expect(button).toBeTruthy();
+    expect(button.style.left).toBe("500px");
+    expect(button.style.transform).toBe("translateX(-50%)");
+  });
+
+  it("rechecks the scrollport when content is inserted after the initial render", async () => {
+    let notifyMutation: (() => void) | undefined;
+    vi.stubGlobal(
+      "MutationObserver",
+      class {
+        constructor(callback: () => void) {
+          notifyMutation = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const { container } = renderDetail();
+    await screen.findByRole("heading", { name: /Files changed/ });
+    const scrollContainer = container.querySelector<HTMLElement>(
+      'main[data-debug-component="RouteContent"]',
+    );
+    if (!scrollContainer) throw new Error("Scroll container not found");
+    Object.defineProperties(scrollContainer, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 1200 },
+      scrollTop: { configurable: true, value: 0 },
+    });
+
+    act(() => notifyMutation?.());
+
+    expect(
+      await screen.findByRole("button", { name: "ページ下部へ移動" }),
+    ).toBeTruthy();
+  });
+
+  it("shows a button away from the bottom and scrolls to the page bottom", async () => {
+    const { container } = renderDetail();
+    await screen.findByRole("heading", { name: /Files changed/ });
+    const scrollContainer = container.querySelector<HTMLElement>(
+      'main[data-debug-component="RouteContent"]',
+    );
+    if (!scrollContainer) throw new Error("Scroll container not found");
+    Object.defineProperties(scrollContainer, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 1200 },
+      scrollTop: { configurable: true, value: 100 },
+    });
+    const scrollTo = vi.fn();
+    Object.defineProperty(scrollContainer, "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    });
+    fireEvent.scroll(scrollContainer);
+
+    const button = await screen.findByRole("button", {
+      name: "ページ下部へ移動",
+    });
+    fireEvent.click(button);
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 1200,
+      behavior: "smooth",
+    });
+  });
+
+  it("hides the button at the page bottom and updates after scrolling", async () => {
+    const { container } = renderDetail();
+    await screen.findByRole("heading", { name: /Files changed/ });
+    const scrollContainer = container.querySelector<HTMLElement>(
+      'main[data-debug-component="RouteContent"]',
+    );
+    if (!scrollContainer) throw new Error("Scroll container not found");
+    Object.defineProperties(scrollContainer, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 1200 },
+      scrollTop: { configurable: true, value: 600, writable: true },
+    });
+    fireEvent.scroll(scrollContainer);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "ページ下部へ移動" }),
+      ).toBeNull(),
+    );
+
+    Object.defineProperty(scrollContainer, "scrollTop", {
+      configurable: true,
+      value: 100,
+    });
+    fireEvent.scroll(scrollContainer);
+    expect(
+      await screen.findByRole("button", { name: "ページ下部へ移動" }),
+    ).toBeTruthy();
   });
 
   it("shows diff comment counts in the file list and diff sidebar", async () => {

@@ -8,7 +8,13 @@
 // via <Markdown>.
 
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { ExternalLink, Github, Loader2, SmilePlus } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ExternalLink,
+  Github,
+  Loader2,
+  SmilePlus,
+} from "lucide-react";
 import {
   type ReactNode,
   type RefObject,
@@ -133,6 +139,62 @@ export function PullDetail({
     subject: string;
   } | null>(null);
   const [timelineReview, setTimelineReview] = useState<PullReview | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [scrollButtonCenter, setScrollButtonCenter] = useState<number | null>(
+    null,
+  );
+  useEffect(() => {
+    const scrollContainer = document.querySelector<HTMLElement>(
+      'main[data-debug-component="RouteContent"]',
+    );
+    if (!scrollContainer) return;
+
+    let mutationObserver: MutationObserver | null = null;
+    let observedTimeline: HTMLElement | null = null;
+    const updateScrollToBottom = () => {
+      const timeline = document.querySelector<HTMLElement>(
+        '[data-debug-component="PullMainContent"]',
+      );
+      if (timeline) {
+        if (mutationObserver && timeline !== observedTimeline) {
+          observedTimeline = timeline;
+          mutationObserver.observe(timeline, {
+            childList: true,
+            subtree: true,
+          });
+        }
+        const rect = timeline.getBoundingClientRect();
+        setScrollButtonCenter(rect.left + rect.width / 2);
+      }
+      setShowScrollToBottom(
+        scrollContainer.scrollTop + scrollContainer.clientHeight <
+          scrollContainer.scrollHeight - 1,
+      );
+    };
+
+    updateScrollToBottom();
+    scrollContainer.addEventListener("scroll", updateScrollToBottom, {
+      passive: true,
+    });
+    const resizeObserver =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver(updateScrollToBottom)
+        : null;
+    resizeObserver?.observe(scrollContainer);
+    mutationObserver =
+      typeof MutationObserver === "function"
+        ? new MutationObserver(updateScrollToBottom)
+        : null;
+    mutationObserver?.observe(scrollContainer, {
+      childList: true,
+    });
+    updateScrollToBottom();
+    return () => {
+      scrollContainer.removeEventListener("scroll", updateScrollToBottom);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+    };
+  }, [pageQuery.isLoading]);
   // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
   // otherwise, and the sidebar section is hidden anyway when github_pull is absent (#850).
   const githubStatusQuery = useGithubPrStatus(
@@ -290,6 +352,36 @@ export function PullDetail({
             />
           </div>
         </div>
+
+        {showScrollToBottom ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            className="fixed bottom-6 left-1/2 z-30 rounded-full border shadow-md"
+            style={
+              scrollButtonCenter == null
+                ? undefined
+                : {
+                    left: `${scrollButtonCenter}px`,
+                    transform: "translateX(-50%)",
+                  }
+            }
+            aria-label="ページ下部へ移動"
+            title="ページ下部へ移動"
+            onClick={() => {
+              const scrollContainer = document.querySelector<HTMLElement>(
+                'main[data-debug-component="RouteContent"]',
+              );
+              scrollContainer?.scrollTo({
+                top: scrollContainer.scrollHeight,
+                behavior: "smooth",
+              });
+            }}
+          >
+            <ArrowDownToLine className="size-4" aria-hidden="true" />
+          </Button>
+        ) : null}
 
         {/* The sidebar sticks (#2348) only while it sits beside the main column: below `lg` it
             wraps under the content, where there is nothing left to scroll past it. lg:top-5 parks
