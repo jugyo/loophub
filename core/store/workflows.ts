@@ -763,7 +763,6 @@ export function reserveWorkflowStepLaunch(
     sessionId: string;
     headSha?: string;
     minimumNextSequence: number;
-    replaceCompletedVerify?: boolean;
   },
 ): number | null {
   const row = db
@@ -776,12 +775,7 @@ export function reserveWorkflowStepLaunch(
            updated_at = ?
        WHERE id = ?
          AND launching_session_id IS NULL
-         AND NOT (
-           (? = 'execute' AND active_step = 'execute' AND active_session_id IS NOT NULL)
-           OR
-           (? = 'verify' AND active_step = 'verify' AND active_session_id IS NOT NULL
-             AND active_head_sha = ? AND ? = 0)
-         )
+         AND NOT (? = 'execute' AND active_step = 'execute' AND active_session_id IS NOT NULL)
        RETURNING child_sequence`,
     )
     .get(
@@ -792,9 +786,6 @@ export function reserveWorkflowStepLaunch(
       now(),
       id,
       input.step,
-      input.step,
-      input.headSha ?? null,
-      input.replaceCompletedVerify ? 1 : 0,
     ) as { child_sequence: number } | null;
   return row?.child_sequence ?? null;
 }

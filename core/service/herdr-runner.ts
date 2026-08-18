@@ -27,6 +27,18 @@ export function isHerdrExitError(error: unknown): error is HerdrExitError {
   return error instanceof HerdrExitError;
 }
 
+export function herdrExitErrorCode(error: unknown): string | null {
+  if (!isHerdrExitError(error) || !error.stderr) return null;
+  try {
+    const parsed = JSON.parse(error.stderr) as {
+      error?: { code?: unknown };
+    };
+    return typeof parsed.error?.code === "string" ? parsed.error.code : null;
+  } catch {
+    return null;
+  }
+}
+
 function unrefReadable(stream: NodeJS.ReadableStream): void {
   const unref = (stream as NodeJS.ReadableStream & { unref?: () => void })
     .unref;

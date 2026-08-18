@@ -95,6 +95,7 @@ function fakeRuntime(
     paneCloseExit?: number;
     paneMoveExit?: number;
     paneListJson?: string;
+    processInfoErrorPane?: string;
     worktreeOpenJson?: string;
     tabCreateJson?: string;
     paneSplitJson?: string;
@@ -108,6 +109,7 @@ function fakeRuntime(
     paneCloseExit = 0,
     paneMoveExit = 0,
     paneListJson = "",
+    processInfoErrorPane = "",
     worktreeOpenJson = "",
     tabCreateJson = REUSE_TAB_JSON,
     paneSplitJson = '{"result":{"pane":{"pane_id":"w1:p4"}}}',
@@ -174,7 +176,14 @@ case " $command " in
     # it owns instead of an arbitrary one; no file for the pane means herdr cannot report it, which
     # is the "that pane is already gone" path.
     pid_file="$HERDR_PROCESS_INFO_PID_DIR/$4"
-    if [ -z "$HERDR_PROCESS_INFO_PID_DIR" ] || [ ! -f "$pid_file" ]; then exit 1; fi
+    if [ "$4" = "${processInfoErrorPane}" ]; then
+      printf '%s' '{"error":{"code":"permission_denied"}}' >&2
+      exit 1
+    fi
+    if [ -z "$HERDR_PROCESS_INFO_PID_DIR" ] || [ ! -f "$pid_file" ]; then
+      printf '%s' '{"error":{"code":"pane_not_found"}}' >&2
+      exit 1
+    fi
     printf '{"result":{"process_info":{"foreground_process_group_id":%s}}}' "$(cat "$pid_file")"
     exit 0 ;;
   *" pane close "*) change_focus_if_closing pane_id "$3"; exit ${paneCloseExit} ;;
@@ -794,7 +803,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
   }
 });
 
-test("fresh Verify discards the verifier left on the old HEAD before launching", async () => {
+test("a later Verify discards prior same-run verifiers before launching", async () => {
   const issueOut = run([
     "issue",
     "create",
@@ -845,21 +854,24 @@ test("fresh Verify discards the verifier left on the old HEAD before launching",
     seq: number,
     event: "pass" | "request_changes",
     sha: string,
+    launchedSessionId?: string,
   ) => {
-    const sid = `verifier-sess-${body.run.id}-${seq}`;
-    const registered = run([
-      "session",
-      "register",
-      "--id",
-      sid,
-      "--agent",
-      "workflow-step",
-      "--session",
-      sid,
-      "--name",
-      `verifier #${body.run.id}-${seq}`,
-    ]);
-    expect(registered.exitCode, registered.stderr).toBe(0);
+    const sid = launchedSessionId ?? `verifier-sess-${body.run.id}-${seq}`;
+    if (!launchedSessionId) {
+      const registered = run([
+        "session",
+        "register",
+        "--id",
+        sid,
+        "--agent",
+        "workflow-step",
+        "--session",
+        sid,
+        "--name",
+        `verifier #${body.run.id}-${seq}`,
+      ]);
+      expect(registered.exitCode, registered.stderr).toBe(0);
+    }
     return run(
       [
         "pr",
@@ -953,6 +965,28 @@ test("fresh Verify discards the verifier left on the old HEAD before launching",
     }),
     paneListJson: JSON.stringify({ result: { panes: [] } }),
   });
+  const duplicateRuntime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
+    tabCreateJson: JSON.stringify({
+      result: { tab: { tab_id: "w1:t7" }, root_pane: { pane_id: "w1:p7" } },
+    }),
+    paneListJson: JSON.stringify({
+      result: {
+        panes: [
+          {
+            pane_id: "w1:p3",
+            agent: "claude",
+            label: `verifier #${body.run.id}-1`,
+          },
+          {
+            pane_id: "w1:p4",
+            agent: "claude",
+            label: `verifier #${body.run.id + 1}-9`,
+          },
+        ],
+      },
+    }),
+  });
   const freshRuntime = fakeRuntime({
     focusedState: UNRELATED_HERDR_FOCUS,
     // The child's pane now comes from the tab this launch creates, not from `agent start`.
@@ -970,12 +1004,12 @@ test("fresh Verify discards the verifier left on the old HEAD before launching",
           {
             pane_id: "w1:p2",
             agent: "claude",
-            label: `executor #${body.run.id}-2`,
+            label: `executor #${body.run.id}-3`,
           },
           {
-            pane_id: "w1:p3",
+            pane_id: "w1:p7",
             agent: "claude",
-            label: `verifier #${body.run.id}-1`,
+            label: `verifier #${body.run.id}-2`,
           },
           {
             pane_id: "w1:p4",
@@ -995,16 +1029,20 @@ test("fresh Verify discards the verifier left on the old HEAD before launching",
           {
             pane_id: "w1:p5",
             agent: "claude",
-            label: `verifier #${body.run.id}-3`,
+            label: `verifier #${body.run.id}-4`,
           },
           {
             pane_id: "w1:p6",
             agent: "claude",
-            label: `executor #${body.run.id}-2`,
+            label: `executor #${body.run.id}-3`,
           },
         ],
       },
     }),
+  });
+  const stopFailureRuntime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
+    processInfoErrorPane: "w1:p2",
   });
   try {
     writeFileSync(fixturePath, "initial\n");
@@ -1018,22 +1056,48 @@ test("fresh Verify discards the verifier left on the old HEAD before launching",
     expect(readFileSync(firstRuntime.log, "utf8")).not.toContain("pane close");
     expectUnrelatedHerdrFocus(firstRuntime);
 
-    const rcReview = postWorkflowReview(1, "request_changes", headSha());
+    // A duplicate trigger on the same HEAD stops verifier #1 and still launches verifier #2.
+    const duplicateExit = spawnVictim("w1:p3");
+    const duplicateVerify = launch(
+      "verify",
+      duplicateRuntime.dir,
+      firstRuntime.log,
+      pidDir,
+    );
+    expect(duplicateVerify.exitCode, duplicateVerify.stderr).toBe(0);
+    expect(duplicateVerify.stdout).toContain(
+      `discarded\tverifier #${body.run.id}-1`,
+    );
+    expect(duplicateVerify.stdout).toContain(
+      `agent\tverifier #${body.run.id}-2`,
+    );
+    const duplicateSession =
+      duplicateVerify.stdout.match(/^session\t(.+)$/m)?.[1];
+    expect(duplicateSession).toBeDefined();
+    expect(await duplicateExit).toBe("SIGKILL");
+    expectUnrelatedHerdrFocus(duplicateRuntime);
+
+    const rcReview = postWorkflowReview(
+      2,
+      "request_changes",
+      headSha(),
+      duplicateSession,
+    );
     expect(rcReview.exitCode, rcReview.stderr).toBe(0);
     const rework = transition("request-rework");
     expect(rework.exitCode, rework.stderr).toBe(0);
 
     const reworkExecute = launch("execute", firstRuntime.dir, firstRuntime.log);
     expect(reworkExecute.exitCode, reworkExecute.stderr).toBe(0);
-    expect(reworkExecute.stdout).toContain(`agent\texecutor #${body.run.id}-2`);
+    expect(reworkExecute.stdout).toContain(`agent\texecutor #${body.run.id}-3`);
     expectUnrelatedHerdrFocus(firstRuntime);
     writeFileSync(fixturePath, "reworked\n");
     commitWorktree("rework Verify lifecycle fixture");
     const secondAdvance = transition("advance-to-verify");
     expect(secondAdvance.exitCode, secondAdvance.stderr).toBe(0);
 
-    // HEAD has moved past what verifier #1 was launched to review, so the fresh launch discards it.
-    const staleExit = spawnVictim("w1:p3");
+    // HEAD has moved past what verifier #2 was launched to review, so the fresh launch discards it.
+    const staleExit = spawnVictim("w1:p7");
     const freshVerify = launch(
       "verify",
       freshRuntime.dir,
@@ -1041,27 +1105,27 @@ test("fresh Verify discards the verifier left on the old HEAD before launching",
       pidDir,
     );
     expect(freshVerify.exitCode, freshVerify.stderr).toBe(0);
-    expect(freshVerify.stdout).toContain(`agent\tverifier #${body.run.id}-3`);
+    expect(freshVerify.stdout).toContain(`agent\tverifier #${body.run.id}-4`);
     // Named by the same `verifier #<run>-<seq>` label the launch lines use, so the pane reads as
     // one story rather than pairing a fresh agent name with a bare session id.
     expect(freshVerify.stdout).toContain(
-      `discarded\tverifier #${body.run.id}-1`,
+      `discarded\tverifier #${body.run.id}-2`,
     );
     expectUnrelatedHerdrFocus(freshRuntime);
     expect(await staleExit).toBe("SIGKILL");
     const log = readFileSync(firstRuntime.log, "utf8");
     // The pane's foreground process is signalled first; `pane close` only tidies the empty pane
     // away afterwards, because herdr refuses that close on a worktree-linked pane (#805).
-    const killIndex = log.indexOf("pane process-info --pane w1:p3");
-    const closeIndex = log.indexOf("pane close w1:p3");
+    const killIndex = log.indexOf("pane process-info --pane w1:p7");
+    const closeIndex = log.indexOf("pane close w1:p7");
     // The herdr agent name is a slug since 0.7.5; the run-scoped wording lives on the pane label.
     const freshStartIndex = log.indexOf(
-      `pane rename w1:p5 verifier #${body.run.id}-3`,
+      `pane rename w1:p5 verifier #${body.run.id}-4`,
     );
     expect(killIndex).toBeGreaterThan(-1);
     expect(closeIndex).toBeGreaterThan(killIndex);
     expect(freshStartIndex).toBeGreaterThan(closeIndex);
-    // Only this run's stale verifier is a target. The parent's pane, another run's verifier and a
+    // Only this run's prior verifier is a target. The parent's pane, another run's verifier and a
     // pane no child of this run was launched into are neither signalled nor closed.
     for (const pane of ["w1:p1", "w1:p2", "w1:p4"]) {
       expect(log).not.toContain(`pane close ${pane}`);
@@ -1091,15 +1155,38 @@ test("fresh Verify discards the verifier left on the old HEAD before launching",
     expect(failedCloseLog).toContain("pane process-info --pane w1:p5");
     expect(failedCloseLog).toContain("pane close w1:p5");
     // The launch itself went through: the fresh verifier was still started and named.
-    expect(failedCloseLog).toContain(`verifier #${body.run.id}-4`);
+    expect(failedCloseLog).toContain(`verifier #${body.run.id}-5`);
+
+    // A genuine stop failure is best-effort: it leaves that prior verifier running, but must not
+    // prevent the replacement from starting.
+    const beforeStopFailure = readFileSync(firstRuntime.log, "utf8").length;
+    const replacement = launch(
+      "verify",
+      stopFailureRuntime.dir,
+      firstRuntime.log,
+      pidDir,
+    );
+    expect(replacement.exitCode, replacement.stderr).toBe(0);
+    expect(replacement.stderr).toContain(
+      `warning: could not stop verifier #${body.run.id}-5; continuing replacement Verify launch`,
+    );
+    expect(replacement.stdout).toContain(`agent\tverifier #${body.run.id}-6`);
+    const replacementLog = readFileSync(firstRuntime.log, "utf8").slice(
+      beforeStopFailure,
+    );
+    expect(replacementLog).toContain("pane process-info --pane w1:p2");
+    expect(replacementLog).toContain("tab create");
+    expect(replacementLog).toContain(`verifier #${body.run.id}-6`);
   } finally {
     for (const victim of victims) victim.kill("SIGKILL");
     rmSync(pidDir, { recursive: true, force: true });
     rmSync(firstRuntime.dir, { recursive: true, force: true });
+    rmSync(duplicateRuntime.dir, { recursive: true, force: true });
     rmSync(freshRuntime.dir, { recursive: true, force: true });
     rmSync(closeFailureRuntime.dir, { recursive: true, force: true });
+    rmSync(stopFailureRuntime.dir, { recursive: true, force: true });
   }
-  // Four `lh` subprocesses, each spawning git and the fake herdr. Unlike this file's synchronous
+  // Six `lh` subprocesses, each spawning git and the fake herdr. Unlike this file's synchronous
   // tests, which block the event loop and so never let Vitest's 5s default fire, this one awaits a
   // real signal — it needs a timeout that matches the work it actually does.
 }, 120_000);

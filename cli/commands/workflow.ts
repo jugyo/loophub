@@ -516,13 +516,13 @@ async function launchStep(): Promise<void> {
   const preflightError = stepLaunchPreflightError(result.runtime);
   if (preflightError) await failUnspawnedLaunch(preflightError);
   if (result.step === "verify") {
-    // This launch is the moment an older Verify child is known to be reviewing a HEAD the run has
-    // moved past — stop it here rather than pay for a review the freshness check will ignore (#61).
-    let stale: Awaited<
-      ReturnType<typeof s.workflowRuns.discardStaleVerifyChildren>
+    // A later Verify supersedes every earlier verifier in this run, even on the same HEAD. Stop
+    // them before spawning so closely repeated launch conditions leave only the newest child.
+    let prior: Awaited<
+      ReturnType<typeof s.workflowRuns.discardPriorVerifyChildren>
     >;
     try {
-      stale = await s.workflowRuns.discardStaleVerifyChildren(
+      prior = await s.workflowRuns.discardPriorVerifyChildren(
         repo,
         { run: result.run.id },
         actorSessionId,
@@ -530,9 +530,14 @@ async function launchStep(): Promise<void> {
     } catch (error) {
       return await failUnspawnedLaunchWith(error);
     }
-    for (const discarded of stale.discarded) {
+    for (const discarded of prior.discarded) {
       console.log(
         `discarded\t${display(discarded.agent_name ?? discarded.session_id)}`,
+      );
+    }
+    for (const failed of prior.failed) {
+      console.warn(
+        `warning: could not stop ${display(failed.agent_name ?? failed.session_id)}; continuing replacement Verify launch`,
       );
     }
   }

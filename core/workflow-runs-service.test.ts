@@ -1413,7 +1413,7 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
   ).toMatchObject({ action: "launch_verify" });
 }, 30_000);
 
-test("Verify launch reservations prevent concurrent and replayed launches but allow explicit retries", async () => {
+test("Verify launch reservations prevent concurrent spawns and allow a later replacement", async () => {
   const { repo } = freshRepo("me/workflow-verify-launch-reservation");
   const issue = S.createIssue(
     repo.id,
@@ -1593,13 +1593,24 @@ test("Verify launch reservations prevent concurrent and replayed launches but al
     active_session_id: finalRetry.session_id,
     active_head_sha: finalRetry.head_sha,
   });
-  await expect(
-    svc.workflowRuns.launchStep(
-      repo.full_name,
-      { run: started.run.id, step: "verify" },
-      parent,
-    ),
-  ).rejects.toMatchObject({ status: 409 });
+  const replacement = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  expect(replacement).toMatchObject({
+    step: "verify",
+    head_sha: finalRetry.head_sha,
+  });
+  expect(replacement.session_id).not.toBe(finalRetry.session_id);
+  svc.workflowRuns.recoverStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      reason: "replacement launch test cleanup",
+    },
+    parent,
+  );
 
   svc.workflowRuns.awaitHuman(
     repo.full_name,
@@ -5121,11 +5132,9 @@ test("successive runs on one PR do not blend their review submissions", async ()
   ]);
 }, 20_000);
 
-// #61: a Verify child is pinned at launch to the head SHA it reviews, so once Execute commits
-// again it is reviewing a diff that no longer exists — its eventual review is discarded by the
-// freshness check anyway. Launching the fresh Verify is the moment that becomes known, so the
-// stale child's pane process is killed there instead of being paid for to the end.
-test("launching a fresh Verify discards only the verifiers left on an older HEAD", async () => {
+// A later Verify replaces every prior verifier for the run. This includes the older-HEAD case from
+// #61 and a duplicate launch for the same HEAD; Execute children remain outside the selection.
+test("launching a Verify discards prior verifiers on old and current HEADs", async () => {
   const { repo } = freshRepo("me/workflow-discard-stale-verify");
   const issue = S.createIssue(
     repo.id,
@@ -5212,7 +5221,7 @@ test("launching a fresh Verify discards only the verifiers left on an older HEAD
     // Execute commits again while that verifier is still working: its reviewed HEAD is now old.
     commit(started.worktree, "impl.txt", "v2\n");
     await expect(
-      svc.workflowRuns.discardStaleVerifyChildren(
+      svc.workflowRuns.discardPriorVerifyChildren(
         repo.full_name,
         { run: started.run.id },
         parent,
@@ -5223,6 +5232,7 @@ test("launching a fresh Verify discards only the verifiers left on an older HEAD
       discarded: [
         { session_id: stale.session_id, agent_name: stale.agent_name },
       ],
+      failed: [],
     });
     expect(killSpy).toHaveBeenCalledWith(-999999, "SIGKILL");
     const calls = readFileSync(log, "utf8");
@@ -5232,8 +5242,8 @@ test("launching a fresh Verify discards only the verifiers left on an older HEAD
     // The Execute child shares the run but is not a verifier on an old HEAD — it is never touched.
     expect(calls).not.toContain(`p-${exec.session_id}`);
 
-    // A verifier launched for the current HEAD is doing exactly the work the run waits for: a
-    // later discard pass leaves it running and still names only the stale one.
+    // A duplicate trigger supersedes even the verifier launched for the current HEAD. Both prior
+    // launch records are selected, while the Execute child remains untouched.
     const fresh = await svc.workflowRuns.launchStep(
       repo.full_name,
       { run: started.run.id, step: "verify" },
@@ -5251,26 +5261,62 @@ test("launching a fresh Verify discards only the verifiers left on an older HEAD
       },
       parent,
     );
+    const prIssue = S.getIssue(repo.id, started.pr.number)!;
+    const supersededReview = S.createReview(
+      prIssue.id,
+      stale.agent_name,
+      "PASS",
+      "late verdict from the superseded verifier",
+      fresh.head_sha,
+      null,
+      "agent",
+      stale.session_id,
+    );
+    expect(supersededReview.session_id).toBe(stale.session_id);
+    // Even if a review crossed the replacement boundary before its submission was rejected, it is
+    // no longer eligible to complete the latest Verify launch.
+    expect(
+      (await svc.workflowRuns.status(repo.full_name, { run: started.run.id }))
+        .steps.verify.latest_review,
+    ).toBeNull();
+    const replacementReview = await svc.reviews.create(
+      repo.full_name,
+      started.pr.number,
+      {
+        event: "PASS",
+        body: "replacement verdict",
+        headSha: fresh.head_sha,
+      },
+      fresh.session_id,
+    );
+    expect(
+      (await svc.workflowRuns.status(repo.full_name, { run: started.run.id }))
+        .steps.verify.latest_review,
+    ).toMatchObject({ id: replacementReview.id, event: "pass", fresh: true });
     writeFileSync(log, "");
     expect(
-      (
-        await svc.workflowRuns.discardStaleVerifyChildren(
-          repo.full_name,
-          { run: started.run.id },
-          parent,
-        )
-      ).discarded,
-    ).toEqual([{ session_id: stale.session_id, agent_name: stale.agent_name }]);
-    expect(readFileSync(log, "utf8")).not.toContain(`p-${fresh.session_id}`);
+      await svc.workflowRuns.discardPriorVerifyChildren(
+        repo.full_name,
+        { run: started.run.id },
+        parent,
+      ),
+    ).toEqual({
+      run: started.run.id,
+      discarded: [
+        { session_id: stale.session_id, agent_name: stale.agent_name },
+        { session_id: fresh.session_id, agent_name: fresh.agent_name },
+      ],
+      failed: [],
+    });
+    expect(readFileSync(log, "utf8")).toContain(`p-${fresh.session_id}`);
   } finally {
     killSpy.mockRestore();
     process.env.PATH = originalPath;
   }
 }, 30_000);
 
-// The discard is an optimization, never a correctness premise: herdr refusing the kill (or the
-// pane being gone already) must leave the run exactly as it was, with the stale review still
-// ignored by the freshness check rather than the launch failing.
+// A refused kill remains a human-recoverable runtime failure rather than blocking the replacement
+// launch before it can start.
 test("a refused discard reports nothing discarded instead of failing the Verify launch", async () => {
   const { repo } = freshRepo("me/workflow-discard-refused");
   const issue = S.createIssue(
@@ -5342,7 +5388,7 @@ test("a refused discard reports nothing discarded instead of failing the Verify 
     join(bin, "herdr"),
     [
       "#!/bin/sh",
-      `printf '%s' '{"error":{"code":"not_found"}}'`,
+      `printf '%s' '{"error":{"code":"permission_denied"}}' >&2`,
       "exit 1",
     ].join("\n"),
   );
@@ -5359,12 +5405,16 @@ test("a refused discard reports nothing discarded instead of failing the Verify 
       exec.session_id,
     );
     await expect(
-      svc.workflowRuns.discardStaleVerifyChildren(
+      svc.workflowRuns.discardPriorVerifyChildren(
         repo.full_name,
         { run: started.run.id },
         parent,
       ),
-    ).resolves.toEqual({ run: started.run.id, discarded: [] });
+    ).resolves.toEqual({
+      run: started.run.id,
+      discarded: [],
+      failed: [{ session_id: stale.session_id, agent_name: stale.agent_name }],
+    });
     // The run is untouched: it still wants a fresh Verify for the new HEAD.
     expect(
       await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),

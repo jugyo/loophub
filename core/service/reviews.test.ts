@@ -187,6 +187,74 @@ test("a review on a PR with no running run records the same source event", async
   expect(runScopedReviewEvents()).toEqual([]);
 });
 
+test("a superseded Workflow verifier cannot submit a review", async () => {
+  const pr = await newPull("superseded-verifier");
+  const runId = startRun(pr, "verify");
+  const prior = "prior-verifier-session";
+  const replacement = "replacement-verifier-session";
+  S.registerAgentSession(prior, "workflow-step", prior, "verifier #1-1");
+  S.registerAgentSession(
+    replacement,
+    "workflow-step",
+    replacement,
+    "verifier #1-2",
+  );
+  S.appendWorkflowRunStepSession(runId, "verify", prior);
+
+  // Hold the old verifier in the asynchronous git read, then reserve the replacement. The second
+  // verifier check inside the review transaction must observe that new boundary and reject before
+  // either the review row or its submission event is written.
+  let resolveRevParse!: (sha: string) => void;
+  let markRevParseStarted!: () => void;
+  const revParseStarted = new Promise<void>((resolve) => {
+    markRevParseStarted = resolve;
+  });
+  const revParseResult = new Promise<string>((resolve) => {
+    resolveRevParse = resolve;
+  });
+  const reviewsBefore = svc.reviews.list("me/reviews", pr).length;
+  const eventsBefore = reviewEvents().length;
+  const pendingPriorReview = svc.reviews.create(
+    "me/reviews",
+    pr,
+    { event: "PASS", body: "late prior verdict" },
+    prior,
+    {
+      revParse: async () => {
+        markRevParseStarted();
+        return revParseResult;
+      },
+    },
+  );
+  await revParseStarted;
+  expect(
+    S.reserveWorkflowStepLaunch(runId, {
+      step: "verify",
+      sessionId: replacement,
+      headSha: "a".repeat(40),
+      minimumNextSequence: 2,
+    }),
+  ).toBe(2);
+  resolveRevParse("a".repeat(40));
+  await expect(pendingPriorReview).rejects.toMatchObject({
+    status: 409,
+    message: "Workflow Verify session was superseded by a later launch",
+  });
+  expect(svc.reviews.list("me/reviews", pr)).toHaveLength(reviewsBefore);
+  expect(reviewEvents()).toHaveLength(eventsBefore);
+
+  S.appendWorkflowRunStepSession(runId, "verify", replacement);
+  S.releaseWorkflowStepLaunch(runId, replacement);
+  await expect(
+    svc.reviews.create(
+      "me/reviews",
+      pr,
+      { event: "PASS", body: "replacement verdict" },
+      replacement,
+    ),
+  ).resolves.toMatchObject({ state: "PASS" });
+});
+
 test("review responses stay linked to their review and optional review comment", async () => {
   const pr = await newPull("linked-response");
   const review = await svc.reviews.create(

@@ -115,12 +115,12 @@ import {
   type WorkflowSubjectEventRole,
   type WorkflowTwinSourceRef,
 } from "../workflow/source-events.ts";
-import { staleVerifyChildSessions } from "../workflow/stale-verify.ts";
 import {
   type WorkflowLatestReviewState,
   workflowDisplayStage,
   workflowDone,
 } from "../workflow/steps.ts";
+import { priorVerifyChildSessions } from "../workflow/verify-children.ts";
 import {
   isHeadAheadOfReview,
   workflowRunProgress as observeWorkflowRunProgress,
@@ -139,6 +139,7 @@ import {
 } from "../worktree-provision.ts";
 import { agentControl, assertAgentExecutionTarget } from "./agent-control.ts";
 import { dev } from "./dev.ts";
+import { herdrExitErrorCode } from "./herdr-runner.ts";
 import { reviewAcResultsJSON } from "./reviews.ts";
 import { workflowContractLanguage } from "./settings.ts";
 import {
@@ -465,7 +466,7 @@ function executionTarget(row: S.AgentExecutionTargetRow): AgentExecutionTarget {
   };
 }
 
-export type WorkflowDiscardStaleVerifyResult = {
+export type WorkflowDiscardPriorVerifyResult = {
   run: number;
   /**
    * The Verify children whose pane process was actually signalled, each carrying the
@@ -473,6 +474,8 @@ export type WorkflowDiscardStaleVerifyResult = {
    * nothing to whoever is watching the run.
    */
   discarded: { session_id: string; agent_name: string | null }[];
+  /** Verify children whose stop failed; the replacement still launches, but the CLI warns. */
+  failed: { session_id: string; agent_name: string | null }[];
 };
 
 // Discard one Verify child: SIGKILL the foreground process group behind its pane, then tidy the
@@ -485,18 +488,20 @@ export type WorkflowDiscardStaleVerifyResult = {
 async function discardVerifyChild(
   repo: S.Repo,
   sessionId: string,
-): Promise<boolean> {
+): Promise<"discarded" | "already_gone" | "failed"> {
   const target = S.getAgentExecutionTarget(sessionId);
-  if (target?.provider !== "herdr") return false;
-  if (!HERDR_ID.test(target.target_id)) return false;
+  if (target?.provider !== "herdr") return "failed";
+  if (!HERDR_ID.test(target.target_id)) return "failed";
   try {
     await killPaneForegroundProcess(
       repo,
       target.target_id,
       target.context ?? undefined,
     );
-  } catch {
-    return false;
+  } catch (error) {
+    return herdrExitErrorCode(error) === "pane_not_found"
+      ? "already_gone"
+      : "failed";
   }
   try {
     await agentControl(repo.local_path, executionTarget(target)).close(
@@ -506,7 +511,7 @@ async function discardVerifyChild(
     // Best-effort tidy-up: the process is already dead, so a refused close only leaves an empty
     // pane behind — it must not undo the discard that already happened.
   }
-  return true;
+  return "discarded";
 }
 
 export type WorkflowTurnDoneResult = {
@@ -877,6 +882,24 @@ function isWorkflowRunVerifyReview(
   );
 }
 
+// A failed best-effort stop can leave an older verifier process alive. It still belongs to this
+// run (and must not become out-of-band feedback), but only the most recently launched Verify
+// session may supply the run's verdict. Sessionless legacy reviews retain their historical
+// attribution because there is no reliable child identity to compare.
+function isCurrentWorkflowRunVerifyReview(
+  review: S.ReviewRow,
+  runId: number,
+  projection: WorkflowRunProjection,
+): boolean {
+  if (!isWorkflowRunVerifyReview(review, runId, projection)) return false;
+  if (!review.session_id) return true;
+  const currentSessionId = projection.latestVerifyLaunch?.payload.session_id;
+  return (
+    typeof currentSessionId !== "string" ||
+    review.session_id === currentSessionId
+  );
+}
+
 // The latest substantive review submitted by this run's own Verify children. Reviews from other
 // runs on the same PR (or from humans) never drive this run's transitions — old runs' data cannot
 // gate a new run.
@@ -889,7 +912,9 @@ function latestWorkflowRunReview(
   for (let i = reviews.length - 1; i >= 0; i--) {
     const review = reviews[i];
     if (review.event !== "PASS" && review.event !== "REQUEST_CHANGES") continue;
-    if (isWorkflowRunVerifyReview(review, runId, projection)) return review;
+    if (isCurrentWorkflowRunVerifyReview(review, runId, projection)) {
+      return review;
+    }
   }
   return null;
 }
@@ -1607,27 +1632,6 @@ function assertNoLiveExecuteChild(run: S.WorkflowRunRow, step: WorkflowStep) {
   throw new ServiceError(
     409,
     `Workflow run #${run.id} already has a live Execute session (${run.active_session_id})`,
-  );
-}
-
-function assertNoDuplicateVerifyChild(
-  run: S.WorkflowRunRow,
-  step: WorkflowStep,
-  headSha: string | undefined,
-) {
-  if (
-    step !== "verify" ||
-    run.active_step !== "verify" ||
-    !run.active_session_id
-  ) {
-    return;
-  }
-  if (run.active_head_sha !== headSha) {
-    return;
-  }
-  throw new ServiceError(
-    409,
-    `Workflow run #${run.id} already has a Verify session for ${headSha} (${run.active_session_id})`,
   );
 }
 
@@ -2681,14 +2685,6 @@ export const workflowRuns = {
     const reviewId = resolveReworkReview(prIssue.id, step, input.review);
     const headSha =
       step === "verify" ? await worktreeHead(worktree) : undefined;
-    const replacesCompletedVerifier =
-      step === "verify" &&
-      pendingDelivery !== undefined &&
-      workflowTargetSessionId(run, "verifier", prIssue.id, projection) ===
-        undefined;
-    if (!replacesCompletedVerifier) {
-      assertNoDuplicateVerifyChild(run, step, headSha);
-    }
     const baseSha =
       step === "verify" && headSha
         ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
@@ -2752,13 +2748,11 @@ export const workflowRuns = {
       sessionId: childSessionId,
       headSha,
       minimumNextSequence: nextWorkflowChildSequence(run.step_sessions_json),
-      replaceCompletedVerify: replacesCompletedVerifier,
     });
     if (sequence == null) {
       const current = S.getWorkflowRun(run.id);
       if (!current) throw new ServiceError(404, "Workflow run not found");
       assertNoLiveExecuteChild(current, step);
-      assertNoDuplicateVerifyChild(current, step, headSha);
       throw new ServiceError(
         409,
         `Workflow run #${run.id} is already launching ${current.launching_step ?? "a step"} (${current.launching_session_id ?? "unknown session"})`,
@@ -2888,16 +2882,16 @@ export const workflowRuns = {
     return { run: runJSON(recovered) };
   },
 
-  // Stop the Verify children left reviewing a HEAD the run has already moved past — called when a
-  // fresh Verify is launched, which is the moment that fact becomes known (#61). Such a child
-  // reviews a diff that no longer exists and submits a review pinned to the old SHA, which
-  // `reviewIsFresh` discards anyway, so this is an optimization and never a correctness premise:
-  // every discard failure is swallowed, and a survivor is simply ignored as before.
-  async discardStaleVerifyChildren(
+  // A later Verify supersedes every earlier Verify child in the same run, including one reviewing
+  // the same HEAD. Stop those children before spawning the replacement so rapid duplicate triggers
+  // leave only the newest verifier running. Selection stays run- and step-scoped through the run's
+  // projected Verify launch events; a failed kill remains best-effort and a survivor is ignored as
+  // before.
+  async discardPriorVerifyChildren(
     name: string,
     input: { run: number },
     sessionId: string | null | undefined,
-  ): Promise<WorkflowDiscardStaleVerifyResult> {
+  ): Promise<WorkflowDiscardPriorVerifyResult> {
     const r = repoOr404(name);
     ensureWritable(r);
     const run = workflowRunOr404(input.run);
@@ -2907,31 +2901,21 @@ export const workflowRuns = {
     assertAutomaticProgressAllowed(run);
     assertParentActor(run, sessionId);
 
-    const prIssue = issueOr404(r, run.pr_number, "pull");
-    const pull = S.getPull(prIssue.id);
-    if (!pull)
-      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-    const currentHead = await worktreeHead(
-      workflowRunWorktree({
-        repo: r,
-        prNumber: run.pr_number,
-        headRef: pull.head_ref,
-      }),
-    );
-    const stale = staleVerifyChildSessions(
+    const prior = priorVerifyChildSessions(
       workflowRunEventProjection(run).verifyLaunches,
-      currentHead,
     );
-    const discarded: WorkflowDiscardStaleVerifyResult["discarded"] = [];
-    for (const child of stale) {
-      if (await discardVerifyChild(r, child)) {
-        discarded.push({
-          session_id: child,
-          agent_name: S.getAgentSession(child)?.name ?? null,
-        });
-      }
+    const discarded: WorkflowDiscardPriorVerifyResult["discarded"] = [];
+    const failed: WorkflowDiscardPriorVerifyResult["failed"] = [];
+    for (const child of prior) {
+      const outcome = await discardVerifyChild(r, child);
+      const entry = {
+        session_id: child,
+        agent_name: S.getAgentSession(child)?.name ?? null,
+      };
+      if (outcome === "failed") failed.push(entry);
+      else discarded.push(entry);
     }
-    return { run: run.id, discarded };
+    return { run: run.id, discarded, failed };
   },
 
   confirmStepLaunch(

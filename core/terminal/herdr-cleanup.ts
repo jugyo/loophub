@@ -174,7 +174,7 @@ export async function killPaneForegroundProcess(
       "herdr",
       ["--session", sessionName, "pane", "process-info", "--pane", paneId],
       repo.local_path,
-      { captureStdout: true, timeoutMs: 10_000 },
+      { captureStdout: true, captureStderr: true, timeoutMs: 10_000 },
     );
   } catch (e) {
     throw isServiceError(e)

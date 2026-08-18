@@ -10,6 +10,7 @@ import {
   reviewResponseJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
+import { workflowStepSessionIds } from "../workflow/herdr-agents.ts";
 import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
 import {
   actorFor,
@@ -20,6 +21,12 @@ import {
 } from "./shared.ts";
 
 const FULL_SHA = /^[0-9a-f]{40}$/i;
+
+interface ReviewCreateDeps {
+  revParse: typeof revParse;
+}
+
+const realReviewCreateDeps: ReviewCreateDeps = { revParse };
 
 // The per-criterion grades of one review (#1895), joined to the rubric text via `criterion_id`.
 // A criterion disabled after grading still resolves here (grade rows are never deleted). Shared by
@@ -146,6 +153,36 @@ function verdictWarnings(
     : [];
 }
 
+// A replacement Verify is allowed to launch even when stopping its predecessor fails. As soon as
+// the replacement owns the launch reservation (and after it is confirmed in session history), the
+// predecessor may no longer submit a review that could move the PR gate or Workflow state ahead of
+// the replacement. Callers check once before git work for a fast failure and again inside the write
+// transaction to close the asynchronous race.
+function assertCurrentWorkflowVerifier(
+  repoId: number,
+  prNumber: number,
+  sessionId: string | null | undefined,
+): void {
+  if (!sessionId) return;
+  const run = S.runningWorkflowRunForSession(repoId, prNumber, sessionId);
+  if (!run) return;
+  const verifySessions = workflowStepSessionIds(
+    run.step_sessions_json,
+    "verify",
+  );
+  if (!verifySessions.includes(sessionId)) return;
+  const currentSessionId =
+    run.launching_step === "verify" && run.launching_session_id
+      ? run.launching_session_id
+      : verifySessions.at(-1);
+  if (currentSessionId !== sessionId) {
+    throw new ServiceError(
+      409,
+      "Workflow Verify session was superseded by a later launch",
+    );
+  }
+}
+
 // ===== reviews =====
 export const reviews = {
   list(name: string, number: number) {
@@ -264,6 +301,7 @@ export const reviews = {
       }[];
     },
     sessionId?: string | null,
+    deps: ReviewCreateDeps = realReviewCreateDeps,
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
@@ -291,6 +329,9 @@ export const reviews = {
       );
     }
     const { actor, authorType } = commentActor(sessionId);
+    if (authorType === "agent") {
+      assertCurrentWorkflowVerifier(r.id, row.number, sessionId);
+    }
     // Bind the review to the agent session that submitted it (#2387): that session exists to
     // produce this one review, so its start is when the review began — what grounds the reported
     // duration. Only an agent session qualifies. `commentActor` resolved the row already, so this
@@ -306,7 +347,7 @@ export const reviews = {
     // SHA explicitly and must keep taking precedence.
     const pull = S.getPull(row.id)!;
     const submissionHeadSha =
-      (await revParse(r.local_path, localBranchRef(pull.head_ref))) ??
+      (await deps.revParse(r.local_path, localBranchRef(pull.head_ref))) ??
       pull.head_sha ??
       null;
     const headSha = input.headSha ?? submissionHeadSha;
@@ -314,6 +355,12 @@ export const reviews = {
     // line comments and the submission event all commit together (#1895), so a review never exists
     // without the grades, comments or event it carries.
     const wire = db.transaction(() => {
+      // revParse above is asynchronous. A replacement can reserve its launch while this review is
+      // waiting, so repeat the verifier check inside the transaction immediately before the first
+      // write. The reservation and verdict now have one serial order.
+      if (authorType === "agent") {
+        assertCurrentWorkflowVerifier(r.id, row.number, sessionId);
+      }
       const v = S.createReviewWithAcResults(
         row.id,
         actor,
