@@ -770,6 +770,34 @@ describe("workflowActionPlan", () => {
     );
   });
 
+  test("delivers GitHub feedback without allowing a GitHub reply instruction", () => {
+    const githubFeedback = plan({
+      action: "deliver",
+      reason: "feedback requires changes",
+      delivery_reason: "github_feedback",
+    });
+
+    expect(githubFeedback).toMatchObject({
+      boundary: "mechanical",
+      after: "watch",
+      commands: [
+        {
+          command: "lh",
+          args: [
+            "workflow",
+            "deliver",
+            "--repo",
+            "me/repo",
+            "--run",
+            "42",
+            "--text",
+            "GitHub PR のフィードバックを確認し、必要なローカル変更だけを実装してください。GitHub への返信は行わないでください。",
+          ],
+        },
+      ],
+    });
+  });
+
   test("reacts to a PR comment before delivering its fixed instruction", () => {
     const comment = plan({
       action: "deliver",

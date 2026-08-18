@@ -255,6 +255,16 @@ export function workflowActionPlan(
           ),
         ]);
       }
+      if (action.delivery_reason === "github_feedback") {
+        return watch([
+          command(
+            "deliver",
+            ...scoped,
+            "--text",
+            "GitHub PR のフィードバックを確認し、必要なローカル変更だけを実装してください。GitHub への返信は行わないでください。",
+          ),
+        ]);
+      }
       const deliver = command("deliver", ...scoped);
       deliver.input = {
         argument: "--text",
