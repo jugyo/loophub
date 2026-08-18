@@ -1000,7 +1000,6 @@ function FileSummaryRow({
           className="justify-self-end text-xs"
         />
         <span aria-hidden="true" />
-        <DiffCommentCount count={commentCount} className="text-xs" />
         {file.last_changed_at ? (
           <span
             className="whitespace-nowrap text-xs text-muted-foreground"
@@ -1009,6 +1008,12 @@ function FileSummaryRow({
             {relativeTime(file.last_changed_at)}
           </span>
         ) : null}
+        {file.last_changed_at && commentCount > 0 ? (
+          <span aria-hidden="true" className="text-muted-foreground">
+            ·
+          </span>
+        ) : null}
+        <DiffCommentCount count={commentCount} className="text-xs" />
       </button>
     </li>
   );

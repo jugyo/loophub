@@ -285,7 +285,7 @@ function renderDetail(
 }
 
 describe("PullDetail", () => {
-  it("shows a file's last change time to the right of its comment count", async () => {
+  it("shows a file's last change time before its comment count", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date("2026-06-18T14:00:00Z"));
     renderDetail({
@@ -303,9 +303,10 @@ describe("PullDetail", () => {
     ).closest("section")!;
     const commentCount = within(section).getByLabelText("2 diff comments");
     const changedAt = within(section).getByText("2h ago");
-    expect(commentCount.compareDocumentPosition(changedAt)).toBe(
+    expect(changedAt.compareDocumentPosition(commentCount)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+    expect(within(section).getByText("·")).toBeTruthy();
   });
 
   it("keeps the file row unchanged when its last change time is unavailable", async () => {
