@@ -267,7 +267,10 @@ export function PullDetail({
               isError={false}
             />
 
+            {/* #2488: how far the timeline has been unfolded belongs to the PR being read, so a
+                different PR remounts the section and starts from its newest page again. */}
             <CommentList
+              key={`${owner}/${repo}/${number}`}
               owner={owner}
               repo={repo}
               number={number}
@@ -1077,6 +1080,10 @@ function timelineItemContent(
   }
 }
 
+// #2488: a PR that ran for a while has a timeline that is mostly history. Only the newest page is
+// rendered; "Load more" unfolds the older entries a page at a time.
+const TIMELINE_PAGE_SIZE = 20;
+
 function CommentList({
   owner,
   repo,
@@ -1099,6 +1106,7 @@ function CommentList({
   isError: boolean;
 }) {
   const [body, setBody] = useState("");
+  const [visibleCount, setVisibleCount] = useState(TIMELINE_PAGE_SIZE);
   const [postFailed, setPostFailed] = useState(false);
   const textareaRef = useAutosizeTextarea(body);
   const sectionRef = useRef<HTMLElement>(null);
@@ -1165,7 +1173,8 @@ function CommentList({
   const runs = useMemo(() => {
     const grouped: PullTimelineItem[][] = [];
     let run: PullTimelineItem[] = [];
-    for (const item of items ?? []) {
+    // The newest entries are the ones on screen; everything older waits behind "Load more".
+    for (const item of (items ?? []).slice(-visibleCount)) {
       if (item.kind === "comment") {
         if (run.length) grouped.push(run);
         run = [];
@@ -1176,7 +1185,7 @@ function CommentList({
     }
     if (run.length) grouped.push(run);
     return grouped;
-  }, [items]);
+  }, [items, visibleCount]);
 
   // Everything the entry renderers need, collected once for the runs below.
   const itemContext = {
@@ -1215,33 +1224,49 @@ function CommentList({
         // is the run's left border and each dot (with its ring) masks the line behind it. A
         // conversation comment breaks the run and renders as its own full-width card — the line
         // does not pass through comments (PR comment #300, #307).
-        runs.map((group) =>
-          group[0].kind === "comment" ? (
-            <CommentCard
-              key={timelineItemKey(group[0])}
-              comment={group[0].comment}
-              {...itemContext}
-            />
-          ) : (
-            <ol
-              key={`run:${timelineItemKey(group[0])}`}
-              className="relative ml-2 border-l pl-5"
-            >
-              {group.map((item) => (
-                <li
-                  key={timelineItemKey(item)}
-                  className="relative pb-3 last:pb-0"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-muted-foreground/60 ring-4 ring-background"
-                  />
-                  {timelineItemContent(item, itemContext)}
-                </li>
-              ))}
-            </ol>
-          ),
-        )
+        <>
+          {/* The hidden entries are the older ones, which belong above what is shown, so the
+              control that unfolds them sits at the top of the timeline rather than the bottom. */}
+          {items.length > visibleCount ? (
+            <div className="flex justify-center">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setVisibleCount((count) => count + TIMELINE_PAGE_SIZE)
+                }
+              >
+                Load more
+              </Button>
+            </div>
+          ) : null}
+          {runs.map((group) =>
+            group[0].kind === "comment" ? (
+              <CommentCard
+                key={timelineItemKey(group[0])}
+                comment={group[0].comment}
+                {...itemContext}
+              />
+            ) : (
+              <ol
+                key={`run:${timelineItemKey(group[0])}`}
+                className="relative ml-2 border-l pl-5"
+              >
+                {group.map((item) => (
+                  <li
+                    key={timelineItemKey(item)}
+                    className="relative pb-3 last:pb-0"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-muted-foreground/60 ring-4 ring-background"
+                    />
+                    {timelineItemContent(item, itemContext)}
+                  </li>
+                ))}
+              </ol>
+            ),
+          )}
+        </>
       )}
       <div
         data-debug-component="PullCommentForm"

@@ -560,6 +560,50 @@ describe("PullDetail", () => {
     expect(within(section).queryByText("web/src/a.ts:1")).toBeNull();
   });
 
+  // #2488: only the newest page of the timeline is on screen; "Load more" — above the entries,
+  // where the older ones belong — unfolds the rest a page at a time.
+  it("shows the newest 20 timeline items and unfolds older ones a page at a time", async () => {
+    const manyCommits = Array.from({ length: 45 }, (_, index) => ({
+      sha: `${String(index + 1).padStart(2, "0")}${"a".repeat(38)}`,
+      author: "impl-bot",
+      // pull.commits is newest first, so commit 1 is the newest and commit 45 the oldest.
+      date: `2026-06-${String(45 - index).padStart(2, "0")}T12:00:00Z`,
+      subject: `Timeline commit ${index + 1}`,
+    }));
+    renderDetail({
+      "pulls/get": () => ({ ...pull, commits: manyCommits }),
+      "comments/list": () => [],
+      "reviews/list": () => [],
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "Comments (0)" })
+    ).closest("section")!;
+    expect(within(section).getAllByRole("listitem")).toHaveLength(20);
+    expect(within(section).getByText("Timeline commit 1")).toBeTruthy();
+    expect(within(section).getByText("Timeline commit 20")).toBeTruthy();
+    expect(within(section).queryByText("Timeline commit 21")).toBeNull();
+
+    const loadMore = within(section).getByRole("button", { name: "Load more" });
+    expect(
+      loadMore.compareDocumentPosition(
+        within(section).getAllByRole("listitem")[0],
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    fireEvent.click(loadMore);
+    expect(within(section).getAllByRole("listitem")).toHaveLength(40);
+    expect(within(section).getByText("Timeline commit 40")).toBeTruthy();
+    expect(within(section).queryByText("Timeline commit 41")).toBeNull();
+
+    fireEvent.click(within(section).getByRole("button", { name: "Load more" }));
+    expect(within(section).getAllByRole("listitem")).toHaveLength(45);
+    expect(within(section).getByText("Timeline commit 45")).toBeTruthy();
+    expect(
+      within(section).queryByRole("button", { name: "Load more" }),
+    ).toBeNull();
+  });
+
   // #313: a review entry is a single minimal line — verdict, author and time — with the body left
   // to the Commits section's review dialog.
   it("renders a review as a one-line entry without its body", async () => {
