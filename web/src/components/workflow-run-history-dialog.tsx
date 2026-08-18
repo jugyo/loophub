@@ -1,5 +1,5 @@
 import { ChevronRight, Loader2, X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   WorkflowRunAgentCost,
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCost } from "@/lib/session-usage";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
+import { cn } from "@/lib/utils";
 import {
   workflowDisplayStage,
   workflowRunDisplayState,
@@ -26,6 +27,13 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "Completed",
   stopped: "Stopped",
 };
+
+const DETAIL_TABS = [
+  { id: "history", label: "History" },
+  { id: "manifest", label: "Manifest" },
+] as const;
+
+type DetailTab = (typeof DETAIL_TABS)[number]["id"];
 
 // A running run holding a needs-human reason is waiting for a human (#1307) — surface that over
 // the plain status, matching the run-status section's badge.
@@ -73,6 +81,9 @@ export function WorkflowRunDetailDialog({
   state: WorkflowRunState;
   onClose: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<DetailTab>("history");
+  const historyTabRef = useRef<HTMLButtonElement>(null);
+  const manifestTabRef = useRef<HTMLButtonElement>(null);
   const displayState = workflowRunDisplayState(state);
   const history = useWorkflowRunHistory(owner, repo, state.id, true);
   const agents = useWorkflowRunAgentCosts(owner, repo, state.id, true);
@@ -85,6 +96,26 @@ export function WorkflowRunDetailDialog({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  function onTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    const activeIndex = DETAIL_TABS.findIndex((tab) => tab.id === activeTab);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowLeft") {
+      nextIndex = (activeIndex - 1 + DETAIL_TABS.length) % DETAIL_TABS.length;
+    } else if (event.key === "ArrowRight") {
+      nextIndex = (activeIndex + 1) % DETAIL_TABS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = DETAIL_TABS.length - 1;
+    }
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextTab = DETAIL_TABS[nextIndex].id;
+    setActiveTab(nextTab);
+    (nextTab === "history" ? historyTabRef : manifestTabRef).current?.focus();
+  }
 
   // Portal to the body so the overlay's z-50 is compared against the app shell's own layers
   // (the toast viewport's z-40, a detail page's sticky header at z-20) instead of against its
@@ -110,7 +141,7 @@ export function WorkflowRunDetailDialog({
               {state.workflow_name ?? "Workflow"} · run {state.id}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Activity and agent costs for this Workflow run
+              History and manifest for this Workflow run
             </p>
           </div>
           <Button
@@ -123,7 +154,45 @@ export function WorkflowRunDetailDialog({
           </Button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-auto p-5">
+        <div
+          role="tablist"
+          aria-label="Workflow run detail"
+          className="flex h-11 shrink-0 items-end gap-1 border-b px-5"
+        >
+          {DETAIL_TABS.map((tab) => {
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                ref={tab.id === "history" ? historyTabRef : manifestTabRef}
+                id={`workflow-run-${state.id}-${tab.id}-tab`}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-controls={`workflow-run-${state.id}-${tab.id}-panel`}
+                tabIndex={active ? 0 : -1}
+                className={cn(
+                  "-mb-px inline-flex h-11 items-center justify-center border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  active
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                )}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={onTabKeyDown}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          id={`workflow-run-${state.id}-history-panel`}
+          role="tabpanel"
+          aria-labelledby={`workflow-run-${state.id}-history-tab`}
+          hidden={activeTab !== "history"}
+          className="min-h-0 flex-1 overflow-auto p-5"
+        >
           <dl className="grid grid-cols-4 gap-x-6 gap-y-4 rounded-md border bg-muted/20 p-4 text-sm">
             <Metadata
               label="Workflow"
@@ -239,9 +308,98 @@ export function WorkflowRunDetailDialog({
             </div>
           </section>
         </div>
+
+        <div
+          id={`workflow-run-${state.id}-manifest-panel`}
+          role="tabpanel"
+          aria-labelledby={`workflow-run-${state.id}-manifest-tab`}
+          hidden={activeTab !== "manifest"}
+          className="min-h-0 flex-1 overflow-auto p-5"
+        >
+          <WorkflowRunManifest state={state} />
+        </div>
       </div>
     </div>,
     document.body,
+  );
+}
+
+function WorkflowRunManifest({ state }: { state: WorkflowRunState }) {
+  const config = state.workflow_config;
+  if (!config) {
+    return (
+      <div
+        data-debug-component="WorkflowRunManifestEmpty"
+        className="rounded-md border border-dashed p-5 text-sm text-muted-foreground"
+      >
+        Manifest information is not available for this legacy Workflow run.
+      </div>
+    );
+  }
+
+  return (
+    <div data-debug-component="WorkflowRunManifest" className="space-y-6">
+      <section aria-labelledby={`workflow-run-${state.id}-manifest-heading`}>
+        <h3
+          id={`workflow-run-${state.id}-manifest-heading`}
+          className="text-sm font-semibold"
+        >
+          Workflow manifest
+        </h3>
+        <dl className="mt-3 rounded-md border bg-muted/20 p-4 text-sm">
+          <Metadata
+            label="Contract language"
+            value={config.contract_language}
+          />
+        </dl>
+      </section>
+
+      <section aria-labelledby={`workflow-run-${state.id}-agents-heading`}>
+        <h3
+          id={`workflow-run-${state.id}-agents-heading`}
+          className="text-sm font-semibold"
+        >
+          Agent configuration
+        </h3>
+        <div className="mt-3 overflow-hidden rounded-md border">
+          <div className="grid grid-cols-[7rem_repeat(3,minmax(0,1fr))] gap-4 border-b bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground">
+            <span>Role</span>
+            <span>Runtime</span>
+            <span>Model</span>
+            <span>Effort</span>
+          </div>
+          <dl className="divide-y">
+            {(["parent", "execute", "verify"] as const).map((role) => {
+              const agent = config.agents[role];
+              return (
+                <div
+                  key={role}
+                  className="grid grid-cols-[7rem_repeat(3,minmax(0,1fr))] gap-4 px-4 py-3 text-sm"
+                >
+                  <dt className="font-medium">{displayName(role)}</dt>
+                  <dd className="break-all">{agent.runtime}</dd>
+                  <dd className="break-all">{agent.model}</dd>
+                  <dd className="break-all">{agent.effort}</dd>
+                </div>
+              );
+            })}
+          </dl>
+        </div>
+      </section>
+
+      <section aria-labelledby={`workflow-run-${state.id}-prompts-heading`}>
+        <h3
+          id={`workflow-run-${state.id}-prompts-heading`}
+          className="text-sm font-semibold"
+        >
+          Prompt sources
+        </h3>
+        <dl className="mt-3 grid grid-cols-2 gap-4 rounded-md border bg-muted/20 p-4 text-sm">
+          <Metadata label="Execute" value={config.prompt_sources.execute} />
+          <Metadata label="Verify" value={config.prompt_sources.verify} />
+        </dl>
+      </section>
+    </div>
   );
 }
 
@@ -297,9 +455,9 @@ function Metadata({
   dateTime?: string;
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 font-medium">
+      <dd className="mt-1 break-words font-medium">
         {dateTime ? <time dateTime={dateTime}>{value}</time> : value}
       </dd>
     </div>

@@ -34,6 +34,7 @@ const RUN: WorkflowRunState = {
   pr_merged: false,
   merge_ready: false,
   merge_conflict: false,
+  workflow_config: null,
 };
 
 afterEach(() => {
@@ -59,6 +60,118 @@ function renderSection(fetchImpl: typeof fetch, state: WorkflowRunState = RUN) {
 }
 
 describe("Workflow run detail dialog", () => {
+  it("switches between linked History and Manifest panels with keyboard navigation", async () => {
+    renderSection(
+      mockRpcFetch({
+        "workflowRuns/agentCosts": () => [],
+        "workflowRuns/history": () => [],
+      }),
+      {
+        ...RUN,
+        workflow_config: {
+          contract_language: "ja",
+          agents: {
+            parent: {
+              runtime: "codex",
+              model: "parent-model",
+              effort: "low",
+            },
+            execute: {
+              runtime: "claude-code",
+              model: "execute-model-with-a-very-long-name",
+              effort: "high",
+            },
+            verify: {
+              runtime: "codex",
+              model: "verify-model",
+              effort: "medium",
+            },
+          },
+          prompt_sources: {
+            execute: "prompts/execute-prompt-with-a-long-source-name.md",
+            verify: "prompts/verify.md",
+          },
+        },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const historyTab = within(dialog).getByRole("tab", { name: "History" });
+    const manifestTab = within(dialog).getByRole("tab", { name: "Manifest" });
+    const historyPanel = within(dialog).getByRole("tabpanel", {
+      name: "History",
+    });
+    expect(historyTab.getAttribute("aria-selected")).toBe("true");
+    expect(historyTab.getAttribute("tabindex")).toBe("0");
+    expect(historyTab.className).toContain("border-primary");
+    expect(historyTab.className).toContain("text-foreground");
+    expect(manifestTab.getAttribute("aria-selected")).toBe("false");
+    expect(manifestTab.getAttribute("tabindex")).toBe("-1");
+    expect(manifestTab.className).toContain("border-transparent");
+    expect(manifestTab.className).toContain("text-muted-foreground");
+    expect(historyTab.getAttribute("aria-controls")).toBe(historyPanel.id);
+
+    historyTab.focus();
+    fireEvent.keyDown(historyTab, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(manifestTab);
+    expect(manifestTab.getAttribute("aria-selected")).toBe("true");
+    expect(manifestTab.className).toContain("border-primary");
+    expect(historyTab.className).toContain("border-transparent");
+    const manifestPanel = within(dialog).getByRole("tabpanel", {
+      name: "Manifest",
+    });
+    expect(manifestTab.getAttribute("aria-controls")).toBe(manifestPanel.id);
+    expect(historyPanel.hidden).toBe(true);
+
+    expect(within(manifestPanel).getByText("ja")).toBeTruthy();
+    for (const value of [
+      "Parent",
+      "parent-model",
+      "low",
+      "claude-code",
+      "execute-model-with-a-very-long-name",
+      "high",
+      "verify-model",
+      "medium",
+      "prompts/execute-prompt-with-a-long-source-name.md",
+      "prompts/verify.md",
+    ]) {
+      expect(within(manifestPanel).getByText(value)).toBeTruthy();
+    }
+    expect(within(manifestPanel).getAllByText("Execute")).toHaveLength(2);
+    expect(within(manifestPanel).getAllByText("Verify")).toHaveLength(2);
+
+    fireEvent.keyDown(manifestTab, { key: "Home" });
+    expect(document.activeElement).toBe(historyTab);
+    expect(historyTab.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(historyTab, { key: "End" });
+    expect(document.activeElement).toBe(manifestTab);
+    fireEvent.keyDown(manifestTab, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(historyTab);
+  });
+
+  it("shows an explicit empty state for a legacy run without a manifest", async () => {
+    renderSection(
+      mockRpcFetch({
+        "workflowRuns/agentCosts": () => [],
+        "workflowRuns/history": () => [],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
+    fireEvent.click(
+      await screen.findByRole("tab", {
+        name: "Manifest",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Manifest information is not available for this legacy Workflow run.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("fetches on open and shows agent costs, metadata, and history", async () => {
     const fetchMock = mockRpcFetch({
       "workflowRuns/totalCost": () => ({
