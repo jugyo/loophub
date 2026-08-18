@@ -360,7 +360,7 @@ hold を維持する。
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
 | Execute | `workflow_run.escalated` を受領 | event の reason で `escalate-human` → 親 agent が担当するリンク済み PR の comment に通知。run state は変えず、人間の指示まで step launch も rework もしない |
 | Execute / Verify | `workflow_run.cost_exceeded` を受領 | `cost_hold` action → `cost-hold` が active child を解決 → `await-human` → 実 Esc + 1 行通知（再送分は `already_completed` で effect を発火しない）→ loop に戻る |
-| Cost hold | 人間が増額 | 人間が期待上限付き専用操作で `B` 増額 → hold を解除。Execute は同じ target で続行、Verify は current HEAD に fresh launch |
+| Cost hold | 人間が増額 | 人間が期待上限付き専用操作で `B` 増額 → hold を解除。Execute は同じ target で続行し、既に Verify に到達した run の `current_step` は維持する。Verify は current HEAD に fresh launch |
 | Cost hold | 増額なし | hold を維持し、子起動・注入・自動遷移を行わず次の明示的指示を待つ |
 | Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
 | Human wait | Execute の turn done 後、HEAD が不変 | hold を維持し、追加作業または明示的 resume を待つ |

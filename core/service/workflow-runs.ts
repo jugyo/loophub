@@ -1885,7 +1885,11 @@ export const workflowRuns = {
     return updateRunLifecycle(
       run,
       {
-        currentStep: step,
+        // The resume target names the interrupted child, not necessarily the run's logical phase.
+        // A continuing Execute can be active while a fresh pass keeps the run at Verify, so a
+        // cost-hold resume must not roll that verified phase back to Execute.
+        currentStep:
+          run.current_step === "verify" && step === "execute" ? "verify" : step,
         reworkCount: 0,
         needsHumanReason: null,
         // Verify must review the current HEAD with a fresh child, so drop the interrupted session.

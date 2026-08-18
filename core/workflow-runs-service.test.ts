@@ -2070,6 +2070,55 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     active_session_id: exec.session_id,
   });
 
+  // The cost hold interrupts the active Execute target without rolling the verified lifecycle
+  // phase back. After the human raises the limit, the same executor resumes; declaring a metadata-
+  // only turn done keeps the pass fresh and does not produce a no-progress delivery.
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: started.run.id, reason: "Cost limit exceeded" },
+    parent,
+  );
+  const webSession = "abababab-abab-4bab-8bab-abababababab";
+  svc.workflowRuns.increaseCostLimitForHuman(
+    repo.full_name,
+    { run: started.run.id, expectedLimitUsd: 10 },
+    webSession,
+  );
+  const resumedExecute = await svc.workflowRuns.resumeAfterHuman(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  expect(resumedExecute.run).toMatchObject({
+    current_step: "verify",
+    active_step: "execute",
+    active_session_id: exec.session_id,
+    needs_human_reason: null,
+  });
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "wait" });
+  expect(
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({
+    current_step: "verify",
+    merge_ready: true,
+    steps: {
+      verify: {
+        latest_review: {
+          id: newerPassReview.id,
+          fresh: true,
+          event: "pass",
+        },
+      },
+    },
+  });
+
   // A human can request ordinary additional work while the pass is fresh. The run is not held and
   // remains at Verify, and the work goes to the Execute child that is still live: launching a
   // second executor into the same worktree is refused rather than silently recorded (#2150).
@@ -3083,23 +3132,36 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
     headSha: headB,
   });
 
-  // Cost-hold resume path B: await-human, resume back into Execute, commit, then re-advance to Verify.
-  // Before #1873 the advance_to_verify transition was not read as entering the Verify phase, so a pass
-  // submitted right after it was dropped as out-of-band.
+  // Cost-hold resume path B: await-human, resume the active Execute target without leaving the
+  // verified phase, commit, then launch a fresh Verify directly. The new verifier's unattributed
+  // pass must still belong to this run.
   await svc.workflowRuns.awaitHuman(
     repo.full_name,
     { run: started.run.id, reason: "cost limit exceeded" },
     parent,
   );
-  await svc.workflowRuns.resumeAfterHuman(
+  const resumed = await svc.workflowRuns.resumeAfterHuman(
     repo.full_name,
     { run: started.run.id, step: "execute" },
     parent,
   );
+  expect(resumed.run).toMatchObject({
+    current_step: "verify",
+    active_step: "execute",
+    active_session_id: exec.session_id,
+  });
   const headC = commit(started.worktree, "impl.txt", "v3\n");
-  await svc.workflowRuns.advanceToVerify(
+  await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
+    exec.session_id,
+  );
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "launch_verify" });
+  await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
     parent,
   );
   const passC = await svc.reviews.create(
