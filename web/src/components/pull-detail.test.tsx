@@ -285,6 +285,42 @@ function renderDetail(
 }
 
 describe("PullDetail", () => {
+  it("shows a file's last change time to the right of its comment count", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-06-18T14:00:00Z"));
+    renderDetail({
+      "pulls/files": () => [
+        { ...files[0], last_changed_at: "2026-06-18T12:00:00Z" },
+      ],
+      "diffFeedback/list": () => ({
+        threads: [],
+        comment_counts: { "web/src/a.ts": 2 },
+      }),
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: /Files changed \(1\)/ })
+    ).closest("section")!;
+    const commentCount = within(section).getByLabelText("2 diff comments");
+    const changedAt = within(section).getByText("2h ago");
+    expect(commentCount.compareDocumentPosition(changedAt)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("keeps the file row unchanged when its last change time is unavailable", async () => {
+    renderDetail();
+
+    const section = (
+      await screen.findByRole("heading", { name: /Files changed \(1\)/ })
+    ).closest("section")!;
+    const row = within(section).getByRole("button", {
+      name: /web\/src\/a\.ts/,
+    });
+    expect(row).toBeTruthy();
+    expect(within(row).queryByText(/ago$/)).toBeNull();
+  });
+
   it("shows diff comment counts in the file list and diff sidebar", async () => {
     renderDetail({
       "diffFeedback/list": () => ({

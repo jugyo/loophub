@@ -17,6 +17,7 @@ import {
   fileAtRef,
   mergePull as gitMergePull,
   hasEffectiveDiff,
+  lastChangedDatesByFile,
   localBranchRef,
   type PullMergeMethod,
   remoteUrl,
@@ -111,7 +112,7 @@ export async function pullDiffFiles(
   baseSha: string;
   baseShas: string[];
   headSha: string;
-  files: DiffFile[];
+  files: Array<DiffFile & { last_changed_at?: string }>;
 }> {
   const r = repoOr404(name);
   const row = issueOr404(r, number, "pull");
@@ -127,11 +128,24 @@ export async function pullDiffFiles(
   const baseSha = baseShas[0];
   if (!baseSha || !headSha)
     throw new ServiceError(422, "pull request diff is unavailable");
+  const [files, lastChangedDates] = await Promise.all([
+    diffFilesBetween(r.local_path, baseSha, headSha),
+    lastChangedDatesByFile(r.local_path, baseShas, headSha).catch(
+      (): Record<string, string> => ({}),
+    ),
+  ]);
   return {
     baseSha,
     baseShas,
     headSha,
-    files: await diffFilesBetween(r.local_path, baseSha, headSha),
+    files: files.map((file) => {
+      const lastChangedAt =
+        lastChangedDates[file.headFilename ?? file.filename];
+      return {
+        ...file,
+        ...(lastChangedAt ? { last_changed_at: lastChangedAt } : {}),
+      };
+    }),
   };
 }
 

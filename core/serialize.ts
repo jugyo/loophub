@@ -2409,6 +2409,8 @@ export interface PullFileWire {
   filename: string;
   previousFilename?: string;
   headFilename?: string;
+  /** Committer date of the newest PR commit that changed this file. */
+  last_changed_at?: string;
   status: string;
   additions: number;
   deletions: number;

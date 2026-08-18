@@ -794,6 +794,49 @@ export interface CommitLogOptions {
   firstParentOnly?: boolean;
 }
 
+/**
+ * The committer date of the newest PR commit that changed each file, keyed by its path at that
+ * commit. One log walk covers the whole PR, and first-parent traversal matches the commit list's
+ * definition of which commits belong to the PR.
+ */
+export async function lastChangedDatesByFile(
+  repoPath: string,
+  baseShas: string[],
+  head: string,
+): Promise<Record<string, string>> {
+  const r = await git(repoPath, [
+    "log",
+    "--first-parent",
+    "--diff-merges=first-parent",
+    "--find-renames",
+    "--format=%x1e%cI%x00",
+    "--name-only",
+    "-z",
+    head,
+    "--not",
+    ...baseShas,
+  ]);
+  if (r.code !== 0) {
+    throw new Error(
+      `git log failed for ${baseShas.join(", ")}..${head}: ${r.stderr.trim() || "unknown error"}`,
+    );
+  }
+
+  const dates: Record<string, string> = {};
+  for (const record of r.stdout.split("\x1e").slice(1)) {
+    const dateEnd = record.indexOf("\0");
+    if (dateEnd < 0) continue;
+    const date = record.slice(0, dateEnd);
+    const paths = record
+      .slice(dateEnd + 1)
+      .replace(/^\0\n/, "")
+      .split("\0")
+      .filter((path) => path !== "");
+    for (const path of paths) dates[path] ??= date;
+  }
+  return dates;
+}
+
 // Commits on head not reachable from base (base..head), newest first. Fields are separated by
 // US (0x1f) and records by RS (0x1e) so subjects with tabs/newlines stay intact.
 export async function commitLog(

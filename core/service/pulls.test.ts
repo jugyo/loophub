@@ -262,6 +262,40 @@ exec "${realGit}" "$@"
   }
 });
 
+test("pull detail keeps files when the optional change-time log fails", async () => {
+  const bin = mkdtempSync(join(HOME, "change-time-bin-"));
+  const fakeGit = join(bin, "git");
+  const realGit = spawnSync("which", ["git"], {
+    encoding: "utf8",
+  }).stdout.trim();
+  writeFileSync(
+    fakeGit,
+    `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "--name-only" ]; then
+    echo "simulated optional change-time log failure" >&2
+    exit 1
+  fi
+done
+exec "${realGit}" "$@"
+`,
+  );
+  chmodSync(fakeGit, 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${bin}:${originalPath ?? ""}`;
+
+  try {
+    const detail = await svc.pageData.pullDetail(
+      "me/commit-files",
+      commitFilesPullNumber,
+    );
+    expect(detail.files).toHaveLength(2);
+    expect(detail.files.every((file) => !file.last_changed_at)).toBe(true);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
 test("repos/commitFiles returns a commit's parent diff", async () => {
   const files = await svc.repos.commitFiles("me/commit-files", featureSha);
 

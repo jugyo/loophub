@@ -21,6 +21,7 @@ import {
   git,
   hasEffectiveDiff,
   isIndexLockError,
+  lastChangedDatesByFile,
   localBranchRef,
   mergePreview,
   mergePull,
@@ -34,6 +35,45 @@ import {
   worktreeStatus,
 } from "./git.ts";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
+
+test("lastChangedDatesByFile returns each file's newest PR commit date", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-file-change-dates-"));
+  try {
+    await git(p, ["init", "-q", "-b", "main"]);
+    await git(p, ["config", "user.email", "t@t.local"]);
+    await git(p, ["config", "user.name", "tester"]);
+    writeFileSync(join(p, "a.txt"), "base\n");
+    writeFileSync(join(p, "old.txt"), "base\n");
+    await git(p, ["add", "-A"]);
+    await git(p, ["commit", "-qm", "base"]);
+
+    await git(p, ["checkout", "-qb", "feature"]);
+    writeFileSync(join(p, "a.txt"), "first\n");
+    writeFileSync(join(p, "old.txt"), "first\n");
+    await git(p, ["commit", "-am", "first changes"], {
+      GIT_AUTHOR_DATE: "2026-06-17T10:00:00Z",
+      GIT_COMMITTER_DATE: "2026-06-17T10:00:00Z",
+    });
+    writeFileSync(join(p, "a.txt"), "latest\n");
+    await git(p, ["commit", "-am", "latest a"], {
+      GIT_AUTHOR_DATE: "2026-06-18T11:00:00Z",
+      GIT_COMMITTER_DATE: "2026-06-18T11:00:00Z",
+    });
+    await git(p, ["mv", "old.txt", "new.txt"]);
+    await git(p, ["commit", "-qm", "rename file"], {
+      GIT_AUTHOR_DATE: "2026-06-18T12:00:00Z",
+      GIT_COMMITTER_DATE: "2026-06-18T12:00:00Z",
+    });
+
+    expect(await lastChangedDatesByFile(p, ["main"], "feature")).toEqual({
+      "a.txt": "2026-06-18T11:00:00Z",
+      "new.txt": "2026-06-18T12:00:00Z",
+      "old.txt": "2026-06-17T10:00:00Z",
+    });
+  } finally {
+    rmSync(p, { recursive: true, force: true });
+  }
+});
 
 async function makeRepo(): Promise<string> {
   const p = mkdtempSync(join(tmpdir(), "lh-merge-lock-"));
