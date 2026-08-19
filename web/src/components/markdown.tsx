@@ -136,8 +136,8 @@ function markdownComponents(
           className={cn(rest.className, report("paragraph", node))}
           style={style("paragraph", node)}
         >
-          {children}
           {action("paragraph", node)}
+          {children}
         </p>,
         "paragraph",
         node,
@@ -150,8 +150,8 @@ function markdownComponents(
           className={cn(rest.className, report("heading", node))}
           style={style("heading", node)}
         >
-          {children}
           {action("heading", node)}
+          {children}
         </h1>,
         "heading",
         node,
@@ -164,8 +164,8 @@ function markdownComponents(
           className={cn(rest.className, report("heading", node))}
           style={style("heading", node)}
         >
-          {children}
           {action("heading", node)}
+          {children}
         </h2>,
         "heading",
         node,
@@ -178,8 +178,8 @@ function markdownComponents(
           className={cn(rest.className, report("heading", node))}
           style={style("heading", node)}
         >
-          {children}
           {action("heading", node)}
+          {children}
         </h3>,
         "heading",
         node,
@@ -192,8 +192,8 @@ function markdownComponents(
           className={cn(rest.className, report("heading", node))}
           style={style("heading", node)}
         >
-          {children}
           {action("heading", node)}
+          {children}
         </h4>,
         "heading",
         node,
@@ -206,8 +206,8 @@ function markdownComponents(
           className={cn(rest.className, report("heading", node))}
           style={style("heading", node)}
         >
-          {children}
           {action("heading", node)}
+          {children}
         </h5>,
         "heading",
         node,
@@ -220,8 +220,8 @@ function markdownComponents(
           className={cn(rest.className, report("heading", node))}
           style={style("heading", node)}
         >
-          {children}
           {action("heading", node)}
+          {children}
         </h6>,
         "heading",
         node,
@@ -234,8 +234,8 @@ function markdownComponents(
           className={cn(rest.className, report("list-item", node))}
           style={style("list-item", node)}
         >
-          {children}
           {action("list-item", node)}
+          {children}
         </li>,
         "list-item",
         node,
@@ -274,22 +274,37 @@ function markdownComponents(
           className={cn(rest.className, report("blockquote", node))}
           style={style("blockquote", node)}
         >
-          {children}
           {action("blockquote", node)}
+          {children}
         </blockquote>,
         "blockquote",
         node,
       );
     },
     table({ node, children, ...rest }) {
+      const blockClassName = report("table", node);
+      const blockStyle = style("table", node);
+      // A table cannot hold the block action itself — a span is not valid inside <table> — so the
+      // action moves to a wrapper, which then carries the block's class and order as well.
+      const blockAction = action("table", node);
       return withAfter(
-        <table
-          {...rest}
-          className={cn(rest.className, report("table", node))}
-          style={style("table", node)}
-        >
-          {children}
-        </table>,
+        blockAction ? (
+          <div
+            className={cn("markdown-diff-table-block", blockClassName)}
+            style={blockStyle}
+          >
+            {blockAction}
+            <table {...rest}>{children}</table>
+          </div>
+        ) : (
+          <table
+            {...rest}
+            className={cn(rest.className, blockClassName)}
+            style={blockStyle}
+          >
+            {children}
+          </table>
+        ),
         "table",
         node,
       );
@@ -355,8 +370,8 @@ function markdownComponents(
           )}
           style={style("image", node)}
         >
-          <img src={src} alt={alt ?? ""} title={title} />
           {action("image", node)}
+          <img src={src} alt={alt ?? ""} title={title} />
         </span>
       );
     },
@@ -375,8 +390,8 @@ function markdownComponents(
               )}
               style={blockStyle}
             >
-              <MermaidDiagram chart={chart} className="min-w-0 flex-1" />
               {blockAction}
+              <MermaidDiagram chart={chart} className="min-w-0 flex-1" />
             </div>
           ) : (
             <MermaidDiagram
@@ -395,8 +410,8 @@ function markdownComponents(
           className={cn(rest.className, report("code-block", node))}
           style={style("code-block", node)}
         >
-          {children}
           {action("code-block", node)}
+          {children}
         </pre>,
         "code-block",
         node,
@@ -527,13 +542,13 @@ export function Markdown({
             className={cn("markdown-diff-image-block", blockClassName)}
             style={blockStyle}
           >
-            {image}
             {renderedBlockAction(block)}
+            {image}
           </span>
         ) : (
           <span style={blockStyle}>
-            {image}
             {renderedBlockAction(block)}
+            {image}
           </span>
         )
       ) : (

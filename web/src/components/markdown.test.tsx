@@ -207,6 +207,7 @@ describe("Markdown", () => {
   });
 
   it("renders table row actions inside the last cell without changing table structure", () => {
+    // The table action moves to a wrapper element, since a span is not valid inside <table>.
     const blocks: MarkdownRenderedBlock[] = [];
     const { container } = renderWithClient(
       <Markdown
@@ -237,6 +238,8 @@ describe("Markdown", () => {
         ?.closest("td"),
     ).not.toBeNull();
     expect(blocks).toEqual([
+      // The table itself is a block too: it names the source lines its rows span.
+      { kind: "table", sourceRange: { startLine: 1, endLine: 4 } },
       { kind: "table-row", sourceRange: { startLine: 1, endLine: 1 } },
       { kind: "table-row", sourceRange: { startLine: 3, endLine: 3 } },
       { kind: "table-row", sourceRange: { startLine: 4, endLine: 4 } },

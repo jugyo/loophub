@@ -3088,8 +3088,12 @@ describe("DiffFileDialog", () => {
     expect(Number((baseBlock as HTMLElement).style.order)).toBeLessThan(
       Number((headBlock as HTMLElement).style.order),
     );
-    expect(baseButton.parentElement?.parentElement).toBe(baseBlock);
-    expect(headButton.parentElement?.parentElement).toBe(headBlock);
+    expect(baseButton.closest(".markdown-diff-gutter")?.parentElement).toBe(
+      baseBlock,
+    );
+    expect(headButton.closest(".markdown-diff-gutter")?.parentElement).toBe(
+      headBlock,
+    );
   });
 
   it("uses the original and target paths for a renamed Markdown rendered diff", async () => {
@@ -3248,6 +3252,173 @@ describe("DiffFileDialog", () => {
     expectOnlyHeadSelected();
     fireEvent.click(screen.getByRole("button", { name: "Unified" }));
     expectOnlyHeadSelected();
+  });
+
+  it("puts the comment button in a left gutter and the composer below the block", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 2,
+      deletions: 2,
+      patch:
+        "@@ -1,7 +1,7 @@\n # Title\n \n-Old paragraph\n+New paragraph\n \n | Field | Meaning |\n | --- | --- |\n-| line | old |\n+| line | new |",
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "README.md",
+              original_path: null,
+              status: "modified",
+              additions: 2,
+              deletions: 2,
+              patch: mdFile.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1,7 +1,7 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "context",
+                  text: " # Title",
+                  left_line: 1,
+                  right_line: 1,
+                },
+                {
+                  kind: "context",
+                  text: " ",
+                  left_line: 2,
+                  right_line: 2,
+                },
+                {
+                  kind: "deletion",
+                  text: "-Old paragraph",
+                  left_line: 3,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+New paragraph",
+                  left_line: null,
+                  right_line: 3,
+                },
+                {
+                  kind: "context",
+                  text: " ",
+                  left_line: 4,
+                  right_line: 4,
+                },
+                {
+                  kind: "context",
+                  text: " | Field | Meaning |",
+                  left_line: 5,
+                  right_line: 5,
+                },
+                {
+                  kind: "context",
+                  text: " | --- | --- |",
+                  left_line: 6,
+                  right_line: 6,
+                },
+                {
+                  kind: "deletion",
+                  text: "-| line | old |",
+                  left_line: 7,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+| line | new |",
+                  left_line: null,
+                  right_line: 7,
+                },
+              ],
+            },
+          ],
+        }),
+        "pulls/fileAtRef": (params) => ({
+          status: "ok",
+          content:
+            params.side === "base"
+              ? "# Title\n\nOld paragraph\n\n| Field | Meaning |\n| --- | --- |\n| line | old |\n"
+              : "# Title\n\nNew paragraph\n\n| Field | Meaning |\n| --- | --- |\n| line | new |\n",
+        }),
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    const button = await screen.findByRole("button", {
+      name: "Comment on head lines 3-3",
+    });
+    const gutter = button.closest(".markdown-diff-gutter");
+    // The gutter is a direct child of its block, which is what the unified stylesheet needs to
+    // pull it out of the text flow, and it names the Markdown source line of the range.
+    expect(gutter?.parentElement).toBe(screen.getByText("New paragraph"));
+    // The line carries the raw diff's sign too, so the change reads without color.
+    expect(gutter?.textContent).toBe("+3");
+    expect(
+      screen
+        .getByRole("button", { name: "Comment on base lines 3-3" })
+        .closest(".markdown-diff-gutter")?.textContent,
+    ).toBe("−3");
+    expect(
+      screen
+        .getByRole("button", { name: "Comment on head lines 1-1" })
+        .closest(".markdown-diff-gutter")?.textContent,
+    ).toBe("1");
+
+    fireEvent.click(button);
+    const block = screen.getByText("New paragraph");
+    const composer = screen.getByLabelText("Diff comment");
+    const group = composer.closest(".markdown-diff-unified-thread-group");
+    expect(group).not.toBeNull();
+    expect(block.nextElementSibling).toBe(group);
+    // The composer shares the block's slot in the unified column, right after the block itself.
+    expect((group as HTMLElement).style.order).toBe(
+      String(Number((block as HTMLElement).style.order) + 1),
+    );
+
+    // A table row has no gutter of its own; its button stays inline in a cell.
+    const rowButton = screen.getByRole("button", {
+      name: "Comment on head lines 7-7",
+    });
+    expect(rowButton.closest(".markdown-diff-gutter")).toBeNull();
+    expect(rowButton.closest("td")).not.toBeNull();
+    // The table names the source lines its rows span, since the rows cannot each show a number.
+    const tableGutter = rowButton.closest(
+      ".markdown-diff-table-block",
+    )?.firstElementChild;
+    expect(tableGutter?.className).toContain("markdown-diff-gutter");
+    expect(tableGutter?.textContent).toContain("5–7");
+
+    // Split shares the gutter but keeps its own composer placement.
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(
+      screen
+        .getByLabelText("Diff comment")
+        .closest(".markdown-diff-unified-thread-group"),
+    ).toBeNull();
+    const splitGutter = screen
+      .getByRole("button", { name: "Comment on head lines 3-3" })
+      .closest(".markdown-diff-gutter");
+    expect(splitGutter?.parentElement).toBe(screen.getByText("New paragraph"));
+    expect(splitGutter?.textContent).toContain("3");
+
+    // Without a selection the split grid holds the two panes only — an empty composer wrapper
+    // would take a full grid row and push them down.
+    const pane = document.querySelector(
+      '[data-debug-component="RenderedDiffPane"]',
+    );
+    expect(pane?.children).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(pane?.children).toHaveLength(2);
   });
 
   it.each([
@@ -3513,9 +3684,12 @@ describe("DiffFileDialog", () => {
       expect(listCard.parentElement?.previousElementSibling?.tagName).toBe(
         "UL",
       );
-      expect(tableCard.parentElement?.previousElementSibling?.tagName).toBe(
-        "TABLE",
+      // A table's block is its wrapper, which also carries the gutter naming its line range.
+      const tableBlock = tableCard.parentElement?.previousElementSibling;
+      expect(tableBlock?.classList.contains("markdown-diff-table-block")).toBe(
+        true,
       );
+      expect(tableBlock?.querySelector("table")).not.toBeNull();
       expect(
         listCard.parentElement?.classList.contains(
           "markdown-diff-unified-thread-group",

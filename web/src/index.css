@@ -216,11 +216,23 @@
   --scrollbar-thumb-hover: rgb(145 152 161 / 58%);
 }
 
-.markdown-diff-block-added,
+/* A changed block is not boxed: the change reads from the left gutter, where a colored border
+   sits beside the source line number. A top-level block stretches that border over its whole
+   height so a long paragraph or code block shows how far the change reaches. */
+.markdown-diff-block-added {
+  --markdown-diff-change: #1a7f37;
+}
+
 .markdown-diff-block-removed {
-  position: relative;
-  border-inline-start: 3px solid;
-  padding-inline-start: 0.75rem;
+  --markdown-diff-change: #cf222e;
+}
+
+.dark .markdown-diff-block-added {
+  --markdown-diff-change: #3fb950;
+}
+
+.dark .markdown-diff-block-removed {
+  --markdown-diff-change: #f85149;
 }
 
 .markdown-diff-image-block {
@@ -228,52 +240,62 @@
   width: fit-content;
 }
 
-.markdown-diff-block-added {
-  border-color: #1a7f37;
-  background: rgb(46 160 67 / 10%);
+:is(.markdown-diff-block-added, .markdown-diff-block-removed)
+  > .markdown-diff-gutter {
+  border-inline-end-color: var(--markdown-diff-change);
 }
 
-.markdown-diff-block-removed {
-  border-color: #cf222e;
-  background: rgb(207 34 46 / 10%);
+:is(.markdown-diff-block-added, .markdown-diff-block-removed)
+  > .markdown-diff-gutter
+  /* Fixed slot for the + / − sign, so a changed line number keeps the same right edge as any other. */
+.markdown-diff-gutter-change {
+  display: inline-block;
+  width: 0.6rem;
+  color: var(--markdown-diff-change);
 }
 
-.markdown-diff-block-added::before,
-.markdown-diff-block-removed::before {
-  display: block;
-  margin-block-end: 0.25rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+.markdown-diff-gutter-line {
+  color: var(--markdown-diff-change);
 }
 
-.markdown-diff-block-added::before {
-  color: #1a7f37;
-  content: "Added";
+/* A table row has no gutter of its own, so its marker stays on the row's leading edge, and the
+   sign that goes with it opens the row's first cell. */
+tr:is(.markdown-diff-block-added, .markdown-diff-block-removed) {
+  border-inline-start: 3px solid var(--markdown-diff-change);
 }
 
-.markdown-diff-block-removed::before {
-  color: #cf222e;
-  content: "Removed";
+tr:is(.markdown-diff-block-added, .markdown-diff-block-removed)
+  > :first-child::before {
+  margin-inline-end: 0.35em;
+  font-size: 0.75rem;
+  color: var(--markdown-diff-change);
 }
 
-.dark .markdown-diff-block-added {
-  border-color: #3fb950;
-  background: rgb(63 185 80 / 12%);
+tr.markdown-diff-block-added > :first-child::before {
+  content: "+";
 }
 
-.dark .markdown-diff-block-removed {
-  border-color: #f85149;
-  background: rgb(248 81 73 / 12%);
+tr.markdown-diff-block-removed > :first-child::before {
+  content: "−";
 }
 
-.dark .markdown-diff-block-added::before {
-  color: #3fb950;
+/* A top-level block draws the full-height bar instead, so its own gutter leaves the marker out. */
+.markdown-diff-document
+  > :is(.markdown-diff-block-added, .markdown-diff-block-removed)
+  > .markdown-diff-gutter {
+  border-inline-end-color: transparent;
 }
 
-.dark .markdown-diff-block-removed::before {
-  color: #f85149;
+/* The bar takes exactly the place of the gutter's trailing border, which ends one gap short of
+   the block, so a nested block's marker and a top-level one share the same column. */
+.markdown-diff-document
+  > :is(.markdown-diff-block-added, .markdown-diff-block-removed)::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(-1 * (var(--markdown-diff-gutter-gap) + 3px));
+  width: 3px;
+  background: var(--markdown-diff-change);
 }
 
 /* Unified rendered diff keeps both complete Markdown trees mounted so source ranges, selections,
@@ -282,6 +304,86 @@
 .markdown-diff-unified-document
   > .markdown-diff-unified-block-hidden {
   display: none;
+}
+
+/* Comment affordance of a rendered block: the Markdown source line the commentable range starts
+   on, plus the + button, in a left gutter shared by both rendered views. The gutter hangs into the
+   preview's left padding so it never moves the reading track or the changed-block highlight. */
+.markdown-diff-document {
+  --markdown-diff-gutter-width: 4.25rem;
+  /* Distance from the marker to the block's text; the preview reserves width + gap on its left. */
+  --markdown-diff-gutter-gap: 0.5rem;
+}
+
+.markdown-diff-document > * {
+  position: relative;
+}
+
+.markdown-diff-gutter {
+  position: absolute;
+  /* The gutter is the block's first child, so a text selection over the block would otherwise
+     copy the line number with it. */
+  user-select: none;
+  /* No block offset: the gutter is the block's first child, so its static position keeps it on the
+     block's first line — for a nested list item or table row just as much as for a whole block. */
+  inset-inline-start: calc(
+    -1 * (var(--markdown-diff-gutter-width) + var(--markdown-diff-gutter-gap))
+  );
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.125rem;
+  /* The trailing border is the change marker; it stays transparent on an unchanged block so every
+     line number keeps the same right edge. */
+  border-inline-end: 3px solid transparent;
+  width: var(--markdown-diff-gutter-width);
+  padding-block-start: 0.2rem;
+  padding-inline-end: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+/* A code block scrolls its own content, which would clip the gutter hanging outside it. Moving
+   the scroll onto the code element keeps long lines scrollable and the gutter visible. */
+.markdown-diff-document > pre {
+  overflow: visible;
+}
+
+.markdown-diff-document > pre > code {
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown-diff-gutter-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Fixed slot for the + / − sign, so a changed line number keeps the same right edge as any other. */
+.markdown-diff-gutter-change {
+  display: inline-block;
+  width: 0.6rem;
+  color: var(--markdown-diff-change);
+}
+
+.markdown-diff-gutter-line {
+  font-variant-numeric: tabular-nums;
+  /* A table names a line range, which must not break across two lines. */
+  white-space: nowrap;
+  color: var(--markdown-diff-muted);
+}
+
+/* Keep the + button out of the way until its block is hovered or the button takes focus, the same
+   way the raw diff reveals the button in its line number cell. */
+.markdown-diff-gutter-button {
+  opacity: 0;
+}
+
+.markdown-diff-document :hover > .markdown-diff-gutter .markdown-diff-gutter-button,
+.markdown-diff-document tr:hover .markdown-diff-gutter-button,
+.markdown-diff-gutter-button:focus-visible {
+  opacity: 1;
 }
 
 /* Rendered Markdown (issue / PR / comment bodies). Tailwind's preflight strips

@@ -2382,32 +2382,30 @@ function RenderedDiffPane({
   );
   const commentComposer =
     selection && stableFile && diff.data ? (
-      <div className={fullWidthClass}>
-        <DiffCommentComposer
-          selection={{ ...selection, hunk: 0 }}
-          body={body}
-          busy={create.isPending}
-          onBodyChange={setBody}
-          onCancel={() => {
-            setSelection(null);
-            setBody("");
-          }}
-          onSubmit={() => {
-            const submittedBody = body.trim();
-            setSelection(null);
-            setBody("");
-            create.mutate({
-              base_sha: diff.data.base_sha,
-              head_sha: diff.data.head_sha,
-              path: stableFile.path,
-              side: selection.side,
-              start_line: selection.startLine,
-              end_line: selection.endLine,
-              body: submittedBody,
-            });
-          }}
-        />
-      </div>
+      <DiffCommentComposer
+        selection={{ ...selection, hunk: 0 }}
+        body={body}
+        busy={create.isPending}
+        onBodyChange={setBody}
+        onCancel={() => {
+          setSelection(null);
+          setBody("");
+        }}
+        onSubmit={() => {
+          const submittedBody = body.trim();
+          setSelection(null);
+          setBody("");
+          create.mutate({
+            base_sha: diff.data.base_sha,
+            head_sha: diff.data.head_sha,
+            path: stableFile.path,
+            side: selection.side,
+            start_line: selection.startLine,
+            end_line: selection.endLine,
+            body: submittedBody,
+          });
+        }}
+      />
     ) : null;
   const sourceOnlyThreads = useMemo(() => {
     const unique = new Map<number, DiffFeedbackThread>();
@@ -2439,6 +2437,7 @@ function RenderedDiffPane({
         selection={selection}
         onSelect={setSelection}
         threadContent={threadContent}
+        composer={viewMode === "unified" ? commentComposer : null}
         registerBlock={registerBlock(baseBlocksRef)}
       />
       <RenderedDiffSide
@@ -2452,6 +2451,7 @@ function RenderedDiffPane({
         selection={selection}
         onSelect={setSelection}
         threadContent={threadContent}
+        composer={viewMode === "unified" ? commentComposer : null}
         registerBlock={registerBlock(headBlocksRef)}
       />
     </>
@@ -2466,13 +2466,17 @@ function RenderedDiffPane({
         viewMode === "split" ? "grid grid-cols-2 divide-x" : "flex flex-col",
       )}
     >
-      {commentComposer}
+      {/* Split places the composer itself; an empty wrapper would still take a grid row. */}
+      {viewMode !== "unified" && commentComposer ? (
+        <div className={fullWidthClass}>{commentComposer}</div>
+      ) : null}
       {viewMode === "unified" ? (
         <section aria-label="Unified rendered diff" className="min-w-0">
           <div className="sticky top-0 z-10 border-b bg-background/95 px-3 py-2 text-xs font-semibold backdrop-blur">
             Unified
           </div>
-          <div className="markdown-diff-preview flex min-h-full flex-col overflow-y-auto px-3 py-8">
+          {/* pl-20 leaves room for the per-block comment gutter, which hangs into this padding. */}
+          <div className="markdown-diff-preview flex min-h-full flex-col overflow-y-auto py-8 pl-20 pr-3">
             {renderedSides}
           </div>
         </section>
@@ -2514,6 +2518,7 @@ function RenderedDiffSide({
   selection,
   onSelect,
   threadContent,
+  composer,
   registerBlock,
 }: {
   side: "LEFT" | "RIGHT";
@@ -2526,6 +2531,8 @@ function RenderedDiffSide({
   selection: RenderedCommentSelection | null;
   onSelect: (selection: RenderedCommentSelection) => void;
   threadContent: (thread: DiffFeedbackThread) => ReactNode;
+  /** Rendered directly below the selected block; null when the pane places it itself. */
+  composer: ReactNode;
   registerBlock: (block: MarkdownRenderedBlock) => void;
 }) {
   const changeByBlock = useMemo(() => {
@@ -2595,19 +2602,63 @@ function RenderedDiffSide({
     },
     [orderForBlock],
   );
+  // The change also has to read without color, so the gutter prefixes the line with the raw diff's
+  // own sign. The slot is always there, which keeps every line number on the same right edge. The
+  // whole label stays decorative: text here would join the accessible name of the block it sits in.
+  const gutterLine = useCallback(
+    (change: "added" | "removed" | undefined, text: string) => (
+      <span className="markdown-diff-gutter-line" aria-hidden="true">
+        <span className="markdown-diff-gutter-change">
+          {change === "added" ? "+" : change === "removed" ? "−" : ""}
+        </span>
+        {text}
+      </span>
+    ),
+    [],
+  );
   const action = useCallback(
     (block: MarkdownRenderedBlock) => {
-      const annotation = annotationsByBlock.get(renderedBlockKey(block));
+      const key = renderedBlockKey(block);
+      const annotation = annotationsByBlock.get(key);
+      const change = changeByBlock.get(key);
       const ranges =
         annotation?.commentableRanges.filter((range) => range.side === side) ??
         [];
-      return ranges.length > 0 ? (
+      // A table's rows cannot each show a number — their cells sit inside a scroll container that
+      // would clip a gutter — so the table names the source lines it spans instead.
+      const sourceRange = block.sourceRange;
+      if (block.kind === "table" && sourceRange) {
+        return (
+          <span className="markdown-diff-gutter font-sans">
+            <span className="markdown-diff-gutter-entry">
+              {ranges.map((range) => (
+                <button
+                  key={`${range.startLine}:${range.endLine}`}
+                  type="button"
+                  className="markdown-diff-gutter-button rounded-sm bg-blue-600 px-1.5 py-0.5 text-[10px] text-white hover:bg-blue-700"
+                  aria-label={`Comment on ${label.toLowerCase()} lines ${range.startLine}-${range.endLine}`}
+                  onClick={() => onSelect(range)}
+                >
+                  <Plus className="inline size-3" aria-hidden="true" />
+                </button>
+              ))}
+              {gutterLine(
+                change,
+                `${sourceRange.startLine}–${sourceRange.endLine}`,
+              )}
+            </span>
+          </span>
+        );
+      }
+      if (ranges.length === 0) return null;
+      // A table row keeps the button inline in its last cell, for the same reason.
+      return block.kind === "table-row" ? (
         <span className="ml-2 inline-flex gap-1 align-middle">
           {ranges.map((range) => (
             <button
               key={`${range.startLine}:${range.endLine}`}
               type="button"
-              className="rounded-sm bg-blue-600 px-1.5 py-0.5 text-[10px] font-sans text-white hover:bg-blue-700"
+              className="markdown-diff-gutter-button rounded-sm bg-blue-600 px-1.5 py-0.5 text-[10px] font-sans text-white hover:bg-blue-700"
               aria-label={`Comment on ${label.toLowerCase()} lines ${range.startLine}-${range.endLine}`}
               onClick={() => onSelect(range)}
             >
@@ -2615,15 +2666,43 @@ function RenderedDiffSide({
             </button>
           ))}
         </span>
-      ) : null;
+      ) : (
+        <span className="markdown-diff-gutter font-sans">
+          {ranges.map((range) => (
+            <span
+              key={`${range.startLine}:${range.endLine}`}
+              className="markdown-diff-gutter-entry"
+            >
+              <button
+                type="button"
+                className="markdown-diff-gutter-button rounded-sm bg-blue-600 px-1.5 py-0.5 text-[10px] text-white hover:bg-blue-700"
+                aria-label={`Comment on ${label.toLowerCase()} lines ${range.startLine}-${range.endLine}`}
+                onClick={() => onSelect(range)}
+              >
+                <Plus className="inline size-3" aria-hidden="true" />
+              </button>
+              {/* The button label already carries the range, so the number stays decorative. */}
+              {gutterLine(change, String(range.startLine))}
+            </span>
+          ))}
+        </span>
+      );
     },
-    [annotationsByBlock, label, onSelect, side],
+    [annotationsByBlock, changeByBlock, gutterLine, label, onSelect, side],
   );
   const after = useCallback(
     (block: MarkdownRenderedBlock) => {
-      const blockThreads = threadsByBlock.get(renderedBlockKey(block));
+      const key = renderedBlockKey(block);
+      const blockThreads = threadsByBlock.get(key);
+      // Commentable ranges never overlap across blocks, so at most one block hosts the composer.
+      const blockComposer =
+        composer &&
+        selection?.side === side &&
+        annotationForSelection(annotationsByBlock.get(key), selection)
+          ? composer
+          : null;
       const order = orderForBlock(block);
-      return blockThreads?.length ? (
+      return blockThreads?.length || blockComposer ? (
         <div
           className={cn(
             "mt-2 space-y-2",
@@ -2631,15 +2710,25 @@ function RenderedDiffSide({
           )}
           style={order == null ? undefined : { order: order * 2 + 1 }}
         >
-          {blockThreads.map((placement) => (
+          {blockThreads?.map((placement) => (
             <Fragment key={placement.thread.id}>
               {threadContent(placement.thread)}
             </Fragment>
           ))}
+          {blockComposer}
         </div>
       ) : null;
     },
-    [orderForBlock, threadContent, threadsByBlock, unified],
+    [
+      annotationsByBlock,
+      composer,
+      orderForBlock,
+      selection,
+      side,
+      threadContent,
+      threadsByBlock,
+      unified,
+    ],
   );
 
   return (
@@ -2656,7 +2745,7 @@ function RenderedDiffSide({
         className={cn(
           unified
             ? "contents"
-            : "markdown-diff-preview min-h-full overflow-y-auto px-3 py-8",
+            : "markdown-diff-preview min-h-full overflow-y-auto py-8 pl-20 pr-3",
         )}
       >
         {file.isLoading ? (
@@ -2681,6 +2770,7 @@ function RenderedDiffSide({
             typeset
             className={cn(
               "typeset-diff-preview mx-auto",
+              "markdown-diff-document",
               unified
                 ? "markdown-diff-unified-document contents"
                 : "markdown-diff-split-document",
