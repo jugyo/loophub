@@ -93,6 +93,7 @@ import { formatDuration, relativeTime } from "@/lib/time";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
+import { useWebConfig } from "@/lib/web-config";
 import { useIssueComments } from "@/queries/issues";
 import {
   useGithubPrStatus,
@@ -139,8 +140,12 @@ export function PullDetail({
   const pullQuery = usePull(owner, repo, number, false);
   const filesQuery = usePullFiles(owner, repo, number, false);
   const reviewsQuery = usePullReviews(owner, repo, number, false);
-  const changeMapQuery = usePullChangeMap(owner, repo, number);
-  const testMapQuery = usePullTestMap(owner, repo, number);
+  // #354: change map and test map are still experimental, so both sections — viewing and
+  // generating alike — are held behind `lh-web --debug`, the same flag the debug panel uses.
+  // Their queries stay off without it so a hidden section costs no traffic.
+  const { debug } = useWebConfig();
+  const changeMapQuery = usePullChangeMap(owner, repo, number, debug);
+  const testMapQuery = usePullTestMap(owner, repo, number, debug);
   const lineCommentsQuery = usePullComments(owner, repo, number, false);
   const commentsQuery = useIssueComments(owner, repo, number, false);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -345,7 +350,7 @@ export function PullDetail({
                 onClose={() => setTimelineReview(null)}
               />
             ) : null}
-            {changeMapOpen && changeMapQuery.data ? (
+            {debug && changeMapOpen && changeMapQuery.data ? (
               <PrChangeMapDialog
                 changeMap={changeMapQuery.data}
                 files={filesQuery.data}
@@ -354,7 +359,7 @@ export function PullDetail({
                 onClose={() => setChangeMapOpen(false)}
               />
             ) : null}
-            {testMapOpen && testMapQuery.data ? (
+            {debug && testMapOpen && testMapQuery.data ? (
               <PrTestMapDialog
                 testMap={testMapQuery.data}
                 files={filesQuery.data}
@@ -444,24 +449,28 @@ export function PullDetail({
           {/* #2406: where and on which branch this PR is being worked on is the first thing to
               know when opening it, so the basics lead the sidebar. */}
           <PullInfoSection owner={owner} repo={repo} pull={pull} />
-          <PullChangeMapSection
-            owner={owner}
-            repo={repo}
-            pull={pull}
-            changeMap={changeMapQuery.data ?? null}
-            isLoading={changeMapQuery.isLoading}
-            isError={changeMapQuery.isError}
-            onOpen={() => setChangeMapOpen(true)}
-          />
-          <PullTestMapSection
-            owner={owner}
-            repo={repo}
-            pull={pull}
-            testMap={testMapQuery.data ?? null}
-            isLoading={testMapQuery.isLoading}
-            isError={testMapQuery.isError}
-            onOpen={() => setTestMapOpen(true)}
-          />
+          {debug ? (
+            <>
+              <PullChangeMapSection
+                owner={owner}
+                repo={repo}
+                pull={pull}
+                changeMap={changeMapQuery.data ?? null}
+                isLoading={changeMapQuery.isLoading}
+                isError={changeMapQuery.isError}
+                onOpen={() => setChangeMapOpen(true)}
+              />
+              <PullTestMapSection
+                owner={owner}
+                repo={repo}
+                pull={pull}
+                testMap={testMapQuery.data ?? null}
+                isLoading={testMapQuery.isLoading}
+                isError={testMapQuery.isError}
+                onOpen={() => setTestMapOpen(true)}
+              />
+            </>
+          ) : null}
           <WorkflowRunSection owner={owner} repo={repo} number={number} />
           {/* GitHub PR status (#850) and the actions on the link — push (#2516), unlink (#2384).
             Renders nothing for a PR with no linked GitHub PR; fetched on demand, with loading/error

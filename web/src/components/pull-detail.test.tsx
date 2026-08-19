@@ -45,6 +45,7 @@ vi.mock("@/components/terminal-controller", () => ({
   }),
 }));
 
+import { WebConfigProvider } from "@/lib/web-config";
 import { PullDetail } from "./pull-detail";
 import { ToastProvider, ToastViewport } from "./toast";
 
@@ -252,6 +253,7 @@ function mockFetch(
 function renderDetail(
   extraHandlers: Record<string, (params: any) => unknown> = {},
   initialEntries: string[] = ["/"],
+  { debug = false }: { debug?: boolean } = {},
 ) {
   vi.stubGlobal("fetch", mockFetch(extraHandlers));
   const queryClient = new QueryClient({
@@ -262,12 +264,14 @@ function renderDetail(
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <ToastProvider>
-        <ToastViewport />
-        <main data-debug-component="RouteContent">
-          <PullDetail owner="me" repo="proj" number={30} />
-        </main>
-      </ToastProvider>
+      <WebConfigProvider config={{ debug }}>
+        <ToastProvider>
+          <ToastViewport />
+          <main data-debug-component="RouteContent">
+            <PullDetail owner="me" repo="proj" number={30} />
+          </main>
+        </ToastProvider>
+      </WebConfigProvider>
     ),
   });
   // The linked-issue link targets the issues route; register it for the router.
@@ -3574,6 +3578,14 @@ describe("PullDetail — #comments landing (#2394)", () => {
   });
 });
 
+// #354: the change map and test map sections only render under `lh-web --debug`, so every test
+// below renders the detail with that flag on. The section-hidden case is covered separately.
+function renderMapDetail(
+  extraHandlers: Record<string, (params: any) => unknown> = {},
+) {
+  return renderDetail(extraHandlers, ["/"], { debug: true });
+}
+
 // #344: the change map is how a reader takes in the whole change before descending into diffs, so
 // the sidebar owns generating and opening it, and the dialog is the thing that must reach every
 // file — including the ones the map never mentions.
@@ -3607,7 +3619,7 @@ describe("PullDetail change map", () => {
   };
 
   it("offers Generate change map with the generation prompt when the PR has none", async () => {
-    renderDetail();
+    renderMapDetail();
     const button = await screen.findByRole("button", {
       name: /Generate change map/i,
     });
@@ -3622,7 +3634,7 @@ describe("PullDetail change map", () => {
   });
 
   it("holds a generating state after the click so a second launch can't be dispatched", async () => {
-    renderDetail();
+    renderMapDetail();
     fireEvent.click(
       await screen.findByRole("button", { name: /Generate change map/i }),
     );
@@ -3635,7 +3647,7 @@ describe("PullDetail change map", () => {
   });
 
   it("opens the map as columns once one exists", async () => {
-    renderDetail({ "pulls/changeMap": () => changeMap });
+    renderMapDetail({ "pulls/changeMap": () => changeMap });
     fireEvent.click(
       await screen.findByRole("button", { name: /View change map/i }),
     );
@@ -3655,7 +3667,7 @@ describe("PullDetail change map", () => {
   // The notes belong to the change, so selecting the change is what makes them readable — a note
   // nobody can navigate to is the same defect as an unreachable diff.
   it("shows the selected change's tests and risk notes under its file list", async () => {
-    renderDetail({ "pulls/changeMap": () => changeMap });
+    renderMapDetail({ "pulls/changeMap": () => changeMap });
     fireEvent.click(
       await screen.findByRole("button", { name: /View change map/i }),
     );
@@ -3679,7 +3691,7 @@ describe("PullDetail change map", () => {
 
   // A per-file note is optional, and belongs above the diff it describes.
   it("shows a file's own summary above its diff", async () => {
-    renderDetail({ "pulls/changeMap": () => changeMap });
+    renderMapDetail({ "pulls/changeMap": () => changeMap });
     fireEvent.click(
       await screen.findByRole("button", { name: /View change map/i }),
     );
@@ -3692,7 +3704,7 @@ describe("PullDetail change map", () => {
   });
 
   it("marks a map written against an earlier head as stale", async () => {
-    renderDetail({
+    renderMapDetail({
       "pulls/changeMap": () => ({ ...changeMap, head_sha: "zzz" }),
     });
     fireEvent.click(
@@ -3704,7 +3716,7 @@ describe("PullDetail change map", () => {
 
   // The descent ends in the diff, so the last column shows it rather than linking to it.
   it("renders the selected file's diff in the last column", async () => {
-    renderDetail({ "pulls/changeMap": () => changeMap });
+    renderMapDetail({ "pulls/changeMap": () => changeMap });
     fireEvent.click(
       await screen.findByRole("button", { name: /View change map/i }),
     );
@@ -3714,7 +3726,7 @@ describe("PullDetail change map", () => {
   });
 
   it("opens the full diff view from the last column, keeping the map underneath", async () => {
-    renderDetail({ "pulls/changeMap": () => changeMap });
+    renderMapDetail({ "pulls/changeMap": () => changeMap });
     fireEvent.click(
       await screen.findByRole("button", { name: /View change map/i }),
     );
@@ -3738,7 +3750,7 @@ describe("PullDetail change map", () => {
   // Coverage is now an exact set difference against the files each change declares, and what is
   // left over is offered as one more category so it is reached the same way as everything else.
   it("offers changed files the map never declares as a Not covered category", async () => {
-    renderDetail({
+    renderMapDetail({
       "pulls/changeMap": () => ({
         ...changeMap,
         document: {
@@ -3779,7 +3791,7 @@ describe("PullDetail change map", () => {
   });
 
   it("has no Not covered category when every changed file is declared", async () => {
-    renderDetail({ "pulls/changeMap": () => changeMap });
+    renderMapDetail({ "pulls/changeMap": () => changeMap });
     fireEvent.click(
       await screen.findByRole("button", { name: /View change map/i }),
     );
@@ -3790,7 +3802,7 @@ describe("PullDetail change map", () => {
   // A saved map outlives the head it was written against, so it can name a path the PR no longer
   // changes. That row must not pretend to lead anywhere.
   it("does not offer a diff for a declared path that is not in the PR", async () => {
-    renderDetail({
+    renderMapDetail({
       "pulls/changeMap": () => ({
         ...changeMap,
         document: {
@@ -3878,7 +3890,7 @@ describe("PullDetail test map", () => {
   };
 
   it("offers Generate test map with the generation prompt when the PR has none", async () => {
-    renderDetail();
+    renderMapDetail();
     const button = await screen.findByRole("button", {
       name: /Generate test map/i,
     });
@@ -3893,7 +3905,7 @@ describe("PullDetail test map", () => {
   });
 
   it("holds a generating state after the click so a second launch can't be dispatched", async () => {
-    renderDetail();
+    renderMapDetail();
     fireEvent.click(
       await screen.findByRole("button", { name: /Generate test map/i }),
     );
@@ -3909,7 +3921,7 @@ describe("PullDetail test map", () => {
   // The listing is the point: the file, the describe path above a test, and the titles are all on
   // screen at once, without anything having to be expanded first.
   it("lists the tests as a tree of file, describe path, and title", async () => {
-    renderDetail({
+    renderMapDetail({
       "pulls/testMap": () => testMap,
       "pulls/files": () => [...files, testFile],
     });
@@ -3937,7 +3949,7 @@ describe("PullDetail test map", () => {
   });
 
   it("shows the selected test's code, and the implementation under it", async () => {
-    renderDetail({
+    renderMapDetail({
       "pulls/testMap": () => testMap,
       "pulls/files": () => [...files, testFile],
     });
@@ -3967,7 +3979,7 @@ describe("PullDetail test map", () => {
   });
 
   it("marks a map written against an earlier head as stale", async () => {
-    renderDetail({
+    renderMapDetail({
       "pulls/testMap": () => ({ ...testMap, head_sha: "zzz" }),
     });
     fireEvent.click(
@@ -3985,7 +3997,7 @@ describe("PullDetail test map", () => {
       value: { writeText },
       configurable: true,
     });
-    renderDetail({
+    renderMapDetail({
       "pulls/testMap": () => testMap,
       "pulls/files": () => [...files, testFile],
     });
@@ -4008,7 +4020,7 @@ describe("PullDetail test map", () => {
   // A map that missed a changed test file must say so, or the PR reads as having fewer tests than
   // it has.
   it("lists changed test files the map never mentions as Not covered", async () => {
-    renderDetail({
+    renderMapDetail({
       "pulls/testMap": () => testMap,
       "pulls/files": () => [...files, testFile, untouchedTestFile],
     });
@@ -4031,7 +4043,7 @@ describe("PullDetail test map", () => {
   });
 
   it("has no Not covered section when every changed test file is listed", async () => {
-    renderDetail({
+    renderMapDetail({
       "pulls/testMap": () => testMap,
       "pulls/files": () => [...files, testFile],
     });
@@ -4043,7 +4055,7 @@ describe("PullDetail test map", () => {
   });
 
   it("opens a file diff from a path, keeping the test map underneath", async () => {
-    renderDetail({
+    renderMapDetail({
       "pulls/testMap": () => testMap,
       "pulls/files": () => [...files, testFile],
     });
@@ -4072,7 +4084,7 @@ describe("PullDetail test map", () => {
   // A saved map outlives the head it was written against, so it can name a path the PR no longer
   // changes. That row must not pretend to lead to a diff.
   it("does not offer a diff for a listed path that is not in the PR", async () => {
-    renderDetail({ "pulls/testMap": () => testMap });
+    renderMapDetail({ "pulls/testMap": () => testMap });
     fireEvent.click(
       await screen.findByRole("button", { name: /View test map/i }),
     );
@@ -4084,5 +4096,56 @@ describe("PullDetail test map", () => {
       within(tree).queryByRole("button", { name: "core/thing.test.ts" }),
     ).toBeNull();
     expect(within(tree).getByText("core/thing.test.ts")).toBeTruthy();
+  });
+});
+
+// #354: both maps are experimental, so the whole entry point — viewing an already generated map as
+// much as generating one — is held behind `lh-web --debug`.
+describe("PullDetail experimental map sections", () => {
+  const generatedChangeMap = {
+    head_sha: "aaa",
+    created_by: "agent",
+    created_at: "2026-06-18T12:00:00Z",
+    document: {
+      version: 1,
+      summary: "Rewired the entry point.",
+      categories: [],
+    },
+  };
+  const generatedTestMap = {
+    head_sha: "aaa",
+    created_by: "agent",
+    created_at: "2026-06-18T12:00:00Z",
+    document: { version: 1, summary: "Covers the entry point.", files: [] },
+  };
+
+  it("hides both sections without --debug, even when the PR has generated maps", async () => {
+    renderDetail({
+      "pulls/changeMap": () => generatedChangeMap,
+      "pulls/testMap": () => generatedTestMap,
+    });
+    await screen.findByRole("heading", { name: /Files changed/ });
+
+    expect(screen.queryByRole("heading", { name: "Change map" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Test map" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /change map/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /test map/i })).toBeNull();
+  });
+
+  it("shows both sections with --debug", async () => {
+    renderMapDetail({
+      "pulls/changeMap": () => generatedChangeMap,
+      "pulls/testMap": () => generatedTestMap,
+    });
+    await screen.findByRole("heading", { name: /Files changed/ });
+
+    expect(screen.getByRole("heading", { name: "Change map" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Test map" })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: /View change map/i }),
+    ).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: /View test map/i }),
+    ).toBeTruthy();
   });
 });

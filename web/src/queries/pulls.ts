@@ -179,10 +179,16 @@ export function useSetPullFileViewed(
  * refreshed only by `pull_request.change_map_created`, so the document — which covers the whole
  * change — is not refetched by the ordinary PR-detail traffic.
  */
-export function usePullChangeMap(owner: string, repo: string, number: number) {
+export function usePullChangeMap(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.pullChangeMap(full(owner, repo), number),
     queryFn: () => getPullChangeMap(owner, repo, number),
+    enabled,
   });
 }
 
@@ -191,10 +197,16 @@ export function usePullChangeMap(owner: string, repo: string, number: number) {
  * refreshed only by `pull_request.test_map_created`, so a document carrying every test's code is
  * not refetched by the ordinary PR-detail traffic.
  */
-export function usePullTestMap(owner: string, repo: string, number: number) {
+export function usePullTestMap(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.pullTestMap(full(owner, repo), number),
     queryFn: () => getPullTestMap(owner, repo, number),
+    enabled,
   });
 }
 
