@@ -33,6 +33,7 @@ import type {
   LoopEventWire,
   NotificationWire,
   PrChangeMapWire,
+  PrTestMapWire,
   PullDetailPageWire,
   PullDiffWire,
   PullFileViewWire,
@@ -139,6 +140,7 @@ export type PullFileView = PullFileViewWire;
 
 /** The newest change map generated for a PR (#344), or null when it has none. */
 export type PrChangeMap = PrChangeMapWire;
+export type PrTestMap = PrTestMapWire;
 export type PullDiff = PullDiffWire;
 export type DiffFeedbackList = DiffFeedbackListWire;
 export type DiffFeedbackThread = DiffFeedbackThreadWire;

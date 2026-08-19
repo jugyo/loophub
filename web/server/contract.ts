@@ -1098,6 +1098,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyObjectOrNull,
     handler: (p) => svc.prChangeMaps.get(p.repo, p.number),
   },
+  "pulls/testMap": {
+    description:
+      "The newest test map generated for a pull request (#348), or null when it has none. `head_sha` is the head its code excerpts were read from, so a caller can tell whether later commits have moved the tests under it.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObjectOrNull,
+    handler: (p) => svc.prTestMaps.get(p.repo, p.number),
+  },
   "pulls/diff": {
     description:
       "Get a stable PR diff with its exact commit pair and line coordinates.",

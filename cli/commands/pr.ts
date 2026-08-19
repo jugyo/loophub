@@ -4,7 +4,9 @@ import { changeMapDocumentPaths } from "../../core/change-map-document.ts";
 import type {
   DiffFeedbackThreadDetailWire,
   PrChangeMapWire,
+  PrTestMapWire,
 } from "../../core/serialize.ts";
+import { testMapTestCount } from "../../core/test-map-document.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   fail,
@@ -54,6 +56,24 @@ function changeMapText(map: PrChangeMapWire): string {
 
 function changeMapPathCount(document: ChangeMapDocument): number {
   return changeMapDocumentPaths(document).size;
+}
+
+// #348: the test map as text, so `lh pr test-map view` stays readable. Indentation carries the same
+// descent the dialog shows as a tree: test file, then the describe path, then the test and what it
+// verifies. The code excerpts are left out — they are what the dialog is for, and inlining them
+// would bury the listing this view exists to give.
+function testMapText(map: PrTestMapWire): string {
+  const lines = [map.document.summary, ""];
+  for (const file of map.document.files) {
+    lines.push(`## ${file.path}`);
+    for (const test of file.tests) {
+      const suites = test.suites.length ? `${test.suites.join(" > ")} > ` : "";
+      lines.push(`  - ${suites}${test.title}`, `    ${test.summary}`);
+      if (test.target) lines.push(`    target: ${test.target.path}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd();
 }
 
 // A diff feedback conversation as text: where it points, the diff around it, then the exchange.
@@ -383,6 +403,47 @@ export async function run(): Promise<void> {
       if (!map) fail(`PR #${number} has no change map`);
       if (flags.json) out(map);
       else console.log(changeMapText(map));
+    } else {
+      usage();
+    }
+  } else if (sub === "test-map") {
+    // #348: the test map an agent generates for a PR. `create` is the one command the generating
+    // agent runs — core validates the document, resolves the head its excerpts were read from,
+    // stores it, and emits its event.
+    const [action, numberText] = rest;
+    const number = Number(numberText);
+    if (action === "create") {
+      if (flags.body === undefined)
+        fail("--body is required (- for stdin, or a file path)");
+      // Same convention as `map create`: `-` reads stdin, anything else is a file path, so a
+      // document full of verbatim code never has to survive shell escaping.
+      const source = await readTextInput(flags.body, { bareFile: true });
+      let document: unknown;
+      try {
+        document = JSON.parse(source);
+      } catch (error) {
+        fail(
+          `--body must be a test map JSON document: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const map = await runOp(async () =>
+        s.prTestMaps.create(
+          repo,
+          number,
+          { headSha: flags["head-sha"] as string | undefined, document },
+          await writeSession(),
+        ),
+      );
+      out(map);
+      if (!flags.json)
+        console.log(
+          `saved test map for PR #${number} at ${map.head_sha.slice(0, 7)} — ${map.document.files.length} files, ${testMapTestCount(map.document)} tests`,
+        );
+    } else if (action === "view") {
+      const map = await runOp(() => s.prTestMaps.get(repo, number));
+      if (!map) fail(`PR #${number} has no test map`);
+      if (flags.json) out(map);
+      else console.log(testMapText(map));
     } else {
       usage();
     }

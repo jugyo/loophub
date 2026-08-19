@@ -32,6 +32,7 @@ import type {
   LoopEvent,
   Notification,
   PrChangeMap,
+  PrTestMap,
   PullDetailPage,
   PullDiff,
   PullFile,
@@ -990,6 +991,14 @@ export function listPullFiles(owner: string, repo: string, number: number) {
 /** The newest change map generated for a PR (#344), or null when it has none. */
 export function getPullChangeMap(owner: string, repo: string, number: number) {
   return rpc<PrChangeMap | null>("pulls/changeMap", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+/** The newest test map generated for a PR (#348), or null when it has none. */
+export function getPullTestMap(owner: string, repo: string, number: number) {
+  return rpc<PrTestMap | null>("pulls/testMap", {
     repo: full(owner, repo),
     number,
   });

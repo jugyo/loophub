@@ -116,7 +116,8 @@ export interface HerdrLaunchInput {
     | "issue-create"
     | "workflow-create"
     | "github-pr-export"
-    | "pr-change-map";
+    | "pr-change-map"
+    | "pr-test-map";
   prNumber?: number;
   codingAgent?: CodingAgent;
   model?: string;
@@ -204,13 +205,14 @@ export function commandForHerdrLaunch(input: HerdrLaunchInput): string {
   }
   if (
     (input.workflow === "github-pr-export" ||
-      input.workflow === "pr-change-map") &&
+      input.workflow === "pr-change-map" ||
+      input.workflow === "pr-test-map") &&
     input.prNumber &&
     input.promptPath
   ) {
     const agent = input.codingAgent ?? codingAgent();
     // The full instructions are the agent's initial prompt (#1892 for the GitHub export, #344 for
-    // the change map), instead of dispatching a skill.
+    // the change map, #348 for the test map), instead of dispatching a skill.
     return agentCommandLine({
       bin: RUNTIMES[agent].bin,
       args: buildRuntimeFlags({ runtime: agent }),

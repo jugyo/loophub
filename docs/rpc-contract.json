@@ -2413,6 +2413,34 @@
       }
     },
     {
+      "name": "pulls/testMap",
+      "description": "The newest test map generated for a pull request (#348), or null when it has none. `head_sha` is the head its code excerpts were read from, so a caller can tell whether later commits have moved the tests under it.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": [
+          "object",
+          "null"
+        ]
+      }
+    },
+    {
       "name": "pulls/diff",
       "description": "Get a stable PR diff with its exact commit pair and line coordinates.",
       "params": {

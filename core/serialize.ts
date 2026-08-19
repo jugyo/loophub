@@ -22,6 +22,8 @@ import type {
   HerdrPullWorkspace,
 } from "./terminal/herdr-status.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
+import type { TestMapDocument } from "./test-map-document.ts";
+import { parseTestMapDocumentText } from "./test-map-document.ts";
 import type { Theme } from "./theme.ts";
 import {
   type WorkerCompatibility,
@@ -651,6 +653,31 @@ export function prChangeMapJSON(
     // rather than bad input — let it throw instead of inventing an empty map that would read as
     // "this PR changed nothing".
     document: parseChangeMapDocumentText(m.document),
+    created_by: m.created_by ?? null,
+    created_at: m.created_at,
+  };
+}
+
+// #348: shape a pr_test_maps row for the wire, or null when the PR has no test map yet. Same shape
+// as the change map's wire object for the same reasons: issue_id stays off the wire, `head_sha` is
+// what a consumer compares against the PR's live head to tell whether the map still describes the
+// current tests, and the document is sent parsed so no consumer has to know it was stored as text.
+export interface PrTestMapWire {
+  head_sha: string;
+  document: TestMapDocument;
+  created_by: string | null;
+  created_at: string;
+}
+export function prTestMapJSON(m: S.PrTestMap): PrTestMapWire;
+export function prTestMapJSON(m: S.PrTestMap | null): PrTestMapWire | null;
+export function prTestMapJSON(m: S.PrTestMap | null): PrTestMapWire | null {
+  if (!m) return null;
+  return {
+    head_sha: m.head_sha,
+    // Stored documents were validated on the way in, so a parse failure here is a corrupt row
+    // rather than bad input — let it throw instead of inventing an empty map that would read as
+    // "this PR added no tests".
+    document: parseTestMapDocumentText(m.document),
     created_by: m.created_by ?? null,
     created_at: m.created_at,
   };

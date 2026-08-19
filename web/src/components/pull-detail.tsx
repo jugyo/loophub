@@ -11,6 +11,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ArrowDownToLine,
   ExternalLink,
+  FlaskConical,
   Github,
   Loader2,
   Map as MapIcon,
@@ -27,6 +28,7 @@ import {
 import type {
   IssueComment,
   PrChangeMap,
+  PrTestMap,
   PullFile,
   PullGithubActivity,
   PullLineComment,
@@ -54,6 +56,7 @@ import { FileViewedBadge } from "@/components/file-viewed-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { Markdown } from "@/components/markdown";
 import { PrChangeMapDialog } from "@/components/pr-change-map-dialog";
+import { PrTestMapDialog } from "@/components/pr-test-map-dialog";
 import {
   PullCommitsSection,
   ReviewDetailsDialog,
@@ -103,6 +106,8 @@ import {
   usePullFiles,
   usePullFileViews,
   usePullReviews,
+  usePullTestMap,
+  usePushGithubPull,
   useReactToPullComment,
   useSetPullCommentArchived,
   useSetPullState,
@@ -112,8 +117,10 @@ import { useSettings } from "@/queries/settings";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 import { githubPrExportPendingUntil } from "../../../core/github-pr-export-pending.ts";
 import { prChangeMapPendingUntil } from "../../../core/pr-change-map-pending.ts";
+import { prTestMapPendingUntil } from "../../../core/pr-test-map-pending.ts";
 import { githubPrExportPrompt } from "../../../core/workflow/github-pr-export-prompt.ts";
 import { prChangeMapPrompt } from "../../../core/workflow/pr-change-map-prompt.ts";
+import { prTestMapPrompt } from "../../../core/workflow/pr-test-map-prompt.ts";
 
 const MERGE_METHODS = ["squash", "merge", "rebase"] as const;
 const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
@@ -133,6 +140,7 @@ export function PullDetail({
   const filesQuery = usePullFiles(owner, repo, number, false);
   const reviewsQuery = usePullReviews(owner, repo, number, false);
   const changeMapQuery = usePullChangeMap(owner, repo, number);
+  const testMapQuery = usePullTestMap(owner, repo, number);
   const lineCommentsQuery = usePullComments(owner, repo, number, false);
   const commentsQuery = useIssueComments(owner, repo, number, false);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -145,6 +153,9 @@ export function PullDetail({
   // opens it, so the dialog can render above the main column and the file diff a map link opens
   // (rendered later, by Files changed) lands on top of it instead of underneath.
   const [changeMapOpen, setChangeMapOpen] = useState(false);
+  // #348: whether the test map dialog is open. Owned here for the same reason as the change map —
+  // a file diff opened from inside it must land on top of it, not underneath.
+  const [testMapOpen, setTestMapOpen] = useState(false);
   const [timelineCommit, setTimelineCommit] = useState<{
     sha: string;
     subject: string;
@@ -343,6 +354,15 @@ export function PullDetail({
                 onClose={() => setChangeMapOpen(false)}
               />
             ) : null}
+            {testMapOpen && testMapQuery.data ? (
+              <PrTestMapDialog
+                testMap={testMapQuery.data}
+                files={filesQuery.data}
+                headSha={pull.head.sha}
+                onOpenFile={setOpenFilename}
+                onClose={() => setTestMapOpen(false)}
+              />
+            ) : null}
             <FilesChanged
               owner={owner}
               repo={repo}
@@ -432,6 +452,15 @@ export function PullDetail({
             isLoading={changeMapQuery.isLoading}
             isError={changeMapQuery.isError}
             onOpen={() => setChangeMapOpen(true)}
+          />
+          <PullTestMapSection
+            owner={owner}
+            repo={repo}
+            pull={pull}
+            testMap={testMapQuery.data ?? null}
+            isLoading={testMapQuery.isLoading}
+            isError={testMapQuery.isError}
+            onOpen={() => setTestMapOpen(true)}
           />
           <WorkflowRunSection owner={owner} repo={repo} number={number} />
           {/* GitHub PR status (#850) and the actions on the link — push (#2516), unlink (#2384).
@@ -974,6 +1003,116 @@ function PullChangeMapSection({
             </Button>
             <span className="text-xs text-muted-foreground">
               A structured map of the whole change, linking to every diff.
+            </span>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// #348: the PR's test map — what the tests it added verify, read without the diff. Same shape as
+// the change map section above it: until one exists the section offers Generate test map, which
+// launches an agent with the generation instructions and returns immediately; the map lands later,
+// when the agent saves it. Once it exists the section opens it.
+//
+// The launch is fire-and-forget, so the pending state is the click itself, bounded by a TTL
+// (core/pr-test-map-pending.ts). A generation that dies leaves its failure in the agent's own pane
+// and the button clickable again — regenerating is cheap, since maps are kept per head rather than
+// overwritten.
+function PullTestMapSection({
+  owner,
+  repo,
+  pull,
+  testMap,
+  isLoading,
+  isError,
+  onOpen,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+  testMap: PrTestMap | null;
+  isLoading: boolean;
+  isError: boolean;
+  onOpen: () => void;
+}) {
+  const { launchTerminal, launchFailed } = useTerminalLauncher();
+  const { data: settings } = useSettings();
+  const [clickedAt, setClickedAt] = useState<string | null>(null);
+  const isGenerating = usePendingUntil(prTestMapPendingUntil(clickedAt) ?? 0);
+  // The click only stands in for a generation nobody has seen finish. A map that lands is the
+  // finish; a rejected launch means no agent started at all, and its failure is already on screen
+  // in its own dialog, so neither should leave the button sitting out the TTL.
+  useEffect(() => {
+    if (launchFailed || testMap) setClickedAt(null);
+  }, [launchFailed, testMap]);
+
+  const isStale = !!testMap && testMap.head_sha !== pull.head.sha;
+  return (
+    <section
+      data-debug-component="PullTestMapSection"
+      className="flex flex-col gap-3"
+    >
+      <h2 className="text-lg font-semibold">Test map</h2>
+      <div className="flex flex-col gap-2 rounded-md border p-3 text-sm">
+        {isLoading ? (
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading…
+          </span>
+        ) : isError ? (
+          // A read that fails is not the same as a PR with no map: a stored document that no longer
+          // parses would otherwise render as an unpressed Generate button, quietly inviting a
+          // regeneration over a failure nobody was told about.
+          <span className="text-xs text-destructive">
+            Failed to load the test map.
+          </span>
+        ) : testMap ? (
+          <>
+            <Button variant="secondary" onClick={onOpen}>
+              <FlaskConical className="size-4" />
+              View test map
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {isStale
+                ? `Written against ${testMap.head_sha.slice(0, 7)}; later commits are not in it`
+                : `Generated ${relativeTime(testMap.created_at)}`}
+            </span>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="secondary"
+              disabled={isGenerating}
+              title={
+                isGenerating
+                  ? "An agent is generating the test map; the action returns if it doesn't land"
+                  : "Launch an agent that reads this PR's tests and lists what each one verifies"
+              }
+              onClick={() => {
+                setClickedAt(new Date().toISOString());
+                launchTerminal({
+                  repo: `${owner}/${repo}`,
+                  label: `PR #${pull.number} - ${pull.title}`,
+                  workflow: "pr-test-map",
+                  prNumber: pull.number,
+                  prompt: prTestMapPrompt({
+                    repo: `${owner}/${repo}`,
+                    prNumber: pull.number,
+                    language: settings?.workflowContractLanguage,
+                  }),
+                });
+              }}
+            >
+              {isGenerating ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <FlaskConical className="size-4" />
+              )}
+              {isGenerating ? "Generating…" : "Generate test map"}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              What the tests in this PR verify, with the code behind each one.
             </span>
           </>
         )}

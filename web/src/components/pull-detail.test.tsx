@@ -221,6 +221,7 @@ function mockFetch(
     "pulls/get": () => pull,
     "pulls/files": () => files,
     "pulls/changeMap": () => null,
+    "pulls/testMap": () => null,
     "reviews/list": () => reviews,
     "reviews/listComments": () => lineComments,
     "diffFeedback/list": () => ({ threads: [], comment_counts: {} }),
@@ -2141,6 +2142,7 @@ describe("PullDetail", () => {
         "pulls/get": () => pull,
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => reviews,
         "reviews/listComments": () => lineComments,
         "comments/list": () => comments,
@@ -2201,6 +2203,7 @@ describe("PullDetail", () => {
         "pulls/get": () => pull,
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2264,6 +2267,7 @@ describe("PullDetail", () => {
         "pulls/get": () => conflicting,
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2316,6 +2320,7 @@ describe("PullDetail", () => {
         "pulls/get": () => noCommits,
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2387,6 +2392,7 @@ describe("PullDetail", () => {
         "pulls/get": () => pull,
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2476,6 +2482,7 @@ describe("PullDetail", () => {
         "pulls/get": () => pull, // head.sha === "aaa", matches no review
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2567,6 +2574,7 @@ describe("PullDetail", () => {
         "pulls/get": () => pull,
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2640,6 +2648,7 @@ describe("PullDetail", () => {
         "pulls/get": () => pull,
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2684,6 +2693,7 @@ describe("PullDetail", () => {
         "pulls/get": () => pull,
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => reviews,
         "reviews/listComments": () => lineComments,
         "comments/list": () => comments,
@@ -3035,6 +3045,7 @@ function renderDetailWithPull(
       "pulls/get": () => ({ ...pull, ...current() }),
       "pulls/files": () => files,
       "pulls/changeMap": () => null,
+      "pulls/testMap": () => null,
       "reviews/list": () => reviews,
       "reviews/listComments": () => lineComments,
       "comments/list": () => comments,
@@ -3344,6 +3355,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
         }),
         "pulls/files": () => files,
         "pulls/changeMap": () => null,
+        "pulls/testMap": () => null,
         "reviews/list": () => reviews,
         "reviews/listComments": () => lineComments,
         "comments/list": () => comments,
@@ -3811,5 +3823,266 @@ describe("PullDetail change map", () => {
       name: /web\/src\/gone\.ts/,
     }) as HTMLButtonElement;
     expect(missing.disabled).toBe(true);
+  });
+});
+
+// #348: the test map is how a reader takes in what a PR's tests verify without reading the diff,
+// so the sidebar owns generating and opening it, and the dialog must show the tests, their code,
+// and what the map failed to mention.
+describe("PullDetail test map", () => {
+  const testFile = {
+    filename: "core/thing.test.ts",
+    status: "added" as const,
+    additions: 12,
+    deletions: 0,
+    patch: "@@ -0,0 +1 @@\n+test('thing', () => {});",
+  };
+  const untouchedTestFile = {
+    filename: "core/other.test.ts",
+    status: "added" as const,
+    additions: 3,
+    deletions: 0,
+    patch: "@@ -0,0 +1 @@\n+test('other', () => {});",
+  };
+  const testMap = {
+    head_sha: "aaa",
+    created_by: "agent",
+    created_at: "2026-06-18T12:00:00Z",
+    document: {
+      version: 1,
+      summary: "Covers the thing.",
+      files: [
+        {
+          path: "core/thing.test.ts",
+          tests: [
+            {
+              suites: ["thing", "when empty"],
+              title: "returns nothing",
+              summary: "An empty input yields an empty result.",
+              code: "expect(thing([])).toEqual([]);",
+              target: {
+                path: "web/src/a.ts",
+                code: "export function thing(xs) { return xs; }",
+              },
+            },
+            {
+              suites: ["thing", "when empty"],
+              title: "does not throw",
+              summary: "An empty input is not an error.",
+              code: "expect(() => thing([])).not.toThrow();",
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  it("offers Generate test map with the generation prompt when the PR has none", async () => {
+    renderDetail();
+    const button = await screen.findByRole("button", {
+      name: /Generate test map/i,
+    });
+
+    fireEvent.click(button);
+    expect(launchTerminal).toHaveBeenCalledTimes(1);
+    const opts = launchTerminal.mock.calls[0][0];
+    expect(opts.repo).toBe("me/proj");
+    expect(opts.workflow).toBe("pr-test-map");
+    expect(opts.prNumber).toBe(30);
+    expect(opts.prompt).toContain("lh pr test-map create 30 --repo me/proj");
+  });
+
+  it("holds a generating state after the click so a second launch can't be dispatched", async () => {
+    renderDetail();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Generate test map/i }),
+    );
+    const generating = (await screen.findAllByRole("button", {
+      name: /Generating…/i,
+    })) as HTMLButtonElement[];
+    expect(generating.length).toBe(1);
+    expect(generating[0].disabled).toBe(true);
+    fireEvent.click(generating[0]);
+    expect(launchTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  // The listing is the point: the file, the describe path above a test, and the titles are all on
+  // screen at once, without anything having to be expanded first.
+  it("lists the tests as a tree of file, describe path, and title", async () => {
+    renderDetail({
+      "pulls/testMap": () => testMap,
+      "pulls/files": () => [...files, testFile],
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View test map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Test map" });
+    expect(within(dialog).getByText("Covers the thing.")).toBeTruthy();
+    const tree = within(dialog).getByRole("navigation", {
+      name: "Test map tree",
+    });
+    expect(
+      within(tree).getByRole("button", { name: "core/thing.test.ts" }),
+    ).toBeTruthy();
+    expect(within(tree).getByText("thing › when empty")).toBeTruthy();
+    expect(
+      within(tree).getByRole("button", { name: "returns nothing" }),
+    ).toBeTruthy();
+    expect(
+      within(tree).getByRole("button", { name: "does not throw" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Generate test map/i }),
+    ).toBeNull();
+  });
+
+  it("shows the selected test's code, and the implementation under it", async () => {
+    renderDetail({
+      "pulls/testMap": () => testMap,
+      "pulls/files": () => [...files, testFile],
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View test map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Test map" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "does not throw" }),
+    );
+    expect(
+      within(dialog).getByText("expect(() => thing([])).not.toThrow();"),
+    ).toBeTruthy();
+    // That one has no target, so nothing claims to be the implementation behind it.
+    expect(within(dialog).queryByText(/Implementation/i)).toBeNull();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "returns nothing" }),
+    );
+    expect(
+      within(dialog).getByText("expect(thing([])).toEqual([]);"),
+    ).toBeTruthy();
+    expect(within(dialog).getByText("Implementation")).toBeTruthy();
+    expect(
+      within(dialog).getByText("export function thing(xs) { return xs; }"),
+    ).toBeTruthy();
+  });
+
+  it("marks a map written against an earlier head as stale", async () => {
+    renderDetail({
+      "pulls/testMap": () => ({ ...testMap, head_sha: "zzz" }),
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View test map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Test map" });
+    expect(within(dialog).getByText("Stale")).toBeTruthy();
+  });
+
+  // Markdown is generated from the document at the moment of the copy, so what lands on the
+  // clipboard is the tree the dialog shows, as headings.
+  it("copies the whole map as Markdown", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    renderDetail({
+      "pulls/testMap": () => testMap,
+      "pulls/files": () => [...files, testFile],
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View test map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Test map" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /Copy as Markdown/i }),
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const markdown = writeText.mock.calls[0][0] as string;
+    expect(markdown).toContain("# Test map");
+    expect(markdown).toContain("## core/thing.test.ts");
+    expect(markdown).toContain("### thing › when empty");
+    expect(markdown).toContain("#### returns nothing");
+    expect(markdown).toContain("expect(thing([])).toEqual([]);");
+  });
+
+  // A map that missed a changed test file must say so, or the PR reads as having fewer tests than
+  // it has.
+  it("lists changed test files the map never mentions as Not covered", async () => {
+    renderDetail({
+      "pulls/testMap": () => testMap,
+      "pulls/files": () => [...files, testFile, untouchedTestFile],
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View test map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Test map" });
+    const section = within(dialog).getByRole("region", {
+      name: "Not covered (1)",
+    });
+    // Only test files: a changed implementation file is not a hole in a listing of tests, and
+    // listing every changed file here would bury the ones that are.
+    expect(within(section).queryByText("web/src/a.ts")).toBeNull();
+
+    // And it reaches its diff exactly like a listed file does.
+    fireEvent.click(
+      within(section).getByRole("button", { name: "core/other.test.ts" }),
+    );
+    await screen.findByRole("dialog", { name: "Diff for core/other.test.ts" });
+  });
+
+  it("has no Not covered section when every changed test file is listed", async () => {
+    renderDetail({
+      "pulls/testMap": () => testMap,
+      "pulls/files": () => [...files, testFile],
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View test map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Test map" });
+    expect(within(dialog).queryByText(/Not covered/)).toBeNull();
+  });
+
+  it("opens a file diff from a path, keeping the test map underneath", async () => {
+    renderDetail({
+      "pulls/testMap": () => testMap,
+      "pulls/files": () => [...files, testFile],
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View test map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Test map" });
+    const tree = within(dialog).getByRole("navigation", {
+      name: "Test map tree",
+    });
+    fireEvent.click(
+      within(tree).getByRole("button", { name: "core/thing.test.ts" }),
+    );
+
+    const diff = await screen.findByRole("dialog", {
+      name: "Diff for core/thing.test.ts",
+    });
+    // The map is still open behind the diff, so closing the diff returns to it. Both overlays sit
+    // at the same z-index, so the diff is only on top because it comes later in document order.
+    const map = screen.getByRole("dialog", { name: "Test map" });
+    expect(
+      map.compareDocumentPosition(diff) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  // A saved map outlives the head it was written against, so it can name a path the PR no longer
+  // changes. That row must not pretend to lead to a diff.
+  it("does not offer a diff for a listed path that is not in the PR", async () => {
+    renderDetail({ "pulls/testMap": () => testMap });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View test map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Test map" });
+    const tree = within(dialog).getByRole("navigation", {
+      name: "Test map tree",
+    });
+    expect(
+      within(tree).queryByRole("button", { name: "core/thing.test.ts" }),
+    ).toBeNull();
+    expect(within(tree).getByText("core/thing.test.ts")).toBeTruthy();
   });
 });

@@ -19,6 +19,7 @@ import {
   getPullDetailPage,
   getPullDiff,
   getPullFileAtRef,
+  getPullTestMap,
   getPullUsage,
   listCommitFiles,
   listDiffFeedback,
@@ -182,6 +183,18 @@ export function usePullChangeMap(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: queryKeys.pullChangeMap(full(owner, repo), number),
     queryFn: () => getPullChangeMap(owner, repo, number),
+  });
+}
+
+/**
+ * The newest test map for a PR (#348), or null when none has been generated. Kept on its own key,
+ * refreshed only by `pull_request.test_map_created`, so a document carrying every test's code is
+ * not refetched by the ordinary PR-detail traffic.
+ */
+export function usePullTestMap(owner: string, repo: string, number: number) {
+  return useQuery({
+    queryKey: queryKeys.pullTestMap(full(owner, repo), number),
+    queryFn: () => getPullTestMap(owner, repo, number),
   });
 }
 

@@ -1644,6 +1644,25 @@ export const MIGRATIONS: Migration[] = [
       dropColumnIfPresent(db, "pr_change_maps", "body");
     },
   },
+  // #348: the test map generated for a PR at one HEAD — what its tests verify, listed so the tests
+  // can be read without the diff. Kept per head_sha for the same reason as pr_change_maps: a later
+  // generation must not erase the one a reviewer is reading, and a map carries the head its code
+  // excerpts were read from (the detail view shows the newest and marks it stale once head moves).
+  sql(
+    "20260819073426-pr-test-maps",
+    `
+    CREATE TABLE IF NOT EXISTS pr_test_maps (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id   INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      head_sha   TEXT NOT NULL,
+      document   TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pr_test_maps_issue
+      ON pr_test_maps(issue_id, id DESC);
+    `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

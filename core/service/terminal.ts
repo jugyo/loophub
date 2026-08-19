@@ -77,6 +77,7 @@ export interface TerminalLaunchInput {
     | "workflow-create"
     | "github-pr-export"
     | "pr-change-map"
+    | "pr-test-map"
     | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
@@ -420,7 +421,8 @@ async function resolveHerdrWorktreeTarget(
   try {
     if (
       (input.workflow === "github-pr-export" ||
-        input.workflow === "pr-change-map") &&
+        input.workflow === "pr-change-map" ||
+        input.workflow === "pr-test-map") &&
       input.prNumber
     ) {
       const prRow = issueOr404(r, input.prNumber, "pull");
@@ -533,12 +535,13 @@ export const terminal = {
       parentIssue:
         input.workflow === "issue-create" ? input.parentIssue : undefined,
       // `lh issue new` takes the operator's instructions as a `--prompt` flag; github-pr-export
-      // (#1892) and pr-change-map (#344) start a coding agent whose whole prompt is the generated
-      // instructions, so those go to a file its command line reads back.
+      // (#1892), pr-change-map (#344) and pr-test-map (#348) start a coding agent whose whole
+      // prompt is the generated instructions, so those go to a file its command line reads back.
       prompt: input.workflow === "issue-create" ? input.prompt : undefined,
       promptPath:
         (input.workflow === "github-pr-export" ||
-          input.workflow === "pr-change-map") &&
+          input.workflow === "pr-change-map" ||
+          input.workflow === "pr-test-map") &&
         input.prompt
           ? writeLaunchPrompt(input.prompt)
           : undefined,
@@ -664,11 +667,11 @@ export const terminal = {
           createdWorkspace = true;
         }
       } else {
-        // Worktree-backed workflows (github-pr-export #551, pr-change-map #344) open the herdr
-        // workspace directly at the PR's real worktree path, so herdr's own workspace/worktree
-        // metadata reflects it — instead of a plain repo-root tab the launched command cd's
-        // into. Falls back to that plain tab below when there is no resolvable worktree path
-        // or the worktree-open attempt itself fails for any reason.
+        // Worktree-backed workflows (github-pr-export #551, pr-change-map #344, pr-test-map #348)
+        // open the herdr workspace directly at the PR's real worktree path, so herdr's own
+        // workspace/worktree metadata reflects it — instead of a plain repo-root tab the launched
+        // command cd's into. Falls back to that plain tab below when there is no resolvable
+        // worktree path or the worktree-open attempt itself fails for any reason.
         const worktreeTarget = await resolveHerdrWorktreeTarget(r, input);
         const acquired = worktreeTarget
           ? await acquireHerdrWorktreeWorkspace(
