@@ -181,6 +181,90 @@ test("lh issue comment returns the created comment", () => {
   expect(comment.id).toBeGreaterThan(0);
 });
 
+// #2494: archiving keeps the comment but takes it out of the list a reader gets by default.
+test("lh issue comment archive|unarchive hides and restores a comment in the list", () => {
+  const number = createIssue("comment archive target");
+  function comment(body: string): number {
+    const created = lh([
+      "issue",
+      "comment",
+      String(number),
+      "--repo",
+      "me/proj",
+      "--body",
+      body,
+      "--json",
+    ]);
+    expect(created.exitCode, created.stderr).toBe(0);
+    return JSON.parse(created.stdout).id;
+  }
+  function listedIds(args: string[] = []): number[] {
+    const viewed = lh([
+      "issue",
+      "view",
+      String(number),
+      "--repo",
+      "me/proj",
+      "--json",
+      ...args,
+    ]);
+    expect(viewed.exitCode, viewed.stderr).toBe(0);
+    return JSON.parse(viewed.stdout).comment_list.map((c: any) => c.id);
+  }
+
+  const kept = comment("keep this");
+  const settled = comment("settled");
+
+  const archived = lh([
+    "issue",
+    "comment",
+    "archive",
+    String(settled),
+    "--issue",
+    String(number),
+    "--repo",
+    "me/proj",
+  ]);
+  expect(archived.exitCode, archived.stderr).toBe(0);
+  expect(archived.stdout).toContain(`archived issue comment ${settled}`);
+
+  expect(listedIds()).toEqual([kept]);
+  const withArchived = lh([
+    "issue",
+    "view",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--json",
+    "--include-archived",
+  ]);
+  expect(withArchived.exitCode, withArchived.stderr).toBe(0);
+  const all = JSON.parse(withArchived.stdout).comment_list;
+  expect(all.map((c: any) => c.id)).toEqual([kept, settled]);
+  expect(all.find((c: any) => c.id === settled).archived_at).not.toBeNull();
+
+  const unarchived = lh([
+    "issue",
+    "comment",
+    "unarchive",
+    String(settled),
+    "--issue",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--json",
+  ]);
+  expect(unarchived.exitCode, unarchived.stderr).toBe(0);
+  expect(JSON.parse(unarchived.stdout).archived_at).toBeNull();
+  expect(listedIds()).toEqual([kept, settled]);
+});
+
+test("lh issue comment archive requires the target issue", () => {
+  const result = lh(["issue", "comment", "archive", "1", "--repo", "me/proj"]);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("--issue is required");
+});
+
 test("free-text body input preserves Markdown from stdin and files", () => {
   const body = "line one `id`\nline two\n";
   const fromStdin = lh(

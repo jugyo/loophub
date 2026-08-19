@@ -22,9 +22,9 @@ async function copyText(text: string) {
   }
 }
 
-/** The three dots menu at a comment's top right. Archive is optional (issue
- * comments don't archive); `copyMarkdown` adds a "Copy as Markdown" item that
- * puts the comment body on the clipboard. */
+/** The three dots menu at a comment's top right. Archive is optional (a surface
+ * without an archive action leaves `onArchived` out); `copyMarkdown` adds a
+ * "Copy as Markdown" item that puts the comment body on the clipboard. */
 export function CommentActionsMenu({
   label,
   copyMarkdown,
@@ -80,7 +80,9 @@ export function commentPreview(body: string): string {
   );
 }
 
-/** An archived comment: one line by default, expandable to the full exchange. */
+/** An archived comment: one line by default, expandable to the full exchange. The
+ * collapsed line is a body preview on a PR, and the comment's own header row on an
+ * issue — hence a node rather than a string. */
 export function ArchivedComment({
   label,
   preview,
@@ -88,7 +90,7 @@ export function ArchivedComment({
   children,
 }: {
   label: string;
-  preview: string;
+  preview: ReactNode;
   menu: ReactNode;
   children: ReactNode;
 }) {

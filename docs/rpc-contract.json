@@ -1815,6 +1815,40 @@
       }
     },
     {
+      "name": "comments/archive",
+      "description": "Archive or unarchive an issue comment, keeping it collapsed on the issue page.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "comment_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "archived": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "comment_id",
+          "archived"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "pullComments/create",
       "description": "Add a human comment to a pull request.",
       "params": {

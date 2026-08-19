@@ -27,6 +27,7 @@ export type Flags = {
   // string when a value is given (--archived all|true|false); boolean true when bare
   // (--archived), since strict:false resolves a value-less declared flag to true.
   archived?: string | boolean;
+  "include-archived"?: boolean;
   "default-branch"?: string;
   workspace?: string;
   "clear-workspace"?: boolean;
@@ -137,6 +138,7 @@ const { values, positionals } = parseArgs({
     path: { type: "string" },
     name: { type: "string" },
     archived: { type: "string" },
+    "include-archived": { type: "boolean" },
     "default-branch": { type: "string" },
     workspace: { type: "string" },
     "clear-workspace": { type: "boolean" },

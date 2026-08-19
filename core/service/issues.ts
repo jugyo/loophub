@@ -267,17 +267,26 @@ export const issues = {
   // an implementation agent reading an issue via `lh issue view --json` gets the design context
   // people leave in comments, not only the body (#231). The summary path stays a count to keep
   // the issue list cheap.
+  // Archived comments (#2494) are left out of `comment_list` unless asked for: a reader of the
+  // issue — `lh issue view`, an implementation agent — should see the comments still in play, not
+  // the ones a human already retired.
   async get(
     name: string,
     number: number,
-    opts: { withComments?: boolean; withAcceptanceCriteria?: boolean } = {},
+    opts: {
+      withComments?: boolean;
+      withAcceptanceCriteria?: boolean;
+      includeArchivedComments?: boolean;
+    } = {},
   ) {
     const r = repoOr404(name);
     const row = issueOr404(r, number);
     const out = await issueDetailJSON(row, r);
     if (opts.withComments !== false) {
       const reactions = S.commentReactionsByIssue(row.id);
-      out.comment_list = S.listComments(row.id).map((comment) =>
+      out.comment_list = S.listComments(row.id, {
+        includeArchived: opts.includeArchivedComments === true,
+      }).map((comment) =>
         commentJSON(comment, reactions.get(comment.id) ?? []),
       );
     }

@@ -21,6 +21,7 @@ import {
   patchIssue,
   postIssueComment,
   setAcceptanceCriterionEnabled,
+  setIssueCommentArchived,
 } from "@/api/client";
 import type { IssueRefTarget } from "@/lib/remark-issue-refs";
 import { queryKeys } from "./keys";
@@ -262,6 +263,39 @@ export function usePostComment(owner: string, repo: string, number: number) {
         queryKey: queryKeys.issueComments(full(owner, repo), number),
       });
     },
+  });
+}
+
+/**
+ * Archive / unarchive a comment, then refresh the comment list. The detail screen reads its
+ * comments from the page-data query, so that key is invalidated too — the comment hook itself is
+ * disabled there and would never refetch on its own.
+ */
+export function useSetIssueCommentArchived(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  const repoFull = full(owner, repo);
+  return useMutation({
+    mutationFn: (input: { commentId: number; archived: boolean }) =>
+      setIssueCommentArchived(
+        owner,
+        repo,
+        number,
+        input.commentId,
+        input.archived,
+      ),
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({
+          queryKey: queryKeys.issueComments(repoFull, number),
+        }),
+        qc.invalidateQueries({
+          queryKey: [...queryKeys.issue(repoFull, number), "pageData"],
+        }),
+      ]),
   });
 }
 

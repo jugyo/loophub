@@ -18,6 +18,8 @@ export function usage(): void {
   lh issue search|list|view|create|import|update|comment|close|label  [--repo owner/repo]
   lh issue new [--repo owner/name] [--claude-code | --codex | --grok | --opencode] [--model <name>] [--effort <level>] [--target-branch <branch>] [--prompt <text>]
   lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
+  lh issue view <number> [--include-archived] [--repo owner/name] [--json]   # archived comments are left out of comment_list unless --include-archived
+  lh issue comment archive|unarchive <comment> --issue <number> [--repo owner/name] [--json]   # collapse a settled comment on the issue page
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|review-response|close|reopen  [--repo owner/repo]
   lh pr feedback list|create <pr> | pending <pr> --run <id> | view|reply|archive|unarchive <conversation> --pr <pr> | react <message> --pr <pr> --emoji <emoji> [--context <lines>] [--repo owner/repo]

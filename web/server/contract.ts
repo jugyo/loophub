@@ -858,6 +858,22 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.comments.createHumanForIssue(p.repo, p.number, p.body),
   },
+  "comments/archive": {
+    description:
+      "Archive or unarchive an issue comment, keeping it collapsed on the issue page.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        comment_id: positiveInt,
+        archived: { type: "boolean" },
+      },
+      ["repo", "number", "comment_id", "archived"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.comments.setArchived(p.repo, p.number, p.comment_id, p.archived),
+  },
   "pullComments/create": {
     description: "Add a human comment to a pull request.",
     params: params({ repo, number: positiveInt, body: strNonEmpty }, [

@@ -86,7 +86,13 @@ export async function run(): Promise<void> {
         );
       });
   } else if (sub === "view") {
-    const i = await runOp(() => s.issues.get(repo, Number(rest[0])));
+    // Archived comments stay out of `comment_list` unless asked for (#2494), so a reader gets the
+    // comments still in play rather than the ones a human already retired.
+    const i = await runOp(() =>
+      s.issues.get(repo, Number(rest[0]), {
+        includeArchivedComments: flags["include-archived"] === true,
+      }),
+    );
     out(i);
     if (!flags.json) {
       let line = `#${i.number} ${i.title} [${i.state}] @${i.user.login}`;
@@ -302,17 +308,35 @@ export async function run(): Promise<void> {
   } else if (sub === "comment") {
     // Write commands return the resource they created/updated so an agent can verify from the
     // output what actually happened, instead of trusting a fixed success word (#1863).
-    const number = Number(rest[0]);
-    const body =
-      flags.body === undefined ? "" : await readTextInput(flags.body);
-    const c = await runOp(async () =>
-      s.comments.create(repo, number, body, await writeSession()),
-    );
-    out(c);
-    if (!flags.json)
-      console.log(
-        `commented on #${number} (comment ${c.id} by @${c.user.login})`,
+    if (rest[0] === "archive" || rest[0] === "unarchive") {
+      if (!flags.issue) fail("--issue is required");
+      const archived = rest[0] === "archive";
+      const c = await runOp(() =>
+        s.comments.setArchived(
+          repo,
+          Number(flags.issue),
+          Number(rest[1]),
+          archived,
+        ),
       );
+      out(c);
+      if (!flags.json)
+        console.log(
+          `${archived ? "archived" : "unarchived"} issue comment ${c.id}`,
+        );
+    } else {
+      const number = Number(rest[0]);
+      const body =
+        flags.body === undefined ? "" : await readTextInput(flags.body);
+      const c = await runOp(async () =>
+        s.comments.create(repo, number, body, await writeSession()),
+      );
+      out(c);
+      if (!flags.json)
+        console.log(
+          `commented on #${number} (comment ${c.id} by @${c.user.login})`,
+        );
+    }
   } else if (sub === "close") {
     const number = Number(rest[0]);
     const before = await runOp(() => s.issues.get(repo, number));

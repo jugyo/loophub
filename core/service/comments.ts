@@ -54,6 +54,27 @@ export const comments = {
     return createIssueComment(r, row, body, "me", "human", null);
   },
 
+  /**
+   * Archive or unarchive an issue comment. Like the PR counterpart the comment is kept and still
+   * rendered — collapsed — so a settled exchange stops crowding the timeline without any history
+   * being deleted.
+   */
+  setArchived(
+    name: string,
+    number: number,
+    commentId: number,
+    archived: boolean,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "issue");
+    const comment = S.getComment(commentId);
+    if (!comment || comment.issue_id !== row.id) {
+      throw new ServiceError(404, "issue comment not found");
+    }
+    return commentWire(S.setCommentArchived(comment.id, archived));
+  },
+
   createForPull(
     name: string,
     number: number,

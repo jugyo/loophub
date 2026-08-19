@@ -815,6 +815,21 @@ export function postIssueComment(
   });
 }
 
+export function setIssueCommentArchived(
+  owner: string,
+  repo: string,
+  number: number,
+  commentId: number,
+  archived: boolean,
+) {
+  return rpc<IssueComment>("comments/archive", {
+    repo: full(owner, repo),
+    number,
+    comment_id: commentId,
+    archived,
+  });
+}
+
 export function postPullComment(
   owner: string,
   repo: string,

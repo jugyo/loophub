@@ -348,3 +348,77 @@ test("classifies issue commenters, including a human posting without a session",
     "unknown",
   ]);
 });
+
+// #2494: an issue comment archives the same way a PR comment does — the row is kept and the
+// archive state survives a round trip — and the issue's comment list leaves it out unless asked.
+test("archives and unarchives an issue comment, and filters it out of the issue's comment list", async () => {
+  const issueNumber = (
+    await svc.issues.create(repoName, { title: "Archive target issue" })
+  ).number;
+  const kept = svc.comments.createHumanForIssue(repoName, issueNumber, "Keep.");
+  const settled = svc.comments.createHumanForIssue(
+    repoName,
+    issueNumber,
+    "Settled.",
+  );
+
+  const archived = svc.comments.setArchived(
+    repoName,
+    issueNumber,
+    settled.id,
+    true,
+  );
+  expect(archived.archived_at).not.toBeNull();
+
+  const listed = await svc.issues.get(repoName, issueNumber);
+  expect(listed.comment_list?.map((c) => c.id)).toEqual([kept.id]);
+
+  const withArchived = await svc.issues.get(repoName, issueNumber, {
+    includeArchivedComments: true,
+  });
+  expect(withArchived.comment_list?.map((c) => c.id)).toEqual([
+    kept.id,
+    settled.id,
+  ]);
+  expect(
+    withArchived.comment_list?.find((c) => c.id === settled.id)?.archived_at,
+  ).not.toBeNull();
+
+  // The Web timeline renders archived comments collapsed, so its own list still carries them.
+  expect(svc.comments.list(repoName, issueNumber).map((c) => c.id)).toEqual([
+    kept.id,
+    settled.id,
+  ]);
+
+  expect(
+    svc.comments.setArchived(repoName, issueNumber, settled.id, false)
+      .archived_at,
+  ).toBeNull();
+  const relisted = await svc.issues.get(repoName, issueNumber);
+  expect(relisted.comment_list?.map((c) => c.id)).toEqual([
+    kept.id,
+    settled.id,
+  ]);
+});
+
+test("rejects archiving a comment that belongs to another issue or to a PR", async () => {
+  const issueNumber = (
+    await svc.issues.create(repoName, { title: "Archive scope issue" })
+  ).number;
+  const otherNumber = (
+    await svc.issues.create(repoName, { title: "Other issue" })
+  ).number;
+  const comment = svc.comments.createHumanForIssue(
+    repoName,
+    issueNumber,
+    "Mine.",
+  );
+
+  expect(() =>
+    svc.comments.setArchived(repoName, otherNumber, comment.id, true),
+  ).toThrow(/not found/);
+  // A PR number is not an issue, so the issue-scoped archive refuses it.
+  expect(() =>
+    svc.comments.setArchived(repoName, prNumber, comment.id, true),
+  ).toThrow(/Not Found/);
+});

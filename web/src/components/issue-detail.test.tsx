@@ -107,7 +107,6 @@ function mockFetch(
       setting: { override: false, runtime: null, model: null, effort: null },
       effective: { runtime: "claude-code", model: "opus", effort: "medium" },
     }),
-    ...extraHandlers,
     "issues/get": getIssue,
     "comments/list": () => comments,
     "comments/create": (p) => ({
@@ -131,6 +130,9 @@ function mockFetch(
       },
       codingAgent: "claude-code",
     }),
+    // Last, so a test can replace any default above it — the archived-comment cases swap the
+    // comment list out for one with an archived entry.
+    ...extraHandlers,
   });
 }
 
@@ -397,6 +399,61 @@ describe("IssueDetail", () => {
     );
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Looks good."));
+  });
+
+  // #2494: archiving an issue comment collapses it in place instead of removing it.
+  it("archives an issue comment from its three dots menu", async () => {
+    const archive = vi.fn(() => ({
+      ...comments[0],
+      archived_at: "2026-06-18T12:00:00Z",
+    }));
+    renderDetail(undefined, { "comments/archive": archive });
+
+    fireEvent.pointerDown(
+      await screen.findByLabelText("Actions for issue comment 1"),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+
+    await waitFor(() =>
+      expect(archive).toHaveBeenCalledWith(
+        expect.objectContaining({ comment_id: 1, archived: true }),
+      ),
+    );
+  });
+
+  it("collapses an archived issue comment to its header and expands it on demand", async () => {
+    const archive = vi.fn(() => ({ ...comments[0], archived_at: null }));
+    renderDetail(undefined, {
+      "comments/list": () => [
+        { ...comments[0], archived_at: "2026-06-18T12:00:00Z" },
+        comments[1],
+      ],
+      "comments/archive": archive,
+    });
+
+    const summary = await screen.findByLabelText("Archived issue comment 1");
+    expect(summary.textContent).toContain("@design-bot");
+    expect(screen.queryByText("Looks good.")).toBeNull();
+    // An unarchived comment in the same timeline still shows its body.
+    expect(screen.getByText("Shipping it.")).toBeTruthy();
+
+    fireEvent.click(summary);
+    expect(screen.getByText("Looks good.")).toBeTruthy();
+
+    fireEvent.pointerDown(
+      screen.getByLabelText("Actions for issue comment 1"),
+      {
+        button: 0,
+        ctrlKey: false,
+      },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Unarchive" }));
+    await waitFor(() =>
+      expect(archive).toHaveBeenCalledWith(
+        expect.objectContaining({ comment_id: 1, archived: false }),
+      ),
+    );
   });
 
   // #2151: documents (not just pasted images) can be attached from the UI.

@@ -65,9 +65,28 @@ Usage:
   lh issue view <number> [options]
 
 Options:
+  --include-archived    Include archived comments in the comment list (omitted by default).
   --repo <owner/name>   Repository (defaults to the repository at the current path).
   --json                Print the issue, comments, acceptance criteria, and linked PR as JSON.
   --help                Show this help without reading the database.`;
+
+const ISSUE_COMMENT_DETAILS = `
+
+Usage:
+  lh issue comment <number> --body <text> [options]
+  lh issue comment archive|unarchive <comment> --issue <number> [options]
+
+Options:
+  --body <text>         Comment body; @file reads a file and - reads stdin.
+  --issue <number>      Target issue (required for archive and unarchive).
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --session-id <uuid>   Attribute the comment to a registered agent session.
+  --json                Print the created or updated comment as JSON.
+  --help                Show this help without changing the database.
+
+Constraints:
+  An archived comment stays on the issue, collapsed, and is left out of the comment list
+  unless \`lh issue view --include-archived\` asks for it.`;
 
 const SESSION_REGISTER_DETAILS = `
 
@@ -304,7 +323,11 @@ export const commandHelp: readonly CommandHelp[] = [
   },
   { path: ["issue", "import"], description: "Import a GitHub issue." },
   { path: ["issue", "update"], description: "Update an issue." },
-  { path: ["issue", "comment"], description: "Comment on an issue." },
+  {
+    path: ["issue", "comment"],
+    description: "Comment on an issue.",
+    details: ISSUE_COMMENT_DETAILS,
+  },
   { path: ["issue", "close"], description: "Close an issue." },
   { path: ["issue", "label"], description: "Add a label to an issue." },
   { path: ["session"], description: "Manage agent sessions." },

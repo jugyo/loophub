@@ -22,9 +22,22 @@ export interface CommentReactionRow {
 }
 
 // ---- comments ----
-export function listComments(issueId: number): CommentRow[] {
+/**
+ * An issue's or PR's comments, oldest first. Archived comments are part of the record and are
+ * returned by default — the caller that wants only the live ones (a CLI listing, an agent reading
+ * an issue) asks for them with `includeArchived: false`.
+ */
+export function listComments(
+  issueId: number,
+  opts: { includeArchived?: boolean } = {},
+): CommentRow[] {
+  const onlyLive = opts.includeArchived === false;
   return db
-    .query(`SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at ASC`)
+    .query(
+      `SELECT * FROM comments
+       WHERE issue_id = ?${onlyLive ? " AND archived_at IS NULL" : ""}
+       ORDER BY created_at ASC`,
+    )
     .all(issueId) as CommentRow[];
 }
 export function getComment(id: number): CommentRow | null {

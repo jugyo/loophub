@@ -20,7 +20,10 @@ import {
   useState,
 } from "react";
 import type { Issue, IssueComment, LinkedPull } from "@/api/types";
-import { CommentActionsMenu } from "@/components/comment-archive";
+import {
+  ArchivedComment,
+  CommentActionsMenu,
+} from "@/components/comment-archive";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
 import {
   DetailHeaderTitle,
@@ -53,6 +56,7 @@ import {
   useIssueDetailPage,
   usePostComment,
   useSetAcceptanceCriterionEnabled,
+  useSetIssueCommentArchived,
   useSetIssueState,
 } from "@/queries/issues";
 import { usePullUsage, useUnarchivePull } from "@/queries/pulls";
@@ -132,6 +136,7 @@ export function IssueDetail({
           <CommentList
             owner={owner}
             repo={repo}
+            number={number}
             comments={commentsQuery.data}
             isLoading={false}
             isError={false}
@@ -655,12 +660,14 @@ function LinkedPullSummaryRowWithUsage({
 function CommentList({
   owner,
   repo,
+  number,
   comments,
   isLoading,
   isError,
 }: {
   owner: string;
   repo: string;
+  number: number;
   comments: IssueComment[] | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -688,32 +695,95 @@ function CommentList({
       className="flex flex-col gap-3"
     >
       {comments.map((c) => (
-        <article
+        <IssueCommentCard
           key={c.id}
-          data-debug-component="IssueComment"
-          className="rounded-md border p-3"
-        >
-          <header className="mb-1 flex items-start justify-between gap-2 text-sm font-medium">
-            <span className="min-w-0">
-              <CommentAuthorLabel
-                author={c.user.login}
-                authorType={c.author_type}
-              />{" "}
-              <span className="text-xs font-normal text-muted-foreground">
-                {relativeTime(c.created_at)}
-              </span>
-            </span>
-            <CommentActionsMenu
-              label={`Actions for issue comment ${c.id}`}
-              copyMarkdown={c.body}
-            />
-          </header>
-          <Markdown owner={owner} repo={repo}>
-            {c.body}
-          </Markdown>
-        </article>
+          owner={owner}
+          repo={repo}
+          number={number}
+          comment={c}
+        />
       ))}
     </div>
+  );
+}
+
+// One comment in the issue timeline. Archived (#2494) it keeps its place in the timeline but
+// collapses to its own header row — author and time — and expands on click; the same three dots
+// menu archives and unarchives it.
+function IssueCommentCard({
+  owner,
+  repo,
+  number,
+  comment,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  comment: IssueComment;
+}) {
+  const archive = useSetIssueCommentArchived(owner, repo, number);
+  const archived = comment.archived_at != null;
+  const header = (
+    <>
+      <CommentAuthorLabel
+        author={comment.user.login}
+        authorType={comment.author_type}
+      />{" "}
+      <span className="text-xs font-normal text-muted-foreground">
+        {relativeTime(comment.created_at)}
+      </span>
+    </>
+  );
+  const menu = (
+    <CommentActionsMenu
+      label={`Actions for issue comment ${comment.id}`}
+      copyMarkdown={comment.body}
+      archived={archived}
+      busy={archive.isPending}
+      onArchived={(next) =>
+        archive.mutate({ commentId: comment.id, archived: next })
+      }
+    />
+  );
+  const body = (
+    <Markdown owner={owner} repo={repo}>
+      {comment.body}
+    </Markdown>
+  );
+  return (
+    <article
+      data-debug-component="IssueComment"
+      className={
+        archived
+          ? "rounded-md border border-dashed px-3 py-2"
+          : "rounded-md border p-3"
+      }
+    >
+      {archived ? (
+        <ArchivedComment
+          label={`Archived issue comment ${comment.id}`}
+          preview={header}
+          menu={menu}
+        >
+          {body}
+        </ArchivedComment>
+      ) : (
+        <>
+          <header className="mb-1 flex items-start justify-between gap-2 text-sm font-medium">
+            <span className="min-w-0">{header}</span>
+            {menu}
+          </header>
+          {body}
+        </>
+      )}
+      {archive.isError ? (
+        <p className="mt-2 text-sm text-destructive">
+          {archive.error instanceof Error
+            ? archive.error.message
+            : "Failed to update the comment."}
+        </p>
+      ) : null}
+    </article>
   );
 }
 
