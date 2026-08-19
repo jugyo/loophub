@@ -61,7 +61,7 @@ const WORKFLOW_MESSAGE_CATALOG = {
     ja: [
       "## 言語",
       "",
-      "この run で生成する自然言語コンテンツは、commit message を除いてすべて日本語で書く。会話上の出力（plan、report、review、summary、note、comment）に加え、issue や pull request の title と body、acceptance criteria、review 文などの成果物も含む。section heading や定型 label など文書構造を支えるテキストは、既存の共通表記を維持する。commit message は repository convention に従い英語で書く。code、identifier、command、path、引用した log / error text は原文のまま維持する。",
+      "この run で生成する自然言語コンテンツはすべて日本語で書く。会話上の出力（plan、report、review、summary、note、comment）に加え、issue や pull request の title と body、acceptance criteria、review 文、commit message などの成果物も含む。section heading や定型 label など文書構造を支えるテキストは、既存の共通表記を維持する。対象 repository が commit message の言語規約を明記している場合は、その規約を優先する。code、identifier、command、path、引用した log / error text は原文のまま維持する。",
     ].join("\n"),
   },
   inputsHeading: {

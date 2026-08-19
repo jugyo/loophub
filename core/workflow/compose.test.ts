@@ -121,8 +121,16 @@ test("every rendered contract carries the configured-language instruction", () =
           "section heading や定型 label など文書構造を支えるテキストは、既存の共通表記を維持する",
         );
         expect(contract).toContain(
-          "commit message は repository convention に従い英語で書く",
+          "review 文、commit message などの成果物も含む",
         );
+        expect(contract).toContain(
+          "対象 repository が commit message の言語規約を明記している場合は、その規約を優先する",
+        );
+        // The positive assertions above still pass if an exclusion clause is added back
+        // alongside them, and such a clause has two independent shapes: carving commit
+        // messages out of the Japanese set, and naming the language they take instead.
+        expect(contract).not.toContain("commit message を除いて");
+        expect(contract).not.toContain("英語");
       }
     }
   }
