@@ -284,6 +284,28 @@ function renderDetail(
   return { ...result, queryClient };
 }
 
+// The tracks of a Tailwind `grid-cols-[...]` class, split on the top-level `_` separators so a
+// track that carries its own underscores (`minmax(0,_max-content)`) still counts as one.
+function gridTemplateColumns(className: string): string[] {
+  const template = className.match(/grid-cols-\[([^\]]+)\]/)?.[1];
+  if (!template) throw new Error(`no grid-cols-[...] class in: ${className}`);
+  const tracks: string[] = [];
+  let depth = 0;
+  let track = "";
+  for (const char of template) {
+    if (char === "(") depth += 1;
+    if (char === ")") depth -= 1;
+    if (char === "_" && depth === 0) {
+      tracks.push(track);
+      track = "";
+      continue;
+    }
+    track += char;
+  }
+  tracks.push(track);
+  return tracks;
+}
+
 describe("PullDetail", () => {
   it("shows a file's last change time before its comment count", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -307,6 +329,38 @@ describe("PullDetail", () => {
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(within(section).getByText("·")).toBeTruthy();
+  });
+
+  it("gives the file row's trailing metadata a column of its own", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-06-18T14:00:00Z"));
+    renderDetail({
+      "pulls/files": () => [
+        { ...files[0], last_changed_at: "2026-06-18T12:00:00Z" },
+      ],
+      "diffFeedback/list": () => ({
+        threads: [],
+        comment_counts: { "web/src/a.ts": 2 },
+      }),
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: /Files changed \(1\)/ })
+    ).closest("section")!;
+    const row = within(section).getByRole("button", {
+      name: /web\/src\/a\.ts/,
+    });
+    // The time, its separator and the comment count are optional, so the row keeps them in one
+    // cell: as separate children they outnumber the columns and wrap onto an implicit second row.
+    const meta = within(section).getByText("2h ago").parentElement!;
+    expect(meta.parentElement).toBe(row);
+    expect(within(meta).getByLabelText("2 diff comments")).toBeTruthy();
+    // One child per track, so that cell is the last track — which must be content-sized. A
+    // flexible track collapses to zero once a long filename takes the row's free space, and the
+    // nowrap metadata then overflows onto the diff stat.
+    const tracks = gridTemplateColumns(row.className);
+    expect(row.children.length).toBe(tracks.length);
+    expect(tracks.at(-1)).not.toMatch(/fr\b/);
   });
 
   it("keeps the file row unchanged when its last change time is unavailable", async () => {
@@ -1517,6 +1571,7 @@ describe("PullDetail", () => {
       "M",
       "web/src/a.ts",
       "+1−1",
+      "",
       "",
     ]);
     expect(row.className).toContain("grid-cols-");

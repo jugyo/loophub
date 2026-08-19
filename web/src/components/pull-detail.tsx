@@ -991,7 +991,7 @@ function FileSummaryRow({
       <button
         type="button"
         onClick={onOpen}
-        className="grid w-full grid-cols-[auto_minmax(0,max-content)_auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="grid w-full grid-cols-[auto_minmax(0,max-content)_auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         <FileStatusBadge status={file.status} />
         <span className="min-w-0 truncate font-mono text-xs [direction:rtl]">
@@ -1003,20 +1003,26 @@ function FileSummaryRow({
           className="justify-self-end text-xs"
         />
         <span aria-hidden="true" />
-        {file.last_changed_at ? (
-          <span
-            className="whitespace-nowrap text-xs text-muted-foreground"
-            title={new Date(file.last_changed_at).toLocaleString()}
-          >
-            {relativeTime(file.last_changed_at)}
-          </span>
-        ) : null}
-        {file.last_changed_at && commentCount > 0 ? (
-          <span aria-hidden="true" className="text-muted-foreground">
-            ·
-          </span>
-        ) : null}
-        <DiffCommentCount count={commentCount} className="text-xs" />
+        {/* The change time, its separator and the comment count are optional, so they share the
+            trailing cell: as separate children they would outnumber the row's columns and wrap.
+            The cell keeps its own content-sized column — in the flexible one it would collapse to
+            zero once a long filename absorbs the row's free space and then overflow the diff stat. */}
+        <span className="flex items-center gap-2 whitespace-nowrap">
+          {file.last_changed_at ? (
+            <span
+              className="text-xs text-muted-foreground"
+              title={new Date(file.last_changed_at).toLocaleString()}
+            >
+              {relativeTime(file.last_changed_at)}
+            </span>
+          ) : null}
+          {file.last_changed_at && commentCount > 0 ? (
+            <span aria-hidden="true" className="text-muted-foreground">
+              ·
+            </span>
+          ) : null}
+          <DiffCommentCount count={commentCount} className="text-xs" />
+        </span>
       </button>
     </li>
   );
