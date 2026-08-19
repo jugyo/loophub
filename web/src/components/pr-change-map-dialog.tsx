@@ -1,5 +1,11 @@
 import { Maximize2, X } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { PrChangeMap, PullFile } from "@/api/types";
 import { DiffLines } from "@/components/diff-lines";
 import { DiffStat } from "@/components/diff-stat";
@@ -24,6 +30,16 @@ import { changeMapDocumentPaths } from "../../../core/change-map-document.ts";
 // left out.
 
 const NOT_COVERED = "__not_covered__";
+
+// #350: the Miller columns are read, not just clicked through, so their labels wrap instead of
+// being cut off — and the widths that were `w-56` / `w-64` / `w-80` are now the starting point of
+// something the reader can drag. Kept in component state on purpose: a width chosen for one map is
+// rarely the right one for the next, so reopening the dialog starts from the defaults again.
+const DEFAULT_COLUMN_WIDTHS = { category: 224, change: 256, file: 320 };
+type ColumnKey = keyof typeof DEFAULT_COLUMN_WIDTHS;
+
+/** How narrow a dragged column may get before it stops following the pointer. */
+const MIN_COLUMN_WIDTH = 160;
 
 /** A first-column entry: one of the document's categories, or the synthesized Not covered one. */
 interface MapCategory {
@@ -51,6 +67,13 @@ export function PrChangeMapDialog({
 }) {
   const backdropDismiss = useBackdropDismiss(onClose);
   const [at, setAt] = useState({ category: 0, change: 0, file: 0 });
+  const [widths, setWidths] = useState(DEFAULT_COLUMN_WIDTHS);
+  const resizeColumn = useCallback((key: ColumnKey, width: number) => {
+    setWidths((current) => ({
+      ...current,
+      [key]: Math.max(MIN_COLUMN_WIDTH, Math.round(width)),
+    }));
+  }, []);
 
   const categories = useMemo<MapCategory[]>(() => {
     const document = changeMap.document;
@@ -141,7 +164,11 @@ export function PrChangeMapDialog({
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <ColumnPane label="Category" count={categories.length} width="w-56">
+          <ColumnPane
+            label="Category"
+            count={categories.length}
+            width={widths.category}
+          >
             {categories.map((item, index) => (
               <ColumnRow
                 key={item.key}
@@ -150,7 +177,7 @@ export function PrChangeMapDialog({
               >
                 <span
                   className={cn(
-                    "min-w-0 flex-1 truncate",
+                    "min-w-0 flex-1 break-words",
                     !item.covered && "italic",
                   )}
                   title={item.summary}
@@ -160,11 +187,16 @@ export function PrChangeMapDialog({
               </ColumnRow>
             ))}
           </ColumnPane>
+          <ColumnResizer
+            label="Category"
+            width={widths.category}
+            onResize={(width) => resizeColumn("category", width)}
+          />
 
           <ColumnPane
             label="Change"
             count={category?.changes.length ?? 0}
-            width="w-64"
+            width={widths.change}
           >
             {(category?.changes ?? []).map((item, index) => (
               <ColumnRow
@@ -175,16 +207,24 @@ export function PrChangeMapDialog({
                 }
               >
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate">{item.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span className="break-words">{item.name}</span>
+                  <span className="break-words text-xs text-muted-foreground">
                     {item.kind}
                   </span>
                 </span>
               </ColumnRow>
             ))}
           </ColumnPane>
+          <ColumnResizer
+            label="Change"
+            width={widths.change}
+            onResize={(width) => resizeColumn("change", width)}
+          />
 
-          <div className="flex w-80 shrink-0 flex-col border-r">
+          <div
+            className="flex shrink-0 flex-col border-r"
+            style={{ width: widths.file }}
+          >
             <ColumnHeader label="File" count={change?.files.length ?? 0} />
             {change ? (
               <div className="min-h-0 flex-1 overflow-y-auto">
@@ -211,14 +251,14 @@ export function PrChangeMapDialog({
                           onClick={() =>
                             setAt((current) => ({ ...current, file: index }))
                           }
-                          className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50 aria-[current=true]:bg-accent"
+                          className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 px-3 py-1.5 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50 aria-[current=true]:bg-accent"
                         >
                           {listed ? (
                             <FileStatusBadge status={listed.status} />
                           ) : (
                             <span aria-hidden="true" className="size-4" />
                           )}
-                          <span className="min-w-0 truncate font-mono text-xs [direction:rtl]">
+                          <span className="min-w-0 break-all font-mono text-xs">
                             {candidate.path}
                           </span>
                           {listed ? (
@@ -251,6 +291,12 @@ export function PrChangeMapDialog({
               </div>
             ) : null}
           </div>
+
+          <ColumnResizer
+            label="File"
+            width={widths.file}
+            onResize={(width) => resizeColumn("file", width)}
+          />
 
           {/* The descent ends in the diff itself, not in a link to it: the last column is the
               reason the reader came, so making them click again to see it would put the thing they
@@ -340,11 +386,12 @@ function ColumnPane({
 }: {
   label: string;
   count: number;
-  width: string;
+  /** Current width in pixels — see DEFAULT_COLUMN_WIDTHS. */
+  width: number;
   children: ReactNode;
 }) {
   return (
-    <div className={cn("flex shrink-0 flex-col border-r", width)}>
+    <div className="flex shrink-0 flex-col border-r" style={{ width }}>
       <ColumnHeader label={label} count={count} />
       <ul className="min-h-0 flex-1 divide-y overflow-y-auto">{children}</ul>
     </div>
@@ -366,7 +413,7 @@ function ColumnRow({
         type="button"
         aria-current={selected}
         onClick={onSelect}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-[current=true]:bg-accent"
+        className="flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-[current=true]:bg-accent"
       >
         {children}
         <span
@@ -377,5 +424,50 @@ function ColumnRow({
         </span>
       </button>
     </li>
+  );
+}
+
+// The handle on a column's right edge. Dragging is tracked on the window rather than on the handle
+// so the pointer may leave the 4px strip mid-drag without the column stopping halfway.
+function ColumnResizer({
+  label,
+  width,
+  onResize,
+}: {
+  label: string;
+  width: number;
+  onResize: (width: number) => void;
+}) {
+  const [drag, setDrag] = useState<{ x: number; width: number } | null>(null);
+
+  useEffect(() => {
+    if (!drag) return;
+    const move = (event: PointerEvent) =>
+      onResize(drag.width + event.clientX - drag.x);
+    const stop = () => setDrag(null);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+  }, [drag, onResize]);
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${label} column`}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        setDrag({ x: event.clientX, width });
+      }}
+      className={cn(
+        "w-1 shrink-0 cursor-col-resize hover:bg-primary/40",
+        drag && "bg-primary/40",
+      )}
+    />
   );
 }
