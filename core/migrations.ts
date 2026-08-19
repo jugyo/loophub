@@ -1611,6 +1611,39 @@ export const MIGRATIONS: Migration[] = [
     "INTEGER",
   ),
   addColumn("089-agent-sessions-effort", "agent_sessions", "effort", "TEXT"),
+  // #344: the change map generated for a PR at one HEAD. Kept per head_sha rather than one row per
+  // PR so a later map does not erase the one a reviewer is reading, and so a map can be told apart
+  // from the commits it was written against (the detail view shows the newest and marks it stale
+  // when head_sha has moved on).
+  sql(
+    "20260818125553-pr-change-maps",
+    `
+    CREATE TABLE IF NOT EXISTS pr_change_maps (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id   INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      head_sha   TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pr_change_maps_issue
+      ON pr_change_maps(issue_id, id DESC);
+    `,
+  ),
+  // #344: a change map became a structured document (core/change-map-document.ts) instead of
+  // Markdown prose, so that the files each change covers are declared rather than inferred from the
+  // text. The two representations cannot be converted into one another — prose does not say which
+  // change owns which file — so the rows written under the old shape are dropped rather than
+  // migrated. They only ever held maps generated while this feature was being built; nothing
+  // references them, and regenerating one is a button.
+  {
+    id: "20260818231634-pr-change-maps-document",
+    run: (db) => {
+      addColumnIfMissing(db, "pr_change_maps", "document", "TEXT");
+      db.exec("DELETE FROM pr_change_maps WHERE document IS NULL;");
+      dropColumnIfPresent(db, "pr_change_maps", "body");
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

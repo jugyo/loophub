@@ -13,6 +13,7 @@ export { labels } from "./service/labels.ts";
 export { notifications } from "./service/notifications.ts";
 export { pageData } from "./service/page-data.ts";
 export { pullFileViews } from "./service/pull-file-views.ts";
+export { prChangeMaps } from "./service/pr-change-maps.ts";
 export { projectPullDiff, pulls } from "./service/pulls.ts";
 export type { Repo } from "./service/repos.ts";
 export { repos } from "./service/repos.ts";

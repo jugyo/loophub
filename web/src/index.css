@@ -443,6 +443,28 @@
   .markdown-preview.markdown-body hr {
     @apply my-10;
   }
+  /* #344: a change map's per-change notes are a sentence or two rendered inside a column, not a
+     document — they inherit the surrounding size and lose the block spacing that would otherwise
+     open gaps between a summary and the label above it. The tag-qualified rules resolve to 0-2-1,
+     so these must match that specificity to win. */
+  .markdown-compact.markdown-body {
+    @apply text-inherit leading-snug;
+  }
+  .markdown-compact.markdown-body p,
+  .markdown-compact.markdown-body blockquote,
+  .markdown-compact.markdown-body ul,
+  .markdown-compact.markdown-body ol,
+  .markdown-compact.markdown-body table,
+  .markdown-compact.markdown-body pre {
+    @apply my-1;
+  }
+  .markdown-compact.markdown-body > :first-child {
+    @apply mt-0;
+  }
+  .markdown-compact.markdown-body > :last-child {
+    @apply mb-0;
+  }
+
   /* GFM wraps loose-list-item and blockquote content in <p>, which would
      otherwise stack the paragraph's own my-5 on top of the li/blockquote's
      own spacing. */

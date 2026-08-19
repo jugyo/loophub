@@ -168,6 +168,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `pulls.createGithubPull` / `pushGithubPull` | procedure | GitHub PR link / pushed SHA、対応する event | git push、`gh`、pushed SHA の read |
 | `pulls.merge` | procedure | merge state、linked issue close、`pull_request.merged` と `issue.closed` | merge の git operation |
 | `pulls.githubStatus` | store helper | status cache | GitHub fetch |
+| `prChangeMaps.create` | procedure | change map row、`pull_request.change_map_created` | head SHA の git read |
 | `dev.openPr` | procedure（既存 PR を再利用する path） | 再利用した PR の session link、`pull_request.updated` | base branch の git 検証。新規作成 path は `pulls.create` の行に従う |
 | `dev.attachSession` | procedure | PR の session link、`pull_request.updated` | — |
 | `comments.create` | procedure | comment、`issue.commented` | — |

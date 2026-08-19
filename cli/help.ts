@@ -158,6 +158,21 @@ Options:
   --json                Print the created comment or reaction as JSON.
   --help                Show this help without changing the database.`;
 
+const PR_MAP_DETAILS = `
+
+Usage:
+  lh pr map create <number> --body - [--head-sha <sha>] [options]
+  lh pr map view <number> [options]
+
+Options:
+  --body <-|path>       Change map JSON document: - reads stdin, anything else is read as a
+                        file path (create). Inline text is not accepted.
+  --head-sha <sha>      Head commit the map was written against; defaults to the PR's head (create).
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --session-id <uuid>   Attribute the change map to a registered agent session.
+  --json                Print the change map as JSON.
+  --help                Show this help without changing the database.`;
+
 const PR_FEEDBACK_DETAILS = `
 
 Usage:
@@ -394,6 +409,11 @@ export const commandHelp: readonly CommandHelp[] = [
     path: ["pr", "feedback"],
     description: "Manage pull request diff feedback conversations.",
     details: PR_FEEDBACK_DETAILS,
+  },
+  {
+    path: ["pr", "map"],
+    description: "Manage a pull request's change map.",
+    details: PR_MAP_DETAILS,
   },
   { path: ["pr", "merge"], description: "Merge a pull request." },
   {

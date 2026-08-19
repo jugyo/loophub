@@ -5,6 +5,8 @@
 // whose values come from live git / worktree state live in serialize-status.ts, so this
 // module needs neither node:fs nor core/git.ts and is testable without a git repo.
 
+import type { ChangeMapDocument } from "./change-map-document.ts";
+import { parseChangeMapDocumentText } from "./change-map-document.ts";
 import { resolveEffectiveAgentConfig } from "./config.ts";
 import type { GhPrStatus, GithubReviewState } from "./github.ts";
 import { linkedRef } from "./links.ts";
@@ -623,6 +625,35 @@ interface RetroFindingWire {
   note: string;
   evidence_ref?: string | null;
   proposed_action?: string | null;
+}
+
+// #344: shape a pr_change_maps row for the wire, or null when the PR has no change map yet. Keeps
+// issue_id (an internal row id) off the wire; `head_sha` is what the consumer compares against the
+// PR's live head to tell whether the map still covers every commit. The document is sent parsed,
+// not as JSON text, so no consumer has to know it was stored as a string.
+export interface PrChangeMapWire {
+  head_sha: string;
+  document: ChangeMapDocument;
+  created_by: string | null;
+  created_at: string;
+}
+export function prChangeMapJSON(m: S.PrChangeMap): PrChangeMapWire;
+export function prChangeMapJSON(
+  m: S.PrChangeMap | null,
+): PrChangeMapWire | null;
+export function prChangeMapJSON(
+  m: S.PrChangeMap | null,
+): PrChangeMapWire | null {
+  if (!m) return null;
+  return {
+    head_sha: m.head_sha,
+    // Stored documents were validated on the way in, so a parse failure here is a corrupt row
+    // rather than bad input — let it throw instead of inventing an empty map that would read as
+    // "this PR changed nothing".
+    document: parseChangeMapDocumentText(m.document),
+    created_by: m.created_by ?? null,
+    created_at: m.created_at,
+  };
 }
 
 // #406: shape a github_pulls row for the wire, or null. Keeps issue_id (an internal row id) off the

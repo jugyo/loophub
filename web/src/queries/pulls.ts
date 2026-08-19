@@ -14,6 +14,7 @@ import {
   createDiffFeedback,
   getGithubPrStatus,
   getPull,
+  getPullChangeMap,
   getPullDebug,
   getPullDetailPage,
   getPullDiff,
@@ -169,6 +170,18 @@ export function useSetPullFileViewed(
         queryKeys.pullFileViews(full(owner, repo), number),
         views,
       ),
+  });
+}
+
+/**
+ * The newest change map for a PR (#344), or null when none has been generated. Its own key is
+ * refreshed only by `pull_request.change_map_created`, so the document — which covers the whole
+ * change — is not refetched by the ordinary PR-detail traffic.
+ */
+export function usePullChangeMap(owner: string, repo: string, number: number) {
+  return useQuery({
+    queryKey: queryKeys.pullChangeMap(full(owner, repo), number),
+    queryFn: () => getPullChangeMap(owner, repo, number),
   });
 }
 

@@ -1,5 +1,10 @@
 import { readFileSync } from "node:fs";
-import type { DiffFeedbackThreadDetailWire } from "../../core/serialize.ts";
+import type { ChangeMapDocument } from "../../core/change-map-document.ts";
+import { changeMapDocumentPaths } from "../../core/change-map-document.ts";
+import type {
+  DiffFeedbackThreadDetailWire,
+  PrChangeMapWire,
+} from "../../core/serialize.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   fail,
@@ -21,6 +26,34 @@ function readJsonArg(value: string): string {
   return trimmed.startsWith("[") || trimmed.startsWith("{")
     ? value
     : readFileSync(value, "utf8");
+}
+
+// #344: the change map as text, so `lh pr map view` stays readable now that the map is stored as a
+// document rather than prose. Indentation carries the descent the UI shows as columns: category,
+// then change, then the files it covers.
+function changeMapText(map: PrChangeMapWire): string {
+  const lines = [map.document.summary, ""];
+  for (const category of map.document.categories) {
+    lines.push(`## ${category.name}`, `   ${category.summary}`, "");
+    for (const change of category.changes) {
+      lines.push(
+        `  - ${change.name} [${change.kind}]`,
+        `    ${change.summary}`,
+      );
+      if (change.tests) lines.push(`    tests: ${change.tests}`);
+      if (change.risk) lines.push(`    risk: ${change.risk}`);
+      for (const file of change.files) {
+        lines.push(`      ${file.path}`);
+        if (file.summary) lines.push(`        ${file.summary}`);
+      }
+      lines.push("");
+    }
+  }
+  return lines.join("\n").trimEnd();
+}
+
+function changeMapPathCount(document: ChangeMapDocument): number {
+  return changeMapDocumentPaths(document).size;
 }
 
 // A diff feedback conversation as text: where it points, the diff around it, then the exchange.
@@ -312,6 +345,47 @@ export async function run(): Promise<void> {
     out(g);
     if (!flags.json)
       console.log(`pushed to GitHub PR #${g.number} branch ${g.branch}`);
+  } else if (sub === "map") {
+    // #344: the change map an agent generates for a PR. `create` is the one command the generating
+    // agent runs — core validates the document, resolves the head it was written against, stores it,
+    // and emits its event.
+    const [action, numberText] = rest;
+    const number = Number(numberText);
+    if (action === "create") {
+      if (flags.body === undefined)
+        fail("--body is required (- for stdin, or a file path)");
+      // Same convention as `create-github-pr`: `-` reads stdin, anything else is a file path, so a
+      // multi-line document never has to survive shell escaping.
+      const source = await readTextInput(flags.body, { bareFile: true });
+      let document: unknown;
+      try {
+        document = JSON.parse(source);
+      } catch (error) {
+        fail(
+          `--body must be a change map JSON document: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const map = await runOp(async () =>
+        s.prChangeMaps.create(
+          repo,
+          number,
+          { headSha: flags["head-sha"] as string | undefined, document },
+          await writeSession(),
+        ),
+      );
+      out(map);
+      if (!flags.json)
+        console.log(
+          `saved change map for PR #${number} at ${map.head_sha.slice(0, 7)} — ${map.document.categories.length} categories, ${changeMapPathCount(map.document)} files`,
+        );
+    } else if (action === "view") {
+      const map = await runOp(() => s.prChangeMaps.get(repo, number));
+      if (!map) fail(`PR #${number} has no change map`);
+      if (flags.json) out(map);
+      else console.log(changeMapText(map));
+    } else {
+      usage();
+    }
   } else if (sub === "review") {
     const [action, numberText] = rest;
     if (action === "view") {

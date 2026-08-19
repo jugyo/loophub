@@ -220,6 +220,7 @@ function mockFetch(
   return mockRpcFetch({
     "pulls/get": () => pull,
     "pulls/files": () => files,
+    "pulls/changeMap": () => null,
     "reviews/list": () => reviews,
     "reviews/listComments": () => lineComments,
     "diffFeedback/list": () => ({ threads: [], comment_counts: {} }),
@@ -2139,6 +2140,7 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => reviews,
         "reviews/listComments": () => lineComments,
         "comments/list": () => comments,
@@ -2198,6 +2200,7 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2260,6 +2263,7 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => conflicting,
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2311,6 +2315,7 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => noCommits,
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2381,6 +2386,7 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2469,6 +2475,7 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull, // head.sha === "aaa", matches no review
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2559,6 +2566,7 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2631,6 +2639,7 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2674,6 +2683,7 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => reviews,
         "reviews/listComments": () => lineComments,
         "comments/list": () => comments,
@@ -3024,6 +3034,7 @@ function renderDetailWithPull(
     mockRpcFetch({
       "pulls/get": () => ({ ...pull, ...current() }),
       "pulls/files": () => files,
+      "pulls/changeMap": () => null,
       "reviews/list": () => reviews,
       "reviews/listComments": () => lineComments,
       "comments/list": () => comments,
@@ -3332,6 +3343,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
           github_pr_export_started_at: null,
         }),
         "pulls/files": () => files,
+        "pulls/changeMap": () => null,
         "reviews/list": () => reviews,
         "reviews/listComments": () => lineComments,
         "comments/list": () => comments,
@@ -3547,5 +3559,257 @@ describe("PullDetail — #comments landing (#2394)", () => {
 
     await commentsSection();
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+});
+
+// #344: the change map is how a reader takes in the whole change before descending into diffs, so
+// the sidebar owns generating and opening it, and the dialog is the thing that must reach every
+// file — including the ones the map never mentions.
+describe("PullDetail change map", () => {
+  const changeMap = {
+    head_sha: "aaa",
+    created_by: "agent",
+    created_at: "2026-06-18T12:00:00Z",
+    document: {
+      version: 1,
+      summary: "Rewired the entry point.",
+      categories: [
+        {
+          name: "Reading the map",
+          summary: "How the map reaches a diff.",
+          changes: [
+            {
+              name: "Entry point",
+              kind: "UI component",
+              summary: "Rewired the app entry.",
+              files: [
+                { path: "web/src/a.ts", summary: "Renamed the mount helper." },
+              ],
+              tests: "Covered by the detail tests.",
+              risk: "Watch the mount order.",
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  it("offers Generate change map with the generation prompt when the PR has none", async () => {
+    renderDetail();
+    const button = await screen.findByRole("button", {
+      name: /Generate change map/i,
+    });
+
+    fireEvent.click(button);
+    expect(launchTerminal).toHaveBeenCalledTimes(1);
+    const opts = launchTerminal.mock.calls[0][0];
+    expect(opts.repo).toBe("me/proj");
+    expect(opts.workflow).toBe("pr-change-map");
+    expect(opts.prNumber).toBe(30);
+    expect(opts.prompt).toContain("lh pr map create 30 --repo me/proj");
+  });
+
+  it("holds a generating state after the click so a second launch can't be dispatched", async () => {
+    renderDetail();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Generate change map/i }),
+    );
+    const generating = (await screen.findByRole("button", {
+      name: /Generating…/i,
+    })) as HTMLButtonElement;
+    expect(generating.disabled).toBe(true);
+    fireEvent.click(generating);
+    expect(launchTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the map as columns once one exists", async () => {
+    renderDetail({ "pulls/changeMap": () => changeMap });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View change map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Change map" });
+    // The whole descent is on screen: the summary, the category, its change, and that change's file.
+    expect(within(dialog).getByText("Rewired the entry point.")).toBeTruthy();
+    expect(within(dialog).getByText("Reading the map")).toBeTruthy();
+    expect(within(dialog).getByText("Entry point")).toBeTruthy();
+    expect(
+      within(dialog).getByRole("button", { name: /web\/src\/a\.ts/ }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Generate change map/i }),
+    ).toBeNull();
+  });
+
+  // The notes belong to the change, so selecting the change is what makes them readable — a note
+  // nobody can navigate to is the same defect as an unreachable diff.
+  it("shows the selected change's tests and risk notes under its file list", async () => {
+    renderDetail({ "pulls/changeMap": () => changeMap });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View change map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Change map" });
+    const tests = within(dialog).getByText(/Covered by the detail tests/);
+    const risk = within(dialog).getByText(/Watch the mount order/);
+    expect(tests).toBeTruthy();
+    expect(risk).toBeTruthy();
+    // The notes read as commentary on the files, so they sit after them rather than pushing the
+    // file list down the column — the change's own description included.
+    const file = within(dialog).getByRole("button", {
+      name: /web\/src\/a\.ts/,
+    });
+    const summary = within(dialog).getByText("Rewired the app entry.");
+    for (const note of [summary, tests, risk]) {
+      expect(
+        file.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  // A per-file note is optional, and belongs above the diff it describes.
+  it("shows a file's own summary above its diff", async () => {
+    renderDetail({ "pulls/changeMap": () => changeMap });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View change map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Change map" });
+    const note = within(dialog).getByText("Renamed the mount helper.");
+    const diff = within(dialog).getByText("+const x = 1;");
+    expect(
+      note.compareDocumentPosition(diff) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("marks a map written against an earlier head as stale", async () => {
+    renderDetail({
+      "pulls/changeMap": () => ({ ...changeMap, head_sha: "zzz" }),
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View change map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Change map" });
+    expect(within(dialog).getByText("Stale")).toBeTruthy();
+  });
+
+  // The descent ends in the diff, so the last column shows it rather than linking to it.
+  it("renders the selected file's diff in the last column", async () => {
+    renderDetail({ "pulls/changeMap": () => changeMap });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View change map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Change map" });
+    expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
+    expect(within(dialog).getByText("-const x = 0;")).toBeTruthy();
+  });
+
+  it("opens the full diff view from the last column, keeping the map underneath", async () => {
+    renderDetail({ "pulls/changeMap": () => changeMap });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View change map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Change map" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /Full view/i }));
+
+    const diff = await screen.findByRole("dialog", {
+      name: "Diff for web/src/a.ts",
+    });
+    // The map is still open behind the diff, so closing the diff returns to it.
+    const map = screen.getByRole("dialog", { name: "Change map" });
+    expect(map).toBeTruthy();
+    // Both overlays sit at the same z-index, so the diff is only on top because it comes later in
+    // document order. Rendering the map after Files changed (or portalling it to the body) would
+    // bury the diff the map just opened.
+    expect(
+      map.compareDocumentPosition(diff) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  // Coverage is now an exact set difference against the files each change declares, and what is
+  // left over is offered as one more category so it is reached the same way as everything else.
+  it("offers changed files the map never declares as a Not covered category", async () => {
+    renderDetail({
+      "pulls/changeMap": () => ({
+        ...changeMap,
+        document: {
+          ...changeMap.document,
+          categories: [
+            {
+              name: "Reading the map",
+              summary: "s",
+              changes: [
+                {
+                  name: "Something else",
+                  kind: "docs",
+                  summary: "Touches nothing in this PR.",
+                  files: [{ path: "docs/notes.md" }],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View change map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Change map" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /Not covered \(1\)/ }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: /^1 file/ }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /web\/src\/a\.ts/ }),
+    );
+    // Reached through Not covered, the diff shows in the last column exactly as a mapped file's
+    // would — that is what makes an unmapped file no harder to read than a mapped one.
+    expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Full view/i }));
+    await screen.findByRole("dialog", { name: "Diff for web/src/a.ts" });
+  });
+
+  it("has no Not covered category when every changed file is declared", async () => {
+    renderDetail({ "pulls/changeMap": () => changeMap });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View change map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Change map" });
+    expect(within(dialog).queryByText(/Not covered/)).toBeNull();
+  });
+
+  // A saved map outlives the head it was written against, so it can name a path the PR no longer
+  // changes. That row must not pretend to lead anywhere.
+  it("does not offer a diff for a declared path that is not in the PR", async () => {
+    renderDetail({
+      "pulls/changeMap": () => ({
+        ...changeMap,
+        document: {
+          ...changeMap.document,
+          categories: [
+            {
+              name: "Reading the map",
+              summary: "s",
+              changes: [
+                {
+                  name: "Entry point",
+                  kind: "UI component",
+                  summary: "s",
+                  files: [
+                    { path: "web/src/a.ts" },
+                    { path: "web/src/gone.ts" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /View change map/i }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Change map" });
+    const missing = within(dialog).getByRole("button", {
+      name: /web\/src\/gone\.ts/,
+    }) as HTMLButtonElement;
+    expect(missing.disabled).toBe(true);
   });
 });

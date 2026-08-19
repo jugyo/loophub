@@ -13,6 +13,7 @@ import {
   ExternalLink,
   Github,
   Loader2,
+  Map as MapIcon,
   SmilePlus,
 } from "lucide-react";
 import {
@@ -25,6 +26,7 @@ import {
 } from "react";
 import type {
   IssueComment,
+  PrChangeMap,
   PullFile,
   PullGithubActivity,
   PullLineComment,
@@ -51,6 +53,7 @@ import { FileStatusBadge } from "@/components/file-status-badge";
 import { FileViewedBadge } from "@/components/file-viewed-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { Markdown } from "@/components/markdown";
+import { PrChangeMapDialog } from "@/components/pr-change-map-dialog";
 import {
   PullCommitsSection,
   ReviewDetailsDialog,
@@ -94,6 +97,7 @@ import {
   useMergePull,
   usePostPullComment,
   usePull,
+  usePullChangeMap,
   usePullComments,
   usePullDetailPage,
   usePullFiles,
@@ -107,7 +111,9 @@ import { useRepoGithubPrExportExtraPrompt } from "@/queries/repos";
 import { useSettings } from "@/queries/settings";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 import { githubPrExportPendingUntil } from "../../../core/github-pr-export-pending.ts";
+import { prChangeMapPendingUntil } from "../../../core/pr-change-map-pending.ts";
 import { githubPrExportPrompt } from "../../../core/workflow/github-pr-export-prompt.ts";
+import { prChangeMapPrompt } from "../../../core/workflow/pr-change-map-prompt.ts";
 
 const MERGE_METHODS = ["squash", "merge", "rebase"] as const;
 const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
@@ -126,6 +132,7 @@ export function PullDetail({
   const pullQuery = usePull(owner, repo, number, false);
   const filesQuery = usePullFiles(owner, repo, number, false);
   const reviewsQuery = usePullReviews(owner, repo, number, false);
+  const changeMapQuery = usePullChangeMap(owner, repo, number);
   const lineCommentsQuery = usePullComments(owner, repo, number, false);
   const commentsQuery = useIssueComments(owner, repo, number, false);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -134,6 +141,10 @@ export function PullDetail({
   // #145: which file's diff dialog is open. Owned here — above Files changed — so a timeline line
   // comment (in CommentList) can open the same dialog Files changed renders.
   const [openFilename, setOpenFilename] = useState<string | null>(null);
+  // #344: whether the change map dialog is open. Owned here rather than in the sidebar section that
+  // opens it, so the dialog can render above the main column and the file diff a map link opens
+  // (rendered later, by Files changed) lands on top of it instead of underneath.
+  const [changeMapOpen, setChangeMapOpen] = useState(false);
   const [timelineCommit, setTimelineCommit] = useState<{
     sha: string;
     subject: string;
@@ -323,6 +334,15 @@ export function PullDetail({
                 onClose={() => setTimelineReview(null)}
               />
             ) : null}
+            {changeMapOpen && changeMapQuery.data ? (
+              <PrChangeMapDialog
+                changeMap={changeMapQuery.data}
+                files={filesQuery.data}
+                headSha={pull.head.sha}
+                onOpenFile={setOpenFilename}
+                onClose={() => setChangeMapOpen(false)}
+              />
+            ) : null}
             <FilesChanged
               owner={owner}
               repo={repo}
@@ -404,6 +424,15 @@ export function PullDetail({
           {/* #2406: where and on which branch this PR is being worked on is the first thing to
               know when opening it, so the basics lead the sidebar. */}
           <PullInfoSection owner={owner} repo={repo} pull={pull} />
+          <PullChangeMapSection
+            owner={owner}
+            repo={repo}
+            pull={pull}
+            changeMap={changeMapQuery.data ?? null}
+            isLoading={changeMapQuery.isLoading}
+            isError={changeMapQuery.isError}
+            onOpen={() => setChangeMapOpen(true)}
+          />
           <WorkflowRunSection owner={owner} repo={repo} number={number} />
           {/* GitHub PR status (#850) and the actions on the link — push (#2516), unlink (#2384).
             Renders nothing for a PR with no linked GitHub PR; fetched on demand, with loading/error
@@ -839,6 +868,116 @@ function PullInfoSection({
           </span>
         </PullInfoRow>
       </dl>
+    </section>
+  );
+}
+
+// #344: the PR's change map — the structured map of everything it changed, and the entry point into
+// its diffs. Until one exists the section offers Generate change map, which launches an agent with
+// the generation instructions (same prompt-injection approach as Create PR on GitHub) and returns
+// immediately; the map lands later, when the agent saves it. Once it exists the section opens it.
+//
+// The launch is fire-and-forget, so the pending state is the click itself, bounded by a TTL
+// (core/pr-change-map-pending.ts). A generation that dies leaves its failure in the agent's own
+// pane and the button clickable again — regenerating is cheap, since maps are kept per head rather
+// than overwritten.
+function PullChangeMapSection({
+  owner,
+  repo,
+  pull,
+  changeMap,
+  isLoading,
+  isError,
+  onOpen,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+  changeMap: PrChangeMap | null;
+  isLoading: boolean;
+  isError: boolean;
+  onOpen: () => void;
+}) {
+  const { launchTerminal, launchFailed } = useTerminalLauncher();
+  const { data: settings } = useSettings();
+  const [clickedAt, setClickedAt] = useState<string | null>(null);
+  const isGenerating = usePendingUntil(prChangeMapPendingUntil(clickedAt) ?? 0);
+  // The click only stands in for a generation nobody has seen finish. A map that lands is the
+  // finish; a rejected launch means no agent started at all, and its failure is already on screen
+  // in its own dialog, so neither should leave the button sitting out the TTL.
+  useEffect(() => {
+    if (launchFailed || changeMap) setClickedAt(null);
+  }, [launchFailed, changeMap]);
+
+  const isStale = !!changeMap && changeMap.head_sha !== pull.head.sha;
+  return (
+    <section
+      data-debug-component="PullChangeMapSection"
+      className="flex flex-col gap-3"
+    >
+      <h2 className="text-lg font-semibold">Change map</h2>
+      <div className="flex flex-col gap-2 rounded-md border p-3 text-sm">
+        {isLoading ? (
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading…
+          </span>
+        ) : isError ? (
+          // A read that fails is not the same as a PR with no map: a stored document that no longer
+          // parses would otherwise render as an unpressed Generate button, quietly inviting a
+          // regeneration over a failure nobody was told about.
+          <span className="text-xs text-destructive">
+            Failed to load the change map.
+          </span>
+        ) : changeMap ? (
+          <>
+            <Button variant="secondary" onClick={onOpen}>
+              <MapIcon className="size-4" />
+              View change map
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {isStale
+                ? `Written against ${changeMap.head_sha.slice(0, 7)}; later commits are not in it`
+                : `Generated ${relativeTime(changeMap.created_at)}`}
+            </span>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="secondary"
+              disabled={isGenerating}
+              title={
+                isGenerating
+                  ? "An agent is generating the change map; the action returns if it doesn't land"
+                  : "Launch an agent that reads the whole diff and writes a map of everything this PR changed"
+              }
+              onClick={() => {
+                setClickedAt(new Date().toISOString());
+                launchTerminal({
+                  repo: `${owner}/${repo}`,
+                  label: `PR #${pull.number} - ${pull.title}`,
+                  workflow: "pr-change-map",
+                  prNumber: pull.number,
+                  prompt: prChangeMapPrompt({
+                    repo: `${owner}/${repo}`,
+                    prNumber: pull.number,
+                    language: settings?.workflowContractLanguage,
+                  }),
+                });
+              }}
+            >
+              {isGenerating ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <MapIcon className="size-4" />
+              )}
+              {isGenerating ? "Generating…" : "Generate change map"}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              A structured map of the whole change, linking to every diff.
+            </span>
+          </>
+        )}
+      </div>
     </section>
   );
 }

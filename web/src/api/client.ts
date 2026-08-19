@@ -31,6 +31,7 @@ import type {
   Label,
   LoopEvent,
   Notification,
+  PrChangeMap,
   PullDetailPage,
   PullDiff,
   PullFile,
@@ -561,6 +562,7 @@ export function launchTerminalWorkflow(input: {
     | "issue-create"
     | "workflow-create"
     | "github-pr-export"
+    | "pr-change-map"
     | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
@@ -983,6 +985,14 @@ export function unarchivePull(
 
 export function listPullFiles(owner: string, repo: string, number: number) {
   return rpc<PullFile[]>("pulls/files", { repo: full(owner, repo), number });
+}
+
+/** The newest change map generated for a PR (#344), or null when it has none. */
+export function getPullChangeMap(owner: string, repo: string, number: number) {
+  return rpc<PrChangeMap | null>("pulls/changeMap", {
+    repo: full(owner, repo),
+    number,
+  });
 }
 
 export function getPullDiff(

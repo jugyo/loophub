@@ -990,6 +990,7 @@
               "issue-create",
               "workflow-create",
               "github-pr-export",
+              "pr-change-map",
               "workflow-run"
             ]
           },
@@ -2381,6 +2382,34 @@
       },
       "result": {
         "type": "array"
+      }
+    },
+    {
+      "name": "pulls/changeMap",
+      "description": "The newest change map generated for a pull request (#344), or null when it has none. `head_sha` is the head the map was written against, so a caller can tell whether later commits are still uncovered by it.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": [
+          "object",
+          "null"
+        ]
       }
     },
     {
