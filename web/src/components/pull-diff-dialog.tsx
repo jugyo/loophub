@@ -61,6 +61,7 @@ import {
   singleSelection,
 } from "@/lib/diff-feedback";
 import { errorMessage } from "@/lib/error-message";
+import { buildFileTree, visibleFileTreeRows } from "@/lib/file-tree";
 import {
   type MarkdownDiffFeedbackThreadPlacement,
   type MarkdownRenderedBlock,
@@ -179,6 +180,16 @@ const MIN_FILE_SIDEBAR_WIDTH = 160;
 const MAX_FILE_SIDEBAR_WIDTH = 480;
 const DIFF_FEEDBACK_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
 
+// Sidebar tree indentation: rows start at the sticky header's px-3 and each depth adds one step.
+// Directory and file rows open with the same fixed-width column — a chevron for a directory, the
+// status badge for a file — so the names below them share one left edge.
+const SIDEBAR_ROW_PADDING = 12;
+const SIDEBAR_INDENT_STEP = 14;
+
+function rowIndent(depth: number) {
+  return SIDEBAR_ROW_PADDING + depth * SIDEBAR_INDENT_STEP;
+}
+
 function globPatternToRegExp(pattern: string) {
   const normalizedPattern = pattern.includes("/") ? pattern : `**/${pattern}`;
   let source = "";
@@ -265,6 +276,25 @@ export function DiffFileDialog({
       ),
     [excludePattern, files, includePattern],
   );
+  const [collapsedDirectories, setCollapsedDirectories] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const sidebarRows = useMemo(
+    () =>
+      visibleFileTreeRows(
+        buildFileTree(filteredFiles, copyFilename),
+        collapsedDirectories,
+      ),
+    [collapsedDirectories, filteredFiles],
+  );
+
+  function toggleDirectory(path: string) {
+    setCollapsedDirectories((current) => {
+      const next = new Set(current);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
+  }
 
   function selectMode(nextMode: DiffDialogMode) {
     if (nextMode === "base" || nextMode === "head" || nextMode === "rendered") {
@@ -377,24 +407,49 @@ export function DiffFileDialog({
             ) : null}
           </div>
           <ul className="py-1">
-            {filteredFiles.map((sidebarFile) => {
+            {sidebarRows.map(({ node, depth }) => {
+              if (node.kind === "directory") {
+                const collapsed = collapsedDirectories.has(node.path);
+                return (
+                  <li key={`dir:${node.path}`}>
+                    <button
+                      type="button"
+                      aria-expanded={!collapsed}
+                      className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 py-1 pr-3 text-left hover:bg-muted"
+                      style={{ paddingLeft: rowIndent(depth) }}
+                      onClick={() => toggleDirectory(node.path)}
+                    >
+                      {collapsed ? (
+                        <ChevronRight className="size-3.5 justify-self-center text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="size-3.5 justify-self-center text-muted-foreground" />
+                      )}
+                      <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                        {node.name}
+                      </span>
+                    </button>
+                  </li>
+                );
+              }
+              const sidebarFile = node.entry;
               const selected = sidebarFile.filename === file.filename;
               return (
-                <li key={sidebarFile.filename}>
+                <li key={`file:${sidebarFile.filename}`}>
                   <button
                     type="button"
                     aria-label={sidebarFile.filename}
                     aria-current={selected ? "true" : undefined}
                     className={cn(
-                      "grid w-full grid-cols-[auto_minmax(0,max-content)_auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 text-left hover:bg-muted",
+                      "grid w-full grid-cols-[1.25rem_minmax(0,max-content)_auto_minmax(0,1fr)_auto] items-center gap-2 py-1.5 pr-3 text-left hover:bg-muted",
                       selected &&
                         "bg-accent font-medium text-accent-foreground",
                     )}
+                    style={{ paddingLeft: rowIndent(depth) }}
                     onClick={() => onSelectFile(sidebarFile.filename)}
                   >
                     <FileStatusBadge status={sidebarFile.status} />
-                    <span className="min-w-0 truncate font-mono text-xs [direction:rtl]">
-                      {sidebarFile.filename}
+                    <span className="min-w-0 truncate font-mono text-xs">
+                      {node.name}
                     </span>
                     <DiffStat
                       additions={sidebarFile.additions}

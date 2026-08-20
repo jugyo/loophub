@@ -404,7 +404,7 @@ describe("PullDetail", () => {
       Array.from(
         within(sidebar).getByRole("button", { name: "web/src/a.ts" }).children,
       ).map((child) => child.textContent),
-    ).toEqual(["M", "web/src/a.ts", "+1−1", "", "2"]);
+    ).toEqual(["M", "a.ts", "+1−1", "", "2"]);
   });
 
   // The badge counts and the previous-threads list are the screen's own diff feedback, so they

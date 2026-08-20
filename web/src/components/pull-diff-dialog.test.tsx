@@ -2108,7 +2108,7 @@ describe("DiffFileDialog", () => {
     expect(screen.queryByRole("button", { name: /Next/i })).toBeNull();
   });
 
-  it("lists changed file details flat and selects a file from the sidebar", () => {
+  it("lists changed files as a directory tree and selects a file from it", () => {
     const onSelectFile = vi.fn();
     const secondFile = {
       ...file,
@@ -2128,7 +2128,13 @@ describe("DiffFileDialog", () => {
     expect(within(sidebar).getByText("Files changed (2)")).toBeTruthy();
     expect(
       within(sidebar)
-        .getByRole("button", { name: /web\/src\/a\.ts/ })
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim())
+        .filter((label) => label !== ""),
+    ).toEqual(["web/src", "Ma.ts+1−1", "core/nested", "Ab.ts+4−0"]);
+    expect(
+      within(sidebar)
+        .getByRole("button", { name: "web/src/a.ts" })
         .getAttribute("aria-current"),
     ).toBe("true");
     expect(
@@ -2139,23 +2145,68 @@ describe("DiffFileDialog", () => {
     expect(within(sidebar).getByLabelText("File status: added")).toBeTruthy();
     expect(within(sidebar).getByText("+4")).toBeTruthy();
     const secondRow = within(sidebar).getByRole("button", {
-      name: /core\/nested\/b\.ts/,
+      name: "core/nested/b.ts",
     });
     expect(
       Array.from(secondRow.children).map((child) => child.textContent),
-    ).toEqual(["A", "core/nested/b.ts", "+4−0", ""]);
+    ).toEqual(["A", "b.ts", "+4−0", ""]);
     expect(secondRow.className).toContain("grid-cols-");
-    const filename = within(secondRow).getByText("core/nested/b.ts");
+    const filename = within(secondRow).getByText("b.ts");
     expect(filename.className).toContain("min-w-0");
     expect(filename.className).toContain("truncate");
-    expect(filename.className).toContain("[direction:rtl]");
 
-    fireEvent.click(
-      within(sidebar).getByRole("button", { name: /core\/nested\/b\.ts/ }),
-    );
+    fireEvent.click(secondRow);
     expect(onSelectFile).toHaveBeenCalledWith("core/nested/b.ts");
-    expect(within(sidebar).queryByText("core")).toBeNull();
-    expect(within(sidebar).queryByText("nested")).toBeNull();
+  });
+
+  it("indents nested rows and keeps the selected file's directories open", () => {
+    const files = [
+      file,
+      { ...file, filename: "web/src/lib/b.ts" },
+      { ...file, filename: "README.md" },
+    ];
+    renderDialog({ files });
+    const sidebar = screen.getByRole("complementary", {
+      name: "Changed files",
+    });
+
+    const rows = within(sidebar)
+      .getAllByRole("listitem")
+      .map((item) => item.firstElementChild as HTMLElement);
+    expect(
+      rows.map((row) => [row.textContent?.trim(), row.style.paddingLeft]),
+    ).toEqual([
+      ["web/src", "12px"],
+      ["Ma.ts+1−1", "26px"],
+      ["lib", "26px"],
+      ["Mb.ts+1−1", "40px"],
+      ["MREADME.md+1−1", "12px"],
+    ]);
+    expect(
+      within(sidebar)
+        .getByRole("button", { name: "web/src/a.ts" })
+        .getAttribute("aria-current"),
+    ).toBe("true");
+  });
+
+  it("collapses and expands a directory row", () => {
+    const files = [file, { ...file, filename: "core/b.ts" }];
+    renderDialog({ files });
+    const sidebar = screen.getByRole("complementary", {
+      name: "Changed files",
+    });
+    const directory = within(sidebar).getByRole("button", { name: "web/src" });
+    expect(directory.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(directory);
+    expect(directory.getAttribute("aria-expanded")).toBe("false");
+    expect(within(sidebar).queryByLabelText("web/src/a.ts")).toBeNull();
+    expect(within(sidebar).getByLabelText("core/b.ts")).toBeTruthy();
+    expect(within(sidebar).getByText("Files changed (2)")).toBeTruthy();
+
+    fireEvent.click(directory);
+    expect(directory.getAttribute("aria-expanded")).toBe("true");
+    expect(within(sidebar).getByLabelText("web/src/a.ts")).toBeTruthy();
   });
 
   it("resizes the changed files sidebar by dragging its boundary", () => {
@@ -2203,10 +2254,10 @@ describe("DiffFileDialog", () => {
     });
 
     expect(within(sidebar).getByText("Files changed (1 of 5)")).toBeTruthy();
-    expect(within(sidebar).getByText("web/src/a.ts")).toBeTruthy();
-    expect(within(sidebar).queryByText("web/src/a.test.ts")).toBeNull();
-    expect(within(sidebar).queryByText("a.test.ts")).toBeNull();
-    expect(within(sidebar).queryByText("core/b.ts")).toBeNull();
+    expect(within(sidebar).getByLabelText("web/src/a.ts")).toBeTruthy();
+    expect(within(sidebar).queryByLabelText("web/src/a.test.ts")).toBeNull();
+    expect(within(sidebar).queryByLabelText("a.test.ts")).toBeNull();
+    expect(within(sidebar).queryByLabelText("core/b.ts")).toBeNull();
 
     fireEvent.change(within(sidebar).getByLabelText("Include files"), {
       target: { value: "" },
@@ -2215,14 +2266,14 @@ describe("DiffFileDialog", () => {
       target: { value: "" },
     });
     expect(within(sidebar).getByText("Files changed (5)")).toBeTruthy();
-    expect(within(sidebar).getByText("README.md")).toBeTruthy();
+    expect(within(sidebar).getByLabelText("README.md")).toBeTruthy();
 
     fireEvent.change(within(sidebar).getByLabelText("Include files"), {
       target: { value: "*.test.ts" },
     });
     expect(within(sidebar).getByText("Files changed (2 of 5)")).toBeTruthy();
-    expect(within(sidebar).getByText("web/src/a.test.ts")).toBeTruthy();
-    expect(within(sidebar).getByText("a.test.ts")).toBeTruthy();
+    expect(within(sidebar).getByLabelText("web/src/a.test.ts")).toBeTruthy();
+    expect(within(sidebar).getByLabelText("a.test.ts")).toBeTruthy();
 
     fireEvent.change(within(sidebar).getByLabelText("Include files"), {
       target: { value: "*b.ts" },
@@ -2231,7 +2282,7 @@ describe("DiffFileDialog", () => {
       target: { value: "*test.ts" },
     });
     expect(within(sidebar).getByText("Files changed (1 of 5)")).toBeTruthy();
-    expect(within(sidebar).getByText("core/b.ts")).toBeTruthy();
+    expect(within(sidebar).getByLabelText("core/b.ts")).toBeTruthy();
 
     fireEvent.change(within(sidebar).getByLabelText("Include files"), {
       target: { value: "**/*.test.ts" },
