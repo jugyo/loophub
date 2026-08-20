@@ -839,6 +839,29 @@ describe("DiffFileDialog", () => {
     });
   });
 
+  it("starts the composer empty after a cancelled draft", async () => {
+    renderDialog({
+      handlers: {
+        "pulls/diff": stableDiff,
+        "diffFeedback/list": () => ({ threads: [] }),
+      },
+    });
+
+    // Cancelling drops the draft, so the next comment starts on an empty composer instead of the
+    // abandoned text.
+    await addComment("New line 1");
+    fireEvent.change(screen.getByLabelText("Diff comment"), {
+      target: { value: "Abandoned draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+
+    await addComment("New line 1");
+    expect(
+      (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
+    ).toBe("");
+  });
+
   it("posts a non-empty thread reply once with Cmd+Enter", async () => {
     const initialThread = feedbackThread();
     let thread = feedbackThread({
@@ -1105,9 +1128,13 @@ describe("DiffFileDialog", () => {
       }),
     ).toBe(addButton);
 
+    // Opening the composer must not remount the rows above it, which would reset the diff's scroll
+    // position the same way it did in the rendered view (#352).
+    const lineCell = screen.getByLabelText("New line 1");
     fireEvent.click(addButton);
     expect(screen.getByText("RIGHT 1")).toBeTruthy();
     expect(screen.getByLabelText("Diff comment")).toBeTruthy();
+    expect(screen.getByLabelText("New line 1")).toBe(lineCell);
   });
 
   it("comments on the line under the pointer when the two diffs disagree", async () => {
@@ -1997,6 +2024,10 @@ describe("DiffFileDialog", () => {
     const rightPane = scroller?.parentElement;
     expect(screen.getByText("line 100")).toBeTruthy();
     expect(scroller?.classList).toContain("overflow-auto");
+    // Scroll anchoring would move this offset when a comment composer opens above the anchor it
+    // picks; jsdom has no anchoring to exercise, so the opt-out is asserted as the class that
+    // carries it (see .diff-scrollport in index.css).
+    expect(scroller?.classList).toContain("diff-scrollport");
     expect(rightPane?.classList).toContain("min-h-0");
   });
 
@@ -4010,6 +4041,115 @@ describe("DiffFileDialog", () => {
     );
   });
 
+  it("keeps the rendered blocks mounted while opening and closing the composer", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-# Old\n+# New",
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "README.md",
+              original_path: null,
+              status: "modified",
+              additions: 1,
+              deletions: 1,
+              patch: mdFile.patch,
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1 +1 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "deletion",
+                  text: "-# Old",
+                  left_line: 1,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+# New",
+                  left_line: null,
+                  right_line: 1,
+                },
+              ],
+            },
+          ],
+        }),
+        "pulls/fileAtRef": (params) => ({
+          status: "ok",
+          content: params.side === "base" ? "# Old\n" : "# New\n",
+        }),
+        "diffFeedback/list": () => ({ threads: [] }),
+        "diffFeedback/create": async (input: Record<string, unknown>) => ({
+          thread: feedbackThread({
+            id: 9,
+            anchor: {
+              ...feedbackThread().anchor,
+              path: "README.md",
+              side: "RIGHT",
+              start_line: 1,
+              end_line: 1,
+            },
+            resolved_anchor: {
+              path: "README.md",
+              original_path: null,
+              side: "RIGHT",
+              start_line: 1,
+              end_line: 1,
+            },
+            messages: [
+              {
+                ...feedbackThread().messages[0],
+                id: 19,
+                thread_id: 9,
+                author: "me",
+                body: input.body as string,
+              },
+            ],
+          }),
+        }),
+      },
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Rendered diff" }),
+    );
+    // Remounting the rendered document would drop the scroll container's children and reset its
+    // scroll position, so the block a reader clicked has to stay the very same DOM node.
+    const heading = await screen.findByRole("heading", { name: "New" });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Comment on head lines 1-1" }),
+    );
+    await screen.findByLabelText("Diff comment");
+    expect(screen.getByRole("heading", { name: "New" })).toBe(heading);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.getByRole("heading", { name: "New" })).toBe(heading);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Comment on head lines 1-1" }),
+    );
+    fireEvent.change(await screen.findByLabelText("Diff comment"), {
+      target: { value: "Rendered feedback" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Diff comment")).toBeNull(),
+    );
+    expect(screen.getByRole("heading", { name: "New" })).toBe(heading);
+  });
+
   it("renders GFM, tables, images, Mermaid, and long content in both panes", async () => {
     const mdFile: PullFile = {
       filename: "README.md",
@@ -4084,7 +4224,11 @@ ${Array.from({ length: 120 }, (_, index) => `Long paragraph ${index + 1}.`).join
     expect(
       image?.parentElement?.classList.contains("markdown-diff-block-added"),
     ).toBe(true);
-    expect(headPane?.querySelector("pre code.language-mermaid")).not.toBeNull();
+    // The diagram renders asynchronously, so the block is either the rendered SVG or, until then,
+    // its Mermaid source.
+    expect(
+      headPane?.querySelector(".mermaid-diagram, pre code.language-mermaid"),
+    ).not.toBeNull();
     expect(headPane?.textContent).toContain("Long paragraph 120.");
     expect(
       document

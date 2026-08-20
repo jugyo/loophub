@@ -171,6 +171,17 @@
   }
 }
 
+/* A diff opens its line comment composer between the blocks it belongs to, which grows the content
+   above whatever the reader is looking at. Chrome's scroll anchoring answers that by keeping the
+   element it picked below the insertion visually fixed — it adds the composer's height to
+   scrollTop, so the clicked line slides up out of view (#352). Opting the diff's scrollport out
+   (the exclusion covers its whole subtree) keeps the offset the reader set: the composer pushes the
+   content below it down instead. Nothing inside grows on its own, so no other insertion relies on
+   the anchoring this turns off. */
+.diff-scrollport {
+  overflow-anchor: none;
+}
+
 /* Diff Markdown previews use a stable LoopHub palette instead of inheriting
    the selected application theme. Only the light/dark mode chooses between
    these two palettes. */

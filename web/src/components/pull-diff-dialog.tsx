@@ -658,7 +658,10 @@ export function DiffFileDialog({
           </header>
           {/* Keying the scrolling element on the open file gives every file a fresh scroll box, so
               a diff opens at its first line instead of inheriting the previous file's offset. */}
-          <div key={path} className="min-w-0 flex-1 overflow-auto">
+          <div
+            key={path}
+            className="diff-scrollport min-w-0 flex-1 overflow-auto"
+          >
             <FileDiffContent
               key={`${path}:${ignoreWhitespace}`}
               owner={owner}

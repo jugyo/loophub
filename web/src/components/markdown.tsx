@@ -20,6 +20,7 @@ import {
   isValidElement,
   type ReactNode,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
@@ -491,79 +492,124 @@ export function Markdown({
     owner && repo
       ? [remarkGfm, [remarkIssueRefs, { owner, repo, kinds }]]
       : [remarkGfm];
-  const componentsWithImg: Components = {
-    ...markdownComponents(
-      onRenderedBlock,
-      renderedBlockClassName,
-      renderedBlockStyle,
-      renderedBlockAction,
-      renderedBlockAfter,
-    ),
-    img({ node, src, alt, title }) {
-      const block = markdownRenderedBlock("image", node);
-      onRenderedBlock?.(block);
-      if (!src) return null;
-      const open = () => setLightbox({ src, alt: alt ?? "" });
-      const image = (
-        <img
-          src={src}
-          alt={alt ?? ""}
-          title={title}
-          role="button"
-          tabIndex={0}
-          onClick={open}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              open();
-            }
-          }}
-        />
-      );
-      const blockClassName = renderedBlockClassName?.(block);
-      const blockStyle = renderedBlockStyle?.(block);
-      const after = renderedBlockAfter?.(block);
-      if (!renderedBlockAction && !after) {
-        return blockClassName || blockStyle ? (
+  // react-markdown builds every node from the components map, so a map rebuilt on each render gives
+  // each element a new component type and React remounts the whole document. That drops the DOM
+  // nodes out of whatever container scrolls them, which resets its scroll position — visible in the
+  // rendered diff, where opening the comment composer changes `renderedBlockAfter` (#352). Keep the
+  // map stable and read the current callbacks through a ref instead; only whether a callback is
+  // given at all changes the markup, so the memo depends on that and not on their identity.
+  const blockHooks = useRef({
+    onRenderedBlock,
+    renderedBlockClassName,
+    renderedBlockStyle,
+    renderedBlockAction,
+    renderedBlockAfter,
+  });
+  blockHooks.current = {
+    onRenderedBlock,
+    renderedBlockClassName,
+    renderedBlockStyle,
+    renderedBlockAction,
+    renderedBlockAfter,
+  };
+  const hasOnRenderedBlock = Boolean(onRenderedBlock);
+  const hasBlockClassName = Boolean(renderedBlockClassName);
+  const hasBlockStyle = Boolean(renderedBlockStyle);
+  const hasBlockAction = Boolean(renderedBlockAction);
+  const hasBlockAfter = Boolean(renderedBlockAfter);
+  const componentsWithImg: Components = useMemo(
+    () => ({
+      ...markdownComponents(
+        hasOnRenderedBlock
+          ? (block) => blockHooks.current.onRenderedBlock?.(block)
+          : undefined,
+        hasBlockClassName
+          ? (block) => blockHooks.current.renderedBlockClassName?.(block)
+          : undefined,
+        hasBlockStyle
+          ? (block) => blockHooks.current.renderedBlockStyle?.(block)
+          : undefined,
+        hasBlockAction
+          ? (block) => blockHooks.current.renderedBlockAction?.(block)
+          : undefined,
+        hasBlockAfter
+          ? (block) => blockHooks.current.renderedBlockAfter?.(block)
+          : undefined,
+      ),
+      img({ node, src, alt, title }) {
+        const block = markdownRenderedBlock("image", node);
+        blockHooks.current.onRenderedBlock?.(block);
+        if (!src) return null;
+        const open = () => setLightbox({ src, alt: alt ?? "" });
+        const image = (
           <img
-            className={blockClassName}
-            style={blockStyle}
             src={src}
             alt={alt ?? ""}
             title={title}
+            role="button"
+            tabIndex={0}
+            onClick={open}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                open();
+              }
+            }}
           />
+        );
+        const blockClassName =
+          blockHooks.current.renderedBlockClassName?.(block);
+        const blockStyle = blockHooks.current.renderedBlockStyle?.(block);
+        const after = blockHooks.current.renderedBlockAfter?.(block);
+        if (!hasBlockAction && !after) {
+          return blockClassName || blockStyle ? (
+            <img
+              className={blockClassName}
+              style={blockStyle}
+              src={src}
+              alt={alt ?? ""}
+              title={title}
+            />
+          ) : (
+            image
+          );
+        }
+        const rendered = hasBlockAction ? (
+          blockClassName ? (
+            <span
+              className={cn("markdown-diff-image-block", blockClassName)}
+              style={blockStyle}
+            >
+              {blockHooks.current.renderedBlockAction?.(block)}
+              {image}
+            </span>
+          ) : (
+            <span style={blockStyle}>
+              {blockHooks.current.renderedBlockAction?.(block)}
+              {image}
+            </span>
+          )
         ) : (
           image
         );
-      }
-      const rendered = renderedBlockAction ? (
-        blockClassName ? (
-          <span
-            className={cn("markdown-diff-image-block", blockClassName)}
-            style={blockStyle}
-          >
-            {renderedBlockAction(block)}
-            {image}
-          </span>
+        return after ? (
+          <>
+            {rendered}
+            {after}
+          </>
         ) : (
-          <span style={blockStyle}>
-            {renderedBlockAction(block)}
-            {image}
-          </span>
-        )
-      ) : (
-        image
-      );
-      return after ? (
-        <>
-          {rendered}
-          {after}
-        </>
-      ) : (
-        rendered
-      );
-    },
-  };
+          rendered
+        );
+      },
+    }),
+    [
+      hasOnRenderedBlock,
+      hasBlockClassName,
+      hasBlockStyle,
+      hasBlockAction,
+      hasBlockAfter,
+    ],
+  );
   return (
     <div className={cn(typeset ? "typeset" : "markdown-body", className)}>
       <ReactMarkdown
