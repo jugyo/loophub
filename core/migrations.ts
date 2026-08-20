@@ -1574,6 +1574,18 @@ export const MIGRATIONS: Migration[] = [
     `CREATE INDEX IF NOT EXISTS idx_issues_parent
        ON issues(parent_issue_id, sub_issue_ordinal);`,
   ),
+  // #2500: what the PR timeline renders for an observed GitHub feedback item. Nullable and not
+  // backfilled — an item whose body has not changed is never re-observed, so rows written before
+  // this migration keep NULLs and the timeline falls back to the item's kind and the PR's own URL.
+  {
+    id: "20260820005820-github-pull-feedback-display-fields",
+    run: (db) => {
+      addColumnIfMissing(db, "github_pull_feedback", "author_login", "TEXT");
+      addColumnIfMissing(db, "github_pull_feedback", "review_state", "TEXT");
+      addColumnIfMissing(db, "github_pull_feedback", "created_at", "TEXT");
+      addColumnIfMissing(db, "github_pull_feedback", "url", "TEXT");
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

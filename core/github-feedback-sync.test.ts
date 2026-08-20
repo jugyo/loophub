@@ -63,10 +63,16 @@ function feedback(input: {
   id: number;
   body: string;
   updatedAt?: string;
+  createdAt?: string;
+  authorLogin?: string | null;
+  reviewState?: GithubPrFeedback["reviewState"];
 }): GithubPrFeedback {
   return {
     ...input,
     updatedAt: input.updatedAt ?? "2026-07-01T00:00:00Z",
+    createdAt: input.createdAt ?? input.updatedAt ?? "2026-07-01T00:00:00Z",
+    authorLogin: input.authorLogin ?? null,
+    reviewState: input.reviewState ?? null,
   };
 }
 
@@ -149,6 +155,73 @@ test("emits one marked source event for aggregated GitHub feedback", async () =>
       (candidate) => candidate.type === "workflow_run.github_event",
     ),
   ).toEqual([]);
+});
+
+// #2500: the same sweep is what the PR timeline reads, so an observation carries who wrote the item,
+// when it entered the conversation, a review's verdict, and a permalink built from the recorded PR
+// URL — GitHub's own html_url is never trusted for it.
+test("records what the PR timeline shows for each observed item", async () => {
+  const pull = await workflowGithubPull(103);
+  await sync.syncGithubFeedback({
+    async fetchFeedback(_repoPath, url) {
+      if (url !== pull.url) return [];
+      return [
+        feedback({
+          kind: "issue_comment",
+          id: 31,
+          body: "conversation",
+          authorLogin: "octocat",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-01T06:00:00Z",
+        }),
+        feedback({
+          kind: "review",
+          id: 32,
+          body: "looks good",
+          authorLogin: "reviewer",
+          reviewState: "approved",
+        }),
+        feedback({ kind: "review_comment", id: 33, body: "inline" }),
+      ];
+    },
+  });
+
+  const issueId = S.getIssue(S.getRepo("me", "proj")!.id, pull.number)!.id;
+  expect(
+    S.githubFeedbackObservations(issueId).map((row) => ({
+      kind: row.kind,
+      github_id: row.github_id,
+      created_at: row.created_at,
+      author_login: row.author_login,
+      review_state: row.review_state,
+      url: row.url,
+    })),
+  ).toEqual([
+    {
+      kind: "issue_comment",
+      github_id: 31,
+      created_at: "2026-07-01T00:00:00Z",
+      author_login: "octocat",
+      review_state: null,
+      url: `${pull.url}#issuecomment-31`,
+    },
+    {
+      kind: "review",
+      github_id: 32,
+      created_at: "2026-07-01T00:00:00Z",
+      author_login: "reviewer",
+      review_state: "approved",
+      url: `${pull.url}#pullrequestreview-32`,
+    },
+    {
+      kind: "review_comment",
+      github_id: 33,
+      created_at: "2026-07-01T00:00:00Z",
+      author_login: null,
+      review_state: null,
+      url: `${pull.url}#discussion_r33`,
+    },
+  ]);
 });
 
 test("skips GitHub feedback when the Workflow run has no parent session", async () => {

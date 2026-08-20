@@ -43,6 +43,8 @@ import {
   agentSessionJSON,
   githubPrStatusJSON,
   githubPullJSON,
+  type PullTimelineItemWire,
+  pullGithubTimelineJSON,
   pullUsageJSON,
   repoJSON,
 } from "../serialize.ts";
@@ -990,6 +992,23 @@ export const pulls = {
     }
     const saved = S.saveGithubPullStatus(row.id, JSON.stringify(status));
     return githubPrStatusJSON(status, saved.synced_at);
+  },
+
+  // #2500: the GitHub side of this PR's story as timeline entries — the feedback items the worker's
+  // feedback sweep has already observed, plus the merge its merge sweep detected. Purely a read of
+  // what is already stored: no `gh` call and no new polling path, so a PR the sweeps never covered
+  // simply has nothing here. Empty for a PR with no linked GitHub PR, which is what keeps those
+  // PRs' timelines exactly as they were.
+  // A PR relinked to a *different* GitHub PR keeps the previous link's observations (they are the
+  // de-dup ledger deleteGithubPull deliberately retains), so those entries show under the new link.
+  // Accepted rather than filtered: each entry still links to the item it was observed from, and
+  // relinking is a rare correction a human can see through.
+  githubTimeline(name: string, number: number): PullTimelineItemWire[] {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const link = S.getGithubPull(row.id);
+    if (!link) return [];
+    return pullGithubTimelineJSON(link, S.githubFeedbackObservations(row.id));
   },
 
   // Read-only debug dump: every piece of data a PR can be reached from, gathered into one

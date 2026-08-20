@@ -10,6 +10,7 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ChevronDown,
+  ExternalLink,
   Github,
   Loader2,
   SmilePlus,
@@ -26,6 +27,7 @@ import {
 import type {
   IssueComment,
   PullFile,
+  PullGithubActivity,
   PullLineComment,
   PullRequest,
   PullReview,
@@ -1043,6 +1045,9 @@ function timelineItemKey(item: PullTimelineItem): string {
       return `review:${item.review.id}`;
     case "comment":
       return `comment:${item.comment.id}`;
+    // GitHub's own id identifies a feedback item; the merge has none, and there is only ever one.
+    case "github_activity":
+      return `github:${item.github_activity.type}:${item.github_activity.github_id ?? "merged"}`;
     default:
       return "unknown";
   }
@@ -1081,6 +1086,8 @@ function timelineItemContent(
           showError={context.showError}
         />
       );
+    case "github_activity":
+      return <TimelineGithubActivityItem item={item} />;
     default:
       return null;
   }
@@ -1561,6 +1568,73 @@ function TimelineReviewItem({
           </span>
         ) : null}
       </button>
+    </article>
+  );
+}
+
+// What each GitHub-side happening reads as in the timeline (#2500). Every label ends in "on GitHub"
+// so the entry says where it happened even when its icon is missed.
+const GITHUB_ACTIVITY_LABEL: Record<PullGithubActivity["type"], string> = {
+  issue_comment: "Commented on GitHub",
+  review: "Reviewed on GitHub",
+  review_comment: "Commented on a diff line on GitHub",
+  merged: "Merged on GitHub",
+};
+
+// A GitHub review's verdict, in the tones the LoopHub review badges already use so one timeline
+// does not speak two colour languages.
+const GITHUB_REVIEW_VERDICT: Record<
+  NonNullable<PullGithubActivity["review_state"]>,
+  { tone: BadgeTone; label: string }
+> = {
+  approved: { tone: "review-passed", label: "approved" },
+  changes_requested: { tone: "review-changes", label: "changes requested" },
+  commented: { tone: "review-commented", label: "commented" },
+  dismissed: { tone: "unknown", label: "dismissed" },
+};
+
+// One GitHub-side happening in the timeline (#2500): the same minimal line the commit and review
+// entries use, marked with the GitHub icon and linking out to the item on GitHub — the body itself
+// stays on GitHub, the way a LoopHub review's body stays in its dialog. The author is absent for an
+// item observed before it was recorded, and for the merge entry, so the line reads without it.
+function TimelineGithubActivityItem({
+  item,
+}: {
+  item: Extract<PullTimelineItem, { kind: "github_activity" }>;
+}) {
+  const activity = item.github_activity;
+  const verdict = activity.review_state
+    ? GITHUB_REVIEW_VERDICT[activity.review_state]
+    : null;
+  return (
+    <article
+      data-debug-component="TimelineGithubActivity"
+      className="px-1 py-0.5"
+    >
+      <a
+        href={activity.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`GitHub PR #${activity.github_number}`}
+        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded text-left text-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Github className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="text-muted-foreground">
+          {GITHUB_ACTIVITY_LABEL[activity.type]}
+        </span>
+        {verdict ? <Badge tone={verdict.tone}>{verdict.label}</Badge> : null}
+        {activity.author ? (
+          <span className="text-muted-foreground">@{activity.author}</span>
+        ) : null}
+        <time
+          dateTime={item.created_at}
+          title={item.created_at}
+          className="text-muted-foreground"
+        >
+          {relativeTime(item.created_at)}
+        </time>
+        <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+      </a>
     </article>
   );
 }

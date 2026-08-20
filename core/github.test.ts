@@ -56,17 +56,38 @@ test("fetches and normalizes conversation comments, review bodies, and inline co
   const endpoints: string[] = [];
   const responses: Record<string, unknown> = {
     "repos/upstream/project/issues/9/comments": [
-      [{ id: 101, body: "conversation", updated_at: "2026-01-01T00:00:00Z" }],
+      [
+        {
+          id: 101,
+          body: "conversation",
+          user: { login: "octocat" },
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T09:00:00Z",
+        },
+      ],
       [{ id: 102, body: "page two", updated_at: "2026-01-02T00:00:00Z" }],
     ],
     "repos/upstream/project/pulls/9/reviews": [
       [
-        { id: 201, body: "review body", submitted_at: "2026-01-03T00:00:00Z" },
+        {
+          id: 201,
+          body: "review body",
+          state: "APPROVED",
+          user: { login: "reviewer" },
+          submitted_at: "2026-01-03T00:00:00Z",
+        },
         { id: 202, body: "", submitted_at: "2026-01-03T00:00:00Z" },
       ],
     ],
     "repos/upstream/project/pulls/9/comments": [
-      [{ id: 301, body: "inline", updated_at: "2026-01-04T00:00:00Z" }],
+      [
+        {
+          id: 301,
+          body: "inline",
+          user: { login: "reviewer" },
+          updated_at: "2026-01-04T00:00:00Z",
+        },
+      ],
     ],
   };
 
@@ -84,36 +105,55 @@ test("fetches and normalizes conversation comments, review bodies, and inline co
     "repos/upstream/project/pulls/9/reviews",
     "repos/upstream/project/pulls/9/comments",
   ]);
+  // #2500: alongside the digest inputs, normalization keeps what the PR timeline shows — the author,
+  // when the item entered the conversation (distinct from its last edit) and a review's verdict.
+  // Each is null when GitHub's payload does not carry it, rather than dropping the item.
   expect(result).toEqual([
     {
       kind: "issue_comment",
       id: 101,
       body: "conversation",
-      updatedAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T09:00:00Z",
+      createdAt: "2026-01-01T00:00:00Z",
+      authorLogin: "octocat",
+      reviewState: null,
     },
     {
       kind: "issue_comment",
       id: 102,
       body: "page two",
       updatedAt: "2026-01-02T00:00:00Z",
+      createdAt: "2026-01-02T00:00:00Z",
+      authorLogin: null,
+      reviewState: null,
     },
     {
       kind: "review",
       id: 201,
       body: "review body",
       updatedAt: "2026-01-03T00:00:00Z",
+      // A review has no created_at; submitted_at is when it entered the conversation.
+      createdAt: "2026-01-03T00:00:00Z",
+      authorLogin: "reviewer",
+      reviewState: "approved",
     },
     {
       kind: "review",
       id: 202,
       body: "",
       updatedAt: "2026-01-03T00:00:00Z",
+      createdAt: "2026-01-03T00:00:00Z",
+      authorLogin: null,
+      reviewState: null,
     },
     {
       kind: "review_comment",
       id: 301,
       body: "inline",
       updatedAt: "2026-01-04T00:00:00Z",
+      createdAt: "2026-01-04T00:00:00Z",
+      authorLogin: "reviewer",
+      reviewState: null,
     },
   ]);
 });
@@ -152,6 +192,9 @@ test("ignores a pending review until the same review is submitted", async () => 
       id: 401,
       body: "same review body",
       updatedAt: "2026-01-05T00:00:00Z",
+      createdAt: "2026-01-05T00:00:00Z",
+      authorLogin: null,
+      reviewState: "commented",
     },
   ]);
 });

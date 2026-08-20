@@ -323,11 +323,24 @@ export type GithubPrFeedbackKind =
   | "review"
   | "review_comment";
 
+export type GithubReviewState =
+  | "approved"
+  | "changes_requested"
+  | "commented"
+  | "dismissed";
+
 export interface GithubPrFeedback {
   kind: GithubPrFeedbackKind;
   id: number;
   body: string;
   updatedAt: string;
+  // #2500: what the PR timeline shows for this item. The body stays out of it — the timeline links
+  // to GitHub for the text, the way a LoopHub review's line links to its dialog.
+  createdAt: string;
+  authorLogin: string | null;
+  // Submitted verdict of a review, lowercased; null for the two comment kinds and for a verdict
+  // GitHub reports outside the known set.
+  reviewState: GithubReviewState | null;
 }
 
 export type GithubApiRunner = (
@@ -390,11 +403,33 @@ function normalizeFeedback(
       item.submitted_at,
       item.created_at,
     ].find((candidate): candidate is string => typeof candidate === "string");
+    // A review has no created_at — submitted_at is when it entered the conversation. Falling back
+    // to the updated timestamp keeps an item whose creation time GitHub omits on the timeline
+    // rather than dropping it.
+    const created = [item.created_at, item.submitted_at, item.updated_at].find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" && candidate.trim() !== "",
+    );
+    const user = item.user as { login?: unknown } | null | undefined;
     normalized.push({
       kind,
       id: item.id as number,
       body: item.body,
       updatedAt: timestamp ?? "",
+      createdAt: created ?? timestamp ?? "",
+      authorLogin:
+        user && typeof user.login === "string" && user.login.trim() !== ""
+          ? user.login
+          : null,
+      reviewState:
+        kind === "review"
+          ? lowerEnum(item.state, [
+              "approved",
+              "changes_requested",
+              "commented",
+              "dismissed",
+            ] as const)
+          : null,
     });
   }
   return normalized;

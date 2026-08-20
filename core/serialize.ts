@@ -6,7 +6,7 @@
 // module needs neither node:fs nor core/git.ts and is testable without a git repo.
 
 import { resolveEffectiveAgentConfig } from "./config.ts";
-import type { GhPrStatus } from "./github.ts";
+import type { GhPrStatus, GithubReviewState } from "./github.ts";
 import { linkedRef } from "./links.ts";
 import type { MergeMode } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
@@ -2455,11 +2455,41 @@ export interface PullCommitWire {
 }
 
 /**
- * One entry in the PR-detail timeline (#145): a commit, a review, or a conversation comment, in
- * display order (chronological, oldest first). Assembled by pageData.pullDetail from data the page
- * already fetches (`pull.commits` / `reviews` / `comments`), so the frontend renders the array as-is
- * and never rebuilds or re-sorts it. `created_at` is the entry's timestamp on its own, uniform
- * across kinds. Review line comments remain available through `line_comments` for the Diff view.
+ * Something that happened on the linked GitHub PR, as the PR timeline shows it (#2500). Read from
+ * what the worker's GitHub syncs already observed — no GitHub request is made to build it — so a
+ * field GitHub did not give us (or an item observed before those fields were recorded) is null and
+ * the entry degrades to its type and its link rather than disappearing.
+ */
+export interface PullGithubActivityWire {
+  /** What happened: a conversation comment, a submitted review, an inline diff comment, or a merge. */
+  type: "issue_comment" | "review" | "review_comment" | "merged";
+  /** The linked GitHub PR's number, so an entry says which PR it happened on. */
+  github_number: number;
+  /**
+   * GitHub's own id for the comment or review, which is the entry's identity even when two items
+   * share a timestamp or fall back to the same URL. Null for the merge entry — a merge is the PR
+   * changing state, not an item of its own.
+   */
+  github_id: number | null;
+  /**
+   * Where to read it on GitHub: the item's own anchor, or the PR itself for a merge and for an item
+   * observed before permalinks were recorded.
+   */
+  url: string;
+  /** GitHub login of the comment's or review's author, when it was recorded. */
+  author: string | null;
+  /** The submitted review's verdict; null for every other type. */
+  review_state: GithubReviewState | null;
+}
+
+/**
+ * One entry in the PR-detail timeline (#145): a commit, a review, a conversation comment, or
+ * something that happened on the linked GitHub PR (#2500), in display order (chronological, oldest
+ * first). Assembled by pageData.pullDetail from data the page already fetches (`pull.commits` /
+ * `reviews` / `comments`) plus the GitHub activity the worker has already observed, so the frontend
+ * renders the array as-is and never rebuilds or re-sorts it. `created_at` is the entry's timestamp
+ * on its own, uniform across kinds. Review line comments remain available through `line_comments`
+ * for the Diff view.
  */
 export type PullTimelineItemWire =
   | {
@@ -2476,4 +2506,66 @@ export type PullTimelineItemWire =
       kind: "comment";
       created_at: string;
       comment: CommentWire;
+    }
+  | {
+      kind: "github_activity";
+      created_at: string;
+      github_activity: PullGithubActivityWire;
     };
+
+// The stored review verdict is plain text (the column is written from a GitHub response), so the
+// wire narrows it back to the union rather than trusting the row.
+const GITHUB_REVIEW_STATES: readonly GithubReviewState[] = [
+  "approved",
+  "changes_requested",
+  "commented",
+  "dismissed",
+];
+
+/** A stored review verdict as the wire's own union, or null when it is absent or unrecognized. */
+function githubReviewState(value: string | null): GithubReviewState | null {
+  return GITHUB_REVIEW_STATES.find((state) => state === value) ?? null;
+}
+
+/**
+ * The GitHub-side timeline entries for one PR: every feedback item the worker observed, plus the
+ * merge it detected. Pure — the rows are read by the caller, and the entries are ordered by the
+ * caller's own chronological sort along with the LoopHub ones.
+ */
+export function pullGithubTimelineJSON(
+  link: S.GithubPull,
+  observations: S.GithubFeedbackObservation[],
+): Extract<PullTimelineItemWire, { kind: "github_activity" }>[] {
+  const entries: Extract<PullTimelineItemWire, { kind: "github_activity" }>[] =
+    observations.map((observation) => ({
+      kind: "github_activity",
+      created_at: observation.created_at ?? observation.updated_at,
+      github_activity: {
+        type: observation.kind,
+        github_number: link.number,
+        github_id: observation.github_id,
+        // A row observed before the permalink was recorded still leads somewhere useful: the PR.
+        url: observation.url ?? link.url,
+        author: observation.author_login,
+        review_state:
+          observation.kind === "review"
+            ? githubReviewState(observation.review_state)
+            : null,
+      },
+    }));
+  if (link.github_merged && link.github_merged_at) {
+    entries.push({
+      kind: "github_activity",
+      created_at: link.github_merged_at,
+      github_activity: {
+        type: "merged",
+        github_number: link.number,
+        github_id: null,
+        url: link.url,
+        author: null,
+        review_state: null,
+      },
+    });
+  }
+  return entries;
+}

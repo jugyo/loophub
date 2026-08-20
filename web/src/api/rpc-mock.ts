@@ -112,6 +112,12 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                     created_at: comment.created_at,
                     comment,
                   })),
+                  // #2500: GitHub-derived entries have no list RPC of their own — the server reads
+                  // them from what the worker already observed — so a test that needs them declares
+                  // them under this fixture key instead of through a method handler.
+                  ...((handlers["fixture/pullGithubActivity"]
+                    ? await handlers["fixture/pullGithubActivity"](pageParams)
+                    : []) as any[]),
                 ].sort(
                   (a: any, b: any) =>
                     Date.parse(a.created_at) - Date.parse(b.created_at),

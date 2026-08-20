@@ -225,6 +225,27 @@ export interface GithubFeedbackObservation {
   content_hash: string;
   updated_at: string;
   observed_at: string;
+  // #2500: what the PR timeline renders for this item. Null on a row observed before the columns
+  // existed — an unchanged item is never re-observed, so those rows are not backfilled.
+  created_at: string | null;
+  author_login: string | null;
+  review_state: string | null;
+  url: string | null;
+}
+
+// #2500: every GitHub feedback item observed for one PR, for the PR-detail timeline. Ordered by the
+// GitHub-side timestamps so the caller merging them with LoopHub entries gets a stable sequence for
+// items that share a second.
+export function githubFeedbackObservations(
+  issueId: number,
+): GithubFeedbackObservation[] {
+  return db
+    .query(
+      `SELECT * FROM github_pull_feedback
+       WHERE issue_id = ?
+       ORDER BY COALESCE(created_at, updated_at), github_id`,
+    )
+    .all(issueId) as GithubFeedbackObservation[];
 }
 
 export function getGithubFeedbackObservation(
@@ -248,16 +269,25 @@ export function saveGithubFeedbackObservation(input: {
   githubId: number;
   contentHash: string;
   updatedAt: string;
+  createdAt?: string | null;
+  authorLogin?: string | null;
+  reviewState?: string | null;
+  url?: string | null;
 }): GithubFeedbackObservation {
   return db
     .query(
       `INSERT INTO github_pull_feedback
-         (issue_id, kind, github_id, content_hash, updated_at, observed_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+         (issue_id, kind, github_id, content_hash, updated_at, observed_at,
+          created_at, author_login, review_state, url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(issue_id, kind, github_id) DO UPDATE SET
          content_hash = excluded.content_hash,
          updated_at = excluded.updated_at,
-         observed_at = excluded.observed_at
+         observed_at = excluded.observed_at,
+         created_at = excluded.created_at,
+         author_login = excluded.author_login,
+         review_state = excluded.review_state,
+         url = excluded.url
        RETURNING *`,
     )
     .get(
@@ -267,6 +297,10 @@ export function saveGithubFeedbackObservation(input: {
       input.contentHash,
       input.updatedAt,
       now(),
+      input.createdAt ?? null,
+      input.authorLogin ?? null,
+      input.reviewState ?? null,
+      input.url ?? null,
     ) as GithubFeedbackObservation;
 }
 

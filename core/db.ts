@@ -728,10 +728,15 @@ CREATE TABLE IF NOT EXISTS github_pull_status (
   synced_at  TEXT NOT NULL
 );
 
--- Last content observed for each GitHub PR feedback item. Only the digest is retained: GitHub
--- bodies are untrusted input and never need to enter LoopHub events or agent notification prompts.
--- The content digest (rather than updated_at alone) also catches edits when GitHub's timestamp is
--- absent or unexpectedly unchanged.
+-- Last content observed for each GitHub PR feedback item. Only the digest of the body is retained:
+-- GitHub bodies are untrusted input and never need to enter LoopHub events or agent notification
+-- prompts. The content digest (rather than updated_at alone) also catches edits when GitHub's
+-- timestamp is absent or unexpectedly unchanged.
+-- created_at/updated_at are GitHub's own timestamps for the item (created_at is submitted_at for a
+-- review); observed_at is when this row was written. author_login/review_state/url are what the PR
+-- timeline renders for the item (#2500) — url is built from the recorded PR URL, never taken from
+-- the API response. All four are nullable because rows observed before #2500 never saw them: an
+-- unchanged item is not re-observed, so they are backfilled only if its body changes.
 CREATE TABLE IF NOT EXISTS github_pull_feedback (
   issue_id     INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
   kind         TEXT NOT NULL CHECK (kind IN ('issue_comment', 'review', 'review_comment')),
@@ -739,6 +744,10 @@ CREATE TABLE IF NOT EXISTS github_pull_feedback (
   content_hash TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   observed_at  TEXT NOT NULL,
+  author_login TEXT,
+  review_state TEXT,
+  created_at   TEXT,
+  url          TEXT,
   PRIMARY KEY (issue_id, kind, github_id)
 );
 

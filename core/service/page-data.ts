@@ -100,15 +100,17 @@ export const pageData = {
     // resolve it once here and hand it to the rest (#123). The resolution is the request's one
     // The operands are ref names, so resolve the live diff base once for this request.
     const diff = await pullDiffFiles(name, number);
-    const [pull, reviewRows, lineComments, commentRows] = await Promise.all([
-      pulls.get(name, number, {
-        withComments: false,
-        diffBaseShas: diff.baseShas,
-      }),
-      reviews.list(name, number),
-      reviews.listComments(name, number),
-      comments.list(name, number, actor),
-    ]);
+    const [pull, reviewRows, lineComments, commentRows, githubTimeline] =
+      await Promise.all([
+        pulls.get(name, number, {
+          withComments: false,
+          diffBaseShas: diff.baseShas,
+        }),
+        reviews.list(name, number),
+        reviews.listComments(name, number),
+        comments.list(name, number, actor),
+        pulls.githubTimeline(name, number),
+      ]);
     pull.comment_list = commentRows;
     // Read the threads as the caller, not as the page: `diffFeedback/list` resolves its actor
     // from the session, and a mismatch would show a reader their own reactions as unreacted.
@@ -141,6 +143,10 @@ export const pageData = {
         created_at: comment.created_at,
         comment,
       })),
+      // #2500: what the worker already observed on the linked GitHub PR, read from the DB rather
+      // than fetched, so this stays as free as the rest of the assembly. Empty when the PR has no
+      // linked GitHub PR.
+      ...githubTimeline,
     ].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
     return {
       pull,

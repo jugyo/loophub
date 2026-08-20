@@ -672,6 +672,120 @@ describe("PullDetail", () => {
     expect(within(section).queryByText("LGTM")).toBeNull();
   });
 
+  // #2500: GitHub-side activity sits in the same chronological list as the LoopHub entries, marked
+  // as GitHub's and linking to the item on GitHub.
+  it("renders GitHub activity in the timeline with links out to GitHub", async () => {
+    const githubUrl = "https://github.com/upstream/proj/pull/7";
+    renderDetail({
+      "fixture/pullGithubActivity": () => [
+        {
+          kind: "github_activity",
+          created_at: "2026-06-18T11:47:00Z",
+          github_activity: {
+            type: "issue_comment",
+            github_number: 7,
+            github_id: 501,
+            url: `${githubUrl}#issuecomment-501`,
+            author: "octocat",
+            review_state: null,
+          },
+        },
+        {
+          kind: "github_activity",
+          created_at: "2026-06-18T11:55:00Z",
+          github_activity: {
+            type: "review",
+            github_number: 7,
+            github_id: 502,
+            url: `${githubUrl}#pullrequestreview-502`,
+            author: "reviewer",
+            review_state: "changes_requested",
+          },
+        },
+        // Observed before the display fields were recorded: no author, and the link falls back to
+        // the PR itself.
+        {
+          kind: "github_activity",
+          created_at: "2026-06-18T11:58:00Z",
+          github_activity: {
+            type: "merged",
+            github_number: 7,
+            github_id: null,
+            url: githubUrl,
+            author: null,
+            review_state: null,
+          },
+        },
+      ],
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "Comments (2)" })
+    ).closest("section")!;
+    const commented = within(section).getByText("Commented on GitHub");
+    expect(commented.closest("a")?.getAttribute("href")).toBe(
+      `${githubUrl}#issuecomment-501`,
+    );
+    expect(within(section).getByText("@octocat")).toBeTruthy();
+    expect(within(section).getByText("changes requested")).toBeTruthy();
+    expect(
+      within(section)
+        .getByText("Merged on GitHub")
+        .closest("a")
+        ?.getAttribute("href"),
+    ).toBe(githubUrl);
+
+    // The GitHub entries land between the LoopHub entries they follow and precede.
+    const order = [
+      "Thanks!",
+      "Commented on GitHub",
+      "Rebased on main.",
+      "Reviewed on GitHub",
+      "Merged on GitHub",
+      "Latest change",
+    ];
+    const nodes = order.map((text) => within(section).getByText(text));
+    for (let index = 0; index < nodes.length - 1; index += 1) {
+      expect(
+        nodes[index].compareDocumentPosition(nodes[index + 1]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  // #2488 still holds once GitHub entries share the list: they are paged with everything else.
+  it("counts GitHub activity toward the timeline page size", async () => {
+    const activity = Array.from({ length: 25 }, (_, index) => ({
+      kind: "github_activity",
+      created_at: `2026-06-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+      github_activity: {
+        type: "issue_comment",
+        github_number: 7,
+        github_id: index + 1,
+        url: `https://github.com/upstream/proj/pull/7#issuecomment-${index + 1}`,
+        author: `commenter-${index + 1}`,
+        review_state: null,
+      },
+    }));
+    renderDetail({
+      "pulls/get": () => ({ ...pull, commits: [] }),
+      "comments/list": () => [],
+      "reviews/list": () => [],
+      "fixture/pullGithubActivity": () => activity,
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "Comments (0)" })
+    ).closest("section")!;
+    expect(within(section).getAllByRole("listitem")).toHaveLength(20);
+    expect(within(section).queryByText("@commenter-5")).toBeNull();
+    expect(within(section).getByText("@commenter-6")).toBeTruthy();
+
+    fireEvent.click(within(section).getByRole("button", { name: "Load more" }));
+    expect(within(section).getAllByRole("listitem")).toHaveLength(25);
+    expect(within(section).getByText("@commenter-1")).toBeTruthy();
+  });
+
   it("opens the commit diff dialog for the selected timeline commit", async () => {
     renderDetail({
       "repos/commitFiles": () => files,

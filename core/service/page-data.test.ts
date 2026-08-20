@@ -175,6 +175,109 @@ test("pullDetail assembles the PR timeline from data it already fetched", async 
   );
 });
 
+// #2500: the GitHub side of the PR reads in the same list as the LoopHub side. Everything here is
+// already-observed data — no `gh` runs — so the entries appear for whatever the worker's sweeps saw.
+test("pullDetail folds the observed GitHub activity into the timeline", async () => {
+  const issueId = S.getIssue(repoId, prNumber)!.id;
+  const url = "https://github.com/upstream/proj/pull/7";
+  S.recordGithubPull({ issueId, number: 7, url });
+  S.saveGithubFeedbackObservation({
+    issueId,
+    kind: "issue_comment",
+    githubId: 501,
+    contentHash: "hash-501",
+    updatedAt: "2026-06-20T10:00:00Z",
+    createdAt: "2026-06-20T09:00:00Z",
+    authorLogin: "octocat",
+    url: `${url}#issuecomment-501`,
+  });
+  S.saveGithubFeedbackObservation({
+    issueId,
+    kind: "review",
+    githubId: 502,
+    contentHash: "hash-502",
+    updatedAt: "2026-06-20T11:00:00Z",
+    createdAt: "2026-06-20T11:00:00Z",
+    authorLogin: "reviewer",
+    reviewState: "approved",
+    url: `${url}#pullrequestreview-502`,
+  });
+  // An item observed before the display columns existed: it still belongs on the timeline, placed
+  // by the timestamp it does have and pointing at the PR.
+  S.saveGithubFeedbackObservation({
+    issueId,
+    kind: "review_comment",
+    githubId: 503,
+    contentHash: "hash-503",
+    updatedAt: "2026-06-20T12:00:00Z",
+  });
+  S.setGithubMerged(issueId, "2026-06-20T13:00:00Z");
+
+  const page = await svc.pageData.pullDetail(REPO, prNumber, "me");
+  const github = page.timeline.filter(
+    (
+      item,
+    ): item is Extract<PullTimelineItemWire, { kind: "github_activity" }> =>
+      item.kind === "github_activity",
+  );
+
+  expect(github.map((item) => item.github_activity)).toEqual([
+    {
+      type: "issue_comment",
+      github_number: 7,
+      github_id: 501,
+      url: `${url}#issuecomment-501`,
+      author: "octocat",
+      review_state: null,
+    },
+    {
+      type: "review",
+      github_number: 7,
+      github_id: 502,
+      url: `${url}#pullrequestreview-502`,
+      author: "reviewer",
+      review_state: "approved",
+    },
+    {
+      type: "review_comment",
+      github_number: 7,
+      github_id: 503,
+      url,
+      author: null,
+      review_state: null,
+    },
+    {
+      type: "merged",
+      github_number: 7,
+      github_id: null,
+      url,
+      author: null,
+      review_state: null,
+    },
+  ]);
+  // Placed by the item's own GitHub timestamp, in the one chronological order the page assembles.
+  expect(github.map((item) => item.created_at)).toEqual([
+    "2026-06-20T09:00:00Z",
+    "2026-06-20T11:00:00Z",
+    "2026-06-20T12:00:00Z",
+    "2026-06-20T13:00:00Z",
+  ]);
+  const times = page.timeline.map((item) => Date.parse(item.created_at));
+  expect([...times].sort((a, b) => a - b)).toEqual(times);
+
+  // Unlinking the GitHub PR returns the timeline to the LoopHub-only entries it had before.
+  S.deleteGithubPull(issueId);
+  const unlinked = await svc.pageData.pullDetail(REPO, prNumber, "me");
+  expect(
+    unlinked.timeline.some((item) => item.kind === "github_activity"),
+  ).toBe(false);
+  expect(unlinked.timeline.length).toBe(
+    (unlinked.pull.commits ?? []).length +
+      unlinked.reviews.length +
+      unlinked.comments.length,
+  );
+});
+
 test("pullDetail resolves the PR's diff base once", async () => {
   const pull = S.getPull(S.getIssue(repoId, prNumber)!.id)!;
   const once = await traceGitCommands(() =>

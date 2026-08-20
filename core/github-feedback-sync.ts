@@ -39,6 +39,20 @@ function feedbackReference(url: string, feedback: GithubPrFeedback): string {
   return `repos/${ref.owner}/${ref.repo}/pulls/comments/${feedback.id}`;
 }
 
+// #2500: where the PR timeline sends a reader for this item. Built from the same parsed coordinates
+// as feedbackReference — GitHub's own `html_url` is never read, so an API response cannot decide
+// where a LoopHub link points.
+function feedbackPermalink(url: string, feedback: GithubPrFeedback): string {
+  const ref = parseGithubPullUrl(url);
+  if (!ref) throw new Error(`invalid GitHub PR URL: ${url}`);
+  const pull = `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`;
+  if (feedback.kind === "issue_comment")
+    return `${pull}#issuecomment-${feedback.id}`;
+  if (feedback.kind === "review")
+    return `${pull}#pullrequestreview-${feedback.id}`;
+  return `${pull}#discussion_r${feedback.id}`;
+}
+
 // Poll feedback only for active Workflow PRs. A PR is the failure boundary: auth/network/parse
 // failure is reported for that PR and the next candidate still runs. New/edited items are persisted
 // before one aggregate event is emitted, so subsequent ticks and worker restarts remain quiet.
@@ -93,6 +107,13 @@ export async function syncGithubFeedback(
             githubId: item.id,
             contentHash: hash,
             updatedAt: item.updatedAt,
+            // #2500: the same observation is what the PR timeline reads, so record who wrote the
+            // item, when it entered the conversation and where it lives on GitHub. The body stays
+            // out — the timeline links to GitHub for the text.
+            createdAt: item.createdAt || null,
+            authorLogin: item.authorLogin,
+            reviewState: item.reviewState,
+            url: feedbackPermalink(link.url, item),
           });
           changed.push({
             kind: item.kind,

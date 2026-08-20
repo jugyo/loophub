@@ -35,6 +35,7 @@ import type {
   PullDetailPageWire,
   PullDiffWire,
   PullFileWire,
+  PullGithubActivityWire,
   PullSummaryWire,
   PullTimelineItemWire,
   PullUsageWire,
@@ -288,6 +289,9 @@ export type PullDetailPage = PullDetailPageWire;
 
 /** One entry of the PR-detail timeline (#145), as assembled by the backend page query. */
 export type PullTimelineItem = PullTimelineItemWire;
+
+/** Something that happened on the linked GitHub PR, as a timeline entry (#2500). */
+export type PullGithubActivity = PullGithubActivityWire;
 
 /** A PR's agent-cost totals on their own, served without touching git (#2263). */
 export type PullUsage = PullUsageWire;
