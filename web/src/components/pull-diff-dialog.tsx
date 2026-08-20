@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import {
   Fragment,
-  type MutableRefObject,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -38,6 +37,12 @@ import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
 import { FileViewedBadge } from "@/components/file-viewed-badge";
 import { Markdown } from "@/components/markdown";
+import {
+  type MarkdownDiffBlockDecoration,
+  MarkdownDiffDocument,
+  type MarkdownDiffDocumentModel,
+  useMarkdownDiffDocument,
+} from "@/components/markdown-diff-document";
 import { useToast } from "@/components/toast";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
@@ -70,6 +75,7 @@ import {
   markdownDiffAnnotations,
   markdownDiffFeedbackPlacements,
   markdownUnifiedBlockOrder,
+  renderedBlockKey,
 } from "@/lib/markdown-source-map";
 import {
   pullFileViewState,
@@ -2299,61 +2305,54 @@ function RenderedDiffPane({
       }
     },
   );
-  const [baseBlocks, setBaseBlocks] = useState<MarkdownRenderedBlock[]>([]);
-  const [headBlocks, setHeadBlocks] = useState<MarkdownRenderedBlock[]>([]);
-  const baseBlocksRef = useRef<MarkdownRenderedBlock[]>([]);
-  const headBlocksRef = useRef<MarkdownRenderedBlock[]>([]);
-  const registerBlock = useCallback(
-    (ref: MutableRefObject<MarkdownRenderedBlock[]>) =>
-      (block: MarkdownRenderedBlock) => {
-        const key = renderedBlockKey(block);
-        if (!ref.current.some((item) => renderedBlockKey(item) === key)) {
-          ref.current = [...ref.current, block];
-        }
-      },
-    [],
+  // Both sides are parsed once per source here, so the annotations, the thread placements, and
+  // the two rendered documents all read the same block list.
+  const baseDocument = useMarkdownDiffDocument(base.data?.content ?? "");
+  const headDocument = useMarkdownDiffDocument(head.data?.content ?? "");
+
+  const lines = useMemo(
+    () =>
+      Array.isArray(diff.data?.files) ? (diff.data.files[0]?.lines ?? []) : [],
+    [diff.data],
   );
-
-  useEffect(() => {
-    if (baseBlocksRef.current.length > 0) setBaseBlocks(baseBlocksRef.current);
-    if (headBlocksRef.current.length > 0) setHeadBlocks(headBlocksRef.current);
-  }, [base.data?.content, head.data?.content]);
-
-  const lines = Array.isArray(diff.data?.files)
-    ? (diff.data.files[0]?.lines ?? [])
-    : [];
   const baseAnnotations = useMemo(
-    () => markdownDiffAnnotations(baseBlocks, lines),
-    [baseBlocks, lines],
+    () => markdownDiffAnnotations(baseDocument.blocks, lines),
+    [baseDocument, lines],
   );
   const headAnnotations = useMemo(
-    () => markdownDiffAnnotations(headBlocks, lines),
-    [headBlocks, lines],
+    () => markdownDiffAnnotations(headDocument.blocks, lines),
+    [headDocument, lines],
   );
-  const threads = feedback.data?.threads ?? [];
+  const threads = useMemo(() => feedback.data?.threads ?? [], [feedback.data]);
   const basePlacements = useMemo(
-    () => markdownDiffFeedbackPlacements(baseBlocks, threads),
-    [baseBlocks, threads],
+    () => markdownDiffFeedbackPlacements(baseDocument.blocks, threads),
+    [baseDocument, threads],
   );
   const headPlacements = useMemo(
-    () => markdownDiffFeedbackPlacements(headBlocks, threads),
-    [headBlocks, threads],
+    () => markdownDiffFeedbackPlacements(headDocument.blocks, threads),
+    [headDocument, threads],
   );
   const stableFile = Array.isArray(diff.data?.files)
     ? diff.data.files[0]
     : undefined;
   const fullWidthClass = viewMode === "split" ? "col-span-2" : "col-span-1";
+  // A mutation result is a new object on every render, so this depends on the pieces the card
+  // actually uses — the mutate functions are stable — and only a pending flag rebuilds the cards.
+  // Otherwise every keystroke in the composer would rebuild every block's decoration.
+  const { mutate: replyMutate, isPending: replyPending } = reply;
+  const { mutate: reactionMutate, isPending: reactionPending } = reaction;
+  const { mutate: archiveMutate, isPending: archivePending } = archive;
   const threadContent = useCallback(
     (thread: DiffFeedbackThread) => (
       <ThreadCard
         owner={owner}
         repo={repo}
         thread={thread}
-        busy={reply.isPending}
-        reactionBusy={reaction.isPending}
-        archiveBusy={archive.isPending}
+        busy={replyPending}
+        reactionBusy={reactionPending}
+        archiveBusy={archivePending}
         onReact={(messageId, emoji) =>
-          reaction.mutate(
+          reactionMutate(
             { messageId, emoji },
             {
               onError: (error) =>
@@ -2362,7 +2361,7 @@ function RenderedDiffPane({
           )
         }
         onReply={(replyBody) =>
-          reply.mutate(
+          replyMutate(
             { threadId: thread.id, body: replyBody },
             {
               onError: (error) =>
@@ -2371,7 +2370,7 @@ function RenderedDiffPane({
           )
         }
         onArchived={(archived) =>
-          archive.mutate(
+          archiveMutate(
             { threadId: thread.id, archived },
             {
               onError: (error) =>
@@ -2381,7 +2380,17 @@ function RenderedDiffPane({
         }
       />
     ),
-    [archive, owner, reaction, repo, reply, showError],
+    [
+      archiveMutate,
+      archivePending,
+      owner,
+      reactionMutate,
+      reactionPending,
+      repo,
+      replyMutate,
+      replyPending,
+      showError,
+    ],
   );
   const commentComposer =
     selection && stableFile && diff.data ? (
@@ -2433,6 +2442,7 @@ function RenderedDiffPane({
         side="LEFT"
         label="Base"
         file={base}
+        document={baseDocument}
         lines={lines}
         unified={viewMode === "unified"}
         annotations={baseAnnotations}
@@ -2440,13 +2450,19 @@ function RenderedDiffPane({
         selection={selection}
         onSelect={setSelection}
         threadContent={threadContent}
-        composer={viewMode === "unified" ? commentComposer : null}
-        registerBlock={registerBlock(baseBlocksRef)}
+        // Only the side the selection is on can host the composer, so the other side keeps its
+        // rendered document untouched while the draft changes.
+        composer={
+          viewMode === "unified" && selection?.side === "LEFT"
+            ? commentComposer
+            : null
+        }
       />
       <RenderedDiffSide
         side="RIGHT"
         label="Head"
         file={head}
+        document={headDocument}
         lines={lines}
         unified={viewMode === "unified"}
         annotations={headAnnotations}
@@ -2454,8 +2470,11 @@ function RenderedDiffPane({
         selection={selection}
         onSelect={setSelection}
         threadContent={threadContent}
-        composer={viewMode === "unified" ? commentComposer : null}
-        registerBlock={registerBlock(headBlocksRef)}
+        composer={
+          viewMode === "unified" && selection?.side === "RIGHT"
+            ? commentComposer
+            : null
+        }
       />
     </>
   );
@@ -2514,6 +2533,7 @@ function RenderedDiffSide({
   side,
   label,
   file,
+  document,
   lines,
   unified,
   annotations,
@@ -2522,11 +2542,11 @@ function RenderedDiffSide({
   onSelect,
   threadContent,
   composer,
-  registerBlock,
 }: {
   side: "LEFT" | "RIGHT";
   label: "Base" | "Head";
   file: ReturnType<typeof usePullFileAtRef>;
+  document: MarkdownDiffDocumentModel;
   lines: Parameters<typeof markdownUnifiedBlockOrder>[1];
   unified: boolean;
   annotations: ReturnType<typeof markdownDiffAnnotations>;
@@ -2536,7 +2556,6 @@ function RenderedDiffSide({
   threadContent: (thread: DiffFeedbackThread) => ReactNode;
   /** Rendered directly below the selected block; null when the pane places it itself. */
   composer: ReactNode;
-  registerBlock: (block: MarkdownRenderedBlock) => void;
 }) {
   const changeByBlock = useMemo(() => {
     const result = new Map<string, "added" | "removed">();
@@ -2567,44 +2586,17 @@ function RenderedDiffSide({
     }
     return result;
   }, [placements, side]);
-  const orderForBlock = useCallback(
-    (block: MarkdownRenderedBlock) =>
-      unified ? markdownUnifiedBlockOrder(block, lines, side) : null,
-    [lines, side, unified],
-  );
-  const blockClassName = useCallback(
-    (block: MarkdownRenderedBlock) => {
-      const key = renderedBlockKey(block);
-      const change = changeByBlock.get(key);
-      return cn(
-        change && `markdown-diff-block-${change}`,
-        threadsByBlock.has(key) && "markdown-diff-block-commented",
-        selection?.side === side &&
-          annotationForSelection(annotationsByBlock.get(key), selection) &&
-          "markdown-diff-block-selected",
-        unified &&
-          (orderForBlock(block) == null
-            ? "markdown-diff-unified-block-hidden"
-            : "markdown-diff-unified-block-visible"),
+  const orderByBlock = useMemo(() => {
+    const result = new Map<string, number | null>();
+    if (!unified) return result;
+    for (const block of document.blocks) {
+      result.set(
+        renderedBlockKey(block),
+        markdownUnifiedBlockOrder(block, lines, side),
       );
-    },
-    [
-      annotationsByBlock,
-      changeByBlock,
-      orderForBlock,
-      selection,
-      side,
-      threadsByBlock,
-      unified,
-    ],
-  );
-  const blockStyle = useCallback(
-    (block: MarkdownRenderedBlock) => {
-      const order = orderForBlock(block);
-      return order == null ? undefined : { order: order * 2 };
-    },
-    [orderForBlock],
-  );
+    }
+    return result;
+  }, [document, lines, side, unified]);
   // The change also has to read without color, so the gutter prefixes the line with the raw diff's
   // own sign. The slot is always there, which keeps every line number on the same right edge. The
   // whole label stays decorative: text here would join the accessible name of the block it sits in.
@@ -2693,46 +2685,64 @@ function RenderedDiffSide({
     },
     [annotationsByBlock, changeByBlock, gutterLine, label, onSelect, side],
   );
-  const after = useCallback(
-    (block: MarkdownRenderedBlock) => {
+  // Everything the diff draws around a block except the selection itself, so moving the selection
+  // — or typing in the composer — leaves this map, and every block that is not selected, alone.
+  const decorations = useMemo(() => {
+    const result = new Map<string, MarkdownDiffBlockDecoration>();
+    for (const block of document.blocks) {
       const key = renderedBlockKey(block);
+      if (result.has(key)) continue;
+      const order = orderByBlock.get(key) ?? null;
       const blockThreads = threadsByBlock.get(key);
-      // Commentable ranges never overlap across blocks, so at most one block hosts the composer.
-      const blockComposer =
-        composer &&
-        selection?.side === side &&
-        annotationForSelection(annotationsByBlock.get(key), selection)
-          ? composer
-          : null;
-      const order = orderForBlock(block);
-      return blockThreads?.length || blockComposer ? (
-        <div
-          className={cn(
-            "mt-2 space-y-2",
-            unified && "markdown-diff-unified-thread-group",
-          )}
-          style={order == null ? undefined : { order: order * 2 + 1 }}
-        >
-          {blockThreads?.map((placement) => (
-            <Fragment key={placement.thread.id}>
-              {threadContent(placement.thread)}
-            </Fragment>
-          ))}
-          {blockComposer}
-        </div>
-      ) : null;
-    },
-    [
-      annotationsByBlock,
-      composer,
-      orderForBlock,
-      selection,
-      side,
-      threadContent,
-      threadsByBlock,
-      unified,
-    ],
-  );
+      result.set(key, {
+        className: cn(
+          changeByBlock.get(key) &&
+            `markdown-diff-block-${changeByBlock.get(key)}`,
+          blockThreads && "markdown-diff-block-commented",
+          unified &&
+            (order == null
+              ? "markdown-diff-unified-block-hidden"
+              : "markdown-diff-unified-block-visible"),
+        ),
+        style: order == null ? undefined : { order: order * 2 },
+        action: action(block),
+        // Commentable ranges never overlap across blocks, so at most one block hosts the composer.
+        after: (blockComposer) =>
+          blockThreads?.length || blockComposer ? (
+            <div
+              className={cn(
+                "mt-2 space-y-2",
+                unified && "markdown-diff-unified-thread-group",
+              )}
+              style={order == null ? undefined : { order: order * 2 + 1 }}
+            >
+              {blockThreads?.map((placement) => (
+                <Fragment key={placement.thread.id}>
+                  {threadContent(placement.thread)}
+                </Fragment>
+              ))}
+              {blockComposer}
+            </div>
+          ) : null,
+      });
+    }
+    return result;
+  }, [
+    action,
+    changeByBlock,
+    document,
+    orderByBlock,
+    threadContent,
+    threadsByBlock,
+    unified,
+  ]);
+  const selectedKey = useMemo(() => {
+    if (!selection || selection.side !== side) return null;
+    for (const [key, annotation] of annotationsByBlock) {
+      if (annotationForSelection(annotation, selection)) return key;
+    }
+    return null;
+  }, [annotationsByBlock, selection, side]);
 
   return (
     <section
@@ -2768,9 +2778,8 @@ function RenderedDiffSide({
             N/A — binary file, cannot render as Markdown.
           </p>
         ) : (
-          <Markdown
-            key={file.data?.content}
-            typeset
+          <MarkdownDiffDocument
+            document={document}
             className={cn(
               "typeset-diff-preview mx-auto",
               "markdown-diff-document",
@@ -2778,21 +2787,12 @@ function RenderedDiffSide({
                 ? "markdown-diff-unified-document contents"
                 : "markdown-diff-split-document",
             )}
-            onRenderedBlock={registerBlock}
-            renderedBlockClassName={blockClassName}
-            renderedBlockStyle={blockStyle}
-            renderedBlockAction={action}
-            renderedBlockAfter={after}
-          >
-            {file.data?.content ?? ""}
-          </Markdown>
+            decorations={decorations}
+            selectedKey={selectedKey}
+            composer={composer}
+          />
         )}
       </div>
     </section>
   );
-}
-
-function renderedBlockKey(block: MarkdownRenderedBlock) {
-  const range = block.sourceRange;
-  return `${block.kind}:${range?.startLine ?? "-"}:${range?.endLine ?? "-"}`;
 }

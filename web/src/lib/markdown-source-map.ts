@@ -81,6 +81,12 @@ export function markdownSourceRange(
   return { startLine: start.line, endLine: end.line };
 }
 
+/** Stable identity of a rendered block: its kind plus the source lines it spans. */
+export function renderedBlockKey(block: MarkdownRenderedBlock) {
+  const range = block.sourceRange;
+  return `${block.kind}:${range?.startLine ?? "-"}:${range?.endLine ?? "-"}`;
+}
+
 /** Create metadata for a rendered block, including generated blocks without a position. */
 export function markdownRenderedBlock(
   kind: MarkdownRenderedBlockKind,
