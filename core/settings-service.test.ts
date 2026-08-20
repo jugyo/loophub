@@ -19,25 +19,29 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
+// settings.get() reports the resolved model/effort next to the raw config.json override (#362).
+// `override` names the fields this test has already written; anything omitted has no override, so
+// the resolved value comes from the runtime registry default.
+function agentWire(
+  model: string,
+  effort: string,
+  override: { model?: string; effort?: string } = {},
+) {
+  return {
+    model,
+    effort,
+    modelOverride: override.model ?? "",
+    effortOverride: override.effort ?? "",
+  };
+}
+
 test("settings.get defaults to the model/effort for every agent and claude-code", () => {
   expect(svc.settings.get()).toEqual({
     agents: {
-      "claude-code": {
-        model: "opus",
-        effort: "medium",
-      },
-      codex: {
-        model: "gpt-5.6-sol",
-        effort: "medium",
-      },
-      opencode: {
-        model: "opencode/big-pickle",
-        effort: "",
-      },
-      grok: {
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
+      "claude-code": agentWire("opus", "medium"),
+      codex: agentWire("gpt-5.6-sol", "medium"),
+      opencode: agentWire("opencode/big-pickle", ""),
+      grok: agentWire("grok-code-fast-1", "medium"),
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -97,22 +101,12 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
   });
   expect(result).toEqual({
     agents: {
-      "claude-code": {
+      "claude-code": agentWire("claude-opus-4-8", "medium", {
         model: "claude-opus-4-8",
-        effort: "medium",
-      },
-      codex: {
-        model: "gpt-5.6-sol",
-        effort: "medium",
-      },
-      opencode: {
-        model: "opencode/big-pickle",
-        effort: "",
-      },
-      grok: {
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
+      }),
+      codex: agentWire("gpt-5.6-sol", "medium"),
+      opencode: agentWire("opencode/big-pickle", ""),
+      grok: agentWire("grok-code-fast-1", "medium"),
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -136,22 +130,10 @@ test("settings.update sets one agent's model without disturbing another's (#594)
   svc.settings.update({ agent: "codex", model: "gpt-5.5-codex" });
   expect(svc.settings.get()).toEqual({
     agents: {
-      "claude-code": {
-        model: "sonnet",
-        effort: "medium",
-      },
-      codex: {
-        model: "gpt-5.5-codex",
-        effort: "medium",
-      },
-      opencode: {
-        model: "opencode/big-pickle",
-        effort: "",
-      },
-      grok: {
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
+      "claude-code": agentWire("sonnet", "medium", { model: "sonnet" }),
+      codex: agentWire("gpt-5.5-codex", "medium", { model: "gpt-5.5-codex" }),
+      opencode: agentWire("opencode/big-pickle", ""),
+      grok: agentWire("grok-code-fast-1", "medium"),
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -165,13 +147,12 @@ test("settings.update sets one agent's model without disturbing another's (#594)
   svc.settings.update({ agent: "codex", model: "gpt-5.6-sol" });
 });
 
-test("settings.update rejects a non-string or empty model (#594)", () => {
-  expect(() =>
-    svc.settings.update({ agent: "claude-code", model: "" }),
-  ).toThrow(/model must be a non-empty string/);
+// An empty model is no longer rejected: it is the Settings screen's Default choice, which removes
+// the override (#362, covered by core/service/settings.test.ts).
+test("settings.update rejects a non-string model (#594)", () => {
   expect(() =>
     svc.settings.update({ agent: "claude-code", model: 123 as any }),
-  ).toThrow(/model must be a non-empty string/);
+  ).toThrow(/model must be a string/);
 });
 
 test("settings.update rejects model without a valid agent (#594)", () => {
@@ -188,22 +169,10 @@ test("settings.update omitting model preserves the persisted value (#594)", () =
   svc.settings.update({});
   expect(svc.settings.get()).toEqual({
     agents: {
-      "claude-code": {
-        model: "sonnet",
-        effort: "medium",
-      },
-      codex: {
-        model: "gpt-5.6-sol",
-        effort: "medium",
-      },
-      opencode: {
-        model: "opencode/big-pickle",
-        effort: "",
-      },
-      grok: {
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
+      "claude-code": agentWire("sonnet", "medium", { model: "sonnet" }),
+      codex: agentWire("gpt-5.6-sol", "medium", { model: "gpt-5.6-sol" }),
+      opencode: agentWire("opencode/big-pickle", ""),
+      grok: agentWire("grok-code-fast-1", "medium"),
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -223,19 +192,13 @@ test("settings.update persists a per-agent effort and is reflected by settings.g
   });
   expect(result).toEqual({
     agents: {
-      "claude-code": { model: "opus", effort: "high" },
-      codex: {
-        model: "gpt-5.6-sol",
-        effort: "medium",
-      },
-      opencode: {
-        model: "opencode/big-pickle",
-        effort: "",
-      },
-      grok: {
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
+      "claude-code": agentWire("opus", "high", {
+        model: "opus",
+        effort: "high",
+      }),
+      codex: agentWire("gpt-5.6-sol", "medium", { model: "gpt-5.6-sol" }),
+      opencode: agentWire("opencode/big-pickle", ""),
+      grok: agentWire("grok-code-fast-1", "medium"),
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -260,19 +223,16 @@ test("settings.update sets one agent's effort without disturbing another's (#682
   svc.settings.update({ agent: "codex", effort: "low" });
   expect(svc.settings.get()).toEqual({
     agents: {
-      "claude-code": {
+      "claude-code": agentWire("opus", "xhigh", {
         model: "opus",
         effort: "xhigh",
-      },
-      codex: { model: "gpt-5.6-sol", effort: "low" },
-      opencode: {
-        model: "opencode/big-pickle",
-        effort: "",
-      },
-      grok: {
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
+      }),
+      codex: agentWire("gpt-5.6-sol", "low", {
+        model: "gpt-5.6-sol",
+        effort: "low",
+      }),
+      opencode: agentWire("opencode/big-pickle", ""),
+      grok: agentWire("grok-code-fast-1", "medium"),
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -286,13 +246,11 @@ test("settings.update sets one agent's effort without disturbing another's (#682
   svc.settings.update({ agent: "codex", effort: "medium" });
 });
 
-test("settings.update rejects a non-string or empty effort (#682)", () => {
-  expect(() =>
-    svc.settings.update({ agent: "claude-code", effort: "" }),
-  ).toThrow(/effort must be a non-empty string/);
+// As with the model, an empty effort removes the override rather than failing (#362).
+test("settings.update rejects a non-string effort (#682)", () => {
   expect(() =>
     svc.settings.update({ agent: "claude-code", effort: 123 as any }),
-  ).toThrow(/effort must be a non-empty string/);
+  ).toThrow(/effort must be a string/);
 });
 
 test("settings.update rejects effort without a valid agent (#682)", () => {
@@ -309,22 +267,16 @@ test("settings.update omitting effort preserves the persisted value (#682)", () 
   svc.settings.update({});
   expect(svc.settings.get()).toEqual({
     agents: {
-      "claude-code": {
+      "claude-code": agentWire("opus", "xhigh", {
         model: "opus",
         effort: "xhigh",
-      },
-      codex: {
+      }),
+      codex: agentWire("gpt-5.6-sol", "medium", {
         model: "gpt-5.6-sol",
         effort: "medium",
-      },
-      opencode: {
-        model: "opencode/big-pickle",
-        effort: "",
-      },
-      grok: {
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
+      }),
+      opencode: agentWire("opencode/big-pickle", ""),
+      grok: agentWire("grok-code-fast-1", "medium"),
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -341,22 +293,16 @@ test("settings.update persists codingAgent and is reflected by settings.get (#51
   const result = svc.settings.update({ codingAgent: "codex" });
   expect(result).toEqual({
     agents: {
-      "claude-code": {
+      "claude-code": agentWire("opus", "medium", {
         model: "opus",
         effort: "medium",
-      },
-      codex: {
+      }),
+      codex: agentWire("gpt-5.6-sol", "medium", {
         model: "gpt-5.6-sol",
         effort: "medium",
-      },
-      opencode: {
-        model: "opencode/big-pickle",
-        effort: "",
-      },
-      grok: {
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
+      }),
+      opencode: agentWire("opencode/big-pickle", ""),
+      grok: agentWire("grok-code-fast-1", "medium"),
     },
     codingAgent: "codex",
     devCostLimitUsd: 10,
@@ -384,10 +330,9 @@ test("settings.update accepts grok as an agent-scoped and default coding agent",
   svc.settings.update({ codingAgent: "grok" });
   const got = svc.settings.get();
   expect(got.codingAgent).toBe("grok");
-  expect(got.agents.grok).toEqual({
-    model: "grok-4",
-    effort: "high",
-  });
+  expect(got.agents.grok).toEqual(
+    agentWire("grok-4", "high", { model: "grok-4", effort: "high" }),
+  );
 
   // Restore defaults so later tests see the untouched baseline.
   svc.settings.update({ agent: "grok", model: "grok-code-fast-1" });
@@ -405,10 +350,9 @@ test("settings.update accepts OpenCode as an agent-scoped and default coding age
   svc.settings.update({ codingAgent: "opencode" });
   const got = svc.settings.get();
   expect(got.codingAgent).toBe("opencode");
-  expect(got.agents.opencode).toEqual({
-    model: "openai/gpt-5.6",
-    effort: "",
-  });
+  expect(got.agents.opencode).toEqual(
+    agentWire("openai/gpt-5.6", "", { model: "openai/gpt-5.6" }),
+  );
 
   // Restore defaults so later tests see the untouched baseline.
   svc.settings.update({
@@ -424,22 +368,21 @@ test("settings.update omitting codingAgent preserves the persisted value (#516)"
   svc.settings.update({});
   expect(svc.settings.get()).toEqual({
     agents: {
-      "claude-code": {
+      "claude-code": agentWire("opus", "medium", {
         model: "opus",
         effort: "medium",
-      },
-      codex: {
+      }),
+      codex: agentWire("gpt-5.6-sol", "medium", {
         model: "gpt-5.6-sol",
         effort: "medium",
-      },
-      opencode: {
+      }),
+      opencode: agentWire("opencode/big-pickle", "", {
         model: "opencode/big-pickle",
-        effort: "",
-      },
-      grok: {
+      }),
+      grok: agentWire("grok-code-fast-1", "medium", {
         model: "grok-code-fast-1",
         effort: "medium",
-      },
+      }),
     },
     codingAgent: "codex",
     devCostLimitUsd: 10,

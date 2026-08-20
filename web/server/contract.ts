@@ -282,11 +282,12 @@ export const methods: Record<string, MethodDef> = {
   },
   "settings/update": {
     description:
-      "Update instance-level settings. model/effort require agent; theme, workflowContractLanguage, and publicOrigin are DB-backed.",
+      "Update instance-level settings. model/effort require agent and clear that agent's override when empty; theme, workflowContractLanguage, and publicOrigin are DB-backed.",
     params: params({
       agent: codingAgentEnum,
-      model: strNonEmpty,
-      // Runtime-specific validation remains in the settings service.
+      // An empty model/effort clears that agent's override; the settings service owns the rest of
+      // the validation.
+      model: str,
       effort: str,
       codingAgent: codingAgentEnum,
       devCostLimitUsd,

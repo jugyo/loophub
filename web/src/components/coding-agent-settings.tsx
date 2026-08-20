@@ -2,9 +2,9 @@
 // (settings-page.tsx) and the per-repo Agent settings (repo-settings-page.tsx's AgentConfigSection)
 // render the same rows — one per registry runtime, each with a radio that picks the active agent and
 // a dropdown that edits that agent's model (plus effort, for runtimes that offer levels) — so the two
-// screens share one layout, one set of labels, and one way to edit. The only per-screen difference is
-// the repo's override semantics: there an empty model/effort means "use the runtime default", so that
-// screen opts into an explicit Default entry via `allowDefault`.
+// screens share one layout, one set of labels, and one way to edit. Both screens edit an override
+// whose empty value means "use the default", so every dropdown offers the same Default entry and the
+// only per-screen difference left is where the picked values are stored (#362).
 
 import { ChevronsUpDown } from "lucide-react";
 import type { CodingAgent } from "@/api/types";
@@ -59,7 +59,6 @@ export function CodingAgentSettingsList({
   label,
   selected,
   values,
-  allowDefault = false,
   disabled,
   saving,
   onSelectAgent,
@@ -72,7 +71,6 @@ export function CodingAgentSettingsList({
   // Saved model/effort per agent. The repo screen stores one triple, so it fills in only the
   // selected agent and the other rows read as Default.
   values: Partial<Record<CodingAgent, AgentSettingValues>>;
-  allowDefault?: boolean;
   disabled: boolean;
   saving: boolean;
   onSelectAgent: (agent: CodingAgent) => void;
@@ -116,7 +114,6 @@ export function CodingAgentSettingsList({
               effort={effort}
               modelSuggestions={MODEL_SUGGESTIONS[agent]}
               effortSuggestions={EFFORT_SUGGESTIONS[agent]}
-              allowDefault={allowDefault}
               disabled={disabled}
               saving={saving}
               onSave={(selectedModel, selectedEffort) =>
@@ -136,7 +133,6 @@ function AgentModelDropdown({
   effort,
   modelSuggestions,
   effortSuggestions,
-  allowDefault,
   disabled,
   saving,
   onSave,
@@ -146,27 +142,20 @@ function AgentModelDropdown({
   effort: string;
   modelSuggestions: string[];
   effortSuggestions: string[];
-  allowDefault: boolean;
   disabled: boolean;
   saving: boolean;
   onSave: (model: string, effort: string) => void;
 }) {
-  // A saved value outside the suggestions is injected so existing config stays visible. With
-  // `allowDefault` the empty value is offered too, so an override can be handed back to the runtime.
-  const modelOptions = allowDefault
-    ? ["", ...modelSuggestions]
-    : modelSuggestions;
+  // Both lists offer the empty value as Default, so an override can always be handed back to the
+  // runtime. A saved value outside the suggestions leads the list so existing config stays visible.
+  const modelOptions = ["", ...modelSuggestions];
   const models = modelOptions.includes(model)
     ? modelOptions
     : [model, ...modelOptions];
-  const effortOptions = allowDefault
-    ? ["", ...effortSuggestions]
-    : effortSuggestions;
+  const effortOptions = ["", ...effortSuggestions];
   const efforts = effortOptions.includes(effort)
     ? effortOptions
-    : effort
-      ? [effort, ...effortOptions]
-      : effortOptions;
+    : [effort, ...effortOptions];
   // Summarize the saved selection on the closed trigger (#100) so model and effort are both
   // readable without opening the submenu. Agents whose registry entry offers no effort levels
   // never save one, so they show the model alone instead of an empty separator.

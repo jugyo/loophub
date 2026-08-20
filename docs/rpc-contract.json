@@ -471,7 +471,7 @@
     },
     {
       "name": "settings/update",
-      "description": "Update instance-level settings. model/effort require agent; theme, workflowContractLanguage, and publicOrigin are DB-backed.",
+      "description": "Update instance-level settings. model/effort require agent and clear that agent's override when empty; theme, workflowContractLanguage, and publicOrigin are DB-backed.",
       "params": {
         "type": "object",
         "properties": {
@@ -484,8 +484,7 @@
             ]
           },
           "model": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "effort": {
             "type": "string"

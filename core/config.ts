@@ -127,30 +127,40 @@ export function uiUrl(path: string): string {
   return p ? `${baseUrl()}/${p}` : baseUrl();
 }
 
-// Model launches of `agent` use when --model isn't passed explicitly (#594). Falls back
-// to DEFAULT_AGENT_MODEL when config.json has no override for this agent.
-export function agentModel(agent: CodingAgent): string {
+// The raw per-agent model override stored in config.json, or "" when this agent has none. The
+// Settings screen needs the override itself — not the resolved value — to tell "no override" from
+// "explicitly set to the same value as the default" (#362).
+export function agentModelOverride(agent: CodingAgent): string {
   try {
     const cfg: GlobalConfig = JSON.parse(
       readFileSync(join(configDir(), "config.json"), "utf8"),
     );
-    const configured = cfg.agents?.[agent]?.defaultModel?.trim();
-    if (configured) return configured;
+    return cfg.agents?.[agent]?.defaultModel?.trim() || "";
   } catch {}
-  return DEFAULT_AGENT_MODEL[agent];
+  return "";
+}
+
+// The raw per-agent effort override stored in config.json, or "" when this agent has none (#362).
+export function agentEffortOverride(agent: CodingAgent): string {
+  try {
+    const cfg: GlobalConfig = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
+    return cfg.agents?.[agent]?.defaultEffort?.trim() || "";
+  } catch {}
+  return "";
+}
+
+// Model launches of `agent` use when --model isn't passed explicitly (#594). Falls back
+// to DEFAULT_AGENT_MODEL when config.json has no override for this agent.
+export function agentModel(agent: CodingAgent): string {
+  return agentModelOverride(agent) || DEFAULT_AGENT_MODEL[agent];
 }
 
 // Effort paired with agentModel() (#682). Falls back to DEFAULT_AGENT_EFFORT when config.json
 // has no override for this agent.
 export function agentEffort(agent: CodingAgent): string {
-  try {
-    const cfg: GlobalConfig = JSON.parse(
-      readFileSync(join(configDir(), "config.json"), "utf8"),
-    );
-    const configured = cfg.agents?.[agent]?.defaultEffort?.trim();
-    if (configured) return configured;
-  } catch {}
-  return DEFAULT_AGENT_EFFORT[agent];
+  return agentEffortOverride(agent) || DEFAULT_AGENT_EFFORT[agent];
 }
 
 // Resolve a repo's raw Coding agent override (#1532) against the live application defaults
@@ -259,18 +269,30 @@ export function updateConfig(patch: Partial<GlobalConfig>): GlobalConfig {
   return merged as GlobalConfig;
 }
 
+// Write one field of a single agent's settings without disturbing the other agents or the agent's
+// other field. An empty value removes the override so the runtime registry default applies again
+// (#362) — writing "" instead would look like an override that resolves to nothing.
+function updateAgentSetting(
+  agent: CodingAgent,
+  key: "defaultModel" | "defaultEffort",
+  value: string,
+): GlobalConfig {
+  const current = readConfigFile() as GlobalConfig;
+  const entry = { ...current.agents?.[agent] };
+  if (value) {
+    entry[key] = value;
+  } else {
+    delete entry[key];
+  }
+  return updateConfig({ agents: { ...current.agents, [agent]: entry } });
+}
+
 // Set a single agent's defaultModel without disturbing other agents' settings (#594).
 export function updateAgentDefaultModel(
   agent: CodingAgent,
   model: string,
 ): GlobalConfig {
-  const current = readConfigFile() as GlobalConfig;
-  return updateConfig({
-    agents: {
-      ...current.agents,
-      [agent]: { ...current.agents?.[agent], defaultModel: model },
-    },
-  });
+  return updateAgentSetting(agent, "defaultModel", model);
 }
 
 // Set a single agent's defaultEffort without disturbing other agents' settings (#682).
@@ -278,13 +300,7 @@ export function updateAgentDefaultEffort(
   agent: CodingAgent,
   effort: string,
 ): GlobalConfig {
-  const current = readConfigFile() as GlobalConfig;
-  return updateConfig({
-    agents: {
-      ...current.agents,
-      [agent]: { ...current.agents?.[agent], defaultEffort: effort },
-    },
-  });
+  return updateAgentSetting(agent, "defaultEffort", effort);
 }
 
 export function updateDevCostLimitUsd(limitUsd: number): GlobalConfig {

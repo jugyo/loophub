@@ -1,6 +1,8 @@
 import {
   agentEffort,
+  agentEffortOverride,
   agentModel,
+  agentModelOverride,
   type CodingAgent,
   codingAgent,
   devCostLimitUsd,
@@ -13,8 +15,8 @@ import {
 } from "../config.ts";
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
-import { CODING_AGENTS, isCodingAgent, RUNTIMES } from "../runtimes.ts";
-import type { GlobalSettingsWire } from "../serialize.ts";
+import { CODING_AGENTS, isCodingAgent } from "../runtimes.ts";
+import type { AgentSettingsWire, GlobalSettingsWire } from "../serialize.ts";
 import * as S from "../store.ts";
 import { isTheme, type Theme } from "../theme.ts";
 import {
@@ -70,23 +72,22 @@ function validatePublicOrigin(value: unknown): asserts value is string | null {
   }
 }
 
-interface AgentSettingsShape {
-  model: string;
-  effort: string;
-}
-
 // The per-agent settings block for every runtime, derived from the registry order so a new runtime
-// surfaces here without another hand-written entry.
-function agentSettings(): Record<CodingAgent, AgentSettingsShape> {
+// surfaces here without another hand-written entry. Both the resolved value and the raw override are
+// reported: the Settings screen edits the override, while readers like the status bar want what a
+// launch would actually use (#362).
+function agentSettings(): Record<CodingAgent, AgentSettingsWire> {
   return Object.fromEntries(
     CODING_AGENTS.map((agent) => [
       agent,
       {
         model: agentModel(agent),
         effort: agentEffort(agent),
+        modelOverride: agentModelOverride(agent),
+        effortOverride: agentEffortOverride(agent),
       },
     ]),
-  ) as Record<CodingAgent, AgentSettingsShape>;
+  ) as Record<CodingAgent, AgentSettingsWire>;
 }
 
 function hasAtMostTwoDecimalPlaces(value: number): boolean {
@@ -153,20 +154,19 @@ export const settings = {
     },
     sessionId?: string | null,
   ): GlobalSettingsWire {
+    // An empty model/effort is not a malformed value but the explicit "no override" choice the
+    // Settings screen offers as Default: it removes the per-agent entry so the runtime registry
+    // default applies again (#362).
     if (input.model !== undefined) {
-      if (typeof input.model !== "string" || !input.model.trim()) {
-        throw new ServiceError(422, "model must be a non-empty string");
+      if (typeof input.model !== "string") {
+        throw new ServiceError(422, "model must be a string");
       }
       validateAgentScopedSetting(input.agent);
     }
     if (input.effort !== undefined) {
       validateAgentScopedSetting(input.agent);
-      if (
-        typeof input.effort !== "string" ||
-        (!input.effort.trim() &&
-          RUNTIMES[input.agent].effortSuggestions.length > 0)
-      ) {
-        throw new ServiceError(422, "effort must be a non-empty string");
+      if (typeof input.effort !== "string") {
+        throw new ServiceError(422, "effort must be a string");
       }
     }
     if (input.codingAgent !== undefined && !isCodingAgent(input.codingAgent)) {

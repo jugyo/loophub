@@ -49,39 +49,35 @@ async function openDropdown(label: string): Promise<HTMLElement> {
 }
 
 describe("CodingAgentSettingsList", () => {
-  // The application Settings screen and the per-repo Agent settings differ only in the repo's
-  // override semantics (`allowDefault`), so the rows they render must stay identical (#165).
-  it("renders the same row per registry runtime whether or not Default is offered", () => {
-    for (const allowDefault of [false, true]) {
-      const { unmount } = render(
-        <CodingAgentSettingsList
-          name="coding-agent"
-          label="Coding agent"
-          selected="codex"
-          values={{ codex: { model: "gpt-5.5", effort: "high" } }}
-          allowDefault={allowDefault}
-          disabled={false}
-          saving={false}
-          onSelectAgent={() => {}}
-          onSaveModel={() => {}}
-        />,
-      );
-      const group = screen.getByRole("radiogroup", { name: "Coding agent" });
-      expect(within(group).getAllByRole("radio")).toHaveLength(
-        CODING_AGENTS.length,
-      );
-      for (const agent of CODING_AGENTS) {
-        const label = CODING_AGENT_LABELS[agent];
-        expect(within(group).getByRole("radio", { name: label })).toBeTruthy();
-        expect(
-          within(group).getByRole("button", { name: `${label} model` }),
-        ).toBeTruthy();
-      }
+  // Both callers render this one list, so there is a single row per registry runtime and the two
+  // screens read alike (#165).
+  it("renders one row per registry runtime", () => {
+    render(
+      <CodingAgentSettingsList
+        name="coding-agent"
+        label="Coding agent"
+        selected="codex"
+        values={{ codex: { model: "gpt-5.5", effort: "high" } }}
+        disabled={false}
+        saving={false}
+        onSelectAgent={() => {}}
+        onSaveModel={() => {}}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "Coding agent" });
+    expect(within(group).getAllByRole("radio")).toHaveLength(
+      CODING_AGENTS.length,
+    );
+    for (const agent of CODING_AGENTS) {
+      const label = CODING_AGENT_LABELS[agent];
+      expect(within(group).getByRole("radio", { name: label })).toBeTruthy();
       expect(
-        screen.getByRole("button", { name: "Codex model" }).textContent,
-      ).toBe("GPT 5.5 · High");
-      unmount();
+        within(group).getByRole("button", { name: `${label} model` }),
+      ).toBeTruthy();
     }
+    expect(
+      screen.getByRole("button", { name: "Codex model" }).textContent,
+    ).toBe("GPT 5.5 · High");
   });
 
   it("reports the picked agent, model and effort to the caller", async () => {
@@ -107,29 +103,43 @@ describe("CodingAgentSettingsList", () => {
     expect(onSelectAgent).toHaveBeenCalledWith("codex");
   });
 
-  // The repo override stores an empty model/effort as "use the runtime default", so that screen
-  // needs a way back to it even once a concrete model is saved.
-  it("offers a Default entry for a saved model only when the caller allows it", async () => {
-    const saved = {
-      selected: "codex" as CodingAgent,
+  // Both screens store an empty model/effort as "use the default", so every dropdown needs a way
+  // back to it even once a concrete model is saved (#362).
+  it("offers a Default entry for the model and the effort", async () => {
+    const { onSaveModel } = renderList({
+      selected: "codex",
       values: { codex: { model: "gpt-5.5", effort: "high" } },
-    };
-    renderList({ ...saved, allowDefault: true });
-    const withDefault = await openDropdown("Codex model");
-    expect(
-      within(withDefault).getByRole("menuitem", {
-        name: "Default effort options",
-      }),
-    ).toBeTruthy();
+    });
+    const menu = await openDropdown("Codex model");
+    const defaultModel = within(menu).getByRole("menuitem", {
+      name: "Default effort options",
+    });
 
-    cleanup();
-    renderList(saved);
-    const withoutDefault = await openDropdown("Codex model");
+    fireEvent.pointerMove(defaultModel, { pointerType: "mouse" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Default" }));
+    expect(onSaveModel).toHaveBeenCalledWith("codex", "", "");
+  });
+
+  it("marks Default as the current selection while no override is saved", async () => {
+    renderList({
+      selected: "codex",
+      values: { codex: { model: "", effort: "" } },
+    });
     expect(
-      within(withoutDefault).queryByRole("menuitem", {
-        name: "Default effort options",
-      }),
-    ).toBeNull();
+      screen.getByRole("button", { name: "Codex model" }).textContent,
+    ).toBe("Default");
+
+    const menu = await openDropdown("Codex model");
+    const defaultModel = within(menu).getByRole("menuitem", {
+      name: "Default effort options",
+    });
+    expect(defaultModel.className).toContain("bg-accent");
+
+    fireEvent.pointerMove(defaultModel, { pointerType: "mouse" });
+    const defaultEffort = await screen.findByRole("menuitem", {
+      name: "Default",
+    });
+    expect(defaultEffort.getAttribute("aria-current")).toBe("true");
   });
 
   it("keeps a saved value outside the suggestions visible", async () => {

@@ -55,8 +55,14 @@ export function workerCompatibilityJSON(
 }
 
 export interface AgentSettingsWire {
+  // Effective model/effort a launch uses: the config.json override when set, else the runtime
+  // registry default.
   model: string;
   effort: string;
+  // The raw config.json override, "" when this agent has none. The Settings screen needs it to
+  // highlight Default and to offer a way back to the registry default (#362).
+  modelOverride: string;
+  effortOverride: string;
 }
 
 export interface GlobalSettingsWire {

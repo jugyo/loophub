@@ -1039,8 +1039,6 @@ function AgentConfigSection({ owner, repo }: { owner: string; repo: string }) {
           selected={runtime}
           // Only the pinned runtime has stored values; the other rows read as Default.
           values={{ [runtime]: { model, effort } }}
-          // An empty model/effort means "use the runtime's default", stored as null.
-          allowDefault
           disabled={isLoading}
           saving={save.isPending}
           onSelectAgent={(agent) => {

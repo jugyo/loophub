@@ -25,22 +25,30 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const DEFAULT_AGENT_SETTINGS: Record<
-  CodingAgent,
-  { model: string; effort: string }
-> = {
-  "claude-code": { model: "opus", effort: "medium" },
-  codex: { model: "gpt-5.5", effort: "medium" },
-  grok: { model: "grok-code-fast-1", effort: "medium" },
-  opencode: { model: "opencode/big-pickle", effort: "" },
+type AgentSettings = {
+  model: string;
+  effort: string;
+  modelOverride: string;
+  effortOverride: string;
+};
+
+// The screen edits the override; the resolved model/effort ride along for other readers, so the
+// fixture keeps both in sync the way the settings service does.
+function saved(model: string, effort: string): AgentSettings {
+  return { model, effort, modelOverride: model, effortOverride: effort };
+}
+
+const DEFAULT_AGENT_SETTINGS: Record<CodingAgent, AgentSettings> = {
+  "claude-code": saved("opus", "medium"),
+  codex: saved("gpt-5.5", "medium"),
+  grok: saved("grok-code-fast-1", "medium"),
+  opencode: saved("opencode/big-pickle", ""),
 };
 
 function renderSettings(
   initialCodingAgent: CodingAgent = "claude-code",
   initialDevCostLimitUsd = 10,
-  agentOverrides: Partial<
-    Record<CodingAgent, { model: string; effort: string }>
-  > = {},
+  agentOverrides: Partial<Record<CodingAgent, AgentSettings>> = {},
 ) {
   const agents = {
     ...structuredClone(DEFAULT_AGENT_SETTINGS),
@@ -60,10 +68,12 @@ function renderSettings(
       }),
       "settings/update": (params) => {
         if (params.agent && params.model !== undefined) {
-          agents[params.agent as CodingAgent].model = params.model as string;
+          agents[params.agent as CodingAgent].modelOverride =
+            params.model as string;
         }
         if (params.agent && params.effort !== undefined) {
-          agents[params.agent as CodingAgent].effort = params.effort as string;
+          agents[params.agent as CodingAgent].effortOverride =
+            params.effort as string;
         }
         if (params.codingAgent) codingAgent = params.codingAgent as CodingAgent;
         if (params.devCostLimitUsd !== undefined) {
@@ -141,7 +151,7 @@ describe("SettingsPage", () => {
 
   it("omits the effort when it is unset or the agent has no effort levels", async () => {
     renderSettings("claude-code", 10, {
-      "claude-code": { model: "opus", effort: "" },
+      "claude-code": saved("opus", ""),
     });
     const withoutEffort = await screen.findByRole("button", {
       name: "Claude Code model",
@@ -196,6 +206,52 @@ describe("SettingsPage", () => {
         effort: "xhigh",
       }),
     );
+  });
+
+  // #362: this screen edits the same override the repo Agent settings do, so Default is offered
+  // here too and clears the per-agent override rather than saving a value.
+  it("shows Default as the current selection while no override is saved", async () => {
+    renderSettings("claude-code", 10, {
+      "claude-code": {
+        model: "opus",
+        effort: "medium",
+        modelOverride: "",
+        effortOverride: "",
+      },
+    });
+    const trigger = await screen.findByRole("button", {
+      name: "Claude Code model",
+    });
+    expect(trigger.textContent).toBe("Default");
+
+    const modelMenu = await openDropdown("Claude Code model");
+    expect(
+      within(modelMenu).getByRole("menuitem", {
+        name: "Default effort options",
+      }).className,
+    ).toContain("bg-accent");
+  });
+
+  it("clears the override when Default is picked", async () => {
+    renderSettings();
+    const modelMenu = await openDropdown("Claude Code model");
+    const defaultOption = within(modelMenu).getByRole("menuitem", {
+      name: "Default effort options",
+    });
+    fireEvent.pointerMove(defaultOption, { pointerType: "mouse" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Default" }));
+
+    await waitFor(() =>
+      expect(lastRpcCall("settings/update")?.params).toMatchObject({
+        agent: "claude-code",
+        model: "",
+        effort: "",
+      }),
+    );
+    expect(
+      (await screen.findByRole("button", { name: "Claude Code model" }))
+        .textContent,
+    ).toBe("Default");
   });
 
   it("shows and saves the task over-budget limit", async () => {

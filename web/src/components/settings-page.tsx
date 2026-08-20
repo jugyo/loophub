@@ -2,7 +2,11 @@
 // opposed to the per-repo settings screen (see repo-settings-page.tsx's MergeModeSection).
 
 import { useEffect, useState } from "react";
-import { CodingAgentSettingsList } from "@/components/coding-agent-settings";
+import type { CodingAgent } from "@/api/types";
+import {
+  type AgentSettingValues,
+  CodingAgentSettingsList,
+} from "@/components/coding-agent-settings";
 import { SettingsLayout } from "@/components/settings-header";
 import { Button } from "@/components/ui/button";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
@@ -39,6 +43,15 @@ export function SettingsPage() {
   }, [devCostLimitUsd]);
 
   const codingAgent = data?.codingAgent ?? "claude-code";
+  // The rows edit the per-agent override, not the resolved value, so an agent with no override
+  // shows Default as its current selection and saving Default clears the override (#362).
+  const agentOverrides: Partial<Record<CodingAgent, AgentSettingValues>> =
+    Object.fromEntries(
+      Object.entries(data?.agents ?? {}).map(([agent, settings]) => [
+        agent,
+        { model: settings.modelOverride, effort: settings.effortOverride },
+      ]),
+    );
   const devCostLimitError = validateDevCostLimit(devCostLimitInput);
   const parsedDevCostLimit = Number(devCostLimitInput.trim());
   const devCostLimitChanged =
@@ -61,7 +74,7 @@ export function SettingsPage() {
             name="coding-agent"
             label="Coding agent"
             selected={codingAgent}
-            values={data?.agents ?? {}}
+            values={agentOverrides}
             disabled={isLoading}
             saving={update.isPending}
             onSelectAgent={(agent) => update.mutate({ codingAgent: agent })}
