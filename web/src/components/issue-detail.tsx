@@ -50,6 +50,7 @@ import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useAttachmentUpload } from "@/lib/use-attachment-upload";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
+import { useScrollToCommentForm } from "@/lib/use-scroll-to-comment-form";
 import {
   useAcceptanceCriteria,
   useAddAcceptanceCriterion,
@@ -86,6 +87,9 @@ export function IssueDetail({
   useEffect(() => {
     if (hash === "comments") commentsSectionRef.current?.scrollIntoView();
   }, [hash, pageQuery.isLoading, issueQuery.data]);
+  const { formRef, scrollAfterPost } = useScrollToCommentForm(
+    commentsQuery.data?.length ?? 0,
+  );
 
   if (pageQuery.isLoading) {
     return (
@@ -148,7 +152,13 @@ export function IssueDetail({
             isError={false}
           />
 
-          <CommentForm owner={owner} repo={repo} number={number} />
+          <CommentForm
+            owner={owner}
+            repo={repo}
+            number={number}
+            formRef={formRef}
+            onPosted={scrollAfterPost}
+          />
         </section>
       </div>
     </div>
@@ -869,10 +879,14 @@ function CommentForm({
   owner,
   repo,
   number,
+  formRef,
+  onPosted,
 }: {
   owner: string;
   repo: string;
   number: number;
+  formRef: RefObject<HTMLDivElement | null>;
+  onPosted: () => void;
 }) {
   const [body, setBody] = useState("");
   const post = usePostComment(owner, repo, number);
@@ -887,11 +901,17 @@ function CommentForm({
   function submit() {
     const trimmed = body.trim();
     if (!trimmed || post.isPending) return;
-    post.mutate(trimmed, { onSuccess: () => setBody("") });
+    post.mutate(trimmed, {
+      onSuccess: () => {
+        setBody("");
+        onPosted();
+      },
+    });
   }
 
   return (
     <div
+      ref={formRef}
       data-debug-component="IssueCommentForm"
       className="flex flex-col gap-2"
     >

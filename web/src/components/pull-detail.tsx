@@ -93,6 +93,7 @@ import { formatDuration, relativeTime } from "@/lib/time";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
+import { useScrollToCommentForm } from "@/lib/use-scroll-to-comment-form";
 import { useWebConfig } from "@/lib/web-config";
 import { useIssueComments } from "@/queries/issues";
 import {
@@ -1535,6 +1536,9 @@ function CommentList({
   useEffect(() => {
     if (hash === "comments") sectionRef.current?.scrollIntoView();
   }, [hash]);
+  const { formRef, scrollAfterPost } = useScrollToCommentForm(
+    comments?.length ?? 0,
+  );
   const reaction = useReactToPullComment(owner, repo, number);
   const archive = useSetPullCommentArchived(owner, repo, number);
   const { showError } = useToast();
@@ -1548,6 +1552,9 @@ function CommentList({
     if (!trimmed || post.isPending) return;
     setPostFailed(false);
     setBody("");
+    // The mutation adds the comment optimistically, so the count moves on this tick and the
+    // form scrolls back into view with the new card already laid out.
+    scrollAfterPost();
     post.mutate(trimmed);
   }
 
@@ -1686,6 +1693,7 @@ function CommentList({
         </>
       )}
       <div
+        ref={formRef}
         data-debug-component="PullCommentForm"
         className="flex flex-col gap-2"
       >
