@@ -15,6 +15,7 @@ import {
 import { rootRoute } from "./routes/root";
 import { sessionsRoute } from "./routes/sessions";
 import { settingsRoute } from "./routes/settings";
+import { settingsNotificationsRoute } from "./routes/settings-notifications";
 import { settingsRepositoriesRoute } from "./routes/settings-repositories";
 import { settingsWorkflowsRoute } from "./routes/settings-workflows";
 import { statsDbRoute, statsRoute } from "./routes/stats";
@@ -37,6 +38,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
   settingsWorkflowsRoute,
   settingsRepositoriesRoute,
+  settingsNotificationsRoute,
   sessionsRoute,
   statsRoute,
   statsDbRoute,

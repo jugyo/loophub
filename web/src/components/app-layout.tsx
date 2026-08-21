@@ -21,6 +21,7 @@ import {
 } from "@/components/terminal-controller";
 import { ToastProvider, ToastViewport } from "@/components/toast";
 import { WorkerCompatibilityWarning } from "@/components/worker-compatibility-warning";
+import { useNotificationSound } from "@/lib/use-notification-sound";
 import { useScrollToTop } from "@/lib/use-scroll-to-top";
 
 export function AppLayout() {
@@ -28,6 +29,8 @@ export function AppLayout() {
   const mainRef = useRef<HTMLElement>(null);
   const [repoSwitcherRequest, setRepoSwitcherRequest] = useState(0);
   useScrollToTop(mainRef);
+  // Announce arriving notifications from the shell: the stack below only renders them.
+  useNotificationSound();
   return (
     // TerminalControllerProvider wraps the content so terminal launch buttons can
     // launch a Herdr session via useTerminalLauncher() and surface its launch feedback / error

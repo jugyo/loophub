@@ -76,6 +76,9 @@ vi.mock("@/components/toast", () => ({
   ToastProvider: ({ children }: { children: React.ReactNode }) => children,
   ToastViewport: () => null,
 }));
+vi.mock("@/lib/use-notification-sound", () => ({
+  useNotificationSound: vi.fn(),
+}));
 vi.mock("@/lib/use-scroll-to-top", () => ({ useScrollToTop: vi.fn() }));
 vi.mock("@/lib/web-config", () => ({
   useWebConfig: () => ({ debug: true }),

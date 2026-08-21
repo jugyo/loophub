@@ -1,16 +1,24 @@
 import { Link } from "@tanstack/react-router";
-import { Bot, FolderGit2, Workflow } from "lucide-react";
+import { Bell, Bot, FolderGit2, Workflow } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-export type SettingsSection = "agent" | "workflows" | "repositories";
+export type SettingsSection =
+  | "agent"
+  | "workflows"
+  | "repositories"
+  | "notifications";
 
 const SETTINGS_NAV_ITEMS: Array<{
   id: SettingsSection;
   label: string;
   description: string;
   icon: typeof Bot;
-  path: "/settings" | "/settings/workflows" | "/settings/repositories";
+  path:
+    | "/settings"
+    | "/settings/workflows"
+    | "/settings/repositories"
+    | "/settings/notifications";
 }> = [
   {
     id: "agent",
@@ -33,6 +41,13 @@ const SETTINGS_NAV_ITEMS: Array<{
     description: "Repositories registered in LoopHub, including archived ones.",
     icon: FolderGit2,
     path: "/settings/repositories",
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    description: "How arriving notifications announce themselves.",
+    icon: Bell,
+    path: "/settings/notifications",
   },
 ];
 

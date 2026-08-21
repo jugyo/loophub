@@ -214,3 +214,23 @@ test("grok is a coding agent with its own default model/effort", async () => {
 
   updateConfig({ codingAgent: "claude-code" });
 });
+
+test("notificationSound defaults to on and reflects updateNotificationSound (#2508)", async () => {
+  const {
+    DEFAULT_NOTIFICATION_SOUND,
+    notificationSound,
+    updateConfig,
+    updateNotificationSound,
+  } = await import("./config.ts");
+  expect(notificationSound()).toBe(DEFAULT_NOTIFICATION_SOUND);
+  expect(DEFAULT_NOTIFICATION_SOUND).toBe(true);
+
+  updateNotificationSound(false);
+  expect(notificationSound()).toBe(false);
+
+  // A malformed persisted value falls back to the default rather than silencing the bell.
+  updateConfig({ notificationSound: "no" as unknown as boolean });
+  expect(notificationSound()).toBe(DEFAULT_NOTIFICATION_SOUND);
+
+  updateNotificationSound(true);
+});

@@ -4,10 +4,12 @@ import {
   type CodingAgent,
   codingAgent,
   devCostLimitUsd,
+  notificationSound,
   updateAgentDefaultEffort,
   updateAgentDefaultModel,
   updateConfig,
   updateDevCostLimitUsd,
+  updateNotificationSound,
 } from "../config.ts";
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
@@ -94,6 +96,7 @@ export const settings = {
       agents: agentSettings(),
       codingAgent: codingAgent(),
       devCostLimitUsd: devCostLimitUsd(),
+      notificationSound: notificationSound(),
       theme: theme(),
       workflowContractLanguage: workflowContractLanguage(),
     };
@@ -109,6 +112,8 @@ export const settings = {
       effort?: string;
       codingAgent?: CodingAgent;
       devCostLimitUsd?: number;
+      // Whether the Web UI rings a bell for new notifications (#2508).
+      notificationSound?: boolean;
       theme?: Theme;
       workflowContractLanguage?: WorkflowContractLanguage;
     },
@@ -139,6 +144,12 @@ export const settings = {
     if (input.devCostLimitUsd !== undefined) {
       validateDevCostLimitUsd(input.devCostLimitUsd);
     }
+    if (
+      input.notificationSound !== undefined &&
+      typeof input.notificationSound !== "boolean"
+    ) {
+      throw new ServiceError(422, "notificationSound must be a boolean");
+    }
     if (input.theme !== undefined && !isTheme(input.theme)) {
       throw new ServiceError(422, "theme must be a supported theme");
     }
@@ -167,6 +178,9 @@ export const settings = {
     }
     if (input.devCostLimitUsd !== undefined) {
       updateDevCostLimitUsd(input.devCostLimitUsd);
+    }
+    if (input.notificationSound !== undefined) {
+      updateNotificationSound(input.notificationSound);
     }
     // The config.json writes above are filesystem work and stay outside the transaction: only the
     // SQLite-backed settings and their event share a rollback boundary, so a failed DB write never

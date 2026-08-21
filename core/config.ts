@@ -49,6 +49,9 @@ export const DEFAULT_DEV_COST_LIMIT_USD = 10;
 // Default interval between `workflow_run.cost_exceeded` re-emissions for the same run and limit.
 export const DEFAULT_COST_REEMIT_MS = 300_000;
 
+// Whether the Web UI rings a bell when a new notification arrives (#2508). On unless turned off.
+export const DEFAULT_NOTIFICATION_SOUND = true;
+
 // Known config.json fields (#474). Fields are optional — any subset may be present, and
 // unrecognized fields written by a future version must round-trip through updateConfig
 // untouched (it merges into the raw parsed object, not this typed shape).
@@ -62,6 +65,8 @@ export interface GlobalConfig {
   codingAgent?: CodingAgent;
   // Per-task over-budget stop threshold for implementation agents. Default $10.
   devCostLimitUsd?: number;
+  // Whether the Web UI plays a sound for new notifications (#2508). Default true.
+  notificationSound?: boolean;
 }
 
 // Read env at call time so parallel test files can set LOOPHUB_HOME/LOOPHUB_DB
@@ -180,6 +185,19 @@ export function devCostLimitUsd(): number {
   return DEFAULT_DEV_COST_LIMIT_USD;
 }
 
+// Whether the Web UI plays a sound for new notifications (#2508). A non-boolean persisted value is
+// ignored rather than silencing the bell.
+export function notificationSound(): boolean {
+  try {
+    const cfg: GlobalConfig = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
+    if (typeof cfg.notificationSound === "boolean")
+      return cfg.notificationSound;
+  } catch {}
+  return DEFAULT_NOTIFICATION_SOUND;
+}
+
 // How long a `workflow_run.cost_exceeded` event suppresses the next one for the same run and
 // limit (#1844). Detection re-emits while the run stays over its limit without a hold, so a parent
 // that stopped between wake and `cost-hold` still receives the interrupt on a later wake. Longer
@@ -271,4 +289,8 @@ export function updateAgentDefaultEffort(
 
 export function updateDevCostLimitUsd(limitUsd: number): GlobalConfig {
   return updateConfig({ devCostLimitUsd: limitUsd });
+}
+
+export function updateNotificationSound(enabled: boolean): GlobalConfig {
+  return updateConfig({ notificationSound: enabled });
 }

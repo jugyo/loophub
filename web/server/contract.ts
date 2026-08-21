@@ -273,7 +273,7 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, theme, workflowContractLanguage).",
+      "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, notificationSound, theme, workflowContractLanguage).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
@@ -288,6 +288,7 @@ export const methods: Record<string, MethodDef> = {
       effort: str,
       codingAgent: codingAgentEnum,
       devCostLimitUsd,
+      notificationSound: { type: "boolean" },
       theme: { enum: THEME_IDS },
       workflowContractLanguage: { enum: ["en", "ja"] },
       session_id: sid,
@@ -301,6 +302,7 @@ export const methods: Record<string, MethodDef> = {
           effort: p.effort,
           codingAgent: p.codingAgent,
           devCostLimitUsd: p.devCostLimitUsd,
+          notificationSound: p.notificationSound,
           theme: p.theme,
           workflowContractLanguage: p.workflowContractLanguage,
         },

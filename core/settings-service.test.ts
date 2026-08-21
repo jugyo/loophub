@@ -41,6 +41,7 @@ test("settings.get defaults to the model/effort for every agent and claude-code"
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    notificationSound: true,
     theme: null,
     workflowContractLanguage: "en",
   });
@@ -99,6 +100,7 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    notificationSound: true,
     theme: null,
     workflowContractLanguage: "en",
   });
@@ -136,6 +138,7 @@ test("settings.update sets one agent's model without disturbing another's (#594)
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    notificationSound: true,
     theme: null,
     workflowContractLanguage: "en",
   });
@@ -186,6 +189,7 @@ test("settings.update omitting model preserves the persisted value (#594)", () =
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    notificationSound: true,
     theme: null,
     workflowContractLanguage: "en",
   });
@@ -216,6 +220,7 @@ test("settings.update persists a per-agent effort and is reflected by settings.g
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    notificationSound: true,
     theme: null,
     workflowContractLanguage: "en",
   });
@@ -251,6 +256,7 @@ test("settings.update sets one agent's effort without disturbing another's (#682
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    notificationSound: true,
     theme: null,
     workflowContractLanguage: "en",
   });
@@ -301,6 +307,7 @@ test("settings.update omitting effort preserves the persisted value (#682)", () 
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
+    notificationSound: true,
     theme: null,
     workflowContractLanguage: "en",
   });
@@ -331,6 +338,7 @@ test("settings.update persists codingAgent and is reflected by settings.get (#51
     },
     codingAgent: "codex",
     devCostLimitUsd: 10,
+    notificationSound: true,
     theme: null,
     workflowContractLanguage: "en",
   });
@@ -412,6 +420,7 @@ test("settings.update omitting codingAgent preserves the persisted value (#516)"
     },
     codingAgent: "codex",
     devCostLimitUsd: 10,
+    notificationSound: true,
     theme: null,
     workflowContractLanguage: "en",
   });
@@ -495,4 +504,29 @@ test("settings.update omitting devCostLimitUsd preserves the persisted value (#1
   expect(svc.settings.get().devCostLimitUsd).toBe(3.5);
 
   svc.settings.update({ devCostLimitUsd: 10 });
+});
+
+test("settings.update persists notificationSound and is reflected by settings.get (#2508)", () => {
+  expect(svc.settings.get().notificationSound).toBe(true);
+
+  expect(
+    svc.settings.update({ notificationSound: false }).notificationSound,
+  ).toBe(false);
+  expect(svc.settings.get().notificationSound).toBe(false);
+
+  const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
+  expect(raw.notificationSound).toBe(false);
+
+  svc.settings.update({});
+  expect(svc.settings.get().notificationSound).toBe(false);
+
+  svc.settings.update({ notificationSound: true });
+  expect(svc.settings.get().notificationSound).toBe(true);
+});
+
+test("settings.update rejects a non-boolean notificationSound (#2508)", () => {
+  expect(() =>
+    svc.settings.update({ notificationSound: "off" as unknown as boolean }),
+  ).toThrow(/notificationSound/);
+  expect(svc.settings.get().notificationSound).toBe(true);
 });

@@ -59,6 +59,8 @@ export interface GlobalSettingsWire {
   agents: Record<CodingAgent, AgentSettingsWire>;
   codingAgent: CodingAgent;
   devCostLimitUsd: number;
+  // Whether the Web UI rings a bell for new notifications (#2508).
+  notificationSound: boolean;
   theme: Theme | null;
   workflowContractLanguage: WorkflowContractLanguage;
 }

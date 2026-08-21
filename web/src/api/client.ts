@@ -498,6 +498,7 @@ export interface UpdateSettingsInput {
   effort?: string;
   codingAgent?: CodingAgent;
   devCostLimitUsd?: number;
+  notificationSound?: boolean;
   theme?: Theme;
   workflowContractLanguage?: GlobalSettings["workflowContractLanguage"];
 }

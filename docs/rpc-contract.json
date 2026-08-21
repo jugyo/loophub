@@ -458,7 +458,7 @@
     },
     {
       "name": "settings/get",
-      "description": "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, theme, workflowContractLanguage).",
+      "description": "Instance-level settings (per-agent model/effort, codingAgent, devCostLimitUsd, notificationSound, theme, workflowContractLanguage).",
       "params": {
         "type": "object",
         "properties": {},
@@ -504,6 +504,9 @@
             "maximum": 1000,
             "default": 10,
             "description": "Per-task USD over-budget stop threshold for implementation agents. Omit to use the $10 default. JSON Schema enforces the positive and $1,000 maximum bounds; the service additionally rejects values with more than two decimal places."
+          },
+          "notificationSound": {
+            "type": "boolean"
           },
           "theme": {
             "enum": [
