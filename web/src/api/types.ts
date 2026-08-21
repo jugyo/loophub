@@ -34,6 +34,7 @@ import type {
   NotificationWire,
   PullDetailPageWire,
   PullDiffWire,
+  PullFileViewWire,
   PullFileWire,
   PullGithubActivityWire,
   PullSummaryWire,
@@ -131,6 +132,7 @@ export type PullLineComment = ReviewCommentWire;
 
 /** A changed file with its unified-diff patch (GET .../pulls/{number}/files). */
 export type PullFile = PullFileWire;
+export type PullFileView = PullFileViewWire;
 export type PullDiff = PullDiffWire;
 export type DiffFeedbackList = DiffFeedbackListWire;
 export type DiffFeedbackThread = DiffFeedbackThreadWire;

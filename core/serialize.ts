@@ -532,6 +532,10 @@ export interface DiffFeedbackPendingWire {
   threads: DiffFeedbackThreadDetailWire[];
 }
 
+export function pullFileViewJSON(row: S.PullFileViewRow): PullFileViewWire {
+  return { path: row.path, sha: row.sha, viewed_at: row.created_at };
+}
+
 export function diffFeedbackMessageJSON(
   row: S.DiffFeedbackMessageRow,
   reactions: S.DiffFeedbackReactionRow[] = [],
@@ -2411,10 +2415,27 @@ export interface PullFileWire {
   headFilename?: string;
   /** Committer date of the newest PR commit that changed this file. */
   last_changed_at?: string;
+  /**
+   * Sha of that same commit — the version of the file a reader is looking at, which a "viewed"
+   * record pins so later commits to the file can be told apart from it (#2502).
+   */
+  last_changed_sha?: string;
   status: string;
   additions: number;
   deletions: number;
   patch: string;
+}
+
+/**
+ * A changed file the supervisor has marked viewed, and the version they marked (#2502). One entry
+ * per path: the newest record, which is what the screens read. Paths whose newest record unmarks
+ * the file are absent.
+ */
+export interface PullFileViewWire {
+  path: string;
+  /** The file's newest PR commit when it was marked, or null when the walk named none. */
+  sha: string | null;
+  viewed_at: string;
 }
 
 /** Data selected together for the pull-request detail screen. */

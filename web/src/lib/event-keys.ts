@@ -45,6 +45,8 @@ export const queryKeys = {
     ["pull-debug", full, number] as const,
   pullFiles: (full: string, number: number) =>
     ["pull-files", full, number] as const,
+  pullFileViews: (full: string, number: number) =>
+    ["pull-file-views", full, number] as const,
   pullReviews: (full: string, number: number) =>
     ["pull-reviews", full, number] as const,
   pullReviewComments: (full: string, number: number) =>

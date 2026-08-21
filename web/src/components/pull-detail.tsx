@@ -49,6 +49,7 @@ import {
 import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
+import { FileViewedBadge } from "@/components/file-viewed-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { Markdown } from "@/components/markdown";
 import {
@@ -71,10 +72,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { errorMessage } from "@/lib/error-message";
 import { usePageTitle } from "@/lib/page-title";
+import {
+  type PullFileViewState,
+  pullFileViewState,
+  pullFileViewsByPath,
+  visiblePullFiles,
+} from "@/lib/pull-file-views";
 import { formatDuration, relativeTime } from "@/lib/time";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
@@ -88,6 +96,7 @@ import {
   usePullComments,
   usePullDetailPage,
   usePullFiles,
+  usePullFileViews,
   usePullReviews,
   usePushGithubPull,
   useReactToPullComment,
@@ -890,6 +899,21 @@ function FilesChanged({
   isLoading: boolean;
   isError: boolean;
 }) {
+  const viewsQuery = usePullFileViews(owner, repo, number);
+  const viewsByPath = useMemo(
+    () => pullFileViewsByPath(viewsQuery.data),
+    [viewsQuery.data],
+  );
+  const [showViewed, setShowViewed] = useState(false);
+  const visibleFiles = useMemo(
+    () => (files ? visiblePullFiles(files, viewsByPath, showViewed) : []),
+    [files, showViewed, viewsByPath],
+  );
+  const hiddenViewedCount = files ? files.length - visibleFiles.length : 0;
+  // Viewed files are meant to be gone by the time the list paints, so hold the section on the
+  // record as well as on the diff rather than showing rows that are about to disappear.
+  const loading = isLoading || viewsQuery.isPending;
+
   const openFile =
     files && openFilename ? (findPullFile(files, openFilename) ?? null) : null;
   // A line comment can name a path the current diff no longer has (a file reverted since the
@@ -918,8 +942,18 @@ function FilesChanged({
             className="text-sm font-normal"
           />
         ) : null}
+        {/* The count is how the list admits it is holding files back; without it a short list
+            looks like the whole diff (#2502). */}
+        {showViewed || hiddenViewedCount > 0 ? (
+          <Switch
+            label="Show viewed"
+            hint={hiddenViewedCount > 0 ? `(${hiddenViewedCount} hidden)` : ""}
+            checked={showViewed}
+            onCheckedChange={setShowViewed}
+          />
+        ) : null}
       </h2>
-      {isLoading ? (
+      {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading diff…
         </div>
@@ -945,14 +979,20 @@ function FilesChanged({
               <span>Changes</span>
             </div>
             <ul className="divide-y">
-              {files.map((file) => (
+              {visibleFiles.map((file) => (
                 <FileSummaryRow
                   key={file.filename}
                   file={file}
+                  viewState={pullFileViewState(file, viewsByPath)}
                   commentCount={commentCounts[file.filename] ?? 0}
                   onOpen={() => onOpenFile(file.filename)}
                 />
               ))}
+              {visibleFiles.length === 0 ? (
+                <li className="px-2.5 py-2 text-sm text-muted-foreground">
+                  Every changed file is marked viewed.
+                </li>
+              ) : null}
             </ul>
           </div>
           <DiffFeedbackHistory
@@ -981,10 +1021,12 @@ function FilesChanged({
 
 function FileSummaryRow({
   file,
+  viewState,
   commentCount,
   onOpen,
 }: {
   file: PullFile;
+  viewState: PullFileViewState;
   commentCount: number;
   onOpen: () => void;
 }) {
@@ -1010,6 +1052,7 @@ function FileSummaryRow({
             The cell keeps its own content-sized column — in the flexible one it would collapse to
             zero once a long filename absorbs the row's free space and then overflow the diff stat. */}
         <span className="flex items-center gap-2 whitespace-nowrap">
+          <FileViewedBadge state={viewState} />
           {file.last_changed_at ? (
             <span
               className="text-xs text-muted-foreground"

@@ -13,6 +13,12 @@ export class RpcFault {
 
 type Handler = (params: any) => unknown | Promise<unknown>;
 
+// A method whose result is a list needs a list even when a test declares no handler for it: the
+// generic `{}` fallback below would break the callers that map over what they get back.
+const DEFAULT_RESULTS: Record<string, unknown> = {
+  "pullFileViews/list": [],
+};
+
 export function mockRpcFetch(handlers: Record<string, Handler>) {
   return vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const { method, params } = JSON.parse(String(init?.body ?? "{}"));
@@ -139,7 +145,12 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
               }
             : undefined;
     const handler = handlers[method] ?? pageDataHandler;
-    if (!handler) return send({ jsonrpc: "2.0", id: 1, result: {} });
+    if (!handler)
+      return send({
+        jsonrpc: "2.0",
+        id: 1,
+        result: DEFAULT_RESULTS[method] ?? {},
+      });
     try {
       const result = await handler(params);
       return send({ jsonrpc: "2.0", id: 1, result });

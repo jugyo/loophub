@@ -1586,6 +1586,24 @@ export const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "github_pull_feedback", "url", "TEXT");
     },
   },
+  // #2502: append-only record of which changed files the supervisor marked viewed. See the table's
+  // comment in core/db.ts for why toggling appends instead of updating.
+  sql(
+    "20260820211533-pull-file-views",
+    `
+    CREATE TABLE IF NOT EXISTS pull_file_views (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      path        TEXT NOT NULL,
+      sha         TEXT,
+      viewed      INTEGER NOT NULL CHECK (viewed IN (0, 1)),
+      created_at  TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pull_file_views_issue_path
+      ON pull_file_views(issue_id, path, id);
+    `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

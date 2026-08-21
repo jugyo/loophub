@@ -23,6 +23,7 @@ import {
   listDiffFeedback,
   listPullComments,
   listPullFiles,
+  listPullFileViews,
   listPullReviews,
   markGithubMerged,
   mergePull,
@@ -34,6 +35,7 @@ import {
   replyDiffFeedback,
   setDiffFeedbackArchived,
   setPullCommentArchived,
+  setPullFileViewed,
   unarchivePull,
   unlinkGithubPull,
 } from "@/api/client";
@@ -134,6 +136,39 @@ export function usePullFiles(
     queryKey: queryKeys.pullFiles(full(owner, repo), number),
     queryFn: () => listPullFiles(owner, repo, number),
     enabled,
+  });
+}
+
+/** Which changed files are marked viewed, and the version each was marked at (#2502). */
+export function usePullFileViews(owner: string, repo: string, number: number) {
+  return useQuery({
+    queryKey: queryKeys.pullFileViews(full(owner, repo), number),
+    queryFn: () => listPullFileViews(owner, repo, number),
+  });
+}
+
+/**
+ * Mark one changed file viewed or not viewed. The call returns the PR's viewed files afterwards,
+ * so the list is written straight into the cache: the toggle sits in the diff dialog, where a
+ * refetch round trip would leave the checkbox lagging behind the click.
+ */
+export function useSetPullFileViewed(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      path: string;
+      sha: string | null;
+      viewed: boolean;
+    }) => setPullFileViewed(owner, repo, number, input),
+    onSuccess: (views) =>
+      qc.setQueryData(
+        queryKeys.pullFileViews(full(owner, repo), number),
+        views,
+      ),
   });
 }
 

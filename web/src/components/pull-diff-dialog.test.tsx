@@ -2149,7 +2149,9 @@ describe("DiffFileDialog", () => {
     });
     expect(
       Array.from(secondRow.children).map((child) => child.textContent),
-    ).toEqual(["A", "b.ts", "+4−0", ""]);
+      // The trailing cell holds the viewed badge and the comment count together, so it is present
+      // even when this row has neither (#2502).
+    ).toEqual(["A", "b.ts", "+4−0", "", ""]);
     expect(secondRow.className).toContain("grid-cols-");
     const filename = within(secondRow).getByText("b.ts");
     expect(filename.className).toContain("min-w-0");
@@ -2157,6 +2159,91 @@ describe("DiffFileDialog", () => {
 
     fireEvent.click(secondRow);
     expect(onSelectFile).toHaveBeenCalledWith("core/nested/b.ts");
+  });
+
+  it("records the open file's current commit when Viewed is ticked", async () => {
+    const set = vi.fn(() => []);
+    renderDialog({
+      file: { ...file, last_changed_sha: "c".repeat(40) },
+      handlers: { "pullFileViews/set": set },
+    });
+
+    const checkbox = screen.getByRole("checkbox", { name: "Viewed" });
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(checkbox);
+
+    await waitFor(() =>
+      expect(set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: "web/src/a.ts",
+          sha: "c".repeat(40),
+          viewed: true,
+        }),
+      ),
+    );
+  });
+
+  it("hides viewed files from the tree until they are asked for", async () => {
+    const secondFile: PullFile = {
+      ...file,
+      filename: "core/b.ts",
+      last_changed_sha: "b".repeat(40),
+    };
+    renderDialog({
+      file,
+      files: [file, secondFile],
+      handlers: {
+        "pullFileViews/list": () => [
+          { path: "core/b.ts", sha: "b".repeat(40), viewed_at: "2026-08-20Z" },
+        ],
+      },
+    });
+    const sidebar = screen.getByRole("complementary", {
+      name: "Changed files",
+    });
+
+    await waitFor(() =>
+      expect(
+        within(sidebar).queryByRole("button", { name: "core/b.ts" }),
+      ).toBeNull(),
+    );
+    expect(within(sidebar).getByText("Files changed (1 of 2)")).toBeTruthy();
+
+    expect(within(sidebar).getByText(/Show viewed \(1 hidden\)/)).toBeTruthy();
+    fireEvent.click(
+      within(sidebar).getByRole("switch", { name: "Show viewed" }),
+    );
+    const row = within(sidebar).getByRole("button", { name: "core/b.ts" });
+    expect(within(row).getByLabelText("Viewed")).toBeTruthy();
+  });
+
+  it("leaves a file marked at an older commit listed, labelled and unticked", async () => {
+    renderDialog({
+      file: { ...file, last_changed_sha: "c".repeat(40) },
+      handlers: {
+        "pullFileViews/list": () => [
+          {
+            path: "web/src/a.ts",
+            sha: "a".repeat(40),
+            viewed_at: "2026-08-20Z",
+          },
+        ],
+      },
+    });
+    const sidebar = screen.getByRole("complementary", {
+      name: "Changed files",
+    });
+
+    await waitFor(() =>
+      expect(
+        within(sidebar).getAllByLabelText("Changed since viewed").length,
+      ).toBe(1),
+    );
+    expect(within(sidebar).getByText("Files changed (1)")).toBeTruthy();
+    expect(
+      (screen.getByRole("checkbox", { name: "Viewed" }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
   });
 
   it("indents nested rows and keeps the selected file's directories open", () => {

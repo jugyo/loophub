@@ -1183,6 +1183,30 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "pullFileViews/list": {
+    description:
+      "List the changed files of a pull request that are currently marked viewed, each with the commit sha that was current when it was marked.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyArray,
+    handler: (p) => svc.pullFileViews.list(p.repo, p.number),
+  },
+  "pullFileViews/set": {
+    description:
+      "Mark one changed file viewed or not viewed. The record is append-only: each call adds a row rather than replacing the previous one. `sha` is the file's newest commit as the caller saw it, so later commits to that file surface as unread; omit it when the pull request's commit walk named none. Returns the pull request's viewed files afterwards.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        path: strNonEmpty,
+        sha: strOrNull,
+        viewed: { type: "boolean" },
+      },
+      ["repo", "number", "path", "viewed"],
+    ),
+    result: anyArray,
+    handler: (p) =>
+      svc.pullFileViews.set(p.repo, p.number, p.path, p.sha ?? null, p.viewed),
+  },
   "repos/commitFiles": {
     description:
       "List files changed by one repository commit, compared with its first parent.",

@@ -179,6 +179,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `diffFeedback.reply` / `replyHuman` | procedure | reply、`pull_request.diff_feedback_replied` | — |
 | `diffFeedback.react` | procedure | reaction の read-modify-write と応答の read | — |
 | `diffFeedback.archive` | store helper | archived state | 応答の git read |
+| `pullFileViews.set` | store helper | viewed record の追記 | 応答の最新 record 読み出し |
 | `diffFeedback.precompute` | procedure | location cache の upsert 全件 | 全 anchor の git 解決 |
 | `closeOpenPullsForIssue` | procedure（caller の transaction に join） | 各 linked PR state、system comment、`pull_request.closed` | — |
 | `handoffs.record` | procedure | handoff、`handoff.recorded` | — |

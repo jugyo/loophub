@@ -34,6 +34,7 @@ import type {
   PullDetailPage,
   PullDiff,
   PullFile,
+  PullFileView,
   PullLineComment,
   PullRequest,
   PullReview,
@@ -989,6 +990,28 @@ export function getPullDiff(
       ignore_whitespace: ignoreWhitespace || undefined,
     }),
   );
+}
+
+export function listPullFileViews(owner: string, repo: string, number: number) {
+  return rpc<PullFileView[]>("pullFileViews/list", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+export function setPullFileViewed(
+  owner: string,
+  repo: string,
+  number: number,
+  input: { path: string; sha: string | null; viewed: boolean },
+) {
+  return rpc<PullFileView[]>("pullFileViews/set", {
+    repo: full(owner, repo),
+    number,
+    path: input.path,
+    sha: input.sha,
+    viewed: input.viewed,
+  });
 }
 
 export function listDiffFeedback(

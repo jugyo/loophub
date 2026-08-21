@@ -794,22 +794,29 @@ export interface CommitLogOptions {
   firstParentOnly?: boolean;
 }
 
+/** The newest PR commit that changed one file: its sha and committer date. */
+export interface LastChangedCommit {
+  sha: string;
+  date: string;
+}
+
 /**
- * The committer date of the newest PR commit that changed each file, keyed by its path at that
- * commit. One log walk covers the whole PR, and first-parent traversal matches the commit list's
- * definition of which commits belong to the PR.
+ * The newest PR commit that changed each file, keyed by its path at that commit. One log walk
+ * covers the whole PR, and first-parent traversal matches the commit list's definition of which
+ * commits belong to the PR. The sha names the version a reader saw, so a file marked viewed can be
+ * compared against it later (#2502).
  */
-export async function lastChangedDatesByFile(
+export async function lastChangedCommitsByFile(
   repoPath: string,
   baseShas: string[],
   head: string,
-): Promise<Record<string, string>> {
+): Promise<Record<string, LastChangedCommit>> {
   const r = await git(repoPath, [
     "log",
     "--first-parent",
     "--diff-merges=first-parent",
     "--find-renames",
-    "--format=%x1e%cI%x00",
+    "--format=%x1e%H%x1f%cI%x00",
     "--name-only",
     "-z",
     head,
@@ -822,19 +829,20 @@ export async function lastChangedDatesByFile(
     );
   }
 
-  const dates: Record<string, string> = {};
+  const commits: Record<string, LastChangedCommit> = {};
   for (const record of r.stdout.split("\x1e").slice(1)) {
-    const dateEnd = record.indexOf("\0");
-    if (dateEnd < 0) continue;
-    const date = record.slice(0, dateEnd);
+    const headerEnd = record.indexOf("\0");
+    if (headerEnd < 0) continue;
+    const [sha, date] = record.slice(0, headerEnd).split("\x1f");
+    if (!sha || !date) continue;
     const paths = record
-      .slice(dateEnd + 1)
+      .slice(headerEnd + 1)
       .replace(/^\0\n/, "")
       .split("\0")
       .filter((path) => path !== "");
-    for (const path of paths) dates[path] ??= date;
+    for (const path of paths) commits[path] ??= { sha, date };
   }
-  return dates;
+  return commits;
 }
 
 // Commits on head not reachable from base (base..head), newest first. Fields are separated by

@@ -2512,6 +2512,71 @@
       }
     },
     {
+      "name": "pullFileViews/list",
+      "description": "List the changed files of a pull request that are currently marked viewed, each with the commit sha that was current when it was marked.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "pullFileViews/set",
+      "description": "Mark one changed file viewed or not viewed. The record is append-only: each call adds a row rather than replacing the previous one. `sha` is the file's newest commit as the caller saw it, so later commits to that file surface as unread; omit it when the pull request's commit walk named none. Returns the pull request's viewed files afterwards.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "viewed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "path",
+          "viewed"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
       "name": "repos/commitFiles",
       "description": "List files changed by one repository commit, compared with its first parent.",
       "params": {

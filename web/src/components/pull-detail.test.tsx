@@ -331,6 +331,73 @@ describe("PullDetail", () => {
     expect(within(section).getByText("·")).toBeTruthy();
   });
 
+  it("hides viewed files behind a count and shows them back on request", async () => {
+    renderDetail({
+      "pulls/files": () => [
+        { ...files[0], last_changed_sha: "a".repeat(40) },
+        {
+          ...files[0],
+          filename: "web/src/b.ts",
+          last_changed_sha: "b".repeat(40),
+        },
+      ],
+      "pullFileViews/list": () => [
+        {
+          path: "web/src/a.ts",
+          sha: "a".repeat(40),
+          viewed_at: "2026-06-18T13:00:00Z",
+        },
+      ],
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: /Files changed \(2\)/ })
+    ).closest("section")!;
+    expect(
+      within(section).queryByRole("button", { name: /web\/src\/a\.ts/ }),
+    ).toBeNull();
+    expect(
+      within(section).getByRole("button", { name: /web\/src\/b\.ts/ }),
+    ).toBeTruthy();
+
+    const toggle = within(section).getByRole("switch", {
+      name: "Show viewed",
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(within(section).getByText(/Show viewed \(1 hidden\)/)).toBeTruthy();
+
+    fireEvent.click(toggle);
+    const viewedRow = within(section).getByRole("button", {
+      name: /web\/src\/a\.ts/,
+    });
+    expect(within(viewedRow).getByLabelText("Viewed")).toBeTruthy();
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("brings a file back with a label once new commits land on it", async () => {
+    renderDetail({
+      "pulls/files": () => [{ ...files[0], last_changed_sha: "b".repeat(40) }],
+      "pullFileViews/list": () => [
+        {
+          path: "web/src/a.ts",
+          sha: "a".repeat(40),
+          viewed_at: "2026-06-18T13:00:00Z",
+        },
+      ],
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: /Files changed \(1\)/ })
+    ).closest("section")!;
+    const row = within(section).getByRole("button", {
+      name: /web\/src\/a\.ts/,
+    });
+    expect(within(row).getByLabelText("Changed since viewed")).toBeTruthy();
+    expect(
+      within(section).queryByRole("switch", { name: "Show viewed" }),
+    ).toBeNull();
+  });
+
   it("gives the file row's trailing metadata a column of its own", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date("2026-06-18T14:00:00Z"));

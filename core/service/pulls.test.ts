@@ -290,7 +290,11 @@ exec "${realGit}" "$@"
       commitFilesPullNumber,
     );
     expect(detail.files).toHaveLength(2);
-    expect(detail.files.every((file) => !file.last_changed_at)).toBe(true);
+    expect(
+      detail.files.every(
+        (file) => !file.last_changed_at && !file.last_changed_sha,
+      ),
+    ).toBe(true);
   } finally {
     process.env.PATH = originalPath;
   }

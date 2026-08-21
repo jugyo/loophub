@@ -11,6 +11,7 @@ export * from "./store/instance-settings.ts";
 export * from "./store/issues.ts";
 export * from "./store/labels.ts";
 export * from "./store/notifications.ts";
+export * from "./store/pull-file-views.ts";
 export * from "./store/pulls.ts";
 export * from "./store/repos.ts";
 export * from "./store/retros.ts";

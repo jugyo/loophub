@@ -928,6 +928,24 @@ CREATE TABLE IF NOT EXISTS pull_conflict_states (
   PRIMARY KEY (repo_id, pull_number)
 );
 
+-- Which of a PR's changed files the supervisor has marked viewed (#2502). Append-only: toggling a
+-- file adds a row instead of updating one, so the record keeps how far a reader had got at each
+-- point, and the newest row for a path is the current state. sha is the file's newest PR commit
+-- when the row was written, so a later commit to that file makes the mark stale rather than hiding
+-- the new change; it is NULL when the PR's commit walk could not name one. LoopHub has a single
+-- human supervisor, so rows are not separated per user.
+CREATE TABLE IF NOT EXISTS pull_file_views (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  path        TEXT NOT NULL,
+  sha         TEXT,
+  viewed      INTEGER NOT NULL CHECK (viewed IN (0, 1)),
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pull_file_views_issue_path
+  ON pull_file_views(issue_id, path, id);
+
 -- workflow definitions (#997). User-editable prompt bundles for the fixed Execute/Verify
 -- workflow. A NULL repo_id is global; otherwise the definition is available only to that repo.
 CREATE TABLE IF NOT EXISTS workflows (

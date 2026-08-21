@@ -129,9 +129,11 @@ test("pullDetail carries the diff feedback the screen renders itself", async () 
   ]);
 
   expect(page.files.map((file) => file.filename)).toEqual(["kept.txt"]);
-  expect(page.files[0].last_changed_at).toBe(
-    page.pull.commits?.find((commit) => commit.subject === "feature")?.date,
+  const featureCommit = page.pull.commits?.find(
+    (commit) => commit.subject === "feature",
   );
+  expect(page.files[0].last_changed_at).toBe(featureCommit?.date);
+  expect(page.files[0].last_changed_sha).toBe(featureCommit?.sha);
   expect(page.diff_feedback.comment_counts).toEqual(counts.comment_counts);
   expect(page.diff_feedback.comment_counts).toEqual({ "kept.txt": 1 });
   expect(page.diff_feedback.orphaned_threads).toEqual(orphaned.threads);

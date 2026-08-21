@@ -21,7 +21,7 @@ import {
   git,
   hasEffectiveDiff,
   isIndexLockError,
-  lastChangedDatesByFile,
+  lastChangedCommitsByFile,
   localBranchRef,
   mergePreview,
   mergePull,
@@ -36,7 +36,7 @@ import {
 } from "./git.ts";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
 
-test("lastChangedDatesByFile returns each file's newest PR commit date", async () => {
+test("lastChangedCommitsByFile returns each file's newest PR commit", async () => {
   const p = mkdtempSync(join(tmpdir(), "lh-file-change-dates-"));
   try {
     await git(p, ["init", "-q", "-b", "main"]);
@@ -65,11 +65,20 @@ test("lastChangedDatesByFile returns each file's newest PR commit date", async (
       GIT_COMMITTER_DATE: "2026-06-18T12:00:00Z",
     });
 
-    expect(await lastChangedDatesByFile(p, ["main"], "feature")).toEqual({
+    const commits = await lastChangedCommitsByFile(p, ["main"], "feature");
+    expect(
+      Object.fromEntries(
+        Object.entries(commits).map(([path, commit]) => [path, commit.date]),
+      ),
+    ).toEqual({
       "a.txt": "2026-06-18T11:00:00Z",
       "new.txt": "2026-06-18T12:00:00Z",
       "old.txt": "2026-06-17T10:00:00Z",
     });
+    // The sha names the commit each date came from, so the newest one is the rename commit.
+    const head = (await git(p, ["rev-parse", "HEAD"])).stdout.trim();
+    expect(commits["new.txt"].sha).toBe(head);
+    expect(commits["a.txt"].sha).not.toBe(head);
   } finally {
     rmSync(p, { recursive: true, force: true });
   }

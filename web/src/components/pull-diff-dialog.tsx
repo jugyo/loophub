@@ -36,6 +36,7 @@ import { CopyButton } from "@/components/copy-button";
 import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
 import { FileStatusBadge } from "@/components/file-status-badge";
+import { FileViewedBadge } from "@/components/file-viewed-badge";
 import { Markdown } from "@/components/markdown";
 import { useToast } from "@/components/toast";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
@@ -45,6 +46,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import {
   type DiffLineKind,
   type PositionedDiffLine,
@@ -68,6 +70,11 @@ import {
   markdownDiffAnnotations,
   markdownDiffFeedbackPlacements,
 } from "@/lib/markdown-source-map";
+import {
+  pullFileViewState,
+  pullFileViewsByPath,
+  visiblePullFiles,
+} from "@/lib/pull-file-views";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
@@ -76,9 +83,11 @@ import {
   useDiffFeedback,
   usePullDiff,
   usePullFileAtRef,
+  usePullFileViews,
   useReactToDiffFeedback,
   useReplyDiffFeedback,
   useSetDiffFeedbackArchived,
+  useSetPullFileViewed,
 } from "@/queries/pulls";
 
 // Markdown files can also switch the same diff dialog to base/head rendered previews.
@@ -265,6 +274,14 @@ export function DiffFileDialog({
   const copyPath = visibleCopyPath(path);
   const isMarkdown = isMarkdownFile(file);
   const mode = isMarkdown ? markdownMode : standardMode;
+  const viewsQuery = usePullFileViews(owner, repo, number);
+  const viewsByPath = useMemo(
+    () => pullFileViewsByPath(viewsQuery.data),
+    [viewsQuery.data],
+  );
+  const setViewed = useSetPullFileViewed(owner, repo, number);
+  const { showError } = useToast();
+  const [showViewed, setShowViewed] = useState(false);
   const filteredFiles = useMemo(
     () =>
       files.filter(
@@ -276,16 +293,22 @@ export function DiffFileDialog({
       ),
     [excludePattern, files, includePattern],
   );
+  const listedFiles = useMemo(
+    () => visiblePullFiles(filteredFiles, viewsByPath, showViewed),
+    [filteredFiles, showViewed, viewsByPath],
+  );
+  const hiddenViewedCount = filteredFiles.length - listedFiles.length;
+  const fileViewState = pullFileViewState(file, viewsByPath);
   const [collapsedDirectories, setCollapsedDirectories] = useState<
     ReadonlySet<string>
   >(() => new Set());
   const sidebarRows = useMemo(
     () =>
       visibleFileTreeRows(
-        buildFileTree(filteredFiles, copyFilename),
+        buildFileTree(listedFiles, copyFilename),
         collapsedDirectories,
       ),
-    [collapsedDirectories, filteredFiles],
+    [collapsedDirectories, listedFiles],
   );
 
   function toggleDirectory(path: string) {
@@ -358,8 +381,8 @@ export function DiffFileDialog({
           <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
             <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold">
               <span>
-                Files changed ({filteredFiles.length}
-                {filteredFiles.length !== files.length
+                Files changed ({listedFiles.length}
+                {listedFiles.length !== files.length
                   ? ` of ${files.length}`
                   : ""}
                 )
@@ -379,6 +402,18 @@ export function DiffFileDialog({
                 <Filter className="size-3.5" />
               </Button>
             </div>
+            {showViewed || hiddenViewedCount > 0 ? (
+              <div className="flex border-t px-3 py-1.5">
+                <Switch
+                  label="Show viewed"
+                  hint={
+                    hiddenViewedCount > 0 ? `(${hiddenViewedCount} hidden)` : ""
+                  }
+                  checked={showViewed}
+                  onCheckedChange={setShowViewed}
+                />
+              </div>
+            ) : null}
             {showFileFilters ? (
               <div className="grid gap-2 border-t px-3 py-2">
                 <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
@@ -457,10 +492,15 @@ export function DiffFileDialog({
                       className="justify-self-end text-[11px]"
                     />
                     <span aria-hidden="true" />
-                    <DiffCommentCount
-                      count={commentCounts[sidebarFile.filename] ?? 0}
-                      className="text-[11px]"
-                    />
+                    <span className="flex items-center gap-1.5">
+                      <FileViewedBadge
+                        state={pullFileViewState(sidebarFile, viewsByPath)}
+                      />
+                      <DiffCommentCount
+                        count={commentCounts[sidebarFile.filename] ?? 0}
+                        className="text-[11px]"
+                      />
+                    </span>
                   </button>
                 </li>
               );
@@ -514,6 +554,7 @@ export function DiffFileDialog({
                   additions={file.additions}
                   deletions={file.deletions}
                 />
+                <FileViewedBadge state={fileViewState} />
               </div>
             </div>
             <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
@@ -585,6 +626,27 @@ export function DiffFileDialog({
                   </div>
                 </>
               ) : null}
+              {/* The record is append-only, so a file whose commits moved on comes back unchecked:
+                  ticking it again pins the version now on screen (#2502). */}
+              <label className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={fileViewState === "viewed"}
+                  disabled={setViewed.isPending}
+                  onChange={(event) =>
+                    setViewed
+                      .mutateAsync({
+                        path: file.filename,
+                        sha: file.last_changed_sha ?? null,
+                        viewed: event.target.checked,
+                      })
+                      .catch((error) =>
+                        showError(errorMessage(error, "Update failed")),
+                      )
+                  }
+                />
+                Viewed
+              </label>
               <Button
                 variant="secondary"
                 size="sm"
