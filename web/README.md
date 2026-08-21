@@ -1,6 +1,6 @@
 # LoopHub Web UI
 
-React SPA (Vite + TypeScript + Tailwind) for LoopHub. `lh-web` builds the SPA at startup and
+React SPA (Bun bundler + TypeScript + Tailwind) for LoopHub. `lh-web` builds the SPA at startup and
 serves the resulting `dist/` itself, so a single process serves the API (`/rpc`) and the UI on one
 port — no separate dev server.
 
@@ -10,7 +10,7 @@ port — no separate dev server.
 
 ## Stack
 
-- **Vite + React + TypeScript**
+- **Bun.build + React + TypeScript**
 - **Tailwind CSS** + shadcn-style design tokens
 - **TanStack Query** — server state
 - **TanStack Router** — routing (code-based route tree in `src/router.tsx`)
@@ -25,11 +25,12 @@ npm --prefix web install # also run by the root postinstall; explicit so it work
 npm run lh-web          # http://localhost:8730 — API + UI, one process
 ```
 
-Open http://localhost:8730. Startup runs `vite build` (a few seconds) and everything after that is
-static file serving: there is no HMR client and no dev WebSocket in the page, so editing a source
-file never moves a screen you are working in. **Restart `lh-web` to pick up a source change.**
+Open http://localhost:8730. Startup runs the Bun production build (a few seconds) and everything
+after that is static file serving: there is no HMR client and no dev WebSocket in the page, so
+editing a source file never moves a screen you are working in. **Restart `lh-web` to pick up a
+source change.**
 
-There is no standalone Vite dev server or API proxy. The SPA is always served same-origin, same
+There is no standalone development server or API proxy. The SPA is always served same-origin, same
 process, by its own `lh-web`, and `src/api/client.ts` always uses a same-origin base — there is no
 way to point the frontend at a different backend.
 
@@ -49,11 +50,11 @@ when done.
 
 | Script | Purpose |
 |--------|---------|
-| `npm run build` | Type-check + production build to `dist/` |
+| `npm run build` | Bun production build to `dist/` |
 | `npm run test` | Vitest |
 
 `lh-web` runs the same production build itself at startup and then serves `dist/` through its
-static handler; `npm run build` is the same thing plus a type-check, on demand.
+static handler. Run the repository-level `npm run typecheck` separately for type checking.
 
 ## API client
 

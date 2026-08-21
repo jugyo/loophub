@@ -66,9 +66,9 @@ server.listen(port, host, () => {
   log.info(`lh-web listening on ${url}  (API + UI)`);
 });
 
-// The compiled binary ships without Vite or the SPA sources, so it serves the dist it was shipped
-// with (core/self-exec.ts: beside the executable, or LOOPHUB_WEB_DIST). handleStatic reports a
-// missing dist per request, which is the visible error an operator needs.
+// The compiled binary ships without the SPA build tools or source, so it serves the dist it was
+// shipped with (core/self-exec.ts: beside the executable, or LOOPHUB_WEB_DIST). handleStatic
+// reports a missing dist per request, which is the visible error an operator needs.
 if (isCompiledBinary()) {
   built = true;
   log.info("lh-web: serving the prebuilt SPA (no build step in the binary)");

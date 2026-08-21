@@ -3,8 +3,8 @@
 // There is no long-running daemon equivalent to the old `lh serve` /
 // Bun.serve — the process runs only while someone is looking. `handleStatic` serves the web/dist
 // that `lh-web` builds at startup (build.ts); it stays injectable so the handler can be wrapped,
-// as `lh-web` does while that build is still running. Keeping Vite out of this file means the
-// HTTP core (and its tests) never imports Vite.
+// as `lh-web` does while that build is still running. Keeping the build tool out of this file
+// means the HTTP core (and its tests) never imports it.
 
 import { createReadStream, existsSync, statSync } from "node:fs";
 import {

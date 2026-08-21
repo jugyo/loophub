@@ -4,7 +4,7 @@
 //   bun scripts/build-binary.ts [--out <dir>] [--target <bun target>] [--skip-spa]
 //
 // The executable carries `lh`, `lh-web` and every worker, so a machine running LoopHub needs no
-// Node, no Bun and no node_modules. The SPA is not compiled into it: Vite builds the assets here
+// Node, no Bun and no node_modules. The SPA is not compiled into it: Bun builds the assets here
 // and they are copied next to the executable, where lh-web looks for them (core/self-exec.ts).
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, rmSync, statSync } from "node:fs";
@@ -39,16 +39,20 @@ if (!skipSpa) {
 }
 
 mkdirSync(outDir, { recursive: true });
-// `vite` is imported dynamically by web/server/build.ts and is only reachable from the checkout;
-// the binary skips that path entirely, so keep the bundler from pulling Vite (and its own
-// dependency tree) into the executable.
+// The SPA build dependencies are imported dynamically by web/server/build.ts and are only
+// reachable from the checkout; the binary skips that path entirely, so keep the bundler from
+// pulling them (and their dependency trees) into the executable.
 const compile = spawnSync(
   "bun",
   [
     "build",
     "--compile",
     "--external",
-    "vite",
+    "autoprefixer",
+    "--external",
+    "postcss",
+    "--external",
+    "tailwindcss",
     ...(target ? ["--target", target] : []),
     "--outfile",
     binaryPath,

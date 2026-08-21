@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build",
+    "build": "bun server/build-cli.ts",
     "test": "bun node_modules/vitest/vitest.mjs run",
     "test:watch": "bun node_modules/vitest/vitest.mjs"
   },
@@ -37,13 +37,11 @@
     "@types/hast": "^3.0.4",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
     "happy-dom": "^15.11.7",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2",
-    "vite": "^5.4.8",
     "vitest": "^2.1.2"
   }
 }

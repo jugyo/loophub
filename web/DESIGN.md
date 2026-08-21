@@ -160,7 +160,7 @@ Existing tools were considered before choosing this approach:
   instrumentation and performance UI are broader than this mode's component
   name and box requirements.
 - TanStack Devtools Source Inspector highlights one hovered element and opens
-  its source location. It depends on development-only Vite source injection,
+  its source location. It depends on development-only bundler source injection,
   whereas this mode must work from the normal LoopHub UI on every route.
 
 The local DOM-marker overlay is therefore the smallest maintainable option: it

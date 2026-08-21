@@ -33,8 +33,24 @@ test("the built page loads the app from a bundled asset", () => {
   )?.[1];
   expect(entry).toBeDefined();
   expect(existsSync(join(DIST, entry as string))).toBe(true);
-  // The dev entry is a source path Vite would have to transform on demand.
+  // The development entry is a source path a dev server would have to transform on demand.
   expect(indexHtml).not.toContain("/src/main.tsx");
+});
+
+test("the build emits processed styles, static assets, chunks, and source maps", () => {
+  const assets = readdirSync(join(DIST, "assets"));
+  const styles = assets
+    .filter((name) => name.endsWith(".css"))
+    .map((name) => readFileSync(join(DIST, "assets", name), "utf8"));
+  expect(styles).toHaveLength(1);
+  expect(styles[0]).toContain("--tw-");
+  expect(styles[0]).not.toContain("@tailwind");
+  expect(indexHtml).toContain(`<link rel="stylesheet" href="/assets/`);
+  expect(existsSync(join(DIST, "favicon.svg"))).toBe(true);
+  expect(assets.filter((name) => name.endsWith(".js")).length).toBeGreaterThan(
+    1,
+  );
+  expect(assets.some((name) => name.endsWith(".js.map"))).toBe(true);
 });
 
 test("nothing in the build talks to a dev server", () => {
@@ -42,8 +58,8 @@ test("nothing in the build talks to a dev server", () => {
     readFileSync(join(DIST, "assets", name), "utf8"),
   );
   for (const source of [indexHtml, ...emitted]) {
-    // Vite's dev client — the script tag it injects, the HMR socket it opens, and the hooks dev
-    // transforms import from it. None of it may reach a page lh-web serves.
+    // A dev client's script tag, HMR socket, and transform hooks must not reach a page lh-web
+    // serves.
     expect(source).not.toContain("@vite/client");
     expect(source).not.toContain("createHotContext");
     expect(source).not.toContain("vite-hmr");
