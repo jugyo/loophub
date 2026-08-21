@@ -5,7 +5,6 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { archivedRoute } from "./archived";
 import { indexRoute } from "./index";
 import { rootRoute } from "./root";
 import { uiCatalogRoute } from "./ui-catalog";
@@ -27,11 +26,7 @@ afterEach(() => {
 });
 
 function renderRoute(initialPath: string) {
-  const routeTree = rootRoute.addChildren([
-    indexRoute,
-    archivedRoute,
-    uiCatalogRoute,
-  ]);
+  const routeTree = rootRoute.addChildren([indexRoute, uiCatalogRoute]);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [initialPath] }),

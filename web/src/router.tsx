@@ -1,6 +1,5 @@
 import { createRouter } from "@tanstack/react-router";
 import { agentsRoute } from "./routes/agents";
-import { archivedRoute } from "./routes/archived";
 import { indexRoute } from "./routes/index";
 import { issueDetailRoute } from "./routes/issues";
 import { pullDetailRoute } from "./routes/pulls";
@@ -16,6 +15,7 @@ import {
 import { rootRoute } from "./routes/root";
 import { sessionsRoute } from "./routes/sessions";
 import { settingsRoute } from "./routes/settings";
+import { settingsRepositoriesRoute } from "./routes/settings-repositories";
 import { settingsWorkflowsRoute } from "./routes/settings-workflows";
 import { statsDbRoute, statsRoute } from "./routes/stats";
 import { uiCatalogRoute } from "./routes/ui-catalog";
@@ -25,7 +25,6 @@ import { uiCatalogRoute } from "./routes/ui-catalog";
 const routeTree = rootRoute.addChildren([
   indexRoute,
   agentsRoute,
-  archivedRoute,
   repoRoute,
   repoSettingsRoute,
   repoSettingsPullRequestsRoute,
@@ -37,6 +36,7 @@ const routeTree = rootRoute.addChildren([
   pullDetailRoute,
   settingsRoute,
   settingsWorkflowsRoute,
+  settingsRepositoriesRoute,
   sessionsRoute,
   statsRoute,
   statsDbRoute,

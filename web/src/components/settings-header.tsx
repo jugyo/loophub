@@ -1,16 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import { Bot, Workflow } from "lucide-react";
+import { Bot, FolderGit2, Workflow } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-export type SettingsSection = "agent" | "workflows";
+export type SettingsSection = "agent" | "workflows" | "repositories";
 
 const SETTINGS_NAV_ITEMS: Array<{
   id: SettingsSection;
   label: string;
   description: string;
   icon: typeof Bot;
-  path: "/settings" | "/settings/workflows";
+  path: "/settings" | "/settings/workflows" | "/settings/repositories";
 }> = [
   {
     id: "agent",
@@ -26,6 +26,13 @@ const SETTINGS_NAV_ITEMS: Array<{
       "Global prompt bundles and contract language for development workflows.",
     icon: Workflow,
     path: "/settings/workflows",
+  },
+  {
+    id: "repositories",
+    label: "Repositories",
+    description: "Repositories registered in LoopHub, including archived ones.",
+    icon: FolderGit2,
+    path: "/settings/repositories",
   },
 ];
 

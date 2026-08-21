@@ -34,9 +34,9 @@ export function useRepos() {
 }
 
 /**
- * Archived repos for the /archived route. This intentionally remains under the repos prefix:
- * repo archive/unarchive changes membership, while favorite and rename change row data or order,
- * so the archived and active lists share the same repo.* invalidation set.
+ * Archived repos for the Settings > Repositories list. This intentionally remains under the
+ * repos prefix: repo archive/unarchive changes membership, while favorite and rename change row
+ * data or order, so the archived and active lists share the same repo.* invalidation set.
  */
 export function useArchivedRepos() {
   return useQuery({

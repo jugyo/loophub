@@ -1,5 +1,5 @@
-// Repo list with TanStack Query state handling, shared by the home (/) and
-// archived (/archived) routes. Each row links to /r/:owner/:repo.
+// Repo list with TanStack Query state handling, shared by the active and archived
+// lists on Settings > Repositories. Each row links to /r/:owner/:repo.
 
 import type { UseQueryResult } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
