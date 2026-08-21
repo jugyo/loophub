@@ -1,10 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { Bell, Bot, FolderGit2, Workflow } from "lucide-react";
+import { Bell, Bot, FolderGit2, Settings2, Workflow } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export type SettingsSection =
   | "agent"
+  | "advanced"
   | "workflows"
   | "repositories"
   | "notifications";
@@ -16,6 +17,7 @@ const SETTINGS_NAV_ITEMS: Array<{
   icon: typeof Bot;
   path:
     | "/settings"
+    | "/settings/advanced"
     | "/settings/workflows"
     | "/settings/repositories"
     | "/settings/notifications";
@@ -34,6 +36,13 @@ const SETTINGS_NAV_ITEMS: Array<{
       "Global prompt bundles and contract language for development workflows.",
     icon: Workflow,
     path: "/settings/workflows",
+  },
+  {
+    id: "advanced",
+    label: "Advanced",
+    description: "Network access and other advanced instance settings.",
+    icon: Settings2,
+    path: "/settings/advanced",
   },
   {
     id: "repositories",

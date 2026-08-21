@@ -17,6 +17,7 @@ import { sessionsRoute } from "./routes/sessions";
 import { settingsRoute } from "./routes/settings";
 import { settingsNotificationsRoute } from "./routes/settings-notifications";
 import { settingsRepositoriesRoute } from "./routes/settings-repositories";
+import { settingsAdvancedRoute } from "./routes/settings-advanced";
 import { settingsWorkflowsRoute } from "./routes/settings-workflows";
 import { statsDbRoute, statsRoute } from "./routes/stats";
 import { uiCatalogRoute } from "./routes/ui-catalog";
@@ -36,6 +37,7 @@ const routeTree = rootRoute.addChildren([
   issueDetailRoute,
   pullDetailRoute,
   settingsRoute,
+  settingsAdvancedRoute,
   settingsWorkflowsRoute,
   settingsRepositoriesRoute,
   settingsNotificationsRoute,

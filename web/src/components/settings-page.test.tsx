@@ -271,17 +271,9 @@ describe("SettingsPage", () => {
     );
   });
 
-  it("shows and saves the exact public origin", async () => {
+  it("does not show the public origin on the Agent page", async () => {
     renderSettings();
-    const input = await screen.findByLabelText("Public origin");
-    fireEvent.change(input, { target: { value: "https://loop.example.com" } });
-    fireEvent.click(
-      within(input.closest("form")!).getByRole("button", { name: "Save" }),
-    );
-    await waitFor(() =>
-      expect(rpcCall("settings/update")?.params).toMatchObject({
-        publicOrigin: "https://loop.example.com",
-      }),
-    );
+    await screen.findByRole("heading", { name: "Coding agent" });
+    expect(screen.queryByLabelText("Public origin")).toBeNull();
   });
 });
