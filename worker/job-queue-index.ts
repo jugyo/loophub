@@ -1,6 +1,11 @@
 #!/usr/bin/env bun
 import { spawn } from "node:child_process";
 import { jobs } from "../core/service.ts";
+import {
+  createJobQueue,
+  DEFAULT_JOB_CONCURRENCY,
+  normalizeJobConcurrency,
+} from "./job-queue.ts";
 // `lh-job-queue` is the independent lifecycle for externally effectful jobs. The shared jobs table
 // and claim protocol are introduced by the next migration; keeping this process boundary now
 // prevents future job execution from being coupled to event observation.
@@ -12,16 +17,20 @@ import {
 
 const argv = process.argv.slice(2);
 let pollMs = Number(process.env.LOOPHUB_JOB_POLL_MS ?? 1000);
+let concurrency = Number(
+  process.env.LOOPHUB_JOB_CONCURRENCY ?? DEFAULT_JOB_CONCURRENCY,
+);
 let closedPullCleanupSweepMs = Number(
   process.env.LOOPHUB_CLOSED_PULL_CLEANUP_SWEEP_MS ??
     DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
 );
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--poll-ms") pollMs = Number(argv[++i]);
+  else if (argv[i] === "--concurrency") concurrency = Number(argv[++i]);
   else if (argv[i] === "--closed-pull-cleanup-sweep-ms")
     closedPullCleanupSweepMs = Number(argv[++i]);
 }
-let running = false;
+concurrency = normalizeJobConcurrency(concurrency);
 const runShell = (job: { id: number; params: string }): Promise<void> => {
   let params: { command?: string; cwd?: string; env?: Record<string, string> };
   try {
@@ -65,29 +74,31 @@ const runShell = (job: { id: number; params: string }): Promise<void> => {
   });
 };
 
-const tick = async () => {
-  if (running) return;
-  const job = jobs.claimNext();
-  if (!job) return;
-  running = true;
-  try {
+const queue = createJobQueue({
+  concurrency,
+  claimNext: jobs.claimNext,
+  run: async (job) => {
     if (job.type === "shell") await runShell(job);
     else
       jobs.finish(job.id, {
         status: "failed",
         error: `unknown job type: ${job.type}`,
       });
-  } finally {
-    running = false;
-  }
-};
+  },
+  onError: (error) =>
+    workerLog.error(
+      `lh-job-queue: job failed error=${error instanceof Error ? error.message : error}`,
+    ),
+});
 const timer = setInterval(
   () => {
-    tick().catch((error) =>
+    try {
+      queue.tick();
+    } catch (error) {
       workerLog.error(
         `lh-job-queue: tick failed error=${error instanceof Error ? error.message : error}`,
-      ),
-    );
+      );
+    }
   },
   pollMs > 0 ? pollMs : 1000,
 );
@@ -96,7 +107,7 @@ const cleanupStop =
     ? startClosedPullCleanupSweep(closedPullCleanupSweepMs)
     : () => {};
 workerLog.info(
-  `lh-job-queue started (poll ${pollMs}ms; closed pull cleanup sweep ${closedPullCleanupSweepMs}ms)`,
+  `lh-job-queue started (poll ${pollMs}ms; concurrency ${concurrency}; closed pull cleanup sweep ${closedPullCleanupSweepMs}ms)`,
 );
 
 let stopped = false;

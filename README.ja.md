@@ -126,6 +126,7 @@ npm run lh-watcher-github # GitHub の状態を観測して event を記録
 npm run lh-watcher-agents # エージェント runtime の状態を観測して event を記録
 npm run lh-dispatcher # event を tail して DB 由来の判断と workflow dispatch を実行
 npm run lh-job-queue # 外部副作用 job の専用プロセス境界
+npm run lh-job-queue -- --concurrency 16 # job の最大並列度を指定
 ```
 
 出力には `[web]` / `[git]` / `[github]` / `[agents]` / `[dispatcher]` / `[queue]` のプレフィックスが付く。
