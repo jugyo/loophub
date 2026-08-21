@@ -87,6 +87,7 @@ import {
 import { formatDuration, relativeTime } from "@/lib/time";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
+import { cn } from "@/lib/utils";
 import { useIssueComments } from "@/queries/issues";
 import {
   useGithubPrStatus,
@@ -130,6 +131,8 @@ export function PullDetail({
   const lineCommentsQuery = usePullComments(owner, repo, number, false);
   const commentsQuery = useIssueComments(owner, repo, number, false);
   const titleRef = useRef<HTMLDivElement>(null);
+  const [measureSidebar, sidebarFitsStickyRoom] =
+    useFitsStickyRoom<HTMLElement>(SIDEBAR_STICKY_TOP_PX);
   // #145: which file's diff dialog is open. Owned here — above Files changed — so a timeline line
   // comment (in CommentList) can open the same dialog Files changed renders.
   const [openFilename, setOpenFilename] = useState<string | null>(null);
@@ -303,10 +306,16 @@ export function PullDetail({
             lands at 2.75rem - 1.5rem. A sticky inset applies from the first paint, so the price of
             clearing the bar is that the sidebar starts those same 20px below the main column's
             first line instead of level with it; top-0 would align them but then park the sidebar
-            under the bar once the page scrolls. */}
+            under the bar once the page scrolls. And it sticks only while it still fits that room
+            (#2518) — a taller sidebar goes back to the normal flow so its tail scrolls into
+            view. */}
         <aside
+          ref={measureSidebar}
           data-debug-component="PullSidebar"
-          className="flex w-full shrink-0 flex-col gap-6 lg:sticky lg:top-5 lg:w-80"
+          className={cn(
+            "flex w-full shrink-0 flex-col gap-6 lg:w-80",
+            sidebarFitsStickyRoom && "lg:sticky lg:top-5",
+          )}
         >
           {/* #2406: where and on which branch this PR is being worked on is the first thing to
               know when opening it, so the basics lead the sidebar. */}
@@ -328,6 +337,58 @@ export function PullDetail({
       </div>
     </div>
   );
+}
+
+/** The sidebar's sticky inset, in px — must match its `lg:top-5`. */
+const SIDEBAR_STICKY_TOP_PX = 20;
+
+// #2518: a stuck element never scrolls, so one taller than the room it is stuck in keeps the part
+// below the fold off-screen no matter how far the page scrolls. Measures an element against that
+// room — the scrollport it would stick inside, minus the inset it sticks at — and reports whether
+// sticky is still safe, so the caller can fall back to the normal flow when it is not. The answer
+// starts as "fits" because a sticky element that has yet to be measured looks exactly like a static
+// one until the page scrolls.
+function useFitsStickyRoom<T extends HTMLElement>(topPx: number) {
+  // A callback ref, not a ref object: the caller renders its loading state first, so the element
+  // arrives on a later render and a mount-time effect would measure nothing and never look again.
+  const [element, setElement] = useState<T | null>(null);
+  const [fits, setFits] = useState(true);
+
+  useEffect(() => {
+    if (!element) return;
+    const measure = () => {
+      const scrollport = stickyScrollport(element);
+      // Sticky insets start inside the scrollport's padding box, so its own top padding eats into
+      // the room on top of the inset itself (see the sidebar's pt-6 note).
+      const paddingTop =
+        Number.parseFloat(getComputedStyle(scrollport).paddingTop) || 0;
+      setFits(
+        element.offsetHeight <= scrollport.clientHeight - paddingTop - topPx,
+      );
+    };
+
+    measure();
+    // The element's height moves with its own content (sections expanding, async data arriving),
+    // the room with the window — watch both so the verdict follows either one.
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [element, topPx]);
+
+  return [setElement, fits] as const;
+}
+
+// The scrollport a sticky element is pinned inside: its nearest scrollable ancestor, or the page.
+function stickyScrollport(element: HTMLElement): HTMLElement {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY === "auto" || overflowY === "scroll") return node;
+  }
+  return document.documentElement;
 }
 
 // Workflow run state for this PR (#1008): renders the linked run's status / step / rework via the

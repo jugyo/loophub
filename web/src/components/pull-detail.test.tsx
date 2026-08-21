@@ -284,6 +284,49 @@ function renderDetail(
   return { ...result, queryClient };
 }
 
+// happy-dom lays nothing out, so the sidebar's sticky-room check (#2518) sees zero on both sides
+// of its comparison unless they are stubbed: the sidebar's own height and the scrollport it is
+// measured against (documentElement here — the app shell's scroll area is not in this tree). Call
+// before rendering, then replay the two ways those heights move at runtime — the sidebar's
+// ResizeObserver for its own height, a window resize for the scrollport's.
+function stubStickyRoom({
+  scrollportHeight,
+  sidebarHeight,
+}: {
+  scrollportHeight: number;
+  sidebarHeight: number;
+}) {
+  let scrollport = scrollportHeight;
+  let sidebar = sidebarHeight;
+  const callbacks: (() => void)[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(callback: () => void) {
+        callbacks.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
+    () => scrollport,
+  );
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+    () => sidebar,
+  );
+  return {
+    resizeSidebar(height: number) {
+      sidebar = height;
+      for (const callback of callbacks) callback();
+    },
+    resizeScrollport(height: number) {
+      scrollport = height;
+      window.dispatchEvent(new Event("resize"));
+    },
+  };
+}
+
 // The tracks of a Tailwind `grid-cols-[...]` class, split on the top-level `_` separators so a
 // track that carries its own underscores (`minmax(0,_max-content)`) still counts as one.
 function gridTemplateColumns(className: string): string[] {
@@ -1530,6 +1573,7 @@ describe("PullDetail", () => {
   // #2348: the sidebar stays in view while the main column scrolls, but only in the two-column
   // layout — every sticky class is `lg:`-gated so the stacked layout keeps the normal flow.
   it("sticks the sidebar below the sticky header only beside the main column", async () => {
+    stubStickyRoom({ scrollportHeight: 800, sidebarHeight: 400 });
     const { container } = renderDetail();
 
     await screen.findByText("ui2: PR detail");
@@ -1543,6 +1587,62 @@ describe("PullDetail", () => {
     // The row must keep aligning its columns to the start: stretched to the row's height, the
     // sidebar has no room left to slide within and sticky silently becomes a no-op.
     expect(sidebar?.parentElement?.className).toContain("lg:items-start");
+  });
+
+  // #2518: stuck at the top of the scrollport, a sidebar taller than that scrollport keeps its
+  // tail below the fold for good — no amount of page scrolling moves it. Such a sidebar goes back
+  // to the normal flow, sticky classes and all, so the page scroll carries the tail into view.
+  it("unsticks the sidebar when it is taller than the room it would stick in", async () => {
+    stubStickyRoom({ scrollportHeight: 800, sidebarHeight: 1200 });
+    const { container } = renderDetail();
+
+    await screen.findByText("ui2: PR detail");
+    const sidebar = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullSidebar"]',
+    );
+    const classes = sidebar?.className.split(/\s+/) ?? [];
+    expect(classes.filter((c) => c.includes("sticky"))).toEqual([]);
+    expect(classes.filter((c) => c.includes("top-"))).toEqual([]);
+    // Only the sticky part goes: the sidebar keeps its column width and stacking.
+    expect(classes).toContain("lg:w-80");
+  });
+
+  // #2518: the verdict follows the current heights, not the ones at mount — sections expand and
+  // collapse and async data lands well after the first measurement.
+  it("re-judges the sidebar's stickiness when its height changes", async () => {
+    const room = stubStickyRoom({ scrollportHeight: 800, sidebarHeight: 400 });
+    const { container } = renderDetail();
+
+    await screen.findByText("ui2: PR detail");
+    const sidebar = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullSidebar"]',
+    );
+    expect(sidebar?.className).toContain("lg:sticky");
+
+    act(() => room.resizeSidebar(1200));
+    expect(sidebar?.className).not.toContain("sticky");
+
+    act(() => room.resizeSidebar(400));
+    expect(sidebar?.className).toContain("lg:sticky");
+  });
+
+  // #2518: the same for the other side of the comparison — a shorter window can leave a sidebar
+  // that fit at mount without room, and a taller one can give it back.
+  it("re-judges the sidebar's stickiness when the window is resized", async () => {
+    const room = stubStickyRoom({ scrollportHeight: 800, sidebarHeight: 700 });
+    const { container } = renderDetail();
+
+    await screen.findByText("ui2: PR detail");
+    const sidebar = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullSidebar"]',
+    );
+    expect(sidebar?.className).toContain("lg:sticky");
+
+    act(() => room.resizeScrollport(500));
+    expect(sidebar?.className).not.toContain("sticky");
+
+    act(() => room.resizeScrollport(800));
+    expect(sidebar?.className).toContain("lg:sticky");
   });
 
   // #59: the header above the section tabs is the title and its status only — authorship, the
@@ -2578,7 +2678,10 @@ describe("PullDetail", () => {
     expect(screen.getByText("Verify")).toBeTruthy();
     expect(screen.getByText("Rework: 2/8")).toBeTruthy();
     expect(screen.getByText("Total cost")).toBeTruthy();
-    expect(screen.getByText("$1.75")).toBeTruthy();
+    // The total is a second request, started only once the run is known, so it can still be in
+    // flight when the run itself renders — wait for it rather than for whatever render happens
+    // to land first.
+    expect(await screen.findByText("$1.75")).toBeTruthy();
     expect(screen.getByText("Needs human")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Detail" })).toBeTruthy();
   });
