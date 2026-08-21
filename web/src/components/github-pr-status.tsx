@@ -4,23 +4,38 @@
 // it sits alongside the other sidebar sections (work duration, sessions, handoff) without crowding
 // them — a badge row plus a few small labeled rows and a freshness footnote. The section body opens
 // with the link out to the GitHub PR (#2091), so the GitHub route lives where the status is read;
-// the heading itself is plain text. The section also owns the link's only write action — unlinking
-// it (#2384) — for the same reason: the link is managed where it is shown.
+// the heading itself is plain text. The section also owns the link's write actions — pushing the
+// local head to its branch (#848, moved here in #2516) and unlinking it (#2384) — for the same
+// reason: the link is managed where it is shown.
 //
 // Loading / error states mirror the sibling sidebar sections (e.g. WorkDuration): a spinner while
-// fetching and a destructive box on failure. The "not linked" state is handled by the caller — the
-// section is not rendered at all when github_pull is absent.
+// fetching and a destructive box on failure. The "not linked" state renders nothing at all, so the
+// sidebar can hand the section every PR and let it decide (like WorkflowRunSection).
 
-import { ExternalLink, Github, Loader2, Unlink } from "lucide-react";
+import {
+  ChevronDown,
+  ExternalLink,
+  Github,
+  Loader2,
+  Unlink,
+  UploadCloud,
+} from "lucide-react";
 import { useEffect, useState } from "react";
-import type { GithubPrStatus, GithubPull } from "@/api/types";
+import type { GithubPrStatus, GithubPull, PullRequest } from "@/api/types";
+import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { BadgeTone } from "@/lib/badges";
 import { errorMessage } from "@/lib/error-message";
 import { relativeTime } from "@/lib/time";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
-import { useUnlinkGithubPull } from "@/queries/pulls";
+import { usePushGithubPull, useUnlinkGithubPull } from "@/queries/pulls";
 
 const STATE: Record<
   GithubPrStatus["state"],
@@ -90,25 +105,27 @@ function StatusRow({
 export function GithubPrStatusSection({
   owner,
   repo,
-  number,
-  githubPull,
+  pull,
   status,
   isLoading,
 }: {
-  // Coordinates of the loophub PR, for the unlink action's mutation (#2384).
+  // The loophub PR the section belongs to: its coordinates address the section's mutations (#2384,
+  // #2516), its link is what the section shows, and the push action reads its state/head to decide
+  // whether there is anything to push.
   owner: string;
   repo: string;
-  number: number;
-  // The linked GitHub PR itself (#2035): the body's first row is the single link out to GitHub, so
-  // the PR-detail action row doesn't need a separate "View PR on GitHub" button. Non-null because
-  // the caller only renders the section for a linked PR.
-  githubPull: GithubPull;
+  pull: PullRequest;
   status: GithubPrStatus | undefined;
   isLoading: boolean;
   // isError is intentionally not a prop: the section only renders for a linked GitHub PR (an enabled
   // query), so the states are exhaustive — loading, a status to show, or (no status, not loading) an
   // error. A failed background refetch keeps `status`, so it stays on the data branch. See the JSX.
 }) {
+  // The linked GitHub PR (#2035): the body's first row is the single link out to GitHub, so the
+  // PR-detail action row doesn't need a separate "View PR on GitHub" button. Without a link there is
+  // no status to read and nothing to push, so the whole section is absent.
+  const githubPull = pull.github_pull;
+  if (!githubPull) return null;
   return (
     <section
       data-debug-component="GithubPrStatusSection"
@@ -175,15 +192,117 @@ export function GithubPrStatusSection({
           Failed to load GitHub status.
         </div>
       )}
-      {/* Outside the status branches, like the link above: unlinking is what you reach for when the
-          link is wrong or its GitHub PR is gone, which is exactly when the status fails to load. */}
+      {/* Outside the status branches, like the link above: whether the local head is ahead of what
+          was pushed is answered by the PR itself, so a slow or failed status must not hide the push
+          (#2516); and unlinking is what you reach for when the link is wrong or its GitHub PR is
+          gone, which is exactly when the status fails to load. */}
+      <PushGithubPrAction
+        owner={owner}
+        repo={repo}
+        pull={pull}
+        githubPull={githubPull}
+      />
       <UnlinkGithubPrAction
         owner={owner}
         repo={repo}
-        number={number}
+        number={pull.number}
         githubPull={githubPull}
       />
     </section>
+  );
+}
+
+/**
+ * Push action for the section (#2516): sends the PR's local head to the linked GitHub PR's branch
+ * (#848), with the rewritten-head variant behind the dropdown (#1861). It sits with the link and the
+ * status rather than in the PR-detail action row because pushing operates on the link this section
+ * shows, leaving that row to the LoopHub-side write actions. `isPending` drives the disabled +
+ * spinner state so the click can't fire twice, and a failed push surfaces as a toast — the mutation
+ * has no dialog of its own to land in.
+ */
+function PushGithubPrAction({
+  owner,
+  repo,
+  pull,
+  githubPull,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+  githubPull: GithubPull;
+}) {
+  const { showError } = useToast();
+  // The same mutation force-pushes when the dropdown's Force push is chosen — the button itself
+  // always stays a plain push.
+  const pushChanges = usePushGithubPull(owner, repo, pull.number);
+  const push = (force: boolean) =>
+    pushChanges.mutate(force, {
+      onError: (e) =>
+        showError(
+          errorMessage(
+            e,
+            force ? "Force push to GitHub failed" : "Push to GitHub failed",
+          ),
+        ),
+    });
+
+  // Unpushed local changes exist when we know what was last pushed (pushed_sha) and the PR's head
+  // has moved past it. Gated on an open, unmerged PR and a recorded branch to push onto — a
+  // closed/merged PR is past syncing, and a null pushed_sha (e.g. an externally-attached PR never
+  // pushed from here) reads as "nothing known to be unpushed", so the button stays disabled.
+  const hasUnpushedChanges =
+    pull.state === "open" &&
+    !pull.merged &&
+    !!githubPull.branch &&
+    !!githubPull.pushed_sha &&
+    !!pull.head.sha &&
+    pull.head.sha !== githubPull.pushed_sha;
+
+  return (
+    <div className="inline-flex w-fit">
+      <Button
+        variant="secondary"
+        size="sm"
+        className="rounded-r-none"
+        disabled={!hasUnpushedChanges || pushChanges.isPending}
+        title={
+          hasUnpushedChanges
+            ? `Push local changes to the GitHub PR branch (${githubPull.branch})`
+            : "No local changes to push to GitHub"
+        }
+        onClick={() => push(false)}
+      >
+        {pushChanges.isPending ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <UploadCloud className="size-4" />
+        )}
+        {pushChanges.isPending ? "Pushing…" : "Push to GitHub"}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label="Push options"
+            title="Push options"
+            className="rounded-l-none border-l px-2"
+            disabled={!hasUnpushedChanges || pushChanges.isPending}
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            title={`Force-push the head to the GitHub PR branch (${githubPull.branch}) with --force-with-lease, for a head rewritten by rebase or amend`}
+            onSelect={() => push(true)}
+          >
+            <UploadCloud className="size-4" />
+            Force push to GitHub
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 

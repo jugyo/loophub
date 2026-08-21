@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
-import type { GithubPrStatus, GithubPull } from "@/api/types";
+import type { GithubPrStatus, GithubPull, PullRequest } from "@/api/types";
 import { GithubPrStatusSection } from "./github-pr-status";
 
 const PULL: GithubPull = {
@@ -15,6 +15,50 @@ const PULL: GithubPull = {
   github_merged_at: null,
   pushed_sha: null,
 };
+
+/** The loophub PR the section belongs to; its head is what the push action offers to push. */
+const LOOPHUB_PULL: PullRequest = {
+  number: 7,
+  state: "open",
+  title: "Export to GitHub",
+  body: "",
+  user: { login: "impl-bot" },
+  head: { ref: "feature/x", sha: "head-sha" },
+  base: { ref: "main", sha: "base-sha" },
+  base_sha: "base-sha",
+  merged: false,
+  mergeable: true,
+  mergeable_state: "clean",
+  merge_commit_sha: null,
+  additions: 1,
+  deletions: 1,
+  changed_files: 1,
+  working: false,
+  review_state: "PASSED",
+  review_gate: {
+    reviewed: true,
+    passed: true,
+    head_sha: "head-sha",
+    blocking_reason: null,
+  },
+  changes_addressed_at: null,
+  changes_addressed_by: null,
+  labels: [],
+  comments: 0,
+  created_at: "2026-06-18T11:00:00Z",
+  updated_at: "2026-06-18T12:00:00Z",
+  linked_issue: null,
+  worktree_path: null,
+  cost_stopped: false,
+  merge_mode: "github_pr",
+  github_pull: PULL,
+  github_pr_export_started_at: null,
+};
+
+/** The fixture PR with its GitHub link overridden — the section reads the link off the PR. */
+function withGithubPull(overrides: Partial<GithubPull>): PullRequest {
+  return { ...LOOPHUB_PULL, github_pull: { ...PULL, ...overrides } };
+}
 
 const BASE: GithubPrStatus = {
   state: "open",
@@ -34,19 +78,20 @@ afterEach(() => {
 });
 
 /**
- * The section owns the unlink mutation, so every render needs a query client. `unlinkHandler` stubs
- * `pulls/unlinkGithubPull`; the default stub answers successfully.
+ * The section owns the unlink and push mutations, so every render needs a query client. `handlers`
+ * overrides the RPC stubs, which answer successfully by default.
  */
 function renderSection(
   props: Partial<Parameters<typeof GithubPrStatusSection>[0]> = {},
-  unlinkHandler: (params: any) => unknown = () => ({
-    unlinked: true,
-    github_number: 42,
-  }),
+  handlers: Record<string, (params: any) => unknown> = {},
 ) {
   vi.stubGlobal(
     "fetch",
-    mockRpcFetch({ "pulls/unlinkGithubPull": unlinkHandler }),
+    mockRpcFetch({
+      "pulls/unlinkGithubPull": () => ({ unlinked: true, github_number: 42 }),
+      "pulls/pushGithubPull": () => ({ ...PULL, pushed_sha: "head-sha" }),
+      ...handlers,
+    }),
   );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -56,8 +101,7 @@ function renderSection(
       <GithubPrStatusSection
         owner="me"
         repo="proj"
-        number={7}
-        githubPull={PULL}
+        pull={LOOPHUB_PULL}
         status={BASE}
         isLoading={false}
         {...props}
@@ -110,7 +154,7 @@ describe("GithubPrStatusSection", () => {
 
   it("shows a URL it can't shorten as-is rather than reducing it to a number (#2091)", () => {
     const { getByRole } = renderSection({
-      githubPull: { ...PULL, url: "gh.example.com/me/proj/pull/42" },
+      pull: withGithubPull({ url: "gh.example.com/me/proj/pull/42" }),
     });
     expect(
       getByRole("link", { name: "gh.example.com/me/proj/pull/42" }),
@@ -167,6 +211,153 @@ describe("GithubPrStatusSection", () => {
     expect(text).not.toContain("Failed to load GitHub status.");
   });
 
+  it("disables Push to GitHub when the current head is already pushed (#2516)", () => {
+    const { getByRole } = renderSection({
+      pull: withGithubPull({ pushed_sha: LOOPHUB_PULL.head.sha }),
+    });
+
+    const button = getByRole("button", {
+      name: /Push to GitHub/i,
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("No local changes to push to GitHub");
+    expect(
+      (getByRole("button", { name: /Push options/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    fireEvent.click(button);
+    expect(rpcCall("pulls/pushGithubPull")).toBeFalsy();
+  });
+
+  it.each([
+    ["nothing is known to have been pushed", { pushed_sha: null }],
+    ["there is no branch to push onto", { branch: "", pushed_sha: "old" }],
+  ])("disables Push to GitHub when %s (#2516)", (_label, overrides) => {
+    const { getByRole } = renderSection({ pull: withGithubPull(overrides) });
+    expect(
+      (getByRole("button", { name: /Push to GitHub/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["closed", { state: "closed" as const }],
+    ["merged", { merged: true }],
+  ])("disables Push to GitHub for a %s PR (#2516)", (_label, overrides) => {
+    const { getByRole } = renderSection({
+      pull: { ...withGithubPull({ pushed_sha: "old-head" }), ...overrides },
+    });
+    expect(
+      (getByRole("button", { name: /Push to GitHub/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("pushes an unpushed head from the section (#2516)", async () => {
+    const { getByRole } = renderSection({
+      pull: withGithubPull({ pushed_sha: "old-head" }),
+    });
+
+    const button = getByRole("button", {
+      name: /Push to GitHub/i,
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(button.title).toContain("feature/x");
+
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(rpcCall("pulls/pushGithubPull")?.params).toMatchObject({
+        repo: "me/proj",
+        number: 7,
+        force: false,
+      });
+    });
+  });
+
+  it("force-pushes when Force push is chosen from the push dropdown (#1861)", async () => {
+    const { getByRole, findByRole } = renderSection({
+      pull: withGithubPull({ pushed_sha: "old-head" }),
+    });
+
+    fireEvent.pointerDown(getByRole("button", { name: /Push options/i }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(
+      await findByRole("menuitem", { name: /Force push to GitHub/i }),
+    );
+
+    await waitFor(() => {
+      expect(rpcCall("pulls/pushGithubPull")?.params).toMatchObject({
+        repo: "me/proj",
+        number: 7,
+        force: true,
+      });
+    });
+  });
+
+  it("holds Pushing… while the push is in flight, so it can't fire twice (#2516)", async () => {
+    let pushes = 0;
+    let resolvePush: (() => void) | undefined;
+    const { getByRole, findByRole } = renderSection(
+      { pull: withGithubPull({ pushed_sha: "old-head" }) },
+      {
+        "pulls/pushGithubPull": () => {
+          pushes += 1;
+          return new Promise((resolve) => {
+            resolvePush = () => resolve({ ...PULL, pushed_sha: "head-sha" });
+          });
+        },
+      },
+    );
+
+    fireEvent.click(getByRole("button", { name: /Push to GitHub/i }));
+    const pushing = (await findByRole("button", {
+      name: /Pushing…/i,
+    })) as HTMLButtonElement;
+    expect(pushing.disabled).toBe(true);
+    fireEvent.click(pushing);
+    expect(pushes).toBe(1);
+
+    resolvePush?.();
+  });
+
+  it("reports a failed push without blanking the section (#2516)", async () => {
+    const { getByRole, container } = renderSection(
+      { pull: withGithubPull({ pushed_sha: "old-head" }) },
+      {
+        "pulls/pushGithubPull": () => {
+          throw new RpcFault(409, "push rejected");
+        },
+      },
+    );
+
+    fireEvent.click(getByRole("button", { name: /Push to GitHub/i }));
+    // The failure goes to the app-level toast (no provider here, so nothing renders); the section
+    // itself stays on its data branch with the action ready to retry.
+    await waitFor(() => {
+      expect(
+        (getByRole("button", { name: /Push to GitHub/i }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+    expect(container.textContent ?? "").toContain("Open");
+  });
+
+  it.each([
+    ["loading", { status: undefined, isLoading: true }],
+    ["failed to load", { status: undefined, isLoading: false }],
+  ])("keeps Push to GitHub reachable while the status is %s (#2516)", (_label, statusProps) => {
+    const { getByRole } = renderSection({
+      pull: withGithubPull({ pushed_sha: "old-head" }),
+      ...statusProps,
+    });
+    expect(
+      (getByRole("button", { name: /Push to GitHub/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
   it("confirms before unlinking, saying the GitHub PR itself is untouched (#2384)", async () => {
     const { getByRole, findByRole } = renderSection();
 
@@ -207,9 +398,14 @@ describe("GithubPrStatusSection", () => {
   });
 
   it("keeps the dialog open and shows the failure when the unlink fails (#2384)", async () => {
-    const { getByRole, findByRole } = renderSection({}, () => {
-      throw new RpcFault(409, "PR #7 has no GitHub PR to unlink");
-    });
+    const { getByRole, findByRole } = renderSection(
+      {},
+      {
+        "pulls/unlinkGithubPull": () => {
+          throw new RpcFault(409, "PR #7 has no GitHub PR to unlink");
+        },
+      },
+    );
 
     fireEvent.click(getByRole("button", { name: /Unlink GitHub PR/i }));
     const dialog = await findByRole("dialog");

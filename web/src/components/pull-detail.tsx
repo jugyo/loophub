@@ -8,14 +8,7 @@
 // via <Markdown>.
 
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  ExternalLink,
-  Github,
-  Loader2,
-  SmilePlus,
-  UploadCloud,
-} from "lucide-react";
+import { ExternalLink, Github, Loader2, SmilePlus } from "lucide-react";
 import {
   type ReactNode,
   type RefObject,
@@ -100,7 +93,6 @@ import {
   usePullFiles,
   usePullFileViews,
   usePullReviews,
-  usePushGithubPull,
   useReactToPullComment,
   useSetPullCommentArchived,
   useSetPullState,
@@ -321,18 +313,16 @@ export function PullDetail({
               know when opening it, so the basics lead the sidebar. */}
           <PullInfoSection owner={owner} repo={repo} pull={pull} />
           <WorkflowRunSection owner={owner} repo={repo} number={number} />
-          {/* GitHub PR status (#850): only for a PR with a linked GitHub PR. Fetched on demand;
-            loading/error live in the section. */}
-          {pull.github_pull ? (
-            <GithubPrStatusSection
-              owner={owner}
-              repo={repo}
-              number={number}
-              githubPull={pull.github_pull}
-              status={githubStatusQuery.data}
-              isLoading={githubStatusQuery.isLoading}
-            />
-          ) : null}
+          {/* GitHub PR status (#850) and the actions on the link — push (#2516), unlink (#2384).
+            Renders nothing for a PR with no linked GitHub PR; fetched on demand, with loading/error
+            inside the section. */}
+          <GithubPrStatusSection
+            owner={owner}
+            repo={repo}
+            pull={pull}
+            status={githubStatusQuery.data}
+            isLoading={githubStatusQuery.isLoading}
+          />
         </aside>
       </div>
     </div>
@@ -589,8 +579,8 @@ function PullBody({
           </Button>
         ) : null}
         {/* #406: the repo's effective merge mode picks exactly one write action — the internal Merge
-            control, or the GitHub export (Create PR on GitHub / push). The two are mutually
-            exclusive, so a merged PR shows neither extra control beyond Close/Reopen above.
+            control, or the GitHub export (Create PR on GitHub). The two are mutually exclusive, so a
+            merged PR shows neither extra control beyond Close/Reopen above.
             The export action is keyed by the PR's full identity: one detail route serves every
             repo, so a client-side navigation reuses it, and without a remount it would carry the
             previous PR's optimistic "creating" state onto a PR that never started one (#2383). The
@@ -778,12 +768,12 @@ function usePendingUntil(until: number): boolean {
 }
 
 // #406: GitHub-export write action for a PR whose repo is in 'github_pr' mode. Once the PR has been
-// exported (github_pull present) the Create action disappears and only the push controls remain —
-// this is the double-create guard, so a second export can't be dispatched. The route to the GitHub
-// PR itself lives in the sidebar's GitHub PR section body (#2091), not here. Until exported,
-// "Create PR on GitHub" injects the full export instructions into a launched agent (#1892, same
-// prompt-injection approach as New issue), which generates a branch/title/description in the target
-// PR's language and opens the GitHub Draft PR via `lh pr create-github-pr`. That agent runs well
+// exported (github_pull present) the action row is empty here — this is the double-create guard, so
+// a second export can't be dispatched. Everything about the resulting link lives in the sidebar's
+// GitHub PR section: the route to the GitHub PR (#2091) and pushing to its branch (#2516). Until
+// exported, "Create PR on GitHub" injects the full export instructions into a launched agent (#1892,
+// same prompt-injection approach as New issue), which generates a branch/title/description in the
+// target PR's language and opens the GitHub Draft PR via `lh pr create-github-pr`. That agent runs well
 // after the launch RPC returns, so the button holds a loading state for the whole export (#2383).
 function GithubPrAction({
   owner,
@@ -795,28 +785,12 @@ function GithubPrAction({
   pull: PullRequest;
 }) {
   const { launchTerminal, launchFailed } = useTerminalLauncher();
-  const { showError } = useToast();
   const { data: settings } = useSettings();
   // #2422: optional per-repo extra text appended after the default export prompt.
   const { data: extraPromptSetting } = useRepoGithubPrExportExtraPrompt(
     owner,
     repo,
   );
-
-  // #848: push local changes to the linked GitHub PR's branch. isPending drives the disabled +
-  // spinner state so the click can't fire twice (AC4). #1861: the same mutation force-pushes when
-  // the dropdown's Force push is chosen — the button itself always stays a plain push.
-  const pushChanges = usePushGithubPull(owner, repo, pull.number);
-  const push = (force: boolean) =>
-    pushChanges.mutate(force, {
-      onError: (e) =>
-        showError(
-          errorMessage(
-            e,
-            force ? "Force push to GitHub failed" : "Push to GitHub failed",
-          ),
-        ),
-    });
 
   // #2383: Create is a fire-and-forget launch — the GitHub PR appears later, when the agent records
   // it — so the button drives its loading state off "an export is running" rather than a mutation's
@@ -842,64 +816,9 @@ function GithubPrAction({
       setClickedAt(null);
   }, [launchFailed, pull.github_pull, pull.github_pr_export_started_at]);
 
-  const gh = pull.github_pull;
-  if (gh) {
-    // Unpushed local changes exist when we know what was last pushed (pushed_sha) and the PR's head
-    // has moved past it. Gated on an open, unmerged PR and a recorded branch to push onto — a
-    // closed/merged PR is past syncing (AC7), and a null pushed_sha (e.g. an externally-attached PR
-    // never pushed from here) reads as "nothing known to be unpushed", so the button stays disabled.
-    const hasUnpushedChanges =
-      pull.state === "open" &&
-      !pull.merged &&
-      !!gh.branch &&
-      !!gh.pushed_sha &&
-      !!pull.head.sha &&
-      pull.head.sha !== gh.pushed_sha;
-    return (
-      <div className="inline-flex">
-        <Button
-          variant="secondary"
-          className="rounded-r-none"
-          disabled={!hasUnpushedChanges || pushChanges.isPending}
-          title={
-            hasUnpushedChanges
-              ? `Push local changes to the GitHub PR branch (${gh.branch})`
-              : "No local changes to push to GitHub"
-          }
-          onClick={() => push(false)}
-        >
-          {pushChanges.isPending ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <UploadCloud className="size-4" />
-          )}
-          {pushChanges.isPending ? "Pushing…" : "Push to GitHub"}
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="secondary"
-              aria-label="Push options"
-              title="Push options"
-              className="rounded-l-none border-l px-2"
-              disabled={!hasUnpushedChanges || pushChanges.isPending}
-            >
-              <ChevronDown className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              title={`Force-push the head to the GitHub PR branch (${gh.branch}) with --force-with-lease, for a head rewritten by rebase or amend`}
-              onSelect={() => push(true)}
-            >
-              <UploadCloud className="size-4" />
-              Force push to GitHub
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    );
-  }
+  // Exported already: the GitHub-side controls are the sidebar section's (#2516), so this row has
+  // nothing left to offer.
+  if (pull.github_pull) return null;
   // A merged or closed loophub PR is past the point of exporting, so offer Create only while open.
   if (pull.state !== "open" || pull.merged) return null;
   return (
