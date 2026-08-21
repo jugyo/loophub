@@ -300,7 +300,12 @@ export function IssueRow({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <div
             className="relative min-w-0 shrink"
+            // The title link opens the popover, but this wrapper is the region
+            // that also holds the panel: returning to it must cancel the pending
+            // close without opening from anywhere else.
+            onMouseEnter={popover.keepOpen}
             onMouseLeave={popover.onMouseLeave}
+            onFocus={popover.keepOpen}
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget)) {
                 popover.close();

@@ -546,9 +546,14 @@ export function LinkedPullSummaryRow({
         !linkTriggersPopover && "hover:bg-muted/60",
         className,
       )}
-      onMouseEnter={linkTriggersPopover ? undefined : popover.onMouseEnter}
+      // When only the PR link opens the popover (#1289), the row is still the
+      // region that holds the panel: returning to it cancels the pending close
+      // without letting a pointer crossing the row open anything.
+      onMouseEnter={
+        linkTriggersPopover ? popover.keepOpen : popover.onMouseEnter
+      }
       onMouseLeave={popover.onMouseLeave}
-      onFocus={linkTriggersPopover ? undefined : popover.onFocus}
+      onFocus={linkTriggersPopover ? popover.keepOpen : popover.onFocus}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
           popover.close();

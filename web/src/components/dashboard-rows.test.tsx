@@ -24,7 +24,10 @@ import type {
   LinkedPull,
   PullRequest,
 } from "@/api/types";
-import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
+import {
+  HOVER_POPUP_CLOSE_DELAY_MS,
+  HOVER_POPUP_DELAY_MS,
+} from "@/lib/use-hover-popover";
 import { WebConfigProvider } from "@/lib/web-config";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -744,6 +747,32 @@ describe("IssueRow title popover", () => {
     expect(issuePopover()).toBeTruthy();
   });
 
+  it("keeps the popover open when the pointer returns to it during the close delay", async () => {
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />);
+    const title = await screen.findByRole("link", { name: "Example issue" });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.mouseEnter(title);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    const popover = issuePopover();
+    expect(popover).toBeTruthy();
+
+    // The title column is wider than the panel, so the pointer can leave the
+    // whole region on its way down and come back onto the panel itself — the
+    // popover must survive that, not vanish under the pointer.
+    fireEvent.mouseLeave(title.parentElement!);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_CLOSE_DELAY_MS - 1);
+    });
+    fireEvent.mouseEnter(popover!);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_CLOSE_DELAY_MS * 2);
+    });
+    expect(issuePopover()).toBeTruthy();
+  });
+
   it("shows and focuses the recorded New Issue pane", async () => {
     renderInRouter(
       <IssueRow
@@ -907,6 +936,32 @@ describe("IssueRow linked PR popover trigger (#1289)", () => {
     expect(popoverHeader(10)).toBeTruthy();
   });
 
+  it("keeps the popover open when the pointer returns to it during the close delay", async () => {
+    renderPulls([makePull({ number: 10 })]);
+    const link = await screen.findByRole("link", { name: "PR #10" });
+    const row = screen.getByLabelText("Linked PR #10: A PR");
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.mouseEnter(link);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    const popover = popoverHeader(10)?.closest<HTMLElement>(".pt-1");
+    expect(popover).toBeTruthy();
+
+    // Only the PR link opens this popover, but the row is the region holding
+    // the panel: coming back onto the panel must cancel the pending close.
+    fireEvent.mouseLeave(row);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_CLOSE_DELAY_MS - 1);
+    });
+    fireEvent.mouseEnter(popover!);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_CLOSE_DELAY_MS * 2);
+    });
+    expect(popoverHeader(10)).toBeTruthy();
+  });
+
   it("keeps the opened popover available while the pointer moves into it", async () => {
     renderPulls([makePull({ number: 10 })]);
     const link = await screen.findByRole("link", { name: "PR #10" });
@@ -947,6 +1002,13 @@ describe("IssueRow linked PR popover trigger (#1289)", () => {
     fireEvent.mouseEnter(firstLink);
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    expect(popoverHeader(10)).toBeTruthy();
+
+    // The abandoned row keeps its popover for the close delay; only the hovered
+    // link's popover survives past it.
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_CLOSE_DELAY_MS);
     });
     expect(popoverHeader(10)).toBeTruthy();
     expect(popoverHeader(9)).toBeNull();

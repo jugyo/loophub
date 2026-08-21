@@ -8,7 +8,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HerdrSessions, WorkflowRunState } from "@/api/types";
-import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
+import {
+  HOVER_POPUP_CLOSE_DELAY_MS,
+  HOVER_POPUP_DELAY_MS,
+} from "@/lib/use-hover-popover";
 
 const { focusHerdrAgent } = vi.hoisted(() => ({
   focusHerdrAgent: vi.fn(),
@@ -302,6 +305,7 @@ describe("WorkflowStepTracker", () => {
       expect(dialog.textContent).toContain("Run #1");
 
       fireEvent.mouseLeave(pill.parentElement!);
+      act(() => vi.advanceTimersByTime(HOVER_POPUP_CLOSE_DELAY_MS));
       expect(
         screen.queryByRole("dialog", {
           name: `${label} workflow step details`,

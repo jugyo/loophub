@@ -318,17 +318,50 @@ navigation target.
   the delay elapses, the pending open is cancelled and the popover never shows —
   not even for a frame. Once open, moving from the trigger into the popover must
   keep it available.
+- **Leaving an open popover closes it after a delay.** The pointer leaving the
+  trigger/popover region starts a `HOVER_POPUP_CLOSE_DELAY_MS = 1000` ms close
+  delay (also defined in
+  [`src/lib/use-hover-popover.ts`](./src/lib/use-hover-popover.ts)) rather than
+  dismissing at once, so a small pointer slip on the way to a link or action
+  inside the panel does not lose it. Hovering or focusing the region again
+  during that window cancels the pending close and leaves the popover open.
+  Because the pointer may come back onto the panel rather than the trigger, the
+  region that contains both must wire the cancellation itself — see the caller
+  contract below.
+- **A closing popover briefly overlaps its surroundings.** During the close
+  delay the panel still covers the content under it and can take a click meant
+  for a row below, and moving to a nearby trigger can show the old and new
+  panels at once. This is accepted as the cost of a forgiving close: the panel
+  the pointer is heading for is the one that stays. Do not add repositioning,
+  fade-out, or a global single-open-popover manager to compensate.
 - **Keyboard focus opens immediately.** Focus is intentional, so it opens the
   popover with no delay. Focus may move into links and actions within the panel;
-  `Escape` and blur to an element outside the trigger/popover region close it.
+  `Escape` and blur to an element outside the trigger/popover region close it
+  with no delay — the close delay applies to pointer departure only.
 - **Click opens immediately.** For a click-triggered resource popover, the same
   control toggles the panel. `Escape`, an outside click, or completed navigation
   dismisses it; it remains non-modal and does not trap focus.
 
-Reuse `useHoverPopover` for the hover delay, pending-open cancellation, immediate
-focus open, and shared `close()` operation. The caller still owns blur
-containment and `Escape` handling: detect when focus leaves the combined
-trigger/popover region or when `Escape` is pressed, then call `close()`.
+Reuse `useHoverPopover` for the open and close delays, pending-transition
+cancellation, immediate focus open, and shared `close()` operation. The hook
+splits its handlers between two roles, and the caller decides which element
+plays each:
+
+- The **trigger** is what opens the popover: wire `onMouseEnter`, `onFocus`,
+  and — when the trigger sits inside a larger region — `cancelPending` on its
+  `onMouseLeave`, so leaving the trigger for the panel drops a pending open
+  without closing.
+- The **region** is the element that contains the trigger *and* the panel: wire
+  `onMouseLeave`, plus `keepOpen` on its `onMouseEnter` and `onFocus`. Without
+  those two, the pointer or `Tab` returning to the panel cannot cancel the
+  pending close and the panel disappears under it. When one element is both
+  trigger and region (`WorkflowStageBadge`, `AgentRow`), the trigger handlers
+  already cover the region role; `keepOpen` is for the split wiring
+  (`IssueRow`, `LinkedPullSummaryRow` with `popoverTrigger="pull-link"`).
+
+The caller still owns blur containment and `Escape` handling: detect when focus
+leaves the combined trigger/popover region or when `Escape` is pressed, then
+call `close()`.
 
 #### Content hierarchy and navigation
 
@@ -390,8 +423,11 @@ pending, and error behavior for operations that may be unavailable or fail.
 
 - Is this supplementary resource context, rather than a menu, modal, or tooltip?
 - Does every activation method expose the same content and dismissal paths?
-- Does hover/focus behavior reuse `useHoverPopover` for its delay, immediate
-  focus open, and `close()`, with caller-owned `Escape` and blur containment?
+- Does hover/focus behavior reuse `useHoverPopover` for its open and close
+  delays, immediate focus open, and `close()`, with caller-owned `Escape` and
+  blur containment?
+- If the trigger sits inside a larger region, does that region wire `keepOpen`
+  so returning to the panel cancels the pending close?
 - Does the header identify the resource and link its ID/name when a detail page
   exists, without duplicating that navigation as a primary button?
 - Are body facts ordered by decision value and actions separated and kept few?
