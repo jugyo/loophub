@@ -164,16 +164,23 @@ export function NotificationStack() {
   if (!isError && unread.length === 0) return null;
 
   return (
+    // Above the z-50 modal layer (diff view, settings, lightbox), because the notifications that
+    // wait on a human — merge ready, over budget, rework limit — arrive while a diff is open and
+    // must stay reachable without closing it (#2510). Still below the z-[100] debug overlay. The
+    // container keeps pointer-events-none so only the cards take clicks and the modal underneath
+    // stays operable.
     <section
       aria-label="Unread notifications"
       aria-live="polite"
       data-debug-component="NotificationStack"
-      className="pointer-events-none fixed right-4 bottom-12 z-40 flex max-h-[calc(100vh-4rem)] w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto"
+      className="pointer-events-none fixed right-4 bottom-12 z-[60] flex max-h-[calc(100vh-4rem)] w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto"
     >
       {unread.length > 0 ? (
         // One button carries both states so toggling keeps it mounted, and a keyboard user who
         // folds the stack stays on the control that unfolds it again.
-        <div className="pointer-events-auto flex justify-end gap-2">
+        // self-end keeps the row only as wide as its buttons: a full-width row would sit on top
+        // of the modal below the stack and swallow clicks in its empty half.
+        <div className="pointer-events-auto flex self-end gap-2">
           <button
             type="button"
             onClick={() => minimize(!minimized)}

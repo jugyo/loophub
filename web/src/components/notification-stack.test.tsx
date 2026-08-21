@@ -233,6 +233,30 @@ describe("NotificationStack", () => {
     );
   });
 
+  it("layers the stack above modal overlays without blocking them", async () => {
+    notifications.value = [makeNotification(1)];
+
+    renderStack();
+
+    const stack = await screen.findByRole("region", {
+      name: "Unread notifications",
+    });
+    // Diff view and the other full-screen overlays sit at z-50, the debug overlay at z-[100].
+    expect(stack.className).toContain("z-[60]");
+    // Only the cards take clicks, so the modal underneath the stack stays operable.
+    expect(stack.className).toContain("pointer-events-none");
+    const card = screen
+      .getByRole("link", { name: /Notification 1/ })
+      .closest("article");
+    expect(card?.className).toContain("pointer-events-auto");
+    // The Minimize / Clear all row shrinks to its buttons instead of spanning the stack width,
+    // so its empty half does not swallow clicks meant for the modal below.
+    const controls = screen
+      .getByRole("button", { name: "Minimize notifications" })
+      .closest("div");
+    expect(controls?.className).toContain("self-end");
+  });
+
   it("renders notification kinds and warning severity with distinct tones", async () => {
     notifications.value = [
       makeNotification(1, { kind: "merge_ready" }),
