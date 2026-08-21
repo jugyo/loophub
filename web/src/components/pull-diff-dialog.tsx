@@ -73,6 +73,7 @@ import {
 import {
   pullFileViewState,
   pullFileViewsByPath,
+  viewedPullFileCount,
   visiblePullFiles,
 } from "@/lib/pull-file-views";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
@@ -297,7 +298,7 @@ export function DiffFileDialog({
     () => visiblePullFiles(filteredFiles, viewsByPath, showViewed),
     [filteredFiles, showViewed, viewsByPath],
   );
-  const hiddenViewedCount = filteredFiles.length - listedFiles.length;
+  const viewedCount = viewedPullFileCount(filteredFiles, viewsByPath);
   const fileViewState = pullFileViewState(file, viewsByPath);
   const [collapsedDirectories, setCollapsedDirectories] = useState<
     ReadonlySet<string>
@@ -402,18 +403,14 @@ export function DiffFileDialog({
                 <Filter className="size-3.5" />
               </Button>
             </div>
-            {showViewed || hiddenViewedCount > 0 ? (
-              <div className="flex border-t px-3 py-1.5">
-                <Switch
-                  label="Show viewed"
-                  hint={
-                    hiddenViewedCount > 0 ? `(${hiddenViewedCount} hidden)` : ""
-                  }
-                  checked={showViewed}
-                  onCheckedChange={setShowViewed}
-                />
-              </div>
-            ) : null}
+            <div className="flex justify-end border-t px-3 py-1.5">
+              <Switch
+                label="Show viewed"
+                hint={`(${viewedCount} viewed)`}
+                checked={showViewed}
+                onCheckedChange={setShowViewed}
+              />
+            </div>
             {showFileFilters ? (
               <div className="grid gap-2 border-t px-3 py-2">
                 <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">

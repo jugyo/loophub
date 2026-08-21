@@ -40,3 +40,13 @@ export function visiblePullFiles(
     (file) => pullFileViewState(file, viewsByPath) !== "viewed",
   );
 }
+
+/** How many files carry a mark that still stands — the count the "Show viewed" hint reports. */
+export function viewedPullFileCount(
+  files: readonly PullFile[],
+  viewsByPath: ReadonlyMap<string, PullFileView>,
+): number {
+  return files.filter(
+    (file) => pullFileViewState(file, viewsByPath) === "viewed",
+  ).length;
+}

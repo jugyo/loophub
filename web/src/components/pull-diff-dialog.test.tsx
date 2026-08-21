@@ -2209,12 +2209,13 @@ describe("DiffFileDialog", () => {
     );
     expect(within(sidebar).getByText("Files changed (1 of 2)")).toBeTruthy();
 
-    expect(within(sidebar).getByText(/Show viewed \(1 hidden\)/)).toBeTruthy();
+    expect(within(sidebar).getByText(/Show viewed \(1 viewed\)/)).toBeTruthy();
     fireEvent.click(
       within(sidebar).getByRole("switch", { name: "Show viewed" }),
     );
     const row = within(sidebar).getByRole("button", { name: "core/b.ts" });
     expect(within(row).getByLabelText("Viewed")).toBeTruthy();
+    expect(within(sidebar).getByText(/Show viewed \(1 viewed\)/)).toBeTruthy();
   });
 
   it("leaves a file marked at an older commit listed, labelled and unticked", async () => {

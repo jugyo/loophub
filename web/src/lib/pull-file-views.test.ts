@@ -3,6 +3,7 @@ import type { PullFile, PullFileView } from "@/api/types";
 import {
   pullFileViewState,
   pullFileViewsByPath,
+  viewedPullFileCount,
   visiblePullFiles,
 } from "@/lib/pull-file-views";
 
@@ -64,5 +65,25 @@ describe("visiblePullFiles", () => {
     expect(
       visiblePullFiles(files, views, true).map((entry) => entry.filename),
     ).toEqual(["viewed.ts", "changed.ts", "fresh.ts"]);
+  });
+});
+
+describe("viewedPullFileCount", () => {
+  const files = [
+    file("viewed.ts", "sha1"),
+    file("changed.ts", "sha2"),
+    file("fresh.ts", "sha3"),
+  ];
+
+  it("counts only the marks that still stand", () => {
+    const views = pullFileViewsByPath([
+      view("viewed.ts", "sha1"),
+      view("changed.ts", "sha1"),
+    ]);
+    expect(viewedPullFileCount(files, views)).toBe(1);
+  });
+
+  it("counts nothing when no file is marked", () => {
+    expect(viewedPullFileCount(files, new Map())).toBe(0);
   });
 });

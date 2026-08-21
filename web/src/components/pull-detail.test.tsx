@@ -364,7 +364,7 @@ describe("PullDetail", () => {
       name: "Show viewed",
     });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(within(section).getByText(/Show viewed \(1 hidden\)/)).toBeTruthy();
+    expect(within(section).getByText(/Show viewed \(1 viewed\)/)).toBeTruthy();
 
     fireEvent.click(toggle);
     const viewedRow = within(section).getByRole("button", {
@@ -372,6 +372,8 @@ describe("PullDetail", () => {
     });
     expect(within(viewedRow).getByLabelText("Viewed")).toBeTruthy();
     expect(toggle.getAttribute("aria-checked")).toBe("true");
+    // The count is about the record, not about what the toggle is holding back, so it stays put.
+    expect(within(section).getByText(/Show viewed \(1 viewed\)/)).toBeTruthy();
   });
 
   it("brings a file back with a label once new commits land on it", async () => {
@@ -394,8 +396,9 @@ describe("PullDetail", () => {
     });
     expect(within(row).getByLabelText("Changed since viewed")).toBeTruthy();
     expect(
-      within(section).queryByRole("switch", { name: "Show viewed" }),
-    ).toBeNull();
+      within(section).getByRole("switch", { name: "Show viewed" }),
+    ).toBeTruthy();
+    expect(within(section).getByText(/Show viewed \(0 viewed\)/)).toBeTruthy();
   });
 
   it("gives the file row's trailing metadata a column of its own", async () => {

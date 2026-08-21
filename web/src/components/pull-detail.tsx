@@ -81,6 +81,7 @@ import {
   type PullFileViewState,
   pullFileViewState,
   pullFileViewsByPath,
+  viewedPullFileCount,
   visiblePullFiles,
 } from "@/lib/pull-file-views";
 import { formatDuration, relativeTime } from "@/lib/time";
@@ -909,7 +910,7 @@ function FilesChanged({
     () => (files ? visiblePullFiles(files, viewsByPath, showViewed) : []),
     [files, showViewed, viewsByPath],
   );
-  const hiddenViewedCount = files ? files.length - visibleFiles.length : 0;
+  const viewedCount = files ? viewedPullFileCount(files, viewsByPath) : 0;
   // Viewed files are meant to be gone by the time the list paints, so hold the section on the
   // record as well as on the diff rather than showing rows that are about to disappear.
   const loading = isLoading || viewsQuery.isPending;
@@ -942,12 +943,13 @@ function FilesChanged({
             className="text-sm font-normal"
           />
         ) : null}
-        {/* The count is how the list admits it is holding files back; without it a short list
-            looks like the whole diff (#2502). */}
-        {showViewed || hiddenViewedCount > 0 ? (
+        {/* The count is the viewed total rather than what is hidden right now, so it reads the
+            same with the toggle on or off (#2502, #2514). */}
+        {files && files.length > 0 ? (
           <Switch
+            className="ml-auto"
             label="Show viewed"
-            hint={hiddenViewedCount > 0 ? `(${hiddenViewedCount} hidden)` : ""}
+            hint={`(${viewedCount} viewed)`}
             checked={showViewed}
             onCheckedChange={setShowViewed}
           />
