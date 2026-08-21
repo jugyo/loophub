@@ -9,25 +9,14 @@ import { expect, test } from "vitest";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 function runWeb(root: string, args: string[]) {
-  return spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      "web/server/index.ts",
-      ...args,
-    ],
-    {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        LOOPHUB_HOME: root,
-      },
-      encoding: "utf8",
+  return spawnSync(process.execPath, ["web/server/index.ts", ...args], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      LOOPHUB_HOME: root,
     },
-  );
+    encoding: "utf8",
+  });
 }
 
 function webLog(root: string): string {

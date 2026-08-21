@@ -175,8 +175,8 @@ export const MIGRATIONS: Migration[] = [
   `,
   ),
 
-  // Persistent Issue/PR substring index (#1400). node:sqlite's bundled SQLite does not include
-  // FTS5, so store one-, two-, and three-character grams in a normal indexed table. Search uses the
+  // Persistent Issue/PR substring index (#1400). FTS5 is not guaranteed to be present in the
+  // bundled SQLite, so store one-, two-, and three-character grams in a normal indexed table. Search uses the
   // longest available grams to narrow candidates, then SQLite verifies the exact substring against
   // issues. The table is created here rather than in the base schema so the backfill below stays
   // attached to its creation.

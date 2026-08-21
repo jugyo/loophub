@@ -10,29 +10,18 @@ let home: string;
 
 // Run the CLI against an isolated HOME; `lh info` is DB-free so no repo/server setup is needed.
 function lh(args: string[], extraEnv: Record<string, string> = {}) {
-  const r = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      CLI,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        LOOPHUB_HOME: home,
-        LOOPHUB_DB: join(home, "loophub.db"),
-        // Drop any inherited overrides so the test controls resolution.
-        LOOPHUB_URL: undefined as unknown as string,
-        LOOPHUB_PORT: undefined as unknown as string,
-        ...extraEnv,
-      },
+  const r = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      LOOPHUB_HOME: home,
+      LOOPHUB_DB: join(home, "loophub.db"),
+      // Drop any inherited overrides so the test controls resolution.
+      LOOPHUB_URL: undefined as unknown as string,
+      LOOPHUB_PORT: undefined as unknown as string,
+      ...extraEnv,
     },
-  );
+  });
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status ?? 0 };
 }
 

@@ -1,27 +1,21 @@
+import type * as SqliteNS from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { dbPath } from "./config.ts";
 import { runMigrations } from "./migrations.ts";
 
-// node:sqlite is an experimental builtin (Node 22.x, behind --experimental-sqlite).
-// Load it through createRequire so bundler-based transformers (Vite/vitest) don't try
-// to statically resolve the `node:sqlite` specifier as a package.
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+// Load bun:sqlite through createRequire so bundler-based transformers (Vite/vitest) don't try
+// to statically resolve the `bun:sqlite` specifier as a package.
+const { Database } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
-type DatabaseSync = SqliteNS.DatabaseSync;
-type StatementSync = SqliteNS.StatementSync;
+type Database = SqliteNS.Database;
 
-// node:sqlite (DatabaseSync) exposes a different surface than bun:sqlite. The rest of
-// core was written against the bun:sqlite shape (db.query(sql).get/all(...), db.run(sql, params[]),
-// db.exec(sql)). This thin adapter re-creates that surface so store.ts et al. stay unchanged.
-//
-// Differences bridged here:
-// - bun caches prepared statements per SQL string -> we cache via a Map.
-// - bun's db.run takes (sql, paramsArray); node:sqlite has no db.run -> prepare(sql).run(...params).
-// - undefined params throw in node:sqlite -> normalize undefined -> null (bun-compatible enough).
+// store.ts et al. are written directly against the bun:sqlite surface (db.query(sql).get/all(...),
+// db.run(sql, params[]), db.exec(sql)), so this class is not an adapter: it only adds what
+// bun:sqlite does not provide on its own — the SQLITE_BUSY write retry below and the nesting-aware
+// transaction helper. Prepared statements are cached by bun:sqlite's own query() cache.
 
 type Param = unknown;
 
@@ -45,14 +39,16 @@ const SQLITE_BUSY = 5;
 
 function isBusyError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const e = err as { errcode?: number; message?: string };
+  // bun:sqlite raises SQLiteError with a numeric `errno` and a string `code`.
+  const e = err as { errno?: number; code?: string; message?: string };
   return (
-    e.errcode === SQLITE_BUSY ||
+    e.errno === SQLITE_BUSY ||
+    e.code === "SQLITE_BUSY" ||
     /database is locked|SQLITE_BUSY/i.test(e.message ?? "")
   );
 }
 
-// Synchronous sleep (the node:sqlite surface is fully synchronous, so we cannot await).
+// Synchronous sleep (the bun:sqlite surface is fully synchronous, so we cannot await).
 // Atomics.wait blocks the thread without busy-spinning the CPU.
 function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -74,7 +70,7 @@ function normalize(params: Param[]): Param[] {
   return params.map((p) => (p === undefined ? null : p));
 }
 
-interface BunStyleQuery {
+interface Query {
   get(...params: Param[]): unknown;
   all(...params: Param[]): unknown[];
   run(...params: Param[]): void;
@@ -101,13 +97,12 @@ function isThenable(value: unknown): boolean {
 }
 
 export class Db {
-  #raw: DatabaseSync;
-  #cache = new Map<string, StatementSync>();
+  #raw: Database;
   // Depth of the transaction this connection owns; 0 means no transaction is open.
   #depth = 0;
 
   constructor(path: string) {
-    this.#raw = new DatabaseSync(path);
+    this.#raw = new Database(path, { create: true });
   }
 
   /** Whether this connection is currently inside a synchronous command transaction. */
@@ -115,21 +110,12 @@ export class Db {
     return this.#depth > 0;
   }
 
-  #prepare(sql: string): StatementSync {
-    let stmt = this.#cache.get(sql);
-    if (!stmt) {
-      stmt = this.#raw.prepare(sql);
-      this.#cache.set(sql, stmt);
-    }
-    return stmt;
-  }
-
   exec(sql: string): void {
     withWriteRetry(() => this.#raw.exec(sql));
   }
 
-  query(sql: string): BunStyleQuery {
-    const stmt = this.#prepare(sql);
+  query(sql: string): Query {
+    const stmt = this.#raw.query(sql);
     return {
       get: (...params: Param[]) =>
         stmt.get(...(normalize(params) as never[])) ?? null,
@@ -141,9 +127,7 @@ export class Db {
   }
 
   run(sql: string, params: Param[] = []): void {
-    withWriteRetry(() =>
-      this.#prepare(sql).run(...(normalize(params) as never[])),
-    );
+    withWriteRetry(() => this.#raw.run(sql, normalize(params) as never[]));
   }
 
   /**
@@ -471,7 +455,7 @@ CREATE INDEX IF NOT EXISTS idx_events_repo_cost_stopped_number_session_id
 -- eventsForWorkflowRun in store/events.ts). The first of those runs once per second in the worker's
 -- event tail and, without this index, re-scanned every event after each run's cursor -- a cost that
 -- grows with both the events table and the number of recorded runs, and that blocks the whole worker
--- event loop because node:sqlite is synchronous. Unlike the two indexes above this one covers a
+-- event loop because bun:sqlite is synchronous. Unlike the two indexes above this one covers a
 -- whole type family rather than a single literal type, so its partial condition repeats the
 -- callers' GLOB pair verbatim (SQLite matches partial indexes syntactically, so the query text has
 -- to keep both GLOBs in that exact form). The CAST is load-bearing too: run ids are compared

@@ -1,8 +1,8 @@
+import type * as SqliteNS from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { expect, test } from "vitest";
 import {
   aggregateUsage,
@@ -18,8 +18,8 @@ import {
   priceForModel,
 } from "./session-usage.ts";
 
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+const { Database } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
 
 function writeOpencodeFixtureDb(
@@ -51,7 +51,7 @@ function writeOpencodeFixtureDb(
     }>;
   }>,
 ) {
-  const db = new DatabaseSync(dbPath);
+  const db = new Database(dbPath);
   db.exec(`
     CREATE TABLE session (
       id TEXT PRIMARY KEY,

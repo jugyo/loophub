@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
+#!/usr/bin/env bun
 import { workerLog } from "./logger.ts";
 // `lh-watcher-github` owns observations that call GitHub APIs. Local-git and agent observations
 // live in separate watcher processes so their cadence and failures cannot block one another.

@@ -9,23 +9,11 @@ process.env.LOOPHUB_HOME = home;
 process.env.LOOPHUB_DB = join(home, "loophub.db");
 
 function runEvents(args: string[]) {
-  return spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      "cli/index.ts",
-      "events",
-      ...args,
-    ],
-    {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      env: process.env,
-    },
-  );
+  return spawnSync(process.execPath, ["cli/index.ts", "events", ...args], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: process.env,
+  });
 }
 
 beforeAll(async () => {

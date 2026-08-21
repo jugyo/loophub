@@ -78,15 +78,20 @@ const workerLimits = {
   maxWorkers: 4,
 };
 
+// See vitest.keepalive.ts: without it the Bun-hosted runner exits 0 mid-run.
+const globalSetup = ["./vitest.keepalive.ts"];
+
 export const fastTestConfig = {
   include: allTestFiles,
   exclude: gitIntegrationTestFiles,
+  globalSetup,
   ...workerLimits,
 };
 
 export const integrationTestConfig = {
   include: gitIntegrationTestFiles,
   exclude: [],
+  globalSetup,
   ...workerLimits,
 };
 
@@ -95,5 +100,6 @@ export const fullTestConfig = {
   // The include list is exhaustive; clear Vitest's default config exclusion so
   // the co-located vitest.config.test.ts contract runs with the suite.
   exclude: [],
+  globalSetup,
   ...workerLimits,
 };

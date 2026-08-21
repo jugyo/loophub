@@ -8,25 +8,14 @@ const CLI = join(import.meta.dirname, "index.ts");
 let home: string;
 
 function lh(args: string[]) {
-  const result = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      CLI,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        LOOPHUB_HOME: home,
-        LOOPHUB_DB: join(home, "loophub.db"),
-      },
+  const result = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      LOOPHUB_HOME: home,
+      LOOPHUB_DB: join(home, "loophub.db"),
     },
-  );
+  });
   return {
     stdout: result.stdout,
     stderr: result.stderr,

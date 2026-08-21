@@ -12,20 +12,15 @@ let home: string;
 let repoPath: string;
 
 function lh(args: string[], tty = false) {
-  const nodeArgs = [
-    "--experimental-sqlite",
-    "--disable-warning=ExperimentalWarning",
-    "--import",
-    "tsx",
-    ...(tty
-      ? [
-          "--input-type=module",
-          "--eval",
-          `Object.defineProperty(process.stderr, "isTTY", { value: true }); process.argv = ${JSON.stringify([process.execPath, CLI, ...args])}; await import(${JSON.stringify(pathToFileURL(CLI).href)});`,
-        ]
-      : [CLI, ...args]),
-  ];
-  const result = spawnSync(process.execPath, nodeArgs, {
+  // `tty` fakes an interactive stderr so the confirmation prompt path is exercised: evaluate a
+  // tiny module that stubs isTTY, restores the argv the CLI expects, and then imports it.
+  const runArgs = tty
+    ? [
+        "--eval",
+        `Object.defineProperty(process.stderr, "isTTY", { value: true }); process.argv = ${JSON.stringify([process.execPath, CLI, ...args])}; await import(${JSON.stringify(pathToFileURL(CLI).href)});`,
+      ]
+    : [CLI, ...args];
+  const result = spawnSync(process.execPath, runArgs, {
     encoding: "utf8",
     env: {
       ...process.env,

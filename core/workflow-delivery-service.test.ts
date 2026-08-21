@@ -6,7 +6,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -17,7 +16,6 @@ const BIN_PATH = mkdtempSync(join(tmpdir(), "lh-workflow-delivery-bin-"));
 const HERDR_LOG = join(HOME, "herdr.log");
 const ORIGINAL_PATH = process.env.PATH;
 const CLI = join(import.meta.dirname, "../cli/index.ts");
-const TSX = createRequire(import.meta.url).resolve("tsx");
 
 process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
@@ -35,24 +33,13 @@ function git(args: string[]): void {
 }
 
 function runCli(args: string[], parentSession: string) {
-  const result = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      TSX,
-      CLI,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        LOOPHUB_SESSION_ID: parentSession,
-      },
+  const result = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      LOOPHUB_SESSION_ID: parentSession,
     },
-  );
+  });
   return {
     stdout: result.stdout,
     stderr: result.stderr,

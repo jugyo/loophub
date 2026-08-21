@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
+#!/usr/bin/env bun
 // `lh-web` entry point: start the lh-web HTTP process. Runs only while in use (no daemon).
 //   lh-web [--port <n>] [--debug]
 //   (port: default 8730 or LOOPHUB_PORT)
@@ -7,6 +7,7 @@
 // restart. Resident maintenance loops run in lh-worker, including Notification Center generation (#118): without
 // lh-worker running, lh-web alone will not produce new notifications.
 
+import { isCompiledBinary } from "../../core/self-exec.ts";
 import { configureSlowOperationLogging } from "../../core/slow-operation.ts";
 import { LH_WEB_HELP, type LhWebArgs, parseLhWebArgs } from "./args.ts";
 import { buildSpa } from "./build.ts";
@@ -49,9 +50,12 @@ const server = createLhWebServer(
 const host = process.env.LOOPHUB_HOST ?? "127.0.0.1";
 
 server.on("error", (error) => {
-  log.error(
-    `lh-web: server error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-  );
+  // The errno code (EADDRINUSE etc.) is the part an operator acts on, and it is not always part of
+  // the message text, so name it explicitly rather than relying on the stack alone.
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  const detail =
+    error instanceof Error ? (error.stack ?? error.message) : String(error);
+  log.error(`lh-web: server error: ${code ? `${code}: ` : ""}${detail}`);
   process.exit(1);
 });
 
@@ -62,20 +66,28 @@ server.listen(port, host, () => {
   log.info(`lh-web listening on ${url}  (API + UI)`);
 });
 
-try {
-  const builtFresh = await buildSpa();
+// The compiled binary ships without Vite or the SPA sources, so it serves the dist it was shipped
+// with (core/self-exec.ts: beside the executable, or LOOPHUB_WEB_DIST). handleStatic reports a
+// missing dist per request, which is the visible error an operator needs.
+if (isCompiledBinary()) {
   built = true;
-  log.info(
-    builtFresh
-      ? "lh-web: SPA build ready"
-      : "lh-web: SPA build skipped (dist up to date)",
-  );
-} catch (err) {
-  log.error(
-    "lh-web: failed to build the SPA. Are web deps installed (npm --prefix web install)?",
-  );
-  log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
-  process.exit(1);
+  log.info("lh-web: serving the prebuilt SPA (no build step in the binary)");
+} else {
+  try {
+    const builtFresh = await buildSpa();
+    built = true;
+    log.info(
+      builtFresh
+        ? "lh-web: SPA build ready"
+        : "lh-web: SPA build skipped (dist up to date)",
+    );
+  } catch (err) {
+    log.error(
+      "lh-web: failed to build the SPA. Are web deps installed (npm --prefix web install)?",
+    );
+    log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
+    process.exit(1);
+  }
 }
 
 let isShuttingDown = false;

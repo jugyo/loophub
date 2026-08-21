@@ -13,8 +13,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { dirname, join, normalize } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, normalize } from "node:path";
 import {
   blobPath,
   getAttachment,
@@ -22,6 +21,7 @@ import {
   saveAttachment,
 } from "../../core/attachments.ts";
 import { isServiceError } from "../../core/errors.ts";
+import { webDistDir } from "../../core/self-exec.ts";
 import { stringifyJsonWithinLimit } from "./bounded-json.ts";
 import { log } from "./logger.ts";
 import { isAllowedOrigin, isLoopbackHost } from "./net.ts";
@@ -33,10 +33,8 @@ import {
   responseTooLarge,
 } from "./rpc.ts";
 
-// Built SPA assets. Defaults to web/dist; override with LOOPHUB_WEB_DIST.
-const DIST_DIR =
-  process.env.LOOPHUB_WEB_DIST ??
-  join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+// Built SPA assets: web/dist in this checkout, or the directory shipped beside the binary.
+const DIST_DIR = webDistDir();
 export const MAX_RPC_REQUEST_BYTES = 1024 * 1024;
 export const MAX_RPC_RESPONSE_BYTES = 10 * 1024 * 1024;
 type RpcLogger = (message: string) => void;

@@ -1,9 +1,9 @@
+import type * as SqliteNS from "bun:sqlite";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { afterAll, expect, test } from "vitest";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-search-migrate-"));
@@ -14,10 +14,10 @@ afterAll(() => {
 });
 
 test("migration backfills existing issues and pull requests into search", () => {
-  const { DatabaseSync } = createRequire(import.meta.url)(
-    "node:sqlite",
+  const { Database } = createRequire(import.meta.url)(
+    "bun:sqlite",
   ) as typeof SqliteNS;
-  const legacy = new DatabaseSync(DB);
+  const legacy = new Database(DB);
   legacy.exec(`
     CREATE TABLE repos (
       id INTEGER PRIMARY KEY,
@@ -54,10 +54,6 @@ test("migration backfills existing issues and pull requests into search", () => 
   const result = spawnSync(
     process.execPath,
     [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
       "--eval",
       `const { search } = await import("./core/service.ts");
        process.stdout.write(JSON.stringify(search.query("me/legacy", "indexed")));`,

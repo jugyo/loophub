@@ -11,6 +11,8 @@ export default defineConfig({
     environment: "happy-dom",
     globals: true,
     setupFiles: ["./test-setup.ts"],
+    // Shared with the root suites: the Bun-hosted runner exits 0 mid-run without it.
+    globalSetup: ["../vitest.keepalive.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
     // These are CPU-bound happy-dom render tests. Left uncapped, Vitest spawns one
     // worker per core minus one, saturating every core at once and spiking CPU on

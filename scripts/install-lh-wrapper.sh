@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install ~/.local/bin/lh — runs the LoopHub CLI source via Node + tsx (no build).
+# Install ~/.local/bin/lh — runs the LoopHub CLI source with Bun (no build).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,13 +10,10 @@ mkdir -p "$BIN_DIR"
 
 cat > "$WRAPPER" <<EOF
 #!/bin/sh
-# LoopHub CLI wrapper — runs source via Node + tsx (no build).
+# LoopHub CLI wrapper — runs source with Bun (no build).
 # Re-run: ${ROOT}/scripts/install-lh-wrapper.sh
 LOOPHUB_ROOT="\${LOOPHUB_ROOT:-${ROOT}}"
-# node:sqlite is experimental on Node 22.x; the flag is required at startup. tsx forwards
-# NODE_OPTIONS to the node process it runs the CLI in.
-export NODE_OPTIONS="--experimental-sqlite --disable-warning=ExperimentalWarning\${NODE_OPTIONS:+ \$NODE_OPTIONS}"
-exec "\$LOOPHUB_ROOT/node_modules/.bin/tsx" "\$LOOPHUB_ROOT/cli/index.ts" "\$@"
+exec bun "\$LOOPHUB_ROOT/cli/index.ts" "\$@"
 EOF
 
 chmod +x "$WRAPPER"

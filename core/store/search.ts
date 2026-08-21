@@ -48,7 +48,7 @@ export function indexIssueSearch(
   }
 }
 
-// Relevance scoring (no FTS5 on node:sqlite): the gram index narrows candidates, then we score
+// Relevance scoring (no FTS5 assumed): the gram index narrows candidates, then we score
 // each match in JS. A match at a word boundary or as a whole word ranks above one buried inside a
 // longer word (`crit` beats `critical`), and a title match outweighs the same match in the body.
 // Like GitHub's best-match, recency is not folded into the score: newer issues only break ties

@@ -9,25 +9,14 @@ const HOME = mkdtempSync(join(tmpdir(), "lh-workflow-scope-home-"));
 const REPO_PATH = mkdtempSync(join(tmpdir(), "lh-workflow-scope-repo-"));
 
 function lh(args: string[]) {
-  const result = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      CLI,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        LOOPHUB_HOME: HOME,
-        LOOPHUB_DB: join(HOME, "loophub.db"),
-      },
+  const result = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      LOOPHUB_HOME: HOME,
+      LOOPHUB_DB: join(HOME, "loophub.db"),
     },
-  );
+  });
   return {
     stdout: result.stdout,
     stderr: result.stderr,

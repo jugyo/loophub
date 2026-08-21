@@ -11,26 +11,15 @@ let home: string;
 let loopHubHome: string;
 
 function lh(args: string[]) {
-  const r = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      CLI,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        HOME: home,
-        LOOPHUB_HOME: loopHubHome,
-        LOOPHUB_DB: join(loopHubHome, "loophub.db"),
-      },
+  const r = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: home,
+      LOOPHUB_HOME: loopHubHome,
+      LOOPHUB_DB: join(loopHubHome, "loophub.db"),
     },
-  );
+  });
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status ?? 0 };
 }
 

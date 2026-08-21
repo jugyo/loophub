@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
+#!/usr/bin/env bun
 // `lh-watcher-git` observes local git state and records events in the shared database.
 import { worktrees } from "../core/service.ts";
 import {

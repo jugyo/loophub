@@ -76,14 +76,12 @@ export function nextHandoffSeq(input: {
   return (row?.max ?? 0) + 1;
 }
 
-// Detect a UNIQUE-constraint failure from node:sqlite (errcode SQLITE_CONSTRAINT_UNIQUE = 2067,
+// Detect a UNIQUE-constraint failure from bun:sqlite (errno SQLITE_CONSTRAINT_UNIQUE = 2067,
 // or the message text), distinct from SQLITE_BUSY. Used to retry a raced seq below.
 function isUniqueViolation(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const e = err as { errcode?: number; message?: string };
-  return (
-    e.errcode === 2067 || /UNIQUE constraint failed/i.test(e.message ?? "")
-  );
+  const e = err as { errno?: number; message?: string };
+  return e.errno === 2067 || /UNIQUE constraint failed/i.test(e.message ?? "");
 }
 
 export function createHandoff(input: HandoffInput): HandoffRow {

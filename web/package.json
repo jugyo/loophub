@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && vite build",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "bun node_modules/vitest/vitest.mjs run",
+    "test:watch": "bun node_modules/vitest/vitest.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dropdown-menu": "^2.1.20",
@@ -39,7 +39,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
-    "happy-dom": "^15.7.4",
+    "happy-dom": "^15.11.7",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2",

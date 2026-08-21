@@ -53,7 +53,7 @@ LoopHub 自身はビルド不要の TypeScript だが、**いくつかの外部 
 
 | ツール | 用途 | 入手方法 |
 |---|---|---|
-| **Node.js >= 22.12.0** | LoopHub 本体（CLI / Web / worker）の実行 | [nodejs.org](https://nodejs.org) |
+| **Bun >= 1.2** | LoopHub 本体（CLI / Web / worker）の実行 | `brew install oven-sh/bun/bun` — [bun.sh](https://bun.sh) |
 | **git** | リポジトリ登録、worktree、branch、diff、merge のすべて | OS の標準的な方法で |
 | **herdr** | エージェントを起動・配置するターミナルマルチプレクサ。`lh workflow start` はこれを直接呼ぶ | `brew install herdr` — [herdr.dev](https://herdr.dev) |
 | **コーディングエージェントの CLI（いずれか 1 つ以上）** | 実際にコードを書く主体 | 例: `claude` / `codex` / `grok` / `opencode` |
@@ -76,6 +76,15 @@ npm --prefix web install # web/ の依存も入れる（root の postinstall で
 ```sh
 npm link
 lh info # baseUrl / home / dbPath が出れば OK
+```
+
+あるいは単一の実行ファイルをビルドして PATH に置いてもよい。`lh`・`lh-web`・各 worker をすべて
+含むので、配置先のマシンには Bun も Node も `node_modules` も要らない。
+
+```sh
+npm run build:binary # dist/loophub と、ビルド済み SPA の dist/web/dist
+dist/loophub --roles # 起動できるプロセスの一覧
+dist/loophub lh info
 ```
 
 **3. 管理したいリポジトリを登録する**

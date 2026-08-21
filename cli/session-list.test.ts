@@ -1,39 +1,28 @@
+import type * as SqliteNS from "bun:sqlite";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { afterAll, expect, test } from "vitest";
 
 const home = mkdtempSync(join(tmpdir(), "lh-session-list-"));
 const cli = join(import.meta.dirname, "index.ts");
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+const { Database } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
 
 afterAll(() => rmSync(home, { recursive: true, force: true }));
 
 function lh(args: string[]) {
-  return spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      cli,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        LOOPHUB_HOME: home,
-        LOOPHUB_DB: join(home, "loophub.db"),
-      },
+  return spawnSync(process.execPath, [cli, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      LOOPHUB_HOME: home,
+      LOOPHUB_DB: join(home, "loophub.db"),
     },
-  );
+  });
 }
 
 test("session list only infers Claude Code for historical build agents", () => {
@@ -56,7 +45,7 @@ test("session list only infers Claude Code for historical build agents", () => {
     expect(registered.status, registered.stderr).toBe(0);
   }
 
-  const db = new DatabaseSync(join(home, "loophub.db"));
+  const db = new Database(join(home, "loophub.db"));
   const insertUsage = db.prepare(
     `INSERT INTO session_usage
      (session_id, model, input_tokens, cache_creation_input_tokens,

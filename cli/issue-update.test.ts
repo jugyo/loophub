@@ -1,13 +1,13 @@
+import type * as SqliteNS from "bun:sqlite";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+const { Database } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
 
 const CLI = join(import.meta.dirname, "index.ts");
@@ -27,26 +27,15 @@ function lh(args: string[], env: Record<string, string> = {}) {
     LOOPHUB_PARENT_ISSUE: _parentIssue,
     ...baseEnv
   } = process.env;
-  const r = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      CLI,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...baseEnv,
-        LOOPHUB_HOME: home,
-        LOOPHUB_DB: join(home, "loophub.db"),
-        ...env,
-      },
+  const r = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: "utf8",
+    env: {
+      ...baseEnv,
+      LOOPHUB_HOME: home,
+      LOOPHUB_DB: join(home, "loophub.db"),
+      ...env,
     },
-  );
+  });
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status ?? 0 };
 }
 
@@ -86,8 +75,8 @@ function createIssueWithEnv(
   return Number(match[1]);
 }
 
-function openDb(): SqliteNS.DatabaseSync {
-  return new DatabaseSync(join(home, "loophub.db"));
+function openDb(): SqliteNS.Database {
+  return new Database(join(home, "loophub.db"));
 }
 
 beforeAll(() => {

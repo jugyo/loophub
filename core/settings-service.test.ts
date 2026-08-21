@@ -61,10 +61,6 @@ test("settings.update persists workflowContractLanguage in the database", () => 
   const restarted = spawnSync(
     process.execPath,
     [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
       "--input-type=module",
       "--eval",
       'const { settings } = await import("./core/service.ts"); process.stdout.write(settings.get().workflowContractLanguage);',
@@ -413,10 +409,6 @@ test("settings.update persists theme in the database", () => {
   const restarted = spawnSync(
     process.execPath,
     [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
       "--input-type=module",
       "--eval",
       'const { settings } = await import("./core/service.ts"); process.stdout.write(settings.get().theme ?? "null");',

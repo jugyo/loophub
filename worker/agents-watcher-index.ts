@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
+#!/usr/bin/env bun
 import { workerLog } from "./logger.ts";
 // `lh-watcher-agents` owns observations obtained from the agent runtime. It persists snapshots and
 // usage facts; agent control remains outside this observer process.

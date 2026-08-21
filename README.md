@@ -46,7 +46,7 @@ In particular, **without herdr you cannot start a workflow** — the core featur
 
 | Tool | Role | How to get it |
 |---|---|---|
-| **Node.js >= 22.12.0** | Run LoopHub (CLI / Web / worker) | [nodejs.org](https://nodejs.org) |
+| **Bun >= 1.2** | Run LoopHub (CLI / Web / worker) | `brew install oven-sh/bun/bun` — [bun.sh](https://bun.sh) |
 | **git** | Repo registration, worktrees, branches, diffs, merges | Your OS package manager or installer |
 | **herdr** | Terminal multiplexer that launches and places agents. `lh workflow start` calls it directly | `brew install herdr` — [herdr.dev](https://herdr.dev) |
 | **A coding-agent CLI (at least one)** | The process that writes code | e.g. `claude`, `codex`, `grok`, `opencode` |
@@ -69,6 +69,15 @@ npm --prefix web install # also run by the root postinstall; explicit here so it
 ```sh
 npm link
 lh info # OK if baseUrl / home / dbPath print
+```
+
+Alternatively, compile the single self-contained executable and put that on your PATH — it carries
+`lh`, `lh-web` and every worker, and needs no Bun, Node, or `node_modules` on the target machine:
+
+```sh
+npm run build:binary # dist/loophub, with the built SPA at dist/web/dist
+dist/loophub --roles # the processes it can run
+dist/loophub lh info
 ```
 
 **3. Register the repository you want to manage**

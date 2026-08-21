@@ -10,44 +10,18 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
+import { traceGitCommands } from "./git-trace-test-helper.ts";
 
-// Counts the fan-out's git-facing calls. Wrapping the exports pull-status-cache.ts imports (rather
-// than the subprocess) keeps every command real while making "did this respawn?" observable.
-const calls = vi.hoisted(() => ({
-  diffStat: 0,
-  mergePreview: 0,
-  hasEffectiveDiff: 0,
-  commitsAhead: 0,
-  revParse: 0,
-}));
+// The fan-out's two expensive halves, named by the git command each one spawns. Counting the real
+// subprocesses through GIT_TRACE2 (rather than wrapping git.ts) keeps every command real while
+// making "did this respawn?" observable.
+const MERGE_PREVIEW = "merge-tree";
+const HAS_EFFECTIVE_DIFF = "diff --name-only";
 
-vi.mock("./git.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./git.ts")>();
-  return {
-    ...actual,
-    mergePreview: (...args: Parameters<typeof actual.mergePreview>) => {
-      calls.mergePreview++;
-      return actual.mergePreview(...args);
-    },
-    hasEffectiveDiff: (...args: Parameters<typeof actual.hasEffectiveDiff>) => {
-      calls.hasEffectiveDiff++;
-      return actual.hasEffectiveDiff(...args);
-    },
-    diffStat: (...args: Parameters<typeof actual.diffStat>) => {
-      calls.diffStat++;
-      return actual.diffStat(...args);
-    },
-    commitsAhead: (...args: Parameters<typeof actual.commitsAhead>) => {
-      calls.commitsAhead++;
-      return actual.commitsAhead(...args);
-    },
-    revParse: (...args: Parameters<typeof actual.revParse>) => {
-      calls.revParse++;
-      return actual.revParse(...args);
-    },
-  };
-});
+function spawned(commands: string[], prefix: string): number {
+  return commands.filter((command) => command.startsWith(prefix)).length;
+}
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-status-fanout-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -108,11 +82,6 @@ beforeAll(async () => {
 
 beforeEach(() => {
   C.clearPullShaStatusCache();
-  calls.diffStat = 0;
-  calls.mergePreview = 0;
-  calls.hasEffectiveDiff = 0;
-  calls.commitsAhead = 0;
-  calls.revParse = 0;
 });
 
 afterAll(() => {
@@ -133,34 +102,41 @@ async function shas(): Promise<[string, string]> {
 test("one SHA pair runs the fan-out once, however many callers ask", async () => {
   const [base, head] = await shas();
 
-  const concurrent = await Promise.all([
-    C.pullShaStatus(repoPath, base, head),
-    C.pullShaStatus(repoPath, base, head),
-  ]);
-  const later = await C.pullShaStatus(repoPath, base, head);
+  const { result, commands } = await traceGitCommands(async () => {
+    const concurrent = await Promise.all([
+      C.pullShaStatus(repoPath, base, head),
+      C.pullShaStatus(repoPath, base, head),
+    ]);
+    return { concurrent, later: await C.pullShaStatus(repoPath, base, head) };
+  });
+  const { concurrent, later } = result;
 
   expect(concurrent[0]).toEqual(concurrent[1]);
   expect(later).toEqual(concurrent[0]);
   expect(later.hasEffectiveDiff).toBe(true);
   expect(later.changedFiles).toBe(1);
-  expect(calls.mergePreview).toBe(1);
-  expect(calls.hasEffectiveDiff).toBe(1);
+  expect(spawned(commands, MERGE_PREVIEW)).toBe(1);
+  expect(spawned(commands, HAS_EFFECTIVE_DIFF)).toBe(1);
 });
 
 // Acceptance: the merge-ready sweep behind the notification badge — which runs over every open PR
 // on every read — reuses that same entry instead of calling git with branch names.
 test("the sweep's mergeable state reuses the entry the SHA pair already has", async () => {
   const [base, head] = await shas();
-  await C.pullShaStatus(repoPath, base, head);
-  expect(calls.mergePreview).toBe(1);
+  const first = await traceGitCommands(() =>
+    C.pullShaStatus(repoPath, base, head),
+  );
+  expect(spawned(first.commands, MERGE_PREVIEW)).toBe(1);
 
   const pull = S.openPulls().find((row) => row.head_ref === "feature")!;
-  expect(await M.currentMergeableState(pull)).toBe("blocked");
-  expect(await M.currentMergeableState(pull)).toBe("blocked");
+  const reuse = await traceGitCommands(async () => {
+    expect(await M.currentMergeableState(pull)).toBe("blocked");
+    expect(await M.currentMergeableState(pull)).toBe("blocked");
+  });
 
   // Still the one fan-out from above: the sweep resolved the refs and hit the same key.
-  expect(calls.mergePreview).toBe(1);
-  expect(calls.hasEffectiveDiff).toBe(1);
+  expect(spawned(reuse.commands, MERGE_PREVIEW)).toBe(0);
+  expect(spawned(reuse.commands, HAS_EFFECTIVE_DIFF)).toBe(0);
 });
 
 test("the pull sweep persists the SHA projection and the issue list reads it", async () => {
@@ -203,11 +179,11 @@ test("the pull sweep persists the SHA projection and the issue list reads it", a
     commitsAhead: 6,
     baseCommitsBehind: 5,
   });
-  calls.mergePreview = 0;
-  calls.hasEffectiveDiff = 0;
   const row = S.getIssueById(linkedIssueId)!;
   const repo = S.getRepoById(pull.repo_id)!;
-  const out = await Z.issueListItemJSON(row, repo);
+  const { result: out, commands } = await traceGitCommands(() =>
+    Z.issueListItemJSON(row, repo),
+  );
   expect(out.linked_pull_request).toMatchObject({
     mergeable_state: "blocked",
     additions: 9,
@@ -216,8 +192,8 @@ test("the pull sweep persists the SHA projection and the issue list reads it", a
     commits_ahead: 6,
     base_commits_behind: 5,
   });
-  expect(calls.mergePreview).toBe(0);
-  expect(calls.hasEffectiveDiff).toBe(0);
+  expect(spawned(commands, MERGE_PREVIEW)).toBe(0);
+  expect(spawned(commands, HAS_EFFECTIVE_DIFF)).toBe(0);
 });
 
 test("an unchanged pull sweep reuses the current projection", async () => {
@@ -324,7 +300,6 @@ test("a projection reapplies the current review gate", async () => {
 test("a moved head is a new key and reports the new truth", async () => {
   const pull = S.openPulls().find((row) => row.head_ref === "feature")!;
   expect(await M.currentMergeableState(pull)).toBe("blocked");
-  const before = calls.mergePreview;
 
   git(["checkout", "-q", "feature"]);
   git(["rm", "-q", "b.txt"]);
@@ -332,8 +307,9 @@ test("a moved head is a new key and reports the new truth", async () => {
   git(["checkout", "-q", "main"]);
 
   // No effective diff left, so the PR has nothing to merge.
-  expect(await M.currentMergeableState(pull)).toBe("no_commits");
-  expect(calls.mergePreview).toBeGreaterThan(before);
+  const moved = await traceGitCommands(() => M.currentMergeableState(pull));
+  expect(moved.result).toBe("no_commits");
+  expect(spawned(moved.commands, MERGE_PREVIEW)).toBeGreaterThan(0);
 
   await W.sweepPullUpdates();
   const row = S.getIssueById(linkedIssueId)!;

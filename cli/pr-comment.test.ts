@@ -12,25 +12,14 @@ let repoPath: string;
 
 // Run the CLI against an isolated HOME/DB; no server — the CLI talks to core directly.
 function lh(args: string[]) {
-  const r = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      CLI,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        LOOPHUB_HOME: home,
-        LOOPHUB_DB: join(home, "loophub.db"),
-      },
+  const r = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      LOOPHUB_HOME: home,
+      LOOPHUB_DB: join(home, "loophub.db"),
     },
-  );
+  });
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status ?? 0 };
 }
 

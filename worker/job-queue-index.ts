@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
+#!/usr/bin/env bun
 import { spawn } from "node:child_process";
 import { jobs } from "../core/service.ts";
 // `lh-job-queue` is the independent lifecycle for externally effectful jobs. The shared jobs table

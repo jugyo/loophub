@@ -182,10 +182,6 @@ describe("dev.openPr", () => {
     const created = spawnSync(
       process.execPath,
       [
-        "--experimental-sqlite",
-        "--disable-warning=ExperimentalWarning",
-        "--import",
-        "tsx",
         CLI,
         "issue",
         "create",
@@ -222,10 +218,6 @@ describe("dev.openPr", () => {
     const created = spawnSync(
       process.execPath,
       [
-        "--experimental-sqlite",
-        "--disable-warning=ExperimentalWarning",
-        "--import",
-        "tsx",
         CLI,
         "issue",
         "create",

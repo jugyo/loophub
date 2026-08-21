@@ -17,19 +17,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # The declared floor in package.json `engines`. Bun is the runtime for
+          # `lh`, `lh-web`, the workers and the test runner.
+          bun-version: 1.3.14
+      # npm still owns dependency installation; postinstall installs web/ too.
       - uses: actions/setup-node@v4
         with:
-          # The declared floor in package.json `engines`. node:sqlite is
-          # experimental here, so every script that touches the DB passes
-          # NODE_OPTIONS='--experimental-sqlite ...' itself.
           node-version: 22.12.0
           cache: npm
           cache-dependency-path: |
             package-lock.json
             web/package-lock.json
-      # postinstall installs web/ dependencies too.
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
       - run: npm run test:integration
+      - run: npm run build:binary
+      - run: dist/loophub lh info

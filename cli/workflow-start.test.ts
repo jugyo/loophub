@@ -16,7 +16,6 @@ import { herdrSessionName } from "../core/terminal/terminal-launch.ts";
 
 const CLI = join(import.meta.dirname, "index.ts");
 const REQUIRE = createRequire(import.meta.url);
-const TSX = REQUIRE.resolve("tsx");
 const HOME = mkdtempSync(join(tmpdir(), "lh-workflow-start-home-"));
 const REPO_PATH = realpathSync(
   mkdtempSync(join(tmpdir(), "lh-workflow-start-repo-")),
@@ -40,27 +39,16 @@ const {
 } = process.env;
 
 function run(args: string[], env: Record<string, string> = {}, cwd?: string) {
-  const result = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      TSX,
-      CLI,
-      ...args,
-    ],
-    {
-      cwd,
-      encoding: "utf8",
-      env: {
-        ...BASE_ENV,
-        LOOPHUB_HOME: HOME,
-        LOOPHUB_DB: join(HOME, "loophub.db"),
-        ...env,
-      },
+  const result = spawnSync(process.execPath, [CLI, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...BASE_ENV,
+      LOOPHUB_HOME: HOME,
+      LOOPHUB_DB: join(HOME, "loophub.db"),
+      ...env,
     },
-  );
+  });
   return {
     stdout: result.stdout,
     stderr: result.stderr,
@@ -506,10 +494,8 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
   expect(prView.exitCode, prView.stderr).toBe(0);
   expect(JSON.parse(prView.stdout).comment_list).toHaveLength(1);
 
-  const { DatabaseSync } = REQUIRE(
-    "node:sqlite",
-  ) as typeof import("node:sqlite");
-  const db = new DatabaseSync(join(HOME, "loophub.db"));
+  const { Database } = REQUIRE("bun:sqlite") as typeof import("bun:sqlite");
+  const db = new Database(join(HOME, "loophub.db"));
   db.exec(`
     CREATE TRIGGER fail_escalation_comment
     BEFORE INSERT ON comments
@@ -1218,10 +1204,8 @@ test("a stale Verify cleanup failure records and releases the unspawned launch",
   expect(started.exitCode, started.stderr).toBe(0);
   const body = JSON.parse(started.stdout);
 
-  const { DatabaseSync } = REQUIRE(
-    "node:sqlite",
-  ) as typeof import("node:sqlite");
-  const db = new DatabaseSync(join(HOME, "loophub.db"));
+  const { Database } = REQUIRE("bun:sqlite") as typeof import("bun:sqlite");
+  const db = new Database(join(HOME, "loophub.db"));
   db.exec(`
     CREATE TRIGGER hold_after_step_launch_reservation
     AFTER UPDATE OF launching_session_id ON workflow_runs
@@ -1324,10 +1308,8 @@ test("an orphaned launch is visible and can be explicitly recovered", () => {
   const body = JSON.parse(started.stdout);
   const orphanSession = "33333333-3333-4333-8333-333333333333";
 
-  const { DatabaseSync } = REQUIRE(
-    "node:sqlite",
-  ) as typeof import("node:sqlite");
-  const db = new DatabaseSync(join(HOME, "loophub.db"));
+  const { Database } = REQUIRE("bun:sqlite") as typeof import("bun:sqlite");
+  const db = new Database(join(HOME, "loophub.db"));
   db.prepare(
     `UPDATE workflow_runs
      SET launching_step = 'verify', launching_session_id = ?,

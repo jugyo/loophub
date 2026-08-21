@@ -25,13 +25,15 @@ import {
   formatTokenCount,
 } from "./agent-sessions-page";
 
-const ORIGINAL_TIME_ZONE = process.env.TZ;
+// Resolve the ambient zone rather than leaving TZ unset: under Bun, deleting process.env.TZ makes
+// every later assignment a no-op, so a test that pins a zone would silently run in the host's.
+const ORIGINAL_TIME_ZONE =
+  process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  if (ORIGINAL_TIME_ZONE === undefined) delete process.env.TZ;
-  else process.env.TZ = ORIGINAL_TIME_ZONE;
+  process.env.TZ = ORIGINAL_TIME_ZONE;
 });
 
 const SESSIONS: AgentSession[] = [

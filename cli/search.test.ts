@@ -13,17 +13,7 @@ const env = {
 };
 
 function node(args: string[]) {
-  return spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      ...args,
-    ],
-    { encoding: "utf8", env },
-  );
+  return spawnSync(process.execPath, [...args], { encoding: "utf8", env });
 }
 
 function lh(args: string[]) {

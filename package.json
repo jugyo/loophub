@@ -11,7 +11,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=22.12.0"
+    "bun": ">=1.2.0"
   },
   "bin": {
     "lh": "cli/index.ts",
@@ -25,32 +25,33 @@
   },
   "scripts": {
     "postinstall": "npm --prefix web install",
-    "lh": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx cli/index.ts",
-    "lh-web": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx web/server/index.ts",
-    "lh-worker": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/index.ts",
-    "lh-watcher-git": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/git-watcher-index.ts",
-    "lh-watcher-github": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/github-watcher-index.ts",
-    "lh-watcher-agents": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/agents-watcher-index.ts",
-    "lh-dispatcher": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/dispatcher-index.ts",
-    "lh-job-queue": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/job-queue-index.ts",
+    "lh": "bun cli/index.ts",
+    "lh-web": "bun web/server/index.ts",
+    "lh-worker": "bun worker/index.ts",
+    "lh-watcher-git": "bun worker/git-watcher-index.ts",
+    "lh-watcher-github": "bun worker/github-watcher-index.ts",
+    "lh-watcher-agents": "bun worker/agents-watcher-index.ts",
+    "lh-dispatcher": "bun worker/dispatcher-index.ts",
+    "lh-job-queue": "bun worker/job-queue-index.ts",
     "serve": "concurrently --kill-others --names web,git,github,agents,dispatcher,queue \"npm run lh-web\" \"npm run lh-watcher-git\" \"npm run lh-watcher-github\" \"npm run lh-watcher-agents\" \"npm run lh-dispatcher\" \"npm run lh-job-queue\"",
     "serve:debug": "concurrently --kill-others --names web,git,github,agents,dispatcher,queue \"npm run lh-web -- --debug\" \"npm run lh-watcher-git\" \"npm run lh-watcher-github\" \"npm run lh-watcher-agents\" \"npm run lh-dispatcher\" \"npm run lh-job-queue\"",
-    "contract": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx scripts/emit-rpc-contract.ts",
-    "migration:new": "node --import tsx scripts/new-migration.ts",
+    "build:binary": "bun scripts/build-binary.ts",
+    "contract": "bun scripts/emit-rpc-contract.ts",
+    "migration:new": "bun scripts/new-migration.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
     "format": "biome format --write",
-    "test": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run && npm run test:web",
+    "test": "bun node_modules/vitest/vitest.mjs run && npm run test:web",
     "test:web": "npm --prefix web test",
-    "test:integration": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run --config vitest.integration.config.ts",
-    "test:full": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run --config vitest.full.config.ts && npm run test:web",
-    "test:watch": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest"
+    "test:integration": "bun node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts",
+    "test:full": "bun node_modules/vitest/vitest.mjs run --config vitest.full.config.ts && npm run test:web",
+    "test:watch": "bun node_modules/vitest/vitest.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",
+    "@types/bun": "^1.4.0",
     "@types/node": "^22.10.0",
     "concurrently": "^10.0.3",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },

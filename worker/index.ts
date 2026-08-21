@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
+#!/usr/bin/env bun
 // `lh-worker` entry point: a resident process that tails the shared events table, runs the
 // per-repo `.loophub/workflow.yml` commands (issue #52), and owns non-git maintenance loops.
 // Runs only while invoked (no daemon).
@@ -7,9 +7,7 @@
 //             [--closed-pull-cleanup-sweep-ms <ms>]
 //             [--conflict-sweep-ms <ms>] [--herdr-sweep-ms <ms>]
 //             [--worktree-prune-sweep-ms <ms>]
-// Like lh-web, it touches the DB through core, so it must carry the --experimental-sqlite flag
-// (the `lh-worker` npm script does). v1 is started via `npm run lh-worker`; an `lh worker`
-// subcommand is intentionally out of scope.
+// v1 is started via `npm run lh-worker`; an `lh worker` subcommand is intentionally out of scope.
 
 import { workerLog } from "./logger.ts";
 import {

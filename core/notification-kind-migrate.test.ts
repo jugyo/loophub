@@ -1,12 +1,12 @@
+import type * as SqliteNS from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+const { Database } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-notification-kind-migrate-"));
@@ -18,7 +18,7 @@ let D: typeof import("./db.ts");
 let S: typeof import("./store.ts");
 
 beforeAll(async () => {
-  const seed = new DatabaseSync(DB_PATH);
+  const seed = new Database(DB_PATH);
   seed.exec(`
     CREATE TABLE repos (
       id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL UNIQUE,

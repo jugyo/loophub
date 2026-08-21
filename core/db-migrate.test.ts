@@ -1,15 +1,15 @@
+import type * as SqliteNS from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-// Backward compatibility: hand-build an old schema with node:sqlite, THEN import core so its
+// Backward compatibility: hand-build an old schema with bun:sqlite, THEN import core so its
 // import-time migrations run against existing tables. This covers both the retired
 // pulls.session_id pointer (#316) and newer additive Workflow run columns.
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+const { Database } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-dbmig-"));
@@ -24,7 +24,7 @@ beforeAll(async () => {
   // Seed an old-schema DB: pulls still has session_id (a pre-#316 1:1 dev-session pointer), the
   // session is NOT yet in session_links and its kind is still NULL (pre-#298 state). The migration
   // must backfill the link, stamp kind='dev', and drop the column.
-  const seed = new DatabaseSync(DB_PATH);
+  const seed = new Database(DB_PATH);
   seed.exec(`
     CREATE TABLE repos (
       id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL UNIQUE,

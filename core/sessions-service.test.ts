@@ -12,14 +12,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
-// Count readdirSync calls (pass-through) so the createClaudeTranscriptIndex test can assert the
-// wanted-set path stats requested filenames directly instead of enumerating each project dir
-// (#1119). node:fs is spread through unchanged; only readdirSync is wrapped.
-const fsSpy = vi.hoisted(() => ({ readdirDirs: [] as unknown[] }));
-const pricingSpy = vi.hoisted(() => ({
-  callsInTransaction: [] as boolean[],
+// Wrap two node:fs reads (pass-through) so the tests below can observe how the usage sync touches
+// the filesystem. readdirSync answers "which directories were enumerated?" for the
+// createClaudeTranscriptIndex wanted-set path (#1119); readFileSync answers "was a transcript read
+// while a DB transaction was open?", the transaction-boundary rule that keeps transcript parsing
+// and cost math out of the write. node:fs is spread through unchanged; only these two are wrapped.
+const fsSpy = vi.hoisted(() => ({
+  readdirDirs: [] as unknown[],
+  readsInTransaction: [] as boolean[],
   isInTransaction: (() => false) as () => boolean,
-  beforeCalculate: null as (() => void) | null,
 }));
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -29,18 +30,9 @@ vi.mock("node:fs", async (importOriginal) => {
       fsSpy.readdirDirs.push(args[0]);
       return (actual.readdirSync as (...a: unknown[]) => unknown)(...args);
     },
-  };
-});
-vi.mock("./pricing.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./pricing.ts")>();
-  return {
-    ...actual,
-    calculateCostUsd: (...args: Parameters<typeof actual.calculateCostUsd>) => {
-      pricingSpy.callsInTransaction.push(pricingSpy.isInTransaction());
-      const beforeCalculate = pricingSpy.beforeCalculate;
-      pricingSpy.beforeCalculate = null;
-      beforeCalculate?.();
-      return actual.calculateCostUsd(...args);
+    readFileSync: (...args: Parameters<typeof actual.readFileSync>) => {
+      fsSpy.readsInTransaction.push(fsSpy.isInTransaction());
+      return (actual.readFileSync as (...a: unknown[]) => unknown)(...args);
     },
   };
 });
@@ -124,7 +116,7 @@ function codexRollout(
 beforeAll(async () => {
   svc = await import("./service.ts");
   D = await import("./db.ts");
-  pricingSpy.isInTransaction = () => D.db.inTransaction;
+  fsSpy.isInTransaction = () => D.db.inTransaction;
   SU = await import("./session-usage.ts");
   ST = await import("./store.ts");
   serialize = await import("./serialize.ts");
@@ -455,10 +447,10 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
     }),
   );
 
-  pricingSpy.callsInTransaction = [];
+  fsSpy.readsInTransaction = [];
   const first = svc.sessions.usageSync({ sessionId, projectsDir });
-  expect(pricingSpy.callsInTransaction.length).toBeGreaterThan(0);
-  expect(pricingSpy.callsInTransaction).not.toContain(true);
+  expect(fsSpy.readsInTransaction.length).toBeGreaterThan(0);
+  expect(fsSpy.readsInTransaction).not.toContain(true);
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(first.sessions[0].messages).toBe(1);
   expect(getSession(sessionId).usage![0]).toMatchObject({
@@ -572,20 +564,27 @@ test("sessions.usageSync rejects a stale Claude dedupe plan", () => {
     }),
   );
 
-  pricingSpy.beforeCalculate = () => {
-    D.db.run(
-      `UPDATE session_usage_cursors
-       SET cursor_offset = cursor_offset + 1
-       WHERE session_id = ?`,
-      [sessionId],
-    );
-  };
+  // The plan is built before the write transaction opens, so moving the cursor in the window just
+  // before that transaction is exactly the race the guard exists for.
+  const openTransaction = D.db.transaction.bind(D.db);
+  const spy = vi
+    .spyOn(D.db, "transaction")
+    .mockImplementation((callback: Parameters<typeof openTransaction>[0]) => {
+      spy.mockRestore();
+      D.db.run(
+        `UPDATE session_usage_cursors
+         SET cursor_offset = cursor_offset + 1
+         WHERE session_id = ?`,
+        [sessionId],
+      );
+      return openTransaction(callback);
+    });
   try {
     expect(() => svc.sessions.usageSync({ sessionId, projectsDir })).toThrow(
       "Session usage changed during sync",
     );
   } finally {
-    pricingSpy.beforeCalculate = null;
+    spy.mockRestore();
     rmSync(projectsDir, { recursive: true, force: true });
   }
   expect(getSession(sessionId).usage![0]).toMatchObject({
@@ -824,10 +823,10 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
     ),
   );
 
-  pricingSpy.callsInTransaction = [];
+  fsSpy.readsInTransaction = [];
   const first = svc.sessions.usageSync({ sessionId, codexSessionsDir });
-  expect(pricingSpy.callsInTransaction.length).toBeGreaterThan(0);
-  expect(pricingSpy.callsInTransaction).not.toContain(true);
+  expect(fsSpy.readsInTransaction.length).toBeGreaterThan(0);
+  expect(fsSpy.readsInTransaction).not.toContain(true);
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(first.sessions[0].messages).toBe(3);
   expect(getSession(sessionId).usage![0]).toMatchObject({
@@ -1170,10 +1169,10 @@ test("sessions.usageSync imports Grok updates.jsonl for the linked PR worktree c
     ]),
   );
 
-  pricingSpy.callsInTransaction = [];
+  fsSpy.readsInTransaction = [];
   const first = svc.sessions.usageSync({ sessionId, grokSessionsDir });
-  expect(pricingSpy.callsInTransaction.length).toBeGreaterThan(0);
-  expect(pricingSpy.callsInTransaction).not.toContain(true);
+  expect(fsSpy.readsInTransaction.length).toBeGreaterThan(0);
+  expect(fsSpy.readsInTransaction).not.toContain(true);
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   // Owner (primary dev) stores the worktree aggregate; peer is cleared.
   const ownerUsage = getSession(sessionId).usage ?? [];

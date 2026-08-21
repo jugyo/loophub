@@ -69,7 +69,8 @@ See [worktree lifecycle](docs/worktree.ja.md),
 ## Layout
 
 ```
-core/    Pure domain library (Node): db, config, store, git, events, links, watcher, service/
+bin/     `loophub` — the single compiled entry point; dispatches to the roles below
+core/    Pure domain library: db, config, store, git, events, links, watcher, service/
 cli/     `lh` command — commands/ grouped by noun; imports core directly, no HTTP
 web/     `lh-web` process: core + JSON-RPC 2.0, plus the SPA
 worker/  `lh-worker` resident process: tails shared events, runs per-repo workflow.yml,
@@ -116,13 +117,30 @@ come from live git or worktree state (`pullJSON`, `issueListItemJSON`, `issueDet
 
 ## Runtime requirements
 
-- **Node.js >= 22.12.0.**
-- Persistence uses **`node:sqlite`** (`DatabaseSync`), which is experimental on Node 22.x
-  and requires `--experimental-sqlite`. The npm scripts pass it (plus a warning suppressor)
-  via `NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning'`. Any new
-  entry point or spawned subprocess that touches the DB must carry the same flag.
-- `core/db.ts` loads `node:sqlite` through `createRequire` so bundler-based transformers
-  (Vite/vitest) don't try to resolve the experimental specifier — keep it that way.
+- **Bun >= 1.2.** Bun runs the TypeScript directly, so there is still no build step and no
+  `tsx`; a new entry point is a plain `#!/usr/bin/env bun` script.
+- Persistence uses **`bun:sqlite`** (`Database`). No runtime flag is required, so no npm script,
+  shebang, or spawn site carries one — keep it that way.
+- `core/db.ts` and `core/session-usage.ts` load `bun:sqlite` through `createRequire` so
+  bundler-based transformers (Vite/vitest) don't try to resolve the specifier as a package.
+- `core/db.ts` is not an adapter: `store.ts` et al. call `bun:sqlite`'s own surface
+  (`db.query(sql).get/all(...)`, `db.run(sql, params[])`, `db.exec(sql)`). The class only adds the
+  SQLITE_BUSY write retry and the nesting-aware `transaction` helper.
+- Everything ships as one executable, `bin/loophub.ts`, which dispatches on a role name
+  (`loophub lh …`, `loophub lh-web …`). Anything that re-runs LoopHub as a subprocess or resolves a
+  path in the source tree must go through `core/self-exec.ts`, because inside the compiled binary
+  there is no source tree.
+
+### Bun differences that have bitten us
+
+- **`vi.mock` of a relative module does not work.** Vitest runs under Bun, which loads project
+  modules natively, so its module interposition (and `vi.spyOn` on a module namespace) has no
+  effect. Mocking a `node:` builtin still works. Prefer a real seam — count git subprocesses with
+  `traceGitCommands`, observe `node:fs`, spy on an object instance such as `db` — over a module mock.
+- **`os.homedir()` ignores a later `process.env.HOME`.** Read `process.env.HOME` first where a
+  caller is expected to redirect it (`core/session-usage.ts`).
+- **`process.env.TZ` cannot be re-set after being deleted.** A test that pins a zone must restore
+  the previous one by assignment, never with `delete`.
 
 ## Commands
 
@@ -138,6 +156,7 @@ npm run typecheck        # tsc --noEmit (uses the local typescript; avoids npx)
 npm run lint             # biome check (lint + format check; no writes)
 npm run format           # biome format --write (apply formatting)
 npm run contract         # regenerate docs/rpc-contract.json from web/server/contract.ts
+npm run build:binary     # compile dist/loophub, the single executable that serves every process
 ```
 
 `docs/rpc-contract.json` is a tracked generated file: adding or changing a JSON-RPC method in
@@ -162,7 +181,9 @@ one with `lh attachment add --file <path>` and put the printed markdown in the b
 
 ## Tests
 
-- Vitest, co-located as `<module>.test.ts` next to the source under each layer.
+- Vitest, co-located as `<module>.test.ts` next to the source under each layer. It is run through
+  Bun (`bun node_modules/vitest/vitest.mjs run`), which needs `vitest.keepalive.ts` as a
+  `globalSetup` — without it the runner's process exits 0 mid-run with no summary.
 - `core/db.ts` opens the DB at import time using `LOOPHUB_HOME` / `LOOPHUB_DB`. Tests that
   need an isolated DB must set those env vars **before** importing any core module, then
   use a dynamic import:

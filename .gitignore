@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# Leftover from an interrupted `bun build --compile`.
+*.bun-build
 *.log
 logs/
 .DS_Store

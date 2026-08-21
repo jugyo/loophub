@@ -1,14 +1,14 @@
+import type * as SqliteNS from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 // Type-only: erased at compile time, so it cannot import core/db.ts before the env vars above.
 import type { SessionUsageSyncCohort } from "./index.ts";
 
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+const { Database } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
 
 // Isolate the DB before any core module runs its import-time setup (see AGENTS.md).
@@ -306,7 +306,7 @@ test("the OpenCode module aggregates worktree sessions and leaves unknown models
     mkdtempSync(join(tmpdir(), "lh-opencode-sync-")),
     "opencode.db",
   );
-  const db = new DatabaseSync(dbPath);
+  const db = new Database(dbPath);
   db.exec(`
     CREATE TABLE session (
       id TEXT PRIMARY KEY,

@@ -11,26 +11,15 @@ let home: string;
 let repoPath: string;
 
 function lh(args: string[], input?: string) {
-  const r = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      CLI,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      input,
-      env: {
-        ...process.env,
-        LOOPHUB_HOME: home,
-        LOOPHUB_DB: join(home, "loophub.db"),
-      },
+  const r = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: "utf8",
+    input,
+    env: {
+      ...process.env,
+      LOOPHUB_HOME: home,
+      LOOPHUB_DB: join(home, "loophub.db"),
     },
-  );
+  });
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status ?? 0 };
 }
 

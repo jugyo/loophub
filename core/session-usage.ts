@@ -1,3 +1,4 @@
+import type * as SqliteNS from "bun:sqlite";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -9,14 +10,13 @@ import {
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { calculateCostUsd } from "./pricing.ts";
 
-// OpenCode stores session usage in its own SQLite DB. Load node:sqlite the same way
-// core/db.ts does so bundler transformers do not try to resolve the experimental
-// specifier as a package.
-const { DatabaseSync: OpencodeDatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+// OpenCode stores session usage in its own SQLite DB. Load bun:sqlite the same way
+// core/db.ts does so bundler transformers do not try to resolve the specifier as a
+// package.
+const { Database: OpencodeDatabase } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
 
 // The model pricing catalog lives in ./pricing.ts (SSOT for per-model rates).
@@ -681,16 +681,23 @@ export function aggregateUsage(entries: UsageEntry[]): ModelUsage[] {
     }));
 }
 
+// Agent runtimes write their transcripts under the invoking user's home directory. Read $HOME
+// first: os.homedir() resolves it once at startup under Bun, so a caller that points HOME
+// somewhere else (a test fixture, a sandboxed sweep) would otherwise be ignored.
+function homeDir(): string {
+  return process.env.HOME?.trim() || homedir();
+}
+
 export function defaultClaudeProjectsDir(): string {
-  return join(homedir(), ".claude", "projects");
+  return join(homeDir(), ".claude", "projects");
 }
 
 export function defaultCodexSessionsDir(): string {
-  return join(homedir(), ".codex", "sessions");
+  return join(homeDir(), ".codex", "sessions");
 }
 
 export function defaultGrokSessionsDir(): string {
-  return join(homedir(), ".grok", "sessions");
+  return join(homeDir(), ".grok", "sessions");
 }
 
 // OpenCode 1.18.x persists sessions in a single SQLite database under the XDG data
@@ -698,7 +705,7 @@ export function defaultGrokSessionsDir(): string {
 // session row and assistant message JSON; model ids are provider/model pairs.
 export function defaultOpencodeDbPath(): string {
   const dataHome =
-    process.env.XDG_DATA_HOME?.trim() || join(homedir(), ".local", "share");
+    process.env.XDG_DATA_HOME?.trim() || join(homeDir(), ".local", "share");
   return join(dataHome, "opencode", "opencode.db");
 }
 
@@ -1095,9 +1102,9 @@ export function findOpencodeSessions(input: {
   const directories = opencodeDirectoryCandidates(input.cwd);
   if (directories.length === 0) return [];
 
-  let db: SqliteNS.DatabaseSync;
+  let db: SqliteNS.Database;
   try {
-    db = new OpencodeDatabaseSync(dbPath, { readOnly: true });
+    db = new OpencodeDatabase(dbPath, { readonly: true });
   } catch {
     return [];
   }

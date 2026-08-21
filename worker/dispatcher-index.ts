@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx
+#!/usr/bin/env bun
 import { workerLog } from "./logger.ts";
 // `lh-dispatcher` is the event-to-action resident process. The current workflow dispatcher is
 // implemented by the existing runner; this entrypoint gives it an independent lifecycle while

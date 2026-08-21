@@ -16,13 +16,7 @@ const home = mkdtempSync(join(tmpdir(), "lh-workflow-manifest-"));
 process.env.LOOPHUB_HOME = home;
 process.env.LOOPHUB_DB = join(home, "loophub.db");
 
-const NODE_ARGS = [
-  "--experimental-sqlite",
-  "--disable-warning=ExperimentalWarning",
-  "--import",
-  "tsx",
-  "cli/index.ts",
-];
+const NODE_ARGS = ["cli/index.ts"];
 
 let S: typeof import("../core/store.ts");
 let repoName: string;

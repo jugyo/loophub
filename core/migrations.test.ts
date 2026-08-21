@@ -1,16 +1,16 @@
+import type * as SqliteNS from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-// Hand-build an old-schema database with node:sqlite, THEN import core so its migrations run
+// Hand-build an old-schema database with bun:sqlite, THEN import core so its migrations run
 // against existing tables. That import is the "first boot on an existing install" path: the ledger
 // starts empty, every migration runs once against a partially-migrated schema, and the ids are
 // recorded so later boots do nothing.
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+const { Database } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-migrations-"));
@@ -22,7 +22,7 @@ let D: typeof import("./db.ts");
 let M: typeof import("./migrations.ts");
 
 beforeAll(async () => {
-  const seed = new DatabaseSync(LEGACY_DB);
+  const seed = new Database(LEGACY_DB);
   seed.exec(`
     CREATE TABLE repos (
       id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL UNIQUE,
@@ -393,7 +393,7 @@ test("readiness confirmation backfill treats same-timestamp receipts as ambiguou
 
 test("repository workflow migration preserves ids, run references, and sequence", () => {
   const path = join(HOME, "workflow-scope.db");
-  const db = new DatabaseSync(path);
+  const db = new Database(path);
   db.exec(`
     PRAGMA foreign_keys = ON;
     CREATE TABLE repos (id INTEGER PRIMARY KEY);
@@ -428,7 +428,7 @@ test("repository workflow migration preserves ids, run references, and sequence"
     exec: db.exec.bind(db),
     query: db.prepare.bind(db),
     run: (sql: string, params: unknown[] = []) =>
-      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+      db.prepare(sql).run(...(params as SqliteNS.SQLQueryBindings[])),
   } as unknown as Parameters<typeof migration.run>[0]);
 
   expect(db.prepare(`SELECT id, repo_id, name FROM workflows`).get()).toEqual({
@@ -528,7 +528,7 @@ test("the cache-read rate migration tolerates a database that holds only one rat
   // The base schema stopped creating both tables, so this step now runs against databases that
   // carry neither — and against the narrow case of one without the other, since the two tables were
   // introduced at different times.
-  const db = new DatabaseSync(join(HOME, "legacy-samples-only.db"));
+  const db = new Database(join(HOME, "legacy-samples-only.db"));
   db.exec(`
     CREATE TABLE session_usage_samples (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -548,7 +548,7 @@ test("the cache-read rate migration tolerates a database that holds only one rat
     exec: db.exec.bind(db),
     query: db.prepare.bind(db),
     run: (sql: string, params: unknown[] = []) =>
-      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+      db.prepare(sql).run(...(params as SqliteNS.SQLQueryBindings[])),
   } as unknown as Parameters<(typeof migration)["run"]>[0];
 
   expect(() => migration.run(adapter)).not.toThrow();
@@ -557,13 +557,13 @@ test("the cache-read rate migration tolerates a database that holds only one rat
   ).toEqual({ count: 0 });
   db.close();
 
-  const empty = new DatabaseSync(join(HOME, "legacy-no-rate-tables.db"));
+  const empty = new Database(join(HOME, "legacy-no-rate-tables.db"));
   expect(() =>
     migration.run({
       exec: empty.exec.bind(empty),
       query: empty.prepare.bind(empty),
       run: (sql: string, params: unknown[] = []) =>
-        empty.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+        empty.prepare(sql).run(...(params as SqliteNS.SQLQueryBindings[])),
     } as unknown as Parameters<(typeof migration)["run"]>[0]),
   ).not.toThrow();
   empty.close();
@@ -573,7 +573,7 @@ test("the GitHub export status migration keeps every existing link as a linked e
   // Rebuilding github_pulls is what makes number/url nullable, so the risk is losing rows or their
   // bolted-on columns. Every pre-existing row is a recorded link by definition, so it must come out
   // 'linked' with its link intact and linked_at seeded from created_at.
-  const db = new DatabaseSync(join(HOME, "legacy-github-pulls.db"));
+  const db = new Database(join(HOME, "legacy-github-pulls.db"));
   db.exec(`
     CREATE TABLE issues (id INTEGER PRIMARY KEY AUTOINCREMENT);
     INSERT INTO issues (id) VALUES (10);
@@ -601,7 +601,7 @@ test("the GitHub export status migration keeps every existing link as a linked e
     exec: db.exec.bind(db),
     query: db.prepare.bind(db),
     run: (sql: string, params: unknown[] = []) =>
-      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+      db.prepare(sql).run(...(params as SqliteNS.SQLQueryBindings[])),
   } as unknown as Parameters<(typeof migration)["run"]>[0];
 
   migration.run(adapter);
@@ -630,7 +630,7 @@ test("the GitHub export status migration keeps every existing link as a linked e
 });
 
 test("the Workflow end migration freezes the best available terminal timestamp", () => {
-  const db = new DatabaseSync(join(HOME, "legacy-workflow-ended-at.db"));
+  const db = new Database(join(HOME, "legacy-workflow-ended-at.db"));
   db.exec(`
     CREATE TABLE workflow_runs (
       id INTEGER PRIMARY KEY,
@@ -650,7 +650,7 @@ test("the Workflow end migration freezes the best available terminal timestamp",
     exec: db.exec.bind(db),
     query: db.prepare.bind(db),
     run: (sql: string, params: unknown[] = []) =>
-      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+      db.prepare(sql).run(...(params as SqliteNS.SQLQueryBindings[])),
   } as unknown as Parameters<(typeof migration)["run"]>[0]);
 
   expect(
@@ -664,7 +664,7 @@ test("the Workflow end migration freezes the best available terminal timestamp",
 });
 
 test("the diff feedback archive migration carries resolved threads over", () => {
-  const db = new DatabaseSync(join(HOME, "legacy-diff-feedback-archive.db"));
+  const db = new Database(join(HOME, "legacy-diff-feedback-archive.db"));
   db.exec(`
     CREATE TABLE diff_feedback_threads (
       id INTEGER PRIMARY KEY,
@@ -683,7 +683,7 @@ test("the diff feedback archive migration carries resolved threads over", () => 
     exec: db.exec.bind(db),
     query: db.prepare.bind(db),
     run: (sql: string, params: unknown[] = []) =>
-      db.prepare(sql).run(...(params as SqliteNS.SQLInputValue[])),
+      db.prepare(sql).run(...(params as SqliteNS.SQLQueryBindings[])),
   } as unknown as Parameters<(typeof migration)["run"]>[0]);
 
   expect(

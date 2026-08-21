@@ -29,22 +29,11 @@ function git(args: string[]) {
 }
 
 function lh(args: string[]) {
-  return run(process.execPath, [
-    "--experimental-sqlite",
-    "--disable-warning=ExperimentalWarning",
-    "--import",
-    "tsx",
-    CLI,
-    ...args,
-  ]);
+  return run(process.execPath, [CLI, ...args]);
 }
 
 function precomputeFeedback() {
   run(process.execPath, [
-    "--experimental-sqlite",
-    "--disable-warning=ExperimentalWarning",
-    "--import",
-    "tsx",
     "--input-type=module",
     "--eval",
     `const { diffFeedback } = await import(${JSON.stringify(SERVICE)}); await diffFeedback.precompute(${JSON.stringify(REPO)}, ${prNumber});`,
@@ -399,10 +388,6 @@ test("create rejects a stale commit pair", () => {
   const result = spawnSync(
     process.execPath,
     [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
       CLI,
       "pr",
       "feedback",
@@ -460,20 +445,7 @@ exec "${realGit}" "$@"
 
   const result = spawnSync(
     process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      CLI,
-      "pr",
-      "feedback",
-      "list",
-      String(prNumber),
-      "--repo",
-      REPO,
-      "--json",
-    ],
+    [CLI, "pr", "feedback", "list", String(prNumber), "--repo", REPO, "--json"],
     {
       encoding: "utf8",
       env: {

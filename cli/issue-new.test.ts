@@ -1,3 +1,4 @@
+import type * as SqliteNS from "bun:sqlite";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -10,11 +11,10 @@ import {
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
+const { Database } = createRequire(import.meta.url)(
+  "bun:sqlite",
 ) as typeof SqliteNS;
 const CLI = join(import.meta.dirname, "index.ts");
 const REPO = "me/issue-new";
@@ -26,27 +26,16 @@ let runtimeLog: string;
 
 function run(args: string[], runHome = home) {
   const { LOOPHUB_SESSION_ID: _sessionId, ...baseEnv } = process.env;
-  const result = spawnSync(
-    process.execPath,
-    [
-      "--experimental-sqlite",
-      "--disable-warning=ExperimentalWarning",
-      "--import",
-      "tsx",
-      CLI,
-      ...args,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...baseEnv,
-        LOOPHUB_HOME: runHome,
-        LOOPHUB_DB: join(runHome, "loophub.db"),
-        PATH: `${runtimeDir}:${baseEnv.PATH ?? ""}`,
-        RUNTIME_LOG: runtimeLog,
-      },
+  const result = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: "utf8",
+    env: {
+      ...baseEnv,
+      LOOPHUB_HOME: runHome,
+      LOOPHUB_DB: join(runHome, "loophub.db"),
+      PATH: `${runtimeDir}:${baseEnv.PATH ?? ""}`,
+      RUNTIME_LOG: runtimeLog,
     },
-  );
+  });
   return {
     stdout: result.stdout,
     stderr: result.stderr,
@@ -70,7 +59,7 @@ function sessions(): Array<{
   model: string | null;
   external_session: string;
 }> {
-  const db = new DatabaseSync(join(home, "loophub.db"), { readOnly: true });
+  const db = new Database(join(home, "loophub.db"), { readonly: true });
   try {
     return db
       .prepare(
@@ -92,7 +81,7 @@ function setRepoAgentOverride(config: {
   model: string | null;
   effort: string | null;
 }): void {
-  const db = new DatabaseSync(join(home, "loophub.db"));
+  const db = new Database(join(home, "loophub.db"));
   try {
     db.prepare(
       `UPDATE repos SET agent_override = ?, agent_runtime = ?, agent_model = ?, agent_effort = ?
