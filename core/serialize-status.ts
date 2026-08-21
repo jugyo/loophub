@@ -65,8 +65,7 @@ export function workflowRunConfigJSON(
 }
 
 // Git-derived status fields for a PR row: mergeable state, diff totals, the
-// "working" flag, and review state. Shared by pullJSON (PR list/detail) and the
-// issue list's linked-PR summary so both compute status identically. The git
+// "working" flag, and review state. Used by pullJSON (PR list/detail). The git
 // fan-out (revParse/mergePreview/diffStat/status) is bounded — callers keep
 // their lists paginated — and its SHA-derived slice (merge preview, commits
 // ahead, effective diff, diff stat) is cached on the (baseSha, headSha) pair so
@@ -189,8 +188,7 @@ async function pullStatusFields(
 }
 
 // #406: the PR's effective write action ('merge' | 'github_pr') and the exported GitHub PR (if any).
-// Kept out of pullStatusFields (shared by the PR list and the issue-list linked-PR summary, neither
-// of which renders the action) so only pullJSON pays for it. The GitHub-remote check is a repo-level
+// Kept out of pullStatusFields so only pullJSON pays for it. The GitHub-remote check is a repo-level
 // constant resolved here once per PR detail, instead of being spent — and discarded — by every
 // linked-PR summary row.
 interface PullMergeFields {
@@ -239,7 +237,9 @@ export async function issueListItemJSON(
     // most-relevant first, so the list can stack them vertically. The singular
     // field stays set to the primary one for any consumer that reads it.
     const pulls = await Promise.all(
-      S.linkedPullsForIssue(row.id).map((pr) => linkedPullDetail(repo, pr)),
+      S.linkedPullsForIssue(row.id).map((pr) =>
+        linkedPullDetail(repo, pr, { dbOnly: true }),
+      ),
     );
     out.linked_pull_requests = pulls;
     out.linked_pull_request = pulls[0] ?? null;
@@ -278,7 +278,11 @@ export async function issueListItemsJSON(
   );
   const linkedDetails = await Promise.all(
     linkedPulls.map(
-      async (pull) => [pull.id, await linkedPullDetail(repo, pull)] as const,
+      async (pull) =>
+        [
+          pull.id,
+          await linkedPullDetail(repo, pull, { dbOnly: true }),
+        ] as const,
     ),
   );
   const detailByPull = new Map(linkedDetails);
@@ -307,22 +311,27 @@ export async function issueListItemsJSON(
 async function linkedPullDetail(
   repo: S.Repo,
   pr: S.LinkedPullIssueRow,
+  opts: { dbOnly?: boolean } = {},
 ): Promise<IssueListPullSummaryWire> {
   const pull = S.getPull(pr.id)!;
   const active =
     pr.state === "open" && pull.merged === 0 && pull.archived_at === null;
-  // Active status is owned by the worker's current projection. Keeping ref observation out of this
-  // request path is what makes a projection hit a DB-only read; the worker sweep updates the SHA
-  // pair after a ref move, and the existing worker compatibility warning exposes a stopped worker.
-  const projection = active ? S.getCurrentPullStatusProjection(pr.id) : null;
+  // Issue-list summaries are DB-only: the worker owns refreshing active PRs, while a
+  // closed/merged/archived PR keeps its final projection even after its refs disappear. Issue
+  // detail keeps its historical live-status path for callers that do not opt into this mode.
+  const projection = opts.dbOnly
+    ? S.getCurrentPullStatusProjection(pr.id)
+    : active
+      ? S.getCurrentPullStatusProjection(pr.id)
+      : null;
   const reviewStatus = S.computeReviewStatus(
     pr.id,
     projection?.head_sha ?? pull.head_sha,
   );
-  // The worker intentionally sweeps only open, unmerged, unarchived PRs. Once a PR leaves that
-  // state, always preserve the historical detail/list contract through the existing status path;
-  // an old current projection must not make a merged or closed PR look active again.
-  const historicalStatus = !active ? await pullStatusFields(repo, pr) : null;
+  const historicalStatus =
+    !opts.dbOnly && (!active || !projection)
+      ? await pullStatusFields(repo, pr)
+      : null;
   const mergeableState = historicalStatus
     ? historicalStatus.mergeable_state
     : projection

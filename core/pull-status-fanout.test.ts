@@ -324,17 +324,21 @@ test("a moved head is a new key and reports the new truth", async () => {
   });
 });
 
-test("a closed linked PR without a current projection keeps its historical status", async () => {
+test("a closed linked PR keeps its stored status after its ref is removed", async () => {
   const repo = S.getRepo("me", "fanout")!;
   git(["checkout", "-qb", "closed-feature", "main"]);
   commit("closed.txt", "closed\n", "closed PR");
   git(["checkout", "-q", "main"]);
   const closed = S.createIssue(repo.id, "pull", "Closed PR", "", "me");
   S.createPull(closed.id, "closed-feature", "main", null, linkedIssueId);
+  await W.sweepPullUpdates();
   S.updateIssue(closed.id, { state: "closed" });
+  git(["branch", "-D", "closed-feature"]);
 
   const row = S.getIssueById(linkedIssueId)!;
-  const out = await Z.issueListItemJSON(row, repo);
+  const { result: out, commands } = await traceGitCommands(() =>
+    Z.issueListItemJSON(row, repo),
+  );
   const linked = out.linked_pull_requests?.find(
     (pull) => pull.number === closed.number,
   );
@@ -344,9 +348,10 @@ test("a closed linked PR without a current projection keeps its historical statu
     changed_files: 1,
     commits_ahead: 1,
   });
+  expect(commands).toEqual([]);
 });
 
-test("a merged linked PR ignores its retained active projection", async () => {
+test("a merged linked PR keeps its retained projection", async () => {
   const repo = S.getRepo("me", "fanout")!;
   git(["checkout", "-qb", "merged-feature", "main"]);
   commit("merged.txt", "merged\n", "merged PR");
@@ -363,11 +368,38 @@ test("a merged linked PR ignores its retained active projection", async () => {
   );
   expect(linked).toMatchObject({
     merged: true,
-    mergeable_state: "unknown",
-    additions: 0,
+    mergeable_state: "blocked",
+    additions: 1,
     deletions: 0,
-    changed_files: 0,
+    changed_files: 1,
+    commits_ahead: 1,
   });
+});
+
+test("a closed linked PR on a closed issue uses the stored status for the list filter", async () => {
+  const repo = S.getRepo("me", "fanout")!;
+  const parent = S.createIssue(repo.id, "issue", "Closed parent", "", "me");
+  git(["checkout", "-qb", "closed-parent-feature", "main"]);
+  commit("closed-parent.txt", "closed parent\n", "closed parent PR");
+  git(["checkout", "-q", "main"]);
+  const closed = S.createIssue(repo.id, "pull", "Closed parent PR", "", "me");
+  S.createPull(closed.id, "closed-parent-feature", "main", null, parent.id);
+  await W.sweepPullUpdates();
+  S.updateIssue(closed.id, { state: "closed" });
+  S.updateIssue(parent.id, { state: "closed" });
+  git(["branch", "-D", "closed-parent-feature"]);
+
+  const { result: items, commands } = await traceGitCommands(() =>
+    svc.issues.list("me/fanout", { state: "closed" }),
+  );
+  const item = items.find((issue) => issue.number === parent.number);
+  expect(item?.linked_pull_request).toMatchObject({
+    number: closed.number,
+    additions: 1,
+    changed_files: 1,
+    commits_ahead: 1,
+  });
+  expect(commands).toEqual([]);
 });
 
 test("a missing ref removes the current projection and shows unknown", async () => {
