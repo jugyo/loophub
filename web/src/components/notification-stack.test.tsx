@@ -297,9 +297,16 @@ describe("NotificationStack", () => {
     expect(agentComment.classList).toContain("lucide-message-square");
     expect(agentComment.getAttribute("class")).toContain("text-violet-700");
 
+    // A linked GitHub PR is information, not an alert, so it shares the info look
+    // (Info icon, sky tone) with human_attention instead of a dedicated one.
     const githubPrLinked = iconFor(5);
-    expect(githubPrLinked.classList).toContain("lucide-git-pull-request");
-    expect(githubPrLinked.getAttribute("class")).toContain("text-indigo-700");
+    expect(githubPrLinked.classList).toContain("lucide-info");
+    expect(githubPrLinked.getAttribute("class")).toContain("text-sky-700");
+    expect(githubPrLinked.classList).not.toContain("lucide-git-pull-request");
+    expect(githubPrLinked.getAttribute("class")).not.toContain(
+      "text-indigo-700",
+    );
+    expect(githubPrLinked.closest("article")?.dataset.severity).toBe("info");
     expect(githubPrLinked.closest("article")?.textContent).toContain(
       "GitHub PR created",
     );
