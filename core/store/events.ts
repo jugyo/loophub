@@ -216,7 +216,7 @@ export function workflowRunStartedEventId(
     .query(
       `SELECT id FROM events
        WHERE repo_id = ? AND type = 'workflow_run.started'
-         AND json_extract(payload, '$.id') = ?
+         AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
        ORDER BY id ASC LIMIT 1`,
     )
     .get(repoId, runId) as { id: number } | null;

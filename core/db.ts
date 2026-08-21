@@ -465,6 +465,12 @@ CREATE INDEX IF NOT EXISTS idx_events_repo_cost_stopped_number_session_id
 CREATE INDEX IF NOT EXISTS idx_events_repo_workflow_run_id
   ON events(repo_id, CAST(json_extract(payload, '$.id') AS INTEGER), id)
   WHERE type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*';
+-- workflowRunsWithPendingEvents は実行中 run ごとに開始イベントの境界を引く。開始イベントは
+-- type が固定されているため、workflow 全体の部分式インデックスより小さい専用インデックスで
+-- 相関検索を直接 seek できるようにする。クエリ側の CAST もこの式と一致させる。
+CREATE INDEX IF NOT EXISTS idx_events_repo_workflow_started_run_id
+  ON events(repo_id, CAST(json_extract(payload, '$.id') AS INTEGER), id)
+  WHERE type = 'workflow_run.started';
 
 CREATE TABLE IF NOT EXISTS agent_sessions (
   id                TEXT PRIMARY KEY,

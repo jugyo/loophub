@@ -380,26 +380,26 @@ export function advanceWorkflowRunEventCursor(
     .get(cursor, now(), id, cursor) as WorkflowRunRow | null;
 }
 
-// Runs with at least one undelivered subject event. This is intentionally independent of run
-// status: the worker advances terminal runs past their remaining events without delivering a
-// progression instruction, so a restart does not scan the same terminal history forever.
+// 未配信の subject event を持つ実行中 run。terminal run の残存イベントは直接の dispatchRun 呼び出し
+// では消費できるが、定期ポーリングで候補に含める必要はない。
 //
-// The `workflow_run.started` bound keeps a run that was already running at the cutover from waking
-// on the issue / PR backlog its narrower subscription never had to skip. A run with no started
-// event falls back to its cursor here rather than being hidden: this query is a prefilter, and the
-// dispatcher resolves the bound again and raises the missing start as a visible error.
+// `workflow_run.started` の境界は、切り替え時点ですでに実行中だった run が、狭い subscription
+// では無視すべき issue / PR の過去イベントで wake しないために使う。開始イベントがない run は
+// ここでは cursor にフォールバックして隠さない。これは prefilter であり、dispatcher が境界を
+// 再解決して開始イベント欠落を可視エラーにする。
 export function workflowRunsWithPendingEvents(): WorkflowRunRow[] {
   return db
     .query(
       `SELECT run.* FROM workflow_runs run
-       WHERE EXISTS (
+       WHERE run.status = 'running'
+         AND EXISTS (
          SELECT 1 FROM events event
          WHERE event.repo_id = run.repo_id
            AND event.id > max(run.event_cursor, COALESCE((
              SELECT started.id - 1 FROM events started
              WHERE started.repo_id = run.repo_id
                AND started.type = 'workflow_run.started'
-               AND json_extract(started.payload, '$.id') = run.id
+               AND CAST(json_extract(started.payload, '$.id') AS INTEGER) = run.id
              ORDER BY started.id ASC LIMIT 1
            ), 0))
            AND ${workflowSubjectMatchSql(RUN_SUBJECT)}

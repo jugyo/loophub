@@ -131,6 +131,53 @@ test("a Workflow run keeps its first lifecycle end while terminal maintenance co
   }
 });
 
+test("pending workflow run の選択では terminal run を除外する", () => {
+  const repo = S.createRepo(
+    "me/pending-workflow-runs",
+    "/tmp/pending-workflow-runs",
+  );
+  const workflow = S.createWorkflow({
+    name: "pending-workflow-runs",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const running = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 1,
+    prNumber: 2,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 1,
+    costLimitUsd: 1,
+  });
+  const completed = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 3,
+    prNumber: 4,
+    status: "completed",
+    currentStep: "verify",
+    costIncrementUsd: 1,
+    costLimitUsd: 1,
+  });
+  const started = (run: typeof running) =>
+    S.emitWorkflowEvent(repo.id, "workflow_run.started", "test", {
+      id: run.id,
+      workflow_id: workflow.id,
+      issue_number: run.issue_number,
+      pr_number: run.pr_number,
+      session_id: null,
+    });
+  started(running);
+  started(completed);
+
+  expect(S.workflowRunsWithPendingEvents().map((run) => run.id)).toEqual([
+    running.id,
+  ]);
+});
+
 test("deleteRepo removes repository workflows, runs, and review responses before the repo", () => {
   const repo = S.createRepo("me/workflow-remove", "/tmp/workflow-remove");
   const issue = S.createIssue(repo.id, "pull", "reviewed change", "", "author");

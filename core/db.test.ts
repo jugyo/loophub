@@ -131,6 +131,7 @@ test("events query-optimization indexes exist", () => {
   expect(names).toContain("idx_events_repo_ready_number_id");
   expect(names).toContain("idx_events_repo_cost_stopped_number_session_id");
   expect(names).toContain("idx_events_repo_workflow_run_id");
+  expect(names).toContain("idx_events_repo_workflow_started_run_id");
 });
 
 test("notification signal sweep (type + id range, no repo_id) uses idx_events_type_id", () => {
@@ -191,6 +192,18 @@ test("eventsForWorkflowRun seeks the workflow run-id partial index", () => {
       [1, 5],
     ),
   ).toContain("idx_events_repo_workflow_run_id");
+});
+
+test("workflowRunStartedEventId が開始イベント用部分式インデックスを使う", () => {
+  expect(
+    explain(
+      `SELECT id FROM events
+       WHERE repo_id = ? AND type = 'workflow_run.started'
+         AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
+       ORDER BY id ASC LIMIT 1`,
+      [1, 5],
+    ),
+  ).toContain("idx_events_repo_workflow_started_run_id");
 });
 
 test("workflowRunObservationTrail seeks the workflow run-id partial index", () => {
@@ -295,9 +308,17 @@ test("workflowRunsWithPendingEvents seeks the workflow run-id partial index per 
   // events with no other visible symptom.
   const plan = explain(
     `SELECT run.* FROM workflow_runs run
-     WHERE EXISTS (
+     WHERE run.status = 'running'
+       AND EXISTS (
        SELECT 1 FROM events event
        WHERE event.repo_id = run.repo_id
+         AND event.id > max(run.event_cursor, COALESCE((
+           SELECT started.id - 1 FROM events started
+           WHERE started.repo_id = run.repo_id
+             AND started.type = 'workflow_run.started'
+             AND CAST(json_extract(started.payload, '$.id') AS INTEGER) = run.id
+           ORDER BY started.id ASC LIMIT 1
+         ), 0))
          AND (event.type GLOB 'workflow_run.*'
            OR event.type GLOB 'workflow_step.*')
          AND CAST(json_extract(event.payload, '$.id') AS INTEGER) = run.id
@@ -307,4 +328,5 @@ test("workflowRunsWithPendingEvents seeks the workflow run-id partial index per 
     [],
   );
   expect(plan).toContain("idx_events_repo_workflow_run_id");
+  expect(plan).toContain("idx_events_repo_workflow_started_run_id");
 });
