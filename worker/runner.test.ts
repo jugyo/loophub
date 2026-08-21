@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { git, worktreeAdd } from "../core/git.ts";
+import { writeCursor } from "../core/worker-cursor.ts";
 import { WORKFLOW_PATH } from "../core/workflow.ts";
 
 // Isolate HOME/DB before db.ts runs its import-time setup (see AGENTS.md test convention).
@@ -396,6 +397,76 @@ test("the worker polls workflow instructions independently of workflow.yml", asy
   } finally {
     worker.stop();
     dispatch.mockRestore();
+  }
+});
+
+test("dispatches partitions concurrently, preserves partition order, and writes one cursor per batch", async () => {
+  const tracePath = join(HOME, "partition-trace.txt");
+  const workflow = (path: string) =>
+    [
+      "on:",
+      "  issue.opened:",
+      `    - run: printf 'start:%s\\n' "$LH_ISSUE_NUMBER" >> '${path}'; sleep 0.1; printf 'end:%s\\n' "$LH_ISSUE_NUMBER" >> '${path}'`,
+      "",
+    ].join("\n");
+  const firstRepoPath = await makeRepo(workflow(tracePath));
+  const secondRepoPath = await makeRepo(workflow(tracePath));
+  const thirdRepoPath = await makeRepo(workflow(tracePath));
+  const firstRepo = S.createRepo("jugyo/partition-first", firstRepoPath);
+  const secondRepo = S.createRepo("jugyo/partition-second", secondRepoPath);
+  const thirdRepo = S.createRepo("jugyo/partition-third", thirdRepoPath);
+  const startCursor = svc.events.newestId();
+  S.emitEvent(firstRepo.id, "issue.opened", "me", {
+    number: 101,
+  });
+  S.emitEvent(secondRepo.id, "issue.opened", "me", {
+    number: 201,
+  });
+  S.emitEvent(firstRepo.id, "issue.opened", "me", {
+    number: 102,
+  });
+  const queuedPartition = S.emitEvent(thirdRepo.id, "issue.opened", "me", {
+    number: 301,
+  });
+  const cursorPath = join(HOME, "partition-worker.cursor");
+  writeCursor(cursorPath, startCursor);
+  const cursorWrites: number[] = [];
+  const worker = R.startWorker({
+    pollMs: 10,
+    concurrency: 2,
+    cursorPath,
+    writeCursor: (path, cursor) => {
+      cursorWrites.push(cursor);
+      writeCursor(path, cursor);
+    },
+  });
+
+  try {
+    await waitUntil(() => cursorWrites.length >= 2, "partition event batch");
+    const lines = readFileSync(tracePath, "utf8").trim().split("\n");
+    const firstStart = lines.indexOf(`start:101`);
+    const firstEnd = lines.indexOf(`end:101`);
+    const otherStart = lines.indexOf(`start:201`);
+    const otherEnd = lines.indexOf(`end:201`);
+    const samePartitionStart = lines.indexOf(`start:102`);
+    const queuedPartitionStart = lines.indexOf(`start:301`);
+    expect(firstStart).toBeGreaterThanOrEqual(0);
+    expect(otherStart).toBeGreaterThanOrEqual(0);
+    expect(firstEnd).toBeGreaterThan(firstStart);
+    expect(otherStart).toBeLessThan(firstEnd);
+    expect(samePartitionStart).toBeGreaterThan(firstEnd);
+    expect(queuedPartitionStart).toBeGreaterThan(otherEnd);
+    expect(cursorWrites[0]).toBe(queuedPartition.id);
+    expect(cursorWrites).toHaveLength(2);
+    expect(cursorWrites[1]).toBe(svc.events.newestId());
+    expect(readFileSync(cursorPath, "utf8")).toContain(
+      `"cursor":${cursorWrites[1]}`,
+    );
+  } finally {
+    worker.stop();
+    rmSync(firstRepoPath, { recursive: true, force: true });
+    rmSync(secondRepoPath, { recursive: true, force: true });
+    rmSync(thirdRepoPath, { recursive: true, force: true });
   }
 });
 

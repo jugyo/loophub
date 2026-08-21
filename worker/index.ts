@@ -2,7 +2,7 @@
 // `lh-worker` entry point: a resident process that tails the shared events table, runs the
 // per-repo `.loophub/workflow.yml` commands (issue #52), and owns non-git maintenance loops.
 // Runs only while invoked (no daemon).
-//   lh-worker [--poll-ms <ms>] [--sweep-ms <ms>] [--usage-sweep-ms <ms>]
+//   lh-worker [--poll-ms <ms>] [--dispatch-concurrency <n>] [--sweep-ms <ms>] [--usage-sweep-ms <ms>]
 //             [--github-merge-sweep-ms <ms>] [--github-feedback-sweep-ms <ms>]
 //             [--closed-pull-cleanup-sweep-ms <ms>]
 //             [--conflict-sweep-ms <ms>] [--herdr-sweep-ms <ms>]
@@ -24,10 +24,17 @@ import {
   startMaintenanceLoops,
   startNotificationSweep,
 } from "./maintenance.ts";
-import { startWorker } from "./runner.ts";
+import {
+  DEFAULT_DISPATCH_CONCURRENCY,
+  normalizeDispatchConcurrency,
+  startWorker,
+} from "./runner.ts";
 
 const argv = process.argv.slice(2);
 let pollMs = Number(process.env.LOOPHUB_POLL_MS ?? 1000);
+let dispatchConcurrency = Number(
+  process.env.LOOPHUB_DISPATCH_CONCURRENCY ?? DEFAULT_DISPATCH_CONCURRENCY,
+);
 let sweepMs = Number(process.env.LOOPHUB_SWEEP_MS ?? DEFAULT_SWEEP_MS);
 let usageSweepMs = Number(
   process.env.LOOPHUB_USAGE_SWEEP_MS ?? DEFAULT_USAGE_SWEEP_MS,
@@ -55,6 +62,8 @@ let worktreePruneSweepMs = Number(
 );
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--poll-ms") pollMs = Number(argv[++i]);
+  else if (argv[i] === "--dispatch-concurrency")
+    dispatchConcurrency = Number(argv[++i]);
   else if (argv[i] === "--sweep-ms") sweepMs = Number(argv[++i]);
   else if (argv[i] === "--usage-sweep-ms") usageSweepMs = Number(argv[++i]);
   else if (argv[i] === "--github-merge-sweep-ms")
@@ -71,6 +80,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 // Guard against a missing/non-numeric value (NaN), which setInterval treats as 0ms — a busy loop.
 if (!Number.isFinite(pollMs) || pollMs <= 0) pollMs = 1000;
+dispatchConcurrency = normalizeDispatchConcurrency(dispatchConcurrency);
 
 const maintenanceOptions = normalizeMaintenanceLoopOptions({
   sweepMs,
@@ -82,7 +92,7 @@ const maintenanceOptions = normalizeMaintenanceLoopOptions({
   herdrSweepMs,
   worktreePruneSweepMs,
 });
-const worker = startWorker({ pollMs });
+const worker = startWorker({ pollMs, concurrency: dispatchConcurrency });
 const externalGitWatcher = process.env.LOOPHUB_GIT_WATCHER === "external";
 const notificationSweepStop =
   externalGitWatcher && maintenanceOptions.sweepMs > 0
@@ -108,7 +118,7 @@ const summary = maintenanceSummary({
     : maintenanceOptions.worktreePruneSweepMs,
 });
 workerLog.info(
-  `lh-worker started (events poll ${pollMs}ms; heartbeat ${summary.workerHeartbeat}; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; github feedback sweep ${summary.githubFeedbackSweep}; closed pull cleanup sweep ${summary.closedPullCleanupSweep}; conflict sweep ${summary.conflictSweep}; herdr sweep ${summary.herdrSweep}; worktree prune sweep ${summary.worktreePruneSweep})`,
+  `lh-worker started (events poll ${pollMs}ms; dispatch concurrency ${dispatchConcurrency}; heartbeat ${summary.workerHeartbeat}; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; github feedback sweep ${summary.githubFeedbackSweep}; closed pull cleanup sweep ${summary.closedPullCleanupSweep}; conflict sweep ${summary.conflictSweep}; herdr sweep ${summary.herdrSweep}; worktree prune sweep ${summary.worktreePruneSweep})`,
 );
 
 let isShuttingDown = false;

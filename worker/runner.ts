@@ -27,6 +27,7 @@ import { scheduleDiffFeedbackProjection } from "./diff-feedback-projection.ts";
 import { workerErrorDetail, workerLog } from "./logger.ts";
 
 const DEFAULT_POLL_MS = 1000;
+export const DEFAULT_DISPATCH_CONCURRENCY = 16;
 const PAGE = 100;
 const ACTOR = "lh-worker";
 
@@ -304,21 +305,84 @@ export interface WorkerHandle {
   stop: () => void;
 }
 
-// Poll the events table by id cursor and dispatch matched events. The cursor is persisted after
-// every event so a restart resumes exactly where it left off.
+export function normalizeDispatchConcurrency(value: number): number {
+  return Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.floor(value))
+    : DEFAULT_DISPATCH_CONCURRENCY;
+}
+
+type CursorWriter = (path: string, cursor: number) => void;
+
+// パーティションごとにイベントを一つずつ処理し、複数パーティションは並列に実行する。
+// `repo_id` をパーティションキーとし、null も独立したパーティションとして扱う。
+async function dispatchEventBatch(
+  rows: EventRow[],
+  concurrency: number,
+  shouldStop: () => boolean,
+  dispatch: (row: EventRow) => Promise<void> = dispatchEvent,
+): Promise<Set<number>> {
+  const partitions = new Map<string, EventRow[]>();
+  for (const row of rows) {
+    const key = String(row.repo_id ?? "null");
+    const partition = partitions.get(key);
+    if (partition) partition.push(row);
+    else partitions.set(key, [row]);
+  }
+
+  const queue = [...partitions.values()];
+  const completed = new Set<number>();
+  let nextPartition = 0;
+
+  const runPartition = async () => {
+    for (;;) {
+      if (shouldStop()) return;
+      const partition = queue[nextPartition++];
+      if (!partition) return;
+      for (const row of partition) {
+        if (shouldStop()) return;
+        scheduleDiffFeedbackProjection(row);
+        try {
+          await dispatch(row);
+        } catch {
+          // dispatchEvent が失敗を記録するため、失敗したイベントでパーティションを止めない。
+        }
+        completed.add(row.id);
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, queue.length) }, () =>
+      runPartition(),
+    ),
+  );
+  return completed;
+}
+
+// events テーブルを id cursor で読み、該当イベントを dispatch する。完了したバッチごとに
+// cursor を永続化し、未完了イベントを越えて進まないようにする。
 export function startWorker(
-  opts: { pollMs?: number; cursorPath?: string } = {},
+  opts: {
+    pollMs?: number;
+    cursorPath?: string;
+    concurrency?: number;
+    writeCursor?: CursorWriter;
+  } = {},
 ): WorkerHandle {
   const pollMs =
     opts.pollMs != null && Number.isFinite(opts.pollMs) && opts.pollMs > 0
       ? opts.pollMs
       : DEFAULT_POLL_MS;
+  const concurrency = normalizeDispatchConcurrency(
+    opts.concurrency ?? DEFAULT_DISPATCH_CONCURRENCY,
+  );
   const cursorPath = opts.cursorPath ?? workerCursorPath();
+  const persistCursor = opts.writeCursor ?? writeCursor;
   let cursor = resolveStartCursor(cursorPath, events.newestId());
   let stopped = false;
   let running = false;
   workerLog.info(
-    `lh-worker: event tail started poll_ms=${pollMs} cursor=${cursor} page_size=${PAGE}`,
+    `lh-worker: event tail started poll_ms=${pollMs} concurrency=${concurrency} cursor=${cursor} page_size=${PAGE}`,
   );
 
   const drain = async () => {
@@ -330,17 +394,16 @@ export function startWorker(
         if (stopped) break;
         const rows = events.page(cursor, null, PAGE) as EventRow[];
         if (rows.length === 0) break;
+        const completed = await dispatchEventBatch(
+          rows,
+          concurrency,
+          () => stopped,
+        );
         for (const row of rows) {
-          if (stopped) break;
-          scheduleDiffFeedbackProjection(row);
-          try {
-            await dispatchEvent(row);
-          } catch {
-            // dispatchEvent logged the failure; one failed event must not stall the tail.
-          }
+          if (!completed.has(row.id)) break;
           cursor = Math.max(cursor, row.id);
-          writeCursor(cursorPath, cursor);
         }
+        persistCursor(cursorPath, cursor);
       }
     } finally {
       running = false;

@@ -132,6 +132,8 @@ npm run lh-job-queue # 外部副作用 job の専用プロセス境界
 `serve` のいずれか一つが終了すると、残りも停止して `serve` 全体が終了する。
 `Ctrl-C` でも6プロセスを停止できる。`serve:debug` も同じ6プロセスを起動し、`lh-web` にだけ `--debug` を渡す。
 `lh-worker` を単独起動した場合は、従来どおり git sweep も実行する。分離プロセスを使う場合は `serve` を利用する。
+イベント処理の同時実行数は既定値 16 で、`LOOPHUB_DISPATCH_CONCURRENCY=4 npm run lh-dispatcher` または
+`npm run lh-dispatcher -- --dispatch-concurrency 4` で変更できる。
 
 ### CLI
 
