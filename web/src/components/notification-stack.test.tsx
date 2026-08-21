@@ -239,6 +239,7 @@ describe("NotificationStack", () => {
       makeNotification(2, { kind: "over_budget", severity: "warning" }),
       makeNotification(3, { kind: "human_attention" }),
       makeNotification(4, { kind: "agent_comment" }),
+      makeNotification(5, { kind: "github_pr_linked" }),
     ];
 
     renderStack();
@@ -271,6 +272,13 @@ describe("NotificationStack", () => {
     const agentComment = iconFor(4);
     expect(agentComment.classList).toContain("lucide-message-square");
     expect(agentComment.getAttribute("class")).toContain("text-violet-700");
+
+    const githubPrLinked = iconFor(5);
+    expect(githubPrLinked.classList).toContain("lucide-git-pull-request");
+    expect(githubPrLinked.getAttribute("class")).toContain("text-indigo-700");
+    expect(githubPrLinked.closest("article")?.textContent).toContain(
+      "GitHub PR created",
+    );
   });
 
   it("reveals the next older unread notification after closing a newer one", async () => {

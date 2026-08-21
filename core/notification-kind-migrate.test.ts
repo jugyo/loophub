@@ -111,11 +111,12 @@ test("createNotification and assert helpers share the single kind allowlist", ()
     "over_budget",
     "human_attention",
     "agent_comment",
+    "github_pr_linked",
   ]);
   expect(S.isNotificationKind("agent_comment")).toBe(true);
   expect(S.isNotificationKind("implementation_done")).toBe(false);
   expect(S.notificationKindAllowlistMessage()).toBe(
-    "merge_ready, over_budget, human_attention, or agent_comment",
+    "merge_ready, over_budget, human_attention, agent_comment, or github_pr_linked",
   );
 
   const expected = `kind must be ${S.notificationKindAllowlistMessage()}`;

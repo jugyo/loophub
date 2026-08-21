@@ -5,6 +5,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   ExternalLink,
+  GitPullRequest,
   Info,
   MessageSquare,
   X,
@@ -42,6 +43,7 @@ function notificationIcon(notification: Notification) {
   if (kind === "over_budget") return CircleDollarSign;
   if (kind === "human_attention") return Info;
   if (kind === "agent_comment") return MessageSquare;
+  if (kind === "github_pr_linked") return GitPullRequest;
   return AlertTriangle;
 }
 
@@ -54,6 +56,8 @@ function notificationTone(notification: Notification): string {
   if (kind === "over_budget") return "text-amber-700 dark:text-amber-300";
   if (kind === "human_attention") return "text-sky-700 dark:text-sky-300";
   if (kind === "agent_comment") return "text-violet-700 dark:text-violet-300";
+  if (kind === "github_pr_linked")
+    return "text-indigo-700 dark:text-indigo-300";
   return "text-rose-700 dark:text-rose-300";
 }
 
@@ -89,6 +93,7 @@ function notificationKindLabel(notification: Notification): string {
   if (notification.kind === "over_budget") return "Over budget";
   if (notification.kind === "human_attention") return "Human attention";
   if (notification.kind === "agent_comment") return "Agent comment";
+  if (notification.kind === "github_pr_linked") return "GitHub PR created";
   return "Notification";
 }
 

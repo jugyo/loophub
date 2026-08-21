@@ -9,6 +9,7 @@ export const NOTIFICATION_KINDS = [
   "over_budget",
   "human_attention",
   "agent_comment",
+  "github_pr_linked",
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

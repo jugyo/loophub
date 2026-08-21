@@ -29,7 +29,7 @@ export async function run(): Promise<void> {
   if (sub === "send") {
     const repo = await resolveRepo();
     const sendUsage =
-      "usage: lh notification send --kind merge_ready|over_budget|human_attention|agent_comment --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/name] [--json]";
+      "usage: lh notification send --kind merge_ready|over_budget|human_attention|agent_comment|github_pr_linked --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/name] [--json]";
     if (!flags.kind) fail(`--kind is required\n${sendUsage}`);
     if (!flags.title) fail(`--title is required\n${sendUsage}`);
     if (flags.body === undefined) fail(`--body is required\n${sendUsage}`);

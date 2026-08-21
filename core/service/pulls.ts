@@ -32,6 +32,7 @@ import {
   realGithubDeps,
   realGithubPrStatusDeps,
 } from "../github.ts";
+import { notifyGithubPullLinked } from "../github-pull-notifications.ts";
 import { parseClosingIssueNumber } from "../links.ts";
 import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
 import {
@@ -589,6 +590,12 @@ export const pulls = {
         github_number,
         url: rec.url,
       });
+      notifyGithubPullLinked({
+        repoId: r.id,
+        repoFullName: r.full_name,
+        pullNumber: row.number,
+        githubNumber: github_number as number,
+      });
       return githubPullJSON(rec);
     });
   },
@@ -742,6 +749,12 @@ export const pulls = {
         number: row.number,
         github_number: gh.number,
         url: rec.url,
+      });
+      notifyGithubPullLinked({
+        repoId: r.id,
+        repoFullName: r.full_name,
+        pullNumber: row.number,
+        githubNumber: gh.number,
       });
       return githubPullJSON(rec);
     });

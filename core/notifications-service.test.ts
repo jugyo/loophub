@@ -681,7 +681,7 @@ test("send rejects the retired implementation_done kind", () => {
       resourceKind: "repo",
     }),
   ).toThrow(
-    "kind must be merge_ready, over_budget, human_attention, or agent_comment",
+    "kind must be merge_ready, over_budget, human_attention, agent_comment, or github_pr_linked",
   );
 });
 

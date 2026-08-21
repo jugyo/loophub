@@ -483,6 +483,67 @@ test("createGithubPull pushes, creates a Draft PR, and records it (#411)", async
   expect(after.github_pull).toMatchObject({ number: 100 });
 });
 
+// #2506: "Create PR on GitHub" launches an agent and returns, so the link landing is the only
+// success signal an AFK supervisor gets. Both recording paths announce it, once per GitHub PR.
+test("linking a GitHub PR notifies once, and an export in flight does not (#2506)", async () => {
+  const number = await openPull();
+  const repo = S.getRepo("me", "proj")!;
+  const pullId = S.getIssue(repo.id, number)!.id;
+  const notified = () =>
+    S.listNotifications({ unreadOnly: true }).filter(
+      (n) => n.kind === "github_pr_linked" && n.resource_number === number,
+    );
+
+  // Still 'creating': there is no GitHub PR to announce yet.
+  S.beginGithubPrExport({ issueId: pullId });
+  expect(notified()).toHaveLength(0);
+
+  svc.pulls.recordGithubPull("me/proj", number, {
+    url: "https://github.com/me/proj/pull/2506",
+  });
+  expect(notified()).toMatchObject([
+    {
+      title: "GitHub PR created",
+      body: `PR #${number} in me/proj is linked to GitHub PR #2506.`,
+      resource_kind: "pull",
+      resource_number: number,
+    },
+  ]);
+
+  // Re-recording the same GitHub PR (a retry, an overwrite) must not stack a second notification.
+  svc.pulls.recordGithubPull("me/proj", number, {
+    url: "https://github.com/me/proj/pull/2506",
+  });
+  expect(notified()).toHaveLength(1);
+});
+
+test("createGithubPull notifies with the GitHub PR it just opened (#2506)", async () => {
+  const number = await openPull();
+  const { deps } = fakeDeps({
+    createResult: { number: 2507, url: "https://github.com/me/proj/pull/2507" },
+  });
+
+  await svc.pulls.createGithubPull(
+    "me/proj",
+    number,
+    { branch: "feature/notify", title: "Add notify", body: "## Summary\nx" },
+    null,
+    deps as any,
+  );
+
+  expect(
+    S.listNotifications({ unreadOnly: true }).filter(
+      (n) => n.kind === "github_pr_linked" && n.resource_number === number,
+    ),
+  ).toMatchObject([
+    {
+      body: `PR #${number} in me/proj is linked to GitHub PR #2507.`,
+      resource_kind: "pull",
+      resource_number: number,
+    },
+  ]);
+});
+
 test("createGithubPull recovers a created-but-unrecorded PR instead of duplicating (#411)", async () => {
   const number = await openPull();
   // view returns an existing PR → create must NOT be called (atomic recovery).
