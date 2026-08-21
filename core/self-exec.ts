@@ -15,12 +15,14 @@ export function isCompiledBinary(): boolean {
 /**
  * The command that re-enters this program's `lh` CLI, as `[command, ...args]` with the caller's
  * arguments appended. The binary dispatches on its first argument (see bin/loophub.ts); the
- * checkout runs the CLI entry point directly.
+ * checkout runs the CLI entry point through Bun. Do not inherit process.execPath for a checkout:
+ * lh-web can have been started through a Node-based TypeScript loader, which cannot load
+ * Bun-only modules such as bun:sqlite.
  */
 export function selfCliCommand(): { command: string; args: string[] } {
   if (isCompiledBinary()) return { command: process.execPath, args: ["lh"] };
   return {
-    command: process.execPath,
+    command: "bun",
     args: [fileURLToPath(new URL("../cli/index.ts", import.meta.url))],
   };
 }

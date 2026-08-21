@@ -44,7 +44,7 @@ const herdr = vi.hoisted(() => ({
   script: [] as Array<(child: ScriptedChild) => void>,
 }));
 
-// Launcher CLI spawns (`lh workflow start --herdr`, #1007): workflow-run launches go through this
+// Launcher CLI spawns (`bun cli/index.ts workflow start --herdr`, #1007): workflow-run launches go through this
 // instead of terminal.launch orchestrating herdr tabs/workspaces itself.
 const lhDev = vi.hoisted(() => ({
   calls: [] as string[][],
@@ -71,7 +71,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   return {
     ...actual,
     spawn: (command: string, args: string[], opts: object) => {
-      if (command === "lh")
+      if (command === "bun")
         return scripted(lhDev.calls, lhDev.script, command, args);
       if (command === "herdr") {
         const explicitFocus = args.some(
@@ -263,7 +263,16 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
     });
 
     expect(lhDev.calls).toEqual([
-      ["lh", "workflow", "start", "me/proj/1", "--workflow-id", "9", "--herdr"],
+      [
+        "bun",
+        expect.stringMatching(/cli\/index\.ts$/),
+        "workflow",
+        "start",
+        "me/proj/1",
+        "--workflow-id",
+        "9",
+        "--herdr",
+      ],
     ]);
     expect(herdr.calls).toHaveLength(0);
     expect(result).toMatchObject({ backend: "herdr" });
@@ -309,7 +318,7 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
     expect(lhDev.calls).toHaveLength(0);
   });
 
-  test("reports lh missing from PATH distinctly from a launch failure", async () => {
+  test("reports a missing Bun runtime distinctly from a launch failure", async () => {
     lhDev.script.push((child) =>
       child.emit(
         "error",
@@ -330,7 +339,7 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
       );
 
     expect(err?.status).toBe(422);
-    expect(err?.message).toBe("lh command not found on PATH");
+    expect(err?.message).toBe("Bun runtime not found on PATH");
   });
 
   test("logs a bounded stderr tail server-side, but never in the client-facing error (#584 security review)", async () => {

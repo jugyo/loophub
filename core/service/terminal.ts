@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
 import { db } from "../db.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
+import { selfCliCommand } from "../self-exec.ts";
 import type {
   HerdrRepoSessionsWire,
   HerdrSessionsWire,
@@ -148,7 +149,8 @@ function runLhDevLaunch(
   reportError: (message: string) => void = console.error,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn("lh", args, {
+    const cli = selfCliCommand();
+    const child = spawn(cli.command, [...cli.args, ...args], {
       cwd,
       stdio: ["ignore", "ignore", "pipe"],
     });
@@ -197,7 +199,7 @@ function runLhDevLaunch(
       settle(() =>
         reject(
           code === "ENOENT"
-            ? new ServiceError(422, "lh command not found on PATH")
+            ? new ServiceError(422, "Bun runtime not found on PATH")
             : new ServiceError(
                 500,
                 `failed to launch ${label} (${code ?? "spawn error"})`,
