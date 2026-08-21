@@ -44,7 +44,7 @@ export function usage(): void {
   lh workflow escalate-human --reason <text|@file|-> --run <id> [--repo owner/name]   # record an idempotent PR comment
   lh workflow instruction <run> [--repo owner/name] (--event <id> --requires-changes true|false | --note <text|->) [--json]      # submit a parent input — a GitHub-reference verdict or a direct human instruction — and return the instruction it produces, without changing run state
   lh workflow effect begin|complete --repo owner/name --run <id> --event <id> --effect <key> [--json]   # durable idempotency receipt for a non-transactional parent side effect
-  lh workflow cost-hold --repo owner/name --run <id> --event <id> [--json]   # hold a cost-exceeded run, interrupt its active pane, and notify the child exactly once
+  lh workflow cost-hold --repo owner/name --run <id> --event <id> [--json]   # hold a cost-exceeded run exactly once; the child already running is left to finish its step
   lh workflow step input <run> <step> [--repo owner/name] [--note <text|->] [--review <id>]   # dry-run the composed contract + input pointers + prompt for a step (no launch)
   lh workflow step status <run> [--repo owner/name] [--json]   # observe run state: HEAD vs base, last turn-done, latest workflow review freshness
   lh handoff record --phase <p> --dir <down|up> (--pr <m> | --issue <n>) (--body <text|@file|-> | --src <ref> [--hash <sha>]) [--from <r>] [--to <r>] [--summary <text>] [--model <m>] [--cost <json>]   # record an orchestrator<->subagent handoff (PR + session)

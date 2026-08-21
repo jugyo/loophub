@@ -49,7 +49,6 @@ export function herdrAgentControl(cwd: string): AgentControl {
         timeoutMs: HERDR_TIMEOUT_MS,
       });
     },
-    inputKey: (target, key) => run(target, "send-keys", [key]),
     close: (target) => run(target, "close", []),
   };
 }

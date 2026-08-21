@@ -626,7 +626,6 @@ describe("reconcileWorkflow", () => {
     ).toEqual({
       action: "launch_verify",
       reason: "A queued verifier instruction requires a fresh Verify child.",
-      transition: null,
       delivery_id: "delivery-1",
     });
   });
@@ -663,6 +662,50 @@ describe("reconcileWorkflow", () => {
     ).toMatchObject({ action: "cost_hold", event_id: 92 });
   });
 
+  // #369: the hold is the whole cost mechanism — the child that overran the limit keeps running
+  // and finishes its step, so the wake it produces must not advance the run any further.
+  test("does not advance to Verify while a cost hold stands", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          needsHumanReason: "Cost limit exceeded",
+          awaitingHuman: true,
+          costLimitIncreaseRequired: true,
+          activeStep: "execute",
+          turnDoneForActiveExecute: true,
+          steps: {
+            execute: { complete: true, missing: [] },
+            verify: {
+              complete: false,
+              missing: ["no workflow review pinned to current head"],
+              latest_review: null,
+            },
+          },
+        }),
+      ),
+    ).toMatchObject({ action: "wait" });
+  });
+
+  test("does not deliver a queued instruction while a cost hold stands", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          needsHumanReason: "Cost limit exceeded",
+          awaitingHuman: true,
+          costLimitIncreaseRequired: true,
+          wake: {
+            kind: "pending_delivery_ready",
+            delivery: {
+              id: "delivery-1",
+              target: "executor",
+              text: "orchestrator: address PR comment 19",
+            },
+          },
+        }),
+      ),
+    ).toMatchObject({ action: "wait" });
+  });
+
   test("completes a merged run instead of holding for cost", () => {
     expect(
       reconcileWorkflow(
@@ -690,7 +733,9 @@ describe("reconcileWorkflow", () => {
   });
 
   // #1828: the increase itself is the human's continuation decision, so a run still held when it
-  // lands must resume the step the cost hold interrupted.
+  // lands must release the hold. #369 narrowed that to the release alone: the held child was never
+  // interrupted, so what it finished is already in domain state and the wake the resume emits lets
+  // the normal rules act on it.
   function costIncreaseWake(patch: Partial<WorkflowReconcileInput> = {}) {
     return observed({
       needsHumanReason: "Cost limit exceeded",
@@ -700,25 +745,61 @@ describe("reconcileWorkflow", () => {
     });
   }
 
-  test("resumes an interrupted Execute after a human increased the cost limit", () => {
+  test("resumes a held Execute after a human increased the cost limit", () => {
     expect(
       reconcileWorkflow(costIncreaseWake({ activeStep: "execute" })),
-    ).toMatchObject({
-      action: "deliver",
-      delivery_reason: "cost_limit_increased",
-      transition: "resume_execute",
-    });
+    ).toMatchObject({ action: "resume", step: "execute" });
   });
 
-  test("launches a fresh Verify after a human increased the cost limit", () => {
+  test("resumes a held Verify after a human increased the cost limit", () => {
     expect(
       reconcileWorkflow(
         costIncreaseWake({ currentStep: "verify", activeStep: "verify" }),
       ),
-    ).toMatchObject({
-      action: "launch_verify",
-      transition: "resume_verify",
-    });
+    ).toMatchObject({ action: "resume", step: "verify" });
+  });
+
+  // #369: the held Verify keeps running, so it can land a verdict before the increase arrives. The
+  // resume must not decide anything on top of releasing the hold — the review is already recorded,
+  // and the wake it emits reaches the rules that act on it rather than re-reviewing the same HEAD.
+  test("resumes without relaunching when the held Verify already reviewed the current HEAD", () => {
+    const reviewed = {
+      execute: { complete: true, missing: [] },
+      verify: {
+        complete: true,
+        missing: [],
+        latest_review: {
+          id: 5,
+          event: "request_changes" as const,
+          headSha: HEAD,
+          fresh: true,
+        },
+      },
+    };
+    expect(
+      reconcileWorkflow(
+        costIncreaseWake({
+          currentStep: "verify",
+          activeStep: "verify",
+          steps: reviewed,
+        }),
+      ),
+    ).toMatchObject({ action: "resume", step: "verify" });
+
+    // The wake the resume emits carries no hold, so the recorded verdict becomes rework.
+    expect(
+      reconcileWorkflow(
+        observed({ currentStep: "verify", activeStep: null, steps: reviewed }),
+      ),
+    ).toMatchObject({ action: "request_rework", review_id: 5 });
+  });
+
+  // The child that overran the limit was never stopped, so the release must not also tell it to
+  // "continue"; the rules see an Execute that is still working and wait for its turn done.
+  test("waits for the resumed Execute's own turn done instead of prompting it", () => {
+    expect(
+      reconcileWorkflow(observed({ activeStep: "execute" })),
+    ).toMatchObject({ action: "wait" });
   });
 
   test("keeps waiting when the increased cost limit is already exceeded", () => {
@@ -732,7 +813,7 @@ describe("reconcileWorkflow", () => {
     ).toMatchObject({ action: "wait" });
   });
 
-  test("keeps waiting when a cost limit increase has no interrupted step", () => {
+  test("keeps waiting when a cost limit increase has no held step", () => {
     expect(reconcileWorkflow(costIncreaseWake())).toMatchObject({
       action: "wait",
     });
@@ -792,10 +873,27 @@ describe("workflowActionPlan", () => {
         ?.args,
     ).toContain("11");
     expect(
+      plan({ action: "resume", reason: "increased", step: "verify" }).commands,
+    ).toEqual([
+      {
+        command: "lh",
+        args: [
+          "workflow",
+          "run",
+          "resume",
+          "--repo",
+          "me/repo",
+          "--run",
+          "42",
+          "--step",
+          "verify",
+        ],
+      },
+    ]);
+    expect(
       plan({
         action: "launch_verify",
         reason: "queued",
-        transition: null,
         delivery_id: "delivery-1",
       }).commands[0]?.args,
     ).toContain("delivery-1");

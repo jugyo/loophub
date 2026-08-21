@@ -502,10 +502,10 @@ export function getWorkflowEventEffect(
   );
 }
 
-// The receipt for one run's interrupt at one cumulative cost limit, whichever
+// The receipt for one run's hold at one cumulative cost limit, whichever
 // `workflow_run.cost_exceeded` event claimed it (#1844). Re-emitted events carry new ids but the
-// same `limit_usd` and ask for the same single interrupt, so the per-event lookup above would let
-// the ones a stopped parent drains after the first hold replay Esc and the pane notification.
+// same `limit_usd` and ask for the same single hold, so the per-event lookup above would let the
+// ones a stopped parent drains after the first hold re-hold a run the human already released.
 export function getWorkflowEventEffectForCostLimit(
   runId: number,
   effect: string,

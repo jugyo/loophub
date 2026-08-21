@@ -1607,7 +1607,7 @@ async function workflowRunState(
 }
 
 // A Web surface may increase the limit only where `increaseCostLimitForHuman` would succeed: the run
-// is held on the current limit's cost-exceeded event and still has an interrupted step to resume.
+// is held on the current limit's cost-exceeded event and still has a held step to resume.
 function costLimitIncreaseAvailable(
   repo: S.Repo,
   run: S.WorkflowRunRow,
@@ -1790,7 +1790,7 @@ function increaseRunCostLimit(
         "Workflow cost limit was not increased because its state changed",
       );
     }
-    // The worker turns this event into the parent's next instruction. It carries the interrupted
+    // The worker turns this event into the parent's next instruction. It carries the held
     // step so the wake is legible in run history even though reconciliation re-observes the run row. The
     // raised limit and this wake commit together: a wake without the raise would resume a run that
     // is still over budget.
@@ -2233,14 +2233,14 @@ export const workflowRuns = {
     return updateRunLifecycle(
       run,
       {
-        // The resume target names the interrupted child, not necessarily the run's logical phase.
+        // The resume target names the held child, not necessarily the run's logical phase.
         // A continuing Execute can be active while a fresh pass keeps the run at Verify, so a
         // cost-hold resume must not roll that verified phase back to Execute.
         currentStep:
           run.current_step === "verify" && step === "execute" ? "verify" : step,
         reworkCount: 0,
         needsHumanReason: null,
-        // Verify must review the current HEAD with a fresh child, so drop the interrupted session.
+        // Verify must review the current HEAD with a fresh child, so drop the held session.
         // Execute continues in the same pane, so its active session is preserved (omitted from the
         // patch): clearing it made `next` see no active Execute and launch a duplicate executor
         // after a cost-hold resume (#1872).
@@ -2431,7 +2431,7 @@ export const workflowRuns = {
     }
     // A hold is the outcome this event asks for, so stop re-emitting once one exists (#1844) —
     // whether `cost-hold` established it or a human is still deciding. Without this the parent
-    // would replay Esc and the pane notification against a run it already interrupted.
+    // would keep re-holding a run that is already held.
     if (run.needs_human_reason !== null) {
       return {
         emitted: false,
@@ -2510,7 +2510,7 @@ export const workflowRuns = {
     if (run.active_step !== "execute" && run.active_step !== "verify") {
       throw new ServiceError(
         409,
-        "Workflow run has no interrupted step to resume after a cost limit increase",
+        "Workflow run has no held step to resume after a cost limit increase",
       );
     }
     return increaseRunCostLimit(repo, run, input, sessionId);

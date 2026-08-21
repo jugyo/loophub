@@ -1,8 +1,6 @@
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
 import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
-import { workflowStepSessionIds } from "../workflow/herdr-agents.ts";
-import { agentControl } from "./agent-control.ts";
 import { ensureWritable, repoOr404 } from "./shared.ts";
 import { workflowRuns } from "./workflow-runs.ts";
 
@@ -10,8 +8,6 @@ const EFFECT = "cost.hold";
 
 type CostExceededPayload = {
   id: number;
-  active_step: "execute" | "verify" | null;
-  active_session_id: string | null;
   cost_usd: number;
   limit_usd: number;
 };
@@ -45,24 +41,9 @@ function costExceededPayload(
   }
   const incomplete = new ServiceError(
     422,
-    `event #${event.id} is missing its active child or cost data`,
+    `event #${event.id} is missing its cost data`,
   );
   if (value.id !== runId) throw incomplete;
-  const activeStep = value.active_step;
-  if (
-    activeStep !== null &&
-    activeStep !== "execute" &&
-    activeStep !== "verify"
-  ) {
-    throw incomplete;
-  }
-  const activeSessionId = value.active_session_id;
-  if (
-    activeSessionId !== null &&
-    (typeof activeSessionId !== "string" || activeSessionId === "")
-  ) {
-    throw incomplete;
-  }
   const costUsd = value.cost_usd;
   if (typeof costUsd !== "number" || !Number.isFinite(costUsd))
     throw incomplete;
@@ -70,13 +51,7 @@ function costExceededPayload(
   if (typeof limitUsd !== "number" || !Number.isFinite(limitUsd)) {
     throw incomplete;
   }
-  return {
-    id: runId,
-    active_step: activeStep,
-    active_session_id: activeSessionId,
-    cost_usd: costUsd,
-    limit_usd: limitUsd,
-  };
+  return { id: runId, cost_usd: costUsd, limit_usd: limitUsd };
 }
 
 function message(error: unknown): string {
@@ -99,35 +74,11 @@ function failedResult(
   };
 }
 
-function activeTarget(input: {
-  run: S.WorkflowRunRow;
-  payload: CostExceededPayload;
-}): S.AgentExecutionTargetRow {
-  if (!input.payload.active_step || !input.payload.active_session_id) {
-    throw new ServiceError(409, "cost exceeded event has no active child");
-  }
-  if (
-    !workflowStepSessionIds(
-      input.run.step_sessions_json,
-      input.payload.active_step,
-    ).includes(input.payload.active_session_id)
-  ) {
-    throw new ServiceError(
-      409,
-      `active session ${input.payload.active_session_id} is not registered for ${input.payload.active_step}`,
-    );
-  }
-  const target = S.getAgentExecutionTarget(input.payload.active_session_id);
-  if (!target) {
-    throw new ServiceError(
-      409,
-      `active session ${input.payload.active_session_id} has no execution target`,
-    );
-  }
-  return target;
-}
-
 export const workflowCostHold = {
+  // A cost hold never touches the running child (#369): it holds the run so `reconcileWorkflow`
+  // stops advising the next Execute / Verify launch and any further injection, and lets the step
+  // already in flight finish. The one step's worth of overspend is accepted deliberately —
+  // interrupting mid-step costs more to recover than it saves.
   async run(
     name: string,
     input: { run: number; event: number },
@@ -160,9 +111,9 @@ export const workflowCostHold = {
     const payload = costExceededPayload(event, run.id);
     // Scoped to the run's cumulative limit rather than this event id (#1844): detection re-emits
     // `workflow_run.cost_exceeded` while a stopped parent is away, so the parent drains several
-    // events that all ask for the one interrupt this limit warrants. A per-event receipt would let
-    // each of them re-send Esc and the child notification — and re-hold a run the human already
-    // released. A raised limit produces events at a new `limit_usd`, which correctly holds again.
+    // events that all ask for the one hold this limit warrants. A per-event receipt would let each
+    // of them re-hold a run the human already released. A raised limit produces events at a new
+    // `limit_usd`, which correctly holds again.
     const existingReceipt = S.getWorkflowEventEffectForCostLimit(
       run.id,
       EFFECT,
@@ -197,14 +148,6 @@ export const workflowCostHold = {
     }
 
     const completed: string[] = [];
-    let target: S.AgentExecutionTargetRow | undefined;
-    let targetError: unknown;
-    try {
-      target = activeTarget({ run, payload });
-    } catch (error) {
-      targetError = error;
-    }
-
     const reason = `Cost limit exceeded: current $${payload.cost_usd}, limit $${payload.limit_usd}; human decision required`;
     try {
       await workflowRuns.awaitHuman(name, { run: run.id, reason }, sessionId);
@@ -218,49 +161,6 @@ export const workflowCostHold = {
       );
     }
     completed.push("await-human");
-
-    if (targetError || !target) {
-      return failedResult(
-        input,
-        completed,
-        "target resolution",
-        "resolve active child execution target",
-        targetError ?? new Error("active execution target was not resolved"),
-      );
-    }
-
-    const executionTarget = {
-      provider: target.provider,
-      targetId: target.target_id,
-      context: target.context,
-    };
-    const control = agentControl(repo.local_path, executionTarget);
-    try {
-      await control.inputKey(executionTarget, "Escape");
-    } catch (error) {
-      return failedResult(
-        input,
-        completed,
-        "Escape",
-        "send Escape to active child",
-        error,
-      );
-    }
-    completed.push("Escape");
-
-    const notification = `orchestrator: Cost limit exceeded: current $${payload.cost_usd}, limit $${payload.limit_usd}. Wait for human instruction.`;
-    try {
-      await control.inputText(executionTarget, notification);
-    } catch (error) {
-      return failedResult(
-        input,
-        completed,
-        "child notification",
-        "send notification to active child",
-        error,
-      );
-    }
-    completed.push("child notification");
 
     const completedReceipt = S.completeWorkflowEventEffect(
       run.id,

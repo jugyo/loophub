@@ -975,7 +975,7 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
     parentSessionId,
   );
   expect(resumed.run.needs_human_reason).toBeNull();
-  // Resuming Execute continues the interrupted executor in the same pane rather than launching a
+  // Resuming Execute continues the held executor in the same pane rather than launching a
   // duplicate (#1872): its active step and session survive the resume.
   expect(resumed.run).toMatchObject({
     active_step: "execute",
@@ -1111,7 +1111,7 @@ test("cost exceeded is re-emitted until the run is held or its limit is raised (
   expect(costEvents()).toHaveLength(1);
 
   // A parent that stopped between wake and cost-hold leaves the run unheld, so the next sweep past
-  // the interval re-sends the interrupt.
+  // the interval re-sends the hold request.
   process.env.LOOPHUB_COST_REEMIT_MS = "0";
   try {
     expect(detect()).toEqual({ emitted: true, cost_usd: 3, limit_usd: 2.5 });
@@ -1124,7 +1124,7 @@ test("cost exceeded is re-emitted until the run is held or its limit is raised (
 
     // Once a hold exists the event has been acted on. This only stops new emissions — the ones
     // already queued behind the parent's cursor are still delivered, and it is `cost.hold`'s
-    // per-limit receipt that keeps them from replaying Esc and the pane notification (covered
+    // per-limit receipt that keeps them from re-holding a released run (covered
     // end-to-end in cli/workflow-cost-hold.test.ts). A human answering "no" keeps the hold, so
     // this also covers that case.
     svc.workflowRuns.awaitHuman(
@@ -1258,20 +1258,27 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
     previous_limit_usd: 2.5,
     current_limit_usd: 5,
   });
-  // The parent resumes the step the cost hold interrupted.
+  // The parent releases the hold and decides nothing else (#369): the held child was never
+  // interrupted, so nothing here should tell it to continue work it never stopped.
   expect(
     await svc.workflowRuns.next(repo.full_name, {
       run: run.id,
       event: increased!.id,
     }),
-  ).toMatchObject({
-    action: "deliver",
-    delivery_reason: "cost_limit_increased",
-    transition: "resume_execute",
-  });
+  ).toMatchObject({ action: "resume", step: "execute" });
 });
 
-// #1872: a cost hold's resume must continue the interrupted executor in the same pane. Clearing the
+/** The id of the run's newest lifecycle event — the wake a `run resume` leaves for the parent. */
+function lastRunUpdate(runId: number): number {
+  const repoId = S.getWorkflowRun(runId)!.repo_id;
+  const updated = S.eventsForWorkflowRun(repoId, runId)
+    .filter((event) => event.type === "workflow_run.updated")
+    .at(-1);
+  if (!updated) throw new Error(`run #${runId} has no lifecycle event`);
+  return updated.id;
+}
+
+// #1872: a cost hold's resume must continue the held executor in the same pane. Clearing the
 // active session made `next` return `launch_execute`, spawning a duplicate executor. Verify keeps the
 // opposite rule — a fresh child reviews the current HEAD — so resuming Verify still clears it.
 test("resume continues a held Execute but relaunches Verify (#1872)", async () => {
@@ -1312,7 +1319,7 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     parent,
   );
 
-  // A cost hold interrupts the executor mid-work (no turn done yet). Resuming preserves it.
+  // A cost hold catches the executor mid-work (no turn done yet). Resuming preserves it.
   svc.workflowRuns.awaitHuman(
     repo.full_name,
     { run: started.run.id, reason: "Cost limit exceeded" },
@@ -1328,12 +1335,17 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     active_step: "execute",
     active_session_id: exec.session_id,
   });
+  // The release is what carries the run forward (#369): its own event is an instruction wake, so
+  // the normal rules see an Execute that never stopped and wait for its turn done.
   expect(
-    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: lastRunUpdate(started.run.id),
+    }),
   ).toMatchObject({ action: "wait" });
 
   // Take the run to Verify with HEAD ahead of base, hold again, then resume at Verify: the
-  // interrupted verifier is dropped and the parent launches a fresh one for the current HEAD.
+  // held verifier is dropped and the parent launches a fresh one for the current HEAD.
   commit(started.worktree, "impl.txt", "v1\n");
   await svc.workflowRuns.turnDone(
     repo.full_name,
@@ -1409,7 +1421,10 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
     active_session_id: null,
   });
   expect(
-    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: lastRunUpdate(started.run.id),
+    }),
   ).toMatchObject({ action: "launch_verify" });
 }, 30_000);
 
@@ -2163,7 +2178,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     active_session_id: exec.session_id,
   });
 
-  // The cost hold interrupts the active Execute target without rolling the verified lifecycle
+  // The cost hold holds the run without rolling the verified lifecycle
   // phase back. After the human raises the limit, the same executor resumes; declaring a metadata-
   // only turn done keeps the pass fresh and does not produce a no-progress delivery.
   svc.workflowRuns.awaitHuman(
@@ -4777,7 +4792,7 @@ test("history ranks lifecycle events by what a human judges the run by (#1867)",
   );
 
   // The event sequence a run actually produces today: Execute ends a turn and completes, Verify
-  // reports twice, the parent reworks and re-activates Execute, and a cost hold interrupts it
+  // reports twice, the parent reworks and re-activates Execute, and a cost hold catches it
   // until a human raises the limit.
   S.emitEvent(repo.id, "workflow_run.started", "parent", base);
   S.emitEvent(repo.id, "workflow_run.turn_done", "execute-agent", base);

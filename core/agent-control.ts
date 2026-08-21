@@ -6,6 +6,5 @@ export interface AgentExecutionTarget {
 
 export interface AgentControl {
   inputText(target: AgentExecutionTarget, text: string): Promise<void>;
-  inputKey(target: AgentExecutionTarget, key: string): Promise<void>;
   close(target: AgentExecutionTarget): Promise<void>;
 }

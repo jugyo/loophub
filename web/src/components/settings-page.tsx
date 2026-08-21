@@ -90,7 +90,9 @@ export function SettingsPage() {
         >
           <h2 className="text-sm font-medium">Task over-budget limit</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Stop a running build agent after its task cost exceeds this amount.
+            Hold a workflow run for a human once its cost exceeds this amount.
+            The step already running finishes; nothing new is started until you
+            raise the limit.
           </p>
           <form
             className="mt-3 flex items-start gap-2"

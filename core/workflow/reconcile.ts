@@ -83,7 +83,6 @@ export type WorkflowNextAction =
   | {
       action: "launch_verify";
       reason: string;
-      transition: "resume_verify" | null;
       delivery_id?: string;
     }
   | { action: "advance_and_verify"; reason: string }
@@ -124,8 +123,16 @@ export type WorkflowNextAction =
   | {
       action: "deliver";
       reason: string;
-      delivery_reason: "human_instruction" | "cost_limit_increased";
+      delivery_reason: "human_instruction";
       transition: "resume_execute" | null;
+    }
+  | {
+      // Release a hold and decide nothing else. The run's facts — reviews, turn done, HEAD — are
+      // already in domain state, so the wake this resume emits reconciles them under the normal
+      // rules instead of the hold path guessing what the held child got done (#369).
+      action: "resume";
+      reason: string;
+      step: "execute" | "verify";
     }
   | {
       // The parent reads the named GitHub resources and submits its verdict. The
@@ -225,9 +232,6 @@ export function workflowActionPlan(
       ]);
     case "launch_verify":
       return watch([
-        ...(action.transition === "resume_verify"
-          ? [command("run", "resume", ...scoped, "--step", "verify")]
-          : []),
         command(
           "launch-step",
           ...scoped,
@@ -369,6 +373,10 @@ export function workflowActionPlan(
       return watch([
         command("cost-hold", ...scoped, "--event", String(action.event_id)),
       ]);
+    case "resume":
+      return watch([
+        command("run", "resume", ...scoped, "--step", action.step),
+      ]);
     case "deliver_pending":
       return watch([
         command(
@@ -448,9 +456,9 @@ export function reconcileWorkflow(
     };
   }
 
-  // A cost interrupt outranks every non-terminal observation, including an established hold: the
+  // A cost hold outranks every non-terminal observation, including an established hold: the
   // detection re-emits while the parent is away (#1844), so a drained replay must still reach
-  // `cost-hold`. Its (run, limit) receipt — not this decision — is what keeps the effects one-time.
+  // `cost-hold`. Its (run, limit) receipt — not this decision — is what keeps the effect one-time.
   if (input.wake?.kind === "cost_exceeded") {
     return {
       action: "cost_hold",
@@ -466,10 +474,14 @@ export function reconcileWorkflow(
     };
   }
 
+  // The only cost gate (#369). A held run is advised `wait` for every wake below except the two
+  // human continuation decisions, so nothing here launches the next Execute / Verify or injects
+  // into the child still running under the exceeded limit. That child is left alone and finishes
+  // its step; the resulting single step of overspend is accepted rather than defended against.
   if (input.awaitingHuman) {
     // A run still held when its increase lands was raised by someone other than this parent — the
     // Issue Web UI (#1828). The increase is that human's continuation decision, so resume the step
-    // the cost hold interrupted. A parent that increased the limit itself already resumed, so its
+    // the cost hold caught. A parent that increased the limit itself already resumed, so its
     // own wake falls through to the state rules below instead of resuming twice.
     if (input.wake?.kind === "cost_limit_increased") {
       if (input.costLimitIncreaseRequired) {
@@ -479,27 +491,23 @@ export function reconcileWorkflow(
             "The cost limit increased, but the new limit is already exceeded.",
         };
       }
-      if (input.activeStep === "execute") {
+      // Release the hold and stop there. A hold no longer interrupts the child (#369), so whatever
+      // the held step got done — a verdict submitted, a turn declared, commits landed — is already
+      // recorded, and the wake this resume emits lets the normal rules act on it. Deciding the next
+      // step here instead would re-launch a Verify whose review already exists, or push Execute to
+      // "continue" work it never stopped doing.
+      if (input.activeStep === "execute" || input.activeStep === "verify") {
         return {
-          action: "deliver",
+          action: "resume",
           reason:
-            "A human increased the cost limit; Execute must re-check domain state and continue.",
-          delivery_reason: "cost_limit_increased",
-          transition: "resume_execute",
-        };
-      }
-      if (input.activeStep === "verify") {
-        return {
-          action: "launch_verify",
-          reason:
-            "A human increased the cost limit; launch a fresh Verify for the interrupted step.",
-          transition: "resume_verify",
+            "A human increased the cost limit; release the hold and reconcile the run's own state.",
+          step: input.activeStep,
         };
       }
       return {
         action: "wait",
         reason:
-          "The cost limit increased, but the run has no interrupted step to resume.",
+          "The cost limit increased, but the run has no held step to resume.",
       };
     }
     if (input.wake?.kind === "human_instruction") {
@@ -554,7 +562,6 @@ export function reconcileWorkflow(
       return {
         action: "launch_verify",
         reason: "A queued verifier instruction requires a fresh Verify child.",
-        transition: null,
         delivery_id: input.wake.delivery.id,
       };
     }
@@ -765,7 +772,6 @@ export function reconcileWorkflow(
             action: "launch_verify",
             reason:
               "Execute declared turn done and HEAD has advanced beyond the latest review; launch a fresh Verify.",
-            transition: null,
           };
     }
     return {
@@ -802,7 +808,6 @@ export function reconcileWorkflow(
     return {
       action: "launch_verify",
       reason: "Verify has not started for the current HEAD.",
-      transition: null,
     };
   }
 

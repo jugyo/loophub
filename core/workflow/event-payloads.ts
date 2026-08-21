@@ -136,8 +136,8 @@ export interface WorkflowEventPayloadMap {
       pr_number: number;
       /**
        * Legacy alias retained for existing event readers. New orchestration must use the explicit
-       * usage/active fields below so the session whose aggregate changed is never treated as the
-       * pane that should be interrupted.
+       * usage/active fields below so the session whose aggregate changed is never mistaken for the
+       * child that was running when the limit was passed.
        */
       session_id: string;
       usage_session_id: string;

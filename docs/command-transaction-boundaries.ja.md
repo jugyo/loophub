@@ -121,7 +121,8 @@ durable になってからでなければ外部 effect を起こせないので�
 claim の意味が失われる。
 
 - `workflowEscalation.escalateHuman`
-- `workflowCostHold.run`
+- `workflowCostHold.run`（外部 effect は持たないが、hold を書く `workflowRuns.awaitHuman` が自分の
+  transaction を持つため claim / complete と同じ区間には入らない）
 - `workflowInstructions.dispatchRun`（pane への配送を挟む）
 - `scheduledTasks` の発火（herdr launch を挟む）
 - pane cleanup（`terminal.cleanupClosedIssuePanes` と `closeManagedHerdrPaneIfUnclaimed`）— claim を
@@ -220,7 +221,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `workflowInstructions.registerParentPane` | procedure | pane row、resource link | — |
 | `workflowInstructions.dispatchRun` | procedure（区間ごと） | receipt claim / complete と cursor advance | pane への配送。claim と complete は配送を挟んだ別区間 |
 | `workflowEscalation.escalateHuman` | 三段 protocol | escalation event、claim、PR comment と `pull_request.commented`、complete | — |
-| `workflowCostHold.run` | 三段 protocol | claim、await-human の state と event、complete | herdr list / Escape / pane notification |
+| `workflowCostHold.run` | 三段 protocol | claim、await-human の state と event、complete | — |
 | `workflowWatch.beginEffect` / `completeEffect` | store helper | receipt の claim / complete | wait、source event の選択 |
 
 ### Session / notification / worker sweep

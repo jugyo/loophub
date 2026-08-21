@@ -1045,7 +1045,7 @@ CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_status
 
 -- Durable idempotency receipts for non-transactional parent side effects. A pending row means the
 -- parent stopped in the ambiguous window after claiming an effect; replay must surface it for human
--- recovery instead of automatically repeating Esc, pane input, or a human notification.
+-- recovery instead of automatically repeating the effect, such as a hold or a human notification.
 CREATE TABLE IF NOT EXISTS workflow_event_effects (
   run_id      INTEGER NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
   event_id    INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,

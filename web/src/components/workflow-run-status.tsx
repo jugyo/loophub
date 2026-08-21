@@ -45,8 +45,8 @@ const STATUS_META: Record<
   // Terminal status: the run's linked PR merged (#1808). A passing Verify does not reach it — that
   // keeps the run `running` + `verification_status: verified` (#1513).
   completed: { label: "Completed", tone: "review-passed" },
-  // Legacy terminal status (#1525): the run-stop write path was removed — a cost stop now interrupts
-  // only the child (Esc) and leaves the run `running`. Old rows may still be `stopped`, so keep the
+  // Legacy terminal status (#1525): the run-stop write path was removed — a cost hold now only
+  // holds the run and leaves it `running`. Old rows may still be `stopped`, so keep the
   // read-only rendering for them.
   stopped: { label: "Stopped", tone: "closed" },
 };

@@ -210,7 +210,7 @@ export function notificationSound(): boolean {
 
 // How long a `workflow_run.cost_exceeded` event suppresses the next one for the same run and
 // limit (#1844). Detection re-emits while the run stays over its limit without a hold, so a parent
-// that stopped between wake and `cost-hold` still receives the interrupt on a later wake. Longer
+// that stopped between wake and `cost-hold` still receives the hold request on a later wake. Longer
 // than the time a live parent needs to reach `cost-hold` (~1 min), short enough to bound the spend
 // a stopped parent lets through. Override via LOOPHUB_COST_REEMIT_MS; 0 re-emits on every sweep.
 export function costReemitMs(): number {

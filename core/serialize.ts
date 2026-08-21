@@ -1669,8 +1669,8 @@ export interface WorkflowRunStateWire {
   rework_limit_increase_available: boolean;
   cost_increment_usd: number;
   cost_limit_usd: number;
-  // True only while the run is held on the current limit's cost-exceeded event and still has an
-  // interrupted step to resume. Web surfaces may call the explicit increase operation only then.
+  // True only while the run is held on the current limit's cost-exceeded event and still has a
+  // held step to resume. Web surfaces may call the explicit increase operation only then.
   cost_limit_increase_available: boolean;
   // Non-null while the run waits for an explicit human instruction (#1307). The run stays
   // `running` (active + resumable); the UI renders this as a Needs human state.
@@ -2020,8 +2020,8 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
   "workflow_run.updated": {
     // `completed` marks the run's terminal condition: its linked PR closed. A passing
     // Verify does not reach it — that keeps the run `running` + `verification_status: verified`
-    // (#1513). `stopped` (#1525) stays a legacy status with no write path (a cost stop interrupts
-    // only the child); old event rows can still carry it, like the legacy `blocked` case.
+    // (#1513). `stopped` (#1525) stays a legacy status with no write path (a cost hold only holds
+    // the run); old event rows can still carry it, like the legacy `blocked` case.
     label: (context) => {
       const { status, transition, touchedNeedsHuman, needsHumanReason } =
         workflowRunUpdatedFacts(context);
