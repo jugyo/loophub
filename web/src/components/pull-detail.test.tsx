@@ -498,14 +498,17 @@ describe("PullDetail", () => {
   });
 
   it("shows the button when the scrollport grows after the initial render", async () => {
-    let notifyResize: (() => void) | undefined;
+    const resizeCallbacks = new Map<Element, () => void>();
     vi.stubGlobal(
       "ResizeObserver",
       class {
         constructor(callback: () => void) {
-          notifyResize = callback;
+          this.callback = callback;
         }
-        observe() {}
+        callback: () => void;
+        observe(target: Element) {
+          resizeCallbacks.set(target, this.callback);
+        }
         disconnect() {}
       },
     );
@@ -529,7 +532,7 @@ describe("PullDetail", () => {
       scrollTop: { configurable: true, value: 0 },
     });
 
-    act(() => notifyResize?.());
+    act(() => resizeCallbacks.get(scrollContainer)?.());
 
     const button = await screen.findByRole("button", {
       name: "ページ下部へ移動",
