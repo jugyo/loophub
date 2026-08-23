@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "#loophub-test";
 import {
   GITHUB_PR_EXPORT_PENDING_TTL_MS,
   githubPrExportPendingUntil,

@@ -14,7 +14,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import { NotificationSettingsPage } from "./notification-settings-page";
 

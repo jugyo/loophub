@@ -13,7 +13,8 @@ import {
   render,
   screen,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { useSyncExternalStore } from "react";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import type { Notification, WorkflowRunState } from "@/api/types";
 import { NotificationStack } from "./notification-stack";
 
@@ -34,27 +35,24 @@ const actions = vi.hoisted(() => ({
   increaseReworkLimit: vi.fn(),
 }));
 
-vi.mock("@/queries/notifications", async () => {
-  const { useSyncExternalStore } = await import("react");
-  return {
-    useNotifications: (input: unknown) => {
-      actions.list(input);
-      useSyncExternalStore(
-        (onChange: () => void) => {
-          notifications.listeners.add(onChange);
-          return () => notifications.listeners.delete(onChange);
-        },
-        () => notifications.value,
-      );
-      return { data: notifications.value, isError: notifications.isError };
-    },
-    useReadNotification: () => ({ mutate: actions.read }),
-    useReadAllNotifications: () => ({
-      mutate: actions.readAll,
-      isPending: false,
-    }),
-  };
-});
+vi.mock("@/queries/notifications", () => ({
+  useNotifications: (input: unknown) => {
+    actions.list(input);
+    useSyncExternalStore(
+      (onChange: () => void) => {
+        notifications.listeners.add(onChange);
+        return () => notifications.listeners.delete(onChange);
+      },
+      () => notifications.value,
+    );
+    return { data: notifications.value, isError: notifications.isError };
+  },
+  useReadNotification: () => ({ mutate: actions.read }),
+  useReadAllNotifications: () => ({
+    mutate: actions.readAll,
+    isPending: false,
+  }),
+}));
 
 vi.mock("@/components/toast", () => ({
   useToast: () => ({ showError: actions.showError }),

@@ -2,18 +2,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRouter,
+  Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import { repoRoute, validateIssueListSearch } from "./repo";
 import { rootRoute } from "./root";
 
-vi.mock("@/components/app-layout", async () => {
-  const { Outlet } = await import("@tanstack/react-router");
-  return { AppLayout: () => <Outlet /> };
-});
+vi.mock("@/components/app-layout", () => ({
+  AppLayout: () => <Outlet />,
+}));
 vi.mock("@/lib/use-loophub-events", () => ({ useLoopHubEvents: () => {} }));
 vi.mock("@/components/issue-list", () => ({
   IssueList: () => <div>Issue list</div>,

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { GithubPrStatus, GithubPull, PullRequest } from "@/api/types";
 import { GithubPrStatusSection } from "./github-pr-status";

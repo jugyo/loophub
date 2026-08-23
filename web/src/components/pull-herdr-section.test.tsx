@@ -6,7 +6,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import type { HerdrSessions } from "@/api/types";
 
 const { focusHerdrAgent, showError } = vi.hoisted(() => ({

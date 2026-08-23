@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 import { herdrAgentControl } from "./herdr-agent-control.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-herdr-agent-control-"));

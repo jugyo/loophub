@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 import { BUILD_HASH_FILENAME, buildSpa, computeBuildHash } from "./build.ts";
 
 // Never web/dist: an lh-web may be running out of it, and replacing those files under it breaks

@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { CHANGE_MAP_MAX_CATEGORIES } from "../change-map-document.ts";
 import { prChangeMapPrompt } from "./pr-change-map-prompt.ts";
 

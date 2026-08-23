@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 const CLI = join(import.meta.dirname, "index.ts");
 const SERVICE = join(import.meta.dirname, "../core/service.ts");

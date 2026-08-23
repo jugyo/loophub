@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "#loophub-test";
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-herdr-sessions-"));

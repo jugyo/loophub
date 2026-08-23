@@ -7,7 +7,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import type { Repo } from "@/api/types";
 import { WebConfigProvider } from "@/lib/web-config";
 import { AppTopbar } from "./app-topbar";

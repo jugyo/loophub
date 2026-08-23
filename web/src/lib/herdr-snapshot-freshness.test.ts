@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "#loophub-test";
 import {
   classifyHerdrSnapshotFreshness,
   HERDR_SNAPSHOT_STALE_MS,

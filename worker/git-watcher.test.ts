@@ -1,7 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+  vi,
+} from "#loophub-test";
 
 const home = mkdtempSync(join(tmpdir(), "lh-git-watcher-"));
 process.env.LOOPHUB_HOME = home;

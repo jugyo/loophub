@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "#loophub-test";
 import { withLoading } from "./loading.ts";
 
 describe("withLoading", () => {

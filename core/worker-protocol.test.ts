@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "#loophub-test";
 import {
   WORKER_HEARTBEAT_STALE_AFTER_MS,
   WORKFLOW_WORKER_PROTOCOL_VERSION,

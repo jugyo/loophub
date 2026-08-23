@@ -6,7 +6,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "#loophub-test";
 import type { PrChangeMap, PullFile } from "@/api/types";
 
 import { PrChangeMapDialog } from "./pr-change-map-dialog";

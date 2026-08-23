@@ -11,7 +11,7 @@ import {
   expect,
   test,
   vi,
-} from "vitest";
+} from "#loophub-test";
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-tl-"));
@@ -453,13 +453,12 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
         issueNumber: 1,
         workflowId: 9,
       });
-      const assertion = expect(pending).rejects.toMatchObject({
+      await vi.advanceTimersByTimeAsync(120_000);
+      await expect(pending).rejects.toMatchObject({
         message: expect.stringMatching(
           /^lh workflow start timed out after \d+ms$/,
         ),
       });
-      await vi.advanceTimersByTimeAsync(120_000);
-      await assertion;
       expect(
         consoleError.mock.calls.some((call) =>
           String(call[0]).includes("provisioning worktree..."),

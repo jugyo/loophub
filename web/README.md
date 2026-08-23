@@ -50,7 +50,7 @@ when done.
 | Script | Purpose |
 |--------|---------|
 | `npm run build` | Bun production build to `dist/` |
-| `npm run test` | Vitest |
+| `npm run test` | Bun test |
 
 `lh-web` runs the same production build itself at startup and then serves `dist/` through its
 static handler. Run the repository-level `npm run typecheck` separately for type checking.

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 // #12: a stray `$GIT_DIR/<branch-name>` file — git's own ambiguous-ref chain checks it before
 // `refs/heads/<name>` — used to shadow a PR's base/head branch, so every git call that took the

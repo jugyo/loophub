@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 // Hand-build an old-schema database with bun:sqlite, THEN import core so its migrations run
 // against existing tables. That import is the "first boot on an existing install" path: the ledger

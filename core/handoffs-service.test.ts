@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-handoff-svc-"));

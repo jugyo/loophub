@@ -20,7 +20,7 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "types": ["vitest/globals"]
+    "types": ["bun"]
   },
-  "include": ["src", "vitest.config.ts"]
+  "include": ["src"]
 }

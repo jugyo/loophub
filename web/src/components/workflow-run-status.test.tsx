@@ -14,7 +14,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import type {
   HerdrSessions,
   WorkflowRunState,
@@ -40,8 +40,7 @@ vi.mock("@/queries/terminal", () => ({
     isPending: false,
   }),
 }));
-vi.mock("@/queries/workflow-runs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/queries/workflow-runs")>()),
+vi.mock("@/queries/workflow-runs", () => ({
   useWorkflowRunTotalCost: () => ({
     data: mocks.totalCost,
     isLoading: false,

@@ -4,7 +4,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { indexRoute } from "./index";
 import { rootRoute } from "./root";
 import { uiCatalogRoute } from "./ui-catalog";

@@ -1,7 +1,7 @@
 // Test helper: a `fetch` mock that speaks JSON-RPC. Every client call is POST /rpc with a
 // { method, params } body, so component tests stub fetch with method->handler routing
 // instead of REST URL matching.
-import { vi } from "vitest";
+import { vi } from "#loophub-test";
 
 /** Throw from a handler to produce a JSON-RPC error carrying an HTTP-style status. */
 export class RpcFault {

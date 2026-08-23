@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "#loophub-test";
 import {
   cachedPullShaStatus,
   clearPullShaStatusCache,

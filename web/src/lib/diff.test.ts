@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "#loophub-test";
 import { classifyDiffLine, parsePatch, parsePositionedPatch } from "./diff";
 
 describe("classifyDiffLine", () => {

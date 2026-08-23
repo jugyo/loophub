@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "#loophub-test";
 import type { WorkerCompatibility } from "@/api/types";
 import { WorkerCompatibilityWarning } from "@/components/worker-compatibility-warning";
 
@@ -58,13 +58,21 @@ it("refreshes a compatible status and disables launch when the worker becomes st
       new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     ),
   });
-  await act(() => vi.advanceTimersByTimeAsync(1));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+    await api.getWorkerStatus.mock.results[0]?.value;
+  });
   expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(
     false,
   );
 
-  await act(() => vi.advanceTimersByTimeAsync(15_000));
-  await act(() => vi.advanceTimersByTimeAsync(1));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(15_000);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+    await api.getWorkerStatus.mock.results[1]?.value;
+  });
 
   expect(api.getWorkerStatus).toHaveBeenCalledTimes(2);
   expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(true);
@@ -77,7 +85,9 @@ it("does not retry a failed status request", async () => {
   render(<Harness />, {
     wrapper: wrapper(new QueryClient()),
   });
-  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(60_000);
+  });
 
   expect(api.getWorkerStatus).toHaveBeenCalledTimes(1);
   expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(true);
@@ -104,7 +114,9 @@ it("does not flash a warning while a compatible status response is delayed", asy
   expect(screen.getByRole("button").textContent).toBe("loading");
 
   await act(async () => resolveStatus(compatible));
-  await act(() => vi.advanceTimersByTimeAsync(1));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.getByRole("button").textContent).toBe("compatible");
 });
@@ -129,7 +141,9 @@ it("shows the warning after a delayed incompatible status is confirmed", async (
       observed_protocol_version: 2,
     }),
   );
-  await act(() => vi.advanceTimersByTimeAsync(1));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
   expect(screen.getByRole("alert").textContent).toContain(
     "incompatible workflow protocol",
   );

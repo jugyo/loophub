@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import {
   PR_TEST_MAP_PENDING_TTL_MS,
   prTestMapPendingUntil,

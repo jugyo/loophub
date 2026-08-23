@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 const home = mkdtempSync(join(tmpdir(), "lh-workflow-cost-hold-"));
 const bin = join(home, "bin");

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { runGitSync } from "./git.ts";
 import {
   configureSlowOperationLogging,

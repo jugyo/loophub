@@ -1,3 +1,18 @@
+import { Window } from "happy-dom";
+
+import "../test-compat.ts";
+
+const window = new Window();
+for (const name of Object.getOwnPropertyNames(window)) {
+  if (name in globalThis) continue;
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    value: (window as unknown as Record<string, unknown>)[name],
+    writable: true,
+  });
+}
+Object.assign(globalThis, { window, document: window.document });
+
 if (typeof globalThis.localStorage === "undefined") {
   const values = new Map<string, string>();
   const storage: Storage = {
@@ -27,20 +42,22 @@ if (typeof globalThis.localStorage === "undefined") {
   });
 }
 
-// happy-dom registers each MutationObserver's callback behind a WeakRef and keeps no strong
-// reference to it, so once the collector runs the observer silently stops reporting. Bun's
-// collector is prompt enough to hit this within a single test, which makes any component that
-// repaints on a DOM mutation look frozen. Retaining every WeakRef target for the life of the test
-// process restores the observer contract; a test run is short and single-purpose, so holding these
-// alive costs nothing.
+// happy-dom stores MutationObserver callbacks behind WeakRef. Bun can collect the callback while
+// a React test is waiting for a DOM update, so retain callback functions for the test process.
 {
   const NativeWeakRef = globalThis.WeakRef;
   const retained = new Set<object>();
   class RetainingWeakRef<T extends object> extends NativeWeakRef<T> {
     constructor(target: T) {
       super(target);
-      retained.add(target);
+      if (typeof target === "function") retained.add(target);
     }
   }
   globalThis.WeakRef = RetainingWeakRef as typeof globalThis.WeakRef;
 }
+
+// happy-dom registers each MutationObserver's callback behind a WeakRef and keeps no strong
+// reference to it, so once the collector runs the observer silently stops reporting. Bun's
+// collector is prompt enough to hit this within a single test, which makes any component that
+// repaints on a DOM mutation look frozen. Retain only callback functions; retaining every WeakRef
+// target would keep the entire rendered DOM alive and make long SPA suites exhaust memory.

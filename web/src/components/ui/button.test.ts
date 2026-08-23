@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "#loophub-test";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "./button";
 

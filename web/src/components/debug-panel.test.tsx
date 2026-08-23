@@ -5,7 +5,7 @@ import {
   render,
   screen,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "#loophub-test";
 import type { LoopEvent } from "@/api/types";
 import {
   clearDebugLog,

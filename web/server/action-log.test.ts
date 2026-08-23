@@ -9,7 +9,7 @@ import {
   expect,
   it,
   vi,
-} from "vitest";
+} from "#loophub-test";
 
 // Isolate LOOPHUB_HOME before importing the logger (its file path is resolved at import time).
 const home = mkdtempSync(join(tmpdir(), "lh-web-action-log-"));

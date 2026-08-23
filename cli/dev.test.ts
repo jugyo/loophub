@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { branchExists, git, worktreeList } from "../core/git.ts";
 import {
   acquireDevLock,

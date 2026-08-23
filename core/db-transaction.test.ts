@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test } from "#loophub-test";
 
 // Isolate the DB before db.ts runs its import-time setup (see store.test.ts).
 const HOME = mkdtempSync(join(tmpdir(), "lh-db-tx-"));

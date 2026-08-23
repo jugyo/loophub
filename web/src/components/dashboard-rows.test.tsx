@@ -15,7 +15,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type {
   GlobalSettings,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "#loophub-test";
 import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 import {
   costStoppedBadge,

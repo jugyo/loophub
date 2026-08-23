@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "#loophub-test";
 import { formatTokenCountShort } from "./session-usage";
 
 describe("formatTokenCountShort", () => {

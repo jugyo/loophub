@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { readProcessStream } from "./process.ts";
 
 test.each([

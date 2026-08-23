@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 import { RUNTIMES } from "../runtimes.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-settings-svc-"));

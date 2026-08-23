@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test as vitestTest } from "vitest";
+import { afterAll, beforeAll, test as bunTest, expect } from "#loophub-test";
 import { git, worktreeAdd } from "./git.ts";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
 import { WORKTREE_AUTO_PRUNE_GRACE_MS } from "./worktree-prune.ts";
@@ -33,7 +33,7 @@ function worktreePath(name: string): string {
 }
 
 function test(name: string, run: () => Promise<void>): void {
-  vitestTest(name, run, REAL_GIT_TIMEOUT_MS);
+  bunTest(name, run, REAL_GIT_TIMEOUT_MS);
 }
 
 beforeAll(async () => {

@@ -1,6 +1,6 @@
 import { act, render } from "@testing-library/react";
 import { createRef } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { DetailStickyHeader } from "./detail-title";
 
 // happy-dom ships a no-op IntersectionObserver, so the visibility toggle is driven by

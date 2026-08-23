@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "#loophub-test";
 import {
   applyTheme,
   getThemeDefinition,
@@ -72,16 +72,15 @@ function expectContrast(
 }
 
 function mockSystemTheme(prefersLight: boolean) {
-  vi.stubGlobal(
-    "matchMedia",
-    (query: string) =>
-      ({
-        matches: query.includes("light") ? prefersLight : !prefersLight,
-        media: query,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-      }) as unknown as MediaQueryList,
-  );
+  const matchMedia = (query: string) =>
+    ({
+      matches: query.includes("light") ? prefersLight : !prefersLight,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }) as unknown as MediaQueryList;
+  vi.stubGlobal("matchMedia", matchMedia);
+  window.matchMedia = matchMedia;
 }
 
 beforeEach(() => {
@@ -92,6 +91,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.matchMedia = globalThis.matchMedia;
 });
 
 describe("THEMES", () => {
@@ -119,9 +119,11 @@ describe("resolveInitialTheme", () => {
   });
 
   it("defaults to dark when matchMedia throws", () => {
-    vi.stubGlobal("matchMedia", () => {
+    const matchMedia = () => {
       throw new Error("not supported");
-    });
+    };
+    vi.stubGlobal("matchMedia", matchMedia);
+    window.matchMedia = matchMedia;
     expect(resolveInitialTheme()).toBe("dark");
   });
 });

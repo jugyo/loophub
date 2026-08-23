@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "#loophub-test";
 import type { WorkerCompatibility } from "@/api/types";
 import { workerLaunchGate, workerStatusRefreshInterval } from "./worker-status";
 

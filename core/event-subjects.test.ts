@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "#loophub-test";
 import { eventPayloadRecord, eventSubjects } from "./event-subjects.ts";
 
 describe("eventSubjects", () => {

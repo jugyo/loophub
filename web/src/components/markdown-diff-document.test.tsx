@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { type ReactNode, useMemo, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "#loophub-test";
 
 // MermaidDiagram itself is covered by mermaid-diagram.test.tsx; here we only need to confirm the
 // diff renderer routes ```mermaid fenced blocks to it with the right chart text.
@@ -11,12 +11,7 @@ vi.mock("@/components/mermaid-diagram", () => ({
 }));
 
 // The parse is the expensive half of rendering, so the tests below watch how often it runs.
-vi.mock("@/lib/markdown-hast", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/markdown-hast")>();
-  return { ...actual, markdownHast: vi.fn(actual.markdownHast) };
-});
-
-import { markdownHast } from "@/lib/markdown-hast";
+import * as markdownHastModule from "@/lib/markdown-hast";
 import {
   type MarkdownRenderedBlock,
   renderedBlockKey,
@@ -26,6 +21,8 @@ import {
   MarkdownDiffDocument,
   useMarkdownDiffDocument,
 } from "./markdown-diff-document";
+
+const markdownHastSpy = vi.spyOn(markdownHastModule, "markdownHast");
 
 type Decorate = (
   block: MarkdownRenderedBlock,
@@ -87,7 +84,7 @@ function renderDocument(
   decorate: Decorate = () => ({}),
   selectKind?: MarkdownRenderedBlock["kind"],
 ) {
-  vi.mocked(markdownHast).mockClear();
+  markdownHastSpy.mockClear();
   return render(
     <Harness source={source} decorate={decorate} selectKind={selectKind} />,
   );
@@ -188,7 +185,7 @@ describe("MarkdownDiffDocument", () => {
       () => ({ after: (composer) => composer }),
       "paragraph",
     );
-    expect(vi.mocked(markdownHast)).toHaveBeenCalledTimes(1);
+    expect(markdownHastSpy).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByText("select"));
     fireEvent.change(screen.getByLabelText("Diff comment"), {
@@ -199,7 +196,7 @@ describe("MarkdownDiffDocument", () => {
       "value",
       "note",
     );
-    expect(vi.mocked(markdownHast)).toHaveBeenCalledTimes(1);
+    expect(markdownHastSpy).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the other blocks' DOM nodes mounted while the selection moves", () => {

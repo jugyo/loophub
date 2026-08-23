@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { calculateCostUsd, priceForModel } from "./pricing.ts";
 
 test("priceForModel prices gpt-5.3-codex-spark without breaking the gpt-5.4-mini/gpt-5.4 order", () => {

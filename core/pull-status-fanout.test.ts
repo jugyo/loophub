@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, test } from "#loophub-test";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
 
 // The fan-out's two expensive halves, named by the git command each one spawns. Counting the real

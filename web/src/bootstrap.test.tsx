@@ -1,6 +1,6 @@
 import { act, screen } from "@testing-library/react";
 import type { Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "#loophub-test";
 import { ApiError } from "@/api/client";
 import { bootstrap } from "./bootstrap";
 

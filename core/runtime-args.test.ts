@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { buildRuntimeArgs, buildRuntimeFlags } from "./runtime-args.ts";
 
 test("OpenCode launch argv uses --auto, --model, and --prompt (no --variant)", () => {

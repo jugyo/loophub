@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "#loophub-test";
 
 const CLI = join(import.meta.dirname, "index.ts");
 let home: string;
@@ -152,7 +152,7 @@ describe("--help", () => {
     usage,
     options,
   }) => {
-    const result = lh(args);
+    const result = lh([...args]);
 
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout).toContain("Usage:");

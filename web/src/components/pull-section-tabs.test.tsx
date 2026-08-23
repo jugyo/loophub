@@ -6,7 +6,7 @@ import {
   screen,
 } from "@testing-library/react";
 import { createRef } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { PullSectionTabs, spyRootMargin } from "./pull-section-tabs";
 
 // happy-dom ships a no-op IntersectionObserver, so both the scrollspy and the sticky-header

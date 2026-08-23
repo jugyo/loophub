@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 // Isolate the DB before herdr-cleanup.ts -> shared.ts -> store.ts -> db.ts runs its import-time
 // setup (see AGENTS.md). The functions under test are pure, but importing the module still opens

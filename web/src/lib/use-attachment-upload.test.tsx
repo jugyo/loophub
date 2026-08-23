@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { useRef, useState } from "react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "#loophub-test";
 import * as attach from "@/api/attachments";
 import { useAttachmentUpload } from "./use-attachment-upload";
 

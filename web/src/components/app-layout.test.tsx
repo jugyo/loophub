@@ -12,7 +12,7 @@ import {
   render,
   screen,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { AppLayout } from "./app-layout";
 
 vi.mock("@/queries/repos", () => ({

@@ -3,7 +3,7 @@
 process.env.TZ = "Asia/Tokyo";
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "#loophub-test";
 import { DebugDataView } from "./pull-debug-view";
 
 afterEach(cleanup);

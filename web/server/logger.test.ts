@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "#loophub-test";
 
 // Isolate LOOPHUB_HOME before importing the logger (its file path is resolved at import time).
 const home = mkdtempSync(join(tmpdir(), "lh-web-log-"));

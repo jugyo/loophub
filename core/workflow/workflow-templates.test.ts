@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { composeWorkflowStepPrompt, WORKFLOW_STEPS } from "./compose.ts";
 import type { WorkflowContractLanguage } from "./contracts.ts";
 import { workflowStepPrompt } from "./prompts.ts";

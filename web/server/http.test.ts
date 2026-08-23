@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 // Isolate the DB before http.ts -> rpc.ts -> contract.ts -> service.ts -> db.ts.
 const HOME = mkdtempSync(join(tmpdir(), "lh-http-"));

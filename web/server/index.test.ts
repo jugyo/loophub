@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 

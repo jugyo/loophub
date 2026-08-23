@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "#loophub-test";
 import type { LoopEvent } from "@/api/types";
 import { eventSubjects } from "../../../core/event-subjects.ts";
 import {
@@ -51,13 +51,18 @@ function wrapper(client: QueryClient) {
 // The hook reads document.visibilityState to pick its polling interval. One stub for the whole
 // file, reset per test, keeps a value set by one test from leaking into the next.
 let visibilityState: DocumentVisibilityState = "visible";
+const originalVisibilityState = Object.getOwnPropertyDescriptor(
+  document,
+  "visibilityState",
+);
 
 beforeEach(() => {
   vi.useFakeTimers();
   visibilityState = "visible";
-  vi.spyOn(document, "visibilityState", "get").mockImplementation(
-    () => visibilityState,
-  );
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => visibilityState,
+  });
 });
 
 // A client with no stored cursor spends its first call learning the newest event id, so tests
@@ -71,6 +76,11 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  if (originalVisibilityState) {
+    Object.defineProperty(document, "visibilityState", originalVisibilityState);
+  } else {
+    delete (document as unknown as Record<string, unknown>).visibilityState;
+  }
   localStorage.clear();
   clearDebugLog();
 });

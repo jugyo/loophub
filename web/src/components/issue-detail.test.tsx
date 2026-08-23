@@ -17,7 +17,7 @@ import {
   within,
 } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import * as attachments from "@/api/attachments";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
@@ -1682,7 +1682,7 @@ describe("IssueDetail — #comments landing", () => {
     const section = await commentsSection();
     expect(section?.id).toBe("comments");
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
-    expect(scrollIntoView.mock.instances[0]).toBe(section);
+    expect(scrollIntoView.mock.contexts[0]).toBe(section);
   });
 
   it("leaves the page where it is without the hash", async () => {

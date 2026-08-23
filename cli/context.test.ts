@@ -2,7 +2,14 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+  vi,
+} from "#loophub-test";
 import { worktreePath } from "../core/worktree-path.ts";
 
 const originalCwd = process.cwd();

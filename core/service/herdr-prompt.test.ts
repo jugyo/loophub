@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, test } from "#loophub-test";
 import { isHerdrPromptError, sendHerdrPrompt } from "./herdr-prompt.ts";
 import { isHerdrExitError } from "./herdr-runner.ts";
 

@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "#loophub-test";
 import { traceGitCommands } from "../git-trace-test-helper.ts";
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });

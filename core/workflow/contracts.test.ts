@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { commandHelp } from "../../cli/help.ts";
 import {
   WORKFLOW_CONTRACT_LANGUAGES,
@@ -105,7 +105,7 @@ function commandHelpForQuotedPath(path: string[]) {
 /*
  * mutation 確認記録:
  * `workflow parent-ready` の registry path を一時的に別名へ変更し、
- * `npm exec vitest run core/workflow/contracts.test.ts` を実行した。
+ * `bun test core/workflow/contracts.test.ts` を実行した。
  * 結果は対象テスト 1 件失敗、`expected undefined to be defined` だった。
  * 確認後に registry path を元へ戻した。
  */

@@ -7,7 +7,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "#loophub-test";
 import { createRotatingLogWriter } from "./rotating-log.ts";
 
 const dirs: string[] = [];

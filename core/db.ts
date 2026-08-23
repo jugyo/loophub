@@ -1060,13 +1060,13 @@ CREATE TABLE IF NOT EXISTS workflow_event_effects (
  */
 export function openDb(path: string): Db {
   if (
-    process.env.VITEST === "true" &&
+    process.env.NODE_ENV === "test" &&
     !process.env.LOOPHUB_HOME &&
     !process.env.LOOPHUB_DB &&
     resolve(path) === resolve(dbPath())
   ) {
     throw new Error(
-      "Refusing to open the default LoopHub database during Vitest. Set LOOPHUB_HOME and LOOPHUB_DB to an isolated temporary directory before importing runtime modules.",
+      "Refusing to open the default LoopHub database during bun test. Set LOOPHUB_HOME and LOOPHUB_DB to an isolated temporary directory before importing runtime modules.",
     );
   }
   mkdirSync(dirname(path), { recursive: true });

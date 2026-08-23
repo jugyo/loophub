@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { githubPrExportPrompt } from "./github-pr-export-prompt.ts";
 
 test("unknown languages fall back to the English prompt", () => {

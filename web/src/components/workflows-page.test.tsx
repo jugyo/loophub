@@ -15,7 +15,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { Workflow } from "@/api/types";
 import { workflowTemplates } from "../../../core/workflow/workflow-templates.ts";

@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterAll, expect, test, vi } from "vitest";
+import { afterAll, expect, test, vi } from "#loophub-test";
 
 const home = mkdtempSync(join(tmpdir(), "lh-worker-log-"));
 const previousHome = process.env.LOOPHUB_HOME;

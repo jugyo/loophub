@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "#loophub-test";
 import type { GithubPull } from "@/api/types";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 

@@ -8,9 +8,10 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "#loophub-test";
 
 // Wrap two node:fs reads (pass-through) so the tests below can observe how the usage sync touches
 // the filesystem. readdirSync answers "which directories were enumerated?" for the
@@ -22,20 +23,22 @@ const fsSpy = vi.hoisted(() => ({
   readsInTransaction: [] as boolean[],
   isInTransaction: (() => false) as () => boolean,
 }));
-vi.mock("node:fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs")>();
-  return {
-    ...actual,
-    readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
-      fsSpy.readdirDirs.push(args[0]);
-      return (actual.readdirSync as (...a: unknown[]) => unknown)(...args);
-    },
-    readFileSync: (...args: Parameters<typeof actual.readFileSync>) => {
-      fsSpy.readsInTransaction.push(fsSpy.isInTransaction());
-      return (actual.readFileSync as (...a: unknown[]) => unknown)(...args);
-    },
-  };
-});
+const actualFs = createRequire(import.meta.url)(
+  "node:fs",
+) as typeof import("node:fs");
+vi.mock("node:fs", () => ({
+  existsSync: actualFs.existsSync,
+  realpathSync: actualFs.realpathSync,
+  statSync: actualFs.statSync,
+  readdirSync: (...args: Parameters<typeof actualFs.readdirSync>) => {
+    fsSpy.readdirDirs.push(args[0]);
+    return (actualFs.readdirSync as (...a: unknown[]) => unknown)(...args);
+  },
+  readFileSync: (...args: Parameters<typeof actualFs.readFileSync>) => {
+    fsSpy.readsInTransaction.push(fsSpy.isInTransaction());
+    return (actualFs.readFileSync as (...a: unknown[]) => unknown)(...args);
+  },
+}));
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md). #298:
 // generalized session links (kind + N:M) surfaced as related_sessions on PR/issue detail.
 const HOME = mkdtempSync(join(tmpdir(), "lh-sess-"));
@@ -577,7 +580,7 @@ test("sessions.usageSync rejects a stale Claude dedupe plan", () => {
          WHERE session_id = ?`,
         [sessionId],
       );
-      return openTransaction(callback);
+      return openTransaction(callback) as never;
     });
   try {
     expect(() => svc.sessions.usageSync({ sessionId, projectsDir })).toThrow(

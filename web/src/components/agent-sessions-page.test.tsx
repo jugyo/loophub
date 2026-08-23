@@ -15,7 +15,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import type { AgentSession } from "@/api/types";
 import { usageTotal } from "@/lib/session-usage";

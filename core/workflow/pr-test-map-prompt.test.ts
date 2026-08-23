@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { prTestMapPrompt } from "./pr-test-map-prompt.ts";
 
 test("unknown languages fall back to the English prompt", () => {

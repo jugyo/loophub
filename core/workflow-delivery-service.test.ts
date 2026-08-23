@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-workflow-delivery-"));
 const REPO_PATH = mkdtempSync(join(tmpdir(), "lh-workflow-delivery-repo-"));

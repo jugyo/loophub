@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 // Isolate the DB before db.ts runs its import-time setup (see store.test.ts).
 const HOME = mkdtempSync(join(tmpdir(), "lh-db-"));
@@ -18,7 +18,7 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-test("Vitest refuses to open the default LoopHub database", () => {
+test("bun test refuses to open the default LoopHub database", () => {
   const isolatedHome = process.env.LOOPHUB_HOME;
   const isolatedDb = process.env.LOOPHUB_DB;
   delete process.env.LOOPHUB_HOME;
@@ -228,30 +228,32 @@ test("workflowRunObservationTrail seeks the workflow run-id partial index", () =
   expect(plan).toContain("idx_events_repo_workflow_run_id");
 });
 
-test("workflowRunObservationTrail latency for an issue-list-sized run set", () => {
-  D.db.run(
-    `INSERT INTO repos (full_name, name, owner, local_path, default_branch, created_at)
-     VALUES ('me/issue-list-benchmark', 'issue-list-benchmark', 'me', '/tmp/issue-list-benchmark', 'main', '2026-01-01T00:00:00.000Z')`,
-  );
-  const insert = (type: string, payload: string) =>
+test(
+  "workflowRunObservationTrail latency for an issue-list-sized run set",
+  () => {
     D.db.run(
-      `INSERT INTO events (repo_id, type, actor, payload, created_at)
-       VALUES (?, ?, ?, ?, '2026-01-01T00:00:00.000Z')`,
-      [1, type, "test", payload],
+      `INSERT INTO repos (full_name, name, owner, local_path, default_branch, created_at)
+     VALUES ('me/issue-list-benchmark', 'issue-list-benchmark', 'me', '/tmp/issue-list-benchmark', 'main', '2026-01-01T00:00:00.000Z')`,
     );
-  for (let i = 0; i < 39_000; i++) {
-    insert("issue.updated", JSON.stringify({ number: i }));
-  }
-  for (let run = 1; run <= 152; run++) {
-    for (let step = 0; step < 10; step++) {
-      insert(
-        step === 0 ? "workflow_run.started" : "workflow_step.completed",
-        JSON.stringify({ id: run }),
+    const insert = (type: string, payload: string) =>
+      D.db.run(
+        `INSERT INTO events (repo_id, type, actor, payload, created_at)
+       VALUES (?, ?, ?, ?, '2026-01-01T00:00:00.000Z')`,
+        [1, type, "test", payload],
       );
+    for (let i = 0; i < 39_000; i++) {
+      insert("issue.updated", JSON.stringify({ number: i }));
     }
-  }
+    for (let run = 1; run <= 152; run++) {
+      for (let step = 0; step < 10; step++) {
+        insert(
+          step === 0 ? "workflow_run.started" : "workflow_step.completed",
+          JSON.stringify({ id: run }),
+        );
+      }
+    }
 
-  const oldSql = `SELECT * FROM events
+    const oldSql = `SELECT * FROM events
     WHERE repo_id = ?
       AND (((type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*')
         AND json_extract(payload, '$.id') = ?)
@@ -260,7 +262,7 @@ test("workflowRunObservationTrail latency for an issue-list-sized run set", () =
           AND json_extract(payload, '$.source_payload_version') = ?
           AND id > ? AND id < ?))
     ORDER BY id ASC`;
-  const newSql = `SELECT * FROM events
+    const newSql = `SELECT * FROM events
     WHERE repo_id = ?
       AND (type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*')
       AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
@@ -271,34 +273,38 @@ test("workflowRunObservationTrail latency for an issue-list-sized run set", () =
       AND json_extract(payload, '$.source_payload_version') = ?
       AND id > ? AND id < ?
     ORDER BY id ASC`;
-  const oldParams = [1, 75, 75, 1, 0, Number.MAX_SAFE_INTEGER];
-  const newParams = [1, 75, 1, 75, 1, 0, Number.MAX_SAFE_INTEGER];
-  const plan = (sql: string, params: unknown[]) =>
-    (
-      D.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as {
-        detail: string;
-      }[]
-    ).map((row) => row.detail);
-  const averageMs = (sql: string, params: unknown[]) => {
-    const query = D.db.query(sql);
-    const started = performance.now();
-    for (let i = 0; i < 200; i++) query.all(...params);
-    return (performance.now() - started) / 200;
-  };
+    const oldParams = [1, 75, 75, 1, 0, Number.MAX_SAFE_INTEGER];
+    const newParams = [1, 75, 1, 75, 1, 0, Number.MAX_SAFE_INTEGER];
+    const plan = (sql: string, params: unknown[]) =>
+      (
+        D.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as {
+          detail: string;
+        }[]
+      ).map((row) => row.detail);
+    const averageMs = (sql: string, params: unknown[]) => {
+      const query = D.db.query(sql);
+      const started = performance.now();
+      for (let i = 0; i < 200; i++) query.all(...params);
+      return (performance.now() - started) / 200;
+    };
 
-  const oldPlan = plan(oldSql, oldParams);
-  const newPlan = plan(newSql, newParams);
-  const oldMs = averageMs(oldSql, oldParams);
-  const newMs = averageMs(newSql, newParams);
-  console.info(
-    `issue-list workload: 40,520 events / 152 workflow runs; ` +
-      `old plan=${oldPlan.join(" | ")}; new plan=${newPlan.join(" | ")}; ` +
-      `old=${oldMs.toFixed(3)}ms; new=${newMs.toFixed(3)}ms`,
-  );
-  expect(oldPlan.join(" | ")).not.toContain("idx_events_repo_workflow_run_id");
-  expect(newPlan.join(" | ")).toContain("idx_events_repo_workflow_run_id");
-  expect(newMs).toBeLessThan(oldMs);
-});
+    const oldPlan = plan(oldSql, oldParams);
+    const newPlan = plan(newSql, newParams);
+    const oldMs = averageMs(oldSql, oldParams);
+    const newMs = averageMs(newSql, newParams);
+    console.info(
+      `issue-list workload: 40,520 events / 152 workflow runs; ` +
+        `old plan=${oldPlan.join(" | ")}; new plan=${newPlan.join(" | ")}; ` +
+        `old=${oldMs.toFixed(3)}ms; new=${newMs.toFixed(3)}ms`,
+    );
+    expect(oldPlan.join(" | ")).not.toContain(
+      "idx_events_repo_workflow_run_id",
+    );
+    expect(newPlan.join(" | ")).toContain("idx_events_repo_workflow_run_id");
+    expect(newMs).toBeLessThan(oldMs);
+  },
+  { timeout: 15_000 },
+);
 
 test("workflowRunsWithPendingEvents seeks the workflow run-id partial index per run", () => {
   // Mirrors store/workflows.ts workflowRunsWithPendingEvents, which the worker's event tail runs

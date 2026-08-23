@@ -11,7 +11,7 @@ import {
   within,
 } from "@testing-library/react";
 import postcss from "postcss";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault } from "@/api/rpc-mock";
 import type { DiffFeedbackThread, PullFile } from "@/api/types";
 
@@ -1685,10 +1685,10 @@ describe("DiffFileDialog", () => {
     expect(await screen.findByLabelText("🎉 reaction: 1")).toBeTruthy();
 
     rejectReact(new RpcFault(500, "write failed"));
-    await waitFor(() => {
-      expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
-      expect(showError).toHaveBeenCalledWith("Reaction failed: write failed");
-    });
+    await waitFor(() =>
+      expect(showError).toHaveBeenCalledWith("Reaction failed: write failed"),
+    );
+    expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
   });
 
   it("keeps a file-scoped historical conversation replyable", async () => {
@@ -2228,6 +2228,7 @@ describe("DiffFileDialog", () => {
   });
 
   it("hides viewed files from the tree until they are asked for", async () => {
+    let viewsCalls = 0;
     const secondFile: PullFile = {
       ...file,
       filename: "core/b.ts",
@@ -2237,20 +2238,28 @@ describe("DiffFileDialog", () => {
       file,
       files: [file, secondFile],
       handlers: {
-        "pullFileViews/list": () => [
-          { path: "core/b.ts", sha: "b".repeat(40), viewed_at: "2026-08-20Z" },
-        ],
+        "pullFileViews/list": () => {
+          viewsCalls += 1;
+          return [
+            {
+              path: "core/b.ts",
+              sha: "b".repeat(40),
+              viewed_at: "2026-08-20Z",
+            },
+          ];
+        },
       },
     });
     const sidebar = screen.getByRole("complementary", {
       name: "Changed files",
     });
-
-    await waitFor(() =>
-      expect(
-        within(sidebar).queryByRole("button", { name: "core/b.ts" }),
-      ).toBeNull(),
-    );
+    await waitFor(() => expect(viewsCalls).toBe(1));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(
+      within(sidebar).queryByRole("button", { name: "core/b.ts" }),
+    ).toBeNull();
     expect(within(sidebar).getByText("Files changed (1 of 2)")).toBeTruthy();
 
     expect(within(sidebar).getByText(/Show viewed \(1 viewed\)/)).toBeTruthy();

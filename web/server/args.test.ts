@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "#loophub-test";
 import { LH_WEB_HELP, parseLhWebArgs } from "./args.ts";
 
 describe("parseLhWebArgs", () => {

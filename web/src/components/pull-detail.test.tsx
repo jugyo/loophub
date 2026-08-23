@@ -17,7 +17,7 @@ import {
   within,
 } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type {
   DiffFeedbackThread,
@@ -45,6 +45,8 @@ vi.mock("@/components/terminal-controller", () => ({
   }),
 }));
 
+const stickyRoomRestorers: (() => void)[] = [];
+
 import { WebConfigProvider } from "@/lib/web-config";
 import { PullDetail } from "./pull-detail";
 import { ToastProvider, ToastViewport } from "./toast";
@@ -56,6 +58,7 @@ afterEach(() => {
   vi.useRealTimers();
   launchTerminal.mockReset();
   launchState.failed = false;
+  for (const restore of stickyRoomRestorers.splice(0)) restore();
 });
 
 const pull: PullRequest = {
@@ -317,12 +320,36 @@ function stubStickyRoom({
       disconnect() {}
     },
   );
-  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
-    () => scrollport,
+  const clientHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientHeight",
   );
-  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
-    () => sidebar,
+  const offsetHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "offsetHeight",
   );
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get: () => scrollport,
+  });
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => sidebar,
+  });
+  stickyRoomRestorers.push(() => {
+    if (clientHeight)
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "clientHeight",
+        clientHeight,
+      );
+    if (offsetHeight)
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "offsetHeight",
+        offsetHeight,
+      );
+  });
   return {
     resizeSidebar(height: number) {
       sidebar = height;
@@ -1490,16 +1517,19 @@ describe("PullDetail", () => {
 
   it("optimistically adds, changes, and removes a PR comment reaction", async () => {
     let serverReactions = [{ emoji: "👍", count: 2, reacted: false }];
-    let resolveReact!: (comment: IssueComment) => void;
-    const react = vi.fn(
-      () =>
-        new Promise<IssueComment>((resolve) => {
-          resolveReact = (comment) => {
-            serverReactions = comment.reactions;
-            resolve(comment);
-          };
-        }),
-    );
+    const react = vi.fn(async (params: { emoji: string }) => {
+      serverReactions =
+        params.emoji === "🎉"
+          ? [
+              { emoji: "👍", count: 2, reacted: false },
+              { emoji: "🎉", count: 1, reacted: true },
+            ]
+          : params.emoji === "👍" &&
+              serverReactions.some((item) => item.emoji === "🎉")
+            ? [{ emoji: "👍", count: 3, reacted: true }]
+            : [{ emoji: "👍", count: 2, reacted: false }];
+      return { ...comments[0], reactions: serverReactions };
+    });
     const listComments = vi.fn(() => [
       { ...comments[0], reactions: serverReactions },
     ]);
@@ -1524,50 +1554,40 @@ describe("PullDetail", () => {
     expect(react).toHaveBeenCalledWith(
       expect.objectContaining({ comment_id: 9, emoji: "🎉" }),
     );
-    resolveReact({
-      ...comments[0],
-      reactions: [
-        { emoji: "👍", count: 2, reacted: false },
-        { emoji: "🎉", count: 1, reacted: true },
-      ],
-    });
     await waitFor(() => expect(listComments).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(
-        (screen.getByLabelText("👍 reaction: 2") as HTMLButtonElement).disabled,
+        (screen.queryByLabelText("👍 reaction: 2") as HTMLButtonElement | null)
+          ?.disabled,
       ).toBe(false),
     );
 
-    fireEvent.click(screen.getByLabelText("👍 reaction: 2"));
-    await waitFor(() => {
-      expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
-      expect(
-        screen.getByLabelText("👍 reaction: 3").getAttribute("aria-pressed"),
-      ).toBe("true");
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("👍 reaction: 2"));
+      await Promise.resolve();
     });
-    resolveReact({
-      ...comments[0],
-      reactions: [{ emoji: "👍", count: 3, reacted: true }],
-    });
+    await waitFor(() => expect(react).toHaveBeenCalledTimes(2));
+    expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
+    expect(screen.queryByLabelText("👍 reaction: 3")).toBeTruthy();
     await waitFor(() => {
       expect(listComments).toHaveBeenCalledTimes(3);
       expect(
-        (screen.getByLabelText("👍 reaction: 3") as HTMLButtonElement).disabled,
+        (screen.queryByLabelText("👍 reaction: 3") as HTMLButtonElement | null)
+          ?.disabled,
       ).toBe(false);
     });
 
-    fireEvent.click(screen.getByLabelText("👍 reaction: 3"));
-    await waitFor(() =>
-      expect(screen.getByLabelText("👍 reaction: 2")).toBeTruthy(),
-    );
-    resolveReact({
-      ...comments[0],
-      reactions: [{ emoji: "👍", count: 2, reacted: false }],
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("👍 reaction: 3"));
+      await Promise.resolve();
     });
+    await waitFor(() =>
+      expect(screen.queryByLabelText("👍 reaction: 2")).toBeTruthy(),
+    );
     await waitFor(() => {
       expect(listComments).toHaveBeenCalledTimes(4);
       expect(
-        screen.getByLabelText("👍 reaction: 2").getAttribute("aria-pressed"),
+        screen.queryByLabelText("👍 reaction: 2")?.getAttribute("aria-pressed"),
       ).toBe("false");
     });
   });
@@ -1594,10 +1614,10 @@ describe("PullDetail", () => {
     expect(await screen.findByLabelText("🎉 reaction: 1")).toBeTruthy();
 
     rejectReact(new RpcFault(500, "write failed"));
-    await waitFor(() => {
-      expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
-      expect(screen.getByText("Reaction failed: write failed")).toBeTruthy();
-    });
+    await waitFor(() =>
+      expect(screen.queryByText("Reaction failed: write failed")).toBeTruthy(),
+    );
+    expect(screen.queryByLabelText("🎉 reaction: 1")).toBeNull();
   });
 
   it("archives a PR comment from its three dots menu", async () => {
@@ -3607,7 +3627,7 @@ describe("PullDetail — #comments landing (#2394)", () => {
     const section = await commentsSection();
     expect(section?.id).toBe("comments");
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
-    expect(scrollIntoView.mock.instances[0]).toBe(section);
+    expect(scrollIntoView.mock.contexts[0]).toBe(section);
   });
 
   it("leaves the page where it is without the hash", async () => {

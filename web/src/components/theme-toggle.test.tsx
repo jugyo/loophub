@@ -6,7 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import type { GlobalSettings, Theme } from "@/api/types";
 import { ThemeToggle } from "./theme-toggle";

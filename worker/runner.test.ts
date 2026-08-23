@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "#loophub-test";
 import { git, worktreeAdd } from "../core/git.ts";
 import { writeCursor } from "../core/worker-cursor.ts";
 import { WORKFLOW_PATH } from "../core/workflow.ts";
@@ -256,7 +256,9 @@ test("events without a workflow.yml or unsupported types are no-ops", async () =
     await expect(R.dispatchEvent(row)).resolves.toBeUndefined();
     expect(out).toHaveBeenCalledWith(
       expect.stringMatching(
-        `^lh-worker: event dispatch completed repo=jugyo/wf-none event_id=${row.id} event_type=issue.opened duration_ms=\\d+$`,
+        new RegExp(
+          `^lh-worker: event dispatch completed repo=jugyo/wf-none event_id=${row.id} event_type=issue.opened duration_ms=\\d+$`,
+        ),
       ),
     );
   } finally {

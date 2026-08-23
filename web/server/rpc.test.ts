@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "#loophub-test";
 
 // Isolate the DB before contract.ts -> service.ts -> db.ts runs its import-time setup.
 const HOME = mkdtempSync(join(tmpdir(), "lh-rpc-"));

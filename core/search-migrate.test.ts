@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, expect, test } from "vitest";
+import { afterAll, expect, test } from "#loophub-test";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-search-migrate-"));
 const DB = join(HOME, "legacy.db");

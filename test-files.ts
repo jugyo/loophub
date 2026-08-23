@@ -3,7 +3,7 @@
 delete process.env.LOOPHUB_SESSION_ID;
 
 export const allTestFiles = [
-  "vitest.config.test.ts",
+  "test-runner.config.test.ts",
   "scripts/**/*.test.ts",
   "core/**/*.test.ts",
   "cli/**/*.test.ts",
@@ -71,35 +71,5 @@ export const gitIntegrationTestFiles = [
   "worker/runner.test.ts",
 ];
 
-const workerLimits = {
-  // Integration tests launch git/CLI subprocesses and open isolated SQLite
-  // databases. Capping workers avoids oversubscribing shared host resources.
-  minWorkers: 1,
-  maxWorkers: 4,
-};
-
-// See vitest.keepalive.ts: without it the Bun-hosted runner exits 0 mid-run.
-const globalSetup = ["./vitest.keepalive.ts"];
-
-export const fastTestConfig = {
-  include: allTestFiles,
-  exclude: gitIntegrationTestFiles,
-  globalSetup,
-  ...workerLimits,
-};
-
-export const integrationTestConfig = {
-  include: gitIntegrationTestFiles,
-  exclude: [],
-  globalSetup,
-  ...workerLimits,
-};
-
-export const fullTestConfig = {
-  include: allTestFiles,
-  // The include list is exhaustive; clear Vitest's default config exclusion so
-  // the co-located vitest.config.test.ts contract runs with the suite.
-  exclude: [],
-  globalSetup,
-  ...workerLimits,
-};
+// Bun's runner receives the selected files directly. Keep the classification data explicit so
+// fast and integration commands cannot silently drift apart.

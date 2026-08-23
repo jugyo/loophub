@@ -11,7 +11,7 @@ import {
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 import { herdrSessionName } from "../core/terminal/terminal-launch.ts";
 
 const CLI = join(import.meta.dirname, "index.ts");

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
 
 const TEST_ROOT = mkdtempSync(join(tmpdir(), "lh-prune-performance-"));

@@ -6,7 +6,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import type { HerdrSessions, WorkflowRunState } from "@/api/types";
 import {
   HOVER_POPUP_CLOSE_DELAY_MS,

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, test } from "#loophub-test";
 
 const home = mkdtempSync(join(tmpdir(), "lh-events-"));
 process.env.LOOPHUB_HOME = home;

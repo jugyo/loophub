@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { bellWavDataUri, playNotificationBell } from "./notification-sound";
 
 afterEach(() => {
@@ -83,7 +83,8 @@ describe("playNotificationBell", () => {
     );
 
     playNotificationBell();
-    await vi.waitFor(() => expect(error).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(error).toHaveBeenCalled();
 
     expect(error.mock.calls[0][1]).toBe(blocked);
   });

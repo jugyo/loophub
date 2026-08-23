@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { migrationTemplate } from "./new-migration.ts";
 
 test("migration:new prints a UTC timestamp id and append-only entry", () => {

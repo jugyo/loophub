@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "#loophub-test";
 import type { GitResult } from "./git.ts";
 import {
   existingPullWorktreePath,

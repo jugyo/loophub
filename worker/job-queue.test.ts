@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "#loophub-test";
 import {
   createJobQueue,
   DEFAULT_JOB_CONCURRENCY,

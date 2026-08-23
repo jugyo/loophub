@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "#loophub-test";
 import type { PullFile, PullFileView } from "@/api/types";
 import {
   pullFileViewState,

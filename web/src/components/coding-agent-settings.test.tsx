@@ -5,7 +5,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import type { CodingAgent } from "@/api/types";
 import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import { CODING_AGENTS } from "../../../core/runtimes.ts";

@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { CODING_AGENTS, RUNTIMES } from "./runtimes.ts";
 
 test("Claude Code suggests the fable model", () => {

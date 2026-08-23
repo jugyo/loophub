@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { formatEvent } from "./events.ts";
 
 test("formatEvent parses the payload, normalizes its subjects, and attaches repo full_name", () => {

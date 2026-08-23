@@ -15,7 +15,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";

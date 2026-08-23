@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, expect, test, vi } from "vitest";
+import { afterAll, expect, test, vi } from "#loophub-test";
 import { setProcessSpawnerForTests } from "../core/process.ts";
 
 const home = mkdtempSync(join(tmpdir(), "lh-usage-sync-subprocess-"));

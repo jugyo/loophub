@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "#loophub-test";
 
 // Isolate the DB before net.ts -> instance-settings.ts -> db.ts.
 const HOME = mkdtempSync(join(tmpdir(), "lh-net-"));

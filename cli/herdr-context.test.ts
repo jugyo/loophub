@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { currentHerdrPaneContext } from "./herdr-context.ts";
 
 test("currentHerdrPaneContext accepts a complete Herdr pane identity", () => {

@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "#loophub-test";
 import { stringifyJsonWithinLimit } from "./bounded-json.ts";
 
 test("serializes JSON with native compact semantics within the byte limit", () => {
