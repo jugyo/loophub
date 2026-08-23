@@ -168,7 +168,7 @@ async function handleAttachmentUpload(
     url.searchParams.get("actor") || req.headers.get("x-actor") || "unknown";
   const mime = req.headers.get("content-type");
   try {
-    const result = saveAttachment({ data, filename, mime, author });
+    const result = await saveAttachment({ data, filename, mime, author });
     return jsonResponse(201, result);
   } catch (e) {
     if (isServiceError(e)) return jsonResponse(e.status, { error: e.message });

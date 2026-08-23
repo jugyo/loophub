@@ -10,7 +10,7 @@
 // (throwing ServiceError with an HTTP-style status), mirroring core/service.ts.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { configDir } from "./config.ts";
 import { db, now } from "./db.ts";
@@ -123,7 +123,7 @@ export interface StoredAttachment {
  * `lh attachment get` so an agent can read a document attached to an issue
  * without going through HTTP.
  */
-export function readAttachment(ref: string): StoredAttachment {
+export async function readAttachment(ref: string): Promise<StoredAttachment> {
   const sha256 = parseAttachmentRef(ref);
   if (!sha256) {
     throw new ServiceError(400, `Not an attachment reference: ${ref}`);
@@ -133,7 +133,11 @@ export function readAttachment(ref: string): StoredAttachment {
   if (!attachment || !existsSync(path)) {
     throw new ServiceError(404, `Attachment not found: ${sha256}`);
   }
-  return { attachment, path, data: readFileSync(path) };
+  return {
+    attachment,
+    path,
+    data: Buffer.from(await Bun.file(path).arrayBuffer()),
+  };
 }
 
 export function getAttachment(sha256: string): Attachment | null {
@@ -147,12 +151,12 @@ export function getAttachment(sha256: string): Attachment | null {
  * bytes converges on one blob and one row (the original row is kept). Returns the
  * stored metadata plus the embed `url` and `markdown`.
  */
-export function saveAttachment(input: {
+export async function saveAttachment(input: {
   data: Buffer;
   filename: string;
   mime?: string | null;
   author: string;
-}): UploadedAttachment {
+}): Promise<UploadedAttachment> {
   const size = input.data.length;
   if (size === 0) throw new ServiceError(400, "Empty file");
   if (size > MAX_ATTACHMENT_BYTES) {
@@ -167,7 +171,7 @@ export function saveAttachment(input: {
   const path = blobPath(sha256);
   if (!existsSync(path)) {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, input.data);
+    await Bun.write(path, input.data);
   }
 
   // Keep the first row on re-upload so created_at/author/filename stay stable.

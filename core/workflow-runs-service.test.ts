@@ -2245,7 +2245,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   // A passing review verifies the current HEAD without terminating the run. Uploading an
   // attachment and embedding it in the PR body are non-code edits: neither moves HEAD, so the same
   // pass remains fresh and the parent can keep observing this run.
-  const attachment = A.saveAttachment({
+  const attachment = await A.saveAttachment({
     data: Buffer.from("workflow evidence"),
     filename: "workflow-evidence.png",
     mime: "image/png",

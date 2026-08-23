@@ -13,11 +13,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
-  readFileSync,
   renameSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,11 +61,19 @@ function listFiles(dir: string): string[] {
   return files;
 }
 
+async function readFileBytes(path: string): Promise<Uint8Array> {
+  return Bun.file(path).bytes();
+}
+
+const HASH_READ_CONCURRENCY = 16;
+
 // Hash of the current build inputs. `root` only exists so tests can hash a throwaway directory
 // tree instead of the real web/; production callers use the default. Missing inputs are skipped,
 // so a checkout that has not run `npm install` still hashes the same way on every restart. The
 // result is independent of directory-listing order thanks to the sort below.
-export function computeBuildHash(root: string = WEB_ROOT): string {
+export async function computeBuildHash(
+  root: string = WEB_ROOT,
+): Promise<string> {
   const hash = createHash("sha256");
   const files: string[] = [];
   for (const input of HASH_INPUTS) {
@@ -76,38 +82,57 @@ export function computeBuildHash(root: string = WEB_ROOT): string {
     if (statSync(path).isDirectory()) files.push(...listFiles(path));
     else files.push(path);
   }
-  for (const file of files.sort()) {
+  const sortedFiles = files.sort();
+  const pending = new Map<number, Promise<Uint8Array>>();
+  let nextToStart = 0;
+  const startNext = (): void => {
+    if (nextToStart < sortedFiles.length) {
+      pending.set(nextToStart, readFileBytes(sortedFiles[nextToStart]));
+      nextToStart += 1;
+    }
+  };
+  while (
+    nextToStart < sortedFiles.length &&
+    pending.size < HASH_READ_CONCURRENCY
+  ) {
+    startNext();
+  }
+  for (let index = 0; index < sortedFiles.length; index += 1) {
+    const contents = await pending.get(index);
+    pending.delete(index);
+    startNext();
+    const file = sortedFiles[index];
     // Path and content are separated with NUL so "a/b" + "c" cannot collide with "a" + "b/c".
     hash.update(relative(root, file));
     hash.update("\0");
-    hash.update(readFileSync(file));
+    hash.update(contents!);
     hash.update("\0");
   }
   return hash.digest("hex");
 }
 
-function storedBuildHash(dist: string): string | null {
+async function storedBuildHash(dist: string): Promise<string | null> {
   const path = join(dist, BUILD_HASH_FILENAME);
-  return existsSync(path) ? readFileSync(path, "utf8").trim() || null : null;
+  return existsSync(path) ? (await Bun.file(path).text()).trim() || null : null;
 }
 
 function assetUrl(outDir: string, path: string): string {
   return `/${relative(outDir, path).split(sep).join("/")}`;
 }
 
-function writeIndexHtml(
+async function writeIndexHtml(
   outDir: string,
   entryPath: string,
   cssPath: string,
-): void {
+): Promise<void> {
   const sourceScript = '<script type="module" src="/src/main.tsx"></script>';
-  const index = readFileSync(join(WEB_ROOT, "index.html"), "utf8");
+  const index = await Bun.file(join(WEB_ROOT, "index.html")).text();
   if (!index.includes(sourceScript)) {
     throw new Error("web/index.html is missing the SPA entry script");
   }
   const styles = `<link rel="stylesheet" href="${assetUrl(outDir, cssPath)}" />`;
   const script = `<script type="module" src="${assetUrl(outDir, entryPath)}"></script>`;
-  writeFileSync(
+  await Bun.write(
     join(outDir, "index.html"),
     index.replace(sourceScript, `${styles}\n    ${script}`),
   );
@@ -139,7 +164,8 @@ function installBuild(staging: string, outDir: string): void {
 // source hash and was left untouched.
 export async function buildSpa(outDir?: string): Promise<boolean> {
   const dist = outDir ?? join(WEB_ROOT, "dist");
-  if (storedBuildHash(dist) === computeBuildHash()) return false;
+  const buildHash = await computeBuildHash();
+  if ((await storedBuildHash(dist)) === buildHash) return false;
   mkdirSync(dirname(dist), { recursive: true });
   const staging = mkdtempSync(join(dirname(dist), `.${basename(dist)}-`));
   try {
@@ -197,13 +223,13 @@ export async function buildSpa(outDir?: string): Promise<boolean> {
     if (!entry || !css) {
       throw new Error("Bun.build did not emit the SPA entry and stylesheet");
     }
-    writeIndexHtml(staging, entry.path, css.path);
+    await writeIndexHtml(staging, entry.path, css.path);
     if (existsSync(PUBLIC_DIR)) {
-      cpPublicAssets(PUBLIC_DIR, staging);
+      await cpPublicAssets(PUBLIC_DIR, staging);
     }
-    writeFileSync(
+    await Bun.write(
       join(staging, BUILD_HASH_FILENAME),
-      `${computeBuildHash()}\n`,
+      `${await computeBuildHash()}\n`,
     );
     installBuild(staging, dist);
   } catch (error) {
@@ -213,15 +239,18 @@ export async function buildSpa(outDir?: string): Promise<boolean> {
   return true;
 }
 
-function cpPublicAssets(publicDir: string, outDir: string): void {
+async function cpPublicAssets(
+  publicDir: string,
+  outDir: string,
+): Promise<void> {
   for (const entry of readdirSync(publicDir)) {
     const source = join(publicDir, entry);
     const target = join(outDir, entry);
     if (statSync(source).isDirectory()) {
       mkdirSync(target, { recursive: true });
-      cpPublicAssets(source, target);
+      await cpPublicAssets(source, target);
     } else {
-      writeFileSync(target, readFileSync(source));
+      await Bun.write(target, Bun.file(source));
     }
   }
 }
