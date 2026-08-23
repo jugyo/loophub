@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Loader2, Search, Star, X } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -36,7 +36,7 @@ export function RepoSwitcher({ openRequest = 0 }: { openRequest?: number }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const dialogRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const optionRefs = useRef<Array<HTMLAnchorElement | null>>([]);
   const filteredRepos = useMemo(() => {
     const query = filter.trim().toLowerCase();
     if (!query) return repos;
@@ -197,7 +197,7 @@ export function RepoSwitcher({ openRequest = 0 }: { openRequest?: number }) {
                   optionRefs.current[index] = node;
                 }}
                 onActive={() => setActiveIndex(index)}
-                onSelect={() => go(repo)}
+                onSelect={close}
               />
             ))}
           </ul>
@@ -216,7 +216,7 @@ function RepoSwitcherOption({
 }: {
   repo: Repo;
   active: boolean;
-  optionRef: (node: HTMLButtonElement | null) => void;
+  optionRef: (node: HTMLAnchorElement | null) => void;
   onActive: () => void;
   onSelect: () => void;
 }) {
@@ -237,15 +237,27 @@ function RepoSwitcherOption({
         )}
         onMouseEnter={onActive}
       >
-        <button
+        <Link
           id={`repo-switcher-${repo.id}`}
           ref={optionRef}
-          type="button"
-          onClick={onSelect}
+          to="/r/$owner/$repo"
+          params={{ owner, repo: name }}
+          onClick={(event) => {
+            if (
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            onSelect();
+          }}
           className="min-w-0 flex-1 rounded-sm truncate text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           {repo.full_name}
-        </button>
+        </Link>
         <button
           type="button"
           aria-label={`${favoriteLabel}: ${repo.full_name}`}

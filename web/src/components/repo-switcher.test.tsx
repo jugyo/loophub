@@ -191,19 +191,64 @@ describe("RepoSwitcher", () => {
     expect(screen.queryByText("org/gamma")).toBeNull();
   });
 
-  it("does not expose an ARIA listbox around rows with multiple buttons", async () => {
+  it("renders repository candidates as links", async () => {
+    reposData.value = [makeRepo({ id: 1, full_name: "me/alpha" })];
+    renderInRouter();
+    await screen.findByText("ready");
+
+    const link = await screen.findByRole("link", { name: "me/alpha" });
+
+    expect(link.getAttribute("href")).toBe("/r/me/alpha");
+  });
+
+  it("keeps the picker open for modified clicks on filtered repositories", async () => {
+    reposData.value = [
+      makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
+      makeRepo({ id: 2, name: "beta", full_name: "team/beta" }),
+    ];
+    const router = renderInRouter();
+    await screen.findByText("ready");
+
+    const filter = await screen.findByRole("searchbox", {
+      name: "Filter repositories",
+    });
+    fireEvent.change(filter, { target: { value: "team" } });
+
+    const link = await screen.findByRole("link", { name: "team/beta" });
+    fireEvent.click(link, { ctrlKey: true });
+    fireEvent.click(link, { metaKey: true });
+    fireEvent.click(link, { shiftKey: true });
+
+    expect(router.state.location.pathname).toBe("/");
+    expect(
+      screen.getByRole("dialog", { name: "Switch repository" }),
+    ).toBeTruthy();
+  });
+
+  it("navigates and closes the picker on a normal repository link click", async () => {
+    reposData.value = [makeRepo({ id: 1, full_name: "me/alpha" })];
+    const router = renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.click(await screen.findByRole("link", { name: "me/alpha" }));
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/r/me/alpha"),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("does not expose an ARIA listbox around rows with a link and a button", async () => {
     reposData.value = [
       makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
     ];
     renderInRouter();
     await screen.findByText("ready");
 
-    expect(
-      await screen.findByRole("button", { name: "me/alpha" }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "me/alpha" }).className,
-    ).toContain("focus-visible:ring-1");
+    expect(await screen.findByRole("link", { name: "me/alpha" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "me/alpha" }).className).toContain(
+      "focus-visible:ring-1",
+    );
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(screen.queryByRole("option")).toBeNull();
   });
