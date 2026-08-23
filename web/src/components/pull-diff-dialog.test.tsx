@@ -2214,6 +2214,19 @@ describe("DiffFileDialog", () => {
     );
   });
 
+  it("closes after successfully marking the open file viewed", async () => {
+    const onClose = vi.fn();
+    renderDialog({
+      file: { ...file, last_changed_sha: "c".repeat(40) },
+      onClose,
+      handlers: { "pullFileViews/set": () => [] },
+    });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
   it("hides viewed files from the tree until they are asked for", async () => {
     const secondFile: PullFile = {
       ...file,

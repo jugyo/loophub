@@ -637,17 +637,21 @@ export function DiffFileDialog({
                   type="checkbox"
                   checked={fileViewState === "viewed"}
                   disabled={setViewed.isPending}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const viewed = event.target.checked;
                     setViewed
                       .mutateAsync({
                         path: file.filename,
                         sha: file.last_changed_sha ?? null,
-                        viewed: event.target.checked,
+                        viewed,
+                      })
+                      .then(() => {
+                        if (viewed) onClose();
                       })
                       .catch((error) =>
                         showError(errorMessage(error, "Update failed")),
-                      )
-                  }
+                      );
+                  }}
                 />
                 Viewed
               </label>

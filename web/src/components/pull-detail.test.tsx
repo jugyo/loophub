@@ -427,6 +427,46 @@ describe("PullDetail", () => {
     expect(within(section).getByText(/Show viewed \(1 viewed\)/)).toBeTruthy();
   });
 
+  it("clears the selected file after marking it viewed", async () => {
+    renderDetail({
+      "pulls/files": () => [
+        { ...files[0], last_changed_sha: "a".repeat(40) },
+        {
+          ...files[0],
+          filename: "web/src/b.ts",
+          last_changed_sha: "b".repeat(40),
+        },
+      ],
+      "pullFileViews/set": () => [
+        {
+          path: files[0].filename,
+          sha: "a".repeat(40),
+          viewed_at: "2026-08-23T12:00:00Z",
+        },
+      ],
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: /Files changed \(2\)/ })
+    ).closest("section")!;
+    fireEvent.click(
+      within(section).getByRole("button", { name: /web\/src\/a\.ts/ }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: /Diff for/ }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      within(section).getByRole("button", { name: /web\/src\/b\.ts/ }),
+    ).toBeTruthy();
+    expect(
+      within(section).queryByRole("button", { name: /web\/src\/a\.ts/ }),
+    ).toBeNull();
+  });
+
   it("brings a file back with a label once new commits land on it", async () => {
     renderDetail({
       "pulls/files": () => [{ ...files[0], last_changed_sha: "b".repeat(40) }],
