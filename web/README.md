@@ -20,8 +20,7 @@ port — no separate dev server.
 From the repo root:
 
 ```sh
-npm install
-npm --prefix web install # also run by the root postinstall; explicit so it works with ignore-scripts=true
+bun install
 npm run lh-web          # http://localhost:8730 — API + UI, one process
 ```
 
@@ -40,7 +39,7 @@ Run the worktree's *own* `lh-web`, isolated from your prod instance, on a non-pr
 `LOOPHUB_HOME` so it never touches the prod DB or port:
 
 ```sh
-LOOPHUB_HOME=$(mktemp -d) npm run lh-web -- --port 8731   # inside the worktree
+LOOPHUB_HOME=$(mktemp -d) bun run lh-web -- --port 8731   # inside the worktree
 ```
 
 Open http://localhost:8731 to develop or capture evidence against that worktree's code, and stop it

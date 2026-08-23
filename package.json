@@ -24,7 +24,7 @@
     "lh-job-queue": "worker/job-queue-index.ts"
   },
   "scripts": {
-    "postinstall": "npm --prefix web install",
+    "postinstall": "bun install --cwd web --frozen-lockfile",
     "lh": "bun cli/index.ts",
     "lh-web": "bun web/server/index.ts",
     "lh-worker": "bun worker/index.ts",
