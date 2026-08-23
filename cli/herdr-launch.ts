@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnSyncProcess } from "../core/process.ts";
 import {
   isHerdrExitError,
   startHerdrSession,
@@ -98,29 +98,35 @@ export async function launchAgentInWorktreeHerdr(input: {
   // this short-lived CLI process (unlike lh-web, whose single server process spawns herdr async);
   // it never throws — a failed call resolves ok:false so the caller simply degrades.
   const runHerdrCmd: HerdrCmdRunner = async (argv, opts) => {
-    const proc = spawnSync(argv[0], argv.slice(1), {
-      stdio: opts?.captureStdout ? ["ignore", "pipe", "ignore"] : "ignore",
+    const proc = spawnSyncProcess(argv, {
+      stdio: opts?.captureStdout
+        ? ["ignore", "pipe", "ignore"]
+        : ["ignore", "ignore", "ignore"],
       timeout: 15_000,
-      encoding: "utf8",
     });
-    const ok = !proc.error && proc.signal == null && (proc.status ?? 0) === 0;
+    const ok =
+      !proc.error && proc.signalCode == null && (proc.exitCode ?? 0) === 0;
     return {
-      stdout: ok && opts?.captureStdout ? (proc.stdout ?? "") : "",
+      stdout:
+        ok && opts?.captureStdout ? (proc.stdout?.toString("utf8") ?? "") : "",
       ok,
     };
   };
   // The launch steps themselves also need stderr, which is where herdr reports the error code a
   // failed step is diagnosed from.
   const runLaunchStep: HerdrLaunchRunner = async (argv) => {
-    const proc = spawnSync(argv[0], argv.slice(1), {
+    const proc = spawnSyncProcess(argv, {
       stdio: ["inherit", "pipe", "pipe"],
       timeout: 30_000,
-      encoding: "utf8",
     });
     return {
-      stdout: proc.stdout ?? "",
-      stderr: proc.error ? proc.error.message : (proc.stderr ?? ""),
-      ok: !proc.error && proc.signal == null && (proc.status ?? 0) === 0,
+      stdout: proc.stdout?.toString("utf8") ?? "",
+      stderr: proc.error
+        ? proc.error instanceof Error
+          ? proc.error.message
+          : String(proc.error)
+        : (proc.stderr?.toString("utf8") ?? ""),
+      ok: !proc.error && proc.signalCode == null && (proc.exitCode ?? 0) === 0,
     };
   };
 

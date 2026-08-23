@@ -1,6 +1,6 @@
-import { spawnSync } from "node:child_process";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
+import { spawnSyncProcess } from "../../core/process.ts";
 import { buildRuntimeFlags } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
 import { isClaudeSessionId } from "../../core/session-runtime.ts";
@@ -138,11 +138,10 @@ async function manifestCommand(): Promise<void> {
 }
 
 function commandAvailable(command: string): boolean {
-  const result = spawnSync(command, ["--version"], {
-    encoding: "utf8",
-    stdio: "ignore",
+  const result = spawnSyncProcess([command, "--version"], {
+    stdio: ["ignore", "ignore", "ignore"],
   });
-  return !result.error && (result.status ?? 0) === 0;
+  return !result.error && (result.exitCode ?? 0) === 0;
 }
 
 // The binary a runtime launches: Claude Code spawns `claude`, Codex spawns `codex`, Grok spawns
@@ -177,19 +176,23 @@ function stepLaunchPreflightError(runtime: CodingAgent): string | null {
 function herdrPaneLayoutRunner(sessionName: string): WorkflowPaneLayoutHerdr {
   return (args, opts) => {
     const captureStdout = opts?.captureStdout === true;
-    const result = spawnSync("herdr", ["--session", sessionName, ...args], {
-      encoding: "utf8",
-      stdio: captureStdout ? ["ignore", "pipe", "inherit"] : "inherit",
-      timeout: 15_000,
-    });
+    const result = spawnSyncProcess(
+      ["herdr", "--session", sessionName, ...args],
+      {
+        stdio: captureStdout
+          ? ["ignore", "pipe", "inherit"]
+          : ["inherit", "inherit", "inherit"],
+        timeout: 15_000,
+      },
+    );
     if (result.error) throw result.error;
-    if (result.signal) {
-      throw new Error(`herdr terminated by signal ${result.signal}`);
+    if (result.signalCode) {
+      throw new Error(`herdr terminated by signal ${result.signalCode}`);
     }
-    if (result.status == null || result.status !== 0) {
-      throw new Error(`herdr exited with status ${result.status}`);
+    if (result.exitCode == null || result.exitCode !== 0) {
+      throw new Error(`herdr exited with status ${result.exitCode}`);
     }
-    return captureStdout ? (result.stdout ?? "") : "";
+    return captureStdout ? (result.stdout?.toString("utf8") ?? "") : "";
   };
 }
 
@@ -317,15 +320,13 @@ async function launchParentHerdr(input: {
   // Web UI and `lh workflow start --herdr` alike — lands on the new run. Best-effort: a failed
   // focus must not fail a successful launch (or block attach below).
   if (launched.tabId) {
-    spawnSync("herdr", herdrTabFocusArgv(input.repo, launched.tabId).slice(1), {
-      stdio: "ignore",
+    spawnSyncProcess(herdrTabFocusArgv(input.repo, launched.tabId), {
+      stdio: ["ignore", "ignore", "ignore"],
     });
   } else if (launched.paneId) {
-    spawnSync(
-      "herdr",
-      herdrAgentFocusArgv(input.repo, launched.paneId).slice(1),
-      { stdio: "ignore" },
-    );
+    spawnSyncProcess(herdrAgentFocusArgv(input.repo, launched.paneId), {
+      stdio: ["ignore", "ignore", "ignore"],
+    });
   }
   // The session, not the agent: `herdr agent attach` resolves its target through herdr's agent
   // detection, and the runtime the pane was just told to run has not been detected yet.
@@ -338,15 +339,18 @@ async function launchParentHerdr(input: {
     );
     process.exit(0);
   }
-  const attached = spawnSync(
-    "herdr",
-    ["session", "attach", launched.sessionName],
+  const attached = spawnSyncProcess(
+    ["herdr", "session", "attach", launched.sessionName],
     {
-      stdio: "inherit",
+      stdio: ["inherit", "inherit", "inherit"],
     },
   );
-  if (attached.error) fail(`failed to attach herdr: ${attached.error.message}`);
-  process.exit(attached.status ?? 0);
+  if (attached.error) {
+    fail(
+      `failed to attach herdr: ${attached.error instanceof Error ? attached.error.message : attached.error}`,
+    );
+  }
+  process.exit(attached.exitCode ?? 0);
 }
 
 async function startWorkflow(): Promise<void> {
@@ -579,15 +583,18 @@ async function launchStep(): Promise<void> {
     );
   launchedAt = new Date().toISOString();
   const outcome = await executeHerdrLaunchPlan(result.herdr, async (argv) => {
-    const proc = spawnSync(argv[0], argv.slice(1), {
-      encoding: "utf8",
+    const proc = spawnSyncProcess(argv, {
       stdio: ["inherit", "pipe", "pipe"],
       timeout: 30_000,
     });
     return {
-      stdout: proc.stdout ?? "",
-      stderr: proc.error ? proc.error.message : (proc.stderr ?? ""),
-      ok: !proc.error && proc.signal == null && (proc.status ?? 0) === 0,
+      stdout: proc.stdout?.toString("utf8") ?? "",
+      stderr: proc.error
+        ? proc.error instanceof Error
+          ? proc.error.message
+          : String(proc.error)
+        : (proc.stderr?.toString("utf8") ?? ""),
+      ok: !proc.error && proc.signalCode == null && (proc.exitCode ?? 0) === 0,
     };
   });
   if (outcome.stdout) process.stdout.write(outcome.stdout);

@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { expect, test } from "vitest";
 import {
   aheadBehind,
@@ -35,6 +35,35 @@ import {
   worktreeStatus,
 } from "./git.ts";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
+
+test("存在しない repoPath の Git stderr を保持する", async () => {
+  const parent = mkdtempSync(join(tmpdir(), "lh-git-missing-parent-"));
+  const missing = join(parent, "missing-repo");
+  try {
+    const result = await git(missing, ["status"]);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("fatal: cannot change to");
+    expect(result.stderr).toContain(missing);
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("相対 repoPath を親プロセスの cwd 基準で解決する", async () => {
+  const repoPath = mkdtempSync(join(process.cwd(), ".lh-git-relative-"));
+  const relativeRepoPath = relative(process.cwd(), repoPath);
+  try {
+    expect((await git(repoPath, ["init", "-q", "-b", "main"])).code).toBe(0);
+    const result = await git(relativeRepoPath, [
+      "rev-parse",
+      "--show-toplevel",
+    ]);
+    expect(result.code).toBe(0);
+    expect(result.stdout.trim()).toBe(repoPath);
+  } finally {
+    rmSync(repoPath, { recursive: true, force: true });
+  }
+});
 
 test("lastChangedCommitsByFile returns each file's newest PR commit", async () => {
   const p = mkdtempSync(join(tmpdir(), "lh-file-change-dates-"));

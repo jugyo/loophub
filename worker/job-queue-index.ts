@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { spawn } from "node:child_process";
+import { spawnProcess } from "../core/process.ts";
 import { jobs } from "../core/service.ts";
 import {
   createJobQueue,
@@ -51,26 +51,41 @@ const runShell = (job: { id: number; params: string }): Promise<void> => {
   }
   const command = params.command;
   return new Promise((resolve) => {
-    const child = spawn("sh", ["-c", command], {
-      cwd: params.cwd,
-      env: { ...process.env, ...params.env } as NodeJS.ProcessEnv,
-    });
+    let child: ReturnType<typeof spawnProcess>;
+    try {
+      child = spawnProcess(["sh", "-c", command], {
+        cwd: params.cwd,
+        env: { ...process.env, ...params.env },
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+    } catch (error) {
+      jobs.finish(job.id, {
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      resolve();
+      return;
+    }
     const heartbeat = setInterval(() => jobs.heartbeat(job.id), 5000);
-    child.on("error", (error: Error) => {
-      clearInterval(heartbeat);
-      jobs.finish(job.id, { status: "failed", error: error.message });
-      resolve();
-    });
-    child.on("close", (code: number | null) => {
-      clearInterval(heartbeat);
-      jobs.finish(
-        job.id,
-        code === 0
-          ? { status: "done", result: { exit_code: code } }
-          : { status: "failed", error: `command exited with code ${code}` },
-      );
-      resolve();
-    });
+    child.exited
+      .then((code) => {
+        clearInterval(heartbeat);
+        jobs.finish(
+          job.id,
+          code === 0
+            ? { status: "done", result: { exit_code: code } }
+            : { status: "failed", error: `command exited with code ${code}` },
+        );
+        resolve();
+      })
+      .catch((error) => {
+        clearInterval(heartbeat);
+        jobs.finish(job.id, {
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        });
+        resolve();
+      });
   });
 };
 

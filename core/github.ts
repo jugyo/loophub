@@ -2,8 +2,8 @@
 // service.ts so the orchestration there (push → create/recover → record) can be unit-tested with
 // these injected — `gh` and a GitHub remote are not available in CI. service.ts composes the real
 // implementations via `realGithubDeps`; tests pass fakes.
-import { execFile } from "node:child_process";
 import { git } from "./git.ts";
+import { readProcessStream, spawnProcess } from "./process.ts";
 
 export interface GhPr {
   number: number;
@@ -38,25 +38,40 @@ function gh(
   args: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(
-      "gh",
-      args,
-      {
+    let child: ReturnType<typeof spawnProcess>;
+    try {
+      child = spawnProcess(["gh", ...args], {
         cwd: repoPath,
         env: process.env,
+        stdio: ["ignore", "pipe", "pipe"],
         maxBuffer: 64 * 1024 * 1024,
-        encoding: "utf8",
-      },
-      (err, stdout, stderr) => {
-        const code =
-          err && typeof (err as { code?: unknown }).code === "number"
-            ? (err as { code: number }).code
-            : err
+      });
+    } catch {
+      resolve({ code: 1, stdout: "", stderr: "" });
+      return;
+    }
+    let maxBufferExceeded = false;
+    const stopAtMaxBuffer = () => {
+      if (maxBufferExceeded) return;
+      maxBufferExceeded = true;
+      child.kill("SIGTERM");
+    };
+    Promise.all([
+      readProcessStream(child.stdout, 64 * 1024 * 1024, stopAtMaxBuffer),
+      readProcessStream(child.stderr, 64 * 1024 * 1024, stopAtMaxBuffer),
+      child.exited,
+    ])
+      .then(([stdout, stderr, code]) =>
+        resolve({
+          code:
+            stdout.exceededMaxBuffer || stderr.exceededMaxBuffer
               ? 1
-              : 0;
-        resolve({ code, stdout: stdout ?? "", stderr: stderr ?? "" });
-      },
-    );
+              : (code ?? 1),
+          stdout: stdout.text,
+          stderr: stderr.text,
+        }),
+      )
+      .catch(() => resolve({ code: 1, stdout: "", stderr: "" }));
   });
 }
 

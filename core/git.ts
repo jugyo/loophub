@@ -1,6 +1,10 @@
-import { execFile, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  readProcessStream,
+  spawnProcess,
+  spawnSyncProcess,
+} from "./process.ts";
 import {
   diagnosticLoggingEnabled,
   logDiagnostic,
@@ -23,14 +27,14 @@ export function runGitSync(
 ): GitResult {
   const argv = ["git", ...args];
   const started = diagnosticLoggingEnabled() ? performance.now() : -1;
-  const result = spawnSync(argv[0], argv.slice(1), {
+  const result = spawnSyncProcess(argv, {
     env: { ...process.env, ...env },
-    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
   });
   const gitResult = {
-    code: result.status ?? 1,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
+    code: result.exitCode ?? 1,
+    stdout: result.stdout?.toString("utf8") ?? "",
+    stderr: result.stderr?.toString("utf8") ?? "",
   };
   logSlowGitOperation(
     args,
@@ -59,30 +63,47 @@ function spawnGit(
   const argv = ["git", "-C", repoPath, ...args];
   return new Promise((resolve) => {
     const started = diagnosticLoggingEnabled() ? performance.now() : -1;
-    execFile(
-      argv[0],
-      argv.slice(1),
-      {
+    let child: ReturnType<typeof spawnProcess>;
+    try {
+      child = spawnProcess(argv, {
         env: { ...process.env, ...env },
+        stdio: ["ignore", "pipe", "pipe"],
         maxBuffer: 256 * 1024 * 1024,
-        encoding: "utf8",
-      },
-      (err, stdout, stderr) => {
-        const code =
-          err && typeof (err as { code?: unknown }).code === "number"
-            ? (err as { code: number }).code
-            : err
-              ? 1
-              : 0;
+      });
+    } catch {
+      const gitResult = { code: 1, stdout: "", stderr: "" };
+      logSlowGitOperation(args, env, gitResult.code, started, repoPath);
+      resolve(gitResult);
+      return;
+    }
+    let maxBufferExceeded = false;
+    const stopAtMaxBuffer = () => {
+      if (maxBufferExceeded) return;
+      maxBufferExceeded = true;
+      child.kill("SIGTERM");
+    };
+    Promise.all([
+      readProcessStream(child.stdout, 256 * 1024 * 1024, stopAtMaxBuffer),
+      readProcessStream(child.stderr, 256 * 1024 * 1024, stopAtMaxBuffer),
+      child.exited,
+    ])
+      .then(([stdout, stderr, exitCode]) => {
         const gitResult = {
-          code,
-          stdout: stdout ?? "",
-          stderr: stderr ?? "",
+          code:
+            stdout.exceededMaxBuffer || stderr.exceededMaxBuffer
+              ? 1
+              : (exitCode ?? 1),
+          stdout: stdout.text,
+          stderr: stderr.text,
         };
         logSlowGitOperation(args, env, gitResult.code, started, repoPath);
         resolve(gitResult);
-      },
-    );
+      })
+      .catch(() => {
+        const gitResult = { code: 1, stdout: "", stderr: "" };
+        logSlowGitOperation(args, env, gitResult.code, started, repoPath);
+        resolve(gitResult);
+      });
   });
 }
 

@@ -6,10 +6,10 @@
 // The executable carries `lh`, `lh-web` and every worker, so a machine running LoopHub needs no
 // Node, no Bun and no node_modules. The SPA is not compiled into it: Bun builds the assets here
 // and they are copied next to the executable, where lh-web looks for them (core/self-exec.ts).
-import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSyncProcess } from "../core/process.ts";
 import { buildSpa } from "../web/server/build.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -42,9 +42,9 @@ mkdirSync(outDir, { recursive: true });
 // The SPA build dependencies are imported dynamically by web/server/build.ts and are only
 // reachable from the checkout; the binary skips that path entirely, so keep the bundler from
 // pulling them (and their dependency trees) into the executable.
-const compile = spawnSync(
-  "bun",
+const compile = spawnSyncProcess(
   [
+    "bun",
     "build",
     "--compile",
     "--external",
@@ -58,9 +58,9 @@ const compile = spawnSync(
     binaryPath,
     ENTRY,
   ],
-  { cwd: ROOT, stdio: "inherit" },
+  { cwd: ROOT, stdio: ["inherit", "inherit", "inherit"] },
 );
-if (compile.status !== 0) process.exit(compile.status ?? 1);
+if (compile.exitCode !== 0) process.exit(compile.exitCode ?? 1);
 
 rmSync(spaOut, { recursive: true, force: true });
 cpSync(join(ROOT, "web", "dist"), spaOut, { recursive: true });

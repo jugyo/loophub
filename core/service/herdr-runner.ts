@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
 import { ServiceError } from "../errors.ts";
+import { spawnProcess } from "../process.ts";
 
 // Pane listings grow with the session's retained workspaces and can legitimately exceed 64 KiB.
 // Keep captures bounded, but leave enough room for the complete JSON instead of silently handing
@@ -39,10 +39,23 @@ export function herdrExitErrorCode(error: unknown): string | null {
   }
 }
 
-function unrefReadable(stream: NodeJS.ReadableStream): void {
-  const unref = (stream as NodeJS.ReadableStream & { unref?: () => void })
-    .unref;
-  unref?.call(stream);
+async function consumeStream(
+  stream: ReadableStream<Uint8Array<any>> | null | undefined,
+  onChunk: (chunk: Uint8Array<any>) => void,
+): Promise<void> {
+  if (!stream) return;
+  const reader = stream.getReader();
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) return;
+      onChunk(result.value);
+    }
+  } catch {
+    // 出力 pipe の切断はプロセスの終了結果で判定する。
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 // Spawns Herdr asynchronously (never spawnSync — this runs inside the lh-web server process,
@@ -66,14 +79,28 @@ export function runHerdr(
     // and block forever (no `close` event, an indefinitely hanging RPC call) — or crash the
     // whole lh-web process on an unhandled stream error. captureStdout pipes stdout but always
     // drains it (and handles its `error` event below, so a stream error can't crash lh-web).
-    const child = spawn(command, args, {
-      cwd,
-      stdio: [
-        "ignore",
-        opts.captureStdout ? "pipe" : "ignore",
-        opts.captureStderr ? "pipe" : "ignore",
-      ],
-    });
+    let child: ReturnType<typeof spawnProcess>;
+    try {
+      child = spawnProcess([command, ...args], {
+        cwd,
+        stdio: [
+          "ignore",
+          opts.captureStdout ? "pipe" : "ignore",
+          opts.captureStderr ? "pipe" : "ignore",
+        ],
+      });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      reject(
+        code === "ENOENT"
+          ? new ServiceError(422, "herdr command not found on PATH")
+          : new ServiceError(
+              500,
+              `failed to launch Herdr (${code ?? "spawn error"})`,
+            ),
+      );
+      return;
+    }
     // Settle-once guard: the success path settles on `close` (all output drained), but the
     // timeout path settles immediately — `close` waits for the stdout pipe to shut, and a
     // descendant process that inherited the pipe fd can hold it open past herdr's own death,
@@ -103,57 +130,50 @@ export function runHerdr(
       : undefined;
     const chunks: Buffer[] = [];
     let captured = 0;
-    child.stdout?.on("data", (chunk: Buffer) => {
-      if (captured >= HERDR_CAPTURE_MAX_BYTES) return; // keep draining, stop keeping
-      chunks.push(chunk);
-      captured += chunk.length;
+    const stdoutDone = consumeStream(child.stdout, (chunk) => {
+      if (captured >= HERDR_CAPTURE_MAX_BYTES) return;
+      const room = HERDR_CAPTURE_MAX_BYTES - captured;
+      const piece = chunk.byteLength > room ? chunk.subarray(0, room) : chunk;
+      chunks.push(Buffer.from(piece));
+      captured += piece.byteLength;
     });
-    child.stdout?.on("error", () => {
-      // Losing the output stream only means the tab id can't be read; the `close` handler
-      // still decides success/failure, so just stop the error from being unhandled.
-    });
-    // Same drain-always discipline as stdout: a piped stream nobody reads would fill the OS
-    // buffer and hang the child. Kept server-side (see HerdrExitError.stderr).
     let stderr = "";
-    child.stderr?.on("data", (chunk: Buffer) => {
-      if (stderr.length >= HERDR_CAPTURE_MAX_BYTES) return;
-      stderr += chunk.toString("utf8");
+    let capturedStderr = 0;
+    const stderrDone = consumeStream(child.stderr, (chunk) => {
+      if (capturedStderr >= HERDR_CAPTURE_MAX_BYTES) return;
+      const room = HERDR_CAPTURE_MAX_BYTES - capturedStderr;
+      const piece = chunk.byteLength > room ? chunk.subarray(0, room) : chunk;
+      stderr += Buffer.from(piece).toString("utf8");
+      capturedStderr += piece.byteLength;
     });
-    child.stderr?.on("error", () => {
-      // Losing stderr only costs the error code hint; `close` still decides success/failure.
-    });
-    child.on("error", (err) => {
-      const code = (err as NodeJS.ErrnoException).code;
-      settle(() =>
-        reject(
-          code === "ENOENT"
-            ? new ServiceError(422, "herdr command not found on PATH")
-            : new ServiceError(
+    child.exited
+      .then(async (status) => {
+        await Promise.all([stdoutDone, stderrDone]);
+        const signal = child.signalCode;
+        settle(() => {
+          if (signal == null && status === 0)
+            resolve(Buffer.concat(chunks).toString("utf8"));
+          else if (signal != null)
+            reject(
+              new ServiceError(
                 500,
-                `failed to launch Herdr (${code ?? "spawn error"})`,
+                `Herdr process was terminated by signal ${signal}`,
               ),
-        ),
-      );
-    });
-    child.on("close", (status, signal) => {
-      // `status` is null when the child was terminated by a signal rather than exiting on its
-      // own — treat that as a failure too, instead of `?? 0` collapsing a null code to success.
-      // The distinction (signal vs. exit code) is itself a safe, non-leaky hint about *why* the
-      // launch failed, so surface it instead of one generic "Herdr launch failed" for both.
-      settle(() => {
-        if (signal == null && status === 0)
-          resolve(Buffer.concat(chunks).toString("utf8"));
-        else if (signal != null)
+            );
+          else if (status !== null) reject(new HerdrExitError(status, stderr));
+          else reject(new ServiceError(500, "Herdr exited without a status"));
+        });
+      })
+      .catch((error) =>
+        settle(() =>
           reject(
             new ServiceError(
               500,
-              `Herdr process was terminated by signal ${signal}`,
+              `failed to launch Herdr (${error instanceof Error ? error.message : error})`,
             ),
-          );
-        else if (status !== null) reject(new HerdrExitError(status, stderr));
-        else reject(new ServiceError(500, "Herdr exited without a status"));
-      });
-    });
+          ),
+        ),
+      );
   });
 }
 
@@ -167,11 +187,25 @@ export function startHerdrSession(
   timeoutMs = 10_000,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn("herdr", ["--session", sessionName, "server"], {
-      cwd,
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    let child: ReturnType<typeof spawnProcess>;
+    try {
+      child = spawnProcess(["herdr", "--session", sessionName, "server"], {
+        cwd,
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      reject(
+        code === "ENOENT"
+          ? new ServiceError(422, "herdr command not found on PATH")
+          : new ServiceError(
+              500,
+              `failed to launch Herdr (${code ?? "spawn error"})`,
+            ),
+      );
+      return;
+    }
     let settled = false;
     let output = "";
     const settle = (fn: () => void) => {
@@ -187,60 +221,52 @@ export function startHerdrSession(
       );
     }, timeoutMs);
 
-    const consumeOutput = (chunk: Buffer) => {
-      output = `${output}${chunk.toString("utf8")}`.slice(
+    const consumeOutput = (chunk: Uint8Array<any>) => {
+      output = `${output}${Buffer.from(chunk).toString("utf8")}`.slice(
         -HERDR_SERVER_READY_MAX_BYTES,
       );
       if (!output.includes(HERDR_SERVER_READY)) return;
       settle(() => {
-        // Keep draining both pipes for the resident server's lifetime. Closing their read ends
-        // here could turn a later Herdr log write into EPIPE and kill the detached session.
-        unrefReadable(child.stdout);
-        unrefReadable(child.stderr);
+        // 常駐プロセスの pipe はバックグラウンドで drain し続ける。
+        (child.stdout as { unref?: () => void } | undefined)?.unref?.();
+        (child.stderr as { unref?: () => void } | undefined)?.unref?.();
         child.unref();
         resolve();
       });
     };
-    child.stdout?.on("data", consumeOutput);
-    child.stderr?.on("data", consumeOutput);
-    child.stdout?.on("error", () => {
-      // A lost readiness stream is handled by close or the startup timeout.
-    });
-    child.stderr?.on("error", () => {
-      // A lost readiness stream is handled by close or the startup timeout.
-    });
-    child.on("error", (err) => {
-      const code = (err as NodeJS.ErrnoException).code;
-      settle(() =>
-        reject(
-          code === "ENOENT"
-            ? new ServiceError(422, "herdr command not found on PATH")
-            : new ServiceError(
+    void consumeStream(child.stdout, consumeOutput);
+    void consumeStream(child.stderr, consumeOutput);
+    child.exited
+      .then((status) => {
+        settle(() => {
+          const signal = child.signalCode;
+          if (signal != null)
+            reject(
+              new ServiceError(
                 500,
-                `failed to launch Herdr (${code ?? "spawn error"})`,
+                `Herdr process was terminated by signal ${signal}`,
               ),
+            );
+          else if (status !== 0) reject(new HerdrExitError(status ?? 1));
+          else
+            reject(
+              new ServiceError(
+                500,
+                "Herdr exited before its server became ready",
+              ),
+            );
+        });
+      })
+      .catch((error) =>
+        settle(() =>
+          reject(
+            new ServiceError(
+              500,
+              `failed to launch Herdr (${error instanceof Error ? error.message : error})`,
+            ),
+          ),
         ),
       );
-    });
-    child.on("close", (status, signal) => {
-      settle(() => {
-        if (signal != null)
-          reject(
-            new ServiceError(
-              500,
-              `Herdr process was terminated by signal ${signal}`,
-            ),
-          );
-        else if (status !== 0) reject(new HerdrExitError(status ?? 1));
-        else
-          reject(
-            new ServiceError(
-              500,
-              "Herdr exited before its server became ready",
-            ),
-          );
-      });
-    });
   });
 }
 

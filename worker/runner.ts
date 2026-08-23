@@ -1,11 +1,11 @@
 // lh-worker runtime: tail the shared `events` table and run the repo's `.loophub/workflow.yml`
 // commands for matched events. This is the process layer (like web/server) — the pure pieces
 // (parse/match/env/cursor) live in core/ and carry the test coverage. See issue #52.
-import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logsDir, workerCursorPath } from "../core/config.ts";
 import { worktreeList } from "../core/git.ts";
+import { spawnProcess } from "../core/process.ts";
 import {
   events,
   pulls,
@@ -109,11 +109,12 @@ function runStep(
   const startedAt = Date.now();
   appendFileSync(logFile, `\n$ ${step.run}\n`);
   return new Promise((resolve) => {
-    let child: ReturnType<typeof spawn>;
+    let child: ReturnType<typeof spawnProcess>;
     try {
-      child = spawn("sh", ["-c", step.run], {
+      child = spawnProcess(["sh", "-c", step.run], {
         cwd,
         env: { ...process.env, ...env },
+        stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (e) {
       appendFileSync(
@@ -123,16 +124,36 @@ function runStep(
       resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
       return;
     }
-    const append = (chunk: Buffer) => appendFileSync(logFile, chunk);
-    child.stdout?.on("data", append);
-    child.stderr?.on("data", append);
-    child.on("error", (e) => {
-      appendFileSync(logFile, `lh-worker: ${e.message}\n`);
-      resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
-    });
-    child.on("close", (code) => {
-      resolve({ exitCode: code, durationMs: Date.now() - startedAt });
-    });
+    const appendStream = async (
+      stream: ReadableStream<Uint8Array> | null | undefined,
+    ) => {
+      if (!stream) return;
+      const reader = stream.getReader();
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) return;
+          appendFileSync(logFile, chunk.value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    };
+    Promise.all([
+      appendStream(child.stdout),
+      appendStream(child.stderr),
+      child.exited,
+    ])
+      .then(([, , code]) =>
+        resolve({ exitCode: code ?? null, durationMs: Date.now() - startedAt }),
+      )
+      .catch((error) => {
+        appendFileSync(
+          logFile,
+          `lh-worker: ${error instanceof Error ? error.message : error}\n`,
+        );
+        resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
+      });
   });
 }
 

@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { agentEffort, agentModel } from "../../core/config.ts";
 import { ENV_PARENT_ISSUE, ENV_WORKSPACE } from "../../core/environment.ts";
+import { spawnSyncProcess } from "../../core/process.ts";
 import {
   ENV_ISSUE_CREATE_SESSION,
   LH_ISSUE_CREATE_SESSION_AGENT,
@@ -252,8 +252,8 @@ export async function run(): Promise<void> {
     // Carry the session id into the spawned runtime via env. A `lh issue create` run inside the
     // session reads it and links the session to whatever issue it files (the number is unknown
     // here, so the link is recorded after creation — see the create branch below).
-    const proc = spawnSync(runtimeBin, runtimeArgs, {
-      stdio: "inherit",
+    const proc = spawnSyncProcess([runtimeBin, ...runtimeArgs], {
+      stdio: ["inherit", "inherit", "inherit"],
       cwd: r.local_path,
       env: {
         ...process.env,
@@ -277,12 +277,12 @@ export async function run(): Promise<void> {
       }
       fail(`failed to launch ${runtimeBin}: ${err.message}`);
     }
-    if (proc.signal) {
+    if (proc.signalCode) {
       fail(
-        `failed to launch ${runtimeBin}: terminated by signal ${proc.signal}`,
+        `failed to launch ${runtimeBin}: terminated by signal ${proc.signalCode}`,
       );
     }
-    process.exit(proc.status ?? 1);
+    process.exit(proc.exitCode ?? 1);
   } else if (sub === "create") {
     if (
       (flags as Record<string, string | boolean | string[] | undefined>)[

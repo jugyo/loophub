@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
 import { db } from "../db.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
+import { spawnProcess } from "../process.ts";
 import { selfCliCommand } from "../self-exec.ts";
 import type {
   HerdrRepoSessionsWire,
@@ -150,10 +150,24 @@ function runLhDevLaunch(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const cli = selfCliCommand();
-    const child = spawn(cli.command, [...cli.args, ...args], {
-      cwd,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
+    let child: ReturnType<typeof spawnProcess>;
+    try {
+      child = spawnProcess([cli.command, ...cli.args, ...args], {
+        cwd,
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      reject(
+        code === "ENOENT"
+          ? new ServiceError(422, "Bun runtime not found on PATH")
+          : new ServiceError(
+              500,
+              `failed to launch ${label} (${code ?? "spawn error"})`,
+            ),
+      );
+      return;
+    }
     let settled = false;
     const settle = (fn: () => void) => {
       if (settled) return;
@@ -163,20 +177,28 @@ function runLhDevLaunch(
     };
     const chunks: Buffer[] = [];
     let captured = 0;
-    child.stderr?.on("data", (chunk: Buffer) => {
-      if (captured >= LH_DEV_STDERR_TAIL_BYTES) return; // keep draining, stop keeping
-      // Slice a single oversized chunk down to the remaining room — pushing it whole would let
-      // captured exceed LH_DEV_STDERR_TAIL_BYTES despite the cap check above only running between
-      // chunks, not within one (#584 review).
-      const room = LH_DEV_STDERR_TAIL_BYTES - captured;
-      const piece = chunk.length > room ? chunk.subarray(0, room) : chunk;
-      chunks.push(piece);
-      captured += piece.length;
-    });
-    child.stderr?.on("error", () => {
-      // Losing the stderr stream only means the failure detail below is missing; `close` still
-      // decides success/failure, so just stop this from becoming an unhandled stream error.
-    });
+    const stderrDone = (async () => {
+      if (!child.stderr) return;
+      const reader = child.stderr.getReader();
+      try {
+        while (true) {
+          const result = await reader.read();
+          if (result.done) return;
+          if (captured >= LH_DEV_STDERR_TAIL_BYTES) continue;
+          const room = LH_DEV_STDERR_TAIL_BYTES - captured;
+          const piece =
+            result.value.byteLength > room
+              ? result.value.subarray(0, room)
+              : result.value;
+          chunks.push(Buffer.from(piece));
+          captured += piece.byteLength;
+        }
+      } catch {
+        // 出力 pipe の切断はプロセスの終了結果で判定する。
+      } finally {
+        reader.releaseLock();
+      }
+    })();
     // Server-side only — never interpolated into a thrown ServiceError (see the const's comment).
     const logStderrTail = () => {
       const tail = Buffer.concat(chunks).toString("utf8").trim();
@@ -194,36 +216,38 @@ function runLhDevLaunch(
         );
       });
     }, LH_DEV_HERDR_TIMEOUT_MS);
-    child.on("error", (err) => {
-      const code = (err as NodeJS.ErrnoException).code;
-      settle(() =>
-        reject(
-          code === "ENOENT"
-            ? new ServiceError(422, "Bun runtime not found on PATH")
-            : new ServiceError(
+    child.exited
+      .then(async (status) => {
+        await stderrDone;
+        const signal = child.signalCode;
+        settle(() => {
+          if (signal == null && status === 0) return resolve();
+          logStderrTail();
+          if (signal != null)
+            reject(
+              new ServiceError(
                 500,
-                `failed to launch ${label} (${code ?? "spawn error"})`,
+                `${label} was terminated by signal ${signal}`,
               ),
+            );
+          else
+            reject(
+              new ServiceError(500, `${label} exited with status ${status}`),
+            );
+        });
+      })
+      .catch((error) =>
+        settle(() =>
+          reject(
+            (error as NodeJS.ErrnoException).code === "ENOENT"
+              ? new ServiceError(422, "Bun runtime not found on PATH")
+              : new ServiceError(
+                  500,
+                  `failed to launch ${label} (${error instanceof Error ? error.message : error})`,
+                ),
+          ),
         ),
       );
-    });
-    child.on("close", (status, signal) => {
-      settle(() => {
-        if (signal == null && status === 0) return resolve();
-        logStderrTail();
-        if (signal != null)
-          reject(
-            new ServiceError(
-              500,
-              `${label} was terminated by signal ${signal}`,
-            ),
-          );
-        else
-          reject(
-            new ServiceError(500, `${label} exited with status ${status}`),
-          );
-      });
-    });
   });
 }
 

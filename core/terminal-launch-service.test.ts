@@ -19,16 +19,56 @@ process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 // Fake child process for scripted `herdr` runs. Everything else (git, etc.) uses the real spawn.
+type FakeStream = ReadableStream<Uint8Array> & {
+  emit: (event: string, chunk?: Uint8Array) => void;
+  listenerCount: (event: string) => number;
+  unref: () => void;
+};
+
+function fakeStream(): FakeStream {
+  let controller: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start(value) {
+      controller = value;
+    },
+  });
+  const emit = (event: string, chunk?: Uint8Array) => {
+    if (event === "data" && chunk) controller.enqueue(chunk);
+    if (event === "close") controller.close();
+    if (event === "error" && chunk) controller.error(chunk);
+  };
+  return Object.assign(stream, {
+    emit,
+    listenerCount: (event: string) => (event === "data" ? 1 : 0),
+    unref: vi.fn(),
+  });
+}
+
 class FakeChild extends EventEmitter {
-  stdout = Object.assign(new EventEmitter(), { unref: vi.fn() });
-  stderr = Object.assign(new EventEmitter(), { unref: vi.fn() });
+  stdout = fakeStream();
+  stderr = fakeStream();
   kill = vi.fn();
   unref = vi.fn();
+  signalCode: string | null = null;
+  exited: Promise<number>;
+
+  constructor() {
+    super();
+    this.exited = new Promise((resolve, reject) => {
+      this.once("close", (status: number | null, signal: string | null) => {
+        this.signalCode = signal;
+        this.stdout.emit("close");
+        this.stderr.emit("close");
+        resolve(status ?? 1);
+      });
+      this.once("error", reject);
+    });
+  }
 }
 
 type ScriptedChild = {
-  stdout: EventEmitter;
-  stderr: EventEmitter;
+  stdout: FakeStream;
+  stderr: FakeStream;
 } & EventEmitter;
 
 let startedHerdrServer: FakeChild | null = null;
@@ -51,53 +91,25 @@ const lhDev = vi.hoisted(() => ({
   script: [] as Array<(child: ScriptedChild) => void>,
 }));
 
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
-  const scripted = (
-    log: string[][],
-    script: Array<(child: ScriptedChild) => void>,
-    command: string,
-    args: string[],
-  ) => {
-    log.push([command, ...args]);
-    const behavior = script.shift();
-    const child = new FakeChild();
-    queueMicrotask(() => {
-      if (behavior) behavior(child);
-      else child.emit("close", 0, null);
-    });
-    return child;
-  };
-  return {
-    ...actual,
-    spawn: (command: string, args: string[], opts: object) => {
-      if (command === "bun")
-        return scripted(lhDev.calls, lhDev.script, command, args);
-      if (command === "herdr") {
-        const explicitFocus = args.some(
-          (arg, index) =>
-            arg === "focus" &&
-            ["workspace", "tab", "agent", "pane"].includes(
-              args[index - 1] ?? "",
-            ),
-        );
-        const implicitFocus =
-          !args.includes("--no-focus") &&
-          (args.includes("create") ||
-            (args.includes("worktree") && args.includes("open")));
-        if (explicitFocus || implicitFocus) {
-          herdr.focus = {
-            workspaceId: "changed",
-            tabId: "changed",
-            paneId: "changed",
-          };
-        }
-        return scripted(herdr.calls, herdr.script, command, args);
-      }
-      return actual.spawn(command, args, opts as never);
-    },
-  };
-});
+let restoreProcessSpawner: (() => void) | undefined;
+
+function scripted(
+  log: string[][],
+  script: Array<(child: ScriptedChild) => void>,
+  command: string,
+  args: string[],
+) {
+  log.push([command, ...args]);
+  const behavior = script.shift();
+  const child = new FakeChild();
+  queueMicrotask(() => {
+    if (behavior) behavior(child);
+    else child.emit("close", 0, null);
+  });
+  return child as unknown as ReturnType<
+    typeof import("./process.ts").spawnProcess
+  >;
+}
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
@@ -164,6 +176,39 @@ function killedBySignal(signal: string) {
 }
 
 beforeAll(async () => {
+  const processModule = await import("./process.ts");
+  restoreProcessSpawner = processModule.setProcessSpawnerForTests(
+    (argv, options) => {
+      const command = argv[0];
+      const args = argv.slice(1);
+      if (command === "bun")
+        return scripted(lhDev.calls, lhDev.script, command, args);
+      if (command === "herdr") {
+        const explicitFocus = args.some(
+          (arg, index) =>
+            arg === "focus" &&
+            ["workspace", "tab", "agent", "pane"].includes(
+              args[index - 1] ?? "",
+            ),
+        );
+        const implicitFocus =
+          !args.includes("--no-focus") &&
+          (args.includes("create") ||
+            (args.includes("worktree") && args.includes("open")));
+        if (explicitFocus || implicitFocus) {
+          herdr.focus = {
+            workspaceId: "changed",
+            tabId: "changed",
+            paneId: "changed",
+          };
+        }
+        return scripted(herdr.calls, herdr.script, command, args);
+      }
+      return Bun.spawn(argv, { env: process.env, ...options }) as ReturnType<
+        typeof import("./process.ts").spawnProcess
+      >;
+    },
+  );
   svc = await import("./service.ts");
   S = await import("./store.ts");
   ({ db } = await import("./db.ts"));
@@ -193,6 +238,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  restoreProcessSpawner?.();
   rmSync(HOME, { recursive: true, force: true });
   rmSync(repoPath, { recursive: true, force: true });
   rmSync(otherRepoPath, { recursive: true, force: true });
