@@ -92,8 +92,8 @@ import {
 import { formatDuration, relativeTime } from "@/lib/time";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
-import { cn } from "@/lib/utils";
 import { useScrollToCommentForm } from "@/lib/use-scroll-to-comment-form";
+import { cn } from "@/lib/utils";
 import { useWebConfig } from "@/lib/web-config";
 import { useIssueComments } from "@/queries/issues";
 import {
@@ -109,7 +109,6 @@ import {
   usePullFileViews,
   usePullReviews,
   usePullTestMap,
-  usePushGithubPull,
   useReactToPullComment,
   useSetPullCommentArchived,
   useSetPullState,

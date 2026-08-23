@@ -15,9 +15,9 @@ import {
 import { rootRoute } from "./routes/root";
 import { sessionsRoute } from "./routes/sessions";
 import { settingsRoute } from "./routes/settings";
+import { settingsAdvancedRoute } from "./routes/settings-advanced";
 import { settingsNotificationsRoute } from "./routes/settings-notifications";
 import { settingsRepositoriesRoute } from "./routes/settings-repositories";
-import { settingsAdvancedRoute } from "./routes/settings-advanced";
 import { settingsWorkflowsRoute } from "./routes/settings-workflows";
 import { statsDbRoute, statsRoute } from "./routes/stats";
 import { uiCatalogRoute } from "./routes/ui-catalog";

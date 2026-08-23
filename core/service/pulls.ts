@@ -149,8 +149,7 @@ export async function diffFilesWithLastChanged(operands: {
     ).catch((): Record<string, LastChangedCommit> => ({})),
   ]);
   return files.map((file) => {
-    const lastChanged =
-      lastChangedCommits[file.headFilename ?? file.filename];
+    const lastChanged = lastChangedCommits[file.headFilename ?? file.filename];
     return {
       ...file,
       ...(lastChanged
