@@ -120,6 +120,10 @@ test("workflowRunProgress: commits with no effective diff stay distinguishable f
 
   expect(progress.headAheadOfBase).toBe(true);
   expect(progress.hasEffectiveDiff).toBe(false);
+  expect(progress.steps.execute).toEqual({
+    complete: false,
+    missing: ["no effective diff"],
+  });
   gitAt(["checkout", "-q", "main"]);
 });
 

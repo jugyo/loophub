@@ -135,6 +135,7 @@ export async function workflowRunProgress(input: {
     steps: evaluateWorkflowSteps({
       currentHead,
       headAheadOfBase,
+      hasEffectiveDiff: effectiveDiff,
       headAheadOfLatestReview,
       latestReview: input.latestReview,
     }),

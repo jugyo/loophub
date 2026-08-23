@@ -23,6 +23,8 @@ export type WorkflowStepEvalInput = {
   currentHead: string | null;
   /** Whether HEAD is ahead of the run's base branch. */
   headAheadOfBase: boolean;
+  /** Whether the base-to-HEAD range contains an effective diff. */
+  hasEffectiveDiff: boolean;
   /** Whether the latest reviewed SHA is an ancestor of current HEAD. */
   headAheadOfLatestReview: boolean;
   /** Latest review submitted by this run's Verify children, or null. */
@@ -98,9 +100,10 @@ export function workflowDone(input: WorkflowDoneInput): boolean {
  * Evaluate each Workflow step's observable state as a pure query over the
  * domain: the worktree HEAD and the run's latest Verify review.
  *
- * - Execute is complete when HEAD is ahead of base and has advanced past the
- *   latest reviewed SHA (there is new work to verify). A turn-done declaration
- *   is a timing signal, never part of this truth.
+ * - Execute is complete when HEAD is ahead of base, the base-to-HEAD range has
+ *   an effective diff, and HEAD has advanced past the latest reviewed SHA (there
+ *   is new work to verify). A turn-done declaration is a timing signal, never
+ *   part of this truth.
  * - Verify is complete when the latest review is pinned to the current HEAD.
  *
  * Review progress is an ancestry relation, not mere SHA inequality: rewinding
@@ -114,6 +117,9 @@ export function evaluateWorkflowSteps(
   const executeMissing: string[] = [];
   if (!input.headAheadOfBase) {
     executeMissing.push("head equals base");
+  }
+  if (input.headAheadOfBase && !input.hasEffectiveDiff) {
+    executeMissing.push("no effective diff");
   }
   if (input.latestReview && !input.headAheadOfLatestReview) {
     executeMissing.push(

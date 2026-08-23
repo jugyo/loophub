@@ -285,7 +285,7 @@ run の current step は `execute | verify` のみで、新しい run は `curre
 
 | step | 出力 | 完了の観測 |
 |---|---|---|
-| Execute | commits + 通常の PR body / attachment / comment 操作 | HEAD が base より先行し、最新 review が指す SHA より前進している |
+| Execute | commits + 通常の PR body / attachment / comment 操作 | HEAD が base より先行し、base から HEAD までの実効差分を持ち、存在する場合は最新 review が指す SHA より前進している |
 | Verify | head SHA に pin された PR review | 最新 review が current HEAD に pin されている（fresh） |
 
 `lh workflow step status <run> --json` は観測結果を返す: current HEAD、HEAD が base より先行しているか、
@@ -298,6 +298,12 @@ freshness は review の pin された head_sha と current HEAD の比較だけ
 pass 後、新しい commit で HEAD が進んだ場合は既存 review が stale となり fresh Verify が必要になる。
 一方、PR body・comment・attachment だけの更新は HEAD を変えないため、既存 pass は fresh のままである。
 Workflow 専用の freshness / dirty / checkpoint 状態は追加しない。
+
+過去の workflow review がない初回の Execute は、review の SHA ではなく base branch を比較基準にする。
+HEAD が base branch より先行していても、base から HEAD までの実効差分が空なら Execute は未完了とする。
+この条件を満たして Verify へ進むと、Verify は base branch と HEAD の merge-base を固定した base SHA と
+current HEAD の組で、その時点の実効差分だけをレビューする。既存 review がある場合は、review 済み SHA
+が current HEAD の祖先であることを引き続き要求し、巻き戻しや分岐した HEAD を進捗とはみなさない。
 
 ## 6. 完了宣言（turn done）
 

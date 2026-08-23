@@ -12,6 +12,7 @@ test("no review, head at base: both steps incomplete with their missing reason",
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: false,
+    hasEffectiveDiff: false,
     headAheadOfLatestReview: false,
     latestReview: null,
   });
@@ -30,16 +31,32 @@ test("execute complete when head ahead of base and no review yet", () => {
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    hasEffectiveDiff: true,
     headAheadOfLatestReview: false,
     latestReview: null,
   });
   expect(status.execute).toEqual({ complete: true, missing: [] });
 });
 
+test("execute is incomplete when commits are ahead of base but the effective diff is empty", () => {
+  const status = evaluateWorkflowSteps({
+    currentHead: HEAD,
+    headAheadOfBase: true,
+    hasEffectiveDiff: false,
+    headAheadOfLatestReview: false,
+    latestReview: null,
+  });
+  expect(status.execute).toEqual({
+    complete: false,
+    missing: ["no effective diff"],
+  });
+});
+
 test("execute incomplete while the fresh review is still pinned to current head", () => {
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    hasEffectiveDiff: true,
     headAheadOfLatestReview: false,
     latestReview: { id: 7, event: "request_changes", headSha: HEAD },
   });
@@ -53,6 +70,7 @@ test("execute complete again once head advances past the reviewed SHA", () => {
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    hasEffectiveDiff: true,
     headAheadOfLatestReview: true,
     latestReview: { id: 7, event: "request_changes", headSha: OLD },
   });
@@ -63,6 +81,7 @@ test("execute remains incomplete when a stale review is not an ancestor of HEAD"
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    hasEffectiveDiff: true,
     headAheadOfLatestReview: false,
     latestReview: { id: 7, event: "request_changes", headSha: OLD },
   });
@@ -77,6 +96,7 @@ test("verify complete only when the latest review is pinned to current head", ()
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    hasEffectiveDiff: true,
     headAheadOfLatestReview: false,
     latestReview: { id: 9, event: "pass", headSha: HEAD },
   });
@@ -93,6 +113,7 @@ test("verify goes stale when head advances, but latest_review still reported", (
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    hasEffectiveDiff: true,
     headAheadOfLatestReview: true,
     latestReview: { id: 4, event: "request_changes", headSha: OLD },
   });
@@ -112,6 +133,7 @@ test("null current head keeps head-dependent steps incomplete", () => {
   const status = evaluateWorkflowSteps({
     currentHead: null,
     headAheadOfBase: false,
+    hasEffectiveDiff: false,
     headAheadOfLatestReview: false,
     latestReview: { id: 1, event: "pass", headSha: HEAD },
   });
