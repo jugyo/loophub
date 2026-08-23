@@ -1,18 +1,10 @@
-// lh-web HTTP binding. A plain node:http server that mounts the JSON-RPC dispatcher at
+// lh-web HTTP binding. A Bun.serve server that mounts the JSON-RPC dispatcher at
 // POST /rpc, serves attachments, and delegates everything else to a static handler for the SPA.
-// There is no long-running daemon equivalent to the old `lh serve` /
-// Bun.serve — the process runs only while someone is looking. `handleStatic` serves the web/dist
-// that `lh-web` builds at startup (build.ts); it stays injectable so the handler can be wrapped,
-// as `lh-web` does while that build is still running. Keeping the build tool out of this file
-// means the HTTP core (and its tests) never imports it.
+// `handleStatic` serves the web/dist that `lh-web` builds at startup (build.ts); it stays
+// injectable so the handler can be wrapped, as `lh-web` does while that build is still running.
+// Keeping the build tool out of this file means the HTTP core (and its tests) never imports it.
 
-import { createReadStream, existsSync, statSync } from "node:fs";
-import {
-  createServer,
-  type IncomingMessage,
-  type Server,
-  type ServerResponse,
-} from "node:http";
+import { existsSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import {
   blobPath,
@@ -65,30 +57,41 @@ function contentType(path: string): string {
 // `tooLarge` — that lets the handler reply with a clean 413 instead of resetting
 // the socket. (LoopHub is a local single-user tool, so draining an oversized body
 // is acceptable; the hard size check is also enforced in saveAttachment.)
-function readBinaryBody(
-  req: IncomingMessage,
+async function readBinaryBody(
+  req: Request,
   limit: number,
 ): Promise<{ data: Buffer; tooLarge: boolean }> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    let tooLarge = false;
-    req.on("data", (c) => {
-      total += (c as Buffer).length;
-      if (total > limit) {
-        tooLarge = true;
-        return;
-      }
-      chunks.push(c as Buffer);
-    });
-    req.on("end", () => resolve({ data: Buffer.concat(chunks), tooLarge }));
-    req.on("error", reject);
-  });
+  const reader = req.body?.getReader();
+  if (!reader) return { data: Buffer.alloc(0), tooLarge: false };
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let tooLarge = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      tooLarge = true;
+      continue;
+    }
+    chunks.push(value);
+  }
+  return { data: Buffer.concat(chunks), tooLarge };
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify(body));
+function jsonResponse(
+  status: number,
+  body: unknown,
+  headers?: Record<string, string>,
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      ...headers,
+    },
+  });
 }
 
 function logRpcCalls(
@@ -107,20 +110,20 @@ function logRpcCalls(
   }
 }
 
-function isJsonRequest(req: IncomingMessage): boolean {
-  const contentType = req.headers["content-type"];
-  const value = Array.isArray(contentType) ? contentType[0] : contentType;
+function isJsonRequest(req: Request): boolean {
   return (
-    (value ?? "").split(";")[0].trim().toLowerCase() === "application/json"
+    (req.headers.get("content-type") ?? "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase() === "application/json"
   );
 }
 
 // A form can't set content-type: application/json without a CORS preflight, so the JSON check
 // above already defeats classic non-preflighted CSRF. This catches the modern-browser case on top:
 // a page's cross-site fetch() carries Sec-Fetch-Site: cross-site regardless of content-type.
-function isCrossSiteFetch(req: IncomingMessage): boolean {
-  const site = req.headers["sec-fetch-site"];
-  return site === "cross-site";
+function isCrossSiteFetch(req: Request): boolean {
+  return req.headers.get("sec-fetch-site") === "cross-site";
 }
 
 // Sec-Fetch-Site alone doesn't stop DNS rebinding: an attacker's page (origin evil.com) can wait
@@ -143,41 +146,33 @@ function isBoundToLoopback(): boolean {
 // x-actor headers), MIME from content-type. Returns the stored metadata plus the
 // embed `url` and `markdown`.
 async function handleAttachmentUpload(
-  req: IncomingMessage,
-  res: ServerResponse,
+  req: Request,
   url: URL,
-): Promise<void> {
+): Promise<Response> {
   let data: Buffer;
   try {
     const body = await readBinaryBody(req, MAX_ATTACHMENT_BYTES);
     if (body.tooLarge) {
-      sendJson(res, 413, { error: "Attachment too large (max 10MB)" });
-      return;
+      return jsonResponse(413, { error: "Attachment too large (max 10MB)" });
     }
     data = body.data;
   } catch {
-    sendJson(res, 400, { error: "Failed to read request body" });
-    return;
+    return jsonResponse(400, { error: "Failed to read request body" });
   }
   const filename =
-    url.searchParams.get("filename") ||
-    (req.headers["x-filename"] as string) ||
-    "";
+    url.searchParams.get("filename") || req.headers.get("x-filename") || "";
   if (!filename) {
-    sendJson(res, 400, { error: "filename is required" });
-    return;
+    return jsonResponse(400, { error: "filename is required" });
   }
   const author =
-    url.searchParams.get("actor") ||
-    (req.headers["x-actor"] as string) ||
-    "unknown";
-  const mime = (req.headers["content-type"] as string) || null;
+    url.searchParams.get("actor") || req.headers.get("x-actor") || "unknown";
+  const mime = req.headers.get("content-type");
   try {
     const result = saveAttachment({ data, filename, mime, author });
-    sendJson(res, 201, result);
+    return jsonResponse(201, result);
   } catch (e) {
-    if (isServiceError(e)) sendJson(res, e.status, { error: e.message });
-    else sendJson(res, 500, { error: "Internal error" });
+    if (isServiceError(e)) return jsonResponse(e.status, { error: e.message });
+    return jsonResponse(500, { error: "Internal error" });
   }
 }
 
@@ -203,20 +198,15 @@ function inlineTextContentType(mime: string): string | null {
 }
 
 // GET /attachments/:sha256 — stream a stored blob with its recorded content-type.
-function handleAttachmentGet(res: ServerResponse, url: URL): void {
+function handleAttachmentGet(url: URL): Response {
   const sha256 = url.pathname.slice("/attachments/".length);
   // sha256 is a fixed 64-char hex string; rejecting anything else also blocks
   // path traversal before the value reaches blobPath().
-  if (!/^[0-9a-f]{64}$/.test(sha256)) {
-    res.writeHead(404).end();
-    return;
-  }
+  if (!/^[0-9a-f]{64}$/.test(sha256))
+    return new Response(null, { status: 404 });
   const att = getAttachment(sha256);
   const path = blobPath(sha256);
-  if (!att || !existsSync(path)) {
-    res.writeHead(404).end();
-    return;
-  }
+  if (!att || !existsSync(path)) return new Response(null, { status: 404 });
   const headers: Record<string, string> = {
     "content-type": inlineTextContentType(att.mime) ?? att.mime,
     "cache-control": "public, max-age=31536000, immutable",
@@ -228,27 +218,17 @@ function handleAttachmentGet(res: ServerResponse, url: URL): void {
     headers["content-disposition"] =
       `attachment; filename="${safeDownloadFilename(att.filename)}"`;
   }
-  res.writeHead(200, headers);
-  const stream = createReadStream(path);
-  // Guard the TOCTOU race (blob removed between existsSync and open): a stream
-  // error here would otherwise be unhandled and crash the process.
-  stream.on("error", () => {
-    if (!res.headersSent) res.writeHead(404);
-    res.end();
-  });
-  stream.pipe(res);
+  return new Response(Bun.file(path), { status: 200, headers });
 }
 
 async function handleRpc(
-  req: IncomingMessage,
-  res: ServerResponse,
+  req: Request,
   receivedAt: bigint,
   rpcLogger?: RpcLogger,
-): Promise<void> {
+): Promise<Response> {
   const body = await readBinaryBody(req, MAX_RPC_REQUEST_BYTES);
   if (body.tooLarge) {
-    sendJson(res, 413, requestTooLarge(MAX_RPC_REQUEST_BYTES));
-    return;
+    return jsonResponse(413, requestTooLarge(MAX_RPC_REQUEST_BYTES));
   }
   const calls: RpcCallOutcome[] = [];
   const response = await dispatchRaw(
@@ -258,8 +238,7 @@ async function handleRpc(
   );
   if (response === null) {
     logRpcCalls(rpcLogger, calls);
-    res.writeHead(204).end(); // all notifications -> no content
-    return;
+    return new Response(null, { status: 204 }); // all notifications -> no content
   }
   let serialized = stringifyJsonWithinLimit(response, MAX_RPC_RESPONSE_BYTES);
   if (serialized === null) {
@@ -269,22 +248,19 @@ async function handleRpc(
   } else {
     logRpcCalls(rpcLogger, calls);
   }
-  res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-  res.end(serialized);
+  return new Response(serialized, {
+    status: 200,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
 }
 
 // Serve a file from web/dist, falling back to index.html for SPA client routes.
-export function handleStatic(
-  _req: IncomingMessage,
-  res: ServerResponse,
-  url: URL,
-): void {
+export function handleStatic(_req: Request, url: URL): Response {
   if (!existsSync(DIST_DIR)) {
-    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-    res.end(
+    return new Response(
       "Not built. Start lh-web, which builds the SPA before serving it.\n",
+      { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } },
     );
-    return;
   }
 
   const rel = normalize(decodeURIComponent(url.pathname)).replace(
@@ -293,88 +269,77 @@ export function handleStatic(
   );
   let filePath = join(DIST_DIR, rel);
   // Guard against path traversal escaping the dist root.
-  if (!filePath.startsWith(DIST_DIR)) {
-    res.writeHead(403).end();
-    return;
-  }
+  if (!filePath.startsWith(DIST_DIR))
+    return new Response(null, { status: 403 });
   if (!existsSync(filePath) || statSync(filePath).isDirectory()) {
     filePath = join(DIST_DIR, "index.html"); // SPA fallback
   }
-  if (!existsSync(filePath)) {
-    res.writeHead(404).end();
-    return;
-  }
-  res.writeHead(200, { "content-type": contentType(filePath) });
-  createReadStream(filePath).pipe(res);
+  if (!existsSync(filePath)) return new Response(null, { status: 404 });
+  return new Response(Bun.file(filePath), {
+    status: 200,
+    headers: { "content-type": contentType(filePath) },
+  });
 }
 
 // Serves GET requests that aren't API routes — i.e. the SPA. `handleStatic` (web/dist) is the
 // default; `lh-web` wraps it so requests that arrive while its startup build is still running
 // get an error instead of the previous build.
 export type StaticHandler = (
-  req: IncomingMessage,
-  res: ServerResponse,
+  req: Request,
   url: URL,
-) => void;
+) => Response | Promise<Response>;
 
-export function handleRequest(
-  req: IncomingMessage,
-  res: ServerResponse,
+export async function handleRequest(
+  req: Request,
   serveStatic: StaticHandler,
   rpcLogger?: RpcLogger,
-): void {
+): Promise<Response> {
   // Captured as early as possible so queue_ms covers time this request spent waiting
   // behind other work on the event loop, not just this handler's own processing.
   const receivedAt = process.hrtime.bigint();
-  const url = new URL(req.url ?? "/", "http://localhost");
+  const url = new URL(req.url);
   if (url.pathname === "/rpc" && req.method === "POST") {
     if (!isJsonRequest(req)) {
-      sendJson(res, 415, { error: "Unsupported Media Type" });
-      return;
+      return jsonResponse(415, { error: "Unsupported Media Type" });
     }
     if (
       isCrossSiteFetch(req) ||
-      (isBoundToLoopback() && !isAllowedOrigin(req.headers.origin))
+      (isBoundToLoopback() &&
+        !isAllowedOrigin(req.headers.get("origin") ?? undefined))
     ) {
-      sendJson(res, 403, { error: "Forbidden" });
-      return;
+      return jsonResponse(403, { error: "Forbidden" });
     }
-    handleRpc(req, res, receivedAt, rpcLogger).catch(() => {
-      if (!res.headersSent)
-        res.writeHead(500, {
-          "content-type": "application/json; charset=utf-8",
-        });
-      res.end(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: null,
-          error: { code: -32603, message: "Internal error" },
-        }),
-      );
-    });
-    return;
+    try {
+      return await handleRpc(req, receivedAt, rpcLogger);
+    } catch {
+      return jsonResponse(500, {
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32603, message: "Internal error" },
+      });
+    }
   }
   if (url.pathname === "/events" && req.method === "GET") {
-    res.writeHead(410, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Gone\n");
-    return;
+    return new Response("Gone\n", {
+      status: 410,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
   }
   if (url.pathname === "/attachments" && req.method === "POST") {
-    handleAttachmentUpload(req, res, url).catch(() => {
-      if (!res.headersSent) sendJson(res, 500, { error: "Internal error" });
-    });
-    return;
+    try {
+      return await handleAttachmentUpload(req, url);
+    } catch {
+      return jsonResponse(500, { error: "Internal error" });
+    }
   }
   if (url.pathname.startsWith("/attachments/") && req.method === "GET") {
-    handleAttachmentGet(res, url);
-    return;
+    return handleAttachmentGet(url);
   }
-  if (req.method === "GET") {
-    serveStatic(req, res, url);
-    return;
-  }
-  res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-  res.end("Not Found\n");
+  if (req.method === "GET") return serveStatic(req, url);
+  return new Response("Not Found\n", {
+    status: 404,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
 }
 
 export function createLhWebServer(
@@ -382,10 +347,14 @@ export function createLhWebServer(
   options: {
     debug?: boolean;
     logger?: RpcLogger;
+    port?: number;
+    hostname?: string;
   } = {},
-): Server {
+): ReturnType<typeof Bun.serve> {
   const rpcLogger = options.debug ? (options.logger ?? log.info) : undefined;
-  return createServer((req, res) =>
-    handleRequest(req, res, serveStatic, rpcLogger),
-  );
+  return Bun.serve({
+    port: options.port ?? 0,
+    hostname: options.hostname ?? "127.0.0.1",
+    fetch: (req) => handleRequest(req, serveStatic, rpcLogger),
+  });
 }

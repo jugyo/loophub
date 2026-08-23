@@ -37,19 +37,20 @@ configureSlowOperationLogging(args.debug ? log.info : undefined);
 // source, build.ts). Until it lands, refuse to serve rather than hand out whatever an earlier run
 // left in web/dist — stale code is harder to notice than a plain error.
 let built = false;
-const server = createLhWebServer(
-  (req, res, url) => {
-    if (built) handleStatic(req, res, url);
-    else res.writeHead(503).end("lh-web is building the UI\n");
-  },
-  { debug: args.debug },
-);
-
 // Bind to loopback by default: this is a single-user local tool and the API it exposes is
 // unauthenticated. Override with LOOPHUB_HOST (e.g. 0.0.0.0) only when LAN access is intentional.
 const host = process.env.LOOPHUB_HOST ?? "127.0.0.1";
 
-server.on("error", (error) => {
+let server: ReturnType<typeof createLhWebServer>;
+try {
+  server = createLhWebServer(
+    (req, url) => {
+      if (built) return handleStatic(req, url);
+      return new Response("lh-web is building the UI\n", { status: 503 });
+    },
+    { debug: args.debug, hostname: host, port },
+  );
+} catch (error) {
   // The errno code (EADDRINUSE etc.) is the part an operator acts on, and it is not always part of
   // the message text, so name it explicitly rather than relying on the stack alone.
   const code = (error as NodeJS.ErrnoException | null)?.code;
@@ -57,14 +58,15 @@ server.on("error", (error) => {
     error instanceof Error ? (error.stack ?? error.message) : String(error);
   log.error(`lh-web: server error: ${code ? `${code}: ` : ""}${detail}`);
   process.exit(1);
-});
+  throw error;
+}
 
 // Listen first so a port clash is reported at once instead of after the build.
-server.listen(port, host, () => {
+{
   const shown = host === "127.0.0.1" ? "localhost" : host;
-  const url = `http://${shown}:${port}`;
+  const url = `http://${shown}:${server.port}`;
   log.info(`lh-web listening on ${url}  (API + UI)`);
-});
+}
 
 // The compiled binary ships without the SPA build tools or source, so it serves the dist it was
 // shipped with (core/self-exec.ts: beside the executable, or LOOPHUB_WEB_DIST). handleStatic
@@ -96,15 +98,9 @@ const shutdown = async () => {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
-  // Close gracefully first, giving existing connections a moment to finish.
-  await new Promise<void>((resolve) => {
-    server.close(() => {});
-    // Force close any remaining connections after 100ms to prevent hanging.
-    setTimeout(() => {
-      server.closeAllConnections?.();
-      resolve();
-    }, 100);
-  });
+  // Bun waits for active requests by default; close active connections on the signal so the
+  // process cannot remain alive indefinitely because a client stopped reading its response.
+  await server.stop(true);
 
   process.exit(0);
 };

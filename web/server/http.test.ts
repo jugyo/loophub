@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { request as httpRequest, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -15,7 +14,8 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 const DIST = join(HOME, "dist");
 process.env.LOOPHUB_WEB_DIST = DIST;
 
-let server: Server;
+type LhWebServer = ReturnType<typeof import("./http.ts").createLhWebServer>;
+let server: LhWebServer;
 let base: string;
 let repoPath: string;
 let S: typeof import("../../core/store.ts");
@@ -100,15 +100,14 @@ beforeAll(async () => {
   git(["commit", "-qm", "init"]);
 
   server = http.createLhWebServer();
-  await new Promise<void>((resolve) => server.listen(0, resolve));
-  base = `http://localhost:${(server.address() as AddressInfo).port}`;
+  base = server.url.origin;
 
   const r = await rpc("repos/create", { path: repoPath, name: "me/proj" });
   expect(r.body.result.full_name).toBe("me/proj");
 });
 
-afterAll(() => {
-  server?.close();
+afterAll(async () => {
+  await server?.stop(true);
   rmSync(HOME, { recursive: true, force: true });
   rmSync(repoPath, { recursive: true, force: true });
 });
@@ -128,16 +127,14 @@ test("POST /rpc logs each outcome only when debug logging is enabled", async () 
     debug: true,
     logger: (message) => debugLogs.push(message),
   });
-  await new Promise<void>((resolve) => debugServer.listen(0, resolve));
-  const debugBase = `http://localhost:${(debugServer.address() as AddressInfo).port}`;
+  const debugBase = debugServer.url.origin;
 
   const normalLogs: string[] = [];
   const normalServer = createLhWebServer(undefined, {
     debug: false,
     logger: (message) => normalLogs.push(message),
   });
-  await new Promise<void>((resolve) => normalServer.listen(0, resolve));
-  const normalBase = `http://localhost:${(normalServer.address() as AddressInfo).port}`;
+  const normalBase = normalServer.url.origin;
 
   try {
     const payload = [
@@ -192,9 +189,8 @@ test("POST /rpc logs each outcome only when debug logging is enabled", async () 
     expect(normalLogs).toEqual([]);
   } finally {
     await Promise.all(
-      [debugServer, normalServer].map(
-        (activeServer) =>
-          new Promise<void>((resolve) => activeServer.close(() => resolve())),
+      [debugServer, normalServer].map((activeServer) =>
+        activeServer.stop(true),
       ),
     );
   }
@@ -206,8 +202,7 @@ test("POST /rpc logs inherited object names as unknown methods", async () => {
     debug: true,
     logger: (message) => debugLogs.push(message),
   });
-  await new Promise<void>((resolve) => debugServer.listen(0, resolve));
-  const debugBase = `http://localhost:${(debugServer.address() as AddressInfo).port}`;
+  const debugBase = debugServer.url.origin;
   const post = async (payload: unknown) => {
     const res = await fetch(`${debugBase}/rpc`, {
       method: "POST",
@@ -250,7 +245,7 @@ test("POST /rpc logs inherited object names as unknown methods", async () => {
       ]),
     );
   } finally {
-    await new Promise<void>((resolve) => debugServer.close(() => resolve()));
+    await debugServer.stop(true);
   }
 });
 
@@ -315,8 +310,7 @@ test("POST /rpc replaces an oversized serialized response with an error", async 
     debug: true,
     logger: (message) => debugLogs.push(message),
   });
-  await new Promise<void>((resolve) => debugServer.listen(0, resolve));
-  const debugBase = `http://localhost:${(debugServer.address() as AddressInfo).port}`;
+  const debugBase = debugServer.url.origin;
 
   try {
     const res = await fetch(`${debugBase}/rpc`, {
@@ -345,7 +339,7 @@ test("POST /rpc replaces an oversized serialized response with an error", async 
       ),
     ]);
   } finally {
-    await new Promise<void>((resolve) => debugServer.close(() => resolve()));
+    await debugServer.stop(true);
   }
 });
 
@@ -561,4 +555,20 @@ test("GET on a client route serves index.html when the SPA is built (fallback)",
   expect(res.status).toBe(200);
   expect(res.headers.get("content-type")).toContain("text/html");
   expect(await res.text()).toContain("<!doctype html>");
+});
+
+test("Bun.serve routes an injected static handler and stops cleanly", async () => {
+  const injected = createLhWebServer(
+    (_req, url) =>
+      new Response(`injected ${url.pathname}`, {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+  );
+  try {
+    const res = await fetch(`${injected.url.origin}/injected`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("injected /injected");
+  } finally {
+    await injected.stop(true);
+  }
 });
