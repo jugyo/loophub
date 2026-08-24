@@ -100,7 +100,11 @@ export function CommitDiffDialog({
                     />
                   </header>
                   <div className="border-t">
-                    <DiffLines patch={file.patch} />
+                    <DiffLines
+                      filename={file.filename}
+                      patch={file.patch}
+                      syntaxHighlight={file.syntax_highlight}
+                    />
                   </div>
                 </article>
               ))}

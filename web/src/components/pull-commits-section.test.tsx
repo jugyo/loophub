@@ -796,6 +796,25 @@ describe("PullCommitsSection", () => {
   });
 
   it("opens a commit diff, closes it, and switches to another commit", async () => {
+    const highlightedFiles: PullFile[] = [
+      {
+        ...files[0],
+        syntax_highlight: {
+          language: "typescript",
+          lines: [
+            { old: null, new: null },
+            {
+              old: [{ kind: "keyword", text: "const" }],
+              new: [{ kind: "keyword", text: "const" }],
+            },
+            {
+              old: [{ kind: "number", text: "0" }],
+              new: [{ kind: "number", text: "1" }],
+            },
+          ],
+        },
+      },
+    ];
     const earlierFiles: PullFile[] = [
       {
         filename: "web/src/earlier.ts",
@@ -808,7 +827,7 @@ describe("PullCommitsSection", () => {
     renderSection({
       handlers: {
         "repos/commitFiles": (params) =>
-          params.sha === commits![0].sha ? files : earlierFiles,
+          params.sha === commits![0].sha ? highlightedFiles : earlierFiles,
       },
     });
 
@@ -824,6 +843,11 @@ describe("PullCommitsSection", () => {
     expect(within(latestDialog).getByText("aaaaaaa")).toBeTruthy();
     expect(within(latestDialog).getByText("Latest change")).toBeTruthy();
     expect(await within(latestDialog).findByText("+const x = 1;")).toBeTruthy();
+    expect(
+      within(latestDialog).getByText("const", {
+        selector: '[data-syntax-token="keyword"]',
+      }),
+    ).toBeTruthy();
     expect(rpcCall("repos/commitFiles")?.params).toEqual({
       repo: "me/proj",
       sha: commits![0].sha,

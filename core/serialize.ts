@@ -463,6 +463,39 @@ export type DiffFeedbackSide = "LEFT" | "RIGHT";
 export type DiffFeedbackOutdatedReason = "deleted" | "modified" | "ambiguous";
 export type DiffFeedbackPlacement = "inline" | "historical";
 
+export type SyntaxLanguageWire =
+  | "javascript"
+  | "jsx"
+  | "markdown"
+  | "typescript"
+  | "tsx";
+
+export type SyntaxTokenKindWire =
+  | "comment"
+  | "keyword"
+  | "literal"
+  | "markup"
+  | "number"
+  | "operator"
+  | "plain"
+  | "string"
+  | "type";
+
+export interface SyntaxTokenWire {
+  kind: SyntaxTokenKindWire;
+  text: string;
+}
+
+export interface SyntaxHighlightLineWire {
+  old: SyntaxTokenWire[] | null;
+  new: SyntaxTokenWire[] | null;
+}
+
+export interface SyntaxHighlightWire {
+  language: SyntaxLanguageWire;
+  lines: SyntaxHighlightLineWire[];
+}
+
 export interface PullDiffWire {
   base_sha: string;
   head_sha: string;
@@ -479,6 +512,7 @@ export interface PullDiffWire {
       text: string;
       left_line: number | null;
       right_line: number | null;
+      syntax_highlight?: SyntaxHighlightLineWire;
     }[];
   }[];
 }
@@ -2550,6 +2584,7 @@ export interface PullFileWire {
   additions: number;
   deletions: number;
   patch: string;
+  syntax_highlight?: SyntaxHighlightWire;
 }
 
 /**

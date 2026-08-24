@@ -2,10 +2,12 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
 import { db } from "../db.ts";
+import { addSyntaxHighlight } from "../diff-syntax.ts";
 import { ServiceError } from "../errors.ts";
 import {
   aheadBehind,
   branchExists,
+  commitDiffBase,
   commitDiffFiles,
   currentBranch,
   defaultBranch,
@@ -89,7 +91,11 @@ export const repos = {
   async commitFiles(name: string, sha: string) {
     if (!/^[0-9a-f]{40}$/i.test(sha)) throw new ServiceError(404, "Not Found");
     const r = repoOr404(name);
-    return commitDiffFiles(r.local_path, sha);
+    const [baseSha, files] = await Promise.all([
+      commitDiffBase(r.local_path, sha),
+      commitDiffFiles(r.local_path, sha),
+    ]);
+    return addSyntaxHighlight(r.local_path, baseSha, sha, files);
   },
 
   // Thin lookups (by id / by "owner/name") for callers outside core/ that only need the raw row,

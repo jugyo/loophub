@@ -26,6 +26,20 @@ const file: PullFile = {
   additions: 12,
   deletions: 3,
   patch: "@@ -1 +1 @@\n-const x = 0;\n+const x = 1;",
+  syntax_highlight: {
+    language: "typescript",
+    lines: [
+      { old: null, new: null },
+      {
+        old: [{ kind: "keyword", text: "const" }],
+        new: [{ kind: "keyword", text: "const" }],
+      },
+      {
+        old: [{ kind: "number", text: "0" }],
+        new: [{ kind: "number", text: "1" }],
+      },
+    ],
+  },
 };
 
 const changeMap: PrChangeMap = {
@@ -87,6 +101,15 @@ function drag(label: string, dx: number) {
 }
 
 describe("PrChangeMapDialog", () => {
+  it("backend の token を差分へ渡して描画する", () => {
+    renderDialog();
+    expect(
+      screen.getAllByText("const", {
+        selector: '[data-syntax-token="keyword"]',
+      }),
+    ).not.toHaveLength(0);
+  });
+
   it("wraps long labels instead of truncating them", () => {
     renderDialog();
     const labels = [

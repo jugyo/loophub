@@ -83,6 +83,7 @@ import {
   viewedPullFileCount,
   visiblePullFiles,
 } from "@/lib/pull-file-views";
+import { SyntaxHighlightedCode } from "@/lib/syntax-highlight";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
@@ -177,8 +178,8 @@ type SplitRow =
   | { kind: "separator"; line: PositionedDiffLine };
 
 const DIFF_LINE_CLASS: Record<DiffLineKind, string> = {
-  add: "bg-green-500/10 text-green-700 dark:text-green-300",
-  del: "bg-red-500/10 text-red-700 dark:text-red-300",
+  add: "bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-100",
+  del: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100",
   hunk: "bg-muted text-muted-foreground",
   meta: "text-muted-foreground",
   context: "",
@@ -970,6 +971,7 @@ function FileDiffContent({
       <DialogDiff
         patch={ignoreWhitespace ? stableFile?.patch : file.patch}
         stableLines={stableFile?.lines}
+        syntaxLanguage={stableFile?.syntax_highlight?.language}
         viewMode={diffViewMode}
         selection={selection}
         selectionContent={commentComposer}
@@ -1068,6 +1070,7 @@ function FileDiffContent({
 function DialogDiff({
   patch,
   stableLines,
+  syntaxLanguage,
   viewMode,
   selection,
   selectionContent,
@@ -1077,6 +1080,7 @@ function DialogDiff({
 }: {
   patch: string | undefined | null;
   stableLines: PullDiff["files"][number]["lines"] | undefined;
+  syntaxLanguage?: DiffRenderProps["syntaxLanguage"];
   viewMode: DiffViewMode;
   selection: DiffSelection | null;
   selectionContent: ReactNode;
@@ -1085,7 +1089,7 @@ function DialogDiff({
   threadContent: (thread: DiffFeedbackThread) => ReactNode;
 }) {
   const { dragging, lineSelection } = useLineSelectionDrag(onSelect);
-  const lines = parsePositionedPatch(patch);
+  const lines = parsePositionedPatch(patch, stableLines);
   const selectable = selectableLines(stableLines ?? []);
   if (lines.length === 0) {
     return (
@@ -1098,6 +1102,7 @@ function DialogDiff({
   // rows the pointer is still travelling over.
   const props: DiffRenderProps = {
     lines,
+    syntaxLanguage,
     selectable,
     selection,
     selectionContent: dragging ? null : selectionContent,
@@ -1148,6 +1153,9 @@ function useLineSelectionDrag(onSelect: (selection: DiffSelection) => void) {
 
 type DiffRenderProps = {
   lines: PositionedDiffLine[];
+  syntaxLanguage?: NonNullable<
+    PullDiff["files"][number]["syntax_highlight"]
+  >["language"];
   selectable: SelectableLines;
   selection: DiffSelection | null;
   selectionContent: ReactNode;
@@ -1201,6 +1209,7 @@ function selectionEndsAt(
 
 function UnifiedDiff({
   lines,
+  syntaxLanguage,
   selectable,
   selection,
   selectionContent,
@@ -1275,7 +1284,7 @@ function UnifiedDiff({
                     >
                       {DIFF_LINE_MARKER[line.kind]}
                     </span>
-                    {lineContent(line) || " "}
+                    {lineContent(line, syntaxLanguage)}
                   </td>
                 </tr>
                 {selectionContent &&
@@ -1305,6 +1314,7 @@ function UnifiedDiff({
 
 function SplitDiff(props: DiffRenderProps) {
   const {
+    syntaxLanguage,
     lines,
     selectable,
     selection,
@@ -1339,6 +1349,7 @@ function SplitDiff(props: DiffRenderProps) {
                 <tr>
                   <SplitLine
                     line={row.left}
+                    syntaxLanguage={syntaxLanguage}
                     markers={row.leftMarkers}
                     side="old"
                     selection={selection}
@@ -1352,6 +1363,7 @@ function SplitDiff(props: DiffRenderProps) {
                   />
                   <SplitLine
                     line={row.right}
+                    syntaxLanguage={syntaxLanguage}
                     markers={row.rightMarkers}
                     side="new"
                     selection={selection}
@@ -1548,6 +1560,7 @@ function AddCommentButton({
 
 function SplitLine({
   line,
+  syntaxLanguage,
   markers = [],
   side,
   selection,
@@ -1556,6 +1569,7 @@ function SplitLine({
   lineSelection,
 }: {
   line: PositionedDiffLine | null;
+  syntaxLanguage?: DiffRenderProps["syntaxLanguage"];
   markers?: PositionedDiffLine[];
   side: "old" | "new";
   selection: DiffSelection | null;
@@ -1618,7 +1632,7 @@ function SplitLine({
             >
               {DIFF_LINE_MARKER[line.kind]}
             </span>
-            {lineContent(line) || " "}
+            {lineContent(line, syntaxLanguage)}
             {markers.map((marker, index) => (
               <span
                 key={`${marker.text}:${index}`}
@@ -1700,10 +1714,23 @@ function isNoNewlineMarker(line: PositionedDiffLine) {
   return line.kind === "meta" && line.text === "\\ No newline at end of file";
 }
 
-function lineContent(line: PositionedDiffLine) {
-  return line.kind === "add" || line.kind === "del" || line.kind === "context"
-    ? line.text.slice(1)
-    : line.text;
+function lineContent(
+  line: PositionedDiffLine,
+  syntaxLanguage?: DiffRenderProps["syntaxLanguage"],
+) {
+  if (line.kind === "add" || line.kind === "del" || line.kind === "context") {
+    const content = line.text.slice(1);
+    return content ? (
+      <SyntaxHighlightedCode
+        code={content}
+        language={syntaxLanguage}
+        tokens={line.syntaxHighlight?.[line.kind === "add" ? "new" : "old"]}
+      />
+    ) : (
+      " "
+    );
+  }
+  return line.text || " ";
 }
 
 export function DiffFeedbackHistory({

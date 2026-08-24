@@ -535,11 +535,19 @@ export async function commitDiffFiles(
   repoPath: string,
   sha: string,
 ): Promise<DiffFile[]> {
+  const base = await commitDiffBase(repoPath, sha);
+  return diffFilesForRevisions(repoPath, [base, sha]);
+}
+
+/** commit diff の表示に使う first-parent revision。root commit では empty tree を返す。 */
+export async function commitDiffBase(
+  repoPath: string,
+  sha: string,
+): Promise<string> {
   const commit = await git(repoPath, ["rev-list", "--parents", sha]);
   assertGitSuccess(commit, "git rev-list failed");
   const [, parent] = commit.stdout.trim().split(/\s+/);
-  const base = parent ?? EMPTY_TREE_SHA;
-  return diffFilesForRevisions(repoPath, [base, sha]);
+  return parent ?? EMPTY_TREE_SHA;
 }
 
 function diffArgs(options: DiffOptions): {

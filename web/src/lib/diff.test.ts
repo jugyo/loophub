@@ -16,6 +16,9 @@ describe("classifyDiffLine", () => {
     expect(classifyDiffLine("--- a/src/a.ts")).toBe("meta");
     expect(classifyDiffLine("diff --git a/x b/x")).toBe("meta");
     expect(classifyDiffLine("index abc..def 100644")).toBe("meta");
+    expect(
+      classifyDiffLine("Binary files a/image.png and b/image.png differ"),
+    ).toBe("meta");
     expect(classifyDiffLine("\\ No newline at end of file")).toBe("meta");
   });
 

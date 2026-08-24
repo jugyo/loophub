@@ -182,6 +182,14 @@
   overflow-anchor: none;
 }
 
+/* Diff line signs stay outside the syntax tokens so add/delete coloring and text lookup keep
+   their existing shape. The sign is visual-only; the screen-reader/plain-text copy contains the
+   complete original patch line. */
+.pr-diff-line-content::before {
+  content: attr(data-diff-marker);
+  white-space: pre;
+}
+
 /* Diff Markdown previews use a stable LoopHub palette instead of inheriting
    the selected application theme. Only the light/dark mode chooses between
    these two palettes. */

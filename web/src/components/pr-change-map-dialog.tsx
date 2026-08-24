@@ -335,7 +335,11 @@ export function PrChangeMapDialog({
                 </div>
               ) : null}
               {file ? (
-                <DiffLines patch={file.patch} />
+                <DiffLines
+                  filename={file.filename}
+                  patch={file.patch}
+                  syntaxHighlight={file.syntax_highlight}
+                />
               ) : (
                 <p className="px-3 py-3 text-sm text-muted-foreground">
                   {filename

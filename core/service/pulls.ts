@@ -1,6 +1,10 @@
 import { join } from "node:path";
 import { db } from "../db.ts";
 import { parsePatchWithCoordinates } from "../diff-anchor.ts";
+import {
+  addSyntaxHighlight,
+  type HighlightedDiffFile,
+} from "../diff-syntax.ts";
 import { publish } from "../domain-events.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
@@ -148,7 +152,7 @@ export async function diffFilesWithLastChanged(operands: {
       operands.headSha,
     ).catch((): Record<string, LastChangedCommit> => ({})),
   ]);
-  return files.map((file) => {
+  const enriched = files.map((file) => {
     const lastChanged = lastChangedCommits[file.headFilename ?? file.filename];
     return {
       ...file,
@@ -160,6 +164,12 @@ export async function diffFilesWithLastChanged(operands: {
         : {}),
     };
   });
+  return addSyntaxHighlight(
+    operands.repoPath,
+    operands.baseSha,
+    operands.headSha,
+    enriched,
+  );
 }
 
 export async function resolvePullDiffOperands(
@@ -227,27 +237,41 @@ export async function projectPullDiff(
 }
 
 function pullDiffWireFiles(
-  files: S.PullDiffProjectionFile[] | DiffFile[],
+  files: Array<
+    | S.PullDiffProjectionFile
+    | (HighlightedDiffFile & { lines?: S.PullDiffProjectionFile["lines"] })
+  >,
   projectRoot: string,
 ) {
-  return files.map((file) => ({
-    path: file.headFilename ?? file.filename,
-    absolute_path: join(projectRoot, file.headFilename ?? file.filename),
-    original_path: file.previousFilename ?? null,
-    status: file.status,
-    additions: file.additions,
-    deletions: file.deletions,
-    patch: file.patch,
-    lines:
-      "lines" in file
+  return files.map((file) => {
+    const syntax =
+      "syntax_highlight" in file ? file.syntax_highlight : undefined;
+    const parsedLines =
+      "lines" in file && file.lines
         ? file.lines
         : parsePatchWithCoordinates(file.patch).map((line) => ({
             kind: line.kind,
             text: line.text,
             left_line: line.leftLine,
             right_line: line.rightLine,
-          })),
-  }));
+          }));
+    return {
+      path: file.headFilename ?? file.filename,
+      absolute_path: join(projectRoot, file.headFilename ?? file.filename),
+      original_path: file.previousFilename ?? null,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+      patch: file.patch,
+      ...(syntax ? { syntax_highlight: syntax } : {}),
+      lines: parsedLines.map((line, index) => ({
+        ...line,
+        ...(syntax?.lines[index]
+          ? { syntax_highlight: syntax.lines[index] }
+          : {}),
+      })),
+    };
+  });
 }
 
 export const pulls = {
@@ -527,10 +551,16 @@ export const pulls = {
               file.previousFilename === path ||
               file.filename === path,
           );
+    const highlightedFiles = await addSyntaxHighlight(
+      r.local_path,
+      baseSha,
+      headSha,
+      selectedFiles,
+    );
     return {
       base_sha: baseSha,
       head_sha: headSha,
-      files: pullDiffWireFiles(selectedFiles, projectRoot),
+      files: pullDiffWireFiles(highlightedFiles, projectRoot),
     };
   },
 

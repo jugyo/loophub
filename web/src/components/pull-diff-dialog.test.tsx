@@ -302,6 +302,12 @@ describe("DiffFileDialog", () => {
       false,
     );
     expect(within(dialog).getByText("const x = 1;")).toBeTruthy();
+    expect(
+      within(dialog).getByText("const x = 1;").closest("tr")?.className,
+    ).toContain("bg-green-100");
+    expect(
+      within(dialog).getByText("const x = 0;").closest("tr")?.className,
+    ).toContain("bg-red-100");
     expect(within(dialog).getByLabelText("Old line 1")).toBeTruthy();
     expect(within(dialog).getByLabelText("New line 1")).toBeTruthy();
     expect(

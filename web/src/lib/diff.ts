@@ -2,6 +2,8 @@
 // Ported from the v1 UI (src/ui.html diffHtml) for parity, kept dependency-free
 // so diff classification is unit-testable without React.
 
+import type { SyntaxHighlightLineWire } from "../../../core/serialize.ts";
+
 export type DiffLineKind = "add" | "del" | "hunk" | "meta" | "context";
 
 export interface DiffLine {
@@ -12,6 +14,7 @@ export interface DiffLine {
 export interface PositionedDiffLine extends DiffLine {
   oldLine: number | null;
   newLine: number | null;
+  syntaxHighlight?: SyntaxHighlightLineWire;
 }
 
 /**
@@ -23,6 +26,9 @@ export function classifyDiffLine(line: string): DiffLineKind {
   if (line.startsWith("@@")) return "hunk";
   if (line.startsWith("+++") || line.startsWith("---")) return "meta";
   if (line.startsWith("diff ") || line.startsWith("index ")) return "meta";
+  if (line.startsWith("Binary files ") && line.endsWith(" differ")) {
+    return "meta";
+  }
   if (line.startsWith("\\ No newline at end of file")) return "meta";
   if (line.startsWith("+")) return "add";
   if (line.startsWith("-")) return "del";
@@ -41,12 +47,14 @@ export function parsePatch(patch: string | undefined | null): DiffLine[] {
 /** Parse a unified patch while tracking old/new coordinates from each hunk header. */
 export function parsePositionedPatch(
   patch: string | undefined | null,
+  syntaxLines?: Array<{ syntax_highlight?: SyntaxHighlightLineWire }>,
 ): PositionedDiffLine[] {
   let oldLine = 0;
   let newLine = 0;
   let inHunk = false;
 
-  return parsePatch(patch).map((line) => {
+  return parsePatch(patch).map((line, index) => {
+    const syntaxHighlight = syntaxLines?.[index]?.syntax_highlight;
     if (line.kind === "hunk") {
       const range = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line.text);
       if (range) {
@@ -54,27 +62,33 @@ export function parsePositionedPatch(
         newLine = Number(range[2]);
         inHunk = true;
       }
-      return { ...line, oldLine: null, newLine: null };
+      return { ...line, oldLine: null, newLine: null, syntaxHighlight };
     }
     if (!inHunk) {
-      return { ...line, kind: "meta", oldLine: null, newLine: null };
+      return {
+        ...line,
+        kind: "meta",
+        oldLine: null,
+        newLine: null,
+        syntaxHighlight,
+      };
     }
     if (line.kind === "add") {
-      const positioned = { ...line, oldLine: null, newLine };
+      const positioned = { ...line, oldLine: null, newLine, syntaxHighlight };
       newLine += 1;
       return positioned;
     }
     if (line.kind === "del") {
-      const positioned = { ...line, oldLine, newLine: null };
+      const positioned = { ...line, oldLine, newLine: null, syntaxHighlight };
       oldLine += 1;
       return positioned;
     }
     if (line.kind === "context") {
-      const positioned = { ...line, oldLine, newLine };
+      const positioned = { ...line, oldLine, newLine, syntaxHighlight };
       oldLine += 1;
       newLine += 1;
       return positioned;
     }
-    return { ...line, oldLine: null, newLine: null };
+    return { ...line, oldLine: null, newLine: null, syntaxHighlight };
   });
 }
