@@ -1112,6 +1112,8 @@ export const methods: Record<string, MethodDef> = {
         number: positiveInt,
         path: str,
         orphaned: { type: "boolean" },
+        base_sha: str,
+        head_sha: str,
         session_id: sid,
       },
       ["repo", "number"],
@@ -1124,6 +1126,8 @@ export const methods: Record<string, MethodDef> = {
         {
           path: p.path,
           orphaned: p.orphaned,
+          base_sha: p.base_sha,
+          head_sha: p.head_sha,
         },
         p.session_id,
       ),
@@ -1146,6 +1150,7 @@ export const methods: Record<string, MethodDef> = {
         number: positiveInt,
         base_sha: strNonEmpty,
         head_sha: strNonEmpty,
+        commit_sha: strNonEmpty,
         path: strNonEmpty,
         side: { enum: ["LEFT", "RIGHT"] },
         start_line: positiveInt,
@@ -1169,6 +1174,7 @@ export const methods: Record<string, MethodDef> = {
       svc.diffFeedback.createHuman(p.repo, p.number, {
         baseSha: p.base_sha,
         headSha: p.head_sha,
+        commitSha: p.commit_sha,
         path: p.path,
         side: p.side,
         startLine: p.start_line,
@@ -1259,6 +1265,37 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo, sha: strNonEmpty }, ["repo", "sha"]),
     result: anyArray,
     handler: (p) => svc.repos.commitFiles(p.repo, p.sha),
+  },
+  "repos/commitDiff": {
+    description:
+      "リポジトリの commit の first-parent diff を読み込み、必要に応じて 1 ファイルに限定します。",
+    params: params(
+      {
+        repo,
+        sha: strNonEmpty,
+        path: str,
+        ignore_whitespace: { type: "boolean" },
+      },
+      ["repo", "sha"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.repos.commitDiff(p.repo, p.sha, p.path, p.ignore_whitespace),
+  },
+  "repos/commitFileAtRef": {
+    description:
+      "リポジトリの commit で変更されたファイルを parent または head から読み込みます。",
+    params: params(
+      {
+        repo,
+        sha: strNonEmpty,
+        path: strNonEmpty,
+        side: { enum: ["base", "head"] },
+      },
+      ["repo", "sha", "path", "side"],
+    ),
+    result: anyObject,
+    handler: (p) => svc.repos.commitFileAtRef(p.repo, p.sha, p.path, p.side),
   },
   "pulls/fileAtRef": {
     description:

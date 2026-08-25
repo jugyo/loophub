@@ -159,6 +159,7 @@ export function PullCommitsSection({
         <CommitDiffDialog
           owner={owner}
           repo={repo}
+          number={number}
           sha={selectedCommit.sha}
           subject={selectedCommit.subject}
           onClose={() => setSelectedCommit(null)}

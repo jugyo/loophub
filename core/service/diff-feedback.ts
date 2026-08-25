@@ -17,6 +17,7 @@ import {
 } from "../diff-feedback-selection.ts";
 import { ServiceError } from "../errors.ts";
 import {
+  commitDiffBase,
   type DiffFile,
   type DiffFileSummary,
   diffFileSummariesBetween,
@@ -779,13 +780,36 @@ export const diffFeedback = {
   async list(
     name: string,
     number: number,
-    scope: { path?: string; orphaned?: boolean } = {},
+    scope: {
+      path?: string;
+      orphaned?: boolean;
+      base_sha?: string;
+      head_sha?: string;
+    } = {},
     sessionId?: string | null,
   ): Promise<DiffFeedbackListWire> {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const pull = S.getPull(row.id)!;
-    const pair = await currentPair(r.local_path, pull);
+    const requestedPair =
+      scope.base_sha && scope.head_sha
+        ? {
+            baseSha: scope.base_sha,
+            headSha: scope.head_sha,
+          }
+        : null;
+    if (
+      (scope.base_sha != null || scope.head_sha != null) &&
+      (!requestedPair ||
+        !FULL_SHA.test(requestedPair.baseSha) ||
+        !FULL_SHA.test(requestedPair.headSha))
+    ) {
+      throw new ServiceError(
+        422,
+        "base_sha と head_sha には完全な commit SHA を指定してください",
+      );
+    }
+    const pair = requestedPair ?? (await currentPair(r.local_path, pull));
     const diff = pair
       ? {
           ...pair,
@@ -1005,6 +1029,7 @@ export const diffFeedback = {
 interface DiffFeedbackInput {
   baseSha: string;
   headSha: string;
+  commitSha?: string;
   path: string;
   side: string;
   startLine: number;
@@ -1049,9 +1074,23 @@ async function createThread(
     throw new ServiceError(422, "side must be LEFT or RIGHT");
   if (!input.path || !input.body)
     throw new ServiceError(422, "path and body are required");
-  const pair = await currentPair(r.local_path, pull);
-  if (!pair || pair.baseSha !== input.baseSha || pair.headSha !== input.headSha)
-    throw new ServiceError(409, "pull request diff has changed");
+  if (input.commitSha) {
+    if (!FULL_SHA.test(input.commitSha) || input.headSha !== input.commitSha) {
+      throw new ServiceError(409, "commit diff has changed");
+    }
+    const commitBaseSha = await commitDiffBase(r.local_path, input.commitSha);
+    if (commitBaseSha !== input.baseSha) {
+      throw new ServiceError(409, "commit diff has changed");
+    }
+  } else {
+    const pair = await currentPair(r.local_path, pull);
+    if (
+      !pair ||
+      pair.baseSha !== input.baseSha ||
+      pair.headSha !== input.headSha
+    )
+      throw new ServiceError(409, "pull request diff has changed");
+  }
   const files = await diffFilesBetween(
     r.local_path,
     input.baseSha,

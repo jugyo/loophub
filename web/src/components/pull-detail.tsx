@@ -305,6 +305,7 @@ export function PullDetail({
               <CommitDiffDialog
                 owner={owner}
                 repo={repo}
+                number={number}
                 sha={timelineCommit.sha}
                 subject={timelineCommit.subject}
                 onClose={() => setTimelineCommit(null)}

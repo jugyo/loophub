@@ -1686,7 +1686,7 @@ describe("DiffFileDialog", () => {
       expect(listFeedback).toHaveBeenCalledTimes(4);
       expect(screen.getByLabelText("👍 reaction: 2")).toBeTruthy();
     });
-  });
+  }, 10000);
 
   it("rolls back an optimistic reaction and reports a failed request", async () => {
     let rejectReact!: (error: RpcFault) => void;

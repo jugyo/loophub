@@ -1029,7 +1029,12 @@ export function listDiffFeedback(
   owner: string,
   repo: string,
   number: number,
-  scope: { path?: string; orphaned?: boolean } = {},
+  scope: {
+    path?: string;
+    orphaned?: boolean;
+    base_sha?: string;
+    head_sha?: string;
+  } = {},
 ) {
   return rpc<DiffFeedbackList>(
     "diffFeedback/list",
@@ -1038,6 +1043,8 @@ export function listDiffFeedback(
       number,
       path: scope.path,
       orphaned: scope.orphaned,
+      base_sha: scope.base_sha,
+      head_sha: scope.head_sha,
       session_id: getSessionId(),
     }),
   );
@@ -1050,6 +1057,7 @@ export function createDiffFeedback(
   input: {
     base_sha: string;
     head_sha: string;
+    commit_sha?: string;
     path: string;
     side: "LEFT" | "RIGHT";
     start_line: number;
@@ -1121,6 +1129,39 @@ export function listCommitFiles(owner: string, repo: string, sha: string) {
   return rpc<PullFile[]>("repos/commitFiles", {
     repo: full(owner, repo),
     sha,
+  });
+}
+
+export function getCommitDiff(
+  owner: string,
+  repo: string,
+  sha: string,
+  path?: string,
+  ignoreWhitespace = false,
+) {
+  return rpc<PullDiff>(
+    "repos/commitDiff",
+    clean({
+      repo: full(owner, repo),
+      sha,
+      path,
+      ignore_whitespace: ignoreWhitespace || undefined,
+    }),
+  );
+}
+
+export function getCommitFileAtRef(
+  owner: string,
+  repo: string,
+  sha: string,
+  path: string,
+  side: "base" | "head",
+) {
+  return rpc<FileAtRef>("repos/commitFileAtRef", {
+    repo: full(owner, repo),
+    sha,
+    path,
+    side,
   });
 }
 

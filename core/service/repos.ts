@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
 import { db } from "../db.ts";
+import { parsePatchWithCoordinates } from "../diff-anchor.ts";
 import { addSyntaxHighlight } from "../diff-syntax.ts";
 import { ServiceError } from "../errors.ts";
 import {
@@ -11,7 +12,9 @@ import {
   commitDiffFiles,
   currentBranch,
   defaultBranch,
+  diffFileSummariesBetween,
   fetchRemote,
+  fileAtRef,
   isGitRepo,
   localBranchRef,
   pullFastForward,
@@ -96,6 +99,77 @@ export const repos = {
       commitDiffFiles(r.local_path, sha),
     ]);
     return addSyntaxHighlight(r.local_path, baseSha, sha, files);
+  },
+
+  async commitDiff(
+    name: string,
+    sha: string,
+    path?: string,
+    ignoreWhitespace = false,
+  ) {
+    if (!/^[0-9a-f]{40}$/i.test(sha)) throw new ServiceError(404, "Not Found");
+    const r = repoOr404(name);
+    const baseSha = await commitDiffBase(r.local_path, sha);
+    const files = await commitDiffFiles(r.local_path, sha, {
+      ignoreWhitespace,
+      paths: path ? [path] : undefined,
+    });
+    const highlighted = await addSyntaxHighlight(
+      r.local_path,
+      baseSha,
+      sha,
+      files,
+    );
+    return {
+      base_sha: baseSha,
+      head_sha: sha,
+      files: highlighted.map((file) => ({
+        path: file.headFilename ?? file.filename,
+        absolute_path: join(r.local_path, file.headFilename ?? file.filename),
+        original_path: file.previousFilename ?? null,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        patch: file.patch,
+        ...(file.syntax_highlight
+          ? { syntax_highlight: file.syntax_highlight }
+          : {}),
+        lines: parsePatchWithCoordinates(file.patch).map((line, index) => ({
+          kind: line.kind,
+          text: line.text,
+          left_line: line.leftLine,
+          right_line: line.rightLine,
+          ...(file.syntax_highlight?.lines[index]
+            ? { syntax_highlight: file.syntax_highlight.lines[index] }
+            : {}),
+        })),
+      })),
+    };
+  },
+
+  async commitFileAtRef(
+    name: string,
+    sha: string,
+    path: string,
+    side: "base" | "head",
+  ) {
+    if (!/^[0-9a-f]{40}$/i.test(sha)) throw new ServiceError(404, "Not Found");
+    const r = repoOr404(name);
+    const baseSha = await commitDiffBase(r.local_path, sha);
+    const files = await diffFileSummariesBetween(r.local_path, baseSha, sha);
+    const changedFile = files.find(
+      (file) =>
+        (file.headFilename ?? file.filename) === path ||
+        file.previousFilename === path ||
+        file.filename === path,
+    );
+    if (!changedFile) throw new ServiceError(404, "Not Found");
+    const ref = side === "base" ? baseSha : sha;
+    const sidePath =
+      side === "base"
+        ? (changedFile.previousFilename ?? changedFile.filename)
+        : (changedFile.headFilename ?? changedFile.filename);
+    return fileAtRef(r.local_path, ref, sidePath);
   },
 
   // Thin lookups (by id / by "owner/name") for callers outside core/ that only need the raw row,

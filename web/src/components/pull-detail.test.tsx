@@ -1160,7 +1160,20 @@ describe("PullDetail", () => {
 
   it("opens the commit diff dialog for the selected timeline commit", async () => {
     renderDetail({
-      "repos/commitFiles": () => files,
+      "repos/commitDiff": () => ({
+        base_sha: "c".repeat(40),
+        head_sha: "b".repeat(40),
+        files: files.map((file) => ({
+          path: file.filename,
+          absolute_path: `/tmp/${file.filename}`,
+          original_path: file.previousFilename ?? null,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          patch: file.patch,
+          lines: [],
+        })),
+      }),
     });
 
     const section = (
@@ -1174,11 +1187,16 @@ describe("PullDetail", () => {
     commitButton.focus();
     fireEvent.click(commitButton);
 
-    const dialog = await screen.findByRole("dialog", {
+    await screen.findByRole("dialog", {
       name: "Changes in bbbbbbb: Earlier change",
     });
-    expect(await within(dialog).findByText("+const x = 1;")).toBeTruthy();
-    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(await screen.findByText("const x = 1;")).toBeTruthy();
+    fireEvent.keyDown(
+      screen.getByRole("dialog", {
+        name: "Changes in bbbbbbb: Earlier change",
+      }),
+      { key: "Escape" },
+    );
     expect(screen.queryByRole("dialog", { name: /Changes in bbbbbbb/ })).toBe(
       null,
     );

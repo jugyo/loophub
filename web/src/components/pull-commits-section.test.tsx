@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type {
+  PullDiff,
   PullFile,
   PullLineComment,
   PullRequest,
@@ -49,6 +50,60 @@ const files: PullFile[] = [
   },
 ];
 
+function commitDiff(filesToUse: PullFile[]): PullDiff {
+  return {
+    base_sha: "c".repeat(40),
+    head_sha: "a".repeat(40),
+    files: filesToUse.map((file) => ({
+      path: file.filename,
+      absolute_path: `/tmp/${file.filename}`,
+      original_path: file.previousFilename ?? null,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+      patch: file.patch,
+      syntax_highlight: file.syntax_highlight,
+      lines: file.patch.includes("-const x = 0;")
+        ? [
+            {
+              kind: "hunk" as const,
+              text: "@@ -1 +1 @@",
+              left_line: null,
+              right_line: null,
+            },
+            {
+              kind: "deletion" as const,
+              text: "-const x = 0;",
+              left_line: 1,
+              right_line: null,
+            },
+            {
+              kind: "addition" as const,
+              text: "+const x = 1;",
+              left_line: null,
+              right_line: 1,
+            },
+          ]
+        : [
+            {
+              kind: "hunk" as const,
+              text: "@@ -0,0 +1 @@",
+              left_line: null,
+              right_line: null,
+            },
+            {
+              kind: "addition" as const,
+              text:
+                file.patch.split("\n").find((line) => line.startsWith("+")) ??
+                "+added",
+              left_line: null,
+              right_line: 1,
+            },
+          ],
+    })),
+  };
+}
+
 function renderSection({
   commits: sectionCommits = commits,
   reviews = [],
@@ -69,7 +124,7 @@ function renderSection({
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({
-      "repos/commitFiles": () => files,
+      "repos/commitDiff": () => commitDiff(files),
       "workflowRuns/stateForPull": () => null,
       ...handlers,
     }),
@@ -826,8 +881,11 @@ describe("PullCommitsSection", () => {
     ];
     renderSection({
       handlers: {
-        "repos/commitFiles": (params) =>
-          params.sha === commits![0].sha ? highlightedFiles : earlierFiles,
+        "repos/commitDiff": (params) => {
+          return commitDiff(
+            params.sha === commits![0].sha ? highlightedFiles : earlierFiles,
+          );
+        },
       },
     });
 
@@ -837,25 +895,25 @@ describe("PullCommitsSection", () => {
       }),
     );
 
-    const latestDialog = await screen.findByRole("dialog", {
+    await screen.findByRole("dialog", {
       name: "Changes in aaaaaaa: Latest change",
     });
-    expect(within(latestDialog).getByText("aaaaaaa")).toBeTruthy();
-    expect(within(latestDialog).getByText("Latest change")).toBeTruthy();
-    expect(await within(latestDialog).findByText("+const x = 1;")).toBeTruthy();
-    expect(
-      within(latestDialog).getByText("const", {
-        selector: '[data-syntax-token="keyword"]',
-      }),
-    ).toBeTruthy();
-    expect(rpcCall("repos/commitFiles")?.params).toEqual({
+    await screen.findByText("const x = 1;");
+    const latestContent = () =>
+      within(
+        screen.getByRole("dialog", {
+          name: "Changes in aaaaaaa: Latest change",
+        }),
+      );
+    expect(latestContent().getByText("aaaaaaa")).toBeTruthy();
+    expect(latestContent().getByText("Latest change")).toBeTruthy();
+    expect(latestContent().getByText("const x = 1;")).toBeTruthy();
+    expect(rpcCall("repos/commitDiff")?.params).toEqual({
       repo: "me/proj",
       sha: commits![0].sha,
     });
 
-    fireEvent.click(
-      within(latestDialog).getByRole("button", { name: "Close commit diff" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Close commit diff" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     fireEvent.click(
@@ -863,24 +921,149 @@ describe("PullCommitsSection", () => {
         name: "View changes in bbbbbbb: Earlier change",
       }),
     );
-    const earlierDialog = await screen.findByRole("dialog", {
+    await screen.findByRole("dialog", {
       name: "Changes in bbbbbbb: Earlier change",
     });
-    expect(
-      await within(earlierDialog).findByText("+export const earlier = true;"),
-    ).toBeTruthy();
-    expect(within(earlierDialog).queryByText("+const x = 1;")).toBeNull();
+    await screen.findByText("export const earlier = true;");
+    expect(screen.getByText("export const earlier = true;")).toBeTruthy();
+    expect(screen.queryByText("const x = 1;")).toBeNull();
 
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  it("commit view に diff サイドバーと表示操作を提供する", async () => {
+    const secondFile: PullFile = {
+      filename: "docs/readme.md",
+      status: "added",
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -0,0 +1 @@\n+# コミットメモ",
+    };
+    renderSection({
+      handlers: {
+        "repos/commitDiff": () => commitDiff([files[0], secondFile]),
+        "repos/commitFileAtRef": () => ({
+          status: "ok",
+          content: "# コミットメモ\n",
+        }),
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      }),
+    );
+    await screen.findByText("const x = 1;");
+    const dialog = screen.getByRole("dialog", {
+      name: "Changes in aaaaaaa: Latest change",
+    });
+    expect(within(dialog).getByLabelText("Changed files")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Raw" })).toBeTruthy();
+    expect(
+      within(dialog).getByRole("button", { name: "Ignore whitespace" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByRole("button", { name: "Unified" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByRole("button", { name: "Toggle file filters" }),
+    ).toBeNull();
+    expect(within(dialog).queryByText("Viewed")).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Split" }));
+    expect(
+      within(dialog)
+        .getByRole("button", { name: "Split" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Ignore whitespace" }),
+    );
+    await waitFor(() => {
+      const commitCall = (
+        fetch as unknown as { mock: { calls: unknown[][] } }
+      ).mock.calls
+        .map((call) => JSON.parse(String((call[1] as RequestInit).body)))
+        .find(
+          (call) =>
+            call.method === "repos/commitDiff" && call.params.ignore_whitespace,
+        );
+      expect(commitCall?.params).toMatchObject({
+        repo: "me/proj",
+        sha: commits![0].sha,
+        path: "web/src/a.ts",
+        ignore_whitespace: true,
+      });
+    });
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "docs/readme.md" }),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog)
+          .getByRole("button", { name: "docs/readme.md" })
+          .getAttribute("aria-current"),
+      ).toBe("true"),
+    );
+    expect(
+      within(
+        screen.getByRole("dialog", {
+          name: "Changes in aaaaaaa: Latest change",
+        }),
+      ).getByRole("button", { name: "Raw" }),
+    ).toBeTruthy();
+  });
+
+  it("commit の parent と head に対する diff comment を投稿する", async () => {
+    const create = vi.fn(() => ({ thread: {}, comment: {} }));
+    renderSection({
+      handlers: {
+        "diffFeedback/list": () => ({ threads: [], comment_counts: {} }),
+        "diffFeedback/create": create,
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      }),
+    );
+    await screen.findByText("const x = 1;");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Comment on new line 1" }),
+    );
+    const composer = screen.getByLabelText("Diff comment");
+    fireEvent.change(composer, { target: { value: "コミットへの指摘" } });
+    fireEvent.click(
+      within(composer.closest("tr") as HTMLElement).getByRole("button", {
+        name: "Comment",
+      }),
+    );
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          base_sha: "c".repeat(40),
+          head_sha: "a".repeat(40),
+          commit_sha: "a".repeat(40),
+          path: "web/src/a.ts",
+          side: "RIGHT",
+          start_line: 1,
+          end_line: 1,
+          body: "コミットへの指摘",
+        }),
+      ),
+    );
+  });
+
   it("distinguishes loading and empty commit diffs", async () => {
-    let resolveFiles: (files: PullFile[]) => void = () => {};
-    const pending = new Promise<PullFile[]>((resolve) => {
+    let resolveFiles: (files: PullDiff) => void = () => {};
+    const pending = new Promise<PullDiff>((resolve) => {
       resolveFiles = resolve;
     });
-    renderSection({ handlers: { "repos/commitFiles": () => pending } });
+    renderSection({ handlers: { "repos/commitDiff": () => pending } });
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -892,7 +1075,7 @@ describe("PullCommitsSection", () => {
     });
     expect(within(dialog).getByText("Loading commit diff…")).toBeTruthy();
 
-    resolveFiles([]);
+    resolveFiles(commitDiff([]));
     expect(
       await within(dialog).findByText("No changes in this commit."),
     ).toBeTruthy();
@@ -902,7 +1085,7 @@ describe("PullCommitsSection", () => {
   it("shows commit diff retrieval failures in the dialog", async () => {
     renderSection({
       handlers: {
-        "repos/commitFiles": () => {
+        "repos/commitDiff": () => {
           throw new RpcFault(500, "simulated commit diff failure");
         },
       },

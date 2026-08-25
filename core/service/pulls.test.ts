@@ -323,6 +323,37 @@ test("repos/commitFiles returns a commit's parent diff", async () => {
   ]);
 });
 
+test("repos/commitDiff が parent/head の組と行座標を正確に返す", async () => {
+  const diff = await svc.repos.commitDiff("me/commit-files", featureSha);
+
+  expect(diff.base_sha).toMatch(/^[0-9a-f]{40}$/);
+  expect(diff.head_sha).toBe(featureSha);
+  expect(diff.files.map((file) => file.path)).toEqual(["a.txt", "added.txt"]);
+  expect(
+    diff.files[0]?.lines.some(
+      (line) => line.right_line === 1 && line.kind === "addition",
+    ),
+  ).toBe(true);
+});
+
+test("repos/commitFileAtRef が変更ファイルを commit の両側から読み込む", async () => {
+  const base = await svc.repos.commitFileAtRef(
+    "me/commit-files",
+    featureSha,
+    "a.txt",
+    "base",
+  );
+  const head = await svc.repos.commitFileAtRef(
+    "me/commit-files",
+    featureSha,
+    "a.txt",
+    "head",
+  );
+
+  expect(base).toEqual({ status: "ok", content: "before\n" });
+  expect(head).toEqual({ status: "ok", content: "after\n" });
+});
+
 test("diff roots absolute paths at the PR worktree with a repo fallback", async () => {
   const withoutWorktree = await svc.pulls.diff(
     "me/commit-files",

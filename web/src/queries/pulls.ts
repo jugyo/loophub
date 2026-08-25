@@ -12,6 +12,8 @@ import {
 import {
   archivePull,
   createDiffFeedback,
+  getCommitDiff,
+  getCommitFileAtRef,
   getGithubPrStatus,
   getPull,
   getPullDebug,
@@ -140,10 +142,16 @@ export function usePullFiles(
 }
 
 /** Which changed files are marked viewed, and the version each was marked at (#2502). */
-export function usePullFileViews(owner: string, repo: string, number: number) {
+export function usePullFileViews(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.pullFileViews(full(owner, repo), number),
     queryFn: () => listPullFileViews(owner, repo, number),
+    enabled,
   });
 }
 
@@ -222,6 +230,7 @@ export function usePullDiff(
   number: number,
   path: string,
   ignoreWhitespace = false,
+  enabled = true,
 ) {
   return useQuery({
     queryKey: [
@@ -231,6 +240,110 @@ export function usePullDiff(
       { ignoreWhitespace },
     ],
     queryFn: () => getPullDiff(owner, repo, number, path, ignoreWhitespace),
+    enabled,
+  });
+}
+
+export function useCommitDiff(
+  owner: string,
+  repo: string,
+  sha: string,
+  path?: string,
+  ignoreWhitespace = false,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: [
+      "repo",
+      full(owner, repo),
+      "commitDiff",
+      sha,
+      path,
+      { ignoreWhitespace },
+    ],
+    queryFn: () => getCommitDiff(owner, repo, sha, path, ignoreWhitespace),
+    enabled,
+  });
+}
+
+export function useCommitFileAtRef(
+  owner: string,
+  repo: string,
+  sha: string,
+  path: string,
+  side: "base" | "head",
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ["repo", full(owner, repo), "commitFileAtRef", sha, side, path],
+    queryFn: () => getCommitFileAtRef(owner, repo, sha, path, side),
+    enabled,
+  });
+}
+
+export function useDiffForSource(
+  owner: string,
+  repo: string,
+  source: { kind: "pull"; number: number } | { kind: "commit"; sha: string },
+  path: string,
+  ignoreWhitespace = false,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey:
+      source.kind === "pull"
+        ? [
+            ...queryKeys.pull(full(owner, repo), source.number),
+            "stableDiff",
+            path,
+            { ignoreWhitespace },
+          ]
+        : [
+            "repo",
+            full(owner, repo),
+            "commitDiff",
+            source.sha,
+            path,
+            { ignoreWhitespace },
+          ],
+    queryFn: () =>
+      source.kind === "pull"
+        ? getPullDiff(owner, repo, source.number, path, ignoreWhitespace)
+        : getCommitDiff(owner, repo, source.sha, path, ignoreWhitespace),
+    enabled,
+  });
+}
+
+export function useFileAtRefForSource(
+  owner: string,
+  repo: string,
+  source: { kind: "pull"; number: number } | { kind: "commit"; sha: string },
+  path: string,
+  side: "base" | "head",
+  enabled = true,
+) {
+  return useQuery({
+    queryKey:
+      source.kind === "pull"
+        ? [
+            ...queryKeys.pull(full(owner, repo), source.number),
+            "fileAtRef",
+            side,
+            path,
+          ]
+        : [
+            "repo",
+            full(owner, repo),
+            "commitFileAtRef",
+            source.sha,
+            side,
+            path,
+          ],
+    queryFn: () =>
+      source.kind === "pull"
+        ? getPullFileAtRef(owner, repo, source.number, path, side)
+        : getCommitFileAtRef(owner, repo, source.sha, path, side),
+    enabled,
   });
 }
 
@@ -238,7 +351,12 @@ export function useDiffFeedback(
   owner: string,
   repo: string,
   number: number,
-  scope: { path?: string; orphaned?: boolean } = {},
+  scope: {
+    path?: string;
+    orphaned?: boolean;
+    base_sha?: string;
+    head_sha?: string;
+  } = {},
   enabled = true,
 ) {
   return useQuery({

@@ -2433,6 +2433,12 @@
           "orphaned": {
             "type": "boolean"
           },
+          "base_sha": {
+            "type": "string"
+          },
+          "head_sha": {
+            "type": "string"
+          },
           "session_id": {
             "type": "string",
             "minLength": 1
@@ -2497,6 +2503,10 @@
             "minLength": 1
           },
           "head_sha": {
+            "type": "string",
+            "minLength": 1
+          },
+          "commit_sha": {
             "type": "string",
             "minLength": 1
           },
@@ -2736,6 +2746,74 @@
       },
       "result": {
         "type": "array"
+      }
+    },
+    {
+      "name": "repos/commitDiff",
+      "description": "リポジトリの commit の first-parent diff を読み込み、必要に応じて 1 ファイルに限定します。",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string"
+          },
+          "ignore_whitespace": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "sha"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "repos/commitFileAtRef",
+      "description": "リポジトリの commit で変更されたファイルを parent または head から読み込みます。",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "side": {
+            "enum": [
+              "base",
+              "head"
+            ]
+          }
+        },
+        "required": [
+          "repo",
+          "sha",
+          "path",
+          "side"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
       }
     },
     {

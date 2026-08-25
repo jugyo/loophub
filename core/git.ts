@@ -534,9 +534,10 @@ export async function diffFileSummariesBetween(
 export async function commitDiffFiles(
   repoPath: string,
   sha: string,
+  options: DiffOptions = {},
 ): Promise<DiffFile[]> {
   const base = await commitDiffBase(repoPath, sha);
-  return diffFilesForRevisions(repoPath, [base, sha]);
+  return diffFilesForRevisions(repoPath, [base, sha], options);
 }
 
 /** commit diff の表示に使う first-parent revision。root commit では empty tree を返す。 */

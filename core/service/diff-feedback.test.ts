@@ -878,3 +878,36 @@ test("list reads patch text only for the files whose threads are not precomputed
     fallback.result.threads.find((thread) => thread.id === moved.id),
   ).toMatchObject({ freshness: "unavailable", placement: "inline" });
 }, 30_000);
+
+test("a commit diff comment accepts a historical first-parent pair", async () => {
+  git(["checkout", "-q", "feature"]);
+  writeFileSync(
+    join(repoPath, "a.txt"),
+    "one\nchanged again\nthree\nfour\nfive\n",
+  );
+  git(["add", "a.txt"]);
+  git(["commit", "-qm", "advance feature"]);
+  git(["checkout", "-q", "main"]);
+
+  const created = await svc.diffFeedback.createHuman(REPO, prNumber, {
+    baseSha,
+    headSha,
+    commitSha: headSha,
+    path: "a.txt",
+    side: "RIGHT",
+    startLine: 2,
+    endLine: 2,
+    body: "Historical commit feedback.",
+  });
+
+  expect(created.thread).toMatchObject({
+    anchor: {
+      base_sha: baseSha,
+      head_sha: headSha,
+      path: "a.txt",
+      start_line: 2,
+      end_line: 2,
+    },
+  });
+  await svc.diffFeedback.archive(REPO, prNumber, created.thread.id, true);
+}, 30_000);

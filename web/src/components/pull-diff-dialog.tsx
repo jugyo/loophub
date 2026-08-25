@@ -88,10 +88,13 @@ import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
 import {
+  useCommitDiff,
   useCreateDiffFeedback,
   useDiffFeedback,
+  useDiffForSource,
+  useFileAtRefForSource,
   usePullDiff,
-  usePullFileAtRef,
+  type usePullFileAtRef,
   usePullFileViews,
   useReactToDiffFeedback,
   useReplyDiffFeedback,
@@ -167,6 +170,9 @@ function visibleCopyPath(path: string) {
 type DiffDialogMode = "diff" | "raw" | "base" | "head" | "rendered";
 type StandardDiffDialogMode = "diff" | "raw";
 type DiffViewMode = "unified" | "split";
+export type DiffDialogSource =
+  | { kind: "pull"; number: number }
+  | { kind: "commit"; sha: string; baseSha: string; headSha: string };
 type SplitRow =
   | {
       kind: "line";
@@ -252,6 +258,10 @@ export function DiffFileDialog({
   file,
   commentCounts = {},
   initialThreadId = null,
+  source = { kind: "pull", number },
+  dialogLabel,
+  dialogTitle,
+  dialogSha,
   onSelectFile,
   onClose,
 }: {
@@ -263,6 +273,10 @@ export function DiffFileDialog({
   commentCounts?: Readonly<Record<string, number>>;
   /** ファイルの feedback 読み込み後に表示位置を合わせるタイムライン thread。 */
   initialThreadId?: number | null;
+  source?: DiffDialogSource;
+  dialogLabel?: string;
+  dialogTitle?: string;
+  dialogSha?: string;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
@@ -282,7 +296,12 @@ export function DiffFileDialog({
     startWidth: number;
   } | null>(null);
   const backdropDismiss = useBackdropDismiss(onClose);
-  const viewsQuery = usePullFileViews(owner, repo, number);
+  const viewsQuery = usePullFileViews(
+    owner,
+    repo,
+    number,
+    source.kind === "pull",
+  );
   const viewsByPath = useMemo(
     () => pullFileViewsByPath(viewsQuery.data),
     [viewsQuery.data],
@@ -303,10 +322,16 @@ export function DiffFileDialog({
     [excludePattern, files, includePattern],
   );
   const listedFiles = useMemo(
-    () => visiblePullFiles(filteredFiles, viewsByPath, showViewed),
-    [filteredFiles, showViewed, viewsByPath],
+    () =>
+      source.kind === "pull"
+        ? visiblePullFiles(filteredFiles, viewsByPath, showViewed)
+        : filteredFiles,
+    [filteredFiles, showViewed, source.kind, viewsByPath],
   );
-  const viewedCount = viewedPullFileCount(filteredFiles, viewsByPath);
+  const viewedCount =
+    source.kind === "pull"
+      ? viewedPullFileCount(filteredFiles, viewsByPath)
+      : 0;
   const selectedFile = selectedFilename
     ? (files.find((candidate) => candidate.filename === selectedFilename) ??
       null)
@@ -402,7 +427,8 @@ export function DiffFileDialog({
         role="dialog"
         aria-modal="true"
         aria-label={
-          selectedFile ? `Diff for ${selectedFile.filename}` : "Diff files"
+          dialogLabel ??
+          (selectedFile ? `Diff for ${selectedFile.filename}` : "Diff files")
         }
         className="flex max-h-full w-full overflow-hidden rounded-md border bg-background shadow-lg"
       >
@@ -420,30 +446,34 @@ export function DiffFileDialog({
                   : ""}
                 )
               </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="Toggle file filters"
-                aria-expanded={showFileFilters}
-                className={cn(
-                  "size-6",
-                  (includePattern || excludePattern) && "text-primary",
-                )}
-                onClick={() => setShowFileFilters((visible) => !visible)}
-              >
-                <Filter className="size-3.5" />
-              </Button>
+              {source.kind === "pull" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Toggle file filters"
+                  aria-expanded={showFileFilters}
+                  className={cn(
+                    "size-6",
+                    (includePattern || excludePattern) && "text-primary",
+                  )}
+                  onClick={() => setShowFileFilters((visible) => !visible)}
+                >
+                  <Filter className="size-3.5" />
+                </Button>
+              ) : null}
             </div>
-            <div className="flex justify-end border-t px-3 py-1.5">
-              <Switch
-                label="Show viewed"
-                hint={`(${viewedCount} viewed)`}
-                checked={showViewed}
-                onCheckedChange={setShowViewed}
-              />
-            </div>
-            {showFileFilters ? (
+            {source.kind === "pull" ? (
+              <div className="flex justify-end border-t px-3 py-1.5">
+                <Switch
+                  label="Show viewed"
+                  hint={`(${viewedCount} viewed)`}
+                  checked={showViewed}
+                  onCheckedChange={setShowViewed}
+                />
+              </div>
+            ) : null}
+            {source.kind === "pull" && showFileFilters ? (
               <div className="grid gap-2 border-t px-3 py-2">
                 <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
                   Include
@@ -522,9 +552,11 @@ export function DiffFileDialog({
                     />
                     <span aria-hidden="true" />
                     <span className="flex items-center gap-1.5">
-                      <FileViewedBadge
-                        state={pullFileViewState(sidebarFile, viewsByPath)}
-                      />
+                      {source.kind === "pull" ? (
+                        <FileViewedBadge
+                          state={pullFileViewState(sidebarFile, viewsByPath)}
+                        />
+                      ) : null}
                       <DiffCommentCount
                         count={commentCounts[sidebarFile.filename] ?? 0}
                         className="text-[11px]"
@@ -561,6 +593,16 @@ export function DiffFileDialog({
             <>
               <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
                 <div className="min-w-0 flex-1">
+                  {dialogTitle ? (
+                    <div className="mb-1 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                      {dialogSha ? (
+                        <code className="shrink-0 rounded bg-muted px-1 py-0.5">
+                          {dialogSha}
+                        </code>
+                      ) : null}
+                      <span className="truncate">{dialogTitle}</span>
+                    </div>
+                  ) : null}
                   <div className="flex min-w-0 items-center gap-1">
                     <h3 className="min-w-0 truncate text-sm font-semibold">
                       {selectedFile.filename}
@@ -571,13 +613,15 @@ export function DiffFileDialog({
                       label={`Copy file path: ${selectedCopyPath}`}
                       className="size-6"
                     />
-                    <FileInfoPopover
-                      key={`info-${selectedCopyPath}`}
-                      owner={owner}
-                      repo={repo}
-                      number={number}
-                      file={selectedFile}
-                    />
+                    {source.kind === "pull" ? (
+                      <FileInfoPopover
+                        key={`info-${selectedCopyPath}`}
+                        owner={owner}
+                        repo={repo}
+                        number={number}
+                        file={selectedFile}
+                      />
+                    ) : null}
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                     <FileStatusBadge status={selectedFile.status} />
@@ -585,7 +629,9 @@ export function DiffFileDialog({
                       additions={selectedFile.additions}
                       deletions={selectedFile.deletions}
                     />
-                    <FileViewedBadge state={selectedFileViewState} />
+                    {source.kind === "pull" ? (
+                      <FileViewedBadge state={selectedFileViewState} />
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
@@ -657,37 +703,45 @@ export function DiffFileDialog({
                       </ModeButton>
                     </div>
                   ) : null}
-                  {/* The record is append-only, so a file whose commits moved on comes back unchecked:
+                  {source.kind === "pull" ? (
+                    <>
+                      {/* The record is append-only, so a file whose commits moved on comes back unchecked:
                       ticking it again pins the version now on screen (#2502). */}
-                  <label className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={selectedFileViewState === "viewed"}
-                      disabled={setViewed.isPending}
-                      onChange={(event) => {
-                        const viewed = event.target.checked;
-                        setViewed.mutate(
-                          {
-                            path: selectedFile.filename,
-                            sha: selectedFile.last_changed_sha ?? null,
-                            viewed,
-                          },
-                          {
-                            onSuccess: () => {
-                              if (viewed) setSelectedFilename(null);
-                            },
-                            onError: (error) =>
-                              showError(errorMessage(error, "Update failed")),
-                          },
-                        );
-                      }}
-                    />
-                    Viewed
-                  </label>
+                      <label className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={selectedFileViewState === "viewed"}
+                          disabled={setViewed.isPending}
+                          onChange={(event) => {
+                            const viewed = event.target.checked;
+                            setViewed.mutate(
+                              {
+                                path: selectedFile.filename,
+                                sha: selectedFile.last_changed_sha ?? null,
+                                viewed,
+                              },
+                              {
+                                onSuccess: () => {
+                                  if (viewed) setSelectedFilename(null);
+                                },
+                                onError: (error) =>
+                                  showError(
+                                    errorMessage(error, "Update failed"),
+                                  ),
+                              },
+                            );
+                          }}
+                        />
+                        Viewed
+                      </label>
+                    </>
+                  ) : null}
                   <Button
                     variant="secondary"
                     size="sm"
-                    aria-label="Close diff"
+                    aria-label={
+                      dialogTitle ? "Close commit diff" : "Close diff"
+                    }
                     className="h-7 w-7 shrink-0 p-0"
                     onClick={onClose}
                   >
@@ -711,6 +765,7 @@ export function DiffFileDialog({
                   diffViewMode={diffViewMode}
                   ignoreWhitespace={ignoreWhitespace}
                   initialThreadId={initialThreadId}
+                  source={source}
                 />
               </div>
             </>
@@ -889,16 +944,7 @@ function ModeButton({
   );
 }
 
-function FileDiffContent({
-  owner,
-  repo,
-  number,
-  file,
-  mode,
-  diffViewMode,
-  ignoreWhitespace,
-  initialThreadId,
-}: {
+type FileDiffContentProps = {
   owner: string;
   repo: string;
   number: number;
@@ -907,10 +953,56 @@ function FileDiffContent({
   diffViewMode: DiffViewMode;
   ignoreWhitespace: boolean;
   initialThreadId: number | null;
-}) {
+  source: DiffDialogSource;
+};
+
+function FileDiffContent(props: FileDiffContentProps) {
+  return props.source.kind === "pull" ? (
+    <PullFileDiffContent {...props} />
+  ) : (
+    <CommitFileDiffContent {...props} />
+  );
+}
+
+function PullFileDiffContent(props: FileDiffContentProps) {
+  const { owner, repo, number, file, ignoreWhitespace } = props;
   const path = copyFilename(file);
   const diff = usePullDiff(owner, repo, number, path, ignoreWhitespace);
-  const feedback = useDiffFeedback(owner, repo, number, { path });
+  return <FileDiffContentBody {...props} diff={diff} />;
+}
+
+function CommitFileDiffContent(props: FileDiffContentProps) {
+  const { owner, repo, file, ignoreWhitespace, source } = props;
+  const path = copyFilename(file);
+  const diff = useCommitDiff(
+    owner,
+    repo,
+    source.kind === "commit" ? source.sha : "",
+    path,
+    ignoreWhitespace,
+  );
+  return <FileDiffContentBody {...props} diff={diff} />;
+}
+
+function FileDiffContentBody({
+  owner,
+  repo,
+  number,
+  file,
+  mode,
+  diffViewMode,
+  ignoreWhitespace,
+  initialThreadId,
+  source,
+  diff,
+}: FileDiffContentProps & { diff: ReturnType<typeof usePullDiff> }) {
+  const path = copyFilename(file);
+  const feedback = useDiffFeedback(owner, repo, number, {
+    path,
+    ...(source.kind === "commit"
+      ? { base_sha: source.baseSha, head_sha: source.headSha }
+      : {}),
+  });
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);
   const archive = useSetDiffFeedbackArchived(owner, repo, number);
@@ -968,6 +1060,7 @@ function FileDiffContent({
           create.mutate({
             base_sha: diff.data.base_sha,
             head_sha: diff.data.head_sha,
+            ...(source.kind === "commit" ? { commit_sha: source.sha } : {}),
             path: stableFile.path,
             side: selection.side,
             start_line: selection.startLine,
@@ -986,6 +1079,7 @@ function FileDiffContent({
         number={number}
         path={copyFilename(file)}
         side={file.status === "removed" ? "base" : "head"}
+        source={source}
       />
     );
   }
@@ -997,6 +1091,7 @@ function FileDiffContent({
         number={number}
         path={file}
         side={mode}
+        source={source}
       />
     );
   }
@@ -1008,6 +1103,7 @@ function FileDiffContent({
         number={number}
         file={file}
         viewMode={diffViewMode}
+        source={source}
       />
     );
   }
@@ -2196,14 +2292,24 @@ function RawFilePane({
   number,
   path,
   side,
+  source,
 }: {
   owner: string;
   repo: string;
   number: number;
   path: string;
   side: "base" | "head";
+  source: DiffDialogSource;
 }) {
-  const file = usePullFileAtRef(owner, repo, number, path, side, true);
+  const file = useFileAtRefForSource(
+    owner,
+    repo,
+    source.kind === "commit"
+      ? { kind: "commit", sha: source.sha }
+      : { kind: "pull", number },
+    path,
+    side,
+  );
   return (
     <div data-debug-component="RawFilePane" className="relative min-h-full">
       {file.isLoading ? (
@@ -2246,20 +2352,24 @@ function MarkdownPreviewPane({
   number,
   path,
   side,
+  source,
 }: {
   owner: string;
   repo: string;
   number: number;
   path: PullFile;
   side: "base" | "head";
+  source: DiffDialogSource;
 }) {
-  const file = usePullFileAtRef(
+  const previewPath = markdownPath(path, side);
+  const file = useFileAtRefForSource(
     owner,
     repo,
-    number,
-    markdownPath(path, side),
+    source.kind === "commit"
+      ? { kind: "commit", sha: source.sha }
+      : { kind: "pull", number },
+    previewPath,
     side,
-    true,
   );
   return (
     // The pane scrolls itself rather than leaning on the dialog's shared
@@ -2334,32 +2444,50 @@ function RenderedDiffPane({
   number,
   file,
   viewMode,
+  source,
 }: {
   owner: string;
   repo: string;
   number: number;
   file: PullFile;
   viewMode: DiffViewMode;
+  source: DiffDialogSource;
 }) {
   const path = copyFilename(file);
-  const diff = usePullDiff(owner, repo, number, path);
-  const base = usePullFileAtRef(
+  const diff = useDiffForSource(
     owner,
     repo,
-    number,
-    markdownPath(file, "base"),
+    source.kind === "commit"
+      ? { kind: "commit", sha: source.sha }
+      : { kind: "pull", number },
+    path,
+  );
+  const basePath = markdownPath(file, "base");
+  const headPath = markdownPath(file, "head");
+  const base = useFileAtRefForSource(
+    owner,
+    repo,
+    source.kind === "commit"
+      ? { kind: "commit", sha: source.sha }
+      : { kind: "pull", number },
+    basePath,
     "base",
-    true,
   );
-  const head = usePullFileAtRef(
+  const head = useFileAtRefForSource(
     owner,
     repo,
-    number,
-    markdownPath(file, "head"),
+    source.kind === "commit"
+      ? { kind: "commit", sha: source.sha }
+      : { kind: "pull", number },
+    headPath,
     "head",
-    true,
   );
-  const feedback = useDiffFeedback(owner, repo, number, { path });
+  const feedback = useDiffFeedback(owner, repo, number, {
+    path,
+    ...(source.kind === "commit"
+      ? { base_sha: source.baseSha, head_sha: source.headSha }
+      : {}),
+  });
   const reply = useReplyDiffFeedback(owner, repo, number);
   const reaction = useReactToDiffFeedback(owner, repo, number);
   const archive = useSetDiffFeedbackArchived(owner, repo, number);

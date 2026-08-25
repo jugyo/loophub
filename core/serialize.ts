@@ -503,6 +503,7 @@ export interface PullDiffWire {
     additions: number;
     deletions: number;
     patch: string;
+    syntax_highlight?: SyntaxHighlightWire;
     lines: {
       kind: "hunk" | "context" | "addition" | "deletion" | "meta";
       text: string;
