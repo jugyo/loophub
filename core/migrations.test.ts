@@ -69,6 +69,22 @@ beforeAll(async () => {
       name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       UNIQUE (repo_id, name)
     );
+    CREATE TABLE pr_change_maps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id INTEGER NOT NULL,
+      head_sha TEXT NOT NULL,
+      document TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE pr_test_maps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id INTEGER NOT NULL,
+      head_sha TEXT NOT NULL,
+      document TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL
+    );
     INSERT INTO repos (id, full_name, name, owner, local_path, created_at)
       VALUES (1, 'me/proj', 'proj', 'me', '/tmp/proj', 't0');
     INSERT INTO issues (id, repo_id, number, kind, state, title, author, created_at, updated_at)
@@ -82,6 +98,10 @@ beforeAll(async () => {
       VALUES ('sess-1', 'lh-dev', 'sess-1', 'dev', 't1', 't1');
     INSERT INTO pulls (issue_id, head_ref, base_ref, session_id)
       VALUES (10, 'loophub/issue-7', 'main', 'sess-1');
+    INSERT INTO pr_change_maps (issue_id, head_sha, document, created_at)
+      VALUES (10, 'abc', '{}', 't2');
+    INSERT INTO pr_test_maps (issue_id, head_sha, document, created_at)
+      VALUES (10, 'abc', '{}', 't2');
     INSERT INTO reviews (issue_id, author, event, created_at)
       VALUES (10, 'reviewer', 'APPROVE', 't2');
     INSERT INTO events (repo_id, type, actor, payload, created_at)
@@ -113,7 +133,7 @@ test("migration ID は一意で append-only の宣言順を維持する", () => 
     "002-drop-retired-issue-groups",
     "003-create-issue-search-grams",
   ]);
-  expect(ids.at(-1)).toBe("20260819073426-pr-test-maps");
+  expect(ids.at(-1)).toBe("20260825072601-remove-pr-maps");
   expect(ids).toContain("088-workflow-runs-manifest-version");
 });
 
@@ -121,6 +141,16 @@ test("新しい migration ID は UTC timestamp と説明名を使う", () => {
   expect(
     M.createMigrationId("add-foo-index", new Date("2026-08-14T05:45:17.999Z")),
   ).toBe("20260814054517-add-foo-index");
+});
+
+test("両マップの既存テーブルと保存行を削除する", () => {
+  expect(
+    D.db
+      .query(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name IN ('pr_change_maps', 'pr_test_maps')",
+      )
+      .all(),
+  ).toEqual([]);
 });
 
 test("旧形式と timestamp 形式の migration ID は同じ ledger で宣言順に扱える", () => {

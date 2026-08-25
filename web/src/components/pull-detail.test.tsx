@@ -224,8 +224,6 @@ function mockFetch(
   return mockRpcFetch({
     "pulls/get": () => pull,
     "pulls/files": () => files,
-    "pulls/changeMap": () => null,
-    "pulls/testMap": () => null,
     "reviews/list": () => reviews,
     "reviews/listComments": () => lineComments,
     "diffFeedback/list": () => ({ threads: [], comment_counts: {} }),
@@ -2208,8 +2206,6 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
         "reviews/list": () => reviews,
         "reviews/listComments": () => lineComments,
         "comments/list": () => comments,
@@ -2269,8 +2265,6 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2333,8 +2327,6 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => conflicting,
         "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2386,8 +2378,6 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => noCommits,
         "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2458,8 +2448,6 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2548,8 +2536,6 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull, // head.sha === "aaa", matches no review
         "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2640,8 +2626,6 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2714,8 +2698,6 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
         "reviews/list": () => grouped,
         "reviews/listComments": () => [],
         "comments/list": () => [],
@@ -2759,8 +2741,6 @@ describe("PullDetail", () => {
       mockRpcFetch({
         "pulls/get": () => pull,
         "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
         "reviews/list": () => reviews,
         "reviews/listComments": () => lineComments,
         "comments/list": () => comments,
@@ -3111,8 +3091,6 @@ function renderDetailWithPull(
     mockRpcFetch({
       "pulls/get": () => ({ ...pull, ...current() }),
       "pulls/files": () => files,
-      "pulls/changeMap": () => null,
-      "pulls/testMap": () => null,
       "reviews/list": () => reviews,
       "reviews/listComments": () => lineComments,
       "comments/list": () => comments,
@@ -3407,86 +3385,91 @@ describe("PullDetail — GitHub export action (#406)", () => {
   it.each([
     ["another PR in the same repo", { repo: "proj", number: 31 }],
     ["the same PR number in another repo", { repo: "other", number: 30 }],
-  ] as const)("does not carry the loading state onto %s", async (_case, other) => {
-    const started = { repo: "proj", number: 30 };
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "pulls/get": (params: any) => ({
-          ...pull,
-          number: params.number,
-          title: `${params.repo} PR ${params.number}`,
-          merge_mode: "github_pr",
-          github_pull: null,
-          github_pr_export_started_at: null,
+  ] as const)(
+    "does not carry the loading state onto %s",
+    async (_case, other) => {
+      const started = { repo: "proj", number: 30 };
+      vi.stubGlobal(
+        "fetch",
+        mockRpcFetch({
+          "pulls/get": (params: any) => ({
+            ...pull,
+            number: params.number,
+            title: `${params.repo} PR ${params.number}`,
+            merge_mode: "github_pr",
+            github_pull: null,
+            github_pr_export_started_at: null,
+          }),
+          "pulls/files": () => files,
+          "reviews/list": () => reviews,
+          "reviews/listComments": () => lineComments,
+          "comments/list": () => comments,
         }),
-        "pulls/files": () => files,
-        "pulls/changeMap": () => null,
-        "pulls/testMap": () => null,
-        "reviews/list": () => reviews,
-        "reviews/listComments": () => lineComments,
-        "comments/list": () => comments,
-      }),
-    );
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    function SwitchingDetail() {
-      const [showOther, setShowOther] = useState(true);
-      const shown = showOther ? other : started;
-      return (
-        <>
-          <button type="button" onClick={() => setShowOther((v) => !v)}>
-            open the other PR
-          </button>
-          <PullDetail owner="me" repo={shown.repo} number={shown.number} />
-        </>
       );
-    }
-    const rootRoute = createRootRoute({ component: Outlet });
-    const indexRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/",
-      component: () => <SwitchingDetail />,
-    });
-    const issuesRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/r/$owner/$repo/issues/$number",
-      component: () => null,
-    });
-    const router = createRouter({
-      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
-      history: createMemoryHistory({ initialEntries: ["/"] }),
-    });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
-    );
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      function SwitchingDetail() {
+        const [showOther, setShowOther] = useState(true);
+        const shown = showOther ? other : started;
+        return (
+          <>
+            <button type="button" onClick={() => setShowOther((v) => !v)}>
+              open the other PR
+            </button>
+            <PullDetail owner="me" repo={shown.repo} number={shown.number} />
+          </>
+        );
+      }
+      const rootRoute = createRootRoute({ component: Outlet });
+      const indexRoute = createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/",
+        component: () => <SwitchingDetail />,
+      });
+      const issuesRoute = createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/r/$owner/$repo/issues/$number",
+        component: () => null,
+      });
+      const router = createRouter({
+        routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+        history: createMemoryHistory({ initialEntries: ["/"] }),
+      });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>,
+      );
 
-    // `pulls/get` is called with the full "owner/name", which is what the stub echoes into the title.
-    const heading = (pr: { repo: string; number: number }) =>
-      `me/${pr.repo} PR ${pr.number}`;
+      // `pulls/get` is called with the full "owner/name", which is what the stub echoes into the title.
+      const heading = (pr: { repo: string; number: number }) =>
+        `me/${pr.repo} PR ${pr.number}`;
 
-    // Visit the other PR first so its detail is cached: coming back to it renders straight from the
-    // cache with no loading gap, which is exactly when the route is reused rather than remounted.
-    await screen.findByRole("heading", { name: heading(other), level: 1 });
-    fireEvent.click(screen.getByRole("button", { name: /open the other PR/i }));
-    await screen.findByRole("heading", { name: heading(started), level: 1 });
+      // Visit the other PR first so its detail is cached: coming back to it renders straight from the
+      // cache with no loading gap, which is exactly when the route is reused rather than remounted.
+      await screen.findByRole("heading", { name: heading(other), level: 1 });
+      fireEvent.click(
+        screen.getByRole("button", { name: /open the other PR/i }),
+      );
+      await screen.findByRole("heading", { name: heading(started), level: 1 });
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Create PR on GitHub/i }),
-    );
-    await screen.findByRole("button", { name: /Creating…/i });
+      fireEvent.click(
+        await screen.findByRole("button", { name: /Create PR on GitHub/i }),
+      );
+      await screen.findByRole("button", { name: /Creating…/i });
 
-    fireEvent.click(screen.getByRole("button", { name: /open the other PR/i }));
+      fireEvent.click(
+        screen.getByRole("button", { name: /open the other PR/i }),
+      );
 
-    await screen.findByRole("heading", { name: heading(other), level: 1 });
-    const button = (await screen.findByRole("button", {
-      name: /Create PR on GitHub/i,
-    })) as HTMLButtonElement;
-    expect(button.disabled).toBe(false);
-  });
+      await screen.findByRole("heading", { name: heading(other), level: 1 });
+      const button = (await screen.findByRole("button", {
+        name: /Create PR on GitHub/i,
+      })) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+    },
+  );
 
   // A launch the server refused started no agent, so there is nothing to wait for: the operator must
   // be able to retry right away rather than sit out the TTL.
@@ -3516,40 +3499,40 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(screen.queryByRole("button", { name: /Creating…/i })).toBeNull();
   });
 
-  it.each([
-    "github_pr",
-    "merge",
-  ] as const)("offers Mark as merged after GitHub merge detection in %s mode and invokes the dedicated action", async (mergeMode) => {
-    renderDetailWithPull(
-      {
-        merge_mode: mergeMode,
-        github_pull: {
-          ...linkedGithubPull(null),
-          github_merged: true,
-          github_merged_at: "2026-07-15T00:00:00Z",
+  it.each(["github_pr", "merge"] as const)(
+    "offers Mark as merged after GitHub merge detection in %s mode and invokes the dedicated action",
+    async (mergeMode) => {
+      renderDetailWithPull(
+        {
+          merge_mode: mergeMode,
+          github_pull: {
+            ...linkedGithubPull(null),
+            github_merged: true,
+            github_merged_at: "2026-07-15T00:00:00Z",
+          },
         },
-      },
-      {
-        "pulls/markGithubMerged": () => ({
-          merged: true,
-          merged_at: "2026-07-15T00:00:00Z",
-        }),
-      },
-    );
+        {
+          "pulls/markGithubMerged": () => ({
+            merged: true,
+            merged_at: "2026-07-15T00:00:00Z",
+          }),
+        },
+      );
 
-    expect(
-      await screen.findByRole("button", { name: /^Close$/i }),
-    ).toBeTruthy();
-    const button = screen.getByRole("button", { name: /Mark as merged/i });
-    fireEvent.click(button);
-    await waitFor(() => {
-      expect(rpcCall("pulls/markGithubMerged")?.params).toMatchObject({
-        repo: "me/proj",
-        number: 30,
+      expect(
+        await screen.findByRole("button", { name: /^Close$/i }),
+      ).toBeTruthy();
+      const button = screen.getByRole("button", { name: /Mark as merged/i });
+      fireEvent.click(button);
+      await waitFor(() => {
+        expect(rpcCall("pulls/markGithubMerged")?.params).toMatchObject({
+          repo: "me/proj",
+          number: 30,
+        });
       });
-    });
-    expect(rpcCall("pulls/merge")).toBeUndefined();
-  });
+      expect(rpcCall("pulls/merge")).toBeUndefined();
+    },
+  );
 
   it.each([
     ["merge not detected", { github_pull: linkedGithubPull(null) }],
@@ -3638,577 +3621,5 @@ describe("PullDetail — #comments landing (#2394)", () => {
 
     await commentsSection();
     expect(scrollIntoView).not.toHaveBeenCalled();
-  });
-});
-
-// #354: the change map and test map sections only render under `lh-web --debug`, so every test
-// below renders the detail with that flag on. The section-hidden case is covered separately.
-function renderMapDetail(
-  extraHandlers: Record<string, (params: any) => unknown> = {},
-) {
-  return renderDetail(extraHandlers, ["/"], { debug: true });
-}
-
-// #344: the change map is how a reader takes in the whole change before descending into diffs, so
-// the sidebar owns generating and opening it, and the dialog is the thing that must reach every
-// file — including the ones the map never mentions.
-describe("PullDetail change map", () => {
-  const changeMap = {
-    head_sha: "aaa",
-    created_by: "agent",
-    created_at: "2026-06-18T12:00:00Z",
-    document: {
-      version: 1,
-      summary: "Rewired the entry point.",
-      categories: [
-        {
-          name: "Reading the map",
-          summary: "How the map reaches a diff.",
-          changes: [
-            {
-              name: "Entry point",
-              kind: "UI component",
-              summary: "Rewired the app entry.",
-              files: [
-                { path: "web/src/a.ts", summary: "Renamed the mount helper." },
-              ],
-              tests: "Covered by the detail tests.",
-              risk: "Watch the mount order.",
-            },
-          ],
-        },
-      ],
-    },
-  };
-
-  it("offers Generate change map with the generation prompt when the PR has none", async () => {
-    renderMapDetail();
-    const button = await screen.findByRole("button", {
-      name: /Generate change map/i,
-    });
-
-    fireEvent.click(button);
-    expect(launchTerminal).toHaveBeenCalledTimes(1);
-    const opts = launchTerminal.mock.calls[0][0];
-    expect(opts.repo).toBe("me/proj");
-    expect(opts.workflow).toBe("pr-change-map");
-    expect(opts.prNumber).toBe(30);
-    expect(opts.prompt).toContain("lh pr map create 30 --repo me/proj");
-  });
-
-  it("holds a generating state after the click so a second launch can't be dispatched", async () => {
-    renderMapDetail();
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Generate change map/i }),
-    );
-    const generating = (await screen.findByRole("button", {
-      name: /Generating…/i,
-    })) as HTMLButtonElement;
-    expect(generating.disabled).toBe(true);
-    fireEvent.click(generating);
-    expect(launchTerminal).toHaveBeenCalledTimes(1);
-  });
-
-  it("opens the map as columns once one exists", async () => {
-    renderMapDetail({ "pulls/changeMap": () => changeMap });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View change map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Change map" });
-    // The whole descent is on screen: the summary, the category, its change, and that change's file.
-    expect(within(dialog).getByText("Rewired the entry point.")).toBeTruthy();
-    expect(within(dialog).getByText("Reading the map")).toBeTruthy();
-    expect(within(dialog).getByText("Entry point")).toBeTruthy();
-    expect(
-      within(dialog).getByRole("button", { name: /web\/src\/a\.ts/ }),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /Generate change map/i }),
-    ).toBeNull();
-  });
-
-  // The notes belong to the change, so selecting the change is what makes them readable — a note
-  // nobody can navigate to is the same defect as an unreachable diff.
-  it("shows the selected change's tests and risk notes under its file list", async () => {
-    renderMapDetail({ "pulls/changeMap": () => changeMap });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View change map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Change map" });
-    const tests = within(dialog).getByText(/Covered by the detail tests/);
-    const risk = within(dialog).getByText(/Watch the mount order/);
-    expect(tests).toBeTruthy();
-    expect(risk).toBeTruthy();
-    // The notes read as commentary on the files, so they sit after them rather than pushing the
-    // file list down the column — the change's own description included.
-    const file = within(dialog).getByRole("button", {
-      name: /web\/src\/a\.ts/,
-    });
-    const summary = within(dialog).getByText("Rewired the app entry.");
-    for (const note of [summary, tests, risk]) {
-      expect(
-        file.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    }
-  });
-
-  // A per-file note is optional, and belongs above the diff it describes.
-  it("shows a file's own summary above its diff", async () => {
-    renderMapDetail({ "pulls/changeMap": () => changeMap });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View change map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Change map" });
-    const note = within(dialog).getByText("Renamed the mount helper.");
-    const diff = within(dialog).getByText("+const x = 1;");
-    expect(
-      note.compareDocumentPosition(diff) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it("marks a map written against an earlier head as stale", async () => {
-    renderMapDetail({
-      "pulls/changeMap": () => ({ ...changeMap, head_sha: "zzz" }),
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View change map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Change map" });
-    expect(within(dialog).getByText("Stale")).toBeTruthy();
-  });
-
-  // The descent ends in the diff, so the last column shows it rather than linking to it.
-  it("renders the selected file's diff in the last column", async () => {
-    renderMapDetail({ "pulls/changeMap": () => changeMap });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View change map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Change map" });
-    expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
-    expect(within(dialog).getByText("-const x = 0;")).toBeTruthy();
-  });
-
-  it("opens the full diff view from the last column, keeping the map underneath", async () => {
-    renderMapDetail({ "pulls/changeMap": () => changeMap });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View change map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Change map" });
-    fireEvent.click(within(dialog).getByRole("button", { name: /Full view/i }));
-
-    const diff = await screen.findByRole("dialog", {
-      name: "Diff for web/src/a.ts",
-    });
-    // The map is still open behind the diff, so closing the diff returns to it.
-    const map = screen.getByRole("dialog", { name: "Change map" });
-    expect(map).toBeTruthy();
-    // Both overlays sit at the same z-index, so the diff is only on top because it comes later in
-    // document order. Rendering the map after Files changed (or portalling it to the body) would
-    // bury the diff the map just opened.
-    expect(
-      map.compareDocumentPosition(diff) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  // Coverage is now an exact set difference against the files each change declares, and what is
-  // left over is offered as one more category so it is reached the same way as everything else.
-  it("offers changed files the map never declares as a Not covered category", async () => {
-    renderMapDetail({
-      "pulls/changeMap": () => ({
-        ...changeMap,
-        document: {
-          ...changeMap.document,
-          categories: [
-            {
-              name: "Reading the map",
-              summary: "s",
-              changes: [
-                {
-                  name: "Something else",
-                  kind: "docs",
-                  summary: "Touches nothing in this PR.",
-                  files: [{ path: "docs/notes.md" }],
-                },
-              ],
-            },
-          ],
-        },
-      }),
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View change map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Change map" });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: /Not covered \(1\)/ }),
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: /^1 file/ }));
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: /web\/src\/a\.ts/ }),
-    );
-    // Reached through Not covered, the diff shows in the last column exactly as a mapped file's
-    // would — that is what makes an unmapped file no harder to read than a mapped one.
-    expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: /Full view/i }));
-    await screen.findByRole("dialog", { name: "Diff for web/src/a.ts" });
-  });
-
-  it("has no Not covered category when every changed file is declared", async () => {
-    renderMapDetail({ "pulls/changeMap": () => changeMap });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View change map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Change map" });
-    expect(within(dialog).queryByText(/Not covered/)).toBeNull();
-  });
-
-  // A saved map outlives the head it was written against, so it can name a path the PR no longer
-  // changes. That row must not pretend to lead anywhere.
-  it("does not offer a diff for a declared path that is not in the PR", async () => {
-    renderMapDetail({
-      "pulls/changeMap": () => ({
-        ...changeMap,
-        document: {
-          ...changeMap.document,
-          categories: [
-            {
-              name: "Reading the map",
-              summary: "s",
-              changes: [
-                {
-                  name: "Entry point",
-                  kind: "UI component",
-                  summary: "s",
-                  files: [
-                    { path: "web/src/a.ts" },
-                    { path: "web/src/gone.ts" },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      }),
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View change map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Change map" });
-    const missing = within(dialog).getByRole("button", {
-      name: /web\/src\/gone\.ts/,
-    }) as HTMLButtonElement;
-    expect(missing.disabled).toBe(true);
-  });
-});
-
-// #348: the test map is how a reader takes in what a PR's tests verify without reading the diff,
-// so the sidebar owns generating and opening it, and the dialog must show the tests, their code,
-// and what the map failed to mention.
-describe("PullDetail test map", () => {
-  const testFile = {
-    filename: "core/thing.test.ts",
-    status: "added" as const,
-    additions: 12,
-    deletions: 0,
-    patch: "@@ -0,0 +1 @@\n+test('thing', () => {});",
-  };
-  const untouchedTestFile = {
-    filename: "core/other.test.ts",
-    status: "added" as const,
-    additions: 3,
-    deletions: 0,
-    patch: "@@ -0,0 +1 @@\n+test('other', () => {});",
-  };
-  const testMap = {
-    head_sha: "aaa",
-    created_by: "agent",
-    created_at: "2026-06-18T12:00:00Z",
-    document: {
-      version: 1,
-      summary: "Covers the thing.",
-      files: [
-        {
-          path: "core/thing.test.ts",
-          tests: [
-            {
-              suites: ["thing", "when empty"],
-              title: "returns nothing",
-              summary: "An empty input yields an empty result.",
-              code: "expect(thing([])).toEqual([]);",
-              target: {
-                path: "web/src/a.ts",
-                code: "export function thing(xs) { return xs; }",
-              },
-            },
-            {
-              suites: ["thing", "when empty"],
-              title: "does not throw",
-              summary: "An empty input is not an error.",
-              code: "expect(() => thing([])).not.toThrow();",
-            },
-          ],
-        },
-      ],
-    },
-  };
-
-  it("offers Generate test map with the generation prompt when the PR has none", async () => {
-    renderMapDetail();
-    const button = await screen.findByRole("button", {
-      name: /Generate test map/i,
-    });
-
-    fireEvent.click(button);
-    expect(launchTerminal).toHaveBeenCalledTimes(1);
-    const opts = launchTerminal.mock.calls[0][0];
-    expect(opts.repo).toBe("me/proj");
-    expect(opts.workflow).toBe("pr-test-map");
-    expect(opts.prNumber).toBe(30);
-    expect(opts.prompt).toContain("lh pr test-map create 30 --repo me/proj");
-  });
-
-  it("holds a generating state after the click so a second launch can't be dispatched", async () => {
-    renderMapDetail();
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Generate test map/i }),
-    );
-    const generating = (await screen.findAllByRole("button", {
-      name: /Generating…/i,
-    })) as HTMLButtonElement[];
-    expect(generating.length).toBe(1);
-    expect(generating[0].disabled).toBe(true);
-    fireEvent.click(generating[0]);
-    expect(launchTerminal).toHaveBeenCalledTimes(1);
-  });
-
-  // The listing is the point: the file, the describe path above a test, and the titles are all on
-  // screen at once, without anything having to be expanded first.
-  it("lists the tests as a tree of file, describe path, and title", async () => {
-    renderMapDetail({
-      "pulls/testMap": () => testMap,
-      "pulls/files": () => [...files, testFile],
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View test map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Test map" });
-    expect(within(dialog).getByText("Covers the thing.")).toBeTruthy();
-    const tree = within(dialog).getByRole("navigation", {
-      name: "Test map tree",
-    });
-    expect(
-      within(tree).getByRole("button", { name: "core/thing.test.ts" }),
-    ).toBeTruthy();
-    expect(within(tree).getByText("thing › when empty")).toBeTruthy();
-    expect(
-      within(tree).getByRole("button", { name: "returns nothing" }),
-    ).toBeTruthy();
-    expect(
-      within(tree).getByRole("button", { name: "does not throw" }),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /Generate test map/i }),
-    ).toBeNull();
-  });
-
-  it("shows the selected test's code, and the implementation under it", async () => {
-    renderMapDetail({
-      "pulls/testMap": () => testMap,
-      "pulls/files": () => [...files, testFile],
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View test map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Test map" });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "does not throw" }),
-    );
-    expect(
-      within(dialog).getByText("expect(() => thing([])).not.toThrow();"),
-    ).toBeTruthy();
-    // That one has no target, so nothing claims to be the implementation behind it.
-    expect(within(dialog).queryByText(/Implementation/i)).toBeNull();
-
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "returns nothing" }),
-    );
-    expect(
-      within(dialog).getByText("expect(thing([])).toEqual([]);"),
-    ).toBeTruthy();
-    expect(within(dialog).getByText("Implementation")).toBeTruthy();
-    expect(
-      within(dialog).getByText("export function thing(xs) { return xs; }"),
-    ).toBeTruthy();
-  });
-
-  it("marks a map written against an earlier head as stale", async () => {
-    renderMapDetail({
-      "pulls/testMap": () => ({ ...testMap, head_sha: "zzz" }),
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View test map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Test map" });
-    expect(within(dialog).getByText("Stale")).toBeTruthy();
-  });
-
-  // Markdown is generated from the document at the moment of the copy, so what lands on the
-  // clipboard is the tree the dialog shows, as headings.
-  it("copies the whole map as Markdown", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      value: { writeText },
-      configurable: true,
-    });
-    renderMapDetail({
-      "pulls/testMap": () => testMap,
-      "pulls/files": () => [...files, testFile],
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View test map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Test map" });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: /Copy as Markdown/i }),
-    );
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    const markdown = writeText.mock.calls[0][0] as string;
-    expect(markdown).toContain("# Test map");
-    expect(markdown).toContain("## core/thing.test.ts");
-    expect(markdown).toContain("### thing › when empty");
-    expect(markdown).toContain("#### returns nothing");
-    expect(markdown).toContain("expect(thing([])).toEqual([]);");
-  });
-
-  // A map that missed a changed test file must say so, or the PR reads as having fewer tests than
-  // it has.
-  it("lists changed test files the map never mentions as Not covered", async () => {
-    renderMapDetail({
-      "pulls/testMap": () => testMap,
-      "pulls/files": () => [...files, testFile, untouchedTestFile],
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View test map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Test map" });
-    const section = within(dialog).getByRole("region", {
-      name: "Not covered (1)",
-    });
-    // Only test files: a changed implementation file is not a hole in a listing of tests, and
-    // listing every changed file here would bury the ones that are.
-    expect(within(section).queryByText("web/src/a.ts")).toBeNull();
-
-    // And it reaches its diff exactly like a listed file does.
-    fireEvent.click(
-      within(section).getByRole("button", { name: "core/other.test.ts" }),
-    );
-    await screen.findByRole("dialog", { name: "Diff for core/other.test.ts" });
-  });
-
-  it("has no Not covered section when every changed test file is listed", async () => {
-    renderMapDetail({
-      "pulls/testMap": () => testMap,
-      "pulls/files": () => [...files, testFile],
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View test map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Test map" });
-    expect(within(dialog).queryByText(/Not covered/)).toBeNull();
-  });
-
-  it("opens a file diff from a path, keeping the test map underneath", async () => {
-    renderMapDetail({
-      "pulls/testMap": () => testMap,
-      "pulls/files": () => [...files, testFile],
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View test map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Test map" });
-    const tree = within(dialog).getByRole("navigation", {
-      name: "Test map tree",
-    });
-    fireEvent.click(
-      within(tree).getByRole("button", { name: "core/thing.test.ts" }),
-    );
-
-    const diff = await screen.findByRole("dialog", {
-      name: "Diff for core/thing.test.ts",
-    });
-    // The map is still open behind the diff, so closing the diff returns to it. Both overlays sit
-    // at the same z-index, so the diff is only on top because it comes later in document order.
-    const map = screen.getByRole("dialog", { name: "Test map" });
-    expect(
-      map.compareDocumentPosition(diff) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  // A saved map outlives the head it was written against, so it can name a path the PR no longer
-  // changes. That row must not pretend to lead to a diff.
-  it("does not offer a diff for a listed path that is not in the PR", async () => {
-    renderMapDetail({ "pulls/testMap": () => testMap });
-    fireEvent.click(
-      await screen.findByRole("button", { name: /View test map/i }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Test map" });
-    const tree = within(dialog).getByRole("navigation", {
-      name: "Test map tree",
-    });
-    expect(
-      within(tree).queryByRole("button", { name: "core/thing.test.ts" }),
-    ).toBeNull();
-    expect(within(tree).getByText("core/thing.test.ts")).toBeTruthy();
-  });
-});
-
-// #354: both maps are experimental, so the whole entry point — viewing an already generated map as
-// much as generating one — is held behind `lh-web --debug`.
-describe("PullDetail experimental map sections", () => {
-  const generatedChangeMap = {
-    head_sha: "aaa",
-    created_by: "agent",
-    created_at: "2026-06-18T12:00:00Z",
-    document: {
-      version: 1,
-      summary: "Rewired the entry point.",
-      categories: [],
-    },
-  };
-  const generatedTestMap = {
-    head_sha: "aaa",
-    created_by: "agent",
-    created_at: "2026-06-18T12:00:00Z",
-    document: { version: 1, summary: "Covers the entry point.", files: [] },
-  };
-
-  it("hides both sections without --debug, even when the PR has generated maps", async () => {
-    renderDetail({
-      "pulls/changeMap": () => generatedChangeMap,
-      "pulls/testMap": () => generatedTestMap,
-    });
-    await screen.findByRole("heading", { name: /Files changed/ });
-
-    expect(screen.queryByRole("heading", { name: "Change map" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Test map" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /change map/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /test map/i })).toBeNull();
-  });
-
-  it("shows both sections with --debug", async () => {
-    renderMapDetail({
-      "pulls/changeMap": () => generatedChangeMap,
-      "pulls/testMap": () => generatedTestMap,
-    });
-    await screen.findByRole("heading", { name: /Files changed/ });
-
-    expect(screen.getByRole("heading", { name: "Change map" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Test map" })).toBeTruthy();
-    expect(
-      await screen.findByRole("button", { name: /View change map/i }),
-    ).toBeTruthy();
-    expect(
-      await screen.findByRole("button", { name: /View test map/i }),
-    ).toBeTruthy();
   });
 });

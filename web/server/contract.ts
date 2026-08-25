@@ -73,9 +73,6 @@ const EMPTY_PARAMS = params({});
 // Loose result schemas — documented in the contract, not runtime-enforced.
 const anyObject = { type: "object" } as const;
 const anyArray = { type: "array" } as const;
-// For reads whose answer is "the one row, or none yet" (e.g. a PR's change map).
-const anyObjectOrNull = { type: ["object", "null"] } as const;
-
 export interface MethodDef {
   description: string;
   params: object;
@@ -509,7 +506,6 @@ export const methods: Record<string, MethodDef> = {
             "issue-create",
             "workflow-create",
             "github-pr-export",
-            "pr-change-map",
             "workflow-run",
           ],
         },
@@ -1091,20 +1087,6 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyArray,
     handler: (p) => svc.pulls.files(p.repo, p.number),
-  },
-  "pulls/changeMap": {
-    description:
-      "The newest change map generated for a pull request (#344), or null when it has none. `head_sha` is the head the map was written against, so a caller can tell whether later commits are still uncovered by it.",
-    params: params({ repo, number: positiveInt }, ["repo", "number"]),
-    result: anyObjectOrNull,
-    handler: (p) => svc.prChangeMaps.get(p.repo, p.number),
-  },
-  "pulls/testMap": {
-    description:
-      "The newest test map generated for a pull request (#348), or null when it has none. `head_sha` is the head its code excerpts were read from, so a caller can tell whether later commits have moved the tests under it.",
-    params: params({ repo, number: positiveInt }, ["repo", "number"]),
-    result: anyObjectOrNull,
-    handler: (p) => svc.prTestMaps.get(p.repo, p.number),
   },
   "pulls/diff": {
     description:

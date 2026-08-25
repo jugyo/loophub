@@ -49,16 +49,6 @@ export const queryKeys = {
     ["pull-files", full, number] as const,
   pullFileViews: (full: string, number: number) =>
     ["pull-file-views", full, number] as const,
-  // Top-level rather than a child of pull(full, n): a change map is generated rarely and its
-  // document covers the whole change, so it must not be refetched by every PR-scoped event that
-  // refreshes the detail (#344).
-  pullChangeMap: (full: string, number: number) =>
-    ["pull-change-map", full, number] as const,
-  // Same reasoning as pullChangeMap: a test map is generated rarely and carries verbatim code for
-  // every test, so it must not be refetched by every PR-scoped event that refreshes the detail
-  // (#348).
-  pullTestMap: (full: string, number: number) =>
-    ["pull-test-map", full, number] as const,
   pullReviews: (full: string, number: number) =>
     ["pull-reviews", full, number] as const,
   pullReviewComments: (full: string, number: number) =>
@@ -195,15 +185,6 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
         ) {
           keys.push([...queryKeys.githubPrStatus(repo, pullNumber)]);
         }
-        // A generating agent runs long after the launch RPC returned, so this event is what turns
-        // the sidebar's Generate change map into View change map (#344).
-        if (type === "pull_request.change_map_created") {
-          keys.push([...queryKeys.pullChangeMap(repo, pullNumber)]);
-        }
-        // Likewise for the test map's sidebar section (#348).
-        if (type === "pull_request.test_map_created") {
-          keys.push([...queryKeys.pullTestMap(repo, pullNumber)]);
-        }
         // Workflow tracker Done is the PR's merge-ready fact (mergeable clean), not a run
         // lifecycle field. Review pass / head advance / conflict / close change that fact via
         // pull_request.* only — reviews no longer twin a workflow_run.review_submitted — so the
@@ -251,12 +232,6 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
         type === "pull_request.github_merged"
       ) {
         keys.push(["github-pr-status"]);
-      }
-      if (type === "pull_request.change_map_created") {
-        keys.push(["pull-change-map"]);
-      }
-      if (type === "pull_request.test_map_created") {
-        keys.push(["pull-test-map"]);
       }
       // Repo-less pull events still need the Done tracker to drop its stale merge-ready signal.
       keys.push(["workflow-run", "pull"]);

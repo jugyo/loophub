@@ -77,8 +77,6 @@ export interface TerminalLaunchInput {
     | "issue-create"
     | "workflow-create"
     | "github-pr-export"
-    | "pr-change-map"
-    | "pr-test-map"
     | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
@@ -445,12 +443,7 @@ async function resolveHerdrWorktreeTarget(
   input: TerminalLaunchInput,
 ): Promise<string | null> {
   try {
-    if (
-      (input.workflow === "github-pr-export" ||
-        input.workflow === "pr-change-map" ||
-        input.workflow === "pr-test-map") &&
-      input.prNumber
-    ) {
+    if (input.workflow === "github-pr-export" && input.prNumber) {
       const prRow = issueOr404(r, input.prNumber, "pull");
       const headRef = S.getPull(prRow.id)!.head_ref;
       const identity = resolveWorktreeIdentity(headRef, input.prNumber);
@@ -561,14 +554,11 @@ export const terminal = {
       parentIssue:
         input.workflow === "issue-create" ? input.parentIssue : undefined,
       // `lh issue new` takes the operator's instructions as a `--prompt` flag; github-pr-export
-      // (#1892), pr-change-map (#344) and pr-test-map (#348) start a coding agent whose whole
-      // prompt is the generated instructions, so those go to a file its command line reads back.
+      // (#1892) starts a coding agent whose whole prompt is the generated instructions, so it goes
+      // to a file its command line reads back.
       prompt: input.workflow === "issue-create" ? input.prompt : undefined,
       promptPath:
-        (input.workflow === "github-pr-export" ||
-          input.workflow === "pr-change-map" ||
-          input.workflow === "pr-test-map") &&
-        input.prompt
+        input.workflow === "github-pr-export" && input.prompt
           ? writeLaunchPrompt(input.prompt)
           : undefined,
       env:
@@ -693,7 +683,7 @@ export const terminal = {
           createdWorkspace = true;
         }
       } else {
-        // Worktree-backed workflows (github-pr-export #551, pr-change-map #344, pr-test-map #348)
+        // Worktree-backed workflow (github-pr-export #551)
         // open the herdr workspace directly at the PR's real worktree path, so herdr's own
         // workspace/worktree metadata reflects it — instead of a plain repo-root tab the launched
         // command cd's into. Falls back to that plain tab below when there is no resolvable

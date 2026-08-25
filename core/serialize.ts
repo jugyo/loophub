@@ -5,8 +5,6 @@
 // whose values come from live git / worktree state live in serialize-status.ts, so this
 // module needs neither node:fs nor core/git.ts and is testable without a git repo.
 
-import type { ChangeMapDocument } from "./change-map-document.ts";
-import { parseChangeMapDocumentText } from "./change-map-document.ts";
 import { resolveEffectiveAgentConfig } from "./config.ts";
 import type { GhPrStatus, GithubReviewState } from "./github.ts";
 import { linkedRef } from "./links.ts";
@@ -22,8 +20,6 @@ import type {
   HerdrPullWorkspace,
 } from "./terminal/herdr-status.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
-import type { TestMapDocument } from "./test-map-document.ts";
-import { parseTestMapDocumentText } from "./test-map-document.ts";
 import type { Theme } from "./theme.ts";
 import {
   type WorkerCompatibility,
@@ -667,60 +663,6 @@ interface RetroFindingWire {
   note: string;
   evidence_ref?: string | null;
   proposed_action?: string | null;
-}
-
-// #344: shape a pr_change_maps row for the wire, or null when the PR has no change map yet. Keeps
-// issue_id (an internal row id) off the wire; `head_sha` is what the consumer compares against the
-// PR's live head to tell whether the map still covers every commit. The document is sent parsed,
-// not as JSON text, so no consumer has to know it was stored as a string.
-export interface PrChangeMapWire {
-  head_sha: string;
-  document: ChangeMapDocument;
-  created_by: string | null;
-  created_at: string;
-}
-export function prChangeMapJSON(m: S.PrChangeMap): PrChangeMapWire;
-export function prChangeMapJSON(
-  m: S.PrChangeMap | null,
-): PrChangeMapWire | null;
-export function prChangeMapJSON(
-  m: S.PrChangeMap | null,
-): PrChangeMapWire | null {
-  if (!m) return null;
-  return {
-    head_sha: m.head_sha,
-    // Stored documents were validated on the way in, so a parse failure here is a corrupt row
-    // rather than bad input — let it throw instead of inventing an empty map that would read as
-    // "this PR changed nothing".
-    document: parseChangeMapDocumentText(m.document),
-    created_by: m.created_by ?? null,
-    created_at: m.created_at,
-  };
-}
-
-// #348: shape a pr_test_maps row for the wire, or null when the PR has no test map yet. Same shape
-// as the change map's wire object for the same reasons: issue_id stays off the wire, `head_sha` is
-// what a consumer compares against the PR's live head to tell whether the map still describes the
-// current tests, and the document is sent parsed so no consumer has to know it was stored as text.
-export interface PrTestMapWire {
-  head_sha: string;
-  document: TestMapDocument;
-  created_by: string | null;
-  created_at: string;
-}
-export function prTestMapJSON(m: S.PrTestMap): PrTestMapWire;
-export function prTestMapJSON(m: S.PrTestMap | null): PrTestMapWire | null;
-export function prTestMapJSON(m: S.PrTestMap | null): PrTestMapWire | null {
-  if (!m) return null;
-  return {
-    head_sha: m.head_sha,
-    // Stored documents were validated on the way in, so a parse failure here is a corrupt row
-    // rather than bad input — let it throw instead of inventing an empty map that would read as
-    // "this PR added no tests".
-    document: parseTestMapDocumentText(m.document),
-    created_by: m.created_by ?? null,
-    created_at: m.created_at,
-  };
 }
 
 // #406: shape a github_pulls row for the wire, or null. Keeps issue_id (an internal row id) off the

@@ -1,6 +1,5 @@
 export * from "./store/acceptance-criteria.ts";
 export * from "./store/agent-execution-targets.ts";
-export * from "./store/change-maps.ts";
 export * from "./store/comments.ts";
 export * from "./store/diff-feedback.ts";
 export * from "./store/events.ts";
@@ -20,7 +19,6 @@ export * from "./store/reviews.ts";
 export * from "./store/search.ts";
 export * from "./store/session-usage.ts";
 export * from "./store/sessions.ts";
-export * from "./store/test-maps.ts";
 export * from "./store/worker-runtime.ts";
 export * from "./store/workflows.ts";
 export * from "./store/workspaces.ts";

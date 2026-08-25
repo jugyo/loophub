@@ -1663,6 +1663,14 @@ export const MIGRATIONS: Migration[] = [
       ON pr_test_maps(issue_id, id DESC);
     `,
   ),
+  {
+    id: "20260825072601-remove-pr-maps",
+    run: (db) => {
+      // 既存インストールに残る両マップの保存行と専用構造を削除する。
+      db.exec("DROP TABLE IF EXISTS pr_change_maps;");
+      db.exec("DROP TABLE IF EXISTS pr_test_maps;");
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

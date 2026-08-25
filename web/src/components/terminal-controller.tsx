@@ -34,8 +34,6 @@ export interface OpenTerminalOptions {
     | "issue-create"
     | "workflow-create"
     | "github-pr-export"
-    | "pr-change-map"
-    | "pr-test-map"
     | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
