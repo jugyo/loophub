@@ -192,6 +192,17 @@ const diffFeedback: DiffFeedbackThread[] = [
       end_line: 1,
     },
     freshness: "current",
+    resolved_anchor: {
+      path: "web/src/a.ts",
+      original_path: null,
+      side: "RIGHT",
+      start_line: 1,
+      end_line: 1,
+    },
+    outdated_reason: null,
+    placement: "inline",
+    original_context: null,
+    archived_at: null,
     created_by: "reviewer",
     created_by_type: "agent",
     created_at: "2026-07-29T00:00:00Z",
@@ -947,6 +958,32 @@ describe("PullDetail", () => {
       ).toBeTruthy();
     }
     expect(within(section).queryByText("web/src/a.ts:1")).toBeNull();
+  });
+
+  it("diff feedback のタイムライン項目から対象ファイルを開く", async () => {
+    renderDetail({
+      "diffFeedback/list": () => ({
+        threads: diffFeedback,
+        comment_counts: { "web/src/a.ts": 2 },
+      }),
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "Comments (2)" })
+    ).closest("section")!;
+    const entry = within(section).getByRole("button", {
+      name: "差分コメント: web/src/a.ts",
+    });
+    expect(within(entry).getByText("差分コメント")).toBeTruthy();
+    expect(within(entry).getByText("web/src/a.ts")).toBeTruthy();
+    expect(within(entry).queryByText("First comment")).toBeNull();
+
+    fireEvent.click(entry);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Diff for web/src/a.ts",
+    });
+    expect(await within(dialog).findByLabelText("Diff thread 1")).toBeTruthy();
   });
 
   // #2488: only the newest page of the timeline is on screen; "Load more" — above the entries,

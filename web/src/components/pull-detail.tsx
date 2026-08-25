@@ -135,6 +135,7 @@ export function PullDetail({
   // #145: which file's diff dialog is open. Owned here — above Files changed — so a timeline line
   // comment (in CommentList) can open the same dialog Files changed renders.
   const [openFilename, setOpenFilename] = useState<string | null>(null);
+  const [openDiffThreadId, setOpenDiffThreadId] = useState<number | null>(null);
   const [timelineCommit, setTimelineCommit] = useState<{
     sha: string;
     subject: string;
@@ -144,6 +145,10 @@ export function PullDetail({
   const [scrollButtonCenter, setScrollButtonCenter] = useState<number | null>(
     null,
   );
+  function openDiffFile(filename: string, threadId: number | null = null) {
+    setOpenDiffThreadId(threadId);
+    setOpenFilename(filename);
+  }
   useEffect(() => {
     const scrollContainer = document.querySelector<HTMLElement>(
       'main[data-debug-component="RouteContent"]',
@@ -331,8 +336,12 @@ export function PullDetail({
               files={filesQuery.data}
               commentCounts={pageQuery.data?.diff_feedback.comment_counts ?? {}}
               openFilename={openFilename}
-              onOpenFile={setOpenFilename}
-              onCloseFile={() => setOpenFilename(null)}
+              onOpenFile={openDiffFile}
+              onCloseFile={() => {
+                setOpenDiffThreadId(null);
+                setOpenFilename(null);
+              }}
+              openThreadId={openDiffThreadId}
               isLoading={false}
               isError={false}
             />
@@ -348,6 +357,9 @@ export function PullDetail({
               comments={commentsQuery.data}
               onOpenCommit={setTimelineCommit}
               onOpenReview={setTimelineReview}
+              onOpenDiffFeedback={(path, threadId) =>
+                openDiffFile(path, threadId)
+              }
               isLoading={false}
               isError={false}
             />
@@ -955,6 +967,7 @@ function FilesChanged({
   files,
   commentCounts,
   openFilename,
+  openThreadId,
   onOpenFile,
   onCloseFile,
   isLoading,
@@ -968,6 +981,8 @@ function FilesChanged({
   commentCounts: Record<string, number>;
   /** Which file's diff dialog is open. */
   openFilename: string | null;
+  /** The timeline thread to reveal after the file dialog opens, if any. */
+  openThreadId: number | null;
   onOpenFile: (filename: string) => void;
   onCloseFile: () => void;
   isLoading: boolean;
@@ -1084,6 +1099,7 @@ function FilesChanged({
               files={files}
               file={openFile}
               commentCounts={commentCounts}
+              initialThreadId={openThreadId}
               onSelectFile={onOpenFile}
               onClose={onCloseFile}
             />
@@ -1163,6 +1179,8 @@ function timelineItemKey(item: PullTimelineItem): string {
       return `review:${item.review.id}`;
     case "comment":
       return `comment:${item.comment.id}`;
+    case "diff_feedback":
+      return `diff-feedback:${item.diff_feedback.thread_id}`;
     // GitHub's own id identifies a feedback item; the merge has none, and there is only ever one.
     case "github_activity":
       return `github:${item.github_activity.type}:${item.github_activity.github_id ?? "merged"}`;
@@ -1179,6 +1197,7 @@ function timelineItemContent(
     repo: string;
     onOpenCommit: (commit: { sha: string; subject: string }) => void;
     onOpenReview: (review: PullReview) => void;
+    onOpenDiffFeedback: (path: string, threadId: number) => void;
     reaction: ReturnType<typeof useReactToPullComment>;
     archive: ReturnType<typeof useSetPullCommentArchived>;
     showError: (message: string) => void;
@@ -1204,6 +1223,13 @@ function timelineItemContent(
           showError={context.showError}
         />
       );
+    case "diff_feedback":
+      return (
+        <TimelineDiffFeedbackItem
+          item={item}
+          onOpen={context.onOpenDiffFeedback}
+        />
+      );
     case "github_activity":
       return <TimelineGithubActivityItem item={item} />;
     default:
@@ -1223,6 +1249,7 @@ function CommentList({
   comments,
   onOpenCommit,
   onOpenReview,
+  onOpenDiffFeedback,
   isLoading,
   isError,
 }: {
@@ -1233,6 +1260,7 @@ function CommentList({
   comments: IssueComment[] | undefined;
   onOpenCommit: (commit: { sha: string; subject: string }) => void;
   onOpenReview: (review: PullReview) => void;
+  onOpenDiffFeedback: (path: string, threadId: number) => void;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -1330,6 +1358,7 @@ function CommentList({
     repo,
     onOpenCommit,
     onOpenReview,
+    onOpenDiffFeedback,
     reaction,
     archive,
     showError,
@@ -1692,6 +1721,45 @@ function TimelineReviewItem({
             {formatDuration(review.duration_seconds)}
           </span>
         ) : null}
+      </button>
+    </article>
+  );
+}
+
+// diff feedback のタイムライン項目は対象ファイルと時刻だけを示し、thread 本文は重複させない。
+// dialog が thread を再取得し、現在の anchor を解決できる場合に表示位置を合わせる。
+function TimelineDiffFeedbackItem({
+  item,
+  onOpen,
+}: {
+  item: Extract<PullTimelineItem, { kind: "diff_feedback" }>;
+  onOpen: (path: string, threadId: number) => void;
+}) {
+  const feedback = item.diff_feedback;
+  return (
+    <article
+      data-debug-component="TimelineDiffFeedback"
+      className="px-1 py-0.5"
+    >
+      <button
+        type="button"
+        aria-label={`差分コメント: ${feedback.path}`}
+        onClick={() => onOpen(feedback.path, feedback.thread_id)}
+        className="flex w-full min-w-0 items-center gap-2 rounded text-left text-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="shrink-0 rounded bg-muted px-1 py-px font-medium text-muted-foreground">
+          差分コメント
+        </span>
+        <code className="min-w-0 flex-1 truncate text-muted-foreground">
+          {feedback.path}
+        </code>
+        <time
+          dateTime={item.created_at}
+          title={item.created_at}
+          className="shrink-0 text-muted-foreground"
+        >
+          {relativeTime(item.created_at)}
+        </time>
       </button>
     </article>
   );

@@ -191,11 +191,16 @@ test("pullDetail assembles the PR timeline from data it already fetched", async 
   expect(page.timeline.length).toBe(
     (page.pull.commits ?? []).length +
       page.reviews.length +
-      page.comments.length,
+      page.comments.length +
+      2,
   );
   expect(ofKind("commit")).toHaveLength((page.pull.commits ?? []).length);
   expect(ofKind("review")).toHaveLength(page.reviews.length);
   expect(ofKind("comment")).toHaveLength(page.comments.length);
+  expect(ofKind("diff_feedback")).toHaveLength(2);
+  expect(
+    ofKind("diff_feedback").map((item) => item.diff_feedback.path),
+  ).toEqual(["kept.txt", "reverted.txt"]);
   expect(page.line_comments).toHaveLength(1);
   expect(page.line_comments[0].body).toBe("Nice change.");
   expect(page.timeline.some((item) => "line_comment" in item)).toBe(false);
@@ -313,7 +318,8 @@ test("pullDetail folds the observed GitHub activity into the timeline", async ()
   expect(unlinked.timeline.length).toBe(
     (unlinked.pull.commits ?? []).length +
       unlinked.reviews.length +
-      unlinked.comments.length,
+      unlinked.comments.length +
+      2,
   );
 });
 

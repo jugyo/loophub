@@ -139,12 +139,14 @@ function feedbackThread(
 function renderDialog({
   file: dialogFile = file,
   files,
+  initialThreadId = null,
   onSelectFile = () => {},
   onClose = () => {},
   handlers = {},
 }: {
   file?: PullFile;
   files?: PullFile[];
+  initialThreadId?: number | null;
   onSelectFile?: (filename: string) => void;
   onClose?: () => void;
   handlers?: Record<string, (params: any) => unknown>;
@@ -161,6 +163,7 @@ function renderDialog({
         number={30}
         files={files ?? [dialogFile]}
         file={dialogFile}
+        initialThreadId={initialThreadId}
         onSelectFile={onSelectFile}
         onClose={onClose}
       />
@@ -315,6 +318,30 @@ describe("DiffFileDialog", () => {
         .getByRole("button", { name: "Unified" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
+  });
+
+  it("feedback 読み込み後にタイムライン thread へ移動する", async () => {
+    const scrollIntoView = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+
+    renderDialog({
+      initialThreadId: 1,
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: { ...feedbackThread().anchor, end_line: 1 },
+            }),
+          ],
+        }),
+      },
+    });
+
+    const thread = await screen.findByLabelText("Diff thread 1");
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(thread);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
   });
 
   it("shows consistent diff feedback metadata without obscuring the comment body", async () => {

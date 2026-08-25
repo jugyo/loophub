@@ -93,11 +93,11 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                   ? await handlers["comments/list"](pageParams)
                   : [];
                 // The page carries the diff feedback it renders itself, which the server derives
-                // from the orphaned scope of the same list call (#123).
+                // from the same list result (#123).
                 const feedback: any = handlers["diffFeedback/list"]
                   ? await handlers["diffFeedback/list"]({
                       ...pageParams,
-                      scope: { orphaned: true },
+                      scope: {},
                     })
                   : null;
                 const reviews = handlers["reviews/list"]
@@ -126,6 +126,20 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
                     created_at: comment.created_at,
                     comment,
                   })),
+                  ...((feedback?.threads ?? []) as any[]).map(
+                    (thread: any) => ({
+                      kind: "diff_feedback",
+                      created_at: thread.created_at,
+                      diff_feedback: {
+                        thread_id: thread.id,
+                        path:
+                          thread.resolved_anchor?.path ?? thread.anchor.path,
+                        original_path:
+                          thread.resolved_anchor?.original_path ??
+                          thread.anchor.original_path,
+                      },
+                    }),
+                  ),
                   // #2500: GitHub-derived entries have no list RPC of their own — the server reads
                   // them from what the worker already observed — so a test that needs them declares
                   // them under this fixture key instead of through a method handler.

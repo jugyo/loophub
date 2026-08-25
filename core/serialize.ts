@@ -2549,9 +2549,9 @@ export interface PullDetailPageWire {
   line_comments: ReviewCommentWire[];
   comments: CommentWire[];
   /**
-   * The whole PR activity in one chronological list (#145): commits, reviews and conversation
-   * comments, oldest first. Assembled by pageData.pullDetail from the fields above —
-   * `pull.commits`, `reviews` and `comments` — so it costs the page no extra git,
+   * The whole PR activity in one chronological list (#145): commits, reviews, conversation
+   * comments、diff feedback を含む時系列リスト（古い順）。pageData.pullDetail が上記の
+   * `pull.commits`、`reviews`、`comments`、diff feedback から組み立てるため、ページ側で追加の git、
    * query or HTTP work, and the frontend renders the array as-is.
    */
   timeline: PullTimelineItemWire[];
@@ -2606,11 +2606,18 @@ export interface PullGithubActivityWire {
   review_state: GithubReviewState | null;
 }
 
+/** PR タイムラインに表示する diff feedback thread のファイル識別情報。 */
+export interface PullDiffFeedbackTimelineWire {
+  thread_id: number;
+  path: string;
+  original_path: string | null;
+}
+
 /**
- * One entry in the PR-detail timeline (#145): a commit, a review, a conversation comment, or
- * something that happened on the linked GitHub PR (#2500), in display order (chronological, oldest
- * first). Assembled by pageData.pullDetail from data the page already fetches (`pull.commits` /
- * `reviews` / `comments`) plus the GitHub activity the worker has already observed, so the frontend
+ * PR 詳細タイムライン（#145）の項目。commit、review、conversation comment、diff feedback、または
+ * linked GitHub PR 上の活動（#2500）を表示順（時系列、古い順）で保持する。pageData.pullDetail が
+ * 既に取得しているデータ（`pull.commits` / `reviews` / `comments` / diff feedback）と worker が
+ * 観測済みの GitHub activity から組み立てるため、frontend は
  * renders the array as-is and never rebuilds or re-sorts it. `created_at` is the entry's timestamp
  * on its own, uniform across kinds. Review line comments remain available through `line_comments`
  * for the Diff view.
@@ -2630,6 +2637,11 @@ export type PullTimelineItemWire =
       kind: "comment";
       created_at: string;
       comment: CommentWire;
+    }
+  | {
+      kind: "diff_feedback";
+      created_at: string;
+      diff_feedback: PullDiffFeedbackTimelineWire;
     }
   | {
       kind: "github_activity";

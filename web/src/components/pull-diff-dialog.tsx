@@ -251,6 +251,7 @@ export function DiffFileDialog({
   files,
   file,
   commentCounts = {},
+  initialThreadId = null,
   onSelectFile,
   onClose,
 }: {
@@ -260,6 +261,8 @@ export function DiffFileDialog({
   files: PullFile[];
   file: PullFile;
   commentCounts?: Readonly<Record<string, number>>;
+  /** ファイルの feedback 読み込み後に表示位置を合わせるタイムライン thread。 */
+  initialThreadId?: number | null;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
@@ -707,6 +710,7 @@ export function DiffFileDialog({
                   mode={selectedMode}
                   diffViewMode={diffViewMode}
                   ignoreWhitespace={ignoreWhitespace}
+                  initialThreadId={initialThreadId}
                 />
               </div>
             </>
@@ -893,6 +897,7 @@ function FileDiffContent({
   mode,
   diffViewMode,
   ignoreWhitespace,
+  initialThreadId,
 }: {
   owner: string;
   repo: string;
@@ -901,6 +906,7 @@ function FileDiffContent({
   mode: DiffDialogMode;
   diffViewMode: DiffViewMode;
   ignoreWhitespace: boolean;
+  initialThreadId: number | null;
 }) {
   const path = copyFilename(file);
   const diff = usePullDiff(owner, repo, number, path, ignoreWhitespace);
@@ -938,6 +944,12 @@ function FileDiffContent({
   const historicalThreads = fileThreads.filter(
     (thread) => thread.placement === "historical",
   );
+  useEffect(() => {
+    if (initialThreadId == null || !feedback.data) return;
+    document
+      .querySelector<HTMLElement>(`[data-diff-thread-id="${initialThreadId}"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, [feedback.data, initialThreadId]);
   const commentComposer =
     selection && stableFile && diff.data ? (
       <DiffCommentComposer
@@ -2032,6 +2044,7 @@ function ThreadCard({
 
   return (
     <article
+      data-diff-thread-id={thread.id}
       className={cn(
         "m-2 rounded-md border bg-background font-sans text-sm",
         archived ? "border-dashed px-3 py-2" : "p-3",

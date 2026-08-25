@@ -1,3 +1,4 @@
+import { selectDiffFeedbackThreads } from "../diff-feedback-selection.ts";
 import type {
   IssueDetailPageWire,
   IssueListPageWire,
@@ -175,16 +176,15 @@ export const pageData = {
     pull.comment_list = commentRows;
     // Read the threads as the caller, not as the page: `diffFeedback/list` resolves its actor
     // from the session, and a mismatch would show a reader their own reactions as unreacted.
-    const orphaned = await measureDiagnostic(
+    const feedback = await measureDiagnostic(
       "pullDetail.feedback_assembly",
       async () =>
-        diffFeedbackForDiff(
-          name,
-          number,
-          diff,
-          { orphaned: true },
-          actorFor(sessionId),
-        ),
+        diffFeedbackForDiff(name, number, diff, {}, actorFor(sessionId)),
+    );
+    const orphanedThreads = selectDiffFeedbackThreads(
+      feedback.threads,
+      diff.files,
+      { orphaned: true },
     );
     // #145: the whole PR activity as one chronological list, folded out of data this request
     // already fetched — the git commit list on the PR row, reviews and comments —
@@ -208,6 +208,17 @@ export const pageData = {
         created_at: comment.created_at,
         comment,
       })),
+      ...feedback.threads.map((thread) => ({
+        kind: "diff_feedback" as const,
+        created_at: thread.created_at,
+        diff_feedback: {
+          thread_id: thread.id,
+          path: thread.resolved_anchor?.path ?? thread.anchor.path,
+          original_path:
+            thread.resolved_anchor?.original_path ??
+            thread.anchor.original_path,
+        },
+      })),
       // #2500: what the worker already observed on the linked GitHub PR, read from the DB rather
       // than fetched, so this stays as free as the rest of the assembly. Empty when the PR has no
       // linked GitHub PR.
@@ -221,8 +232,8 @@ export const pageData = {
       comments: commentRows,
       timeline,
       diff_feedback: {
-        comment_counts: orphaned.comment_counts,
-        orphaned_threads: orphaned.threads,
+        comment_counts: feedback.comment_counts,
+        orphaned_threads: orphanedThreads,
       },
     }));
   },
