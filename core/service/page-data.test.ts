@@ -134,6 +134,8 @@ test("pullDetail carries the diff feedback the screen renders itself", async () 
   ]);
 
   expect(page.files.map((file) => file.filename)).toEqual(["kept.txt"]);
+  expect(page.files[0]).not.toHaveProperty("patch");
+  expect(page.files[0]).not.toHaveProperty("syntax_highlight");
   const featureCommit = page.pull.commits?.find(
     (commit) => commit.subject === "feature",
   );
@@ -338,6 +340,11 @@ test("pullDetail resolves the PR's diff base once", async () => {
   expect(baseResolutions(page.commands).length).toBe(
     baseResolutions(once.commands).length,
   );
+  expect(
+    page.commands
+      .filter((command) => command.startsWith("diff "))
+      .every((command) => command.includes("--raw --numstat")),
+  ).toBe(true);
   // Not a vacuous equality: asking for the same feedback through its own RPC resolves the base
   // again, which is what the screen used to pay twice more on load.
   const separate = await traceGitCommands(() =>

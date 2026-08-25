@@ -12,7 +12,7 @@ import { diffFeedbackForDiff } from "./diff-feedback.ts";
 import { issues } from "./issues.ts";
 import { labels } from "./labels.ts";
 import {
-  diffFilesWithLastChanged,
+  diffFileSummariesWithLastChanged,
   pulls,
   resolvePullDiffOperands,
 } from "./pulls.ts";
@@ -146,8 +146,8 @@ export const pageData = {
   ): Promise<PullDetailPageWire> {
     // Everything on this screen that depends on the PR's live diff base — Files changed, the
     // commit list on the PR row, and the diff feedback anchors — sits on the same base, so
-    // resolve it once here and hand it to the rest (#123). The resolution is the request's one
-    // The operands are ref names, so resolve the live diff base once for this request.
+    // resolve it once here and hand it to the rest (#123)。この詳細リクエストではファイル
+    // summary だけを取得し、patch と syntax token は Diff View を開いた時に取得する。
     const operands = await measureDiagnostic(
       "pullDetail.diff_base_resolution",
       () => resolvePullDiffOperands(name, number),
@@ -156,8 +156,8 @@ export const pageData = {
       files,
       [pull, reviewRows, lineComments, commentRows, githubTimeline],
     ] = await Promise.all([
-      measureDiagnostic("pullDetail.patch_generation", () =>
-        diffFilesWithLastChanged(operands),
+      measureDiagnostic("pullDetail.file_summary_generation", () =>
+        diffFileSummariesWithLastChanged(operands),
       ),
       measureDiagnostic("pullDetail.metadata", () =>
         Promise.all([

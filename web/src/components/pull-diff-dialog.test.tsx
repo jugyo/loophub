@@ -194,6 +194,36 @@ async function dragLines(from: string, ...through: string[]) {
 }
 
 describe("DiffFileDialog", () => {
+  it("初期 summary の patch を表示せず、選択後の応答で diff を表示する", async () => {
+    let resolveDiff!: (diff: ReturnType<typeof stableDiff>) => void;
+    const diffPending = new Promise<ReturnType<typeof stableDiff>>(
+      (resolve) => {
+        resolveDiff = resolve;
+      },
+    );
+    const summary: PullFile = { ...file };
+    delete summary.patch;
+    const getDiff = vi.fn(() => diffPending);
+
+    renderDialog({
+      file: summary,
+      handlers: { "pulls/diff": getDiff },
+    });
+
+    expect(screen.getByText("Loading diff…")).toBeTruthy();
+    expect(screen.queryByText("const x = 1;")).toBeNull();
+    expect(getDiff).toHaveBeenCalledWith({
+      repo: "me/proj",
+      number: 30,
+      path: file.filename,
+    });
+
+    await act(async () => {
+      resolveDiff(stableDiff());
+    });
+    expect(await screen.findByText("const x = 1;")).toBeTruthy();
+  });
+
   it("posts a copied-file comment with a target-side anchor", async () => {
     const create = vi.fn(() => ({
       thread: feedbackThread({

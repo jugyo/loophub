@@ -128,6 +128,90 @@ const files: PullFile[] = [
   },
 ];
 
+const representativeDiffs = {
+  "web/src/a.ts": {
+    language: "typescript" as const,
+    oldText: "const value = 0;",
+    newText: "const value = 1;",
+    token: "keyword" as const,
+  },
+  "web/src/a.js": {
+    language: "javascript" as const,
+    oldText: "const value = 0;",
+    newText: "const value = 1;",
+    token: "keyword" as const,
+  },
+  "docs/a.md": {
+    language: "markdown" as const,
+    oldText: "# Before",
+    newText: "# After",
+    token: "markup" as const,
+  },
+};
+
+function representativeDiff(path: keyof typeof representativeDiffs) {
+  const sample = representativeDiffs[path];
+  const patch = `@@ -1 +1 @@\n-${sample.oldText}\n+${sample.newText}`;
+  return {
+    base_sha: "a".repeat(40),
+    head_sha: "b".repeat(40),
+    files: [
+      {
+        path,
+        absolute_path: `/repo/${path}`,
+        original_path: null,
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch,
+        syntax_highlight: {
+          language: sample.language,
+          lines: [
+            { old: null, new: null },
+            {
+              old: [{ kind: sample.token, text: sample.oldText }],
+              new: null,
+            },
+            {
+              old: null,
+              new: [{ kind: sample.token, text: sample.newText }],
+            },
+          ],
+        },
+        lines: [
+          {
+            kind: "hunk" as const,
+            text: "@@ -1 +1 @@",
+            left_line: null,
+            right_line: null,
+            syntax_highlight: { old: null, new: null },
+          },
+          {
+            kind: "deletion" as const,
+            text: `-${sample.oldText}`,
+            left_line: 1,
+            right_line: null,
+            syntax_highlight: {
+              old: [{ kind: sample.token, text: sample.oldText }],
+              new: null,
+            },
+          },
+          {
+            kind: "addition" as const,
+            text: `+${sample.newText}`,
+            left_line: null,
+            right_line: 1,
+            syntax_highlight: {
+              old: null,
+              new: [{ kind: sample.token, text: sample.newText }],
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
 const reviews: PullReview[] = [
   {
     id: 1,
@@ -394,6 +478,106 @@ function gridTemplateColumns(className: string): string[] {
 }
 
 describe("PullDetail", () => {
+  it("初期 pageData から Diff View の token 描画までを代表3形式で計測する", async () => {
+    const paths = Object.keys(representativeDiffs) as Array<
+      keyof typeof representativeDiffs
+    >;
+    const summaryFiles = paths.map((path) => {
+      const summary: PullFile = {
+        filename: path,
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+      };
+      return summary;
+    });
+    const pendingResolvers = new Map<
+      string,
+      (value: ReturnType<typeof representativeDiff>) => void
+    >();
+    const timings = new Map<
+      string,
+      {
+        queryStartedAt: number;
+        apiStartedAt: number;
+        patchTokenCompletedAt: number;
+        renderCompletedAt: number;
+      }
+    >();
+    const getDiff = vi.fn(({ path }: { path: string }) => {
+      const timing = timings.get(path);
+      if (!timing) throw new Error(`unexpected diff path: ${path}`);
+      timing.apiStartedAt = performance.now();
+      return new Promise<ReturnType<typeof representativeDiff>>((resolve) => {
+        pendingResolvers.set(path, (value) => {
+          timing.patchTokenCompletedAt = performance.now();
+          resolve(value);
+        });
+      });
+    });
+
+    renderDetail({
+      "pulls/files": () => summaryFiles,
+      "pulls/diff": getDiff,
+    });
+
+    await screen.findByRole("heading", { name: /Files changed \(3\)/ });
+    expect(getDiff).not.toHaveBeenCalled();
+
+    for (const path of paths) {
+      timings.set(path, {
+        queryStartedAt: performance.now(),
+        apiStartedAt: 0,
+        patchTokenCompletedAt: 0,
+        renderCompletedAt: 0,
+      });
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: new RegExp(
+            `File status: modified ${path.replaceAll(".", "\\.")}`,
+          ),
+        }),
+      );
+      await waitFor(() =>
+        expect(getDiff).toHaveBeenCalledWith(expect.objectContaining({ path })),
+      );
+      expect(screen.getByText("Loading diff…")).toBeTruthy();
+
+      pendingResolvers.get(path)?.(representativeDiff(path));
+      const sample = representativeDiffs[path];
+      await waitFor(() => {
+        const dialog = screen.getByRole("dialog");
+        expect(
+          dialog.querySelector(`[data-syntax-language="${sample.language}"]`),
+        ).toBeTruthy();
+        expect(
+          dialog.querySelector(`[data-syntax-token="${sample.token}"]`),
+        ).toBeTruthy();
+      });
+      const timing = timings.get(path)!;
+      timing.renderCompletedAt = performance.now();
+      expect(timing.apiStartedAt).toBeGreaterThanOrEqual(timing.queryStartedAt);
+      expect(timing.patchTokenCompletedAt).toBeGreaterThanOrEqual(
+        timing.apiStartedAt,
+      );
+      expect(timing.renderCompletedAt).toBeGreaterThanOrEqual(
+        timing.patchTokenCompletedAt,
+      );
+
+      console.info(
+        `Diff View の計測 ${path}: query=${(
+          timing.apiStartedAt - timing.queryStartedAt
+        ).toFixed(1)}ms, API=${(
+          timing.patchTokenCompletedAt - timing.apiStartedAt
+        ).toFixed(1)}ms, render=${(
+          timing.renderCompletedAt - timing.patchTokenCompletedAt
+        ).toFixed(1)}ms`,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Close diff" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    }
+  });
+
   it("shows a file's last change time before its comment count", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date("2026-06-18T14:00:00Z"));

@@ -1183,6 +1183,14 @@ function FileDiffContentBody({
     );
   }
 
+  if (diff.isPending && !stableFile && !file.patch) {
+    return (
+      <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Loading diff…
+      </div>
+    );
+  }
+
   return (
     <div data-debug-component="FileDiffContent">
       {diff.isError || feedback.isError ? (
@@ -1191,7 +1199,11 @@ function FileDiffContentBody({
         </div>
       ) : null}
       <DialogDiff
-        patch={ignoreWhitespace ? stableFile?.patch : file.patch}
+        patch={
+          ignoreWhitespace
+            ? stableFile?.patch
+            : (file.patch ?? stableFile?.patch)
+        }
         stableLines={stableFile?.lines}
         syntaxLanguage={stableFile?.syntax_highlight?.language}
         viewMode={diffViewMode}

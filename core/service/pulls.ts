@@ -14,6 +14,7 @@ import {
   commitsAhead,
   currentBranch,
   type DiffFile,
+  type DiffFileSummary,
   diffFileSummariesBetween,
   diffFiles,
   diffFilesBetween,
@@ -172,6 +173,43 @@ export async function diffFilesWithLastChanged(operands: {
   );
 }
 
+/** PR 詳細画面用に、patch と syntax token を生成せず変更ファイルのメタデータを返す。 */
+export async function diffFileSummariesWithLastChanged(operands: {
+  repoPath: string;
+  baseSha: string;
+  baseShas: string[];
+  headSha: string;
+}): Promise<
+  Array<
+    DiffFileSummary & { last_changed_at?: string; last_changed_sha?: string }
+  >
+> {
+  const [files, lastChangedCommits] = await Promise.all([
+    diffFileSummariesBetween(
+      operands.repoPath,
+      operands.baseSha,
+      operands.headSha,
+    ),
+    lastChangedCommitsByFile(
+      operands.repoPath,
+      operands.baseShas,
+      operands.headSha,
+    ).catch((): Record<string, LastChangedCommit> => ({})),
+  ]);
+  return files.map((file) => {
+    const lastChanged = lastChangedCommits[file.headFilename ?? file.filename];
+    return {
+      ...file,
+      ...(lastChanged
+        ? {
+            last_changed_at: lastChanged.date,
+            last_changed_sha: lastChanged.sha,
+          }
+        : {}),
+    };
+  });
+}
+
 export async function resolvePullDiffOperands(
   name: string,
   number: number,
@@ -272,6 +310,26 @@ function pullDiffWireFiles(
       })),
     };
   });
+}
+
+async function pathspecsForSelectedDiff(
+  repoPath: string,
+  baseSha: string,
+  headSha: string,
+  path: string,
+): Promise<string[]> {
+  const summaries = await diffFileSummariesBetween(repoPath, baseSha, headSha);
+  const selected = summaries.find(
+    (file) =>
+      file.headFilename === path ||
+      file.previousFilename === path ||
+      file.filename === path,
+  );
+  if (!selected) return [path];
+  return [selected.previousFilename, selected.headFilename, path].filter(
+    (candidate, index, paths): candidate is string =>
+      Boolean(candidate) && paths.indexOf(candidate) === index,
+  );
 }
 
 export const pulls = {
@@ -537,10 +595,17 @@ export const pulls = {
     const projected = !ignoreWhitespace
       ? S.getPullDiffProjection(row.id, baseSha, headSha)
       : null;
+    // rename/copy は旧 path と新 path の両方を pathspec に渡さないと Git が片側の
+    // 追加・削除として扱うため、選択対象の metadata を先に調べる。
+    const selectedPaths =
+      path && !projected
+        ? await pathspecsForSelectedDiff(r.local_path, baseSha, headSha, path)
+        : undefined;
     const files =
       projected?.files ??
       (await diffFilesBetween(r.local_path, baseSha, headSha, {
         ignoreWhitespace,
+        paths: selectedPaths,
       }));
     const selectedFiles =
       path == null

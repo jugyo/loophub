@@ -132,7 +132,7 @@ export type WorkflowStepExecution = WorkflowStepExecutionWire;
 /** A line comment on a PR (GET .../pulls/{number}/comments). */
 export type PullLineComment = ReviewCommentWire;
 
-/** A changed file with its unified-diff patch (GET .../pulls/{number}/files). */
+/** 変更ファイルの summary、または unified-diff patch 付きの変更ファイル。 */
 export type PullFile = PullFileWire;
 export type PullFileView = PullFileViewWire;
 

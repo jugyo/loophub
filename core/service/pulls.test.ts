@@ -22,6 +22,8 @@ let S: typeof import("../store.ts");
 let repoPath: string;
 let commitFilesRepoPath: string;
 let commitFilesPullNumber: number;
+let syntaxTimingRepoPath: string;
+let syntaxTimingPullNumber: number;
 let featureSha: string;
 let outsideSha: string;
 
@@ -106,12 +108,43 @@ beforeAll(async () => {
     base: "main",
   });
   commitFilesPullNumber = pull.number;
+
+  syntaxTimingRepoPath = mkdtempSync(
+    join(tmpdir(), "lh-pull-syntax-timing-repo-"),
+  );
+  const syntaxGit = (args: string[]) => gitAt(syntaxTimingRepoPath, args);
+  syntaxGit(["init", "-q", "-b", "main"]);
+  syntaxGit(["config", "user.email", "t@t.local"]);
+  syntaxGit(["config", "user.name", "tester"]);
+  writeFileSync(join(syntaxTimingRepoPath, "sample.ts"), "const value = 0;\n");
+  writeFileSync(join(syntaxTimingRepoPath, "sample.js"), "const value = 0;\n");
+  writeFileSync(join(syntaxTimingRepoPath, "sample.md"), "# Before\n");
+  syntaxGit(["add", "-A"]);
+  syntaxGit(["commit", "-qm", "base"]);
+  syntaxGit(["checkout", "-qb", "feature"]);
+  writeFileSync(join(syntaxTimingRepoPath, "sample.ts"), "const value = 1;\n");
+  writeFileSync(join(syntaxTimingRepoPath, "sample.js"), "const value = 1;\n");
+  writeFileSync(join(syntaxTimingRepoPath, "sample.md"), "# After\n");
+  syntaxGit(["add", "-A"]);
+  syntaxGit(["commit", "-qm", "feature change"]);
+  syntaxGit(["checkout", "-q", "main"]);
+  await svc.repos.create({
+    path: syntaxTimingRepoPath,
+    name: "me/syntax-timing",
+  });
+  const syntaxPull = await svc.pulls.create("me/syntax-timing", {
+    title: "syntax timing",
+    head: "feature",
+    base: "main",
+  });
+  syntaxTimingPullNumber = syntaxPull.number;
 });
 
 afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
   rmSync(repoPath, { recursive: true, force: true });
   rmSync(commitFilesRepoPath, { recursive: true, force: true });
+  rmSync(syntaxTimingRepoPath, { recursive: true, force: true });
 });
 
 test("pull detail returns the newest 100 base..head commits with wire metadata", async () => {
@@ -298,6 +331,121 @@ exec "${realGit}" "$@"
   } finally {
     process.env.PATH = originalPath;
   }
+});
+
+test("pulls/diff limits a selected file's git diff to that path", async () => {
+  const diff = await svc.pulls.diff(
+    "me/commit-files",
+    commitFilesPullNumber,
+    "a.txt",
+  );
+
+  expect(diff.files.map((file) => file.path)).toEqual(["a.txt"]);
+  expect(diff.files[0]?.patch).toContain("+after");
+});
+
+test("pulls/diff preserves rename metadata when selected by the head path", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-selected-rename-"));
+  const g = (args: string[]) => gitAt(path, args);
+  mkdirSync(join(path, "src"), { recursive: true });
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(path, "src/old.ts"), "const value = 1;\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base"]);
+  g(["checkout", "-qb", "feature"]);
+  g(["mv", "src/old.ts", "src/new.ts"]);
+  g(["commit", "-qam", "rename"]);
+  g(["checkout", "-q", "main"]);
+
+  try {
+    await svc.repos.create({ path, name: "me/selected-rename" });
+    const pull = await svc.pulls.create("me/selected-rename", {
+      title: "selected rename",
+      head: "feature",
+      base: "main",
+    });
+    const traced = await traceGitCommands(() =>
+      svc.pulls.diff("me/selected-rename", pull.number, "src/new.ts"),
+    );
+
+    expect(traced.result.files).toEqual([
+      expect.objectContaining({
+        path: "src/new.ts",
+        original_path: "src/old.ts",
+        status: "renamed",
+        patch: expect.stringContaining("rename from src/old.ts"),
+      }),
+    ]);
+    const diffCommands = traced.commands.filter((command) =>
+      command.startsWith("diff "),
+    );
+    const pathspecCommands = diffCommands.filter((command) =>
+      command.includes(":(literal)"),
+    );
+    expect(pathspecCommands.length).toBeGreaterThan(0);
+    expect(
+      pathspecCommands.every(
+        (command) =>
+          command.includes(":(literal)src/old.ts") &&
+          command.includes(":(literal)src/new.ts"),
+      ),
+    ).toBe(true);
+  } finally {
+    rmSync(path, { recursive: true, force: true });
+  }
+});
+
+test("pulls/diff の代表形式で patch と token の完了時刻を計測する", async () => {
+  const samples = [
+    { path: "sample.ts", language: "typescript" },
+    { path: "sample.js", language: "javascript" },
+    { path: "sample.md", language: "markdown" },
+  ] as const;
+  const timings = [] as Array<{
+    path: string;
+    queryStartedAt: number;
+    patchCompletedAt: number;
+    tokenCompletedAt: number;
+  }>;
+
+  for (const sample of samples) {
+    const queryStartedAt = performance.now();
+    const diff = await svc.pulls.diff(
+      "me/syntax-timing",
+      syntaxTimingPullNumber,
+      sample.path,
+    );
+    const responseCompletedAt = performance.now();
+    const file = diff.files[0];
+    expect(file?.patch).toBeTruthy();
+    expect(file?.syntax_highlight?.language).toBe(sample.language);
+    // patch と syntax_highlight は一つの pulls/diff 応答のフィールドなので、完了境界は
+    // ブラウザの二つの render pass ではなく、同じ応答境界になる。
+    timings.push({
+      path: sample.path,
+      queryStartedAt,
+      patchCompletedAt: responseCompletedAt,
+      tokenCompletedAt: responseCompletedAt,
+    });
+  }
+
+  expect(timings).toHaveLength(3);
+  for (const timing of timings) {
+    expect(timing.patchCompletedAt).toBeGreaterThanOrEqual(
+      timing.queryStartedAt,
+    );
+    expect(timing.tokenCompletedAt).toBe(timing.patchCompletedAt);
+  }
+  console.info(
+    `pulls/diff の patch/token 計測: ${timings
+      .map(
+        ({ path, queryStartedAt, patchCompletedAt, tokenCompletedAt }) =>
+          `${path} query=${(patchCompletedAt - queryStartedAt).toFixed(1)}ms patch=${patchCompletedAt.toFixed(1)} token=${tokenCompletedAt.toFixed(1)}`,
+      )
+      .join(", ")}`,
+  );
 });
 
 test("repos/commitFiles returns a commit's parent diff", async () => {

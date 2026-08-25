@@ -2511,8 +2511,8 @@ export interface SubIssuesPageWire {
   workflow_runs: WorkflowRunStateWire[];
 }
 
-/** A changed file with its unified-diff patch. */
-export interface PullFileWire {
+/** patch 内容を持たない、一覧・詳細画面用の変更ファイルメタデータ。 */
+export interface PullFileSummaryWire {
   filename: string;
   previousFilename?: string;
   headFilename?: string;
@@ -2526,7 +2526,11 @@ export interface PullFileWire {
   status: string;
   additions: number;
   deletions: number;
-  patch: string;
+}
+
+/** A changed file with its unified-diff patch. */
+export interface PullFileWire extends PullFileSummaryWire {
+  patch?: string;
   syntax_highlight?: SyntaxHighlightWire;
 }
 
@@ -2545,7 +2549,7 @@ export interface PullFileViewWire {
 /** Data selected together for the pull-request detail screen. */
 export interface PullDetailPageWire {
   pull: PullWire;
-  files: PullFileWire[];
+  files: PullFileSummaryWire[];
   reviews: ReviewWire[];
   line_comments: ReviewCommentWire[];
   comments: CommentWire[];
