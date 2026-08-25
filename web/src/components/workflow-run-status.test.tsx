@@ -107,7 +107,7 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
 }
 
 describe("WorkflowRunStatusSection", () => {
-  it("shows the manifest-backed agent settings and prompt sources", async () => {
+  it("サイドバーに Run configuration を表示しない", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
@@ -141,10 +141,11 @@ describe("WorkflowRunStatusSection", () => {
       />,
     );
 
-    const config = await screen.findByTestId("workflow-run-config");
-    expect(config.textContent).toContain("execute-model");
-    expect(config.textContent).toContain("execute-prompt.md");
-    expect(config.textContent).toContain("verify-prompt.md");
+    expect(screen.queryByTestId("workflow-run-config")).toBeNull();
+    expect(screen.queryByText("Run configuration")).toBeNull();
+    expect(screen.queryByText("execute-model")).toBeNull();
+    expect(screen.queryByText("execute-prompt.md")).toBeNull();
+    expect(screen.queryByText("verify-prompt.md")).toBeNull();
   });
 
   it("opens the matching Workflow step pane from the detail tracker", async () => {
