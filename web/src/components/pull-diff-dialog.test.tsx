@@ -2220,7 +2220,7 @@ describe("DiffFileDialog", () => {
     );
   });
 
-  it("closes after successfully marking the open file viewed", async () => {
+  it("clears the open file after marking it viewed", async () => {
     const onClose = vi.fn();
     renderDialog({
       file: { ...file, last_changed_sha: "c".repeat(40) },
@@ -2230,7 +2230,16 @@ describe("DiffFileDialog", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
 
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole("dialog", { name: "Diff files" })).toBeTruthy(),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "web/src/a.ts" })).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: "web/src/a.ts" })
+        .getAttribute("aria-current"),
+    ).toBeNull();
   });
 
   it("hides viewed files from the tree until they are asked for", async () => {

@@ -474,8 +474,14 @@ describe("PullDetail", () => {
     const section = (
       await screen.findByRole("heading", { name: /Files changed \(2\)/ })
     ).closest("section")!;
+    const fileSummaryList = section.querySelector<HTMLElement>(
+      '[data-debug-component="FileSummaryRow"]',
+    )?.parentElement;
+    if (!fileSummaryList) throw new Error("File summary list not found");
     fireEvent.click(
-      within(section).getByRole("button", { name: /web\/src\/a\.ts/ }),
+      within(fileSummaryList).getByRole("button", {
+        name: /web\/src\/a\.ts/,
+      }),
     );
     expect(
       await screen.findByRole("dialog", { name: /Diff for/ }),
@@ -483,13 +489,21 @@ describe("PullDetail", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
 
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(
-      within(section).getByRole("button", { name: /web\/src\/b\.ts/ }),
-    ).toBeTruthy();
-    expect(
-      within(section).queryByRole("button", { name: /web\/src\/a\.ts/ }),
-    ).toBeNull();
+    const dialog = await screen.findByRole("dialog", { name: /Diff for/ });
+    expect(dialog).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Diff files" })).toBeTruthy();
+      expect(
+        screen.queryByRole("heading", { name: "web/src/a.ts" }),
+      ).toBeNull();
+      const summaryRows = Array.from(
+        fileSummaryList.querySelectorAll<HTMLElement>(
+          '[data-debug-component="FileSummaryRow"]',
+        ),
+      );
+      expect(summaryRows).toHaveLength(1);
+      expect(summaryRows[0]?.textContent).toContain("b.ts");
+    });
   });
 
   it("brings a file back with a label once new commits land on it", async () => {

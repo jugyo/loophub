@@ -279,10 +279,6 @@ export function DiffFileDialog({
     startWidth: number;
   } | null>(null);
   const backdropDismiss = useBackdropDismiss(onClose);
-  const path = copyFilename(file);
-  const copyPath = visibleCopyPath(path);
-  const isMarkdown = isMarkdownFile(file);
-  const mode = isMarkdown ? markdownMode : standardMode;
   const viewsQuery = usePullFileViews(owner, repo, number);
   const viewsByPath = useMemo(
     () => pullFileViewsByPath(viewsQuery.data),
@@ -290,6 +286,7 @@ export function DiffFileDialog({
   );
   const setViewed = useSetPullFileViewed(owner, repo, number);
   const { showError } = useToast();
+  const [selectedFilename, setSelectedFilename] = useState(file.filename);
   const [showViewed, setShowViewed] = useState(false);
   const filteredFiles = useMemo(
     () =>
@@ -307,7 +304,10 @@ export function DiffFileDialog({
     [filteredFiles, showViewed, viewsByPath],
   );
   const viewedCount = viewedPullFileCount(filteredFiles, viewsByPath);
-  const fileViewState = pullFileViewState(file, viewsByPath);
+  const selectedFile = selectedFilename
+    ? (files.find((candidate) => candidate.filename === selectedFilename) ??
+      null)
+    : null;
   const [collapsedDirectories, setCollapsedDirectories] = useState<
     ReadonlySet<string>
   >(() => new Set());
@@ -319,6 +319,10 @@ export function DiffFileDialog({
       ),
     [collapsedDirectories, listedFiles],
   );
+
+  useEffect(() => {
+    setSelectedFilename(file.filename);
+  }, [file.filename]);
 
   function toggleDirectory(path: string) {
     setCollapsedDirectories((current) => {
@@ -334,8 +338,23 @@ export function DiffFileDialog({
       return;
     }
     setStandardMode(nextMode);
-    if (isMarkdown) setMarkdownMode(nextMode);
+    if (selectedIsMarkdown) setMarkdownMode(nextMode);
   }
+
+  function selectFile(filename: string) {
+    setSelectedFilename(filename);
+    onSelectFile(filename);
+  }
+
+  const selectedPath = selectedFile ? copyFilename(selectedFile) : "";
+  const selectedCopyPath = visibleCopyPath(selectedPath);
+  const selectedIsMarkdown = selectedFile
+    ? isMarkdownFile(selectedFile)
+    : false;
+  const selectedMode = selectedIsMarkdown ? markdownMode : standardMode;
+  const selectedFileViewState = selectedFile
+    ? pullFileViewState(selectedFile, viewsByPath)
+    : "unviewed";
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -379,7 +398,9 @@ export function DiffFileDialog({
         data-debug-component="DiffFileDialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`Diff for ${file.filename}`}
+        aria-label={
+          selectedFile ? `Diff for ${selectedFile.filename}` : "Diff files"
+        }
         className="flex max-h-full w-full overflow-hidden rounded-md border bg-background shadow-lg"
       >
         <aside
@@ -472,7 +493,7 @@ export function DiffFileDialog({
                 );
               }
               const sidebarFile = node.entry;
-              const selected = sidebarFile.filename === file.filename;
+              const selected = sidebarFile.filename === selectedFilename;
               return (
                 <li key={`file:${sidebarFile.filename}`}>
                   <button
@@ -485,7 +506,7 @@ export function DiffFileDialog({
                         "bg-accent font-medium text-accent-foreground",
                     )}
                     style={{ paddingLeft: rowIndent(depth) }}
-                    onClick={() => onSelectFile(sidebarFile.filename)}
+                    onClick={() => selectFile(sidebarFile.filename)}
                   >
                     <FileStatusBadge status={sidebarFile.status} />
                     <span className="min-w-0 truncate font-mono text-xs">
@@ -533,129 +554,164 @@ export function DiffFileDialog({
           }}
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-1">
-                <h3 className="min-w-0 truncate text-sm font-semibold">
-                  {file.filename}
-                </h3>
-                <CopyButton
-                  key={`copy-${copyPath}`}
-                  value={copyPath}
-                  label={`Copy file path: ${copyPath}`}
-                  className="size-6"
-                />
-                <FileInfoPopover
-                  key={`info-${copyPath}`}
+          {selectedFile ? (
+            <>
+              <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <h3 className="min-w-0 truncate text-sm font-semibold">
+                      {selectedFile.filename}
+                    </h3>
+                    <CopyButton
+                      key={`copy-${selectedCopyPath}`}
+                      value={selectedCopyPath}
+                      label={`Copy file path: ${selectedCopyPath}`}
+                      className="size-6"
+                    />
+                    <FileInfoPopover
+                      key={`info-${selectedCopyPath}`}
+                      owner={owner}
+                      repo={repo}
+                      number={number}
+                      file={selectedFile}
+                    />
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                    <FileStatusBadge status={selectedFile.status} />
+                    <DiffStat
+                      additions={selectedFile.additions}
+                      deletions={selectedFile.deletions}
+                    />
+                    <FileViewedBadge state={selectedFileViewState} />
+                  </div>
+                </div>
+                <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+                  <div className="flex overflow-hidden rounded-md border text-xs">
+                    <ModeButton
+                      active={selectedMode === "diff"}
+                      onClick={() => selectMode("diff")}
+                    >
+                      Diff
+                    </ModeButton>
+                    <ModeButton
+                      active={selectedMode === "raw"}
+                      onClick={() => selectMode("raw")}
+                    >
+                      Raw
+                    </ModeButton>
+                    {selectedIsMarkdown ? (
+                      <>
+                        <ModeButton
+                          active={selectedMode === "rendered"}
+                          onClick={() => selectMode("rendered")}
+                        >
+                          Rendered diff
+                        </ModeButton>
+                        <ModeButton
+                          active={selectedMode === "base"}
+                          onClick={() => selectMode("base")}
+                        >
+                          Base
+                        </ModeButton>
+                        <ModeButton
+                          active={selectedMode === "head"}
+                          onClick={() => selectMode("head")}
+                        >
+                          Head
+                        </ModeButton>
+                      </>
+                    ) : null}
+                  </div>
+                  {selectedMode === "diff" ? (
+                    <div
+                      className="flex overflow-hidden rounded-md border text-xs"
+                      aria-label="Diff whitespace"
+                    >
+                      <ModeButton
+                        active={ignoreWhitespace}
+                        onClick={() => setIgnoreWhitespace((value) => !value)}
+                      >
+                        Ignore whitespace
+                      </ModeButton>
+                    </div>
+                  ) : null}
+                  {selectedMode === "diff" || selectedMode === "rendered" ? (
+                    <div
+                      className="flex overflow-hidden rounded-md border text-xs"
+                      aria-label="Diff view"
+                    >
+                      <ModeButton
+                        active={diffViewMode === "unified"}
+                        onClick={() => setDiffViewMode("unified")}
+                      >
+                        Unified
+                      </ModeButton>
+                      <ModeButton
+                        active={diffViewMode === "split"}
+                        onClick={() => setDiffViewMode("split")}
+                      >
+                        Split
+                      </ModeButton>
+                    </div>
+                  ) : null}
+                  {/* The record is append-only, so a file whose commits moved on comes back unchecked:
+                      ticking it again pins the version now on screen (#2502). */}
+                  <label className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={selectedFileViewState === "viewed"}
+                      disabled={setViewed.isPending}
+                      onChange={(event) => {
+                        const viewed = event.target.checked;
+                        setViewed.mutate(
+                          {
+                            path: selectedFile.filename,
+                            sha: selectedFile.last_changed_sha ?? null,
+                            viewed,
+                          },
+                          {
+                            onSuccess: () => {
+                              if (viewed) setSelectedFilename(null);
+                            },
+                            onError: (error) =>
+                              showError(errorMessage(error, "Update failed")),
+                          },
+                        );
+                      }}
+                    />
+                    Viewed
+                  </label>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    aria-label="Close diff"
+                    className="h-7 w-7 shrink-0 p-0"
+                    onClick={onClose}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </div>
+              </header>
+              {/* Keying the scrolling element on the open file gives every file a fresh scroll box, so
+                  a diff opens at its first line instead of inheriting the previous file's offset. */}
+              <div
+                key={selectedPath}
+                className="diff-scrollport min-w-0 flex-1 overflow-auto"
+              >
+                <FileDiffContent
+                  key={`${selectedPath}:${ignoreWhitespace}`}
                   owner={owner}
                   repo={repo}
                   number={number}
-                  file={file}
+                  file={selectedFile}
+                  mode={selectedMode}
+                  diffViewMode={diffViewMode}
+                  ignoreWhitespace={ignoreWhitespace}
                 />
               </div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                <FileStatusBadge status={file.status} />
-                <DiffStat
-                  additions={file.additions}
-                  deletions={file.deletions}
-                />
-                <FileViewedBadge state={fileViewState} />
-              </div>
-            </div>
-            <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-              <div className="flex overflow-hidden rounded-md border text-xs">
-                <ModeButton
-                  active={mode === "diff"}
-                  onClick={() => selectMode("diff")}
-                >
-                  Diff
-                </ModeButton>
-                <ModeButton
-                  active={mode === "raw"}
-                  onClick={() => selectMode("raw")}
-                >
-                  Raw
-                </ModeButton>
-                {isMarkdown ? (
-                  <>
-                    <ModeButton
-                      active={mode === "rendered"}
-                      onClick={() => selectMode("rendered")}
-                    >
-                      Rendered diff
-                    </ModeButton>
-                    <ModeButton
-                      active={mode === "base"}
-                      onClick={() => selectMode("base")}
-                    >
-                      Base
-                    </ModeButton>
-                    <ModeButton
-                      active={mode === "head"}
-                      onClick={() => selectMode("head")}
-                    >
-                      Head
-                    </ModeButton>
-                  </>
-                ) : null}
-              </div>
-              {mode === "diff" ? (
-                <div
-                  className="flex overflow-hidden rounded-md border text-xs"
-                  aria-label="Diff whitespace"
-                >
-                  <ModeButton
-                    active={ignoreWhitespace}
-                    onClick={() => setIgnoreWhitespace((value) => !value)}
-                  >
-                    Ignore whitespace
-                  </ModeButton>
-                </div>
-              ) : null}
-              {mode === "diff" || mode === "rendered" ? (
-                <div
-                  className="flex overflow-hidden rounded-md border text-xs"
-                  aria-label="Diff view"
-                >
-                  <ModeButton
-                    active={diffViewMode === "unified"}
-                    onClick={() => setDiffViewMode("unified")}
-                  >
-                    Unified
-                  </ModeButton>
-                  <ModeButton
-                    active={diffViewMode === "split"}
-                    onClick={() => setDiffViewMode("split")}
-                  >
-                    Split
-                  </ModeButton>
-                </div>
-              ) : null}
-              {/* The record is append-only, so a file whose commits moved on comes back unchecked:
-                  ticking it again pins the version now on screen (#2502). */}
-              <label className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={fileViewState === "viewed"}
-                  disabled={setViewed.isPending}
-                  onChange={(event) => {
-                    const viewed = event.target.checked;
-                    setViewed
-                      .mutateAsync({
-                        path: file.filename,
-                        sha: file.last_changed_sha ?? null,
-                        viewed,
-                      })
-                      .then(() => {
-                        if (viewed) onClose();
-                      })
-                      .catch((error) =>
-                        showError(errorMessage(error, "Update failed")),
-                      );
-                  }}
-                />
-                Viewed
-              </label>
+            </>
+          ) : (
+            <div className="flex justify-end border-b px-3 py-2">
               <Button
                 variant="secondary"
                 size="sm"
@@ -666,24 +722,7 @@ export function DiffFileDialog({
                 <X className="size-4" />
               </Button>
             </div>
-          </header>
-          {/* Keying the scrolling element on the open file gives every file a fresh scroll box, so
-              a diff opens at its first line instead of inheriting the previous file's offset. */}
-          <div
-            key={path}
-            className="diff-scrollport min-w-0 flex-1 overflow-auto"
-          >
-            <FileDiffContent
-              key={`${path}:${ignoreWhitespace}`}
-              owner={owner}
-              repo={repo}
-              number={number}
-              file={file}
-              mode={mode}
-              diffViewMode={diffViewMode}
-              ignoreWhitespace={ignoreWhitespace}
-            />
-          </div>
+          )}
         </div>
       </div>
     </div>
