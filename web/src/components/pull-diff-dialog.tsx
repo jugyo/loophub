@@ -250,6 +250,81 @@ function matchesGlobList(filename: string, value: string) {
   );
 }
 
+export function DiffDialogState({
+  dialogLabel,
+  dialogTitle,
+  dialogSha,
+  onClose,
+  children,
+}: {
+  dialogLabel: string;
+  dialogTitle: string;
+  dialogSha: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const backdropDismiss = useBackdropDismiss(onClose);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4"
+      {...backdropDismiss}
+    >
+      <div
+        data-debug-component="DiffFileDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={dialogLabel}
+        className="flex max-h-full w-full overflow-hidden rounded-md border bg-background shadow-lg"
+      >
+        <aside
+          aria-label="Changed files"
+          className="shrink-0 overflow-y-auto bg-muted/20"
+          style={{ width: INITIAL_FILE_SIDEBAR_WIDTH }}
+        >
+          <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold">
+              <span>Files changed (0)</span>
+            </div>
+          </div>
+        </aside>
+        <div
+          role="separator"
+          aria-label="Resize changed files sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={MIN_FILE_SIDEBAR_WIDTH}
+          aria-valuemax={MAX_FILE_SIDEBAR_WIDTH}
+          aria-valuenow={INITIAL_FILE_SIDEBAR_WIDTH}
+          className="relative w-1 shrink-0 border-x bg-border/40"
+        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                <code className="shrink-0 rounded bg-muted px-1 py-0.5">
+                  {dialogSha}
+                </code>
+                <span className="truncate">{dialogTitle}</span>
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label="Close commit diff"
+              className="h-7 w-7 shrink-0 p-0"
+              onClick={onClose}
+            >
+              <X className="size-4" />
+            </Button>
+          </header>
+          <div className="diff-scrollport min-w-0 flex-1 overflow-auto">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DiffFileDialog({
   owner,
   repo,

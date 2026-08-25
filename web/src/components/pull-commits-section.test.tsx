@@ -1073,6 +1073,13 @@ describe("PullCommitsSection", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Changes in aaaaaaa: Latest change",
     });
+    expect(dialog.getAttribute("data-debug-component")).toBe("DiffFileDialog");
+    expect(within(dialog).getByLabelText("Changed files")).toBeTruthy();
+    expect(within(dialog).getByText("aaaaaaa")).toBeTruthy();
+    expect(within(dialog).getByText("Latest change")).toBeTruthy();
+    expect(
+      within(dialog).getByRole("button", { name: "Close commit diff" }),
+    ).toBeTruthy();
     expect(within(dialog).getByText("Loading commit diff…")).toBeTruthy();
 
     resolveFiles(commitDiff([]));
