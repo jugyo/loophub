@@ -305,12 +305,14 @@ describe("DiffFileDialog", () => {
       false,
     );
     expect(within(dialog).getByText("const x = 1;")).toBeTruthy();
-    expect(
-      within(dialog).getByText("const x = 1;").closest("tr")?.className,
-    ).toContain("bg-green-100");
-    expect(
-      within(dialog).getByText("const x = 0;").closest("tr")?.className,
-    ).toContain("bg-red-100");
+    const addedRow = within(dialog).getByText("const x = 1;").closest("tr");
+    expect(addedRow?.className).toContain("bg-green-50");
+    expect(addedRow?.className).toContain("dark:bg-[#13251d]");
+    expect(addedRow?.className).toContain("text-foreground");
+    const deletedRow = within(dialog).getByText("const x = 0;").closest("tr");
+    expect(deletedRow?.className).toContain("bg-red-50");
+    expect(deletedRow?.className).toContain("dark:bg-[#2b1b1e]");
+    expect(deletedRow?.className).toContain("text-foreground");
     expect(within(dialog).getByLabelText("Old line 1")).toBeTruthy();
     expect(within(dialog).getByLabelText("New line 1")).toBeTruthy();
     expect(

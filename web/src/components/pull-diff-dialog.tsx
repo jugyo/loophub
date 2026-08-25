@@ -178,8 +178,8 @@ type SplitRow =
   | { kind: "separator"; line: PositionedDiffLine };
 
 const DIFF_LINE_CLASS: Record<DiffLineKind, string> = {
-  add: "bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-100",
-  del: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100",
+  add: "bg-green-50 text-foreground dark:bg-[#13251d]",
+  del: "bg-red-50 text-foreground dark:bg-[#2b1b1e]",
   hunk: "bg-muted text-muted-foreground",
   meta: "text-muted-foreground",
   context: "",
