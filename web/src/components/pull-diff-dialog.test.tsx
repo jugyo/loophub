@@ -916,7 +916,9 @@ describe("DiffFileDialog", () => {
     expect(screen.queryByLabelText("Comment")).toBeNull();
 
     await addComment("New line 1");
-    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("");
+    expect(
+      (screen.getByLabelText("Comment") as HTMLTextAreaElement).value,
+    ).toBe("");
   });
 
   it("posts a non-empty thread reply once with Cmd+Enter", async () => {
@@ -4232,9 +4234,7 @@ describe("DiffFileDialog", () => {
       target: { value: "Rendered feedback" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-    await waitFor(() =>
-      expect(screen.queryByLabelText("Comment")).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByLabelText("Comment")).toBeNull());
     expect(screen.getByRole("heading", { name: "New" })).toBe(heading);
   });
 

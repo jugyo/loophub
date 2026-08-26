@@ -825,19 +825,16 @@ describe("NotificationStack", () => {
       },
       message: "Clear failed",
     },
-  ])(
-    "shows $action failures through the shared error toast",
-    async (testCase) => {
-      notifications.value = [makeNotification(12)];
-      actions[testCase.action as "read" | "readAll"].mockImplementationOnce(
-        (_input: unknown, options: { onError: (error: Error) => void }) =>
-          options.onError(new Error(testCase.message)),
-      );
-      renderStack();
+  ])("shows $action failures through the shared error toast", async (testCase) => {
+    notifications.value = [makeNotification(12)];
+    actions[testCase.action as "read" | "readAll"].mockImplementationOnce(
+      (_input: unknown, options: { onError: (error: Error) => void }) =>
+        options.onError(new Error(testCase.message)),
+    );
+    renderStack();
 
-      await testCase.invoke();
+    await testCase.invoke();
 
-      expect(actions.showError).toHaveBeenCalledWith(testCase.message);
-    },
-  );
+    expect(actions.showError).toHaveBeenCalledWith(testCase.message);
+  });
 });
