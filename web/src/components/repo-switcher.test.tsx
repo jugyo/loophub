@@ -12,6 +12,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import type { Repo } from "@/api/types";
@@ -199,6 +200,27 @@ describe("RepoSwitcher", () => {
     const link = await screen.findByRole("link", { name: "me/alpha" });
 
     expect(link.getAttribute("href")).toBe("/r/me/alpha");
+  });
+
+  it("Unicode を含む repository 名を dashboard と同じ順序で並べる", async () => {
+    reposData.value = [
+      makeRepo({ id: 1, full_name: "a/z" }),
+      makeRepo({ id: 2, full_name: "Ä/alpha" }),
+      makeRepo({ id: 3, full_name: "e/z" }),
+      makeRepo({ id: 4, full_name: "É/alpha" }),
+      makeRepo({ id: 5, full_name: "z/favorite", favorite: true }),
+    ];
+    renderInRouter();
+    await screen.findByText("ready");
+
+    const repositoryList = await screen.findByRole("list", {
+      name: "Repositories",
+    });
+    const order = within(repositoryList)
+      .getAllByRole("link")
+      .map((link) => link.textContent?.trim());
+
+    expect(order).toEqual(["z/favorite", "Ä/alpha", "a/z", "É/alpha", "e/z"]);
   });
 
   it("keeps the picker open for modified clicks on filtered repositories", async () => {

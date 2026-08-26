@@ -41,6 +41,25 @@ afterAll(() => {
 });
 
 describe("dashboard.overview", () => {
+  test("Unicode を含む repository 名を picker と同じ順序で返す", async () => {
+    const registered = [
+      S.createRepo("a/z", "/tmp/dashboard-sort-a"),
+      S.createRepo("Ä/alpha", "/tmp/dashboard-sort-umlaut-a"),
+      S.createRepo("e/z", "/tmp/dashboard-sort-e"),
+      S.createRepo("É/alpha", "/tmp/dashboard-sort-acute-e"),
+      S.createRepo("z/favorite", "/tmp/dashboard-sort-favorite"),
+    ];
+    S.setRepoFavorite(registered[4].id, true);
+
+    const overview = await svc.dashboard.overview();
+    const names = new Set(registered.map((repo) => repo.full_name));
+    const order = overview.repositories
+      .map((repository) => repository.repo.full_name)
+      .filter((name) => names.has(name));
+
+    expect(order).toEqual(["z/favorite", "Ä/alpha", "a/z", "É/alpha", "e/z"]);
+  });
+
   test("enriches each issue's linked PR like the dedicated issue list", async () => {
     const withPr = svc.issues.create("me/proj", { title: "has a PR" });
     await svc.dev.openPr(

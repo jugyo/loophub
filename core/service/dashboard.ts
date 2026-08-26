@@ -1,3 +1,4 @@
+import { compareRepos } from "../repo-sort.ts";
 import type {
   DashboardOverviewWire,
   DashboardRepositoryWire,
@@ -35,7 +36,7 @@ export const dashboard = {
   async overview(): Promise<DashboardOverviewWire> {
     const repositories: DashboardRepositoryWire[] = [];
     const issueRows: { repo: S.Repo; ref: RepoRefWire; row: S.IssueRow }[] = [];
-    for (const r of S.listRepos("active")) {
+    for (const r of [...S.listRepos("active")].sort(compareRepos)) {
       const ref = repoRef(r);
       const rows = S.listIssues(r.id, "issue", "all", "created", {
         rootsOnly: true,

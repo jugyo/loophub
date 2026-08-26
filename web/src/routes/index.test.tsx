@@ -166,4 +166,61 @@ describe("HomePage", () => {
     expect(within(section).getByText("No issues.")).toBeTruthy();
     expect(within(section).queryByText("Closed issue")).toBeNull();
   });
+
+  it("dashboard が返した repository の順序をそのまま表示する", async () => {
+    renderHome({
+      ...emptyOverview,
+      repository_count: 4,
+      repositories: [
+        {
+          repo: { full_name: "acme/Alpha", owner: "acme", name: "Alpha" },
+          issues: [],
+          total_issues: 0,
+          open_issues: 0,
+          closed_issues: 0,
+          issue_limit: 20,
+          has_more: false,
+        },
+        {
+          repo: { full_name: "Acme/widget", owner: "Acme", name: "widget" },
+          issues: [],
+          total_issues: 0,
+          open_issues: 0,
+          closed_issues: 0,
+          issue_limit: 20,
+          has_more: false,
+        },
+        {
+          repo: { full_name: "me/beta", owner: "me", name: "beta" },
+          issues: [],
+          total_issues: 0,
+          open_issues: 0,
+          closed_issues: 0,
+          issue_limit: 20,
+          has_more: false,
+        },
+        {
+          repo: { full_name: "me/zulu", owner: "me", name: "zulu" },
+          issues: [],
+          total_issues: 0,
+          open_issues: 0,
+          closed_issues: 0,
+          issue_limit: 20,
+          has_more: false,
+        },
+      ],
+    });
+
+    await screen.findByRole("heading", { name: "me/zulu" });
+    const sections = screen
+      .getAllByRole("heading")
+      .filter((heading) => heading.closest("section"))
+      .map((heading) => heading.textContent?.trim());
+    expect(sections).toEqual([
+      "acme/Alpha",
+      "Acme/widget",
+      "me/beta",
+      "me/zulu",
+    ]);
+  });
 });

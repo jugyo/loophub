@@ -90,6 +90,7 @@ export function useSetRepoFavorite(owner: string, repo: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: queryKeys.repos() });
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard() });
     },
   });
 }
@@ -105,6 +106,7 @@ export function useRenameRepo(owner: string, repo: string) {
     mutationFn: (newName: string) => renameRepo(owner, repo, newName),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.repos() });
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard() });
     },
   });
 }

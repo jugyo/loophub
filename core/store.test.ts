@@ -1124,10 +1124,11 @@ test("setRepoFavorite toggles favorite and stamps/clears favorited_at (#457)", (
   expect(unfavorited.favorited_at).toBeNull();
 });
 
-test("listRepos sorts favorites first, then by insertion order (#457)", () => {
-  const a = S.createRepo("me/sort-fav-a", "/tmp/sort-fav-a");
-  const b = S.createRepo("me/sort-fav-b", "/tmp/sort-fav-b");
-  const c = S.createRepo("me/sort-fav-c", "/tmp/sort-fav-c");
+test("listRepos sorts favorites first and preserves insertion order (#457)", () => {
+  const a = S.createRepo("me/zulu", "/tmp/sort-fav-a");
+  const b = S.createRepo("Acme/widget", "/tmp/sort-fav-b");
+  const c = S.createRepo("acme/Alpha", "/tmp/sort-fav-c");
+  S.setRepoFavorite(b.id, true);
   S.setRepoFavorite(c.id, true);
 
   const idsAmong = (ids: number[]) =>
@@ -1135,7 +1136,7 @@ test("listRepos sorts favorites first, then by insertion order (#457)", () => {
       .map((r) => r.id)
       .filter((id) => ids.includes(id));
 
-  expect(idsAmong([a.id, b.id, c.id])).toEqual([c.id, a.id, b.id]);
+  expect(idsAmong([a.id, b.id, c.id])).toEqual([b.id, c.id, a.id]);
 });
 
 test("increases a held workflow rework limit with an expected-value guard", () => {
