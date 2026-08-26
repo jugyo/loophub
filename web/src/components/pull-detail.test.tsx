@@ -594,7 +594,7 @@ describe("PullDetail", () => {
     const section = (
       await screen.findByRole("heading", { name: /Files changed \(1\)/ })
     ).closest("section")!;
-    const commentCount = within(section).getByLabelText("2 diff comments");
+    const commentCount = within(section).getByLabelText("2 comments");
     const changedAt = within(section).getByText("2h ago");
     expect(changedAt.compareDocumentPosition(commentCount)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -749,7 +749,7 @@ describe("PullDetail", () => {
     // cell: as separate children they outnumber the columns and wrap onto an implicit second row.
     const meta = within(section).getByText("2h ago").parentElement!;
     expect(meta.parentElement).toBe(row);
-    expect(within(meta).getByLabelText("2 diff comments")).toBeTruthy();
+    expect(within(meta).getByLabelText("2 comments")).toBeTruthy();
     // One child per track, so that cell is the last track — which must be content-sized. A
     // flexible track collapses to zero once a long filename takes the row's free space, and the
     // nowrap metadata then overflows onto the diff stat.
@@ -919,9 +919,7 @@ describe("PullDetail", () => {
     });
     const section = filesChanged.closest("section");
     if (!section) throw new Error("Files changed section not found");
-    expect(
-      await within(section).findByLabelText("2 diff comments"),
-    ).toBeTruthy();
+    expect(await within(section).findByLabelText("2 comments")).toBeTruthy();
 
     fireEvent.click(
       within(section).getByRole("button", { name: /web\/src\/a\.ts/ }),
@@ -929,7 +927,7 @@ describe("PullDetail", () => {
     const sidebar = await screen.findByRole("complementary", {
       name: "Changed files",
     });
-    expect(within(sidebar).getByLabelText("2 diff comments")).toBeTruthy();
+    expect(within(sidebar).getByLabelText("2 comments")).toBeTruthy();
     expect(
       Array.from(
         within(sidebar).getByRole("button", { name: "web/src/a.ts" }).children,
@@ -953,9 +951,7 @@ describe("PullDetail", () => {
     });
     const section = filesChanged.closest("section");
     if (!section) throw new Error("Files changed section not found");
-    expect(
-      await within(section).findByLabelText("2 diff comments"),
-    ).toBeTruthy();
+    expect(await within(section).findByLabelText("2 comments")).toBeTruthy();
     fireEvent.click(
       within(section).getByRole("button", { name: "Previous diff threads" }),
     );
@@ -1156,9 +1152,9 @@ describe("PullDetail", () => {
       await screen.findByRole("heading", { name: "Comments (2)" })
     ).closest("section")!;
     const entry = within(section).getByRole("button", {
-      name: "差分コメント: web/src/a.ts",
+      name: "Comment: web/src/a.ts",
     });
-    expect(within(entry).getByText("差分コメント")).toBeTruthy();
+    expect(within(entry).getByText("Comment")).toBeTruthy();
     expect(within(entry).getByText("web/src/a.ts")).toBeTruthy();
     expect(within(entry).queryByText("First comment")).toBeNull();
 

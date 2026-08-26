@@ -300,7 +300,7 @@ describe("DiffFileDialog", () => {
       }),
     ).toHaveLength(1);
     fireEvent.click(commentButtons[0]);
-    const composer = screen.getByLabelText("Diff comment");
+    const composer = screen.getByLabelText("Comment");
     fireEvent.change(composer, {
       target: { value: "Copied line" },
     });
@@ -653,9 +653,7 @@ describe("DiffFileDialog", () => {
 
     await dragLines("New line 1", "New line 2");
     expect(screen.getByText("RIGHT 1–2")).toBeTruthy();
-    const unifiedComposerRow = screen
-      .getByLabelText("Diff comment")
-      .closest("tr");
+    const unifiedComposerRow = screen.getByLabelText("Comment").closest("tr");
     expect(unifiedComposerRow?.hasAttribute("data-diff-comment-row")).toBe(
       true,
     );
@@ -663,9 +661,7 @@ describe("DiffFileDialog", () => {
     expect(unifiedComposerRow?.previousElementSibling?.textContent).toContain(
       "new two",
     );
-    const unifiedComposerCell = screen
-      .getByLabelText("Diff comment")
-      .closest("td");
+    const unifiedComposerCell = screen.getByLabelText("Comment").closest("td");
     expect(unifiedComposerCell?.firstElementChild?.classList).toContain(
       "sticky",
     );
@@ -680,25 +676,23 @@ describe("DiffFileDialog", () => {
     ).toContain("[container-type:inline-size]");
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByLabelText("Comment")).toBeNull();
 
     await dragLines("New line 1", "New line 2");
 
     fireEvent.click(screen.getByRole("button", { name: "Split" }));
     expect(screen.getByText("RIGHT 1–2")).toBeTruthy();
-    const splitComposerRow = screen
-      .getByLabelText("Diff comment")
-      .closest("tr");
+    const splitComposerRow = screen.getByLabelText("Comment").closest("tr");
     expect(splitComposerRow?.hasAttribute("data-diff-comment-row")).toBe(true);
     expect(splitComposerRow?.children).toHaveLength(2);
     expect(splitComposerRow?.previousElementSibling?.textContent).toContain(
       "new two",
     );
 
-    fireEvent.change(screen.getByLabelText("Diff comment"), {
+    fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Please keep these together" },
     });
-    fireEvent.keyDown(screen.getByLabelText("Diff comment"), { key: "Enter" });
+    fireEvent.keyDown(screen.getByLabelText("Comment"), { key: "Enter" });
     expect(create).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
     await waitFor(() =>
@@ -788,7 +782,7 @@ describe("DiffFileDialog", () => {
     });
 
     await addComment("New line 1");
-    const textarea = screen.getByLabelText("Diff comment");
+    const textarea = screen.getByLabelText("Comment");
 
     fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
     expect(create).not.toHaveBeenCalled();
@@ -805,7 +799,7 @@ describe("DiffFileDialog", () => {
       expect.not.objectContaining({ session_id: expect.anything() }),
     );
     expect(screen.getAllByText("Keyboard feedback")).toHaveLength(1);
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByLabelText("Comment")).toBeNull();
 
     resolveCreate();
     await waitFor(() => {
@@ -827,7 +821,7 @@ describe("DiffFileDialog", () => {
     });
 
     await addComment("New line 1");
-    fireEvent.change(screen.getByLabelText("Diff comment"), {
+    fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Visible before feedback loads." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
@@ -835,7 +829,7 @@ describe("DiffFileDialog", () => {
     expect(
       await screen.findByText("Visible before feedback loads."),
     ).toBeTruthy();
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByLabelText("Comment")).toBeNull();
   });
 
   it("removes an optimistic diff comment when posting fails during the initial feedback load", async () => {
@@ -854,7 +848,7 @@ describe("DiffFileDialog", () => {
     });
 
     await addComment("New line 1");
-    fireEvent.change(screen.getByLabelText("Diff comment"), {
+    fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Remove this failed comment." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
@@ -865,7 +859,7 @@ describe("DiffFileDialog", () => {
     await waitFor(() => {
       expect(screen.queryByLabelText(/^Diff thread -/)).toBeNull();
       expect(
-        (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
+        (screen.getByLabelText("Comment") as HTMLTextAreaElement).value,
       ).toBe("Remove this failed comment.");
       expect(showError).toHaveBeenCalledWith("Create failed: write failed");
       expect(listFeedback).toHaveBeenCalledTimes(2);
@@ -886,19 +880,19 @@ describe("DiffFileDialog", () => {
     });
 
     await addComment("New line 1");
-    fireEvent.change(screen.getByLabelText("Diff comment"), {
+    fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Please retry this range." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     expect(await screen.findByText("Please retry this range.")).toBeTruthy();
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByLabelText("Comment")).toBeNull();
 
     rejectCreate(new RpcFault(500, "write failed"));
     await waitFor(() => {
       expect(screen.queryByLabelText(/^Diff thread -/)).toBeNull();
       expect(
-        (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
+        (screen.getByLabelText("Comment") as HTMLTextAreaElement).value,
       ).toBe("Please retry this range.");
       expect(showError).toHaveBeenCalledWith("Create failed: write failed");
     });
@@ -915,16 +909,14 @@ describe("DiffFileDialog", () => {
     // Cancelling drops the draft, so the next comment starts on an empty composer instead of the
     // abandoned text.
     await addComment("New line 1");
-    fireEvent.change(screen.getByLabelText("Diff comment"), {
+    fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Abandoned draft" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByLabelText("Comment")).toBeNull();
 
     await addComment("New line 1");
-    expect(
-      (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
-    ).toBe("");
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("");
   });
 
   it("posts a non-empty thread reply once with Cmd+Enter", async () => {
@@ -1024,7 +1016,7 @@ describe("DiffFileDialog", () => {
     const view = renderDialog({ files: [file, secondFile], handlers });
 
     await addComment("New line 1");
-    fireEvent.change(screen.getByLabelText("Diff comment"), {
+    fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Comment for file A" },
     });
 
@@ -1048,7 +1040,7 @@ describe("DiffFileDialog", () => {
 
     const secondFileLine = await screen.findByLabelText("New line 1");
     expect(secondFileLine.hasAttribute("data-selected")).toBe(false);
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByLabelText("Comment")).toBeNull();
     expect(screen.queryByText("Comment for file A")).toBeNull();
   });
 
@@ -1198,7 +1190,7 @@ describe("DiffFileDialog", () => {
     const lineCell = screen.getByLabelText("New line 1");
     fireEvent.click(addButton);
     expect(screen.getByText("RIGHT 1")).toBeTruthy();
-    expect(screen.getByLabelText("Diff comment")).toBeTruthy();
+    expect(screen.getByLabelText("Comment")).toBeTruthy();
     expect(screen.getByLabelText("New line 1")).toBe(lineCell);
   });
 
@@ -1332,7 +1324,7 @@ describe("DiffFileDialog", () => {
     ).toBe(false);
 
     await addComment("New line 1");
-    const commentInput = screen.getByLabelText("Diff comment");
+    const commentInput = screen.getByLabelText("Comment");
     const replyInput = screen.getByLabelText("Reply to thread 1");
     const commentActions = screen.getByRole("button", {
       name: "Comment",
@@ -1400,7 +1392,7 @@ describe("DiffFileDialog", () => {
 
     await addComment("New line 1");
     const commentComposer = screen.getByLabelText(
-      "Diff comment",
+      "Comment",
     ) as HTMLTextAreaElement;
     const replyComposer = screen.getByLabelText(
       "Reply to thread 1",
@@ -3502,7 +3494,7 @@ describe("DiffFileDialog", () => {
 
     fireEvent.click(button);
     const block = screen.getByText("New paragraph");
-    const composer = screen.getByLabelText("Diff comment");
+    const composer = screen.getByLabelText("Comment");
     const group = composer.closest(".markdown-diff-unified-thread-group");
     expect(group).not.toBeNull();
     expect(block.nextElementSibling).toBe(group);
@@ -3528,7 +3520,7 @@ describe("DiffFileDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Split" }));
     expect(
       screen
-        .getByLabelText("Diff comment")
+        .getByLabelText("Comment")
         .closest(".markdown-diff-unified-thread-group"),
     ).toBeNull();
     const splitGutter = screen
@@ -3544,7 +3536,7 @@ describe("DiffFileDialog", () => {
     );
     expect(pane?.children).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByLabelText("Comment")).toBeNull();
     expect(pane?.children).toHaveLength(2);
   });
 
@@ -4097,12 +4089,12 @@ describe("DiffFileDialog", () => {
     expect(
       screen.getByRole("heading", { name: "Old" }).className,
     ).not.toContain("markdown-diff-block-selected");
-    fireEvent.change(screen.getByLabelText("Diff comment"), {
+    fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Rendered feedback" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Split" }));
     expect(
-      (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
+      (screen.getByLabelText("Comment") as HTMLTextAreaElement).value,
     ).toBe("Rendered feedback");
     expect(screen.getByRole("heading", { name: "New" }).className).toContain(
       "markdown-diff-block-selected",
@@ -4112,7 +4104,7 @@ describe("DiffFileDialog", () => {
     ).not.toContain("markdown-diff-block-selected");
     fireEvent.click(screen.getByRole("button", { name: "Unified" }));
     expect(
-      (screen.getByLabelText("Diff comment") as HTMLTextAreaElement).value,
+      (screen.getByLabelText("Comment") as HTMLTextAreaElement).value,
     ).toBe("Rendered feedback");
     expect(screen.getByRole("heading", { name: "New" }).className).toContain(
       "markdown-diff-block-selected",
@@ -4227,21 +4219,21 @@ describe("DiffFileDialog", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Comment on head lines 1-1" }),
     );
-    await screen.findByLabelText("Diff comment");
+    await screen.findByLabelText("Comment");
     expect(screen.getByRole("heading", { name: "New" })).toBe(heading);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByLabelText("Comment")).toBeNull();
     expect(screen.getByRole("heading", { name: "New" })).toBe(heading);
 
     fireEvent.click(
       screen.getByRole("button", { name: "Comment on head lines 1-1" }),
     );
-    fireEvent.change(await screen.findByLabelText("Diff comment"), {
+    fireEvent.change(await screen.findByLabelText("Comment"), {
       target: { value: "Rendered feedback" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
     await waitFor(() =>
-      expect(screen.queryByLabelText("Diff comment")).toBeNull(),
+      expect(screen.queryByLabelText("Comment")).toBeNull(),
     );
     expect(screen.getByRole("heading", { name: "New" })).toBe(heading);
   });

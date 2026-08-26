@@ -1744,12 +1744,12 @@ function TimelineDiffFeedbackItem({
     >
       <button
         type="button"
-        aria-label={`差分コメント: ${feedback.path}`}
+        aria-label={`Comment: ${feedback.path}`}
         onClick={() => onOpen(feedback.path, feedback.thread_id)}
         className="flex w-full min-w-0 items-center gap-2 rounded text-left text-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="shrink-0 rounded bg-muted px-1 py-px font-medium text-muted-foreground">
-          差分コメント
+          Comment
         </span>
         <code className="min-w-0 flex-1 truncate text-muted-foreground">
           {feedback.path}

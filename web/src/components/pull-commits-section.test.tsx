@@ -1035,7 +1035,7 @@ describe("PullCommitsSection", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Comment on new line 1" }),
     );
-    const composer = screen.getByLabelText("Diff comment");
+    const composer = screen.getByLabelText("Comment");
     fireEvent.change(composer, { target: { value: "コミットへの指摘" } });
     fireEvent.click(
       within(composer.closest("tr") as HTMLElement).getByRole("button", {

@@ -1687,7 +1687,7 @@ function DiffCommentComposer({
       </div>
       <textarea
         ref={textareaRef}
-        aria-label="Diff comment"
+        aria-label="Comment"
         value={body}
         onChange={(event) => onBodyChange(event.target.value)}
         onKeyDown={(event) => {

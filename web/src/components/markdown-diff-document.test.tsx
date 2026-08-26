@@ -69,7 +69,7 @@ function Harness({
         selectedKey={selectedKey}
         composer={
           <textarea
-            aria-label="Diff comment"
+            aria-label="Comment"
             value={body}
             onChange={(event) => setBody(event.target.value)}
           />
@@ -168,7 +168,7 @@ describe("MarkdownDiffDocument", () => {
       "paragraph",
     );
 
-    expect(screen.queryByLabelText("Diff comment")).toBeNull();
+    expect(screen.queryByLabelText("Comment")).toBeNull();
     fireEvent.click(screen.getByText("select"));
 
     const selected = container.querySelector(".markdown-diff-block-selected");
@@ -176,7 +176,7 @@ describe("MarkdownDiffDocument", () => {
     expect(
       container.querySelectorAll(".markdown-diff-block-selected"),
     ).toHaveLength(1);
-    expect(screen.getByLabelText("Diff comment")).not.toBeNull();
+    expect(screen.getByLabelText("Comment")).not.toBeNull();
   });
 
   it("parses the source once, however often the selection or the draft changes", () => {
@@ -188,14 +188,11 @@ describe("MarkdownDiffDocument", () => {
     expect(markdownHastSpy).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByText("select"));
-    fireEvent.change(screen.getByLabelText("Diff comment"), {
+    fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "note" },
     });
 
-    expect(screen.getByLabelText("Diff comment")).toHaveProperty(
-      "value",
-      "note",
-    );
+    expect(screen.getByLabelText("Comment")).toHaveProperty("value", "note");
     expect(markdownHastSpy).toHaveBeenCalledTimes(1);
   });
 

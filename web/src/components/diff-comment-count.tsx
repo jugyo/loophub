@@ -12,7 +12,7 @@ export function DiffCommentCount({
 
   return (
     <span
-      aria-label={`${count} diff ${count === 1 ? "comment" : "comments"}`}
+      aria-label={`${count} ${count === 1 ? "comment" : "comments"}`}
       className={cn(
         "flex shrink-0 items-center gap-1 text-muted-foreground",
         className,
