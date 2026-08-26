@@ -13,6 +13,18 @@ export class RpcFault {
 
 type Handler = (params: any) => unknown | Promise<unknown>;
 
+type IssueListMockRow = {
+  linked_pull_requests?: { number: number }[];
+  sub_issues?: IssueListMockRow[];
+};
+
+function issueRowsWithChildren(issues: IssueListMockRow[]): IssueListMockRow[] {
+  return issues.flatMap((issue) => [
+    issue,
+    ...issueRowsWithChildren(issue.sub_issues ?? []),
+  ]);
+}
+
 // A method whose result is a list needs a list even when a test declares no handler for it: the
 // generic `{}` fallback below would break the callers that map over what they get back.
 const DEFAULT_RESULTS: Record<string, unknown> = {
@@ -39,9 +51,10 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
       method === "pageData/issueList" && handlers["issues/list"]
         ? async (pageParams: any) => {
             // One call per page, so a handler that counts its invocations sees what the server does.
-            const issues = (await handlers["issues/list"](pageParams)) as {
-              linked_pull_requests?: { number: number }[];
-            }[];
+            const issues = (await handlers["issues/list"](
+              pageParams,
+            )) as IssueListMockRow[];
+            const rows = issueRowsWithChildren(issues);
             return {
               issues,
               repo: handlers["repos/get"]
@@ -59,7 +72,7 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
               workflow_runs: handlers["workflowRuns/stateForPull"]
                 ? (
                     await Promise.all(
-                      issues.flatMap((issue) =>
+                      rows.flatMap((issue) =>
                         (issue.linked_pull_requests ?? []).map((pull) =>
                           handlers["workflowRuns/stateForPull"]({
                             ...pageParams,

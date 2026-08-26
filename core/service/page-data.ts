@@ -2,6 +2,7 @@ import { selectDiffFeedbackThreads } from "../diff-feedback-selection.ts";
 import type {
   IssueDetailPageWire,
   IssueListPageWire,
+  IssueWire,
   PullDetailPageWire,
   PullTimelineItemWire,
   SubIssuesPageWire,
@@ -21,6 +22,16 @@ import { reviews } from "./reviews.ts";
 import { actorFor } from "./shared.ts";
 import { workflowRuns } from "./workflow-runs.ts";
 import { workspaces } from "./workspaces.ts";
+
+function linkedPullNumbers(issues: IssueWire[]): number[] {
+  return issues.flatMap((issue) => [
+    ...(
+      issue.linked_pull_requests ??
+      (issue.linked_pull_request ? [issue.linked_pull_request] : [])
+    ).map((pull) => pull.number),
+    ...linkedPullNumbers(issue.sub_issues ?? []),
+  ]);
+}
 
 export const pageData = {
   async issueList(
@@ -45,6 +56,7 @@ export const pageData = {
           lookahead: opts.lookahead,
           page: opts.page,
           perPage: opts.perPage,
+          includeSubIssues: true,
         }),
       ),
       measureDiagnostic("issueList.repository_metadata", async () =>
@@ -61,14 +73,7 @@ export const pageData = {
     // with the page keeps a Workflow event to one refetch — asking per row put one request per row
     // on lh-web's single event loop, and every workflow_run.* / workflow_step.* event invalidated
     // all of them at once. The linked PR status itself is read from the worker projection.
-    const linkedPulls = issueRows.flatMap((issue) =>
-      // Same fallback the row renderer uses (web/src/components/dashboard-rows.tsx): a response
-      // shape carrying only the singular field still gets its row seeded.
-      (
-        issue.linked_pull_requests ??
-        (issue.linked_pull_request ? [issue.linked_pull_request] : [])
-      ).map((pull) => pull.number),
-    );
+    const linkedPulls = linkedPullNumbers(issueRows);
     const workflow_runs = await measureDiagnostic(
       "issueList.workflow_state_projection",
       () => workflowRuns.statesForPulls(name, { pulls: linkedPulls }),

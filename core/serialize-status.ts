@@ -253,6 +253,8 @@ export interface IssueListSelection {
   linkedPullsByIssue: Map<number, S.LinkedPullIssueRow[]>;
   herdrPanesByIssue: Map<number, S.IssueHerdrPane>;
   subIssueSummariesByParent?: Map<number, S.SubIssueSummary>;
+  subIssueRowsByParent?: Map<number, S.IssueRow[]>;
+  subIssuesTruncatedByParent?: Set<number>;
 }
 
 function addIssueHierarchyFields(
@@ -286,26 +288,44 @@ export async function issueListItemsJSON(
     ),
   );
   const detailByPull = new Map(linkedDetails);
-  return rows.map((row) => {
-    const out = addIssueHierarchyFields(
-      issueJSON(row, undefined, {
-        labels: selected.labelsByIssue.get(row.id) ?? [],
-        comments: selected.commentCountsByIssue.get(row.id) ?? 0,
-      }),
-      row,
-      selected,
-    );
-    out.herdr_pane = herdrPaneJSON(
-      selected.herdrPanesByIssue.get(row.id) ?? null,
-    );
-    const pulls = (selected.linkedPullsByIssue.get(row.id) ?? [])
-      .map((pull) => detailByPull.get(pull.id))
-      .filter((pull): pull is IssueListPullSummaryWire => pull !== undefined);
-    out.linked_pull_requests = pulls;
-    out.linked_pull_request = pulls[0] ?? null;
-    out.has_open_pull_request = pulls.some((pull) => pull.state === "open");
-    return out;
-  });
+  return Promise.all(
+    rows.map(async (row) => {
+      const out = addIssueHierarchyFields(
+        issueJSON(row, undefined, {
+          labels: selected.labelsByIssue.get(row.id) ?? [],
+          comments: selected.commentCountsByIssue.get(row.id) ?? 0,
+        }),
+        row,
+        selected,
+      );
+      out.herdr_pane = herdrPaneJSON(
+        selected.herdrPanesByIssue.get(row.id) ?? null,
+      );
+      const pulls = (selected.linkedPullsByIssue.get(row.id) ?? [])
+        .map((pull) => detailByPull.get(pull.id))
+        .filter((pull): pull is IssueListPullSummaryWire => pull !== undefined);
+      out.linked_pull_requests = pulls;
+      out.linked_pull_request = pulls[0] ?? null;
+      out.has_open_pull_request = pulls.some((pull) => pull.state === "open");
+      const childRows = selected.subIssueRowsByParent?.get(row.id);
+      if (childRows) {
+        const childIds = childRows.map((child) => child.id);
+        out.sub_issues = await issueListItemsJSON(childRows, repo, {
+          labelsByIssue: S.labelsByIssue(childIds),
+          commentCountsByIssue: S.commentCountsByIssue(childIds),
+          linkedPullsByIssue: S.linkedPullsByIssue(childIds),
+          herdrPanesByIssue: S.issueHerdrPanesByIssue(repo.id, childIds),
+          subIssueSummariesByParent: S.subIssueSummariesByParent(childIds),
+        });
+        for (const child of out.sub_issues) {
+          child.depth = (out.depth ?? 1) + 1;
+        }
+        out.sub_issues_truncated =
+          selected.subIssuesTruncatedByParent?.has(row.id) ?? false;
+      }
+      return out;
+    }),
+  );
 }
 
 async function linkedPullDetail(

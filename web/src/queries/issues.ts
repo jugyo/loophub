@@ -24,10 +24,18 @@ import {
   setAcceptanceCriterionEnabled,
   setIssueCommentArchived,
 } from "@/api/client";
+import type { Issue } from "@/api/types";
 import type { IssueRefTarget } from "@/lib/remark-issue-refs";
 import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
+
+function issueRowsWithChildren(issues: Issue[]): Issue[] {
+  return issues.flatMap((issue) => [
+    issue,
+    ...issueRowsWithChildren(issue.sub_issues ?? []),
+  ]);
+}
 
 /** Filters for the issue list view (mirrors v1 listState / labels). */
 export interface IssueListFilters {
@@ -99,7 +107,7 @@ export function useIssueListPage(
       const runByPull = new Map(
         data.workflow_runs.map((run) => [run.pr_number, run]),
       );
-      for (const issue of data.issues) {
+      for (const issue of issueRowsWithChildren(data.issues)) {
         // Same fallback the row renderer uses, so a row drawn from the singular field is seeded too.
         const pulls =
           issue.linked_pull_requests ??

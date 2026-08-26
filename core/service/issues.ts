@@ -200,6 +200,7 @@ export const issues = {
       page?: number;
       perPage?: number;
       sort?: "updated" | "created";
+      includeSubIssues?: boolean;
     } = {},
   ) {
     const r = repoOr404(name);
@@ -241,12 +242,34 @@ export const issues = {
           )
         : paginate(rows, perPage, page);
     const issueIds = pageRows.map((row) => row.id);
+    const subIssueRowsByParent = new Map<number, S.IssueRow[]>();
+    const subIssuesTruncatedByParent = new Set<number>();
+    if (opts.includeSubIssues) {
+      const visibleRows =
+        opts.lookahead && perPage > 1
+          ? pageRows.slice(0, perPage - 1)
+          : pageRows;
+      for (const row of visibleRows) {
+        const children = S.listSubIssues(row.id);
+        if (children.length > 0) {
+          subIssueRowsByParent.set(
+            row.id,
+            children.slice(0, S.MAX_ISSUE_DETAIL_SUB_ISSUES),
+          );
+        }
+        if (children.length > S.MAX_ISSUE_DETAIL_SUB_ISSUES) {
+          subIssuesTruncatedByParent.add(row.id);
+        }
+      }
+    }
     return issueListItemsJSON(pageRows, r, {
       labelsByIssue: S.labelsByIssue(issueIds),
       commentCountsByIssue: S.commentCountsByIssue(issueIds),
       linkedPullsByIssue: S.linkedPullsByIssue(issueIds),
       herdrPanesByIssue: S.issueHerdrPanesByIssue(r.id, issueIds),
       subIssueSummariesByParent: S.subIssueSummariesByParent(issueIds),
+      subIssueRowsByParent,
+      subIssuesTruncatedByParent,
     });
   },
 

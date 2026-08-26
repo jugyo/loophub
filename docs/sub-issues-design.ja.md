@@ -395,7 +395,7 @@ export interface IssueWire {
   sub_issue_summary?: SubIssueSummaryWire;
   /** 根から直接の親までの祖先。detail 応答のみ。根では空配列、最大 2 要素。 */
   ancestors?: IssueRefSummaryWire[];
-  /** 直接の子。detail 応答と sub issue 展開応答のみ。 */
+  /** 直接の子。issue list / detail 応答と sub issue 展開応答に載る。 */
   sub_issues?: IssueWire[];
   sub_issues_truncated?: boolean;
 }
@@ -416,7 +416,7 @@ export interface IssueWire {
 
 | 経路 | 返すもの |
 |---|---|
-| `issues.list` | 親を持たない issue **のみ**。各行に `sub_issue_summary` |
+| `issues.list` | 親を持たない issue **のみ**。各行に `sub_issue_summary`。`pageData/issueList` では直接の子も各親行へ同梱 |
 | `issues.listSubIssues(repo, n)` | `#n` の直接の子。一覧行と同じ enrich。detail と同じ `MAX_ISSUE_DETAIL_SUB_ISSUES` で truncate |
 | `issues.get`（detail） | `ancestors` と `sub_issues`（直接の子、`MAX_ISSUE_DETAIL_SUB_ISSUES` で truncate） |
 | `search.query` | 変更なし。sub issue も通常どおりヒットする |
@@ -441,13 +441,11 @@ export interface IssueWire {
 `core/store/pulls.ts` ではなく `core/store/issues.ts` に置く。これは **深さではなく幅**の上限で、
 `MAX_ISSUE_DEPTH` とは独立している。超過は `sub_issues_truncated` で可視化する（黙って切らない）。
 
-**この上限は detail と展開の両方に効かせる。** 一覧の子行を lazy にした理由が「幅を制限して
-いないから 1 応答が重くなりうる」である以上（[5.3](#53-eager--lazy-の分界)）、その lazy 経路
-（`pageData/subIssues`）が無制限に enrich したのでは一貫しない。子 100 件の親を 1 回展開すると、
-一覧が避けたはずの git fan-out をそのまま払うことになる。上限を超えた展開は詳細と同じく
-`sub_issues_truncated` を立て、UI は末尾に truncate 行を出す（[6.3](#63-状態)）。
+**この上限は一覧・detail・展開のすべてに効かせる。** 一覧に同梱する直接の子も幅を制限している
+ため、子 100 件の親を 1 回の一覧応答で無制限に enrich することはない。上限を超えた一覧・展開は
+detail と同じく `sub_issues_truncated` を立て、UI は末尾に truncate 行を出す（[6.3](#63-状態)）。
 
-`depth` の埋め方は経路ごとに定数コストで決まる。一覧は常に 1（根しか返さないため）、
+`depth` の埋め方は経路ごとに定数コストで決まる。一覧の根は 1、同梱される直接の子は 2、
 `listSubIssues(repo, n)` は `#n` の深さを 1 回解決して +1、detail は `ancestors.length + 1`。
 行ごとに祖先を辿る経路はどこにもない。
 
@@ -457,18 +455,19 @@ repo トップは既に最も重い画面で、行ごとに linked PR の git fa
 （`core/serialize-status.ts` の `linkedPullDetail`）。子行を一覧応答に同梱すると、この fan-out が
 子の数だけ増える。
 
-したがって **サマリーは eager、子行は lazy**とする。
+したがって **直接の子までは eager、孫以降は lazy**とする。
 
 | データ | 取得 | 根拠 |
 |---|---|---|
 | `sub_issue_summary`（折りたたみ時の表示に必要） | 一覧応答に同梱。`GROUP BY parent_issue_id` の 1 query | ページあたり定数コスト。git を呼ばない |
-| 子行そのもの | 展開時に `pageData/subIssues` を 1 回。`MAX_ISSUE_DETAIL_SUB_ISSUES` で有界 | 既定は折りたたみなので、多くの閲覧で子の enrich は発生しない |
+| 一覧の直接の子行 | `pageData/issueList` に同梱。`MAX_ISSUE_DETAIL_SUB_ISSUES` で有界 | 既定表示で親子関係を確認でき、子の再取得を省ける |
+| 孫以降の子行 | 展開時に `pageData/subIssues` を 1 回。`MAX_ISSUE_DETAIL_SUB_ISSUES` で有界 | 既定は折りたたみなので、多くの閲覧で深い階層の enrich は発生しない |
 | issue 詳細の子行 | detail 応答に同梱 | 単一 issue の画面であり、上限つきで有界。AC の「詳細は直接の子を返す」に一致 |
 
 `docs/web-rpc-eager-lazy-judgment-2026-08-10.ja.md` の判断（表示は既定 lazy、eager 化は
 決定的で安いスライスに限る）と同じ線引きである。
 
-深さが 3 に固定されても、**根の子孫を一覧応答に同梱する形には変えない**。制限がかかったのは
+深さが 3 に固定されても、**根の孫以降を一覧応答に同梱する形には変えない**。制限がかかったのは
 深さだけで、幅（1 つの親が持てる子の数）は制限していない。子 20 件 × 孫 5 件の木は 3 段でも
 100 行の enrich になり、一覧が払う git fan-out としては重すぎる。
 
@@ -476,7 +475,7 @@ repo トップは既に最も重い画面で、行ごとに linked PR の git fa
 
 | method | params | 備考 |
 |---|---|---|
-| `issues/list` | 変更なし | 返す集合が根のみに変わる。param は増やさない（[5.2](#52-一覧は根詳細は直接の子)） |
+| `issues/list` | 変更なし | 返す集合は根のみ。`pageData/issueList` は直接の子を各親行へ同梱する（[5.2](#52-一覧は根詳細は直接の子)） |
 | `issues/create` | 既存 + `parent: positiveInt` | 親の workspace を継承 |
 | `pageData/subIssues` | `{ repo, number }` | `{ issues: IssueWire[], truncated: boolean, workflow_runs }` を返す。展開 1 回 = 1 request。`MAX_ISSUE_DETAIL_SUB_ISSUES` で truncate（[5.2](#52-一覧は根詳細は直接の子)） |
 | `issues/sub/attach` | `{ repo, parent, child, session_id }` | |
@@ -545,7 +544,8 @@ lh issue view <n> [--json]                              # ancestors と sub issu
 ```
 
 - **開閉**: `sub_issue_summary.total > 0` の行にだけ、`#number` の左に disclosure（chevron）と
-  `sub k/n` chip を出す。**既定は折りたたみ**。chip 自体も開閉の trigger にする。
+  `sub k/n` chip を出す。直接の子を一覧応答に含む親は**既定で展開**し、孫以降は**既定で折りたたみ**。
+  chip 自体も開閉の trigger にする。
   深さ 3 の行は子を持てないので、どちらも出ない。
 - **展開**: `pageData/subIssues` を TanStack Query で取得する。query key は
   `queryKeys.subIssues(full, n) = [...queryKeys.issues(full), "sub", n]`（= `["issues", full, "sub", n]`）。
@@ -554,14 +554,14 @@ lh issue view <n> [--json]                              # ancestors と sub issu
   `issues` 配下なら、repo 内の `issue.*` と `pull_request.*` の両方が既存の invalidation 経路で
   この key を落とすので、`web/src/lib/event-keys.ts` は変更不要。
   代償として、無関係な issue の event でも展開中の子一覧が refetch される。これは issue 一覧本体が
-  既に払っているコストと同じで、同時に展開されている親の数だけしか増えない（既定は折りたたみ）。
+ 既に払っているコストと同じで、同時に展開されている親の数だけしか増えない（孫以降は既定で折りたたみ）。
   一方、狭い key の取りこぼしは「画面が黙って古くなる」形で現れる。粗い invalidate を選ぶ。
 - **入れ子**: 子行も同じ `IssueRow` を使い、同じ chip / disclosure を持つ。展開は再帰的に
   行われるが、深さ上限 3 により再帰は高々 2 段で止まる。インデントは 1 段 `pl-6` の固定で、
   最も深い行でも `pl-12` を超えない。折り返しや横スクロールの心配がないため、
   「深くなったらインデントを打ち切る」ような例外規則は要らない。
-- **開閉状態**: `IssueList` の局所 state（`Set<number>`）に持つ。URL には載せない。
-  リロードや画面遷移で畳まれるのは許容する（既定が折りたたみである以上、失われる情報はない）。
+- **開閉状態**: `IssueList` の局所 state（`Map<number, boolean>`）に持つ。URL には載せない。
+  一覧応答に同梱された直接の子は初期表示で開き、リロードや画面遷移で折りたたまれるのは許容する。
 - **workspace section**: 子は必ず親と同じ workspace なので、常に親の section 配下に描画する。
   section の割り当ては根 issue だけで決まる。
 
@@ -655,7 +655,7 @@ fallback として同じ関数を呼んでいる）。片方だけ直すと、�
 | D3 | 一覧は常に根のみ。平坦化する逃げ道（`scope` param / `--all`）を作らない | データ選択の意味論を core に置く（AGENTS.md）。状態 filter の `all` と階層は直交する軸で、同じ画面に 2 つの all を持ち込まない。子へは `sub_issue_summary` → 展開 / `lh issue sub list` / detail / search で到達できる。既存データでは挙動不変 |
 | D4 | workspace は木単位、変更は根からのみ | 不変条件を 1 つの規則で保てる。`dev.openPr` の base 解決を変えずに済む |
 | D5 | 新 event type を足さず `issue.updated` を使う | subject 解決と Web invalidation が無改造で通る。consumer への波及を作らない |
-| D6 | 折りたたみサマリーは eager、子行は lazy | 一覧の git fan-out を増やさない。eager/lazy 判断ドキュメントの線引きと同じ |
+| D6 | 直接の子まで eager、孫以降は lazy | 一覧の git fan-out を幅の上限内に留める。eager/lazy 判断ドキュメントの線引きと同じ |
 | D7 | 親を閉じても子は閉じない | sub issue は通常の issue であり、Non-goals の「順序を強制しない」と同じ立場。残りは `sub k/n` で見える |
 | D8 | 循環 / 深さは可視のエラーで拒否し、自動補正しない | AGENTS.md「Prefer visible errors to automatic recovery」 |
 | D9 | Web の親子編集は v1 では持たない | 分解は agent / CLI が行う運用が先。読み取りと「子を作る」だけで AC を満たす |
@@ -786,7 +786,7 @@ S5 = P9、S6 = 後続。
 | リスク | 影響 | 緩和 |
 |---|---|---|
 | 一覧が根のみになったことに気付かず「issue が消えた」と誤解される | 運用の混乱 | 行の `sub k/n` chip が子の存在を示し、`lh issue list` の footer が `lh issue sub list <n>` を案内する。migration 直後は全件が根なので実害は出ない |
-| 展開で request が積み上がる | トップ画面の負荷 | 展開は利用者の明示操作、1 展開 = 1 request、既定は折りたたみ。深さ上限 3 により 1 つの根の下で起きうる展開は高々 2 段 |
+| 展開で request が積み上がる | トップ画面の負荷 | 孫以降の展開は利用者の明示操作、1 展開 = 1 request。深さ上限 3 により 1 つの根の下で起きうる追加取得は高々 1 段 |
 | 3 段では足りない分解が出てくる | 木にできない作業が別 issue 群として散る | まずは 3 段で運用する。定数 1 つの変更で緩められるが、D10 のとおり深さ由来の例外規則が UI に戻ってくるため、緩める判断は計測を伴って行う（未解決 6） |
 | 親を閉じても子が open のまま残る（D7） | 取り残し | 親行と詳細の `sub k/n` に残数が出る。将来 Notification Center の signal 候補 |
 | `ancestors` / cascade の recursive CTE が壊れたデータで走り続ける | 応答が返らない | I7 の `MAX_ISSUE_DEPTH` 段で打ち切り、可視のエラーにする |

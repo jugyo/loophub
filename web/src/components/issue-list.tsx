@@ -163,9 +163,9 @@ export function IssueList({
   );
   const [draftLabels, setDraftLabels] = useState(labelsParam ?? "");
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
-  const [expandedIssues, setExpandedIssues] = useState<Set<number>>(
-    () => new Set(),
-  );
+  const [issueExpansionOverrides, setIssueExpansionOverrides] = useState<
+    Map<number, boolean>
+  >(() => new Map());
   const query = useIssueListPage(owner, repo, filters, {
     includeLabels: labelFilterMode === "select",
   });
@@ -224,11 +224,11 @@ export function IssueList({
     });
   }
 
-  function toggleIssue(number: number) {
-    setExpandedIssues((current) => {
-      const next = new Set(current);
-      if (next.has(number)) next.delete(number);
-      else next.add(number);
+  function toggleIssue(number: number, defaultExpanded: boolean) {
+    setIssueExpansionOverrides((current) => {
+      const next = new Map(current);
+      const expanded = current.get(number) ?? defaultExpanded;
+      next.set(number, !expanded);
       return next;
     });
   }
@@ -526,7 +526,7 @@ export function IssueList({
                     labelWorkspaceFilter={
                       showWorkspaceFilter ? workspaceParam : undefined
                     }
-                    expandedIssues={expandedIssues}
+                    expansionOverrides={issueExpansionOverrides}
                     onToggle={toggleIssue}
                   />
                 </li>
@@ -575,7 +575,7 @@ export function IssueList({
                           repo={repo}
                           issue={issue}
                           labelState={state}
-                          expandedIssues={expandedIssues}
+                          expansionOverrides={issueExpansionOverrides}
                           onToggle={toggleIssue}
                         />
                       </li>
@@ -597,7 +597,7 @@ function IssueTree({
   repo,
   issue,
   path = [],
-  expandedIssues,
+  expansionOverrides,
   onToggle,
   ...rowProps
 }: {
@@ -605,8 +605,8 @@ function IssueTree({
   repo: string;
   issue: Issue;
   path?: number[];
-  expandedIssues: Set<number>;
-  onToggle: (number: number) => void;
+  expansionOverrides: Map<number, boolean>;
+  onToggle: (number: number, defaultExpanded: boolean) => void;
   labelState?: IssueListFilters["state"];
   labelWorkspaceFilter?: string;
   workflowRunSeeded?: boolean;
@@ -617,8 +617,20 @@ function IssueTree({
     !invalid &&
     (issue.sub_issue_summary?.total ?? 0) > 0 &&
     depth < MAX_ISSUE_DEPTH;
-  const expanded = expandedIssues.has(issue.number);
-  const query = useSubIssues(owner, repo, issue.number, canExpand && expanded);
+  const loadedSubIssues = issue.sub_issues;
+  const defaultExpanded = loadedSubIssues !== undefined;
+  const expanded = expansionOverrides.get(issue.number) ?? defaultExpanded;
+  const query = useSubIssues(
+    owner,
+    repo,
+    issue.number,
+    loadedSubIssues === undefined && canExpand && expanded,
+  );
+  const subIssues = loadedSubIssues ?? query.data?.issues;
+  const subIssuesTruncated =
+    loadedSubIssues !== undefined
+      ? issue.sub_issues_truncated
+      : query.data?.truncated;
 
   return (
     <>
@@ -629,7 +641,9 @@ function IssueTree({
         issue={issue}
         subIssueDepth={depth}
         subIssueExpanded={expanded}
-        onSubIssueToggle={canExpand ? () => onToggle(issue.number) : undefined}
+        onSubIssueToggle={
+          canExpand ? () => onToggle(issue.number, defaultExpanded) : undefined
+        }
       />
       {invalid ? (
         <div className="px-7 pb-2">
@@ -637,24 +651,24 @@ function IssueTree({
         </div>
       ) : expanded && canExpand ? (
         <div className="flex flex-col gap-1 pl-6">
-          {query.isLoading ? (
+          {loadedSubIssues === undefined && query.isLoading ? (
             <div className="flex h-9 items-center gap-2 rounded border border-dashed px-3 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" /> Loading…
             </div>
-          ) : query.isError ? (
+          ) : loadedSubIssues === undefined && query.isError ? (
             <div className="flex items-center justify-between gap-3 rounded border border-dashed border-destructive/50 px-3 py-2 text-sm text-destructive">
               <span>Failed to load sub issues.</span>
               <Button variant="secondary" onClick={() => query.refetch()}>
                 Retry
               </Button>
             </div>
-          ) : query.data?.issues.length === 0 ? (
+          ) : subIssues?.length === 0 ? (
             <div className="rounded border border-dashed px-3 py-2 text-sm text-muted-foreground">
               No sub issues
             </div>
           ) : (
             <>
-              {query.data?.issues.map((child) => (
+              {subIssues?.map((child) => (
                 <IssueTree
                   key={child.number}
                   {...rowProps}
@@ -662,11 +676,11 @@ function IssueTree({
                   repo={repo}
                   issue={child}
                   path={[...path, issue.number]}
-                  expandedIssues={expandedIssues}
+                  expansionOverrides={expansionOverrides}
                   onToggle={onToggle}
                 />
               ))}
-              {query.data?.truncated ? (
+              {subIssuesTruncated ? (
                 <p className="px-2 text-xs text-muted-foreground">
                   Showing first 50 sub issues
                 </p>

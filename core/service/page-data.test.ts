@@ -429,6 +429,7 @@ test("pullDetail reads the diff feedback as the calling session", async () => {
 
 test("issue pages include bounded sub-issue wire data and workflow seeds", async () => {
   const root = S.createIssue(repoId, "issue", "wire root", "", "me");
+  const leaf = S.createIssue(repoId, "issue", "wire leaf", "", "me");
   const child = S.createIssue(repoId, "issue", "wire child", "", "me");
   const grandchild = S.createIssue(
     repoId,
@@ -456,6 +457,30 @@ test("issue pages include bounded sub-issue wire data and workflow seeds", async
   });
   expect(detail.issue.sub_issues?.[0].sub_issues).toBeUndefined();
   expect(detail.workflow_runs).toEqual([]);
+
+  const list = await svc.pageData.issueList(REPO);
+  const listedRoot = list.issues.find((issue) => issue.number === root.number);
+  expect(listedRoot).toMatchObject({
+    number: root.number,
+    depth: 1,
+    sub_issue_summary: { total: 1, open: 1, closed: 0 },
+  });
+  expect(listedRoot?.sub_issues).toMatchObject([
+    {
+      number: child.number,
+      depth: 2,
+      sub_issue_summary: { total: 1, open: 1, closed: 0 },
+    },
+  ]);
+  expect(
+    list.issues.find((issue) => issue.number === leaf.number),
+  ).toMatchObject({
+    number: leaf.number,
+  });
+  expect(
+    list.issues.find((issue) => issue.number === leaf.number)?.sub_issues,
+  ).toBeUndefined();
+  expect(list.workflow_runs).toEqual([]);
 
   const expanded = await svc.pageData.subIssues(REPO, root.number);
   expect(expanded).toMatchObject({ truncated: false, workflow_runs: [] });
