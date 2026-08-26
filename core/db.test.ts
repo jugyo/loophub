@@ -241,17 +241,19 @@ test(
        VALUES (?, ?, ?, ?, '2026-01-01T00:00:00.000Z')`,
         [1, type, "test", payload],
       );
-    for (let i = 0; i < 39_000; i++) {
-      insert("issue.updated", JSON.stringify({ number: i }));
-    }
-    for (let run = 1; run <= 152; run++) {
-      for (let step = 0; step < 10; step++) {
-        insert(
-          step === 0 ? "workflow_run.started" : "workflow_step.completed",
-          JSON.stringify({ id: run }),
-        );
+    D.db.transaction(() => {
+      for (let i = 0; i < 39_000; i++) {
+        insert("issue.updated", JSON.stringify({ number: i }));
       }
-    }
+      for (let run = 1; run <= 152; run++) {
+        for (let step = 0; step < 10; step++) {
+          insert(
+            step === 0 ? "workflow_run.started" : "workflow_step.completed",
+            JSON.stringify({ id: run }),
+          );
+        }
+      }
+    });
 
     const oldSql = `SELECT * FROM events
     WHERE repo_id = ?
