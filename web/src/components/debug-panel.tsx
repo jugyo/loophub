@@ -5,7 +5,7 @@
 // scroll position stays at the bottom. Desktop-only; the panel participates in the app shell
 // layout so it does not cover route content.
 
-import { Activity, Bug, Cable, ListTree, X } from "lucide-react";
+import { Activity, Bell, Bug, Cable, ListTree, X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -21,18 +21,20 @@ import {
   type DebugLogState,
   type EventLogEntry,
   type InvalidationLogEntry,
+  type NotificationSoundLogEntry,
   type RpcLogEntry,
   useDebugLog,
 } from "@/lib/debug-log";
 import { cn } from "@/lib/utils";
 import { useWebConfig } from "@/lib/web-config";
 
-type LogTab = "events" | "invalidations" | "rpcs";
+type LogTab = "events" | "invalidations" | "rpcs" | "sounds";
 
 const TABS: { id: LogTab; label: string }[] = [
   { id: "rpcs", label: "RPC" },
   { id: "events", label: "Event" },
   { id: "invalidations", label: "Invalidation" },
+  { id: "sounds", label: "Sound" },
 ];
 
 const DEFAULT_HEIGHT = 320;
@@ -196,19 +198,53 @@ function RpcRow({ entry }: { entry: RpcLogEntry }) {
   );
 }
 
+function SoundRow({ entry }: { entry: NotificationSoundLogEntry }) {
+  return (
+    <li className="border-b px-3 py-1.5 font-mono text-[11px] leading-relaxed">
+      <span className="text-muted-foreground">{formatTime(entry.at)}</span>{" "}
+      <span className="text-foreground">#{entry.notificationId}</span>{" "}
+      <span className="text-foreground">{entry.decision}</span>{" "}
+      <span className="text-muted-foreground">{entry.reason}</span>
+      {entry.cooldownElapsedMs != null ? (
+        <span className="text-muted-foreground">
+          {` cooldown=${entry.cooldownElapsedMs}ms`}
+        </span>
+      ) : null}
+      {entry.playback ? (
+        <span
+          className={
+            entry.playback === "success"
+              ? "text-foreground"
+              : "text-destructive"
+          }
+        >
+          {` playback=${entry.playback}`}
+        </span>
+      ) : null}
+      <div className="truncate text-[10px] text-muted-foreground">
+        instance={entry.instanceId}
+      </div>
+    </li>
+  );
+}
+
 function LogList({ tab, logs }: { tab: LogTab; logs: DebugLogState }) {
   const emptyMessage =
     tab === "events"
       ? "No events received yet"
       : tab === "invalidations"
         ? "No invalidations yet"
-        : "No RPC calls yet";
+        : tab === "sounds"
+          ? "No notification sounds yet"
+          : "No RPC calls yet";
   const entries =
     tab === "events"
       ? logs.events
       : tab === "invalidations"
         ? logs.invalidations
-        : logs.rpcs;
+        : tab === "sounds"
+          ? logs.sounds
+          : logs.rpcs;
 
   if (entries.length === 0) {
     return (
@@ -225,6 +261,11 @@ function LogList({ tab, logs }: { tab: LogTab; logs: DebugLogState }) {
           <InvalidationRow
             key={entry.seq}
             entry={entry as InvalidationLogEntry}
+          />
+        ) : tab === "sounds" ? (
+          <SoundRow
+            key={entry.seq}
+            entry={entry as NotificationSoundLogEntry}
           />
         ) : (
           <RpcRow key={entry.seq} entry={entry as RpcLogEntry} />
@@ -283,7 +324,9 @@ export function DebugLogPanel() {
       ? logs.events
       : tab === "invalidations"
         ? logs.invalidations
-        : logs.rpcs;
+        : tab === "sounds"
+          ? logs.sounds
+          : logs.rpcs;
 
   // While pinned to the tail, keep the newest entry in view when the list grows.
   useEffect(() => {
@@ -404,6 +447,8 @@ export function DebugLogPanel() {
               <Activity className="size-3" aria-hidden="true" />
             ) : id === "invalidations" ? (
               <ListTree className="size-3" aria-hidden="true" />
+            ) : id === "sounds" ? (
+              <Bell className="size-3" aria-hidden="true" />
             ) : (
               <Cable className="size-3" aria-hidden="true" />
             )}

@@ -6,6 +6,7 @@ import {
   getDebugLogSnapshot,
   recordEvents,
   recordInvalidation,
+  recordNotificationSound,
   recordRpc,
   useDebugLog,
 } from "./debug-log";
@@ -102,15 +103,62 @@ describe("debug-log store", () => {
     });
   });
 
+  it("通知本文を含めずに通知音の判定を記録する", () => {
+    enableRecording();
+    act(() =>
+      recordNotificationSound({
+        at: 1234,
+        instanceId: "tab-only",
+        notificationId: 7,
+        decision: "cooldown",
+        reason: "new_id",
+        cooldownElapsedMs: 1000,
+        playback: null,
+      }),
+    );
+
+    expect(getDebugLogSnapshot().sounds).toEqual([
+      {
+        seq: expect.any(Number),
+        at: 1234,
+        instanceId: "tab-only",
+        notificationId: 7,
+        decision: "cooldown",
+        reason: "new_id",
+        cooldownElapsedMs: 1000,
+        playback: null,
+      },
+    ]);
+    expect(JSON.stringify(getDebugLogSnapshot().sounds)).not.toContain(
+      "me/proj",
+    );
+    expect(JSON.stringify(getDebugLogSnapshot().sounds)).not.toContain("Body");
+  });
+
   it("caps each log at 300 entries, dropping the oldest", () => {
     enableRecording();
     for (let i = 1; i <= 305; i++) {
       act(() => recordEvents([event(i)]));
+      act(() =>
+        recordNotificationSound({
+          at: i,
+          instanceId: "tab-only",
+          notificationId: i,
+          decision: "duplicate",
+          reason: "same_id",
+          cooldownElapsedMs: null,
+          playback: null,
+        }),
+      );
     }
     const { events } = getDebugLogSnapshot();
     expect(events).toHaveLength(300);
     expect(events[0].eventId).toBe(6);
     expect(events[299].eventId).toBe(305);
+    const { sounds } = getDebugLogSnapshot();
+    expect(sounds).toHaveLength(300);
+    expect(sounds[0].notificationId).toBe(6);
+    expect(sounds[299].notificationId).toBe(305);
   });
 
   it("clearDebugLog empties every log", () => {
@@ -118,12 +166,22 @@ describe("debug-log store", () => {
     act(() => {
       recordEvents([event(1)]);
       recordRpc({ method: "a/b", params: {}, durationMs: 1, ok: true });
+      recordNotificationSound({
+        at: 1,
+        instanceId: "tab-only",
+        notificationId: 1,
+        decision: "duplicate",
+        reason: "same_id",
+        cooldownElapsedMs: null,
+        playback: null,
+      });
     });
     act(() => clearDebugLog());
     const snapshot = getDebugLogSnapshot();
     expect(snapshot.events).toHaveLength(0);
     expect(snapshot.invalidations).toHaveLength(0);
     expect(snapshot.rpcs).toHaveLength(0);
+    expect(snapshot.sounds).toHaveLength(0);
   });
 
   it("notifies subscribers when a record is appended", () => {

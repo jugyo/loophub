@@ -2,11 +2,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import type { GlobalSettings, Notification } from "@/api/types";
+import {
+  clearDebugLog,
+  getDebugLogSnapshot,
+  useDebugLog,
+} from "@/lib/debug-log";
 import { queryKeys } from "@/queries/keys";
 import { useNotificationSound } from "./use-notification-sound";
 
 const { playNotificationBell } = vi.hoisted(() => ({
-  playNotificationBell: vi.fn(),
+  playNotificationBell: vi.fn<() => Promise<"success" | "failure">>(() =>
+    Promise.resolve("success"),
+  ),
 }));
 
 vi.mock("@/lib/notification-sound", () => ({ playNotificationBell }));
@@ -15,6 +22,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  clearDebugLog();
 });
 
 const LIST_KEY = [...queryKeys.notifications(), "list", { unreadOnly: true }];
@@ -60,6 +68,7 @@ function makeNotification(
 
 function Harness({ pathname }: { pathname: string }) {
   useNotificationSound(pathname);
+  useDebugLog(true);
   return null;
 }
 
@@ -108,12 +117,36 @@ describe("useNotificationSound", () => {
     expect(playNotificationBell).not.toHaveBeenCalled();
   });
 
-  it("rings once when a notification arrives", async () => {
+  it("空の unread list の後に届いた通知で鳴り、play を記録する", async () => {
+    const { deliver } = renderHook([]);
+
+    await deliver([makeNotification(1)]);
+
+    expect(playNotificationBell).toHaveBeenCalledTimes(1);
+    expect(getDebugLogSnapshot().sounds).toMatchObject([
+      {
+        notificationId: 1,
+        decision: "play",
+        reason: "new_id",
+        playback: "success",
+      },
+    ]);
+  });
+
+  it("通知が届いたときに一度だけ鳴り、成功結果を記録する", async () => {
     const { deliver } = renderHook([makeNotification(4)]);
 
     await deliver([makeNotification(5), makeNotification(4)]);
 
     expect(playNotificationBell).toHaveBeenCalledTimes(1);
+    expect(getDebugLogSnapshot().sounds).toMatchObject([
+      {
+        notificationId: 5,
+        decision: "play",
+        reason: "new_id",
+        playback: "success",
+      },
+    ]);
   });
 
   it("stays silent when a new notification targets the visible page", async () => {
@@ -171,7 +204,7 @@ describe("useNotificationSound", () => {
     expect(playNotificationBell).not.toHaveBeenCalled();
   });
 
-  it("rings once for a burst arriving as separate refreshes", async () => {
+  it("別々の refresh で届くバーストでは一度だけ鳴り、cooldown を記録する", async () => {
     const { deliver } = renderHook([makeNotification(4)]);
 
     await deliver([makeNotification(5), makeNotification(4)]);
@@ -182,6 +215,42 @@ describe("useNotificationSound", () => {
     ]);
 
     expect(playNotificationBell).toHaveBeenCalledTimes(1);
+    expect(getDebugLogSnapshot().sounds).toMatchObject([
+      { notificationId: 5, decision: "play", playback: "success" },
+      { notificationId: 6, decision: "cooldown", playback: null },
+    ]);
+  });
+
+  it("cooldown の判定時刻と経過時間を記録する", async () => {
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValue(10_000);
+    const { deliver } = renderHook([makeNotification(4)]);
+
+    await deliver([makeNotification(5)]);
+    now.mockReturnValue(11_500);
+    await deliver([makeNotification(6)]);
+
+    expect(getDebugLogSnapshot().sounds[1]).toMatchObject({
+      at: 11_500,
+      notificationId: 6,
+      decision: "cooldown",
+      cooldownElapsedMs: 1_500,
+    });
+  });
+
+  it("最新の通知 ID が変わらないとき duplicate を記録する", async () => {
+    const { deliver } = renderHook([makeNotification(4)]);
+
+    await deliver([makeNotification(4), makeNotification(3)]);
+
+    expect(getDebugLogSnapshot().sounds).toMatchObject([
+      {
+        notificationId: 4,
+        decision: "duplicate",
+        reason: "same_id",
+        playback: null,
+      },
+    ]);
   });
 
   it("rings again for a notification arriving after the burst", async () => {
@@ -194,6 +263,36 @@ describe("useNotificationSound", () => {
     await deliver([makeNotification(6)]);
 
     expect(playNotificationBell).toHaveBeenCalledTimes(2);
+  });
+
+  it("通知音オフのとき新着通知に disabled を記録する", async () => {
+    const { deliver } = renderHook([makeNotification(4)], {
+      ...SETTINGS,
+      notificationSound: false,
+    });
+
+    await deliver([makeNotification(5)]);
+
+    expect(getDebugLogSnapshot().sounds).toMatchObject([
+      {
+        notificationId: 5,
+        decision: "disabled",
+        reason: "new_id",
+        cooldownElapsedMs: null,
+        playback: null,
+      },
+    ]);
+  });
+
+  it("ブラウザの再生失敗結果を記録する", async () => {
+    playNotificationBell.mockResolvedValueOnce("failure");
+    const { deliver } = renderHook([makeNotification(4)]);
+
+    await deliver([makeNotification(5)]);
+
+    expect(getDebugLogSnapshot().sounds).toMatchObject([
+      { notificationId: 5, decision: "play", playback: "failure" },
+    ]);
   });
 
   it("stays silent while the notification sound setting is off", async () => {

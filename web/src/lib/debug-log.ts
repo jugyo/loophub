@@ -39,10 +39,30 @@ export interface RpcLogEntry {
   error?: string;
 }
 
+export type NotificationSoundDecision =
+  | "play"
+  | "duplicate"
+  | "cooldown"
+  | "disabled";
+
+export type NotificationSoundPlayback = "success" | "failure";
+
+export interface NotificationSoundLogEntry {
+  seq: number;
+  at: number;
+  instanceId: string;
+  notificationId: number;
+  decision: NotificationSoundDecision;
+  reason: "same_id" | "new_id";
+  cooldownElapsedMs: number | null;
+  playback: NotificationSoundPlayback | null;
+}
+
 export interface DebugLogState {
   events: EventLogEntry[];
   invalidations: InvalidationLogEntry[];
   rpcs: RpcLogEntry[];
+  sounds: NotificationSoundLogEntry[];
 }
 
 let nextSeq = 1;
@@ -50,6 +70,7 @@ let state: DebugLogState = {
   events: [],
   invalidations: [],
   rpcs: [],
+  sounds: [],
 };
 const listeners = new Set<() => void>();
 
@@ -143,12 +164,26 @@ export function recordRpc(input: {
   }));
 }
 
+/** 通知音の判定と、再生を要求した場合の結果を一件記録する。 */
+export function recordNotificationSound(
+  input: Omit<NotificationSoundLogEntry, "seq">,
+): void {
+  record((prev) => ({
+    ...prev,
+    sounds: append(prev.sounds, {
+      seq: nextSeq++,
+      ...input,
+    }),
+  }));
+}
+
 /** Empty every log. The panel calls this from its Clear button. */
 export function clearDebugLog(): void {
   state = {
     events: [],
     invalidations: [],
     rpcs: [],
+    sounds: [],
   };
   emit();
 }

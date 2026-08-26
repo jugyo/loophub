@@ -87,12 +87,21 @@ function reportPlaybackFailure(error: unknown): void {
   console.error("Notification sound could not be played", error);
 }
 
-/** Ring the bell once. Playback failures are reported, never thrown at the caller. */
-export function playNotificationBell(): void {
+export type NotificationSoundPlayback = "success" | "failure";
+
+/** ベルを一度鳴らし、ブラウザの再生結果で resolve する。 */
+export function playNotificationBell(): Promise<NotificationSoundPlayback> {
   try {
-    new Audio(bellWavDataUri()).play().catch(reportPlaybackFailure);
+    return Promise.resolve(new Audio(bellWavDataUri()).play()).then(
+      () => "success" as const,
+      (error) => {
+        reportPlaybackFailure(error);
+        return "failure" as const;
+      },
+    );
   } catch (error) {
     // No audio support at all (an environment without HTMLAudioElement) lands here.
     reportPlaybackFailure(error);
+    return Promise.resolve("failure");
   }
 }

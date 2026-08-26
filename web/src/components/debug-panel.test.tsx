@@ -12,6 +12,7 @@ import {
   getDebugLogSnapshot,
   recordEvents,
   recordInvalidation,
+  recordNotificationSound,
   recordRpc,
 } from "@/lib/debug-log";
 import { WebConfigProvider } from "@/lib/web-config";
@@ -115,13 +116,13 @@ describe("DebugPanel", () => {
     expect(panel.className).not.toContain("right-3");
   });
 
-  it("orders tabs as RPC, Event, and Invalidation and opens on RPC", () => {
+  it("タブを RPC、Event、Invalidation、Sound の順に並べて RPC を開く", () => {
     renderPanel(true);
     openPanel();
 
     expect(
       screen.getAllByRole("tab").map((tab) => tab.textContent?.trim()),
-    ).toEqual(["RPC", "Event", "Invalidation"]);
+    ).toEqual(["RPC", "Event", "Invalidation", "Sound"]);
     expect(
       screen.getByRole("tab", { name: "RPC" }).getAttribute("aria-selected"),
     ).toBe("true");
@@ -214,6 +215,29 @@ describe("DebugPanel", () => {
     expect(screen.getByText(/issue\.commented/)).toBeTruthy();
     expect(screen.getByText('["issues","me/proj"]')).toBeTruthy();
     expect(screen.getByText('["issue","me/proj",3]')).toBeTruthy();
+  });
+
+  it("通知本文を含めずに通知音の判定を表示する", () => {
+    renderPanel(true);
+    openPanel();
+    act(() =>
+      recordNotificationSound({
+        at: Date.now(),
+        instanceId: "tab-only",
+        notificationId: 7,
+        decision: "play",
+        reason: "new_id",
+        cooldownElapsedMs: null,
+        playback: "success",
+      }),
+    );
+    openTab(/Sound/);
+
+    const row = screen.getByRole("listitem");
+    expect(row.textContent).toContain("#7 play new_id");
+    expect(row.textContent).toContain("playback=success");
+    expect(row.textContent).toContain("instance=tab-only");
+    expect(screen.queryByText(/me\/proj|Body/)).toBeNull();
   });
 
   it("shows RPC method, params, and duration on the RPC tab", () => {
