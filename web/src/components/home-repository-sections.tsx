@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import type { DashboardRepository } from "@/api/types";
-import { IssueRow } from "@/components/dashboard-rows";
+import { IssueTree } from "@/components/dashboard-rows";
 
 function RepositoryLink({
   repository,
@@ -62,6 +63,19 @@ function RepositorySection({
 }: {
   repository: DashboardRepository;
 }) {
+  const [issueExpansionOverrides, setIssueExpansionOverrides] = useState<
+    Map<number, boolean>
+  >(() => new Map());
+
+  function toggleIssue(number: number, defaultExpanded: boolean) {
+    setIssueExpansionOverrides((current) => {
+      const next = new Map(current);
+      const expanded = current.get(number) ?? defaultExpanded;
+      next.set(number, !expanded);
+      return next;
+    });
+  }
+
   return (
     <section
       data-debug-component="HomeRepositorySection"
@@ -82,12 +96,14 @@ function RepositorySection({
         <ul className="flex flex-col divide-y rounded-md border">
           {repository.issues.map((issue) => (
             <li key={issue.number}>
-              <IssueRow
+              <IssueTree
                 owner={repository.repo.owner}
                 repo={repository.repo.name}
                 issue={issue}
                 showCreatedAt
                 showState
+                expansionOverrides={issueExpansionOverrides}
+                onToggle={toggleIssue}
               />
             </li>
           ))}

@@ -336,6 +336,32 @@ describe("dashboard.overview", () => {
     expect(linked).not.toHaveProperty("review");
   });
 
+  test("repository sections include sub issues below their visible parent", async () => {
+    const parent = svc.issues.create("me/proj", { title: "dashboard parent" });
+    const child = svc.issues.create("me/proj", { title: "dashboard child" });
+    svc.issues.attachSubIssue("me/proj", parent.number, child.number);
+
+    const overview = await svc.dashboard.overview();
+    const repository = overview.repositories.find(
+      (item) => item.repo.full_name === "me/proj",
+    )!;
+    const parentIssue = repository.issues.find(
+      (issue) => issue.number === parent.number,
+    )!;
+
+    expect(parentIssue.sub_issues).toMatchObject([
+      {
+        number: child.number,
+        title: "dashboard child",
+        depth: 2,
+        sub_issue_ordinal: 1,
+      },
+    ]);
+    expect(
+      repository.issues.some((issue) => issue.number === child.number),
+    ).toBe(false);
+  });
+
   test("linked PR totals its comments and diff comments (#2152)", async () => {
     const issue = svc.issues.create("me/proj", { title: "gets comment count" });
     const pr = await svc.dev.openPr(

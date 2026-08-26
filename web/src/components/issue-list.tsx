@@ -13,7 +13,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { Issue, Workspace } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
-import { IssueRow } from "@/components/dashboard-rows";
+import { IssueTree } from "@/components/dashboard-rows";
 import { NewWorkspaceButton } from "@/components/new-workspace-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,9 +33,7 @@ import {
   ISSUE_LIST_PAGE_SIZE,
   type IssueListFilters,
   useIssueListPage,
-  useSubIssues,
 } from "@/queries/issues";
-import { MAX_ISSUE_DEPTH } from "../../../core/issue-hierarchy.ts";
 
 const STATE_TABS: {
   value: IssueListFilters["state"];
@@ -589,107 +587,6 @@ export function IssueList({
         </div>
       )}
     </div>
-  );
-}
-
-function IssueTree({
-  owner,
-  repo,
-  issue,
-  path = [],
-  expansionOverrides,
-  onToggle,
-  ...rowProps
-}: {
-  owner: string;
-  repo: string;
-  issue: Issue;
-  path?: number[];
-  expansionOverrides: Map<number, boolean>;
-  onToggle: (number: number, defaultExpanded: boolean) => void;
-  labelState?: IssueListFilters["state"];
-  labelWorkspaceFilter?: string;
-  workflowRunSeeded?: boolean;
-}) {
-  const depth = issue.depth ?? path.length + 1;
-  const invalid = depth > MAX_ISSUE_DEPTH || path.includes(issue.number);
-  const canExpand =
-    !invalid &&
-    (issue.sub_issue_summary?.total ?? 0) > 0 &&
-    depth < MAX_ISSUE_DEPTH;
-  const loadedSubIssues = issue.sub_issues;
-  const defaultExpanded = loadedSubIssues !== undefined;
-  const expanded = expansionOverrides.get(issue.number) ?? defaultExpanded;
-  const query = useSubIssues(
-    owner,
-    repo,
-    issue.number,
-    loadedSubIssues === undefined && canExpand && expanded,
-  );
-  const subIssues = loadedSubIssues ?? query.data?.issues;
-  const subIssuesTruncated =
-    loadedSubIssues !== undefined
-      ? issue.sub_issues_truncated
-      : query.data?.truncated;
-
-  return (
-    <>
-      <IssueRow
-        {...rowProps}
-        owner={owner}
-        repo={repo}
-        issue={issue}
-        subIssueDepth={depth}
-        subIssueExpanded={expanded}
-        onSubIssueToggle={
-          canExpand ? () => onToggle(issue.number, defaultExpanded) : undefined
-        }
-      />
-      {invalid ? (
-        <div className="px-7 pb-2">
-          <Badge tone="review-changes">階層が不正</Badge>
-        </div>
-      ) : expanded && canExpand ? (
-        <div className="flex flex-col gap-1 pl-6">
-          {loadedSubIssues === undefined && query.isLoading ? (
-            <div className="flex h-9 items-center gap-2 rounded border border-dashed px-3 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Loading…
-            </div>
-          ) : loadedSubIssues === undefined && query.isError ? (
-            <div className="flex items-center justify-between gap-3 rounded border border-dashed border-destructive/50 px-3 py-2 text-sm text-destructive">
-              <span>Failed to load sub issues.</span>
-              <Button variant="secondary" onClick={() => query.refetch()}>
-                Retry
-              </Button>
-            </div>
-          ) : subIssues?.length === 0 ? (
-            <div className="rounded border border-dashed px-3 py-2 text-sm text-muted-foreground">
-              No sub issues
-            </div>
-          ) : (
-            <>
-              {subIssues?.map((child) => (
-                <IssueTree
-                  key={child.number}
-                  {...rowProps}
-                  owner={owner}
-                  repo={repo}
-                  issue={child}
-                  path={[...path, issue.number]}
-                  expansionOverrides={expansionOverrides}
-                  onToggle={onToggle}
-                />
-              ))}
-              {subIssuesTruncated ? (
-                <p className="px-2 text-xs text-muted-foreground">
-                  Showing first 50 sub issues
-                </p>
-              ) : null}
-            </>
-          )}
-        </div>
-      ) : null}
-    </>
   );
 }
 

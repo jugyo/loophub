@@ -219,6 +219,51 @@ describe("HomePage", () => {
     expect(within(section).queryByText("Closed issue")).toBeNull();
   });
 
+  it("親 issue の下に sub issue を表示し、折りたためる", async () => {
+    const child = makeIssue(3, "open", "Child issue");
+    renderHome({
+      ...emptyOverview,
+      repository_count: 1,
+      total_issues: 2,
+      total_open_issues: 2,
+      repositories: [
+        {
+          repo: { full_name: "me/project", owner: "me", name: "project" },
+          issues: [
+            {
+              ...makeIssue(2, "open", "Parent issue"),
+              sub_issue_summary: { total: 1, open: 1, closed: 0 },
+              sub_issues: [{ ...child, depth: 2, sub_issue_ordinal: 1 }],
+            },
+          ],
+          total_issues: 2,
+          open_issues: 2,
+          closed_issues: 0,
+          issue_limit: 20,
+          has_more: false,
+        },
+      ],
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "me/project" })
+    ).closest("section")!;
+    expect(within(section).getByText("Child issue")).toBeTruthy();
+    expect(
+      within(section)
+        .getByRole("link", { name: "Child issue" })
+        .getAttribute("href"),
+    ).toBe("/r/me/project/issues/3");
+
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Collapse sub issues" }),
+    );
+    expect(within(section).queryByText("Child issue")).toBeNull();
+    expect(
+      within(section).getByRole("button", { name: "Expand sub issues" }),
+    ).toBeTruthy();
+  });
+
   it("dashboard が返した repository の順序をそのまま表示する", async () => {
     renderHome({
       ...emptyOverview,

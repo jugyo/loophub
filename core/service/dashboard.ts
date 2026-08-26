@@ -6,7 +6,7 @@ import type {
   RepoRefWire,
 } from "../serialize.ts";
 import { labelJSON } from "../serialize.ts";
-import { issueListItemJSON } from "../serialize-status.ts";
+import { issueListItemJSON, issueListItemsJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 
 // ===== dashboard =====
@@ -34,6 +34,43 @@ export const DASHBOARD_RECENT_ISSUES_LIMIT = 100;
 /** Per-repository cap for the grouped home-page dashboard. */
 export const DASHBOARD_REPOSITORY_ISSUES_LIMIT = 20;
 
+function repositoryIssues(
+  rows: S.IssueRow[],
+  repo: S.Repo,
+): Promise<DashboardRepositoryWire["issues"]> {
+  const visibleRows = rows.slice(0, DASHBOARD_REPOSITORY_ISSUES_LIMIT);
+  const subIssueRowsByParent = new Map<number, S.IssueRow[]>();
+  const subIssuesTruncatedByParent = new Set<number>();
+
+  for (const row of visibleRows) {
+    const children = S.listSubIssues(row.id);
+    if (children.length > 0) {
+      subIssueRowsByParent.set(
+        row.id,
+        children.slice(0, S.MAX_ISSUE_DETAIL_SUB_ISSUES),
+      );
+    }
+    if (children.length > S.MAX_ISSUE_DETAIL_SUB_ISSUES) {
+      subIssuesTruncatedByParent.add(row.id);
+    }
+  }
+
+  const allRows = [
+    ...visibleRows,
+    ...Array.from(subIssueRowsByParent.values()).flat(),
+  ];
+  const issueIds = allRows.map((row) => row.id);
+  return issueListItemsJSON(visibleRows, repo, {
+    labelsByIssue: S.labelsByIssue(issueIds),
+    commentCountsByIssue: S.commentCountsByIssue(issueIds),
+    linkedPullsByIssue: S.linkedPullsByIssue(issueIds),
+    herdrPanesByIssue: S.issueHerdrPanesByIssue(repo.id, issueIds),
+    subIssueSummariesByParent: S.subIssueSummariesByParent(issueIds),
+    subIssueRowsByParent,
+    subIssuesTruncatedByParent,
+  });
+}
+
 export const dashboard = {
   async overview(labels: string[] = []): Promise<DashboardOverviewWire> {
     const repositories: DashboardRepositoryWire[] = [];
@@ -55,11 +92,7 @@ export const dashboard = {
         rows = rows.filter((row) => matchingIssueIds.has(row.id));
       }
       const openRows = rows.filter((row) => row.state === "open");
-      const groupedIssues = await Promise.all(
-        openRows
-          .slice(0, DASHBOARD_REPOSITORY_ISSUES_LIMIT)
-          .map((row) => issueListItemJSON(row, r)),
-      );
+      const groupedIssues = await repositoryIssues(openRows, r);
       repositories.push({
         repo: ref,
         issues: groupedIssues,
