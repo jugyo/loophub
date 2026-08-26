@@ -3567,15 +3567,19 @@ describe("PullDetail — GitHub export action (#406)", () => {
   // hanging forever on an agent that died.
   it("returns to a clickable button when the export never lands", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-06-18T14:00:00Z"));
+    const expiresIn = 1_000;
     renderDetailWithPull({
       merge_mode: "github_pr",
       github_pull: null,
-      github_pr_export_started_at: new Date().toISOString(),
+      github_pr_export_started_at: new Date(
+        Date.now() - GITHUB_PR_EXPORT_PENDING_TTL_MS + expiresIn,
+      ).toISOString(),
     });
     await screen.findByRole("button", { name: /Creating…/i });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(GITHUB_PR_EXPORT_PENDING_TTL_MS + 1000);
+      await vi.advanceTimersByTimeAsync(expiresIn + 1);
     });
 
     const button = (await screen.findByRole("button", {
