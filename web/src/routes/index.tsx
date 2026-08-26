@@ -1,4 +1,5 @@
-import { createRoute } from "@tanstack/react-router";
+import { createRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import { HomeLabelFilter } from "@/components/home-label-filter";
 import { HomeRepositorySections } from "@/components/home-repository-sections";
 import { usePageTitle } from "@/lib/page-title";
 import { useDashboardOverview } from "@/queries/dashboard";
@@ -6,7 +7,22 @@ import { rootRoute } from "./root";
 
 export function HomePage() {
   usePageTitle(["Home"]);
-  const overview = useDashboardOverview();
+  const { labels: labelsParam = "" } = useSearch({ strict: false }) as {
+    labels?: string;
+  };
+  const selectedLabels = labelsParam
+    .split(",")
+    .map((label) => label.trim())
+    .filter(Boolean);
+  const overview = useDashboardOverview(selectedLabels);
+  const navigate = useNavigate();
+
+  function navigateWithLabels(labels: string[]) {
+    navigate({
+      to: "/",
+      search: labels.length > 0 ? { labels: labels.join(",") } : {},
+    });
+  }
 
   return (
     <div
@@ -18,6 +34,16 @@ export function HomePage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Review issue status and work across active repositories.
         </p>
+        {overview.data ? (
+          <div className="mt-4">
+            <HomeLabelFilter
+              labels={overview.data.labels}
+              selectedLabels={selectedLabels}
+              onChange={navigateWithLabels}
+              disabled={overview.isFetching}
+            />
+          </div>
+        ) : null}
       </div>
 
       {overview.isLoading ? (
@@ -58,4 +84,12 @@ export const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: HomePage,
+  validateSearch: validateHomeSearch,
 });
+
+export function validateHomeSearch(search: Record<string, unknown>): {
+  labels?: string;
+} {
+  const labels = typeof search.labels === "string" ? search.labels.trim() : "";
+  return labels ? { labels } : {};
+}

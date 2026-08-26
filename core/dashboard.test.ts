@@ -378,4 +378,37 @@ describe("dashboard.overview", () => {
     // One conversation comment plus both messages of the diff thread, as a single number.
     expect(await totalComments()).toBe(3);
   });
+
+  test("filters grouped issues by every requested label and lists active labels", async () => {
+    const both = svc.issues.create("me/proj", {
+      title: "has both labels",
+      labels: ["bug", "ui"],
+    });
+    svc.issues.create("me/proj", { title: "has only bug", labels: ["bug"] });
+    const closed = svc.issues.create("me/proj", {
+      title: "closed with both labels",
+      labels: ["bug", "ui"],
+    });
+    S.updateIssue(S.getIssue(S.getRepo("me", "proj")!.id, closed.number)!.id, {
+      state: "closed",
+    });
+
+    const overview = await svc.dashboard.overview([" bug ", "ui"]);
+    const repository = overview.repositories.find(
+      (item) => item.repo.full_name === "me/proj",
+    )!;
+
+    expect(overview.labels).toEqual(
+      expect.arrayContaining([
+        { name: "bug", color: null },
+        { name: "ui", color: null },
+      ]),
+    );
+    expect(repository.total_issues).toBe(2);
+    expect(repository.open_issues).toBe(1);
+    expect(repository.closed_issues).toBe(1);
+    expect(repository.issues.map((issue) => issue.number)).toEqual([
+      both.number,
+    ]);
+  });
 });

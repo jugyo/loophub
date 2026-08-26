@@ -2,8 +2,10 @@ import { compareRepos } from "../repo-sort.ts";
 import type {
   DashboardOverviewWire,
   DashboardRepositoryWire,
+  LabelWire,
   RepoRefWire,
 } from "../serialize.ts";
+import { labelJSON } from "../serialize.ts";
 import { issueListItemJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 
@@ -33,14 +35,25 @@ export const DASHBOARD_RECENT_ISSUES_LIMIT = 100;
 export const DASHBOARD_REPOSITORY_ISSUES_LIMIT = 20;
 
 export const dashboard = {
-  async overview(): Promise<DashboardOverviewWire> {
+  async overview(labels: string[] = []): Promise<DashboardOverviewWire> {
     const repositories: DashboardRepositoryWire[] = [];
     const issueRows: { repo: S.Repo; ref: RepoRefWire; row: S.IssueRow }[] = [];
+    const availableLabels = new Map<string, LabelWire>();
+    const labelFilter = [
+      ...new Set(labels.map((label) => label.trim()).filter(Boolean)),
+    ];
     for (const r of [...S.listRepos("active")].sort(compareRepos)) {
       const ref = repoRef(r);
-      const rows = S.listIssues(r.id, "issue", "all", "created", {
+      for (const label of S.listLabels(r.id)) {
+        availableLabels.set(label.name, labelJSON(label));
+      }
+      let rows = S.listIssues(r.id, "issue", "all", "created", {
         rootsOnly: true,
       });
+      if (labelFilter.length > 0) {
+        const matchingIssueIds = S.issueIdsWithLabels(r.id, labelFilter);
+        rows = rows.filter((row) => matchingIssueIds.has(row.id));
+      }
       const openRows = rows.filter((row) => row.state === "open");
       const groupedIssues = await Promise.all(
         openRows
@@ -88,6 +101,9 @@ export const dashboard = {
     );
     return {
       repositories,
+      labels: [...availableLabels.values()].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
       repository_count: repositories.length,
       total_issues: totalIssues,
       total_open_issues: totalOpenIssues,

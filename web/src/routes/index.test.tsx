@@ -6,11 +6,18 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import type { DashboardOverview } from "@/api/types";
-import { HomePage } from "./index";
+import { HomePage, validateHomeSearch } from "./index";
 
 afterEach(() => {
   cleanup();
@@ -19,6 +26,7 @@ afterEach(() => {
 
 const emptyOverview: DashboardOverview = {
   repositories: [],
+  labels: [],
   repository_count: 0,
   total_issues: 0,
   total_open_issues: 0,
@@ -29,7 +37,12 @@ const emptyOverview: DashboardOverview = {
   recentIssuesLimit: 100,
 };
 
-function makeIssue(number: number, state: "open" | "closed", title: string) {
+function makeIssue(
+  number: number,
+  state: "open" | "closed",
+  title: string,
+  labels = [],
+) {
   return {
     number,
     state,
@@ -37,7 +50,7 @@ function makeIssue(number: number, state: "open" | "closed", title: string) {
     body: "",
     target_branch: null,
     user: { login: "me" },
-    labels: [],
+    labels,
     comments: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
@@ -45,13 +58,17 @@ function makeIssue(number: number, state: "open" | "closed", title: string) {
   };
 }
 
-function renderHome(data: DashboardOverview = emptyOverview) {
+function renderHome(
+  data: DashboardOverview = emptyOverview,
+  initialPath = "/",
+) {
   vi.stubGlobal("fetch", mockRpcFetch({ "dashboard/overview": () => data }));
   const rootRoute = createRootRoute();
-  const indexRoute = createRoute({
+  const homeRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/",
     component: HomePage,
+    validateSearch: validateHomeSearch,
   });
   const repoRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -64,8 +81,8 @@ function renderHome(data: DashboardOverview = emptyOverview) {
     component: () => null,
   });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, repoRoute, issueRoute]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: rootRoute.addChildren([homeRoute, repoRoute, issueRoute]),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -78,6 +95,41 @@ function renderHome(data: DashboardOverview = emptyOverview) {
 }
 
 describe("HomePage", () => {
+  it("normalizes the label search parameter", () => {
+    expect(validateHomeSearch({ labels: " bug, ui " })).toEqual({
+      labels: "bug, ui",
+    });
+    expect(validateHomeSearch({ labels: " " })).toEqual({});
+  });
+
+  it("filters the overview through the shareable label URL", async () => {
+    const data = {
+      ...emptyOverview,
+      labels: [
+        { name: "bug", color: null },
+        { name: "ui", color: null },
+      ],
+    };
+    renderHome(data, "/?labels=bug");
+
+    const filter = await screen.findByRole("button", { name: "Label filter" });
+    expect(filter.textContent).toContain("bug");
+    const request = JSON.parse(
+      String((globalThis.fetch as any).mock.calls[0][1].body),
+    );
+    expect(request.params).toEqual({ labels: ["bug"] });
+
+    fireEvent.pointerDown(filter);
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", { name: "ui" }),
+    );
+    await waitFor(() => {
+      const calls = (globalThis.fetch as any).mock.calls;
+      const request = JSON.parse(String(calls.at(-1)[1].body));
+      expect(request.params).toEqual({ labels: ["bug", "ui"] });
+    });
+  });
+
   it("shows the empty active-repository state", async () => {
     renderHome();
 

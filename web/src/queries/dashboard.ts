@@ -7,23 +7,23 @@ import { getDashboardOverview } from "@/api/client";
 import { queryKeys } from "./keys";
 
 // --- cross-repo top page (/) ---
-// Both hooks share one query key, so the overview is fetched once and each hook
-// selects its slice. Event invalidation keys off queryKeys.dashboard().
+// Dashboard queries are keyed by their label filter. Event invalidation keys off
+// the shared queryKeys.dashboard() prefix.
 
 /** Recently created open issues across all active repos, newest first. */
 export function useRecentOpenIssues() {
   return useQuery({
     queryKey: queryKeys.dashboard(),
-    queryFn: getDashboardOverview,
+    queryFn: () => getDashboardOverview(),
     select: (overview) => overview.issues,
   });
 }
 
 /** Grouped repositories and issue rows for the top-page dashboard. */
-export function useDashboardOverview() {
+export function useDashboardOverview(labels: string[] = []) {
   return useQuery({
-    queryKey: queryKeys.dashboard(),
-    queryFn: getDashboardOverview,
+    queryKey: [...queryKeys.dashboard(), "overview", labels],
+    queryFn: () => getDashboardOverview(labels),
   });
 }
 
@@ -31,7 +31,7 @@ export function useDashboardOverview() {
 export function useRecentIssuesLimit() {
   return useQuery({
     queryKey: queryKeys.dashboard(),
-    queryFn: getDashboardOverview,
+    queryFn: () => getDashboardOverview(),
     select: (overview) => overview.recentIssuesLimit,
   });
 }

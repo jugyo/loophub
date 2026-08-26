@@ -448,6 +448,7 @@ export interface DashboardRepositoryWire {
 /** Cross-repository home-page data, including the grouped issue dashboard. */
 export interface DashboardOverviewWire {
   repositories: DashboardRepositoryWire[];
+  labels: LabelWire[];
   repository_count: number;
   total_issues: number;
   total_open_issues: number;

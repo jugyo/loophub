@@ -1277,6 +1277,8 @@ export function unlinkGithubPull(
 }
 
 // --- dashboard ---
-export function getDashboardOverview() {
-  return rpc<DashboardOverview>("dashboard/overview");
+export function getDashboardOverview(labels: string[] = []) {
+  return rpc<DashboardOverview>("dashboard/overview", {
+    ...(labels.length > 0 ? { labels } : {}),
+  });
 }

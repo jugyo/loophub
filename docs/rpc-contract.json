@@ -3175,7 +3175,14 @@
       "description": "Cross-repo top-page overview: active repositories grouped with capped issue rows and counts, plus the legacy recent-open-issue projection.",
       "params": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
         "required": [],
         "additionalProperties": false
       },
