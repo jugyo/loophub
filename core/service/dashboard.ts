@@ -40,9 +40,9 @@ export const dashboard = {
       const rows = S.listIssues(r.id, "issue", "all", "created", {
         rootsOnly: true,
       });
-      const openIssues = rows.filter((row) => row.state === "open").length;
+      const openRows = rows.filter((row) => row.state === "open");
       const groupedIssues = await Promise.all(
-        rows
+        openRows
           .slice(0, DASHBOARD_REPOSITORY_ISSUES_LIMIT)
           .map((row) => issueListItemJSON(row, r)),
       );
@@ -50,12 +50,12 @@ export const dashboard = {
         repo: ref,
         issues: groupedIssues,
         total_issues: rows.length,
-        open_issues: openIssues,
-        closed_issues: rows.length - openIssues,
+        open_issues: openRows.length,
+        closed_issues: rows.length - openRows.length,
         issue_limit: DASHBOARD_REPOSITORY_ISSUES_LIMIT,
-        has_more: rows.length > DASHBOARD_REPOSITORY_ISSUES_LIMIT,
+        has_more: openRows.length > DASHBOARD_REPOSITORY_ISSUES_LIMIT,
       });
-      for (const row of rows.filter((item) => item.state === "open")) {
+      for (const row of openRows) {
         issueRows.push({ repo: r, ref, row });
       }
     }

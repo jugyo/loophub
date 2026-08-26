@@ -110,7 +110,7 @@ describe("dashboard.overview", () => {
     });
   });
 
-  test("groups all issue states and reports the per-repository cap", async () => {
+  test("open issue のみを表示し、全状態の件数と上限を報告する", async () => {
     for (let i = 0; i < 20; i++) {
       svc.issues.create("me/proj", { title: `issue ${i}` });
     }
@@ -129,12 +129,31 @@ describe("dashboard.overview", () => {
     expect(repository.issues).toHaveLength(20);
     expect(repository.issue_limit).toBe(20);
     expect(repository.has_more).toBe(true);
-    expect(repository.issues.some((issue) => issue.state === "closed")).toBe(
+    expect(repository.issues.every((issue) => issue.state === "open")).toBe(
       true,
     );
     expect(overview.total_issues).toBe(24);
     expect(overview.total_open_issues).toBe(23);
     expect(overview.total_closed_issues).toBe(1);
+  });
+
+  test("open issue がない repository では空状態のデータを返す", async () => {
+    const repo = S.getRepo("me", "proj")!;
+    for (const row of S.listIssues(repo.id, "issue", "all", "created", {
+      rootsOnly: true,
+    })) {
+      if (row.state === "open") S.updateIssue(row.id, { state: "closed" });
+    }
+
+    const overview = await svc.dashboard.overview();
+    const repository = overview.repositories.find(
+      (item) => item.repo.full_name === "me/proj",
+    )!;
+
+    expect(repository.issues).toEqual([]);
+    expect(repository.open_issues).toBe(0);
+    expect(repository.closed_issues).toBe(repository.total_issues);
+    expect(repository.has_more).toBe(false);
   });
 
   test("linked PR carries github_pull once exported, null otherwise (#629)", async () => {
