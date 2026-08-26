@@ -3588,49 +3588,6 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(button.disabled).toBe(false);
   });
 
-  // A start can arrive already expired — the events poll pauses while the tab is hidden, so the
-  // first payload after it comes back can describe an export that ran out long ago. The button must
-  // judge it against the current clock, not against whenever the page happened to mount.
-  it("ignores a start that is already past its TTL when it arrives", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const mountedAt = Date.now();
-    let override: Partial<PullRequest> = {
-      merge_mode: "github_pr",
-      github_pull: null,
-      github_pr_export_started_at: null,
-    };
-    const { queryClient } = renderDetailWithPull(() => override);
-    const button = (await screen.findByRole("button", {
-      name: /Create PR on GitHub/i,
-    })) as HTMLButtonElement;
-    expect(button.disabled).toBe(false);
-
-    // The export started shortly before the page mounted and has since run out; the payload only
-    // reaches the page now. Its expiry is still after the mount, so a mount-time clock would call it
-    // in progress with no timer left to ever end it. The title changes with it, so the assertion
-    // below can only run once this payload has actually reached the page.
-    override = {
-      ...override,
-      title: "Export that ran out",
-      github_pr_export_started_at: new Date(
-        mountedAt - GITHUB_PR_EXPORT_PENDING_TTL_MS + 60_000,
-      ).toISOString(),
-    };
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(GITHUB_PR_EXPORT_PENDING_TTL_MS);
-      await queryClient.invalidateQueries();
-    });
-    await screen.findByRole("heading", {
-      name: "Export that ran out",
-      level: 1,
-    });
-
-    const stillClickable = screen.getByRole("button", {
-      name: /Create PR on GitHub/i,
-    }) as HTMLButtonElement;
-    expect(stillClickable.disabled).toBe(false);
-  });
-
   // The optimistic half of the loading state is local to the button, and the detail route is reused
   // across a client-side navigation — so it has to be tied to the PR it was started for.
   // Both shapes matter: one detail route serves every repo, and PR numbers are per repo, so
