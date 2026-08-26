@@ -402,6 +402,39 @@ test("the worker polls workflow instructions independently of workflow.yml", asy
   }
 });
 
+test("event tail は conflict sweep を await せず local merge event を enqueue する", async () => {
+  const repoPath = await makeRepo("");
+  const repo = S.createRepo("jugyo/merge-event-tail", repoPath);
+  const pr = S.createIssue(repo.id, "pull", "merged", "", "me");
+  S.createPull(pr.id, "feature", "main", "head", null);
+  const coordinator = {
+    enqueueMergedEvent: vi.fn(),
+  } as any;
+  const cursorPath = join(HOME, "merge-event-tail.cursor");
+  const worker = R.startWorker({
+    pollMs: 10,
+    cursorPath,
+    conflictCoordinator: coordinator,
+  });
+  const event = S.emitEvent(repo.id, "pull_request.merged", "me", {
+    number: pr.number,
+    sha: "merge-sha",
+  });
+
+  try {
+    await waitUntil(
+      () => coordinator.enqueueMergedEvent.mock.calls.length > 0,
+      "local merge conflict enqueue",
+    );
+    expect(coordinator.enqueueMergedEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: event.id, type: "pull_request.merged" }),
+    );
+  } finally {
+    worker.stop();
+    rmSync(repoPath, { recursive: true, force: true });
+  }
+});
+
 test("dispatches partitions concurrently, preserves partition order, and writes one cursor per batch", async () => {
   const tracePath = join(HOME, "partition-trace.txt");
   const workflow = (path: string) =>

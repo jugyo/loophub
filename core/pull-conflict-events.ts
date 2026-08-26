@@ -33,6 +33,10 @@ export interface ConflictSweepDeps {
     pull: S.OpenPullSweepRow,
     previousProjection?: S.CurrentPullStatusProjection | null,
   ) => Promise<MergeableState>;
+  // 指定時は同じ repository と base ref の open PR に対象を絞る。periodic fallback は未指定で
+  // すべての open PR を再検知する。
+  repoId?: number;
+  baseRef?: string;
 }
 
 export interface ConflictSweepResult {
@@ -48,7 +52,11 @@ export async function sweepPullConflicts(
   deps: ConflictSweepDeps = {},
 ): Promise<ConflictSweepResult> {
   const computeState = deps.computeState ?? currentMergeableState;
-  const pulls = S.openPulls();
+  const pulls = S.openPulls().filter(
+    (pull) =>
+      (deps.repoId === undefined || pull.repo_id === deps.repoId) &&
+      (deps.baseRef === undefined || pull.base_ref === deps.baseRef),
+  );
   let emitted = 0;
   for (const pull of pulls) {
     const state = await computeState(

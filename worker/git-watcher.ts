@@ -1,20 +1,16 @@
 // Local-git watcher process. This process observes local repositories and records facts in the
 // shared database; it does not dispatch events or run external jobs.
-import { sweepPullConflicts } from "../core/pull-conflict-events.ts";
 import type { WorktreeAutoPruneResult } from "../core/service/worktrees.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
 import { workerLog } from "./logger.ts";
 
 export const DEFAULT_PULL_SWEEP_MS = 5000;
-export const DEFAULT_CONFLICT_SWEEP_MS = 15000;
 export const DEFAULT_WORKTREE_PRUNE_SWEEP_MS = 1800000;
 
 export interface GitWatcherOptions {
   pullSweepMs?: number;
-  conflictSweepMs?: number;
   worktreePruneSweepMs?: number;
   pullSweep?: () => Promise<unknown[]>;
-  conflictSweep?: () => Promise<{ checked: number; emitted: number }>;
   worktreePruneSweep?: () => Promise<WorktreeAutoPruneResult>;
 }
 
@@ -70,7 +66,6 @@ export function startGitWatcher(
   options: GitWatcherOptions = {},
 ): GitWatcherHandle {
   const pullSweep = options.pullSweep ?? sweepPullUpdates;
-  const conflictSweep = options.conflictSweep ?? sweepPullConflicts;
   const worktreePruneSweep = options.worktreePruneSweep;
   const stops = [
     intervalOrDefault(options.pullSweepMs, DEFAULT_PULL_SWEEP_MS) > 0
@@ -81,18 +76,6 @@ export function startGitWatcher(
             const emitted = await pullSweep();
             workerLog.info(
               `lh-watcher-git: pull sweep emitted_events=${emitted.length}`,
-            );
-          },
-        )
-      : () => {},
-    intervalOrDefault(options.conflictSweepMs, DEFAULT_CONFLICT_SWEEP_MS) > 0
-      ? startLoop(
-          "conflict sweep",
-          intervalOrDefault(options.conflictSweepMs, DEFAULT_CONFLICT_SWEEP_MS),
-          async () => {
-            const result = await conflictSweep();
-            workerLog.info(
-              `lh-watcher-git: conflict sweep checked=${result.checked} emitted_events=${result.emitted}`,
             );
           },
         )

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // `lh-worker` entry point: a resident process that tails the shared events table, runs the
 // per-repo `.loophub/workflow.yml` commands (issue #52), and owns non-git maintenance loops.
 // Runs only while invoked (no daemon).
@@ -9,6 +10,7 @@
 //             [--worktree-prune-sweep-ms <ms>]
 // v1 is started via `npm run lh-worker`; an `lh worker` subcommand is intentionally out of scope.
 
+import { createConflictCoordinator } from "./conflict-coordinator.ts";
 import { workerLog } from "./logger.ts";
 import {
   DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
@@ -92,7 +94,12 @@ const maintenanceOptions = normalizeMaintenanceLoopOptions({
   herdrSweepMs,
   worktreePruneSweepMs,
 });
-const worker = startWorker({ pollMs, concurrency: dispatchConcurrency });
+const conflictCoordinator = createConflictCoordinator();
+const worker = startWorker({
+  pollMs,
+  concurrency: dispatchConcurrency,
+  conflictCoordinator,
+});
 const externalGitWatcher = process.env.LOOPHUB_GIT_WATCHER === "external";
 const notificationSweepStop =
   externalGitWatcher && maintenanceOptions.sweepMs > 0
@@ -105,6 +112,7 @@ const maintenance = startMaintenanceLoops({
   ...maintenanceOptions,
   sweepMs: externalGitWatcher ? 0 : maintenanceOptions.sweepMs,
   conflictSweepMs: externalGitWatcher ? 0 : maintenanceOptions.conflictSweepMs,
+  conflictCoordinator,
   worktreePruneSweepMs: externalGitWatcher
     ? 0
     : maintenanceOptions.worktreePruneSweepMs,

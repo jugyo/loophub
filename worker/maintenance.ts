@@ -7,7 +7,6 @@ import {
   type GithubPrStatusSyncResult,
   syncGithubPrStatus,
 } from "../core/github-status-sync.ts";
-import { sweepPullConflicts } from "../core/pull-conflict-events.ts";
 import type { SessionUsageSyncResult } from "../core/service/sessions.ts";
 import type { WorktreeAutoPruneResult } from "../core/service/worktrees.ts";
 import {
@@ -21,6 +20,10 @@ import {
 } from "../core/service.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
 import { WORKER_HEARTBEAT_INTERVAL_MS } from "../core/worker-protocol.ts";
+import {
+  type ConflictCoordinator,
+  createConflictCoordinator,
+} from "./conflict-coordinator.ts";
 import { workerLog } from "./logger.ts";
 import { runUsageSyncSubprocess } from "./usage-sync.ts";
 
@@ -63,6 +66,7 @@ export interface MaintenanceLoopOptions {
   herdrSweepMs?: number;
   worktreePruneSweepMs?: number;
   workerHeartbeatMs?: number;
+  conflictCoordinator?: ConflictCoordinator;
 }
 
 export interface NormalizedMaintenanceLoopOptions {
@@ -177,6 +181,8 @@ export function startMaintenanceLoops(
   opts: MaintenanceLoopOptions = {},
 ): MaintenanceHandle {
   const normalized = normalizeMaintenanceLoopOptions(opts);
+  const conflictCoordinator =
+    opts.conflictCoordinator ?? createConflictCoordinator();
   const workerStartedAt = new Date().toISOString();
   const stops = [
     normalized.workerHeartbeatMs > 0
@@ -196,7 +202,7 @@ export function startMaintenanceLoops(
       ? startClosedPullCleanupSweep(normalized.closedPullCleanupSweepMs)
       : () => {},
     normalized.conflictSweepMs > 0
-      ? startConflictSweep(normalized.conflictSweepMs)
+      ? startConflictSweep(normalized.conflictSweepMs, conflictCoordinator)
       : () => {},
     normalized.herdrSweepMs > 0
       ? startHerdrSnapshotSweep(normalized.herdrSweepMs)
@@ -306,6 +312,7 @@ export function startNotificationSweep(
 // parent polling `lh events`) observe the emitted events on their own; no session is launched here.
 export function startConflictSweep(
   intervalMs = DEFAULT_CONFLICT_SWEEP_MS,
+  coordinator: ConflictCoordinator = createConflictCoordinator(),
 ): () => void {
   let stopped = false;
   let running = false;
@@ -315,7 +322,7 @@ export function startConflictSweep(
     running = true;
     const startedAt = logLoopStarted("conflict sweep");
     try {
-      const result = await sweepPullConflicts();
+      const result = await coordinator.enqueueAll("periodic");
       logLoopCompleted("conflict sweep", startedAt, {
         checked: result.checked,
         emitted_events: result.emitted,

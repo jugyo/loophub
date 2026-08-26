@@ -135,6 +135,68 @@ test("sweep emits once per clean -> conflict transition and does not repeat", as
   expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
 });
 
+test("targeted sweep は指定した base ref の open sibling だけを検査する", async () => {
+  const repo = S.getRepo("me", "conflict")!;
+  const mainPull = S.createIssue(repo.id, "pull", "Main sibling", "", "me");
+  S.createPull(mainPull.id, "main-sibling", "main", "main-head", null);
+  const otherBasePull = S.createIssue(repo.id, "pull", "Other base", "", "me");
+  S.createPull(
+    otherBasePull.id,
+    "other-sibling",
+    "develop",
+    "other-head",
+    null,
+  );
+  const checked: number[] = [];
+  const expectedMainPulls = S.openPulls().filter(
+    (pull) => pull.repo_id === repo.id && pull.base_ref === "main",
+  );
+
+  const result = await D.sweepPullConflicts({
+    repoId: repo.id,
+    baseRef: "main",
+    computeState: async (pull) => {
+      checked.push(pull.number);
+      return "clean";
+    },
+  });
+
+  expect(result.checked).toBe(expectedMainPulls.length);
+  expect(checked).toContain(mainPull.number);
+  expect(checked).not.toContain(otherBasePull.number);
+});
+
+test("targeted sweep は実 git の base advance による sibling PR の conflict を検知する", async () => {
+  const path = initGitRepo("lh-conflict-events-real-git-");
+  const repo = await svc.repos.create({ path, name: "me/real-conflict" });
+  git(path, ["checkout", "-qb", "sibling"]);
+  writeFileSync(join(path, "a.txt"), "sibling\n");
+  git(path, ["add", "-A"]);
+  git(path, ["commit", "-qm", "sibling change"]);
+  const headSha = git(path, ["rev-parse", "HEAD"]).stdout.trim();
+  git(path, ["checkout", "-q", "main"]);
+
+  const issue = S.createIssue(repo.id, "pull", "Real sibling", "", "me");
+  S.createPull(issue.id, "sibling", "main", headSha, null);
+  S.createReview(issue.id, "reviewer", "PASS", "looks good", headSha);
+  const clean = await D.sweepPullConflicts({
+    repoId: repo.id,
+    baseRef: "main",
+  });
+  expect(clean.emitted).toBe(0);
+
+  writeFileSync(join(path, "a.txt"), "base change\n");
+  git(path, ["add", "-A"]);
+  git(path, ["commit", "-qm", "base change"]);
+  const conflict = await D.sweepPullConflicts({
+    repoId: repo.id,
+    baseRef: "main",
+  });
+
+  expect(conflict.emitted).toBe(1);
+  expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
+});
+
 test("marks the conflict source so a Workflow run reacts to it directly", async () => {
   const repo = S.getRepo("me", "conflict")!;
   const issue = S.createIssue(repo.id, "pull", "Workflow PR", "", "me");

@@ -23,6 +23,7 @@ import {
   stepsFor,
   type WorkflowStep,
 } from "../core/workflow.ts";
+import type { ConflictCoordinator } from "./conflict-coordinator.ts";
 import { scheduleDiffFeedbackProjection } from "./diff-feedback-projection.ts";
 import { workerErrorDetail, workerLog } from "./logger.ts";
 
@@ -340,6 +341,7 @@ async function dispatchEventBatch(
   rows: EventRow[],
   concurrency: number,
   shouldStop: () => boolean,
+  conflictCoordinator?: ConflictCoordinator,
   dispatch: (row: EventRow) => Promise<void> = dispatchEvent,
 ): Promise<Set<number>> {
   const partitions = new Map<string, EventRow[]>();
@@ -362,6 +364,7 @@ async function dispatchEventBatch(
       for (const row of partition) {
         if (shouldStop()) return;
         scheduleDiffFeedbackProjection(row);
+        conflictCoordinator?.enqueueMergedEvent(row);
         try {
           await dispatch(row);
         } catch {
@@ -388,6 +391,7 @@ export function startWorker(
     cursorPath?: string;
     concurrency?: number;
     writeCursor?: CursorWriter;
+    conflictCoordinator?: ConflictCoordinator;
   } = {},
 ): WorkerHandle {
   const pollMs =
@@ -419,6 +423,7 @@ export function startWorker(
           rows,
           concurrency,
           () => stopped,
+          opts.conflictCoordinator,
         );
         for (const row of rows) {
           if (!completed.has(row.id)) break;
