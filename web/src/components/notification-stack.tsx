@@ -9,7 +9,7 @@ import {
   MessageSquare,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Notification } from "@/api/types";
 import { useToast } from "@/components/toast";
 import { YesNoPrompt } from "@/components/yes-no-prompt";
@@ -17,8 +17,10 @@ import {
   getNotificationsMinimized,
   setNotificationsMinimized,
 } from "@/lib/notification-minimize";
+import { notificationMatchesPath } from "@/lib/notification-resource";
 import { formatCost } from "@/lib/session-usage";
 import { relativeTime } from "@/lib/time";
+import { usePageVisibility } from "@/lib/use-page-visibility";
 import { cn } from "@/lib/utils";
 import {
   useNotifications,
@@ -95,13 +97,18 @@ function notificationKindLabel(notification: Notification): string {
   return "Notification";
 }
 
-export function NotificationStack() {
+export function NotificationStack({ pathname }: { pathname: string }) {
   const { data, isError } = useNotifications({ unreadOnly: true });
   const readNotification = useReadNotification();
   const readAllNotifications = useReadAllNotifications();
   const { showError } = useToast();
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
+  const [autoReadFailures, setAutoReadFailures] = useState<Set<number>>(
+    new Set(),
+  );
+  const autoReadAttemptedIds = useRef<Set<number>>(new Set());
   const [minimized, setMinimized] = useState(getNotificationsMinimized);
+  const pageVisible = usePageVisibility();
   const unread = useMemo(
     () =>
       (data ?? [])
@@ -114,32 +121,72 @@ export function NotificationStack() {
         ),
     [data, dismissedIds],
   );
-  const visible = unread.slice(0, MAX_VISIBLE_NOTIFICATIONS);
+  const pageUnread = useMemo(
+    () =>
+      unread.filter(
+        (notification) =>
+          !(
+            pageVisible &&
+            notificationMatchesPath(notification, pathname) &&
+            !autoReadFailures.has(notification.id)
+          ),
+      ),
+    [autoReadFailures, pageVisible, pathname, unread],
+  );
+  const visible = pageUnread.slice(0, MAX_VISIBLE_NOTIFICATIONS);
 
-  function markRead(notification: Notification) {
-    setDismissedIds((ids) => new Set(ids).add(notification.id));
-    readNotification.mutate(notification.id, {
-      onSuccess: () => {
-        setDismissedIds((ids) => {
+  const markRead = useCallback(
+    (notification: Notification, automatic = false) => {
+      if (automatic) {
+        setAutoReadFailures((ids) => {
+          if (!ids.has(notification.id)) return ids;
           const next = new Set(ids);
           next.delete(notification.id);
           return next;
         });
-      },
-      onError: (error) => {
-        setDismissedIds((ids) => {
-          const next = new Set(ids);
-          next.delete(notification.id);
-          return next;
-        });
-        showError(
-          error instanceof Error
-            ? error.message
-            : "Failed to mark notification read.",
-        );
-      },
-    });
-  }
+      }
+      setDismissedIds((ids) => new Set(ids).add(notification.id));
+      readNotification.mutate(notification.id, {
+        onSuccess: () => {
+          setDismissedIds((ids) => {
+            const next = new Set(ids);
+            next.delete(notification.id);
+            return next;
+          });
+        },
+        onError: (error) => {
+          setDismissedIds((ids) => {
+            const next = new Set(ids);
+            next.delete(notification.id);
+            return next;
+          });
+          if (automatic) {
+            setAutoReadFailures((ids) => new Set(ids).add(notification.id));
+          }
+          showError(
+            error instanceof Error
+              ? error.message
+              : "Failed to mark notification read.",
+          );
+        },
+      });
+    },
+    [readNotification, showError],
+  );
+
+  useEffect(() => {
+    if (!pageVisible) return;
+    for (const notification of unread) {
+      if (
+        !notificationMatchesPath(notification, pathname) ||
+        autoReadAttemptedIds.current.has(notification.id)
+      ) {
+        continue;
+      }
+      autoReadAttemptedIds.current.add(notification.id);
+      markRead(notification, true);
+    }
+  }, [markRead, pageVisible, pathname, unread]);
 
   // A view preference, not a read: the notifications stay unread and come back as they were.
   function minimize(next: boolean) {
@@ -159,7 +206,7 @@ export function NotificationStack() {
     });
   }
 
-  if (!isError && unread.length === 0) return null;
+  if (!isError && pageUnread.length === 0) return null;
 
   return (
     // Above the z-50 modal layer (diff view, settings, lightbox), because the notifications that
@@ -173,7 +220,7 @@ export function NotificationStack() {
       data-debug-component="NotificationStack"
       className="pointer-events-none fixed right-4 bottom-12 z-[60] flex max-h-[calc(100vh-4rem)] w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto"
     >
-      {unread.length > 0 ? (
+      {pageUnread.length > 0 ? (
         // One button carries both states so toggling keeps it mounted, and a keyboard user who
         // folds the stack stays on the control that unfolds it again.
         // self-end keeps the row only as wide as its buttons: a full-width row would sit on top
@@ -195,7 +242,7 @@ export function NotificationStack() {
             {minimized ? (
               <>
                 <Bell className="size-3.5" aria-hidden="true" />
-                {unread.length} unread
+                {pageUnread.length} unread
               </>
             ) : (
               <ChevronDown className="size-3.5" aria-hidden="true" />

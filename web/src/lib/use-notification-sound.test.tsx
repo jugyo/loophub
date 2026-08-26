@@ -33,7 +33,10 @@ const SETTINGS: GlobalSettings = {
   workflowContractLanguage: "en",
 };
 
-function makeNotification(id: number): Notification {
+function makeNotification(
+  id: number,
+  overrides: Partial<Notification> = {},
+): Notification {
   return {
     id,
     kind: "merge_ready",
@@ -51,11 +54,12 @@ function makeNotification(id: number): Notification {
     workflow_run_id: null,
     read_at: null,
     created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
   };
 }
 
-function Harness() {
-  useNotificationSound();
+function Harness({ pathname }: { pathname: string }) {
+  useNotificationSound(pathname);
   return null;
 }
 
@@ -70,6 +74,7 @@ async function settle(): Promise<void> {
 function renderHook(
   unread: Notification[],
   settings: GlobalSettings = SETTINGS,
+  pathname = "/",
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -80,7 +85,7 @@ function renderHook(
   queryClient.setQueryData(LIST_KEY, unread);
   render(
     <QueryClientProvider client={queryClient}>
-      <Harness />
+      <Harness pathname={pathname} />
     </QueryClientProvider>,
   );
   return {
@@ -107,6 +112,51 @@ describe("useNotificationSound", () => {
     const { deliver } = renderHook([makeNotification(4)]);
 
     await deliver([makeNotification(5), makeNotification(4)]);
+
+    expect(playNotificationBell).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays silent when a new notification targets the visible page", async () => {
+    const { deliver } = renderHook(
+      [makeNotification(4)],
+      SETTINGS,
+      "/r/me/proj/pulls/4",
+    );
+
+    await deliver([
+      makeNotification(5, {
+        resource: {
+          kind: "pull",
+          number: 4,
+          title: null,
+          href: "/r/me/proj/pulls/4",
+        },
+      }),
+      makeNotification(4),
+    ]);
+
+    expect(playNotificationBell).not.toHaveBeenCalled();
+  });
+
+  it("rings for an unrelated notification while a page is visible", async () => {
+    const { deliver } = renderHook(
+      [makeNotification(4)],
+      SETTINGS,
+      "/r/me/proj/pulls/4",
+    );
+
+    await deliver([
+      makeNotification(5, {
+        resource: {
+          kind: "pull",
+          number: 4,
+          title: null,
+          href: "/r/me/proj/pulls/4",
+        },
+      }),
+      makeNotification(6),
+      makeNotification(4),
+    ]);
 
     expect(playNotificationBell).toHaveBeenCalledTimes(1);
   });

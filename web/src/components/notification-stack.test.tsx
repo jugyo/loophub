@@ -5,6 +5,7 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
+  useRouterState,
 } from "@tanstack/react-router";
 import {
   act,
@@ -34,6 +35,10 @@ const actions = vi.hoisted(() => ({
   increaseCostLimit: vi.fn(),
   increaseReworkLimit: vi.fn(),
 }));
+const originalVisibilityState = Object.getOwnPropertyDescriptor(
+  document,
+  "visibilityState",
+);
 
 vi.mock("@/queries/notifications", () => ({
   useNotifications: (input: unknown) => {
@@ -85,7 +90,20 @@ afterEach(() => {
   notifications.value = [];
   notifications.isError = false;
   notifications.workflowRun = null;
+  if (originalVisibilityState) {
+    Object.defineProperty(document, "visibilityState", originalVisibilityState);
+  } else {
+    delete (document as unknown as Record<string, unknown>).visibilityState;
+  }
 });
+
+function setPageVisibility(state: DocumentVisibilityState): void {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    value: state,
+  });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
 
 function makeNotification(
   id: number,
@@ -163,14 +181,19 @@ function makeRunState(
   };
 }
 
-function renderStack() {
+function renderStack(initialPath = "/") {
   const rootRoute = createRootRoute({
-    component: () => (
-      <>
-        <NotificationStack />
-        <Outlet />
-      </>
-    ),
+    component: () => {
+      const pathname = useRouterState({
+        select: (state) => state.location.pathname,
+      });
+      return (
+        <>
+          <NotificationStack pathname={pathname} />
+          <Outlet />
+        </>
+      );
+    },
   });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -182,9 +205,24 @@ function renderStack() {
     path: "/r/$owner/$repo/pulls/$number",
     component: () => null,
   });
+  const issueRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/issues/$number",
+    component: () => null,
+  });
+  const repoRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo",
+    component: () => null,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, pullRoute]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: rootRoute.addChildren([
+      indexRoute,
+      repoRoute,
+      issueRoute,
+      pullRoute,
+    ]),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
   return { router, ...render(<RouterProvider router={router} />) };
 }
@@ -229,6 +267,117 @@ describe("NotificationStack", () => {
         expect.stringContaining("Notification 2"),
       ],
     );
+  });
+
+  it("automatically reads only the notification for the visible pull page", async () => {
+    notifications.value = [
+      makeNotification(12),
+      makeNotification(13, {
+        resource: {
+          kind: "issue",
+          number: 13,
+          title: null,
+          href: "/r/me/proj/issues/13",
+        },
+      }),
+    ];
+
+    renderStack("/r/me/proj/pulls/12");
+
+    expect(
+      await screen.findByRole("link", { name: /Notification 13/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Notification 12/ })).toBeNull();
+    expect(actions.read).toHaveBeenCalledTimes(1);
+    expect(actions.read).toHaveBeenCalledWith(12, expect.any(Object));
+  });
+
+  it("keeps issue and repository notifications scoped to their exact resource", async () => {
+    notifications.value = [
+      makeNotification(20, {
+        resource: {
+          kind: "repo",
+          number: null,
+          title: null,
+          href: "/r/me/proj",
+        },
+      }),
+      makeNotification(21, {
+        resource: {
+          kind: "issue",
+          number: 21,
+          title: null,
+          href: "/r/me/proj/issues/21",
+        },
+      }),
+      makeNotification(22, {
+        resource: {
+          kind: "issue",
+          number: 22,
+          title: null,
+          href: "/r/other/proj/issues/21",
+        },
+      }),
+    ];
+
+    renderStack("/r/me/proj/issues/21");
+
+    expect(
+      await screen.findByRole("link", { name: /Notification 20/ }),
+    ).toBeTruthy();
+    expect(
+      await screen.findByRole("link", { name: /Notification 22/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Notification 21/ })).toBeNull();
+    expect(actions.read).toHaveBeenCalledTimes(1);
+    expect(actions.read).toHaveBeenCalledWith(21, expect.any(Object));
+  });
+
+  it("reads matching notifications after navigating to their page", async () => {
+    notifications.value = [makeNotification(12)];
+    const { router } = renderStack();
+
+    expect(
+      await screen.findByRole("link", { name: /Notification 12/ }),
+    ).toBeTruthy();
+    await act(() =>
+      router.navigate({
+        to: "/r/$owner/$repo/pulls/$number",
+        params: { owner: "me", repo: "proj", number: "12" },
+      }),
+    );
+
+    expect(screen.queryByRole("link", { name: /Notification 12/ })).toBeNull();
+    expect(actions.read).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits to read a matching notification until the page is visible", async () => {
+    setPageVisibility("hidden");
+    notifications.value = [makeNotification(12)];
+    renderStack("/r/me/proj/pulls/12");
+
+    expect(
+      await screen.findByRole("link", { name: /Notification 12/ }),
+    ).toBeTruthy();
+    expect(actions.read).not.toHaveBeenCalled();
+
+    await act(async () => setPageVisibility("visible"));
+
+    expect(actions.read).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("link", { name: /Notification 12/ })).toBeNull();
+  });
+
+  it("does not issue another automatic read when the list is refreshed", async () => {
+    notifications.value = [makeNotification(12)];
+    renderStack("/r/me/proj/pulls/12");
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(actions.read).toHaveBeenCalledTimes(1);
+    deliverNotifications([makeNotification(12)]);
+
+    expect(actions.read).toHaveBeenCalledTimes(1);
   });
 
   it("layers the stack above modal overlays without blocking them", async () => {
@@ -676,16 +825,19 @@ describe("NotificationStack", () => {
       },
       message: "Clear failed",
     },
-  ])("shows $action failures through the shared error toast", async (testCase) => {
-    notifications.value = [makeNotification(12)];
-    actions[testCase.action as "read" | "readAll"].mockImplementationOnce(
-      (_input: unknown, options: { onError: (error: Error) => void }) =>
-        options.onError(new Error(testCase.message)),
-    );
-    renderStack();
+  ])(
+    "shows $action failures through the shared error toast",
+    async (testCase) => {
+      notifications.value = [makeNotification(12)];
+      actions[testCase.action as "read" | "readAll"].mockImplementationOnce(
+        (_input: unknown, options: { onError: (error: Error) => void }) =>
+          options.onError(new Error(testCase.message)),
+      );
+      renderStack();
 
-    await testCase.invoke();
+      await testCase.invoke();
 
-    expect(actions.showError).toHaveBeenCalledWith(testCase.message);
-  });
+      expect(actions.showError).toHaveBeenCalledWith(testCase.message);
+    },
+  );
 });

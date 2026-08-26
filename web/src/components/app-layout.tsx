@@ -1,7 +1,7 @@
 // App shell: fixed top navigation + main content area with route-level navigation.
 // Routes render into <Outlet/>. Screen content lands in later UI issues.
 
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { AppStatusbar } from "@/components/app-statusbar";
 import { AppTopbar } from "@/components/app-topbar";
@@ -28,9 +28,12 @@ export function AppLayout() {
   // Reset the content scroll position to the top on every route change (#277).
   const mainRef = useRef<HTMLElement>(null);
   const [repoSwitcherRequest, setRepoSwitcherRequest] = useState(0);
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   useScrollToTop(mainRef);
   // Announce arriving notifications from the shell: the stack below only renders them.
-  useNotificationSound();
+  useNotificationSound(pathname);
   return (
     // TerminalControllerProvider wraps the content so terminal launch buttons can
     // launch a Herdr session via useTerminalLauncher() and surface its launch feedback / error
@@ -71,7 +74,7 @@ export function AppLayout() {
             <AppStatusbar debugPanel={<DebugPanelToggle />} />
             <RepoSwitcher openRequest={repoSwitcherRequest} />
             <TerminalLaunchErrorDialog />
-            <NotificationStack />
+            <NotificationStack pathname={pathname} />
             {/* Operation feedback (#574): a floating toast above the content, with an explicit
                 lifetime independent of any one screen's components (mirrors the old ErrorBanner). */}
             <ToastViewport />
