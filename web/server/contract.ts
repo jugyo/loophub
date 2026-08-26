@@ -1452,7 +1452,7 @@ export const methods: Record<string, MethodDef> = {
   // ---- dashboard ----
   "dashboard/overview": {
     description:
-      "Cross-repo top-page overview: recently created open issues, each tagged with its repo.",
+      "Cross-repo top-page overview: active repositories grouped with capped issue rows and counts, plus the legacy recent-open-issue projection.",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.dashboard.overview(),

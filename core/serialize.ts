@@ -94,6 +94,13 @@ export interface RepoWire {
   herdr_session_name: string;
 }
 
+/** Minimal repository identity attached to aggregated dashboard data. */
+export interface RepoRefWire {
+  full_name: string;
+  owner: string;
+  name: string;
+}
+
 export interface RepoMergeModeWire {
   setting: MergeMode | null;
   has_github_remote: boolean;
@@ -425,6 +432,31 @@ export interface IssueWire {
   ancestors?: IssueRefSummaryWire[];
   sub_issues?: IssueWire[];
   sub_issues_truncated?: boolean;
+}
+
+/** One repository group in the cross-repository home-page dashboard. */
+export interface DashboardRepositoryWire {
+  repo: RepoRefWire;
+  issues: IssueWire[];
+  total_issues: number;
+  open_issues: number;
+  closed_issues: number;
+  issue_limit: number;
+  has_more: boolean;
+}
+
+/** Cross-repository home-page data, including the grouped issue dashboard. */
+export interface DashboardOverviewWire {
+  repositories: DashboardRepositoryWire[];
+  repository_count: number;
+  total_issues: number;
+  total_open_issues: number;
+  total_closed_issues: number;
+  repository_issue_limit: number;
+  /** Legacy flat projection kept for existing dashboard consumers. */
+  issues: { repo: RepoRefWire; issue: IssueWire }[];
+  recent_issues_limit: number;
+  recentIssuesLimit: number;
 }
 
 // The rubric-delivery shape carried on issue view. `id` is the public, repository-scoped

@@ -110,6 +110,33 @@ describe("dashboard.overview", () => {
     });
   });
 
+  test("groups all issue states and reports the per-repository cap", async () => {
+    for (let i = 0; i < 20; i++) {
+      svc.issues.create("me/proj", { title: `issue ${i}` });
+    }
+    const closed = svc.issues.create("me/proj", { title: "closed issue" });
+    const closedRow = S.getIssue(S.getRepo("me", "proj")!.id, closed.number)!;
+    S.updateIssue(closedRow.id, { state: "closed" });
+
+    const overview = await svc.dashboard.overview();
+    const repository = overview.repositories.find(
+      (item) => item.repo.full_name === "me/proj",
+    )!;
+
+    expect(repository.total_issues).toBe(24);
+    expect(repository.open_issues).toBe(23);
+    expect(repository.closed_issues).toBe(1);
+    expect(repository.issues).toHaveLength(20);
+    expect(repository.issue_limit).toBe(20);
+    expect(repository.has_more).toBe(true);
+    expect(repository.issues.some((issue) => issue.state === "closed")).toBe(
+      true,
+    );
+    expect(overview.total_issues).toBe(24);
+    expect(overview.total_open_issues).toBe(23);
+    expect(overview.total_closed_issues).toBe(1);
+  });
+
   test("linked PR carries github_pull once exported, null otherwise (#629)", async () => {
     const issue = svc.issues.create("me/proj", { title: "gets a GitHub PR" });
     const pr = await svc.dev.openPr(

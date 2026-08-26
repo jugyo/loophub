@@ -19,6 +19,14 @@ export function useRecentOpenIssues() {
   });
 }
 
+/** Grouped repositories and issue rows for the top-page dashboard. */
+export function useDashboardOverview() {
+  return useQuery({
+    queryKey: queryKeys.dashboard(),
+    queryFn: getDashboardOverview,
+  });
+}
+
 /** The cap on the recent-issues list, so the UI can note when it's reached. */
 export function useRecentIssuesLimit() {
   return useQuery({

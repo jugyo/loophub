@@ -1,9 +1,12 @@
 import { createRoute } from "@tanstack/react-router";
+import { HomeRepositorySections } from "@/components/home-repository-sections";
 import { usePageTitle } from "@/lib/page-title";
+import { useDashboardOverview } from "@/queries/dashboard";
 import { rootRoute } from "./root";
 
 export function HomePage() {
   usePageTitle(["Home"]);
+  const overview = useDashboardOverview();
 
   return (
     <div
@@ -11,12 +14,42 @@ export function HomePage() {
       className="mx-auto flex max-w-content flex-col gap-8"
     >
       <div>
-        <h1 className="text-2xl font-semibold">Home</h1>
+        <h1 className="text-2xl font-semibold">Repository issues</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Pick a repository from the topbar to browse its issues and pull
-          requests.
+          Review issue status and work across active repositories.
         </p>
       </div>
+
+      {overview.isLoading ? (
+        <p className="py-8 text-sm text-muted-foreground">Loading…</p>
+      ) : overview.isError ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">
+          Failed to load repository issues.
+          {overview.error instanceof Error
+            ? ` ${overview.error.message}`
+            : null}
+        </div>
+      ) : overview.data ? (
+        <>
+          <div className="border-b pb-4 text-sm">
+            <span className="font-medium">Overview</span>
+            <span className="ml-3 text-muted-foreground">
+              {overview.data.repository_count} repositories ·{" "}
+              {overview.data.total_issues} issues · open{" "}
+              {overview.data.total_open_issues} · closed{" "}
+              {overview.data.total_closed_issues}
+            </span>
+          </div>
+
+          {overview.data.repositories.length === 0 ? (
+            <p className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+              No active repositories.
+            </p>
+          ) : (
+            <HomeRepositorySections repositories={overview.data.repositories} />
+          )}
+        </>
+      ) : null}
     </div>
   );
 }

@@ -243,6 +243,7 @@ export function IssueRow({
   issue,
   repoLabel,
   showCreatedAt = false,
+  showState = false,
   labelState,
   labelWorkspaceFilter,
   workflowRunSeeded = false,
@@ -261,6 +262,8 @@ export function IssueRow({
    * visible timestamp matches the sort order.
    */
   showCreatedAt?: boolean;
+  /** Show an explicit state badge when the surrounding list includes open and closed issues. */
+  showState?: boolean;
   /** Preserves the active issue-list state when label chips filter the list. */
   labelState?: IssueListFilters["state"];
   /** Preserves the repo-top workspace filter when a label chip is clicked (#1494). */
@@ -367,7 +370,9 @@ export function IssueRow({
             workspaceFilter={labelWorkspaceFilter}
           />
         </div>
-        {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
+        {showState || issue.state === "closed" ? (
+          <Badge tone={issue.state}>{issue.state}</Badge>
+        ) : null}
         {/* Fixed-width, right-aligned relative time keeps rows vertically aligned
             regardless of the relative-time length ("3m ago" vs "12h ago"). #278 */}
         <span className="w-16 shrink-0 truncate text-right text-xs text-muted-foreground">

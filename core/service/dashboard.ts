@@ -1,3 +1,8 @@
+import type {
+  DashboardOverviewWire,
+  DashboardRepositoryWire,
+  RepoRefWire,
+} from "../serialize.ts";
 import { issueListItemJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 
@@ -6,9 +11,7 @@ import * as S from "../store.ts";
 // issues (newest first) and pull requests that are open and not yet merged.
 // Each item carries its repo identity so the aggregated view can show which
 // project it belongs to.
-type RepoRef = { full_name: string; owner: string; name: string };
-
-function repoRef(r: S.Repo): RepoRef {
+function repoRef(r: S.Repo): RepoRefWire {
   return { full_name: r.full_name, owner: r.owner, name: r.name };
 }
 
@@ -25,15 +28,34 @@ function byCreatedDesc(
 // linked PR spawn git — most have none — so this stays well under the per-issue
 // worst case even at a higher cap than the open-PR section.
 export const DASHBOARD_RECENT_ISSUES_LIMIT = 100;
+/** Per-repository cap for the grouped home-page dashboard. */
+export const DASHBOARD_REPOSITORY_ISSUES_LIMIT = 20;
 
 export const dashboard = {
-  async overview() {
-    const issueRows: { repo: S.Repo; ref: RepoRef; row: S.IssueRow }[] = [];
+  async overview(): Promise<DashboardOverviewWire> {
+    const repositories: DashboardRepositoryWire[] = [];
+    const issueRows: { repo: S.Repo; ref: RepoRefWire; row: S.IssueRow }[] = [];
     for (const r of S.listRepos("active")) {
       const ref = repoRef(r);
-      for (const row of S.listIssues(r.id, "issue", "open", "created", {
+      const rows = S.listIssues(r.id, "issue", "all", "created", {
         rootsOnly: true,
-      })) {
+      });
+      const openIssues = rows.filter((row) => row.state === "open").length;
+      const groupedIssues = await Promise.all(
+        rows
+          .slice(0, DASHBOARD_REPOSITORY_ISSUES_LIMIT)
+          .map((row) => issueListItemJSON(row, r)),
+      );
+      repositories.push({
+        repo: ref,
+        issues: groupedIssues,
+        total_issues: rows.length,
+        open_issues: openIssues,
+        closed_issues: rows.length - openIssues,
+        issue_limit: DASHBOARD_REPOSITORY_ISSUES_LIMIT,
+        has_more: rows.length > DASHBOARD_REPOSITORY_ISSUES_LIMIT,
+      });
+      for (const row of rows.filter((item) => item.state === "open")) {
         issueRows.push({ repo: r, ref, row });
       }
     }
@@ -55,6 +77,24 @@ export const dashboard = {
     );
     // Surface the issue cap so the UI can note "showing the N most recent"
     // without duplicating the magic number client-side.
-    return { issues, recentIssuesLimit: DASHBOARD_RECENT_ISSUES_LIMIT };
+    const totalIssues = repositories.reduce(
+      (sum, repository) => sum + repository.total_issues,
+      0,
+    );
+    const totalOpenIssues = repositories.reduce(
+      (sum, repository) => sum + repository.open_issues,
+      0,
+    );
+    return {
+      repositories,
+      repository_count: repositories.length,
+      total_issues: totalIssues,
+      total_open_issues: totalOpenIssues,
+      total_closed_issues: totalIssues - totalOpenIssues,
+      repository_issue_limit: DASHBOARD_REPOSITORY_ISSUES_LIMIT,
+      issues,
+      recent_issues_limit: DASHBOARD_RECENT_ISSUES_LIMIT,
+      recentIssuesLimit: DASHBOARD_RECENT_ISSUES_LIMIT,
+    };
   },
 };

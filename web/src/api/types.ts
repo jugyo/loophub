@@ -12,6 +12,8 @@ import type {
   AgentSessionWire,
   CodingAgent as CodingAgentWire,
   CommentWire,
+  DashboardOverviewWire,
+  DashboardRepositoryWire,
   DiffFeedbackListWire,
   DiffFeedbackMessageWire,
   DiffFeedbackThreadWire,
@@ -48,6 +50,7 @@ import type {
   RepoGithubPrExportExtraPromptWire,
   RepoMergeModeWire,
   RepoOriginSyncWire,
+  RepoRefWire,
   RepoWire,
   ReviewAcResultWire,
   ReviewCommentWire,
@@ -311,24 +314,9 @@ export type RelatedSessionsUsage = RelatedSessionsUsageWire;
 export type RelatedSessionsUsageByKind = RelatedSessionsUsageByKindWire;
 
 /** Minimal repo identity attached to aggregated dashboard items. */
-export interface RepoRef {
-  full_name: string;
-  owner: string;
-  name: string;
-}
-
-/** One recently created open issue plus its repo (dashboard/overview). */
-export interface DashboardIssueItem {
-  repo: RepoRef;
-  issue: Issue;
-}
-
-/** Cross-repo top-page overview (dashboard/overview). */
-export interface DashboardOverview {
-  issues: DashboardIssueItem[];
-  /** Max issues the overview returns; used to note when the list is capped. */
-  recentIssuesLimit: number;
-}
+export type RepoRef = RepoRefWire;
+export type DashboardRepository = DashboardRepositoryWire;
+export type DashboardOverview = DashboardOverviewWire;
 
 /** One domain subject an event names, normalized by core (core/event-subjects.ts). */
 export type EventSubject = EventSubjectWire;
