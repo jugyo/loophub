@@ -302,6 +302,8 @@ describe("herdr terminal launch", () => {
       "w1",
       "--cwd",
       "/repo/main",
+      "--label",
+      "dev #444",
       "--env",
       "LOOPHUB_SESSION_ID=s-1",
       "--no-focus",
@@ -316,7 +318,8 @@ describe("herdr terminal launch", () => {
       HERDR_PANE_PLACEHOLDER,
       "claude --model sonnet\n",
     ]);
-    // The human-readable label is applied separately; it is the only identity LoopHub reads back.
+    // The human-readable label is applied to the tab and pane; it is the only identity LoopHub
+    // reads back.
     expect(plan.label).toBe("dev #444");
     expect(plan.renameArgv).toEqual([
       "herdr",
@@ -636,6 +639,20 @@ describe("herdr terminal launch", () => {
       "create",
       "--cwd",
       "/repo/main",
+      "--no-focus",
+    ]);
+    expect(
+      herdrTabCreateArgv(repo, "/repo/main", undefined, "executor #12-1"),
+    ).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "tab",
+      "create",
+      "--cwd",
+      "/repo/main",
+      "--label",
+      "executor #12-1",
       "--no-focus",
     ]);
     expect(herdrTabCloseArgv(repo, "w1:t2")).toEqual([
@@ -983,7 +1000,15 @@ describe("herdr terminal launch", () => {
   test("builds Herdr tab create argv scoped to an already-open worktree workspace", () => {
     const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
     const sessionName = herdrSessionName(repo);
-    expect(herdrTabCreateInWorkspaceArgv(repo, "w7", "/wt/pr-42")).toEqual([
+    expect(
+      herdrTabCreateInWorkspaceArgv(
+        repo,
+        "w7",
+        "/wt/pr-42",
+        undefined,
+        "verifier #12-2",
+      ),
+    ).toEqual([
       "herdr",
       "--session",
       sessionName,
@@ -993,6 +1018,8 @@ describe("herdr terminal launch", () => {
       "w7",
       "--cwd",
       "/wt/pr-42",
+      "--label",
+      "verifier #12-2",
       "--no-focus",
     ]);
   });

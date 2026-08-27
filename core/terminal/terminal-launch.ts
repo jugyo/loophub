@@ -23,8 +23,9 @@ export const HERDR_PANE_PLACEHOLDER = "{pane}";
 // substitutes it.
 export interface HerdrLaunchPlan {
   sessionName: string;
-  // The display label written to the pane. This is the string LoopHub's own parsers (workflow agent
-  // names, the sidebar) read back out of `pane list`, and the only identity a launch registers.
+  // The display label written to the tab and pane. This is the string LoopHub's own parsers
+  // (workflow agent names, the sidebar) read back out of `pane list`, and the only identity a
+  // launch registers.
   label: string;
   command: string;
   cwd: string;
@@ -227,13 +228,15 @@ function herdrEnvArgs(env?: Record<string, string>): string[] {
 }
 
 // Creates the tab whose pane the agent will be started in, so launches open a new tab instead of
-// splitting the currently focused pane (#489). `cwd` defaults to the repo checkout; a worktree
-// launch overrides it while the session name stays derived from the repo, so every launch for that
-// repo — worktree-pinned or not — lands in the same herdr session (#584).
+// splitting the currently focused pane (#489). `label`, when present, is the tab's display label;
+// `cwd` defaults to the repo checkout; a worktree launch overrides it while the session name stays
+// derived from the repo, so every launch for that repo — worktree-pinned or not — lands in the same
+// herdr session (#584).
 export function herdrTabCreateArgv(
   repo: TerminalLaunchRepo,
   cwd = repo.local_path,
   env?: Record<string, string>,
+  label?: string,
 ): string[] {
   return [
     "herdr",
@@ -243,6 +246,7 @@ export function herdrTabCreateArgv(
     "create",
     "--cwd",
     cwd,
+    ...(label ? ["--label", label] : []),
     ...herdrEnvArgs(env),
     "--no-focus",
   ];
@@ -368,12 +372,14 @@ export function parseHerdrWorktreeOpenResult(
 
 // Creates a fresh tab inside an already-open worktree workspace (the `already_open: true` case
 // above) instead of splitting whatever pane already occupies it — same #489 rationale as
-// herdrTabCreateArgv, scoped to the worktree's own workspace via --workspace.
+// herdrTabCreateArgv, scoped to the worktree's own workspace via --workspace. `label`, when
+// present, is the tab's display label.
 export function herdrTabCreateInWorkspaceArgv(
   repo: TerminalLaunchRepo,
   workspaceId: string,
   worktreeCheckoutPath: string,
   env?: Record<string, string>,
+  label?: string,
 ): string[] {
   return [
     "herdr",
@@ -385,6 +391,7 @@ export function herdrTabCreateInWorkspaceArgv(
     workspaceId,
     "--cwd",
     worktreeCheckoutPath,
+    ...(label ? ["--label", label] : []),
     ...herdrEnvArgs(env),
     "--no-focus",
   ];
@@ -618,8 +625,9 @@ export function buildHerdrLaunchPlan(input: {
             input.workspaceId,
             cwd,
             input.env,
+            label,
           )
-        : herdrTabCreateArgv(input.repo, cwd, input.env);
+        : herdrTabCreateArgv(input.repo, cwd, input.env, label);
   return {
     sessionName,
     label,

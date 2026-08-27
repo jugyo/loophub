@@ -720,7 +720,9 @@ test("workflow launch-step starts each child in an independent tab", () => {
     expect(launched.exitCode, launched.stderr).toBe(0);
     expect(launched.stdout).toContain(`agent\texecutor #${body.run.id}-1`);
     const log = readFileSync(runtime.log, "utf8");
-    expect(log).toMatch(/tab create --cwd /);
+    expect(log).toMatch(
+      new RegExp(`tab create --cwd .+ --label executor #${body.run.id}-1`),
+    );
     expect(log).toContain(`pane rename w1:p10 executor #${body.run.id}-1`);
     expect(log).toMatch(/pane send-text w1:p10 .*claude /);
     expect(log).not.toContain("pane split");
@@ -758,7 +760,9 @@ test("workflow launch-step starts each child in an independent tab", () => {
     expect(legacyLaunch.exitCode, legacyLaunch.stderr).toBe(0);
     const relaunchedLog = readFileSync(runtime.log, "utf8").slice(log.length);
     // A child without a caller pane also gets its own fresh tab.
-    expect(relaunchedLog).toMatch(/tab create --cwd /);
+    expect(relaunchedLog).toMatch(
+      new RegExp(`tab create --cwd .+ --label verifier #${body.run.id}-2`),
+    );
     expect(relaunchedLog).toMatch(/pane send-text w1:p10 /);
     expect(relaunchedLog).not.toContain("pane split");
     expect(relaunchedLog).not.toContain("pane list");
@@ -1407,7 +1411,7 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     );
     // The launch creates its own tab in that workspace, then starts the parent in that tab's pane.
     expect(log).toMatch(
-      /tab create --workspace w1 --cwd .+ --env LOOPHUB_SESSION_ID=/,
+      /tab create --workspace w1 --cwd .+ --label orchestrator #\d+ --env LOOPHUB_SESSION_ID=/,
     );
     expect(log).toMatch(/pane send-text w1:p2 .*claude /);
     expect(log.indexOf("worktree open")).toBeLessThan(
