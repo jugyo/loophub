@@ -587,7 +587,7 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   expect(S.getAgentSession(launched.session_id)?.runtime).toBe("codex");
 });
 
-test("launch-step anchors every child to the run's registered parent pane", async () => {
+test("launch-step creates every child in an independent Herdr tab", async () => {
   const { repo } = freshRepo("me/workflow-anchor-pane");
   const issue = S.createIssue(repo.id, "issue", "Anchored panes", "", "me");
   const workflow = S.createWorkflow({
@@ -602,16 +602,15 @@ test("launch-step anchors every child to the run's registered parent pane", asyn
     "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   );
 
-  // Before the parent's pane is registered there is nothing to anchor to, so the caller's own pane
-  // is the only remaining hint.
+  // Before the parent's pane is registered, the caller's pane is retained as metadata only.
   const unregistered = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "execute", paneId: "w9:pQ" },
     started.session_id,
   );
   expect(unregistered.anchor_pane_id).toBe("w9:pQ");
-  expect(unregistered.herdr.paneArgv).toContain("split");
-  expect(unregistered.herdr.paneArgv).toContain("w9:pQ");
+  expect(unregistered.herdr.paneArgv).toContain("create");
+  expect(unregistered.herdr.paneArgv).not.toContain("split");
   svc.workflowRuns.failStepLaunch(
     repo.full_name,
     { run: started.run.id, sessionId: unregistered.session_id },
@@ -626,31 +625,30 @@ test("launch-step anchors every child to the run's registered parent pane", asyn
     launched_at: new Date().toISOString(),
   });
 
-  // Once it is registered the record wins: the child splits the parent's pane even though the
-  // caller reports a different pane of its own, so placement does not follow whoever ran the
-  // command — or whatever is focused.
+  // Once it is registered the parent pane remains metadata, while the child still gets a new tab.
   const anchored = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "verify", paneId: "w9:pQ" },
     started.session_id,
   );
   expect(anchored.anchor_pane_id).toBe("w1:pB");
-  expect(anchored.herdr.paneArgv).toContain("w1:pB");
-  expect(anchored.herdr.paneArgv).not.toContain("w9:pQ");
+  expect(anchored.herdr.paneArgv).toContain("create");
+  expect(anchored.herdr.paneArgv).not.toContain("split");
   svc.workflowRuns.failStepLaunch(
     repo.full_name,
     { run: started.run.id, sessionId: anchored.session_id },
     started.session_id,
   );
 
-  // A caller with no pane at all still gets the registered anchor rather than a fresh tab.
+  // A caller with no pane at all still retains the registered anchor as metadata.
   const withoutCallerPane = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "verify" },
     started.session_id,
   );
   expect(withoutCallerPane.anchor_pane_id).toBe("w1:pB");
-  expect(withoutCallerPane.herdr.paneArgv).toContain("w1:pB");
+  expect(withoutCallerPane.herdr.paneArgv).toContain("create");
+  expect(withoutCallerPane.herdr.paneArgv).not.toContain("split");
   svc.workflowRuns.failStepLaunch(
     repo.full_name,
     { run: started.run.id, sessionId: withoutCallerPane.session_id },

@@ -248,9 +248,8 @@ export function herdrTabCreateArgv(
   ];
 }
 
-// Splits an existing pane to make the pane a launch will start its agent in. Workflow child steps
-// use this so Execute/Verify land beside their run's parent pane in the same tab; every other flow
-// creates a fresh tab instead (#489).
+// Splits an existing pane to make the pane a launch will start its agent in. This remains available
+// to callers that explicitly request split placement; workflow child steps use fresh tabs.
 export function herdrPaneSplitArgv(
   repo: TerminalLaunchRepo,
   paneId: string,
@@ -590,8 +589,7 @@ export function buildHerdrLaunchPlan(input: {
   // anything the agent must see (LOOPHUB_SESSION_ID and friends) is set when the pane is created.
   env?: Record<string, string>;
   label?: string;
-  // Pane to split to make this launch's pane. Workflow child steps split their run's parent pane so
-  // Execute/Verify land in the same tab; every other flow creates a fresh tab instead.
+  // Pane to split to make this launch's pane. Callers that omit it create a fresh tab instead.
   splitPaneId?: string | null;
   split?: "right" | "down";
   // Workspace the fresh tab is created in, keeping the launch inside the target worktree's own
@@ -658,10 +656,6 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
   // Grok have no --append-system-prompt-file equivalent, so their file carries the contract folded
   // in). The command line reads it back instead of carrying it inline — see agentCommandLine.
   userPromptPath: string;
-  // The parent run's pane, split to place the child beside it in the same tab. Comes from the
-  // parent agent's own HERDR_PANE_ID (see `lh workflow launch-step`); when absent the child falls
-  // back to its own fresh tab, the same degraded placement the tab-less launch has always had.
-  splitPaneId?: string | null;
   model?: string | null;
   effort?: string | null;
 }): HerdrLaunchPlan {
@@ -684,8 +678,6 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
     }),
     env,
     label: workflowStepHerdrAgentName(input.runId, input.step, input.sequence),
-    splitPaneId: input.splitPaneId,
-    split: "down",
     cwd: input.worktree,
   });
 }

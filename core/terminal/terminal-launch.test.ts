@@ -343,7 +343,6 @@ describe("herdr terminal launch", () => {
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
       userPromptPath: "/tmp/run/execute-prompt.md",
-      splitPaneId: "w1:p2",
       model: "gpt-5.5",
       effort: "high",
     });
@@ -478,7 +477,7 @@ describe("herdr terminal launch", () => {
     ).toMatchObject({ ok: false, failed: "agent", paneId: "w1:p5" });
   });
 
-  test("builds Workflow step Herdr split launch with only session correlation env", () => {
+  test("builds Workflow step Herdr tab launch with only session correlation env", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 12,
@@ -489,17 +488,13 @@ describe("herdr terminal launch", () => {
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
       userPromptPath: "/tmp/run/execute-prompt.md",
-      splitPaneId: "w1:p2",
       model: "sonnet",
     });
 
     expect(plan.cwd).toBe("/repo/worktrees/pr-7");
-    // The child pane is a split of the run's parent pane, so it lands in the run's own tab.
-    expect(plan.paneArgv).toContain("split");
-    expect(plan.paneArgv).toContain("w1:p2");
-    expect(plan.paneArgv[plan.paneArgv.indexOf("--direction") + 1]).toBe(
-      "down",
-    );
+    // Each workflow agent gets its own tab; no existing pane is used as a split target.
+    expect(plan.paneArgv).toContain("create");
+    expect(plan.paneArgv).not.toContain("split");
     expect(plan.paneArgv[plan.paneArgv.indexOf("--cwd") + 1]).toBe(
       "/repo/worktrees/pr-7",
     );
@@ -535,7 +530,6 @@ describe("herdr terminal launch", () => {
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
       userPromptPath: "/tmp/run/execute-prompt.md",
-      splitPaneId: "w1:p2",
       model: "gpt-5.5",
       effort: "high",
     });
@@ -590,7 +584,6 @@ describe("herdr terminal launch", () => {
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/execute-contract.md",
       userPromptPath: "/tmp/run/execute-prompt.md",
-      splitPaneId: "w1:p2",
       model: "grok-code-fast-1",
     });
 

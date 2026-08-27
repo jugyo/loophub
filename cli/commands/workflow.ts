@@ -11,10 +11,6 @@ import {
   herdrAgentFocusArgv,
   herdrTabFocusArgv,
 } from "../../core/terminal/terminal-launch.ts";
-import {
-  layoutWorkflowTab,
-  type WorkflowPaneLayoutHerdr,
-} from "../../core/terminal/workflow-pane-layout.ts";
 import { workflowParentHerdrAgentName } from "../../core/workflow/herdr-agents.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
@@ -169,31 +165,6 @@ function stepLaunchPreflightError(runtime: CodingAgent): string | null {
     return `workflow launch-step requires ${bin} on PATH`;
   }
   return null;
-}
-
-// The Herdr seam core's layoutWorkflowTab drives: one spawnSync per command, bound to the run's
-// session. Layout is best-effort and does not change launch-step's result after confirmation.
-function herdrPaneLayoutRunner(sessionName: string): WorkflowPaneLayoutHerdr {
-  return (args, opts) => {
-    const captureStdout = opts?.captureStdout === true;
-    const result = spawnSyncProcess(
-      ["herdr", "--session", sessionName, ...args],
-      {
-        stdio: captureStdout
-          ? ["ignore", "pipe", "inherit"]
-          : ["inherit", "inherit", "inherit"],
-        timeout: 15_000,
-      },
-    );
-    if (result.error) throw result.error;
-    if (result.signalCode) {
-      throw new Error(`herdr terminated by signal ${result.signalCode}`);
-    }
-    if (result.exitCode == null || result.exitCode !== 0) {
-      throw new Error(`herdr exited with status ${result.exitCode}`);
-    }
-    return captureStdout ? (result.stdout?.toString("utf8") ?? "") : "";
-  };
 }
 
 function requestedSessionId(): string | undefined {
@@ -613,24 +584,9 @@ async function launchStep(): Promise<void> {
       "herdr returned no valid pane_id for the step's pane",
     );
   }
-  // The child's command is in its pane once the launch succeeds, so persist that truth before
-  // ancillary layout work. Layout is best-effort and must not turn a recorded launch into a
-  // failure; launch-step never retries automatically (an explicit retry is a new session).
+  // The child's command is in its own tab once the launch succeeds, so persist that truth before
+  // returning. Launch-step never retries automatically (an explicit retry is a new session).
   await confirm(childPaneId);
-  if (result.anchor_pane_id) {
-    layoutWorkflowTab({
-      anchorPaneId: result.anchor_pane_id,
-      runId: result.run.id,
-      herdr: herdrPaneLayoutRunner(result.herdr.sessionName),
-    });
-  } else {
-    // Preserve the legacy/headless launch path that had no placement anchor. The child got its own
-    // tab, so there is no run tab to rebuild; make the missing visual guarantee explicit without
-    // moving whichever unrelated tab happens to be focused.
-    console.error(
-      "warning: skipped Workflow pane layout because the run has no anchor Herdr pane",
-    );
-  }
 }
 
 async function runLifecycle(): Promise<void> {

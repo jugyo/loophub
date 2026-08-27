@@ -74,19 +74,16 @@ function git(args: string[], path = REPO_PATH): void {
 // whether that list reports it (default reuses it, `false` leaves it absent so a headless
 // `herdr --session <n> server` is spawned), and `sessionListExit` makes the list call itself fail.
 //
-// Neither `pane send-text` nor `pane split` moves herdr's focus (verified against the real CLI:
-// `pane split` focuses only with an explicit `--focus`), so neither changes the focused state here.
+// `pane send-text` does not move herdr's focus, so it does not change the focused state here.
 function fakeRuntime(
   opts: {
     sendTextExit?: number;
     focusedState?: Record<string, string>;
     paneCloseExit?: number;
-    paneMoveExit?: number;
     paneListJson?: string;
     processInfoErrorPane?: string;
     worktreeOpenJson?: string;
     tabCreateJson?: string;
-    paneSplitJson?: string;
     sessionRunning?: boolean;
     sessionListExit?: number;
   } = {},
@@ -95,12 +92,10 @@ function fakeRuntime(
     sendTextExit = 0,
     focusedState,
     paneCloseExit = 0,
-    paneMoveExit = 0,
     paneListJson = "",
     processInfoErrorPane = "",
     worktreeOpenJson = "",
     tabCreateJson = REUSE_TAB_JSON,
-    paneSplitJson = '{"result":{"pane":{"pane_id":"w1:p4"}}}',
     sessionRunning = true,
     sessionListExit = 0,
   } = opts;
@@ -156,9 +151,7 @@ case " $command " in
   *" server "*) printf 'herdr server running; you can use any herdr CLI command'; sleep 1; exit 0 ;;
   *" worktree open "*) change_focus_without_no_focus; printf '%s' '${worktreeOpenJson}'; exit 0 ;;
   *" pane list "*) printf '%s' '${paneListJson}'; exit 0 ;;
-  *" pane split "*) printf '%s' '${paneSplitJson}'; exit 0 ;;
   *" pane zoom "*) change_focus; exit 0 ;;
-  *" pane move "*) change_focus_without_no_focus; exit ${paneMoveExit} ;;
   *" pane process-info "*)
     # The pid a discard signals, per pane. Written by the caller so a test can offer a process group
     # it owns instead of an arbitrary one; no file for the pane means herdr cannot report it, which
@@ -638,7 +631,7 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   ]);
 });
 
-test("workflow launch-step rebuilds only its parent tab as a staged grid", () => {
+test("workflow launch-step starts each child in an independent tab", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -700,9 +693,6 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
         root_pane: { pane_id: "w1:p10" },
       },
     }),
-    // The child's pane, split off the parent's — the pane the layout below then arranges.
-    paneSplitJson: JSON.stringify({ result: { pane: { pane_id: "w1:p3" } } }),
-    paneMoveExit: 7,
   });
   try {
     const launched = run(
@@ -720,8 +710,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_FOCUSED_STATE: runtime.focusedStatePath,
         HERDR_LOG: runtime.log,
-        // A stale tab id: the anchor pane w1:p2 is in w1:t1, and that is the tab the rebuild must
-        // use. Nothing reads this any more, and no launch may act on a tab it was merely told about.
+        // The caller's pane must not affect the independent-tab launch.
         HERDR_TAB_ID: "w1:t9",
         HERDR_PANE_ID: "w1:p2",
         LOOPHUB_SESSION_ID: body.session_id,
@@ -729,29 +718,21 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     );
 
     expect(launched.exitCode, launched.stderr).toBe(0);
-    expect(launched.stderr).toContain("warning: skipped Workflow pane layout");
     expect(launched.stdout).toContain(`agent\texecutor #${body.run.id}-1`);
     const log = readFileSync(runtime.log, "utf8");
-    // The child splits its parent's pane, so it lands in the run's own tab.
-    expect(log).toMatch(/pane split w1:p2 --direction down --cwd /);
-    expect(log).toContain(`pane rename w1:p3 executor #${body.run.id}-1`);
-    expect(log).toMatch(/pane send-text w1:p3 .*claude /);
-    expect(log).toContain("pane list");
-    expect(log).toContain("tab create --workspace w1 --no-focus");
-    expect(log).toContain(
-      "pane move w1:p3 --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
-    );
-    expect(log).not.toContain(
-      "pane move w1:p3 --tab w1:t1 --split right --target-pane w1:p2 --ratio 0.5 --no-focus",
-    );
-    expect(log).not.toContain("tab close w1:t3");
+    expect(log).toMatch(/tab create --cwd /);
+    expect(log).toContain(`pane rename w1:p10 executor #${body.run.id}-1`);
+    expect(log).toMatch(/pane send-text w1:p10 .*claude /);
+    expect(log).not.toContain("pane split");
+    expect(log).not.toContain("pane list");
+    expect(log).not.toContain("pane move");
+    expect(log).not.toContain("tab close");
     expect(log).not.toContain("pane move w1:p4");
     expect(log).not.toContain("pane zoom");
     expect(log).not.toMatch(/(?:workspace|tab|agent) focus/);
     expectUnrelatedHerdrFocus(runtime);
 
-    // The layout is step-agnostic, and the run now owns a live Execute child, so the launch that
-    // exercises the missing-anchor fallback is a Verify one (#2150).
+    // The run now owns a live Execute child, so the second launch exercises another independent tab.
     const legacyLaunch = run(
       [
         "workflow",
@@ -775,13 +756,14 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
       },
     );
     expect(legacyLaunch.exitCode, legacyLaunch.stderr).toBe(0);
-    expect(legacyLaunch.stderr).toContain(
-      "warning: skipped Workflow pane layout because the run has no anchor Herdr pane",
-    );
     const relaunchedLog = readFileSync(runtime.log, "utf8").slice(log.length);
-    // With no parent pane to split, the child falls back to its own fresh tab.
+    // A child without a caller pane also gets its own fresh tab.
     expect(relaunchedLog).toMatch(/tab create --cwd /);
     expect(relaunchedLog).toMatch(/pane send-text w1:p10 /);
+    expect(relaunchedLog).not.toContain("pane split");
+    expect(relaunchedLog).not.toContain("pane list");
+    expect(relaunchedLog).not.toContain("pane move");
+    expect(relaunchedLog).not.toContain("tab close");
     expect(relaunchedLog).not.toMatch(/(?:workspace|tab|agent) focus/);
     expectUnrelatedHerdrFocus(runtime);
   } finally {

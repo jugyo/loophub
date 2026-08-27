@@ -248,7 +248,7 @@ export type WorkflowLaunchStepResult = {
   base_sha?: string;
   // The pane this child was placed against, and the pane the run's tab is identified by afterwards.
   // Null only for a run with no registered parent pane and a caller with no pane of its own, which
-  // is the one case where the child gets its own tab and no grid layout.
+  // is the one case where the child gets its own tab without a registered parent pane.
   anchor_pane_id: string | null;
   // The ordered herdr calls that place and start the child agent. Structural (not a reference to
   // HerdrLaunchPlan) because it crosses the JSON-RPC boundary to `lh workflow launch-step`, which
@@ -2758,11 +2758,9 @@ export const workflowRuns = {
         `Workflow run #${run.id} is already launching ${current.launching_step ?? "a step"} (${current.launching_session_id ?? "unknown session"})`,
       );
     }
-    // Where the child goes is decided here, from the pane the run's parent launch registered — not
-    // from the environment of whoever ran the command. That record is the run's own anchor, so the
-    // child lands beside its parent no matter which pane, tab or workspace is focused. A run with no
-    // registered pane (parent started outside the recorded launch path) still falls back to the
-    // caller's pane, which is better than the tab-create fallback that ignores the run entirely.
+    // Keep the run's pane anchor in the launch result for existing callers and parent targeting.
+    // Step agents themselves always create a fresh tab; no workflow launch may split or rearrange
+    // an existing pane.
     const anchorPaneId = workflowRunParentPaneId(run) ?? input.paneId ?? null;
     let herdr: HerdrLaunchPlan;
     try {
@@ -2776,7 +2774,6 @@ export const workflowRuns = {
         worktree,
         systemPromptPath,
         userPromptPath,
-        splitPaneId: anchorPaneId,
         model,
         effort: stepAgent.effort,
       });
