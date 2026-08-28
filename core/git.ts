@@ -890,6 +890,23 @@ export async function commitsAhead(
   return Number(r.stdout.trim()) || 0;
 }
 
+// Return all commits on head that are not reachable from base. An empty set is a genuine 0-commit
+// result; null means one of the refs could not be resolved.
+export async function commitShas(
+  repoPath: string,
+  base: string,
+  head: string,
+): Promise<Set<string> | null> {
+  const r = await git(repoPath, ["rev-list", head, "--not", base]);
+  if (r.code !== 0) return null;
+  return new Set(
+    r.stdout
+      .split("\n")
+      .map((sha) => sha.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
 export interface CommitInfo {
   sha: string;
   author: string;

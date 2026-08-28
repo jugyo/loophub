@@ -11,6 +11,7 @@ import { formatEvent } from "../events.ts";
 import {
   aheadBehind,
   commitLog,
+  commitShas,
   commitsAhead,
   currentBranch,
   type DiffFile,
@@ -70,6 +71,36 @@ import {
   paginate,
   repoOr404,
 } from "./shared.ts";
+
+async function githubCommitSync(
+  repoPath: string,
+  pull: S.PullRow,
+  status: Awaited<ReturnType<GithubPrStatusDeps["fetchStatus"]>>,
+): Promise<{
+  unpushedCommits: number | null;
+  unpulledCommits: number | null;
+}> {
+  if (!Array.isArray(status.commitShas))
+    return { unpushedCommits: null, unpulledCommits: null };
+
+  const remoteBase = `refs/remotes/origin/${pull.base_ref}`;
+  const base = (await revParse(repoPath, remoteBase))
+    ? remoteBase
+    : localBranchRef(pull.base_ref);
+  const localShas = await commitShas(
+    repoPath,
+    base,
+    localBranchRef(pull.head_ref),
+  );
+  if (!localShas) return { unpushedCommits: null, unpulledCommits: null };
+  const remoteShas = new Set(status.commitShas.map((sha) => sha.toLowerCase()));
+  return {
+    unpushedCommits: [...localShas].filter((sha) => !remoteShas.has(sha))
+      .length,
+    unpulledCommits: [...remoteShas].filter((sha) => !localShas.has(sha))
+      .length,
+  };
+}
 
 // #850: how long a cached GitHub PR status is served before hitting `gh` again. On-demand from the
 // PR-detail sidebar, so a short TTL keeps the panel roughly live without spawning a `gh` per render.
@@ -1119,9 +1150,11 @@ export const pulls = {
       cached &&
       Date.now() - Date.parse(cached.synced_at) < GITHUB_PR_STATUS_TTL_MS
     ) {
+      const status = parseGhPrStatus(cached.payload);
       return githubPrStatusJSON(
-        parseGhPrStatus(cached.payload),
+        status,
         cached.synced_at,
+        await githubCommitSync(r.local_path, S.getPull(row.id)!, status),
       );
     }
 
@@ -1129,18 +1162,25 @@ export const pulls = {
     try {
       status = await deps.fetchStatus(r.local_path, link.url);
     } catch (e) {
-      if (cached)
+      if (cached) {
+        const status = parseGhPrStatus(cached.payload);
         return githubPrStatusJSON(
-          parseGhPrStatus(cached.payload),
+          status,
           cached.synced_at,
+          await githubCommitSync(r.local_path, S.getPull(row.id)!, status),
         );
+      }
       throw new ServiceError(
         502,
         `failed to fetch GitHub PR status: ${(e as Error).message}`,
       );
     }
     const saved = S.saveGithubPullStatus(row.id, JSON.stringify(status));
-    return githubPrStatusJSON(status, saved.synced_at);
+    return githubPrStatusJSON(
+      status,
+      saved.synced_at,
+      await githubCommitSync(r.local_path, S.getPull(row.id)!, status),
+    );
   },
 
   // #2500: the GitHub side of this PR's story as timeline entries — the feedback items the worker's

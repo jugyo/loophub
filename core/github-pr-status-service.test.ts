@@ -70,6 +70,7 @@ const SAMPLE: GhPrStatus = {
   comments: 3,
   reviews: 2,
   updatedAt: "2026-07-01T00:00:00Z",
+  commitShas: [],
 };
 
 function depsReturning(
@@ -111,6 +112,46 @@ test("githubStatus serves the cache within the TTL without calling gh again (#85
   await svc.pulls.githubStatus("me/proj", number, deps);
   await svc.pulls.githubStatus("me/proj", number, deps);
   expect(calls).toBe(1);
+});
+
+test("githubStatus reports local and remote commits that are not on the other side (#457)", async () => {
+  const number = await openGithubLinkedPull();
+  const repo = await svc.repos.get("me/proj");
+  const issue = S.getIssue(repo!.id, number)!;
+  const pull = S.getPull(issue.id)!;
+  const localSha = git(["rev-parse", pull.head_ref]).stdout.trim();
+
+  const wire = await svc.pulls.githubStatus(
+    "me/proj",
+    number,
+    depsReturning({ ...SAMPLE, commitShas: [localSha, "remote-only"] }),
+  );
+
+  expect(wire.unpushed_commits).toBe(0);
+  expect(wire.unpulled_commits).toBe(1);
+});
+
+test("githubStatus reports local commits added after the GitHub head (#457)", async () => {
+  const number = await openGithubLinkedPull();
+  const repo = await svc.repos.get("me/proj");
+  const issue = S.getIssue(repo!.id, number)!;
+  const pull = S.getPull(issue.id)!;
+  const branch = pull.head_ref;
+  git(["checkout", "-q", branch]);
+  writeFileSync(join(repoPath, `${branch}-second.txt`), "second\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "second feature work"]);
+  git(["checkout", "-q", "main"]);
+  const firstSha = git(["rev-parse", `${branch}~1`]).stdout.trim();
+
+  const wire = await svc.pulls.githubStatus(
+    "me/proj",
+    number,
+    depsReturning({ ...SAMPLE, commitShas: [firstSha] }),
+  );
+
+  expect(wire.unpushed_commits).toBe(1);
+  expect(wire.unpulled_commits).toBe(0);
 });
 
 test("the eager status sweep fills the same cache used by githubStatus (#152)", async () => {

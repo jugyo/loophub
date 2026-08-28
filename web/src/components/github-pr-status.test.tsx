@@ -68,6 +68,8 @@ const BASE: GithubPrStatus = {
   checks: "failure",
   comments: 3,
   reviews: 2,
+  unpushed_commits: 0,
+  unpulled_commits: 0,
   updated_at: "2026-07-01T00:00:00Z",
   synced_at: "2026-07-01T00:00:30Z",
 };
@@ -124,7 +126,7 @@ describe("GithubPrStatusSection", () => {
   });
 
   it("renders the badges, distinctly-labeled counts, and freshness for a linked GitHub PR (#850)", () => {
-    const { container } = renderSection();
+    const { container, getByRole } = renderSection();
     const text = container.textContent ?? "";
     expect(text).toContain("GitHub PR");
     expect(text).toContain("Open");
@@ -134,7 +136,17 @@ describe("GithubPrStatusSection", () => {
     // Two counts, each labeled — a reader can't confuse conversation comments with reviews.
     expect(text).toContain("3 comments");
     expect(text).toContain("2 reviews");
+    expect(getByRole("group", { name: "Unpushed commits: 0" })).toBeTruthy();
+    expect(getByRole("group", { name: "Unpulled commits: 0" })).toBeTruthy();
     expect(text).toContain("synced");
+  });
+
+  it("shows the local and remote commit counts separately", () => {
+    const { getByRole } = renderSection({
+      status: { ...BASE, unpushed_commits: 2, unpulled_commits: 3 },
+    });
+    expect(getByRole("group", { name: "Unpushed commits: 2" })).toBeTruthy();
+    expect(getByRole("group", { name: "Unpulled commits: 3" })).toBeTruthy();
   });
 
   it("links to the GitHub PR from the section body in a new tab, showing its URL path (#2091)", () => {

@@ -10,6 +10,7 @@ import { join, relative } from "node:path";
 import { expect, test } from "#loophub-test";
 import {
   aheadBehind,
+  commitShas,
   currentBranch,
   describeUnresolvedRevision,
   diffFileSummariesBetween,
@@ -1094,6 +1095,42 @@ test("hasEffectiveDiff is true for real changes and false when commits net out (
 
   // No diff against itself.
   expect(await hasEffectiveDiff(p, "main", "main")).toBe(false);
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("commitShas includes commits from a merged side branch", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-commit-shas-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "base.txt"), "base\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feature"]);
+  writeFileSync(join(p, "feature.txt"), "feature\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "feature"]);
+  const featureSha = (await git(p, ["rev-parse", "HEAD"])).stdout.trim();
+
+  await git(p, ["checkout", "-q", "-b", "side"]);
+  writeFileSync(join(p, "side.txt"), "side\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "side"]);
+  const sideSha = (await git(p, ["rev-parse", "HEAD"])).stdout.trim();
+
+  await git(p, ["checkout", "-q", "feature"]);
+  writeFileSync(join(p, "feature-2.txt"), "feature-2\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "feature 2"]);
+  const featureTwoSha = (await git(p, ["rev-parse", "HEAD"])).stdout.trim();
+  await git(p, ["merge", "--no-edit", "--no-ff", "side"]);
+  const mergeSha = (await git(p, ["rev-parse", "HEAD"])).stdout.trim();
+
+  expect(await commitShas(p, "refs/heads/main", "refs/heads/feature")).toEqual(
+    new Set([featureSha, sideSha, featureTwoSha, mergeSha]),
+  );
 
   rmSync(p, { recursive: true, force: true });
 });

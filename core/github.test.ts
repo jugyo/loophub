@@ -1,5 +1,6 @@
 import { expect, test } from "#loophub-test";
 import {
+  fetchGithubPrCommitShas,
   fetchGithubPrFeedback,
   parseGithubIssueUrl,
   parseGithubPullUrl,
@@ -207,4 +208,26 @@ test("parses only canonical GitHub pull URLs", () => {
   });
   expect(parseGithubPullUrl("https://github.com/o/r/pull/42/files")).toBeNull();
   expect(parseGithubPullUrl("https://github.com.evil/o/r/pull/42")).toBeNull();
+});
+
+test("PRコミットSHAを全ページから取得する", async () => {
+  const pageOne = Array.from({ length: 100 }, (_, index) => ({
+    sha: `sha-${index}`,
+  }));
+  const pageTwo = [{ sha: "sha-100" }, { sha: 101 }, null];
+  let endpoint = "";
+
+  const result = await fetchGithubPrCommitShas(
+    "/repo",
+    "https://github.com/upstream/project/pull/9",
+    async (_repoPath, requestedEndpoint) => {
+      endpoint = requestedEndpoint;
+      return JSON.stringify([pageOne, pageTwo]);
+    },
+  );
+
+  expect(endpoint).toBe("repos/upstream/project/pulls/9/commits");
+  expect(result).toHaveLength(101);
+  expect(result[0]).toBe("sha-0");
+  expect(result.at(-1)).toBe("sha-100");
 });

@@ -391,6 +391,27 @@ function paginatedItems(stdout: string, endpoint: string): unknown[] {
   return parsed.every(Array.isArray) ? parsed.flat() : parsed;
 }
 
+function normalizeCommitShas(items: unknown[]): string[] {
+  return items.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const sha = (value as { sha?: unknown }).sha;
+    return typeof sha === "string" ? [sha] : [];
+  });
+}
+
+export async function fetchGithubPrCommitShas(
+  repoPath: string,
+  url: string,
+  api: GithubApiRunner = runGithubApi,
+): Promise<string[]> {
+  const ref = parseGithubPullUrl(url);
+  if (!ref) throw new Error(`invalid GitHub PR URL: ${url}`);
+  const endpoint = `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/commits`;
+  return normalizeCommitShas(
+    paginatedItems(await api(repoPath, endpoint), endpoint),
+  );
+}
+
 function normalizeFeedback(
   kind: GithubPrFeedbackKind,
   items: unknown[],
@@ -512,6 +533,7 @@ export interface GhPrStatus {
   comments: number;
   reviews: number;
   updatedAt: string | null;
+  commitShas: string[];
 }
 
 // Classify one statusCheckRollup entry. gh returns two shapes: CheckRun (has `status`+`conclusion`)
@@ -564,7 +586,8 @@ function lowerEnum<T extends string>(
 // remote need not match — mirrors fetchGithubPrMergeStatus). Throws on any gh failure so the caller
 // can fall back to a cached value or surface the error, rather than reporting a transient failure as
 // a real status. `comments`/`reviews` request the full arrays (gh has no count-only projection); only
-// their lengths are kept.
+// their lengths are kept. Commit SHAs come from the paginated REST endpoint because the `commits`
+// field in `gh pr view --json` is capped at the first 100 items.
 export async function fetchGithubPrStatus(
   repoPath: string,
   url: string,
@@ -596,6 +619,7 @@ export async function fetchGithubPrStatus(
   } catch {
     throw new Error(`gh pr view returned unparseable JSON: ${r.stdout.trim()}`);
   }
+  const commitShas = await fetchGithubPrCommitShas(repoPath, url);
   const state =
     lowerEnum(j.state, ["open", "closed", "merged"] as const) ?? "open";
   return {
@@ -616,6 +640,7 @@ export async function fetchGithubPrStatus(
     comments: Array.isArray(j.comments) ? j.comments.length : 0,
     reviews: Array.isArray(j.reviews) ? j.reviews.length : 0,
     updatedAt: typeof j.updatedAt === "string" ? j.updatedAt : null,
+    commitShas,
   };
 }
 

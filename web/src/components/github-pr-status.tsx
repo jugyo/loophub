@@ -13,6 +13,8 @@
 // sidebar can hand the section every PR and let it decide (like WorkflowRunSection).
 
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ExternalLink,
   Github,
@@ -102,6 +104,39 @@ function StatusRow({
   );
 }
 
+function CommitSyncCounts({
+  unpushed,
+  unpulled,
+}: {
+  unpushed: number | null;
+  unpulled: number | null;
+}) {
+  const ahead = unpushed ?? "—";
+  const behind = unpulled ?? "—";
+  return (
+    <span className="flex items-center gap-2 text-xs tabular-nums">
+      <span
+        role="group"
+        aria-label={`Unpushed commits: ${ahead}`}
+        title={`Unpushed commits: ${ahead}`}
+        className="flex items-center gap-0.5"
+      >
+        <ArrowUp className="size-3.5" aria-hidden="true" />
+        {ahead}
+      </span>
+      <span
+        role="group"
+        aria-label={`Unpulled commits: ${behind}`}
+        title={`Unpulled commits: ${behind}`}
+        className="flex items-center gap-0.5"
+      >
+        <ArrowDown className="size-3.5" aria-hidden="true" />
+        {behind}
+      </span>
+    </span>
+  );
+}
+
 export function GithubPrStatusSection({
   owner,
   repo,
@@ -174,6 +209,12 @@ export function GithubPrStatusSection({
           />
           <StatusRow label="Checks" badge={CHECKS[status.checks]} />
           <StatusRow label="Mergeable" badge={MERGEABLE[status.mergeable]} />
+          <div className="flex flex-col gap-2 border-t pt-2">
+            <CommitSyncCounts
+              unpushed={status.unpushed_commits}
+              unpulled={status.unpulled_commits}
+            />
+          </div>
           {/* Two distinct counts, labeled so neither is mistaken for the other (#850 AC): conversation
               comments vs submitted reviews. */}
           <p className="text-xs text-muted-foreground">

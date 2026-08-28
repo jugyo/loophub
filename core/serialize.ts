@@ -749,6 +749,8 @@ export interface GithubPrStatusWire {
   checks: "success" | "failure" | "pending" | "none";
   comments: number;
   reviews: number;
+  unpushed_commits: number | null;
+  unpulled_commits: number | null;
   updated_at: string | null;
   synced_at: string;
 }
@@ -756,6 +758,10 @@ export interface GithubPrStatusWire {
 export function githubPrStatusJSON(
   gh: GhPrStatus,
   syncedAt: string,
+  sync: {
+    unpushedCommits: number | null;
+    unpulledCommits: number | null;
+  } = { unpushedCommits: null, unpulledCommits: null },
 ): GithubPrStatusWire {
   return {
     state: gh.state,
@@ -765,6 +771,8 @@ export function githubPrStatusJSON(
     checks: gh.checks,
     comments: gh.comments,
     reviews: gh.reviews,
+    unpushed_commits: sync.unpushedCommits,
+    unpulled_commits: sync.unpulledCommits,
     updated_at: gh.updatedAt,
     synced_at: syncedAt,
   };
