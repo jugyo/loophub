@@ -319,12 +319,13 @@ navigation target.
   not even for a frame. Once open, moving from the trigger into the popover must
   keep it available.
 - **Leaving an open popover closes it after a delay.** The pointer leaving the
-  trigger/popover region starts a `HOVER_POPUP_CLOSE_DELAY_MS = 1000` ms close
-  delay (also defined in
-  [`src/lib/use-hover-popover.ts`](./src/lib/use-hover-popover.ts)) rather than
-  dismissing at once, so a small pointer slip on the way to a link or action
-  inside the panel does not lose it. Hovering or focusing the region again
-  during that window cancels the pending close and leaves the popover open.
+  trigger/popover region から離れると、`HOVER_POPUP_CLOSE_DELAY_MS = 500` ms の
+  close delay（定義は
+  [`src/lib/use-hover-popover.ts`](./src/lib/use-hover-popover.ts)）を開始する。
+  即時には閉じないため、パネル内の link や action へ移動する際の小さな
+  ポインタのずれで表示が失われることはない。この時間内に region を hover
+  または focus すると、保留中の close がキャンセルされ、popover は表示を
+  継続する。
   Because the pointer may come back onto the panel rather than the trigger, the
   region that contains both must wire the cancellation itself — see the caller
   contract below.

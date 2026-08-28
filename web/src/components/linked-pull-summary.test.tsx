@@ -18,7 +18,10 @@ import {
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
-import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
+import {
+  HOVER_POPUP_CLOSE_DELAY_MS,
+  HOVER_POPUP_DELAY_MS,
+} from "@/lib/use-hover-popover";
 
 const { focusHerdrAgent, showError } = vi.hoisted(() => ({
   focusHerdrAgent: vi.fn(),
@@ -914,6 +917,50 @@ describe("LinkedPullSummaryRow hover popover delay", () => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS * 2);
     });
     expect(popoverVisible()).toBe(false);
+  });
+
+  it("closes after the shortened close delay", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderRow();
+    await screen.findByRole("link", { name: "PR #10" });
+
+    fireEvent.mouseEnter(row());
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    expect(popoverVisible()).toBe(true);
+
+    fireEvent.mouseLeave(row());
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_CLOSE_DELAY_MS - 1);
+    });
+    expect(popoverVisible()).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(popoverVisible()).toBe(false);
+  });
+
+  it("cancels the shortened close delay when the pointer returns", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderRow();
+    await screen.findByRole("link", { name: "PR #10" });
+
+    fireEvent.mouseEnter(row());
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    fireEvent.mouseLeave(row());
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_CLOSE_DELAY_MS - 1);
+    });
+    fireEvent.mouseEnter(row());
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_CLOSE_DELAY_MS * 2);
+    });
+
+    expect(popoverVisible()).toBe(true);
   });
 
   it("opens immediately on keyboard focus without any delay", async () => {

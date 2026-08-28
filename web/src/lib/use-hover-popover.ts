@@ -9,7 +9,7 @@ export const HOVER_POPUP_DELAY_MS = 300;
 // pointer leaves, so a slight slip off the trigger on the way to a link or
 // action inside the panel does not dismiss it. Escape, blur, and an explicit
 // `close()` stay immediate.
-export const HOVER_POPUP_CLOSE_DELAY_MS = 1000;
+export const HOVER_POPUP_CLOSE_DELAY_MS = 500;
 
 // Drives a hover popover's open state with a standard hover delay: pointer
 // hover opens after HOVER_POPUP_DELAY_MS, leaving during the delay cancels the
