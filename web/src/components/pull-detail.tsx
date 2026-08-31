@@ -58,7 +58,7 @@ import {
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import {
   DiffFeedbackHistory,
-  DiffFileDialog,
+  PullDiffDialog,
 } from "@/components/pull-diff-dialog";
 import { PullSectionTabs } from "@/components/pull-section-tabs";
 import { useTerminalLauncher } from "@/components/terminal-controller";
@@ -335,6 +335,7 @@ export function PullDetail({
               repo={repo}
               number={number}
               files={filesQuery.data}
+              commits={pull.commits}
               commentCounts={pageQuery.data?.diff_feedback.comment_counts ?? {}}
               openFilename={openFilename}
               onOpenFile={openDiffFile}
@@ -966,6 +967,7 @@ function FilesChanged({
   repo,
   number,
   files,
+  commits,
   commentCounts,
   openFilename,
   openThreadId,
@@ -978,6 +980,7 @@ function FilesChanged({
   repo: string;
   number: number;
   files: PullFile[] | undefined;
+  commits: PullRequest["commits"];
   /** Per-file diff feedback counts, from the same page query that produced `files` (#123). */
   commentCounts: Record<string, number>;
   /** Which file's diff dialog is open. */
@@ -1093,12 +1096,13 @@ function FilesChanged({
             fetchEnabled={false}
           />
           {openFile ? (
-            <DiffFileDialog
+            <PullDiffDialog
               owner={owner}
               repo={repo}
               number={number}
               files={files}
               file={openFile}
+              commits={commits}
               commentCounts={commentCounts}
               initialThreadId={openThreadId}
               onSelectFile={onOpenFile}

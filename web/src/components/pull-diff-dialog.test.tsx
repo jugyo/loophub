@@ -15,7 +15,11 @@ import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault } from "@/api/rpc-mock";
 import type { DiffFeedbackThread, PullFile } from "@/api/types";
 
-import { DiffFeedbackHistory, DiffFileDialog } from "./pull-diff-dialog";
+import {
+  DiffFeedbackHistory,
+  DiffFileDialog,
+  PullDiffDialog,
+} from "./pull-diff-dialog";
 
 const { showError } = vi.hoisted(() => ({ showError: vi.fn() }));
 
@@ -170,6 +174,211 @@ function renderDialog({
     </QueryClientProvider>,
   );
 }
+
+const commits = [
+  {
+    sha: "c".repeat(40),
+    author: "Alice",
+    date: "2026-08-31T04:00:00Z",
+    subject: "Latest commit",
+  },
+  {
+    sha: "d".repeat(40),
+    author: "Bob",
+    date: "2026-08-30T04:00:00Z",
+    subject: "Earlier commit",
+  },
+];
+
+function scopedDiff(path: string, before: string, after: string) {
+  return {
+    base_sha: "e".repeat(40),
+    head_sha: "f".repeat(40),
+    files: [
+      {
+        path,
+        original_path: null,
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: `@@ -1 +1 @@\n-${before}\n+${after}`,
+        lines: [
+          {
+            kind: "hunk",
+            text: "@@ -1 +1 @@",
+            left_line: null,
+            right_line: null,
+          },
+          {
+            kind: "deletion",
+            text: `-${before}`,
+            left_line: 1,
+            right_line: null,
+          },
+          {
+            kind: "addition",
+            text: `+${after}`,
+            left_line: null,
+            right_line: 1,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function renderPullDialog(
+  handlers: Record<string, (params: any) => unknown> = {},
+  onClose = () => {},
+) {
+  vi.stubGlobal("fetch", mockRpcFetch(handlers));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <PullDiffDialog
+        owner="me"
+        repo="proj"
+        number={30}
+        files={[file]}
+        file={file}
+        commits={commits}
+        onSelectFile={() => {}}
+        onClose={onClose}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+async function selectDiffScope(name: RegExp | string) {
+  fireEvent.pointerDown(
+    screen.getByRole("button", { name: "Select diff scope" }),
+    {
+      button: 0,
+      ctrlKey: false,
+    },
+  );
+  fireEvent.click(await screen.findByRole("menuitem", { name }));
+}
+
+describe("PullDiffDialog", () => {
+  it("PR 全体と任意コミットを切り替え、前の差分を残さない", async () => {
+    let resolveLatest!: (diff: ReturnType<typeof scopedDiff>) => void;
+    const latestPending = new Promise<ReturnType<typeof scopedDiff>>(
+      (resolve) => {
+        resolveLatest = resolve;
+      },
+    );
+    const commitDiff = vi.fn((params: { sha: string; path?: string }) => {
+      if (params.sha === commits[0].sha && !params.path) return latestPending;
+      if (params.sha === commits[0].sha) {
+        return scopedDiff("latest.ts", "latest before", "latest after");
+      }
+      return scopedDiff("earlier.ts", "earlier before", "earlier after");
+    });
+    renderPullDialog({
+      "pulls/diff": stableDiff,
+      "repos/commitDiff": commitDiff,
+      "diffFeedback/list": () => ({ threads: [], comment_counts: {} }),
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Select diff scope" }).textContent,
+    ).toContain("All changes");
+    expect(screen.getByText("const x = 1;")).toBeTruthy();
+
+    await selectDiffScope(/ccccccc.*Latest commit/);
+    expect(screen.getByText("Loading commit diff…")).toBeTruthy();
+    expect(screen.queryByText("const x = 1;")).toBeNull();
+
+    await act(async () => {
+      resolveLatest(scopedDiff("latest.ts", "latest before", "latest after"));
+    });
+    expect(await screen.findByText("latest after")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "latest.ts" })).toBeTruthy();
+
+    await selectDiffScope(/ddddddd.*Earlier commit/);
+    expect(await screen.findByText("earlier after")).toBeTruthy();
+    expect(screen.queryByText("latest after")).toBeNull();
+    expect(screen.queryByRole("button", { name: "latest.ts" })).toBeNull();
+    expect(commitDiff).toHaveBeenCalledWith({
+      repo: "me/proj",
+      sha: commits[1].sha,
+    });
+
+    await selectDiffScope("All changes");
+    expect(await screen.findByText("const x = 1;")).toBeTruthy();
+    expect(screen.queryByText("earlier after")).toBeNull();
+  });
+
+  it("コミット差分の取得失敗を表示し、PR 全体へ戻せる", async () => {
+    renderPullDialog({
+      "pulls/diff": stableDiff,
+      "repos/commitDiff": () => {
+        throw new RpcFault(500, "commit unavailable");
+      },
+    });
+
+    await selectDiffScope(/ccccccc.*Latest commit/);
+    expect(await screen.findByText(/Failed to load commit diff/)).toBeTruthy();
+    expect(screen.getByText(/commit unavailable/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Select diff scope" }),
+    ).toBeTruthy();
+
+    await selectDiffScope("All changes");
+    expect(await screen.findByText("const x = 1;")).toBeTruthy();
+    expect(screen.queryByText(/Failed to load commit diff/)).toBeNull();
+  });
+
+  it("コミット差分の loading・error・empty 状態でも Escape で閉じられる", async () => {
+    const onClose = vi.fn();
+    const pending = new Promise<never>(() => {});
+    renderPullDialog(
+      {
+        "pulls/diff": stableDiff,
+        "repos/commitDiff": () => pending,
+      },
+      onClose,
+    );
+
+    await selectDiffScope(/ccccccc.*Latest commit/);
+    expect(screen.getByText("Loading commit diff…")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [
+      "error",
+      () => {
+        throw new RpcFault(500, "commit unavailable");
+      },
+    ],
+    [
+      "empty",
+      () => ({
+        base_sha: "e".repeat(40),
+        head_sha: "f".repeat(40),
+        files: [],
+      }),
+    ],
+  ])("コミット差分の %s 状態でも Escape で閉じられる", async (_state, handler) => {
+    const onClose = vi.fn();
+    renderPullDialog(
+      {
+        "pulls/diff": stableDiff,
+        "repos/commitDiff": handler,
+      },
+      onClose,
+    );
+
+    await selectDiffScope(/ccccccc.*Latest commit/);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
 
 // The hover + button comments on one line; pressing a line number cell and moving over further
 // cells drags a range. The + button only exists once the diff query has reported which lines are

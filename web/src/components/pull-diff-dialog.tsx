@@ -5,6 +5,7 @@
 // open file. Review line comments are not shown here — the Reviews timeline is their only view.
 
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   Filter,
@@ -24,7 +25,12 @@ import {
   useRef,
   useState,
 } from "react";
-import type { DiffFeedbackThread, PullDiff, PullFile } from "@/api/types";
+import type {
+  DiffFeedbackThread,
+  PullDiff,
+  PullFile,
+  PullRequest,
+} from "@/api/types";
 import {
   ArchivedComment,
   CommentActionsMenu,
@@ -254,16 +260,26 @@ export function DiffDialogState({
   dialogLabel,
   dialogTitle,
   dialogSha,
+  scopeSelector,
   onClose,
   children,
 }: {
   dialogLabel: string;
   dialogTitle: string;
   dialogSha: string;
+  scopeSelector?: ReactNode;
   onClose: () => void;
   children: ReactNode;
 }) {
   const backdropDismiss = useBackdropDismiss(onClose);
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4"
@@ -306,15 +322,18 @@ export function DiffDialogState({
                 <span className="truncate">{dialogTitle}</span>
               </div>
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              aria-label="Close commit diff"
-              className="h-7 w-7 shrink-0 p-0"
-              onClick={onClose}
-            >
-              <X className="size-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {scopeSelector}
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label="Close commit diff"
+                className="h-7 w-7 shrink-0 p-0"
+                onClick={onClose}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
           </header>
           <div className="diff-scrollport min-w-0 flex-1 overflow-auto">
             {children}
@@ -322,6 +341,234 @@ export function DiffDialogState({
         </div>
       </div>
     </div>
+  );
+}
+
+type PullCommit = NonNullable<PullRequest["commits"]>[number];
+
+function filesFromDiff(diff: PullDiff): PullFile[] {
+  return diff.files.map((file) => ({
+    filename: file.path,
+    previousFilename: file.original_path ?? undefined,
+    headFilename: file.path,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+    patch: file.patch,
+    syntax_highlight: file.syntax_highlight,
+  }));
+}
+
+function DiffScopeSelector({
+  commits,
+  selectedSha,
+  onSelect,
+}: {
+  commits: PullCommit[];
+  selectedSha: string | null;
+  onSelect: (sha: string | null) => void;
+}) {
+  const selectedCommit = commits.find((commit) => commit.sha === selectedSha);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          aria-label="Select diff scope"
+          className="h-7 max-w-80 gap-1.5"
+        >
+          <span className="truncate">
+            {selectedCommit
+              ? `${selectedCommit.sha.slice(0, 7)}: ${selectedCommit.subject}`
+              : "All changes"}
+          </span>
+          <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="w-96 max-w-[calc(100vw-2rem)]"
+      >
+        <DropdownMenuItem onSelect={() => onSelect(null)}>
+          <Check
+            className={cn("size-4 shrink-0", selectedSha && "invisible")}
+            aria-hidden="true"
+          />
+          <span>All changes</span>
+        </DropdownMenuItem>
+        {commits.map((commit) => (
+          <DropdownMenuItem
+            key={commit.sha}
+            onSelect={() => onSelect(commit.sha)}
+          >
+            <Check
+              className={cn(
+                "size-4 shrink-0",
+                selectedSha !== commit.sha && "invisible",
+              )}
+              aria-hidden="true"
+            />
+            <code className="shrink-0 text-xs">{commit.sha.slice(0, 7)}</code>
+            <span className="truncate">{commit.subject}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function PullDiffDialog({
+  owner,
+  repo,
+  number,
+  files,
+  file,
+  commits,
+  commentCounts = {},
+  initialThreadId = null,
+  onSelectFile,
+  onClose,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  files: PullFile[];
+  file: PullFile;
+  commits: PullRequest["commits"];
+  commentCounts?: Readonly<Record<string, number>>;
+  initialThreadId?: number | null;
+  onSelectFile: (filename: string) => void;
+  onClose: () => void;
+}) {
+  const [selectedSha, setSelectedSha] = useState<string | null>(null);
+  const diffQuery = useCommitDiff(
+    owner,
+    repo,
+    selectedSha ?? "",
+    undefined,
+    false,
+    selectedSha !== null,
+  );
+  const commitFeedback = useDiffFeedback(
+    owner,
+    repo,
+    number,
+    diffQuery.data
+      ? {
+          base_sha: diffQuery.data.base_sha,
+          head_sha: diffQuery.data.head_sha,
+        }
+      : { base_sha: undefined, head_sha: undefined },
+    selectedSha !== null && Boolean(diffQuery.data),
+  );
+  const selectedCommit = commits.find((commit) => commit.sha === selectedSha);
+  const scopeSelector = (
+    <DiffScopeSelector
+      commits={commits}
+      selectedSha={selectedSha}
+      onSelect={setSelectedSha}
+    />
+  );
+
+  if (!selectedSha || !selectedCommit) {
+    return (
+      <DiffFileDialog
+        key="pull"
+        owner={owner}
+        repo={repo}
+        number={number}
+        files={files}
+        file={file}
+        commentCounts={commentCounts}
+        initialThreadId={initialThreadId}
+        scopeSelector={scopeSelector}
+        onSelectFile={onSelectFile}
+        onClose={onClose}
+      />
+    );
+  }
+
+  const shortSha = selectedCommit.sha.slice(0, 7);
+  const label = `Changes in ${shortSha}: ${selectedCommit.subject}`;
+  if (diffQuery.isPending) {
+    return (
+      <DiffDialogState
+        dialogLabel={label}
+        dialogSha={shortSha}
+        dialogTitle={selectedCommit.subject}
+        scopeSelector={scopeSelector}
+        onClose={onClose}
+      >
+        <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading commit diff…
+        </div>
+      </DiffDialogState>
+    );
+  }
+  if (diffQuery.isError) {
+    return (
+      <DiffDialogState
+        dialogLabel={label}
+        dialogSha={shortSha}
+        dialogTitle={selectedCommit.subject}
+        scopeSelector={scopeSelector}
+        onClose={onClose}
+      >
+        <div className="m-4 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load commit diff.
+          {diffQuery.error instanceof Error
+            ? ` ${diffQuery.error.message}`
+            : null}
+        </div>
+      </DiffDialogState>
+    );
+  }
+
+  const diff = diffQuery.data;
+  const commitFiles = diff ? filesFromDiff(diff) : [];
+  if (!diff || commitFiles.length === 0) {
+    return (
+      <DiffDialogState
+        dialogLabel={label}
+        dialogSha={shortSha}
+        dialogTitle={selectedCommit.subject}
+        scopeSelector={scopeSelector}
+        onClose={onClose}
+      >
+        <p className="p-4 text-sm text-muted-foreground">
+          No changes in this commit.
+        </p>
+      </DiffDialogState>
+    );
+  }
+
+  const selectedFile =
+    commitFiles.find((candidate) => candidate.filename === file.filename) ??
+    commitFiles[0];
+  return (
+    <DiffFileDialog
+      key={selectedCommit.sha}
+      owner={owner}
+      repo={repo}
+      number={number}
+      files={commitFiles}
+      file={selectedFile}
+      source={{
+        kind: "commit",
+        sha: selectedCommit.sha,
+        baseSha: diff.base_sha,
+        headSha: diff.head_sha,
+      }}
+      dialogLabel={label}
+      dialogTitle={selectedCommit.subject}
+      dialogSha={shortSha}
+      scopeSelector={scopeSelector}
+      commentCounts={commitFeedback.data?.comment_counts}
+      onSelectFile={() => {}}
+      onClose={onClose}
+    />
   );
 }
 
@@ -337,6 +584,7 @@ export function DiffFileDialog({
   dialogLabel,
   dialogTitle,
   dialogSha,
+  scopeSelector,
   onSelectFile,
   onClose,
 }: {
@@ -352,6 +600,7 @@ export function DiffFileDialog({
   dialogLabel?: string;
   dialogTitle?: string;
   dialogSha?: string;
+  scopeSelector?: ReactNode;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
@@ -710,6 +959,7 @@ export function DiffFileDialog({
                   </div>
                 </div>
                 <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+                  {scopeSelector}
                   <div className="flex overflow-hidden rounded-md border text-xs">
                     <ModeButton
                       active={selectedMode === "diff"}
