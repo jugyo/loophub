@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { agentEffort, agentModel } from "../../core/config.ts";
 import { ENV_PARENT_ISSUE, ENV_WORKSPACE } from "../../core/environment.ts";
+import {
+  DEFAULT_LIST_PER_PAGE,
+  MAX_LIST_PER_PAGE,
+} from "../../core/list-paging.ts";
 import { spawnSyncProcess } from "../../core/process.ts";
 import {
   ENV_ISSUE_CREATE_SESSION,
@@ -75,8 +79,19 @@ export async function run(): Promise<void> {
     }
   } else if (sub === "list") {
     const state = flags.state || "open";
-    const items = await s.issues.list(repo, { state });
-    const issues = items.filter((i: any) => !i.pull_request);
+    // Ask the service for issues only: filtering pulls out after the fact would let them eat the
+    // page budget and silently shrink the result (#2524).
+    const page = flags.page ? Number(flags.page) : 1;
+    const perPage = flags.limit ? Number(flags.limit) : undefined;
+    if (!Number.isInteger(page) || page < 1) fail("--page must be >= 1");
+    if (
+      perPage !== undefined &&
+      (!Number.isInteger(perPage) || perPage < 1 || perPage > MAX_LIST_PER_PAGE)
+    )
+      fail(`--limit must be between 1 and ${MAX_LIST_PER_PAGE}`);
+    const filter = { state, kind: "issue" as const };
+    const issues = await s.issues.list(repo, { ...filter, page, perPage });
+    const total = await s.issues.count(repo, filter);
     out(issues);
     if (!flags.json) {
       const summaries = s.issues.subIssueSummaries(
@@ -99,6 +114,14 @@ export async function run(): Promise<void> {
       if (hasSubIssues)
         console.log("use 'lh issue sub list <n>' to see sub issues");
     }
+    const shown =
+      (page - 1) * (perPage ?? DEFAULT_LIST_PER_PAGE) + issues.length;
+    // Report truncation on stderr so it survives `--json` piping: a caller counting rows would
+    // otherwise take a page for the whole result.
+    if (total > shown || page > 1)
+      console.error(
+        `showing ${issues.length} of ${total} (page ${page}; use --page/--limit for more)`,
+      );
   } else if (sub === "view") {
     // Archived comments stay out of `comment_list` unless asked for (#2494), so a reader gets the
     // comments still in play rather than the ones a human already retired.

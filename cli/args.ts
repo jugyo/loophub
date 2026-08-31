@@ -73,6 +73,7 @@ export type Flags = {
   input?: string;
   status?: string;
   limit?: string;
+  page?: string;
   phase?: string;
   dir?: string;
   src?: string;
@@ -186,6 +187,7 @@ const { values, positionals } = parseArgs({
     input: { type: "string" },
     status: { type: "string" },
     limit: { type: "string" },
+    page: { type: "string" },
     phase: { type: "string" },
     dir: { type: "string" },
     src: { type: "string" },

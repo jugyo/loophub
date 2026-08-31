@@ -188,46 +188,59 @@ function acceptanceCriterionInRepoOr404(
 }
 
 // ===== issues =====
+
+type IssueListFilter = {
+  state?: string;
+  kind?: "issue" | "pull" | "any";
+  labels?: string[];
+  workspace?: string;
+  sort?: "updated" | "created";
+};
+
+// The rows a list request selects, before paging. `list` slices this; `count` measures it, so a
+// caller can tell a full page from a truncated result instead of guessing from the page length.
+function filteredIssueRows(r: S.Repo, opts: IssueListFilter): S.IssueRow[] {
+  const labelsFilter = opts.labels ?? [];
+  let rows = S.listIssues(
+    r.id,
+    opts.kind ?? "any",
+    opts.state ?? "open",
+    opts.sort ?? "created",
+    { rootsOnly: true },
+  );
+  if (labelsFilter.length) {
+    const matchingIssueIds = S.issueIdsWithLabels(r.id, labelsFilter);
+    rows = rows.filter((row) => matchingIssueIds.has(row.id));
+  }
+  if (opts.workspace) {
+    rows = rows.filter((row) => {
+      const targetBranch = row.target_branch?.trim();
+      return opts.workspace === r.default_branch
+        ? !targetBranch || targetBranch === r.default_branch
+        : targetBranch === opts.workspace;
+    });
+  }
+  return rows;
+}
+
 export const issues = {
   async list(
     name: string,
-    opts: {
-      state?: string;
-      kind?: "issue" | "pull" | "any";
-      labels?: string[];
-      workspace?: string;
+    opts: IssueListFilter & {
       lookahead?: boolean;
       page?: number;
       perPage?: number;
-      sort?: "updated" | "created";
       includeSubIssues?: boolean;
     } = {},
   ) {
     const r = repoOr404(name);
-    const state = opts.state ?? "open";
-    const kind = opts.kind ?? "any";
-    const labelsFilter = opts.labels ?? [];
     const perPage = clampPerPage(
       opts.perPage,
       DEFAULT_LIST_PER_PAGE,
       ISSUE_LIST_LOOKAHEAD_MAX,
     );
     const page = opts.page && opts.page >= 1 ? opts.page : 1;
-    let rows = S.listIssues(r.id, kind, state, opts.sort ?? "created", {
-      rootsOnly: true,
-    });
-    if (labelsFilter.length) {
-      const matchingIssueIds = S.issueIdsWithLabels(r.id, labelsFilter);
-      rows = rows.filter((row) => matchingIssueIds.has(row.id));
-    }
-    if (opts.workspace) {
-      rows = rows.filter((row) => {
-        const targetBranch = row.target_branch?.trim();
-        return opts.workspace === r.default_branch
-          ? !targetBranch || targetBranch === r.default_branch
-          : targetBranch === opts.workspace;
-      });
-    }
+    const rows = filteredIssueRows(r, opts);
     // Enrich each issue's linked PR with the worker's current status projection. A missing or
     // stale projection remains visible as unknown/zero until the worker catches up.
     // A lookahead page returns one extra row so the caller can decide whether
@@ -271,6 +284,12 @@ export const issues = {
       subIssueRowsByParent,
       subIssuesTruncatedByParent,
     });
+  },
+
+  // How many issues a `list` filter selects in total, so a caller can report truncation.
+  async count(name: string, opts: IssueListFilter = {}): Promise<number> {
+    const r = repoOr404(name);
+    return filteredIssueRows(r, opts).length;
   },
 
   async listSubIssues(name: string, number: number) {

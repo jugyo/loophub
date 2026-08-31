@@ -10,9 +10,16 @@ import { ServiceError } from "../errors.ts";
 import { runGitSync } from "../git.ts";
 import * as S from "../store.ts";
 
+// Re-exported so service modules keep importing their paging limits from here, while callers that
+// must not open the DB (the CLI parses flags before svc()) can import the pure module directly.
+export {
+  clampPerPage,
+  DEFAULT_LIST_PER_PAGE,
+  MAX_LIST_PER_PAGE,
+  paginate,
+} from "../list-paging.ts";
+
 export const MAX_EVENTS_PER_PAGE = 100;
-export const DEFAULT_LIST_PER_PAGE = 30;
-export const MAX_LIST_PER_PAGE = 100;
 
 // ---- shared helpers ----
 export function repoOr404(name: string): S.Repo {
@@ -164,19 +171,4 @@ export function issueOr404(
   if (!row || (kind && row.kind !== kind))
     throw new ServiceError(404, "Not Found");
   return row;
-}
-
-export function clampPerPage(
-  perPage: number | undefined,
-  def: number,
-  max: number,
-): number {
-  let v = Number(perPage ?? def);
-  if (!Number.isFinite(v) || v < 1) v = def;
-  return Math.min(v, max);
-}
-
-export function paginate<T>(rows: T[], perPage: number, page: number): T[] {
-  const offset = (page - 1) * perPage;
-  return rows.slice(offset, offset + perPage);
 }

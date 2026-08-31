@@ -478,6 +478,30 @@ test("issues.list defaults to newest-created order and keeps label filters (#751
   ]);
 });
 
+test("issues.count measures the same filter a paged list slices (#2524)", async () => {
+  const repo = S.createRepo("me/list-count", "/tmp/list-count");
+  for (let i = 1; i <= 5; i += 1) {
+    S.createIssue(repo.id, "issue", `counted ${i}`, "", "me");
+  }
+  const pull = S.createIssue(repo.id, "pull", "counted pull", "", "me") as any;
+  S.createPull(pull.id, "feature", "main", null);
+  const closed = S.createIssue(repo.id, "issue", "counted closed", "", "me");
+  S.updateIssue(closed.id, { state: "closed" });
+
+  const page = (await svc.issues.list("me/list-count", {
+    kind: "issue",
+    state: "open",
+    perPage: 2,
+  })) as any[];
+
+  expect(page).toHaveLength(2);
+  expect(await svc.issues.count("me/list-count", { kind: "issue" })).toBe(5);
+  expect(
+    await svc.issues.count("me/list-count", { kind: "issue", state: "all" }),
+  ).toBe(6);
+  expect(await svc.issues.count("me/list-count", { state: "all" })).toBe(7);
+});
+
 test("issues.list advances lookahead pages by the visible issue-list size (#906)", async () => {
   const repo = S.createRepo("me/list-lookahead", "/tmp/list-lookahead");
   for (let i = 1; i <= 201; i += 1) {
