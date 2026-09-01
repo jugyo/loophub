@@ -6,6 +6,7 @@ import {
   WORKFLOW_CONTRACT_LANGUAGES,
   WORKFLOW_CONTRACTS,
   workflowContracts,
+  workflowContractText,
 } from "./contracts.ts";
 
 // Contract tests intentionally cover loading, the executable commands the contracts quote, and the
@@ -138,6 +139,31 @@ test("contracts quote only commands and flags the CLI documents", () => {
       }
       // An extractor that stopped matching would satisfy every assertion above by finding nothing.
       expect(quoted, `${language} ${contract}`).toBeGreaterThan(0);
+    }
+  }
+});
+
+test("Supervisor contract は sub issue の実施順序と停止条件を明示する", () => {
+  const expectations = {
+    en: [
+      "lh issue view <parent> --repo <owner/name> --json",
+      "lh issue sub list <parent> --repo <owner/name> --json",
+      "The order returned by `lh issue sub list`",
+      "is the execution order.",
+      "Do not start the next",
+    ],
+    ja: [
+      "lh issue view <parent> --repo <owner/name> --json",
+      "lh issue sub list <parent> --repo <owner/name> --json",
+      "`lh issue sub list` が返す順序を実施順序として扱ってください。",
+      "次の sub issue を開始してはいけません。",
+    ],
+  } as const;
+
+  for (const language of WORKFLOW_CONTRACT_LANGUAGES) {
+    const contract = workflowContractText("supervisor", language);
+    for (const expected of expectations[language]) {
+      expect(contract).toContain(expected);
     }
   }
 });

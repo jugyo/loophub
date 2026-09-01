@@ -369,6 +369,24 @@ export const commandHelp: readonly CommandHelp[] = [
     path: ["session", "usage", "recalculate"],
     description: "Recalculate all available session usage.",
   },
+  {
+    path: ["supervisor"],
+    description: "Start a Supervisor agent without LoopHub state tracking.",
+    details: `
+
+Usage:
+  lh supervisor start --runtime <runtime> --prompt <text|@file|-> [options]
+
+Options:
+  --runtime <runtime>   Runtime: claude-code, codex, grok, or opencode.
+  --prompt <text>       Prompt; @file reads a file and - reads stdin.
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --herdr               Start in a herdr pane and return without attaching.
+  --help                Show this help without changing LoopHub state.
+
+Constraints:
+  This command does not create or update issues, sub issues, pull requests, sessions, workflow runs, manifests, or events.`,
+  },
   { path: ["attachment"], description: "Manage attachments." },
   { path: ["attachment", "add"], description: "Upload attachment files." },
   { path: ["pr"], description: "Manage pull requests." },

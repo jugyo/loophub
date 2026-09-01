@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { WORKFLOW_STEPS, type WorkflowStep } from "./compose.ts";
 
-export type WorkflowContract = WorkflowStep | "parent";
+export type WorkflowContract = WorkflowStep | "parent" | "supervisor";
 /** Every fixed contract of a run, in the order the run uses them. */
 export const WORKFLOW_CONTRACTS: readonly WorkflowContract[] = [
   "parent",
