@@ -17,8 +17,8 @@ import {
 import { projectHerdrRepoSessions } from "./session-projection.ts";
 import {
   HERDR_ID,
+  herdrPaneCloseArgv,
   herdrSessionName,
-  herdrWorkspaceCloseArgv,
   type TerminalLaunchRepo,
 } from "./terminal-launch.ts";
 
@@ -286,6 +286,32 @@ export function timestampPlus(value: string | null, ms: number): number | null {
   return parsed + ms;
 }
 
+async function closeExpiredPullPane(
+  repo: S.Repo,
+  sessionName: string,
+  pane: ReturnType<typeof parseHerdrAgentPlacements>[number],
+): Promise<"closed" | "failed"> {
+  if (!HERDR_ID.test(pane.id)) return "failed";
+  try {
+    await killPaneForegroundProcess(repo, pane.id, sessionName);
+  } catch {
+    return "failed";
+  }
+
+  const paneClose = herdrPaneCloseArgv(repo, pane.id);
+  try {
+    await runHerdr(paneClose[0], paneClose.slice(1), repo.local_path, {
+      timeoutMs: 10_000,
+    });
+    return "closed";
+  } catch {
+    // A worktree-linked workspace may refuse to close its last pane. Leave the empty pane and
+    // report the failure: closing the workspace would also terminate an unrelated Workflow pane,
+    // and there is no atomic Herdr operation that can make that check safe.
+    return "failed";
+  }
+}
+
 export async function cleanupClosedPullDevAgentsImpl(): Promise<{
   killed: number;
   skipped: number;
@@ -322,25 +348,15 @@ export async function cleanupClosedPullDevAgentsImpl(): Promise<{
       worktreeRoot(),
       repo.full_name,
     );
-    type Placement = (typeof placements)[number];
-    const hasClosableWorkspace = (
-      placement: Placement,
-    ): placement is Placement & { workspaceId: string } =>
-      HERDR_ID.test(placement.id) &&
-      placement.workspaceId !== null &&
-      HERDR_ID.test(placement.workspaceId);
-    const byPull = new Map<number, (typeof placements)[number]>();
+    const byPull = new Map<number, (typeof placements)[number][]>();
     for (const placement of placements) {
       if (placement.pull === null) continue;
-      const current = byPull.get(placement.pull);
-      if (
-        current === undefined ||
-        (!hasClosableWorkspace(current) && hasClosableWorkspace(placement))
-      ) {
-        byPull.set(placement.pull, placement);
-      }
+      const current = byPull.get(placement.pull) ?? [];
+      if (!current.some((candidate) => candidate.id === placement.id))
+        current.push(placement);
+      byPull.set(placement.pull, current);
     }
-    for (const [pullNumber, pane] of byPull) {
+    for (const [pullNumber, candidates] of byPull) {
       const prRow = S.getIssue(repo.id, pullNumber);
       if (prRow?.kind !== "pull") {
         skipped++;
@@ -364,27 +380,26 @@ export async function cleanupClosedPullDevAgentsImpl(): Promise<{
         skipped++;
         continue;
       }
-      if (!hasClosableWorkspace(pane)) {
-        failed++;
-        continue;
-      }
-      const close = herdrWorkspaceCloseArgv(repo, pane.workspaceId);
-      try {
-        await runHerdr(close[0], close.slice(1), repo.local_path, {
-          timeoutMs: 10_000,
+      const paneCandidates = candidates.filter((candidate) =>
+        HERDR_ID.test(candidate.id),
+      );
+      const panes =
+        paneCandidates.length > 0 ? paneCandidates : candidates.slice(0, 1);
+      for (const pane of panes) {
+        const close = await closeExpiredPullPane(repo, sessionName, pane);
+        if (close === "failed") {
+          failed++;
+          continue;
+        }
+        S.emitEvent(repo.id, CLOSED_PULL_AGENT_KILLED_EVENT, "lh-worker", {
+          number: pullNumber,
+          pr: pullNumber,
+          session_id: sessionId,
+          pane_id: pane.id,
+          reason: CLOSED_PULL_AGENT_KILL_REASON,
         });
-      } catch {
-        failed++;
-        continue;
+        killed++;
       }
-      S.emitEvent(repo.id, CLOSED_PULL_AGENT_KILLED_EVENT, "lh-worker", {
-        number: pullNumber,
-        pr: pullNumber,
-        session_id: sessionId,
-        pane_id: pane.id,
-        reason: CLOSED_PULL_AGENT_KILL_REASON,
-      });
-      killed++;
     }
   }
   return { killed, skipped, failed };

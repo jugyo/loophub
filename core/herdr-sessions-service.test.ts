@@ -597,7 +597,7 @@ test("terminal.killAgent surfaces a visible error when herdr is not installed", 
   }
 });
 
-test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed and merged PR agents only", async () => {
+test("terminal.cleanupClosedPullDevAgents closes only expired panes and leaves workspaces untouched", async () => {
   const repo = await svc.repos.create({
     path: initGitRepo(),
     name: "me/closed-pr-cleanup",
@@ -737,6 +737,9 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
       "#!/bin/sh",
       `echo "$@" >> ${CALLS_FILE}`,
       `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":12345}}}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "close" ]; then exit 1; fi`,
       `printf '%s' '${agents}'`,
       "",
     ].join("\n"),
@@ -746,28 +749,28 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
   const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
   try {
     await expect(svc.terminal.cleanupClosedPullDevAgents()).resolves.toEqual({
-      killed: 2,
+      killed: 0,
       skipped: 2,
-      failed: 0,
+      failed: 2,
     });
-    expect(killSpy).not.toHaveBeenCalled();
+    expect(killSpy).toHaveBeenCalledTimes(2);
+    expect(killSpy).toHaveBeenNthCalledWith(1, -12345, "SIGKILL");
+    expect(killSpy).toHaveBeenNthCalledWith(2, -12345, "SIGKILL");
     const { readFileSync } = await import("node:fs");
     const calls = readFileSync(CALLS_FILE, "utf8");
-    expect(calls).toContain(`--session ${sessionName} workspace close wC1`);
-    expect(calls).toContain(`--session ${sessionName} workspace close wC3`);
-    expect(calls).not.toContain("workspace close wC2");
-    expect(calls).not.toContain("workspace close wC4");
-    expect(calls).not.toContain("workspace close wR");
-    expect(calls).not.toContain("pane process-info");
-    expect(calls).not.toContain("pane close");
+    expect(calls).toContain(
+      `--session ${sessionName} pane process-info --pane wC:p1`,
+    );
+    expect(calls).toContain(
+      `--session ${sessionName} pane process-info --pane wC:p3`,
+    );
+    expect(calls).toContain(`--session ${sessionName} pane close wC:p1`);
+    expect(calls).toContain(`--session ${sessionName} pane close wC:p3`);
+    expect(calls).not.toContain("workspace close");
 
     const events = S.listEvents(0, repo.id, 10);
     const killed = events.filter((e) => e.type === "agent_session.killed");
-    expect(killed).toHaveLength(2);
-    expect(killed.map((e) => JSON.parse(e.payload).session_id).sort()).toEqual([
-      "session-expired-closed",
-      "session-expired-merged",
-    ]);
+    expect(killed).toHaveLength(0);
   } finally {
     killSpy.mockRestore();
     process.env.PATH = ORIGINAL_PATH;
@@ -841,7 +844,8 @@ test("terminal.cleanupClosedPullDevAgents continues after invalid workspace ids 
       `echo "$@" >> ${CALLS_FILE}`,
       `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
       `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agents}'; exit 0; fi`,
-      `if [ "$5" = "wFail" ]; then exit 1; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":12345}}}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "close" ] && [ "$5" = "wF:p3" ]; then exit 1; fi`,
       "exit 0",
       "",
     ].join("\n"),
@@ -851,28 +855,124 @@ test("terminal.cleanupClosedPullDevAgents continues after invalid workspace ids 
   const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
   try {
     await expect(svc.terminal.cleanupClosedPullDevAgents()).resolves.toEqual({
-      killed: 2,
+      killed: 5,
       skipped: 0,
-      failed: 3,
+      failed: 1,
     });
-    expect(killSpy).not.toHaveBeenCalled();
+    expect(killSpy).toHaveBeenCalledTimes(6);
     const calls = readFileSync(CALLS_FILE, "utf8");
-    expect(calls).not.toContain("workspace close --bad");
-    expect(calls).toContain(`--session ${sessionName} workspace close wFail`);
-    expect(calls).toContain(`--session ${sessionName} workspace close wNext`);
-    expect(calls).toContain(
-      `--session ${sessionName} workspace close wRecovered`,
-    );
-    expect(calls).not.toContain("pane process-info");
-    expect(calls).not.toContain("pane close");
+    expect(calls).toContain(`--session ${sessionName} pane close wF:p1`);
+    expect(calls).toContain(`--session ${sessionName} pane close wF:p2`);
+    expect(calls).toContain(`--session ${sessionName} pane close wF:p3`);
+    expect(calls).toContain(`--session ${sessionName} pane close wF:p4`);
+    expect(calls).toContain(`--session ${sessionName} pane close wF:p5`);
+    expect(calls).toContain(`--session ${sessionName} pane close wF:p6`);
+    expect(calls).not.toContain("workspace close");
 
     const events = S.listEvents(0, repo.id, 10);
     const killed = events.filter((e) => e.type === "agent_session.killed");
-    expect(killed).toHaveLength(2);
+    expect(killed).toHaveLength(5);
     expect(killed.map((e) => JSON.parse(e.payload).session_id).sort()).toEqual([
+      "session-cleanup-1",
+      "session-cleanup-2",
       "session-cleanup-4",
       "session-cleanup-5",
+      "session-cleanup-5",
     ]);
+  } finally {
+    killSpy.mockRestore();
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.cleanupClosedPullDevAgents never closes a workspace with another active Workflow pane", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/closed-pr-shared-workspace",
+  });
+  const sessionName = herdrSessionName(repo);
+  const old = new Date(Date.now() - 61 * 60 * 1000)
+    .toISOString()
+    .replace(/\.\d+Z$/, "Z");
+  const closedPr = S.createIssue(repo.id, "pull", "closed", "", "me");
+  S.createPull(closedPr.id, "loophub/pr-1", "main", null);
+  S.registerAgentSession(
+    "session-shared-closed",
+    LEGACY_LH_DEV_SESSION_AGENT,
+    "shared-closed-external",
+  );
+  S.setPullSession(closedPr.id, "session-shared-closed");
+  S.updateIssue(closedPr.id, { state: "closed" });
+  db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
+    old,
+    old,
+    closedPr.id,
+  ]);
+
+  const openPr = S.createIssue(repo.id, "pull", "open", "", "me");
+  S.createPull(openPr.id, "loophub/pr-2", "main", null);
+  const root = worktreeRoot();
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "dev #1",
+          pane_id: "wShared:p1",
+          workspace_id: "wShared",
+          foreground_cwd: worktreePath(root, repo.full_name, closedPr.number),
+        },
+        {
+          agent: "codex",
+          agent_status: "working",
+          name: "Workflow parent #open",
+          pane_id: "wShared:p2",
+          workspace_id: "wShared",
+          foreground_cwd: worktreePath(root, repo.full_name, openPr.number),
+        },
+      ],
+    },
+  });
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const callsFile = join(HOME, "closed-pr-shared-workspace-calls.txt");
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `echo "$@" >> ${callsFile}`,
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":12345}}}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "close" ]; then exit 1; fi`,
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+  try {
+    await expect(svc.terminal.cleanupClosedPullDevAgents()).resolves.toEqual({
+      killed: 0,
+      skipped: 1,
+      failed: 1,
+    });
+    expect(killSpy).toHaveBeenCalledWith(-12345, "SIGKILL");
+    const calls = readFileSync(callsFile, "utf8");
+    expect(calls).toContain(
+      `--session ${sessionName} pane process-info --pane wShared:p1`,
+    );
+    expect(calls).toContain(`--session ${sessionName} pane close wShared:p1`);
+    expect(calls).toContain(`--session ${sessionName} pane list`);
+    expect(calls).not.toContain("workspace close wShared");
+    expect(
+      S.listEvents(0, repo.id, 10).filter(
+        (event) => event.type === "agent_session.killed",
+      ),
+    ).toHaveLength(0);
   } finally {
     killSpy.mockRestore();
     process.env.PATH = ORIGINAL_PATH;
