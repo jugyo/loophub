@@ -479,6 +479,18 @@ test("POST /attachments stores HTML; GET downloads it with a safe filename", asy
   );
   expect(get.headers.get("x-content-type-options")).toBe("nosniff");
   expect(Buffer.from(await get.arrayBuffer()).equals(html)).toBe(true);
+
+  const preview = await fetch(`${base}${body.url}/preview`);
+  expect(preview.status).toBe(200);
+  expect(preview.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  expect(preview.headers.get("content-disposition")).toBeNull();
+  expect(preview.headers.get("cache-control")).toBe("no-store");
+  expect(preview.headers.get("referrer-policy")).toBe("no-referrer");
+  expect(preview.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(preview.headers.get("content-security-policy")).toBe(
+    "default-src 'none'; base-uri 'none'; connect-src 'none'; font-src data:; form-action 'none'; frame-src 'none'; img-src data:; media-src 'none'; navigate-to 'none'; object-src 'none'; script-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; sandbox",
+  );
+  expect(Buffer.from(await preview.arrayBuffer()).equals(html)).toBe(true);
 });
 
 test("POST /attachments accepts application/octet-stream for a valid extension", async () => {
@@ -540,6 +552,24 @@ test("GET /attachments/:sha256 404s for an invalid attachment ID", async () => {
 test("GET /attachments/:sha256 404s for an unknown blob", async () => {
   const res = await fetch(`${base}/attachments/${"0".repeat(64)}`);
   expect(res.status).toBe(404);
+});
+
+test("GET /attachments/:sha256/preview rejects non-HTML attachments", async () => {
+  const res = await fetch(`${base}/attachments/${"0".repeat(64)}/preview`);
+  expect(res.status).toBe(404);
+
+  const upload = await fetch(
+    `${base}/attachments?filename=notes.txt&actor=me`,
+    {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: "notes",
+    },
+  );
+  const body = (await upload.json()) as any;
+  const preview = await fetch(`${base}${body.url}/preview`);
+  expect(preview.status).toBe(415);
+  expect(await preview.text()).toBe("");
 });
 
 test("GET on a client route 404s when the SPA is not built", async () => {

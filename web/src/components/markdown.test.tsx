@@ -104,6 +104,99 @@ describe("Markdown", () => {
     expect(a?.getAttribute("href")).toBe("https://example.com");
   });
 
+  it("adds an explicit sandboxed preview action to HTML attachment links", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("<h1>Report</h1>", {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+    );
+    try {
+      const sha256 = "a".repeat(64);
+      const { container } = renderWithClient(
+        <Markdown>{`[report.html](/attachments/${sha256})`}</Markdown>,
+      );
+      const previewButton = screen.getByRole("button", { name: "プレビュー" });
+      expect(
+        container.querySelector(`a[href="/attachments/${sha256}"]`),
+      ).not.toBeNull();
+
+      fireEvent.click(previewButton);
+      expect(screen.getByRole("status").textContent).toContain(
+        "プレビューを読み込んでいます…",
+      );
+      const iframe = await screen.findByTitle("report.html のプレビュー内容");
+      expect(iframe.getAttribute("src")).toBeNull();
+      expect(iframe.getAttribute("srcdoc")).toContain("<h1>Report</h1>");
+      expect(iframe.getAttribute("sandbox")).toBe("");
+      expect(iframe.getAttribute("referrerpolicy")).toBe("no-referrer");
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `/attachments/${sha256}/preview`,
+        expect.objectContaining({ credentials: "same-origin" }),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "閉じる" }));
+      expect(screen.queryByTitle("report.html のプレビュー内容")).toBeNull();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("removes external resources, navigation and refreshes from preview HTML", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        '<meta http-equiv="refresh" content="0;url=https://example.invalid/refresh"><script>document.body.dataset.scriptRan = "true";</script><a href="https://example.invalid/top">external</a><img src="https://example.invalid/image"><p>Report</p>',
+        {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        },
+      ),
+    );
+    try {
+      renderWithClient(
+        <Markdown>{`[report.html](/attachments/${"d".repeat(64)})`}</Markdown>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
+      const iframe = await screen.findByTitle("report.html のプレビュー内容");
+      const srcDoc = iframe.getAttribute("srcdoc") ?? "";
+      expect(srcDoc).toContain("<p>Report</p>");
+      expect(srcDoc).not.toContain("example.invalid");
+      expect(srcDoc).not.toContain("<script");
+      expect(srcDoc).not.toContain('http-equiv="refresh"');
+      expect(srcDoc).toContain("Content-Security-Policy");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("shows a safe error when an HTML attachment preview cannot load", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 404 }));
+    try {
+      renderWithClient(
+        <Markdown>{`[missing.html](/attachments/${"b".repeat(64)})`}</Markdown>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
+      expect((await screen.findByRole("alert")).textContent).toContain(
+        "HTML プレビューを読み込めませんでした。",
+      );
+      expect(screen.queryByTitle("missing.html のプレビュー内容")).toBeNull();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("keeps non-HTML attachment links as ordinary links", () => {
+    const { container } = renderWithClient(
+      <Markdown>{`[notes.txt](/attachments/${"c".repeat(64)})`}</Markdown>,
+    );
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      `/attachments/${"c".repeat(64)}`,
+    );
+    expect(screen.queryByRole("button", { name: "プレビュー" })).toBeNull();
+  });
+
   it("renders fenced code blocks", () => {
     const { container } = renderWithClient(
       <Markdown>{"```ts\nconst x = 1;\n```"}</Markdown>,

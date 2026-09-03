@@ -197,6 +197,23 @@ function inlineTextContentType(mime: string): string | null {
     : null;
 }
 
+const HTML_PREVIEW_CSP = [
+  "default-src 'none'",
+  "base-uri 'none'",
+  "connect-src 'none'",
+  "font-src data:",
+  "form-action 'none'",
+  "frame-src 'none'",
+  "img-src data:",
+  "media-src 'none'",
+  "navigate-to 'none'",
+  "object-src 'none'",
+  "script-src 'none'",
+  "style-src 'unsafe-inline'",
+  "worker-src 'none'",
+  "sandbox",
+].join("; ");
+
 // GET /attachments/:sha256 — stream a stored blob with its recorded content-type.
 function handleAttachmentGet(url: URL): Response {
   const sha256 = url.pathname.slice("/attachments/".length);
@@ -219,6 +236,27 @@ function handleAttachmentGet(url: URL): Response {
       `attachment; filename="${safeDownloadFilename(att.filename)}"`;
   }
   return new Response(Bun.file(path), { status: 200, headers });
+}
+
+// GET /attachments/:sha256/preview — serve HTML only to the sandboxed preview iframe.
+function handleAttachmentPreview(url: URL): Response {
+  const match = /^\/attachments\/([0-9a-f]{64})\/preview$/.exec(url.pathname);
+  if (!match) return new Response(null, { status: 404 });
+  const sha256 = match[1];
+  const att = getAttachment(sha256);
+  const path = blobPath(sha256);
+  if (!att || !existsSync(path)) return new Response(null, { status: 404 });
+  if (att.mime !== "text/html") return new Response(null, { status: 415 });
+  return new Response(Bun.file(path), {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "content-security-policy": HTML_PREVIEW_CSP,
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+    },
+  });
 }
 
 async function handleRpc(
@@ -331,6 +369,13 @@ export async function handleRequest(
     } catch {
       return jsonResponse(500, { error: "Internal error" });
     }
+  }
+  if (
+    url.pathname.startsWith("/attachments/") &&
+    url.pathname.endsWith("/preview") &&
+    req.method === "GET"
+  ) {
+    return handleAttachmentPreview(url);
   }
   if (url.pathname.startsWith("/attachments/") && req.method === "GET") {
     return handleAttachmentGet(url);
