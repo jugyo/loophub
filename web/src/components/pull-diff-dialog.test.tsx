@@ -2001,7 +2001,7 @@ describe("DiffFileDialog", () => {
       within(section).getByRole("button", { name: "Previous diff threads" }),
     );
     const card = within(section).getByLabelText("Diff thread 1");
-    expect(within(card).queryByText("Outdated")).toBeNull();
+    expect(within(card).getByText("Outdated")).toBeTruthy();
     expect(within(card).queryByText("RIGHT 1–2")).toBeNull();
     fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
       target: { value: "Still relevant" },
@@ -2071,6 +2071,27 @@ describe("DiffFileDialog", () => {
               },
               original_context: [
                 {
+                  kind: "hunk",
+                  text: "@@ -1,3 +1,3 @@",
+                  left_line: null,
+                  right_line: null,
+                  anchored: false,
+                },
+                {
+                  kind: "deletion",
+                  text: "-old one",
+                  left_line: 1,
+                  right_line: null,
+                  anchored: false,
+                },
+                {
+                  kind: "context",
+                  text: " unchanged",
+                  left_line: 2,
+                  right_line: 2,
+                  anchored: false,
+                },
+                {
                   kind: "addition",
                   text: "+new one",
                   left_line: null,
@@ -2087,10 +2108,25 @@ describe("DiffFileDialog", () => {
     });
 
     const card = await screen.findByLabelText("Diff thread 1");
-    expect(within(card).queryByText("Outdated")).toBeNull();
+    expect(within(card).getByText("Outdated")).toBeTruthy();
+    const originalDiff = within(card).getByLabelText(
+      "Original diff for thread 1",
+    );
+    expect(within(originalDiff).getByText("Original diff")).toBeTruthy();
     expect(
-      within(card).queryByLabelText("Historical context for thread 1"),
-    ).toBeNull();
+      originalDiff.querySelector('[data-diff-context-kind="deletion"]')
+        ?.textContent,
+    ).toContain("-old one");
+    expect(
+      originalDiff.querySelector('[data-diff-context-kind="addition"]')
+        ?.textContent,
+    ).toContain("+new one");
+    expect(originalDiff.querySelector('[data-anchored="true"]')).toBeTruthy();
+    expect(
+      originalDiff.compareDocumentPosition(
+        within(card).getByText("Please revisit this range."),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.queryByLabelText("Previous diff threads")).toBeNull();
     const threadRow = screen
       .getByLabelText("Diff thread 1")
@@ -5103,13 +5139,13 @@ describe("DiffFeedbackHistory", () => {
 
     const agentThread = within(section).getByLabelText("Diff thread 8");
     expect(within(agentThread).getByText("@executor #12-1")).toBeTruthy();
-    expect(within(agentThread).queryByText("Outdated")).toBeNull();
+    expect(within(agentThread).getByText("Outdated")).toBeTruthy();
     fireEvent.click(
       within(agentThread).getByRole("button", {
         name: "Show diff anchor information for thread 8",
       }),
     );
-    expect(within(agentThread).getByText("Outdated")).toBeTruthy();
+    expect(within(agentThread).getAllByText("Outdated")).toHaveLength(2);
     expect(within(agentThread).getByText("Modified")).toBeTruthy();
   });
 });

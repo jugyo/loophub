@@ -590,6 +590,13 @@ test("an outdated conversation remains replyable, reactable, and archivable", as
     anchor: { start_line: 2, end_line: 2 },
     resolved_anchor: null,
   });
+  expect(thread.original_context).toContainEqual(
+    expect.objectContaining({
+      text: "+changed",
+      right_line: 2,
+      anchored: true,
+    }),
+  );
 
   const archived = await svc.diffFeedback.archive(
     REPO,

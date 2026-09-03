@@ -2474,6 +2474,7 @@ function ThreadCard({
       </div>
     </>
   );
+  const originalDiff = <OriginalDiff thread={thread} />;
 
   return (
     <article
@@ -2487,22 +2488,30 @@ function ThreadCard({
       {archived ? (
         <ArchivedComment
           label={`Archived diff thread ${thread.id}`}
-          preview={`${displayedAnchor.path}:${displayedAnchor.start_line} ${commentPreview(
-            thread.messages[0]?.body ?? "",
-          )}`}
+          preview={
+            <>
+              <DiffFeedbackStatus thread={thread} />
+              <span>{`${displayedAnchor.path}:${displayedAnchor.start_line} ${commentPreview(
+                thread.messages[0]?.body ?? "",
+              )}`}</span>
+            </>
+          }
           menu={menu}
         >
           <header className="mb-2 flex justify-end">
             <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
           </header>
+          {originalDiff}
           {conversation}
         </ArchivedComment>
       ) : (
         <>
           <header className="mb-2 flex items-center justify-end gap-1">
+            <DiffFeedbackStatus thread={thread} />
             <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
             {menu}
           </header>
+          {originalDiff}
           {conversation}
         </>
       )}
@@ -2514,6 +2523,57 @@ type DisplayedDiffAnchor = Pick<
   DiffFeedbackThread["anchor"],
   "path" | "side" | "start_line" | "end_line"
 >;
+
+function DiffFeedbackStatus({ thread }: { thread: DiffFeedbackThread }) {
+  return thread.freshness === "outdated" ? (
+    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">
+      Outdated
+    </span>
+  ) : null;
+}
+
+function OriginalDiff({ thread }: { thread: DiffFeedbackThread }) {
+  if (thread.freshness !== "outdated" || !thread.original_context) return null;
+  return (
+    <section
+      className="mb-3 overflow-hidden rounded-md border"
+      aria-label={`Original diff for thread ${thread.id}`}
+    >
+      <h4 className="border-b bg-muted/20 px-2 py-1 text-xs font-medium">
+        Original diff
+      </h4>
+      <pre className="overflow-x-auto p-2 font-mono text-xs leading-5">
+        <code>
+          {thread.original_context.map((line, index) => (
+            <span
+              key={`${line.left_line}:${line.right_line}:${index}`}
+              className={cn(
+                "block min-w-max whitespace-pre px-1",
+                line.kind === "addition" &&
+                  "bg-green-50 text-foreground dark:bg-[#13251d]",
+                line.kind === "deletion" &&
+                  "bg-red-50 text-foreground dark:bg-[#2b1b1e]",
+                line.kind === "hunk" && "bg-muted text-muted-foreground",
+                line.kind === "meta" && "text-muted-foreground",
+                line.anchored && "shadow-[inset_3px_0_0_0] shadow-amber-500/70",
+              )}
+              data-diff-context-kind={line.kind}
+              data-anchored={line.anchored || undefined}
+            >
+              <span className="mr-2 inline-block w-10 select-none text-right text-muted-foreground">
+                {line.left_line ?? ""}
+              </span>
+              <span className="mr-2 inline-block w-10 select-none text-right text-muted-foreground">
+                {line.right_line ?? ""}
+              </span>
+              {line.text || " "}
+            </span>
+          ))}
+        </code>
+      </pre>
+    </section>
+  );
+}
 
 function DiffAnchorInfoPopover({
   thread,
