@@ -381,6 +381,7 @@ test("originSync reports the checkout's standing against origin, pullFromOrigin 
 
   expect(await svc.repos.originSync("me/origin-sync")).toEqual({
     has_origin: true,
+    github_url: null,
     branch: "main",
     ahead: 0,
     behind: 0,
@@ -397,6 +398,7 @@ test("originSync reports the checkout's standing against origin, pullFromOrigin 
 
   expect(await svc.repos.pullFromOrigin("me/origin-sync")).toEqual({
     has_origin: true,
+    github_url: null,
     branch: "main",
     ahead: 0,
     behind: 0,
@@ -429,6 +431,7 @@ test("originSync reports no origin, and pullFromOrigin refuses without one (#71)
 
   expect(await svc.repos.originSync("me/no-origin")).toEqual({
     has_origin: false,
+    github_url: null,
     branch: null,
     ahead: null,
     behind: null,
@@ -436,6 +439,17 @@ test("originSync reports no origin, and pullFromOrigin refuses without one (#71)
   await expect(svc.repos.pullFromOrigin("me/no-origin")).rejects.toThrow(
     /no origin remote is configured/,
   );
+});
+
+test("originSync が GitHub origin をブラウザ向けリポジトリ URL に解決する", async () => {
+  const path = initGitRepo();
+  await git(path, ["remote", "add", "origin", "git@github.com:me/origin.git"]);
+  await svc.repos.create({ path, name: "me/github-origin" });
+
+  expect(await svc.repos.originSync("me/github-origin")).toMatchObject({
+    has_origin: true,
+    github_url: "https://github.com/me/origin",
+  });
 });
 
 // #71: a diverged branch has no fast-forward; git's own message is what the operator sees.
@@ -487,6 +501,7 @@ test("originSync reports a detached HEAD, and pullFromOrigin refuses it (#71)", 
 
   expect(await svc.repos.originSync("me/detached")).toEqual({
     has_origin: true,
+    github_url: null,
     branch: null,
     ahead: null,
     behind: null,
@@ -527,6 +542,7 @@ test("fetchFromOrigin refreshes the behind count without moving the checkout (#7
 
   expect(await svc.repos.fetchFromOrigin("me/fetch-clone")).toEqual({
     has_origin: true,
+    github_url: null,
     branch: "main",
     ahead: 0,
     behind: 1,
@@ -559,6 +575,7 @@ test("fetchFromOrigin runs on a detached HEAD (#71)", async () => {
 
   expect(await svc.repos.fetchFromOrigin("me/fetch-detached")).toEqual({
     has_origin: true,
+    github_url: null,
     branch: null,
     ahead: null,
     behind: null,

@@ -24,6 +24,7 @@ import {
 } from "../git.ts";
 import {
   effectiveMergeMode,
+  githubRepositoryUrl,
   isGithubRemoteUrl,
   type MergeMode,
   normalizeMergeMode,
@@ -55,8 +56,16 @@ export type { Repo } from "../store.ts";
 // fetch/pull. `repos.pullFromOrigin` is what contacts origin, and it returns this same view once
 // the pull has updated `refs/remotes/origin/<branch>`.
 async function originSyncOf(r: S.Repo): Promise<RepoOriginSyncWire> {
-  if (!(await remoteUrl(r.local_path)))
-    return { has_origin: false, branch: null, ahead: null, behind: null };
+  const origin = await remoteUrl(r.local_path);
+  if (!origin) {
+    return {
+      has_origin: false,
+      github_url: null,
+      branch: null,
+      ahead: null,
+      behind: null,
+    };
+  }
   const branch = await currentBranch(r.local_path);
   const counts = branch
     ? await aheadBehind(
@@ -67,6 +76,7 @@ async function originSyncOf(r: S.Repo): Promise<RepoOriginSyncWire> {
     : null;
   return {
     has_origin: true,
+    github_url: githubRepositoryUrl(origin),
     branch,
     ahead: counts?.ahead ?? null,
     behind: counts?.behind ?? null,

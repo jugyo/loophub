@@ -1,6 +1,7 @@
 import { describe, expect, test } from "#loophub-test";
 import {
   effectiveMergeMode,
+  githubRepositoryUrl,
   isGithubRemoteUrl,
   normalizeMergeMode,
   parseGithubPullNumber,
@@ -38,6 +39,34 @@ describe("isGithubRemoteUrl", () => {
     // A host that merely contains the substring must not match.
     expect(isGithubRemoteUrl("https://notgithub.com/o/r")).toBe(false);
     expect(isGithubRemoteUrl("https://github.com.evil.com/o/r")).toBe(false);
+  });
+});
+
+describe("githubRepositoryUrl", () => {
+  test("HTTPS と SSH の remote をブラウザ向け URL に変換する", () => {
+    expect(githubRepositoryUrl("https://github.com/o/r.git")).toBe(
+      "https://github.com/o/r",
+    );
+    expect(githubRepositoryUrl("git@github.com:o/r.git")).toBe(
+      "https://github.com/o/r",
+    );
+    expect(githubRepositoryUrl("ssh://git@github.com/o/r")).toBe(
+      "https://github.com/o/r",
+    );
+    expect(githubRepositoryUrl("https://www.github.com/o/r")).toBe(
+      "https://github.com/o/r",
+    );
+  });
+
+  test("GitHub 以外、不正な形式、リポジトリではない URL を拒否する", () => {
+    expect(githubRepositoryUrl(null)).toBeNull();
+    expect(githubRepositoryUrl("https://gitlab.com/o/r.git")).toBeNull();
+    expect(
+      githubRepositoryUrl("https://github.example.com/o/r.git"),
+    ).toBeNull();
+    expect(githubRepositoryUrl("https://github.com/o/r/issues/1")).toBeNull();
+    expect(githubRepositoryUrl("https://github.com/o/r?tab=readme")).toBeNull();
+    expect(githubRepositoryUrl("not a url")).toBeNull();
   });
 });
 

@@ -114,6 +114,7 @@ export interface RepoMergeModeWire {
 // come from the remote-tracking ref as it stands locally — reading them does not contact origin.
 export interface RepoOriginSyncWire {
   has_origin: boolean;
+  github_url: string | null;
   branch: string | null;
   ahead: number | null;
   behind: number | null;

@@ -8,6 +8,7 @@ import {
   ArrowDownToLine,
   ArrowUp,
   GitBranch,
+  Github,
   Loader2,
   RefreshCw,
 } from "lucide-react";
@@ -115,6 +116,18 @@ function OriginSection({ owner, repo }: { owner: string; repo: string }) {
               <span className="shrink-0">
                 <AheadBehind ahead={sync.ahead} behind={sync.behind} />
               </span>
+            ) : null}
+            {sync.github_url ? (
+              <a
+                href={sync.github_url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                aria-label="GitHub リポジトリを開く（外部リンク）"
+                title="GitHub リポジトリを開く（外部リンク）"
+              >
+                <Github className="size-4" aria-hidden="true" />
+              </a>
             ) : null}
             <Button
               variant="ghost"

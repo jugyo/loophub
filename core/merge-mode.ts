@@ -42,6 +42,50 @@ export function isGithubRemoteUrl(url: string | null | undefined): boolean {
   return host === "github.com" || host.endsWith(".github.com");
 }
 
+// 公開 GitHub の remote URL をブラウザ向け URL に変換する。canonical なリポジトリ URL と
+// 判定できない場合は null を返す。公開 github.com リポジトリに対して Git が出力する HTTPS
+// と SSH の形式だけを受け付け、GitHub Enterprise や不正なパスを別ホストへのリンクにはしない。
+export function githubRepositoryUrl(
+  url: string | null | undefined,
+): string | null {
+  if (!url) return null;
+
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  let host: string;
+  let path: string;
+  const scp = /^[^/@]+@([^:]+):(.+)$/.exec(trimmed);
+  if (scp) {
+    host = scp[1];
+    path = `/${scp[2]}`;
+  } else {
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      return null;
+    }
+    if (!["http:", "https:", "ssh:"].includes(parsed.protocol)) return null;
+    host = parsed.hostname;
+    path = parsed.pathname;
+    if (parsed.search || parsed.hash) return null;
+  }
+
+  const normalizedHost = host.toLowerCase();
+  if (normalizedHost !== "github.com" && normalizedHost !== "www.github.com") {
+    return null;
+  }
+
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length !== 2) return null;
+  const [owner, rawRepo] = parts;
+  const repo = rawRepo.endsWith(".git") ? rawRepo.slice(0, -4) : rawRepo;
+  if (!owner || !repo) return null;
+
+  return `https://github.com/${owner}/${repo}`;
+}
+
 // Extract the PR number from a GitHub PR URL (e.g. `https://github.com/o/r/pull/42`), for callers
 // that only have the URL and want to avoid also requiring the number as a separate input (#487).
 // Returns null if the URL has no `/pull/<digits>` segment.

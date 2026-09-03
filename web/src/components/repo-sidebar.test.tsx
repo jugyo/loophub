@@ -30,6 +30,7 @@ function renderSidebar(handlers: Record<string, (params: any) => unknown>) {
 
 const synced: RepoOriginSync = {
   has_origin: true,
+  github_url: "https://github.com/me/proj",
   branch: "main",
   ahead: 2,
   behind: 1,
@@ -47,10 +48,39 @@ describe("repo sidebar origin section (#71)", () => {
     expect(screen.getByRole("button", { name: "Pull" })).toBeTruthy();
   });
 
+  it("GitHub リポジトリへのコンパクトでアクセシブルなリンクを表示する", async () => {
+    renderSidebar({ "repos/originSync": () => synced });
+
+    const link = await screen.findByRole("link", {
+      name: "GitHub リポジトリを開く（外部リンク）",
+    });
+    expect(link.getAttribute("href")).toBe("https://github.com/me/proj");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noreferrer");
+  });
+
+  it("解決可能な GitHub URL でない origin では GitHub リンクを表示しない", async () => {
+    renderSidebar({
+      "repos/originSync": () => ({
+        ...synced,
+        github_url: null,
+      }),
+    });
+
+    expect(await screen.findByText("main")).toBeTruthy();
+    expect(
+      screen.queryByRole("link", {
+        name: "GitHub リポジトリを開く（外部リンク）",
+      }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Pull" })).toBeTruthy();
+  });
+
   it("hides the sync UI when the repo has no origin remote", async () => {
     renderSidebar({
       "repos/originSync": () => ({
         has_origin: false,
+        github_url: null,
         branch: null,
         ahead: null,
         behind: null,
@@ -104,6 +134,7 @@ describe("repo sidebar origin section (#71)", () => {
     renderSidebar({
       "repos/originSync": () => ({
         has_origin: true,
+        github_url: null,
         branch: null,
         ahead: null,
         behind: null,
@@ -127,6 +158,7 @@ describe("repo sidebar origin section (#71)", () => {
     renderSidebar({
       "repos/originSync": () => ({
         has_origin: true,
+        github_url: null,
         branch: "feature/new",
         ahead: null,
         behind: null,
