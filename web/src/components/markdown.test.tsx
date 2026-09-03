@@ -7,7 +7,13 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "#loophub-test";
 import type { IssueRefKind } from "@/api/types";
@@ -187,13 +193,81 @@ describe("Markdown", () => {
     }
   });
 
-  it("keeps non-HTML attachment links as ordinary links", () => {
+  it("opens an image attachment link in the existing lightbox", () => {
+    const sha256 = "c".repeat(64);
     const { container } = renderWithClient(
-      <Markdown>{`[notes.txt](/attachments/${"c".repeat(64)})`}</Markdown>,
+      <Markdown>{`[shot.png](/attachments/${sha256})`}</Markdown>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(
+      screen.getByRole("dialog").querySelector("img")?.getAttribute("src"),
+    ).toBe(`/attachments/${sha256}`);
+    expect(
+      container.querySelector(`a[href="/attachments/${sha256}"]`),
+    ).not.toBeNull();
+  });
+
+  it("renders a Markdown attachment safely in a named dialog", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("# 調査結果\n\n<script>alert('unsafe')</script>", {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+    );
+    try {
+      renderWithClient(
+        <Markdown>{`[findings.md](/attachments/${"e".repeat(64)})`}</Markdown>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
+      const dialog = await screen.findByRole("dialog", {
+        name: "findings.md のプレビュー",
+      });
+      expect(
+        within(dialog).getByRole("heading", { name: "調査結果" }),
+      ).toBeTruthy();
+      expect(dialog.querySelector("script")).toBeNull();
+      expect(dialog.textContent).toContain("alert('unsafe')");
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `/attachments/${"e".repeat(64)}`,
+        expect.objectContaining({ credentials: "same-origin" }),
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("renders a TXT attachment as UTF-8 text in a named dialog", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("日本語のメモ\n2 行目", {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+    );
+    try {
+      renderWithClient(
+        <Markdown>{`[notes.txt](/attachments/${"f".repeat(64)})`}</Markdown>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
+      const dialog = await screen.findByRole("dialog", {
+        name: "notes.txt のプレビュー",
+      });
+      expect(dialog.querySelector("pre")?.textContent).toBe(
+        "日本語のメモ\n2 行目",
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("keeps unsupported attachment links and explains that preview is unavailable", () => {
+    const { container } = renderWithClient(
+      <Markdown>{`[archive.pdf](/attachments/${"b".repeat(64)})`}</Markdown>,
     );
     expect(container.querySelector("a")?.getAttribute("href")).toBe(
-      `/attachments/${"c".repeat(64)}`,
+      `/attachments/${"b".repeat(64)}`,
     );
+    expect(screen.getByText("（プレビュー対象外）")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "プレビュー" })).toBeNull();
   });
 
@@ -521,5 +595,21 @@ describe("Markdown image lightbox", () => {
     );
     const img = container.querySelector(".markdown-body img");
     expect(img?.getAttribute("title")).toBe("a caption");
+  });
+
+  it("shows an error and keeps the original link when an attached image fails", () => {
+    const sha256 = "a".repeat(64);
+    const { container } = renderWithClient(
+      <Markdown>{`![shot.png](/attachments/${sha256})`}</Markdown>,
+    );
+
+    fireEvent.error(container.querySelector(".markdown-body img") as Element);
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "画像添付を読み込めませんでした。",
+    );
+    expect(
+      screen.getByRole("alert").querySelector("a")?.getAttribute("href"),
+    ).toBe(`/attachments/${sha256}`);
   });
 });

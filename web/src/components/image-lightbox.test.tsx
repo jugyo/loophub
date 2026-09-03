@@ -77,6 +77,22 @@ describe("ImageLightbox", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("shows an error and keeps the original image link when loading fails", () => {
+    const src = `/attachments/${"a".repeat(64)}`;
+    render(<ImageLightbox src={src} alt="a pic" onClose={vi.fn()} />);
+
+    fireEvent.error(screen.getByRole("img"));
+
+    const dialog = screen.getByRole("dialog");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "画像プレビューを読み込めませんでした。",
+    );
+    expect(
+      screen.getByRole("link", { name: "元の画像を開く" }).getAttribute("href"),
+    ).toBe(src);
+    expect(dialog.querySelector("img")).toBeNull();
+  });
+
   it("closes via the close button", () => {
     const onClose = vi.fn();
     render(

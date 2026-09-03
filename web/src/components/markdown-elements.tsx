@@ -13,6 +13,8 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ImageLightbox } from "@/components/image-lightbox";
 
 // Matches the hrefs produced by remarkIssueRefs: /r/<owner>/<repo>/<segment>/<number>.
@@ -23,7 +25,7 @@ const REF_ROUTES = {
   pulls: "/r/$owner/$repo/pulls/$number",
 } as const;
 
-const HTML_ATTACHMENT_HREF = /^\/attachments\/([0-9a-f]{64})$/;
+const ATTACHMENT_HREF = /^\/attachments\/([0-9a-f]{64})$/;
 
 const PREVIEW_CSP = [
   "default-src 'none'",
@@ -88,15 +90,28 @@ function textContent(children: ReactNode): string {
   return "";
 }
 
-function isHtmlAttachment(
+type AttachmentKind = "image" | "html" | "markdown" | "text";
+
+function attachmentKindLabel(kind: AttachmentKind): string {
+  if (kind === "html") return "HTML";
+  if (kind === "markdown") return "Markdown";
+  if (kind === "text") return "TXT";
+  return "画像";
+}
+
+function attachmentKind(
   href: string | undefined,
-  children: ReactNode,
-): boolean {
-  return (
-    href !== undefined &&
-    HTML_ATTACHMENT_HREF.test(href) &&
-    /\.html?$/i.test(textContent(children).trim())
-  );
+  filename: string,
+): AttachmentKind | null {
+  if (href === undefined || !ATTACHMENT_HREF.test(href)) return null;
+  const extension = filename.slice(filename.lastIndexOf(".")).toLowerCase();
+  if ([".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(extension)) {
+    return "image";
+  }
+  if (extension === ".html" || extension === ".htm") return "html";
+  if (extension === ".md") return "markdown";
+  if (extension === ".txt") return "text";
+  return null;
 }
 
 // Decode the owner/repo captured from an internal ref href. A hand-authored
@@ -139,16 +154,27 @@ export function MarkdownLink({
       </Link>
     );
   }
-  if (isHtmlAttachment(href, children)) {
+  const filename = textContent(children).trim() || "添付ファイル";
+  const kind = attachmentKind(href, filename);
+  if (kind !== null) {
     return (
       <span className="inline-flex items-center gap-2">
         <a href={href} title={title}>
           {children}
         </a>
-        <HtmlAttachmentPreview
-          href={`${href}/preview`}
-          filename={textContent(children).trim()}
-        />
+        <AttachmentPreview href={href ?? ""} filename={filename} kind={kind} />
+      </span>
+    );
+  }
+  if (href !== undefined && ATTACHMENT_HREF.test(href)) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <a href={href} title={title}>
+          {children}
+        </a>
+        <span className="text-sm text-muted-foreground">
+          （プレビュー対象外）
+        </span>
       </span>
     );
   }
@@ -161,17 +187,20 @@ export function MarkdownLink({
   );
 }
 
-function HtmlAttachmentPreview({
+function AttachmentPreview({
   href,
   filename,
+  kind,
 }: {
   href: string;
   filename: string;
+  kind: AttachmentKind;
 }) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("ready");
-  const [srcDoc, setSrcDoc] = useState<string | null>(null);
+  const [content, setContent] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const openLightbox = useContext(OpenLightboxContext);
 
   const close = useCallback(() => {
     requestRef.current += 1;
@@ -191,24 +220,35 @@ function HtmlAttachmentPreview({
   }, [close, open]);
 
   async function openPreview() {
+    if (kind === "image") {
+      openLightbox?.(href, filename);
+      return;
+    }
     const request = ++requestRef.current;
     setOpen(true);
     setStatus("loading");
-    setSrcDoc(null);
+    setContent(null);
     try {
-      const response = await fetch(href, {
+      const response = await fetch(kind === "html" ? `${href}/preview` : href, {
         credentials: "same-origin",
-        headers: { accept: "text/html" },
+        headers: {
+          accept: kind === "html" ? "text/html" : "text/plain, text/markdown",
+        },
       });
+      const expectedType = kind === "html" ? "text/html" : "text/plain";
       if (
         !response.ok ||
-        !response.headers.get("content-type")?.startsWith("text/html")
+        !response.headers.get("content-type")?.startsWith(expectedType)
       ) {
         throw new Error("Preview unavailable");
       }
-      const html = await response.text();
+      const responseContent = await response.text();
       if (request === requestRef.current) {
-        setSrcDoc(sanitizePreviewHtml(html));
+        setContent(
+          kind === "html"
+            ? sanitizePreviewHtml(responseContent)
+            : responseContent,
+        );
         setStatus("ready");
       }
     } catch {
@@ -256,26 +296,61 @@ function HtmlAttachmentPreview({
               )}
               {status === "error" && (
                 <p className="p-6 text-sm text-destructive" role="alert">
-                  {
-                    "HTML プレビューを読み込めませんでした。添付ファイルをダウンロードして確認してください。"
-                  }
+                  {`${attachmentKindLabel(kind)} プレビューを読み込めませんでした。添付ファイルをダウンロードして確認してください。`}
                 </p>
               )}
-              {status === "ready" && srcDoc !== null && (
+              {status === "ready" && content !== null && kind === "html" && (
                 <iframe
                   className="min-h-0 flex-1 bg-white"
-                  srcDoc={srcDoc}
+                  srcDoc={content}
                   title={`${filename} のプレビュー内容`}
                   sandbox=""
                   referrerPolicy="no-referrer"
                   onError={() => setStatus("error")}
                 />
               )}
+              {status === "ready" &&
+                content !== null &&
+                kind === "markdown" && (
+                  <MarkdownAttachmentContent content={content} />
+                )}
+              {status === "ready" && content !== null && kind === "text" && (
+                <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-6 font-mono text-sm">
+                  {content}
+                </pre>
+              )}
             </div>
           </div>,
           document.body,
         )}
     </>
+  );
+}
+
+const ATTACHMENT_MARKDOWN_COMPONENTS: Components = {
+  a({ href, title, children }) {
+    return <MarkdownLink href={href} title={title} children={children} />;
+  },
+  img({ src, alt, title }) {
+    if (!src) return null;
+    return <MarkdownImage src={src} alt={alt} title={title} />;
+  },
+};
+
+function MarkdownAttachmentContent({ content }: { content: string }) {
+  return (
+    <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="markdown-body markdown-preview">
+        <MarkdownLightboxProvider>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={ATTACHMENT_MARKDOWN_COMPONENTS}
+          >
+            {content}
+          </ReactMarkdown>
+        </MarkdownLightboxProvider>
+      </div>
+    </div>
   );
 }
 
@@ -325,21 +400,34 @@ export function MarkdownImage({
   title?: string;
 }) {
   const openLightbox = useContext(OpenLightboxContext);
+  const [loadError, setLoadError] = useState(false);
   const open = () => openLightbox?.(src, alt ?? "");
   return (
-    <img
-      src={src}
-      alt={alt ?? ""}
-      title={title}
-      role="button"
-      tabIndex={0}
-      onClick={open}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          open();
-        }
-      }}
-    />
+    <>
+      <img
+        src={src}
+        alt={alt ?? ""}
+        title={title}
+        role="button"
+        tabIndex={0}
+        onError={() => setLoadError(true)}
+        onLoad={() => setLoadError(false)}
+        onClick={open}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            open();
+          }
+        }}
+      />
+      {loadError && ATTACHMENT_HREF.test(src) && (
+        <span role="alert" className="text-sm text-destructive">
+          画像添付を読み込めませんでした。{" "}
+          <a href={src} className="text-link hover:underline">
+            元の添付ファイルを開く
+          </a>
+        </span>
+      )}
+    </>
   );
 }
