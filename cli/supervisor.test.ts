@@ -116,37 +116,34 @@ test.each([
   ["codex", "codex"],
   ["grok", "grok"],
   ["opencode", "opencode"],
-])(
-  "starts %s in the registered repository without LoopHub state",
-  (runtime, bin) => {
-    const prompt = `${runtime} supervision prompt`;
-    const before = stateCounts();
-    const result = run([
-      "supervisor",
-      "start",
-      "--runtime",
-      runtime,
-      "--prompt",
-      prompt,
-      "--repo",
-      REPO,
-    ]);
+])("starts %s in the registered repository without LoopHub state", (runtime, bin) => {
+  const prompt = `${runtime} supervision prompt`;
+  const before = stateCounts();
+  const result = run([
+    "supervisor",
+    "start",
+    "--runtime",
+    runtime,
+    "--prompt",
+    prompt,
+    "--repo",
+    REPO,
+  ]);
 
-    expect(result.exitCode, result.stderr).toBe(0);
-    const log = readFileSync(runtimeLog, "utf8");
-    expect(log).toContain(`bin=${bin}`);
-    expect(log).toContain(`cwd=${repoPath}`);
-    expect(log).toContain(prompt);
-    if (runtime === "claude-code") {
-      expect(readFileSync(`${runtimeLog}.contract`, "utf8")).toContain(
-        "# Supervisor workflow contract",
-      );
-    } else {
-      expect(log).toContain("# Supervisor workflow contract");
-    }
-    expect(stateCounts()).toEqual(before);
-  },
-);
+  expect(result.exitCode, result.stderr).toBe(0);
+  const log = readFileSync(runtimeLog, "utf8");
+  expect(log).toContain(`bin=${bin}`);
+  expect(log).toContain(`cwd=${repoPath}`);
+  expect(log).toContain(prompt);
+  if (runtime === "claude-code") {
+    expect(readFileSync(`${runtimeLog}.contract`, "utf8")).toContain(
+      "# Supervisor workflow contract",
+    );
+  } else {
+    expect(log).toContain("# Supervisor workflow contract");
+  }
+  expect(stateCounts()).toEqual(before);
+});
 
 test("reads a Supervisor prompt from @path and stdin", () => {
   const path = join(home, "prompt.md");
