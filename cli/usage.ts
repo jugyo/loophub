@@ -16,7 +16,7 @@ export function usage(): void {
   lh session usage sync [--session <id>] [--full] [--json]
   lh session usage recalculate [--session <id>] [--json]
   lh supervisor start --runtime <runtime> --prompt <text|@file|-> [--repo owner/name] [--herdr]   # start a Supervisor without LoopHub state tracking
-  lh issue search|list|view|create|import|update|comment|close|label|sub  [--repo owner/repo]
+  lh issue search|list|view|create|import|update|comment|close|label|sub|ac  [--repo owner/repo]
   lh issue sub list|add|remove|reorder ... [--repo owner/repo]
   lh issue new [--repo owner/name] [--claude-code | --codex | --grok | --opencode] [--model <name>] [--effort <level>] [--target-branch <branch>] [--prompt <text>]
   lh issue list [--state open|closed|all] [--page <n>] [--limit <n>] [--repo owner/name] [--json]   # issues only; prints "showing X of N" on stderr when a page hides rows

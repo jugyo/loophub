@@ -38,6 +38,45 @@ Example:
 Preserve input order."
     --ac "Exports retain input order" --ac "Repeated exports are byte-identical"`;
 
+const ISSUE_DETAILS = `
+
+Commands:
+  search|list|view|create|import|update|comment|close|label|sub|ac
+  ac                  Manage acceptance criteria.`;
+
+const ISSUE_AC_DETAILS = `
+
+Usage:
+  lh issue ac list <issue> [options]
+  lh issue ac add <issue> --text <text> [options]
+  lh issue ac enable <issue-ac> [options]
+  lh issue ac disable <issue-ac> [options]
+  lh issue ac enable|disable <issue> ac-<number> [options]
+  lh issue ac reorder <issue> --order <issue-ac|ac-number,...> [options]
+
+Commands:
+  list <issue>                         List acceptance criteria, including enabled and disabled ones.
+  add <issue> --text <text>            Add an acceptance criterion.
+  enable <issue-ac>                    Re-enable a disabled acceptance criterion.
+  disable <issue-ac>                   Remove an acceptance criterion from the enabled rubric.
+  reorder <issue> --order <refs,...>   Set the acceptance-criterion display order.
+
+References:
+  <issue>                              Issue number (for example, 123).
+  <issue-ac>                           <issue-number>-<ac-number> (for example, 123-2).
+  ac-<number>                          Shorthand when the Issue is a separate argument (for example, ac-2).
+  The reorder --order value must list every criterion for this Issue exactly once.
+
+Disable:
+  disable removes an acceptance criterion from the enabled rubric without deleting it.
+  If it is needed later, enable restores the same criterion to the rubric.
+
+Example:
+  lh issue ac list 123
+  lh issue ac disable 123-2
+  lh issue ac enable 123-2
+  lh issue ac disable 123 ac-2`;
+
 const ISSUE_NEW_DETAILS = `
 
 Usage:
@@ -314,7 +353,11 @@ export const commandHelp: readonly CommandHelp[] = [
     path: ["repo", "merge-mode"],
     description: "Set a repository's pull request merge mode.",
   },
-  { path: ["issue"], description: "Manage issues." },
+  {
+    path: ["issue"],
+    description: "Manage issues.",
+    details: ISSUE_DETAILS,
+  },
   {
     path: ["issue", "search"],
     description: "Search issues and pull requests in a repository.",
@@ -344,6 +387,11 @@ export const commandHelp: readonly CommandHelp[] = [
   },
   { path: ["issue", "close"], description: "Close an issue." },
   { path: ["issue", "label"], description: "Add a label to an issue." },
+  {
+    path: ["issue", "ac"],
+    description: "Manage acceptance criteria.",
+    details: ISSUE_AC_DETAILS,
+  },
   {
     path: ["issue", "sub"],
     description: "Manage issue hierarchy.",

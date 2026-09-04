@@ -88,6 +88,50 @@ describe("--help", () => {
     expect(existsSync(join(home, "loophub.db"))).toBe(false);
   });
 
+  test("documents acceptance criteria management and disable recovery without touching the DB", () => {
+    const issueHelp = lh(["issue", "--help"]);
+
+    expect(issueHelp.exitCode, issueHelp.stderr).toBe(0);
+    expect(issueHelp.stdout).toContain(
+      "search|list|view|create|import|update|comment|close|label|sub|ac",
+    );
+    expect(issueHelp.stdout).toContain(
+      "ac                  Manage acceptance criteria.",
+    );
+    expect(existsSync(join(home, "loophub.db"))).toBe(false);
+
+    const acHelp = lh(["issue", "ac", "--help"]);
+
+    expect(acHelp.exitCode, acHelp.stderr).toBe(0);
+    expect(acHelp.stdout).toContain(
+      "lh issue ac — Manage acceptance criteria.",
+    );
+    expect(acHelp.stdout).toContain("lh issue ac list <issue> [options]");
+    expect(acHelp.stdout).toContain(
+      "lh issue ac add <issue> --text <text> [options]",
+    );
+    expect(acHelp.stdout).toContain("lh issue ac enable <issue-ac> [options]");
+    expect(acHelp.stdout).toContain("lh issue ac disable <issue-ac> [options]");
+    expect(acHelp.stdout).toContain(
+      "lh issue ac enable|disable <issue> ac-<number> [options]",
+    );
+    expect(acHelp.stdout).toContain(
+      "lh issue ac reorder <issue> --order <issue-ac|ac-number,...> [options]",
+    );
+    expect(acHelp.stdout).toContain("<issue-number>-<ac-number>");
+    expect(acHelp.stdout).toContain("ac-<number>");
+    expect(acHelp.stdout).toContain(
+      "Remove an acceptance criterion from the enabled rubric.",
+    );
+    expect(acHelp.stdout).toContain(
+      "enable restores the same criterion to the rubric",
+    );
+    expect(acHelp.stdout).toContain("lh issue ac disable 123-2");
+    expect(acHelp.stdout).toContain("lh issue ac enable 123-2");
+    expect(acHelp.stdout).toContain("lh issue ac disable 123 ac-2");
+    expect(existsSync(join(home, "loophub.db"))).toBe(false);
+  });
+
   test("documents every supported session runtime without touching the DB", () => {
     const result = lh(["session", "register", "--help"]);
 
