@@ -405,6 +405,27 @@ tr.markdown-diff-block-removed > :first-child::before {
   opacity: 1;
 }
 
+/* rendered diff の会話を本文と同じ読み幅に収める。長いコメントや返信によって読み幅が広がり、
+   文書全体の横スクロールが生じることを防ぐため、すべてのカードを縮小可能にする。 */
+.markdown-diff-thread,
+.markdown-diff-comment-composer {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.markdown-diff-thread .markdown-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.markdown-diff-table-block {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* Rendered Markdown (issue / PR / comment bodies). Tailwind's preflight strips
    default element styles, so GFM output needs explicit rules. Scoped to
    .markdown-body so it never leaks into the rest of the UI. */

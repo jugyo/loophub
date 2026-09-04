@@ -1927,7 +1927,7 @@ function DiffCommentComposer({
   const textareaRef = useAutosizeTextarea(body);
 
   return (
-    <div className="m-2 rounded-md border bg-background p-3 font-sans">
+    <div className="markdown-diff-comment-composer m-2 rounded-md border bg-background p-3 font-sans">
       <div className="mb-2 text-xs font-medium">
         {selection.side} {selection.startLine}
         {selection.endLine === selection.startLine
@@ -2436,7 +2436,7 @@ function ThreadCard({
               id={message.id}
               className="mb-1"
             />
-            <Markdown owner={owner} repo={repo}>
+            <Markdown owner={owner} repo={repo} className="min-w-0">
               {message.body}
             </Markdown>
             <div className="mt-2 flex items-center gap-1">
@@ -2523,7 +2523,7 @@ function ThreadCard({
     <article
       data-diff-thread-id={thread.id}
       className={cn(
-        "m-2 rounded-md border bg-background font-sans text-sm",
+        "markdown-diff-thread m-2 rounded-md border bg-background font-sans text-sm",
         archived ? "border-dashed px-3 py-2" : "p-3",
       )}
       aria-label={`Diff thread ${thread.id}`}
@@ -3149,7 +3149,7 @@ function RenderedDiffPane({
             Unified
           </div>
           {/* pl-20 leaves room for the per-block comment gutter, which hangs into this padding. */}
-          <div className="markdown-diff-preview flex min-h-full flex-col overflow-y-auto py-8 pl-20 pr-3">
+          <div className="markdown-diff-preview flex min-h-full flex-col overflow-x-clip overflow-y-auto py-8 pl-20 pr-3">
             {renderedSides}
           </div>
         </section>
@@ -3409,7 +3409,7 @@ function RenderedDiffSide({
         className={cn(
           unified
             ? "contents"
-            : "markdown-diff-preview min-h-full overflow-y-auto py-8 pl-20 pr-3",
+            : "markdown-diff-preview min-h-full overflow-x-clip overflow-y-auto py-8 pl-20 pr-3",
         )}
       >
         {file.isLoading ? (

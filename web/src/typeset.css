@@ -239,14 +239,19 @@
   --typeset-table-heading: var(--markdown-diff-table-heading);
 
   width: 100%;
+  min-width: 0;
 }
 
 .typeset-diff-preview > :where(:not(table, :has(table))) {
+  box-sizing: border-box;
+  min-width: 0;
   margin-inline: auto;
   max-width: 46rem;
 }
 
 .typeset-diff-preview > :where(table, :has(table)) {
+  box-sizing: border-box;
+  min-width: 0;
   margin-inline: auto;
   max-width: 100%;
 }
@@ -260,8 +265,15 @@
     .markdown-diff-unified-thread-group
   ) {
   box-sizing: border-box;
+  min-width: 0;
   margin-block-start: 0.75rem;
   width: min(100%, 46rem);
+}
+
+.typeset-diff-preview.markdown-diff-unified-document
+  > :where(table, :has(table)) {
+  max-width: 100%;
+  width: 100%;
 }
 
 /* Split diff keeps each pane independent, but every top-level block still
@@ -270,7 +282,13 @@
 .typeset-diff-preview.markdown-diff-split-document > :where(*) {
   box-sizing: border-box;
   max-width: none;
+  min-width: 0;
   width: min(100%, 46rem);
+}
+
+.typeset-diff-preview.markdown-diff-split-document
+  > :where(table, :has(table)) {
+  width: 100%;
 }
 
 /* A composite block expands so its nested table can use the wide track, but

@@ -28,6 +28,7 @@ vi.mock("@/components/toast", () => ({
 }));
 
 const typesetCss = readFileSync(resolve("src/typeset.css"), "utf8");
+const indexCss = readFileSync(resolve("src/index.css"), "utf8");
 
 afterEach(() => {
   cleanup();
@@ -3371,6 +3372,15 @@ describe("DiffFileDialog", () => {
     expect(unifiedTrackRule?.toString()).toContain(
       "margin-block-start: 0.75rem",
     );
+    const unifiedTableRule = postcss
+      .parse(typesetCss)
+      .nodes.find(
+        (node) =>
+          node.type === "rule" &&
+          node.selector.includes("markdown-diff-unified-document") &&
+          node.selector.includes(":has(table)"),
+      );
+    expect(unifiedTableRule?.toString()).toContain("width: 100%");
 
     fireEvent.click(screen.getByRole("button", { name: "Split" }));
     expect(renderedPane?.getAttribute("data-view-mode")).toBe("split");
@@ -3394,6 +3404,15 @@ describe("DiffFileDialog", () => {
       );
     expect(splitTrackRule?.toString()).toContain("width: min(100%, 46rem)");
     expect(splitTrackRule?.toString()).toContain("max-width: none");
+    const splitTableRule = postcss
+      .parse(typesetCss)
+      .nodes.find(
+        (node) =>
+          node.type === "rule" &&
+          node.selector.includes("markdown-diff-split-document") &&
+          node.selector.includes(":has(table)"),
+      );
+    expect(splitTableRule?.toString()).toContain("width: 100%");
   });
 
   it("interleaves rendered blocks from multiple hunks in source diff order", async () => {
@@ -3888,6 +3907,7 @@ describe("DiffFileDialog", () => {
     fireEvent.click(button);
     const block = screen.getByText("New paragraph");
     const composer = screen.getByLabelText("Comment");
+    expect(composer.closest(".markdown-diff-comment-composer")).not.toBeNull();
     const group = composer.closest(".markdown-diff-unified-thread-group");
     expect(group).not.toBeNull();
     expect(block.nextElementSibling).toBe(group);
@@ -3928,6 +3948,14 @@ describe("DiffFileDialog", () => {
       '[data-debug-component="RenderedDiffPane"]',
     );
     expect(pane?.children).toHaveLength(3);
+    expect(pane?.querySelector(".markdown-diff-preview")?.classList).toContain(
+      "overflow-x-clip",
+    );
+    expect(
+      [...(pane?.querySelectorAll(".markdown-diff-preview") ?? [])].every(
+        (preview) => preview.classList.contains("overflow-x-clip"),
+      ),
+    ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Comment")).toBeNull();
     expect(pane?.children).toHaveLength(2);
@@ -4212,6 +4240,10 @@ describe("DiffFileDialog", () => {
           "markdown-diff-unified-thread-group",
         ),
       ).toBe(unified);
+      expect(tableCard.classList).toContain("markdown-diff-thread");
+      expect(tableCard.querySelector(".markdown-body")?.classList).toContain(
+        "min-w-0",
+      );
       expect(screen.queryByLabelText("Previous diff threads")).toBeNull();
     };
 
@@ -4841,6 +4873,33 @@ ${Array.from({ length: 120 }, (_, index) => `Long paragraph ${index + 1}.`).join
     expect(mixedContentRule?.selector).toContain(
       ":where(p, h1, h2, h3, h4, h5, h6)",
     );
+    const widthRules: { selector: string; declarations: string }[] = [];
+    postcss.parse(indexCss).walkRules((rule) => {
+      if (
+        rule.selector.includes(".markdown-diff-thread") ||
+        rule.selector.includes(".markdown-diff-table-block")
+      ) {
+        widthRules.push({
+          selector: rule.selector,
+          declarations: rule.toString(),
+        });
+      }
+    });
+    expect(
+      widthRules.some(
+        (rule) =>
+          rule.selector.includes(".markdown-diff-thread") &&
+          rule.declarations.includes("max-width: 100%") &&
+          rule.declarations.includes("overflow-wrap: anywhere"),
+      ),
+    ).toBe(true);
+    expect(
+      widthRules.some(
+        (rule) =>
+          rule.selector.includes(".markdown-diff-table-block") &&
+          rule.declarations.includes("max-width: 100%"),
+      ),
+    ).toBe(true);
   });
 
   it("restores the Markdown mode after visiting a non-Markdown file", () => {
