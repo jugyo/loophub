@@ -2012,6 +2012,18 @@ describe("PullDetail", () => {
     );
   });
 
+  it("Archive 済み PR comment を Comments 見出しの件数から除外する", async () => {
+    const archived = { ...comments[1], archived_at: "2026-06-18T12:00:00Z" };
+    renderDetail({ "comments/list": () => [comments[0], archived] });
+
+    expect(
+      await screen.findByRole("heading", { name: "Comments (1)" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Archived PR comment 11" }),
+    ).toBeTruthy();
+  });
+
   it("names the major PR regions for component debugging", async () => {
     const { container } = renderDetail();
 

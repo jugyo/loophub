@@ -403,6 +403,7 @@ test("archives and unarchives an issue comment, and filters it out of the issue'
   expect(archived.archived_at).not.toBeNull();
 
   const listed = await svc.issues.get(repoName, issueNumber);
+  expect(listed.comments).toBe(1);
   expect(listed.comment_list?.map((c) => c.id)).toEqual([kept.id]);
 
   const withArchived = await svc.issues.get(repoName, issueNumber, {
@@ -427,10 +428,35 @@ test("archives and unarchives an issue comment, and filters it out of the issue'
       .archived_at,
   ).toBeNull();
   const relisted = await svc.issues.get(repoName, issueNumber);
+  expect(relisted.comments).toBe(2);
   expect(relisted.comment_list?.map((c) => c.id)).toEqual([
     kept.id,
     settled.id,
   ]);
+});
+
+test("archive 済み PR comment を件数から除外し、unarchive 後に戻す", async () => {
+  const before = (await svc.pulls.get(repoName, prNumber)).comments;
+  const kept = svc.comments.createHumanForPull(
+    repoName,
+    prNumber,
+    "件数に残す PR comment。",
+  );
+  const settled = svc.comments.createHumanForPull(
+    repoName,
+    prNumber,
+    "件数から除外する PR comment。",
+  );
+
+  expect((await svc.pulls.get(repoName, prNumber)).comments).toBe(before + 2);
+  svc.comments.setArchivedForPull(repoName, prNumber, settled.id, true);
+  expect((await svc.pulls.get(repoName, prNumber)).comments).toBe(before + 1);
+  expect(svc.comments.list(repoName, prNumber).map((c) => c.id)).toEqual(
+    expect.arrayContaining([kept.id, settled.id]),
+  );
+
+  svc.comments.setArchivedForPull(repoName, prNumber, settled.id, false);
+  expect((await svc.pulls.get(repoName, prNumber)).comments).toBe(before + 2);
 });
 
 test("rejects archiving a comment that belongs to another issue or to a PR", async () => {

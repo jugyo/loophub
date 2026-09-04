@@ -206,7 +206,7 @@ export function countDiffFeedbackMessages(issueId: number): number {
       .query(
         `SELECT COUNT(*) AS c FROM diff_feedback_messages m
          JOIN diff_feedback_threads t ON t.id = m.thread_id
-         WHERE t.issue_id = ?`,
+         WHERE t.issue_id = ? AND t.archived_at IS NULL`,
       )
       .get(issueId) as { c: number }
   ).c;

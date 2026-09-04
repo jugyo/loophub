@@ -70,7 +70,11 @@ export function setCommentArchived(id: number, archived: boolean): CommentRow {
 export function countComments(issueId: number): number {
   return (
     db
-      .query(`SELECT COUNT(*) AS c FROM comments WHERE issue_id = ?`)
+      .query(
+        `SELECT COUNT(*) AS c
+         FROM comments
+         WHERE issue_id = ? AND archived_at IS NULL`,
+      )
       .get(issueId) as { c: number }
   ).c;
 }
@@ -82,7 +86,7 @@ export function commentCountsByIssue(issueIds: number[]): Map<number, number> {
     .query(
       `SELECT issue_id, COUNT(*) AS count
        FROM comments
-       WHERE issue_id IN (${placeholders})
+       WHERE issue_id IN (${placeholders}) AND archived_at IS NULL
        GROUP BY issue_id`,
     )
     .all(...issueIds) as { issue_id: number; count: number }[];

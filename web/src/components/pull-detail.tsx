@@ -1278,6 +1278,8 @@ function CommentList({
   const [postFailed, setPostFailed] = useState(false);
   const textareaRef = useAutosizeTextarea(body);
   const sectionRef = useRef<HTMLElement>(null);
+  const commentCount =
+    comments?.filter((comment) => comment.archived_at == null).length ?? 0;
   // #2394: a row's comment count links here with the `#comments` hash, but this section only exists
   // once the page's data has loaded — by then the router has already looked for the anchor and found
   // nothing. Scroll to it when it first exists. The in-page "Comments (n)" link needs no help: it is
@@ -1286,9 +1288,7 @@ function CommentList({
   useEffect(() => {
     if (hash === "comments") sectionRef.current?.scrollIntoView();
   }, [hash]);
-  const { formRef, scrollAfterPost } = useScrollToCommentForm(
-    comments?.length ?? 0,
-  );
+  const { formRef, scrollAfterPost } = useScrollToCommentForm(commentCount);
   const reaction = useReactToPullComment(owner, repo, number);
   const archive = useSetPullCommentArchived(owner, repo, number);
   const { showError } = useToast();
@@ -1380,9 +1380,7 @@ function CommentList({
       data-debug-component="PullCommentList"
       className="flex scroll-mt-11 flex-col gap-3 pb-6"
     >
-      <h2 className="text-lg font-semibold">
-        Comments ({comments?.length ?? 0})
-      </h2>
+      <h2 className="text-lg font-semibold">Comments ({commentCount})</h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading comments…

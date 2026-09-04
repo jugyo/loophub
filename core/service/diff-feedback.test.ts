@@ -584,6 +584,9 @@ test("an outdated conversation remains replyable, reactable, and archivable", as
 
   await svc.diffFeedback.precompute(REPO, prNumber);
   const thread = (await svc.diffFeedback.list(REPO, prNumber)).threads[0];
+  const issueId = S.getIssue(repoId, prNumber)!.id;
+  const beforeArchive = S.countDiffFeedbackMessages(issueId);
+  const archivedMessageCount = thread.messages.length;
   expect(thread).toMatchObject({
     freshness: "outdated",
     outdated_reason: "deleted",
@@ -606,12 +609,18 @@ test("an outdated conversation remains replyable, reactable, and archivable", as
   );
   expect(archived).toMatchObject({ freshness: "outdated" });
   expect(archived.archived_at).not.toBeNull();
+  expect(S.countDiffFeedbackMessages(issueId)).toBe(
+    beforeArchive - archivedMessageCount,
+  );
   await svc.diffFeedback.reply(
     REPO,
     prNumber,
     thread.id,
     "Archived after removal.",
     HUMAN_SESSION,
+  );
+  expect(S.countDiffFeedbackMessages(issueId)).toBe(
+    beforeArchive - archivedMessageCount,
   );
   await svc.diffFeedback.react(
     REPO,
@@ -636,6 +645,7 @@ test("an outdated conversation remains replyable, reactable, and archivable", as
     freshness: "outdated",
     archived_at: null,
   });
+  expect(S.countDiffFeedbackMessages(issueId)).toBe(beforeArchive + 1);
   expect(
     (await svc.diffFeedback.pending(REPO, prNumber, runId)).threads.map(
       ({ id }) => id,

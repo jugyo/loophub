@@ -155,10 +155,28 @@ describe("countDiffFeedbackMessagesByFile", () => {
         reactions: [],
       },
     ];
+    const archivedThread = thread(4, "new.ts");
+    archivedThread.archived_at = "2026-07-28T00:02:00Z";
+    archivedThread.messages = [
+      {
+        id: 4,
+        thread_id: 4,
+        author: "reviewer",
+        author_type: "agent",
+        body: "Archive 済みコメント",
+        created_at: "2026-07-28T00:02:00Z",
+        reactions: [],
+      },
+    ];
 
     expect(
       countDiffFeedbackMessagesByFile(
-        [oldPathThread, originalPathThread, thread(3, "other.ts")],
+        [
+          oldPathThread,
+          originalPathThread,
+          archivedThread,
+          thread(3, "other.ts"),
+        ],
         [renamed, { filename: "untouched.ts" }],
       ),
     ).toEqual({

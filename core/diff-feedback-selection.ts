@@ -77,7 +77,9 @@ export function countDiffFeedbackMessagesByFile(
       file.filename,
       selectDiffFeedbackThreads(threads, files, {
         path: file.filename,
-      }).reduce((sum, thread) => sum + thread.messages.length, 0),
+      })
+        .filter((thread) => thread.archived_at == null)
+        .reduce((sum, thread) => sum + thread.messages.length, 0),
     ]),
   );
 }
