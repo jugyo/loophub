@@ -1021,7 +1021,9 @@ describe("PullDetail", () => {
     const { container } = renderDetail();
 
     expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
-    expect(document.title).toBe("PR #30 · ui2: PR detail · me/proj · LoopHub");
+    expect(document.title).toBe(
+      "passed · mergeable · PR #30 · ui2: PR detail · me/proj · LoopHub",
+    );
     // Branch names are scoped to the sidebar's PR details section, the one place they appear (#59).
     const details = container.querySelector<HTMLElement>(
       '[data-debug-component="PullInfoSection"]',
@@ -1084,6 +1086,82 @@ describe("PullDetail", () => {
     // Bidirectional link back to the issue this PR closes.
     const linked = within(details).getByText("#153").closest("a");
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
+  });
+
+  it.each([
+    [
+      "open fallback",
+      { review_state: null, mergeable_state: "unknown" },
+      "open",
+    ],
+    ["merged", { merged: true }, "merged"],
+    ["closed", { state: "closed" }, "closed"],
+    [
+      "changes requested",
+      { review_state: "CHANGES_REQUESTED", mergeable_state: "unknown" },
+      "changes",
+    ],
+    [
+      "re-review",
+      { review_state: "STALE", mergeable_state: "unknown" },
+      "re-review",
+    ],
+    [
+      "commented",
+      { review_state: "COMMENTED", mergeable_state: "unknown" },
+      "commented",
+    ],
+    [
+      "conflict",
+      { review_state: null, mergeable_state: "conflict" },
+      "conflict",
+    ],
+    [
+      "over budget",
+      { cost_stopped: true, review_state: null, mergeable_state: "unknown" },
+      "over budget",
+    ],
+  ] as const)("puts the canonical %s status at the start of the page title", async (_case, override, status) => {
+    renderDetailWithPull(override);
+
+    await screen.findByText("ui2: PR detail");
+    expect(document.title).toBe(
+      `${status} · PR #30 · ui2: PR detail · me/proj · LoopHub`,
+    );
+  });
+
+  it("keeps multiple status labels in the canonical badge order", async () => {
+    renderDetailWithPull({
+      review_state: "CHANGES_REQUESTED",
+      mergeable_state: "conflict",
+    });
+
+    await screen.findByText("ui2: PR detail");
+    expect(document.title).toBe(
+      "changes · conflict · PR #30 · ui2: PR detail · me/proj · LoopHub",
+    );
+  });
+
+  it("updates the page title after the PR is refetched", async () => {
+    let override: Partial<PullRequest> = {};
+    const { queryClient } = renderDetailWithPull(() => override);
+
+    await screen.findByText("ui2: PR detail");
+    expect(document.title).toContain("passed · mergeable");
+
+    override = {
+      review_state: "CHANGES_REQUESTED",
+      mergeable_state: "conflict",
+    };
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+
+    await waitFor(() => {
+      expect(document.title).toBe(
+        "changes · conflict · PR #30 · ui2: PR detail · me/proj · LoopHub",
+      );
+    });
   });
 
   // #59: the header's own "Comments (n)" link is gone — the Comments tab is the same in-page
