@@ -65,7 +65,9 @@ import {
 } from "@/lib/diff";
 import {
   type DiffSelection,
+  type DiffThreadPlacement,
   dragSelection,
+  historicalDiffFeedbackPlacement,
   type SelectableDiffLine,
   type SelectableLines,
   selectableAt,
@@ -1460,6 +1462,7 @@ function FileDiffContentBody({
         selection={selection}
         selectionContent={commentComposer}
         threads={inlineThreads}
+        historicalThreads={historicalThreads}
         onSelect={setSelection}
         threadContent={(thread) => (
           <ThreadCard
@@ -1502,51 +1505,6 @@ function FileDiffContentBody({
           />
         )}
       />
-      {historicalThreads.length > 0 ? (
-        <PreviousDiffThreadsSection className="m-2 space-y-2" heading="h4">
-          {historicalThreads.map((thread) => (
-            <ThreadCard
-              key={thread.id}
-              owner={owner}
-              repo={repo}
-              thread={thread}
-              busy={reply.isPending}
-              reactionBusy={reaction.isPending}
-              archiveBusy={archive.isPending}
-              onReact={(messageId, emoji) =>
-                reaction.mutate(
-                  { messageId, emoji },
-                  {
-                    onError: (error) =>
-                      showError(errorMessage(error, "Reaction failed")),
-                  },
-                )
-              }
-              onReply={(replyBody) =>
-                reply.mutate(
-                  {
-                    threadId: thread.id,
-                    body: replyBody,
-                  },
-                  {
-                    onError: (error) =>
-                      showError(errorMessage(error, "Reply failed")),
-                  },
-                )
-              }
-              onArchived={(archived) =>
-                archive.mutate(
-                  { threadId: thread.id, archived },
-                  {
-                    onError: (error) =>
-                      showError(errorMessage(error, "Update failed")),
-                  },
-                )
-              }
-            />
-          ))}
-        </PreviousDiffThreadsSection>
-      ) : null}
     </div>
   );
 }
@@ -1559,6 +1517,7 @@ function DialogDiff({
   selection,
   selectionContent,
   threads,
+  historicalThreads,
   onSelect,
   threadContent,
 }: {
@@ -1569,17 +1528,56 @@ function DialogDiff({
   selection: DiffSelection | null;
   selectionContent: ReactNode;
   threads: DiffFeedbackThread[];
+  historicalThreads: DiffFeedbackThread[];
   onSelect: (selection: DiffSelection) => void;
   threadContent: (thread: DiffFeedbackThread) => ReactNode;
 }) {
   const { dragging, lineSelection } = useLineSelectionDrag(onSelect);
   const lines = parsePositionedPatch(patch, stableLines);
   const selectable = selectableLines(stableLines ?? []);
+  const inlinePlacements: DiffThreadPlacement[] = threads.map((thread) => {
+    const anchor = thread.resolved_anchor ?? thread.anchor;
+    return {
+      thread,
+      anchor: {
+        side: anchor.side,
+        startLine: anchor.start_line,
+        endLine: anchor.end_line,
+      },
+    };
+  });
+  const historicalPlacements = historicalThreads.flatMap((thread) => {
+    const placement = historicalDiffFeedbackPlacement(lines, thread);
+    return placement ? [placement] : [];
+  });
+  const placedHistoricalIds = new Set(
+    historicalPlacements.map(({ thread }) => thread.id),
+  );
+  const fallbackHistoricalThreads = historicalThreads.filter(
+    (thread) => !placedHistoricalIds.has(thread.id),
+  );
+  const fallback =
+    fallbackHistoricalThreads.length > 0 ? (
+      <PreviousDiffThreadsSection className="m-2 space-y-2" heading="h4">
+        {fallbackHistoricalThreads.map((thread) => (
+          <Fragment key={thread.id}>{threadContent(thread)}</Fragment>
+        ))}
+      </PreviousDiffThreadsSection>
+    ) : null;
+  const displayedThreadContent = (thread: DiffFeedbackThread) =>
+    placedHistoricalIds.has(thread.id) ? (
+      <HistoricalDiffThread thread={thread} content={threadContent(thread)} />
+    ) : (
+      threadContent(thread)
+    );
   if (lines.length === 0) {
     return (
-      <p className="px-3 py-2 text-xs text-muted-foreground">
-        No textual diff.
-      </p>
+      <>
+        <p className="px-3 py-2 text-xs text-muted-foreground">
+          No textual diff.
+        </p>
+        {fallback}
+      </>
     );
   }
   // The composer stays hidden until the drag ends: inserting its row mid-drag would move the
@@ -1590,14 +1588,19 @@ function DialogDiff({
     selectable,
     selection,
     selectionContent: dragging ? null : selectionContent,
-    threads,
+    threads: [...inlinePlacements, ...historicalPlacements],
     lineSelection,
-    threadContent,
+    threadContent: displayedThreadContent,
   };
-  return viewMode === "unified" ? (
-    <UnifiedDiff {...props} />
-  ) : (
-    <SplitDiff {...props} />
+  return (
+    <>
+      {viewMode === "unified" ? (
+        <UnifiedDiff {...props} />
+      ) : (
+        <SplitDiff {...props} />
+      )}
+      {fallback}
+    </>
   );
 }
 
@@ -1643,35 +1646,34 @@ type DiffRenderProps = {
   selectable: SelectableLines;
   selection: DiffSelection | null;
   selectionContent: ReactNode;
-  threads: DiffFeedbackThread[];
+  threads: DiffThreadPlacement[];
   lineSelection: LineSelectionHandlers;
   threadContent: (thread: DiffFeedbackThread) => ReactNode;
 };
 
 function threadsEndingAt(
-  threads: DiffFeedbackThread[],
+  threads: DiffThreadPlacement[],
   line: PositionedDiffLine,
 ) {
   return threads.filter((thread) => {
-    const anchor = thread.resolved_anchor ?? thread.anchor;
-    const coordinate = anchor.side === "LEFT" ? line.oldLine : line.newLine;
-    return coordinate === anchor.end_line;
+    const coordinate =
+      thread.anchor.side === "LEFT" ? line.oldLine : line.newLine;
+    return coordinate === thread.anchor.endLine;
   });
 }
 
 function threadAnchorsLine(
-  threads: DiffFeedbackThread[],
+  threads: DiffThreadPlacement[],
   side: "LEFT" | "RIGHT",
   line: number | null,
 ) {
   return (
     line != null &&
     threads.some((thread) => {
-      const anchor = thread.resolved_anchor ?? thread.anchor;
       return (
-        anchor.side === side &&
-        line >= anchor.start_line &&
-        line <= anchor.end_line
+        thread.anchor.side === side &&
+        line >= thread.anchor.startLine &&
+        line <= thread.anchor.endLine
       );
     })
   );
@@ -1783,8 +1785,8 @@ function UnifiedDiff({
                   </tr>
                 ) : null}
                 {ending.map((thread) => (
-                  <tr key={`thread:${thread.id}`}>
-                    <td colSpan={3}>{threadContent(thread)}</td>
+                  <tr key={`thread:${thread.thread.id}`}>
+                    <td colSpan={3}>{threadContent(thread.thread)}</td>
                   </tr>
                 ))}
               </Fragment>
@@ -1877,26 +1879,23 @@ function SplitDiff(props: DiffRenderProps) {
                   ...(row.left ? threadsEndingAt(threads, row.left) : []),
                   ...(row.right
                     ? threadsEndingAt(threads, row.right).filter(
-                        (thread) =>
-                          (thread.resolved_anchor ?? thread.anchor).side ===
-                          "RIGHT",
+                        (thread) => thread.anchor.side === "RIGHT",
                       )
                     : []),
                 ]
                   .filter(
                     (thread, threadIndex, all) =>
-                      all.findIndex((item) => item.id === thread.id) ===
-                      threadIndex,
+                      all.findIndex(
+                        (item) => item.thread.id === thread.thread.id,
+                      ) === threadIndex,
                   )
                   .map((thread) => (
-                    <tr key={`thread:${thread.id}`}>
-                      {(thread.resolved_anchor ?? thread.anchor).side ===
-                      "RIGHT" ? (
+                    <tr key={`thread:${thread.thread.id}`}>
+                      {thread.anchor.side === "RIGHT" ? (
                         <td colSpan={2} aria-hidden="true" />
                       ) : null}
-                      <td colSpan={2}>{threadContent(thread)}</td>
-                      {(thread.resolved_anchor ?? thread.anchor).side ===
-                      "LEFT" ? (
+                      <td colSpan={2}>{threadContent(thread.thread)}</td>
+                      {thread.anchor.side === "LEFT" ? (
                         <td colSpan={2} aria-hidden="true" />
                       ) : null}
                     </tr>
@@ -2298,6 +2297,50 @@ export function DiffFeedbackHistory({
         />
       ))}
     </PreviousDiffThreadsSection>
+  );
+}
+
+function HistoricalDiffThread({
+  thread,
+  content,
+}: {
+  thread: DiffFeedbackThread;
+  content: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const line = `${thread.anchor.side} ${thread.anchor.start_line}${
+    thread.anchor.end_line === thread.anchor.start_line
+      ? ""
+      : `–${thread.anchor.end_line}`
+  }`;
+  const contentId = `historical-diff-thread-${thread.id}`;
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  return (
+    <section
+      data-diff-thread-id={thread.id}
+      aria-label={`Historical diff thread ${thread.id}`}
+      className="m-2 rounded-md border bg-background font-sans text-sm"
+    >
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        aria-label={`Show historical diff thread ${thread.id}`}
+        onClick={() => setExpanded((shown) => !shown)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/40"
+      >
+        <Chevron className="size-3.5 shrink-0" aria-hidden="true" />
+        <span className="font-medium">Historical diff thread</span>
+        <code className="truncate text-xs text-muted-foreground">
+          {thread.anchor.path}:{line}
+        </code>
+      </button>
+      {expanded ? (
+        <div id={contentId} className="border-t">
+          {content}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

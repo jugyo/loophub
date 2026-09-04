@@ -2248,6 +2248,152 @@ describe("DiffFileDialog", () => {
     );
   });
 
+  it("places a historical conversation beside its matched diff context", async () => {
+    const reply = vi.fn(() => ({}));
+    const archive = vi.fn(() => ({}));
+    renderDialog({
+      file: {
+        ...file,
+        patch:
+          "@@ -1,3 +1,3 @@\n line before\n-old value\n+new value\n line after",
+      },
+      handlers: {
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: "web/src/a.ts",
+              original_path: null,
+              status: "modified",
+              additions: 1,
+              deletions: 1,
+              patch:
+                "@@ -1,3 +1,3 @@\n line before\n-old value\n+new value\n line after",
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1,3 +1,3 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "context",
+                  text: " line before",
+                  left_line: 1,
+                  right_line: 1,
+                },
+                {
+                  kind: "deletion",
+                  text: "-old value",
+                  left_line: 2,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+new value",
+                  left_line: null,
+                  right_line: 2,
+                },
+                {
+                  kind: "context",
+                  text: " line after",
+                  left_line: 3,
+                  right_line: 3,
+                },
+              ],
+            },
+          ],
+        }),
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              freshness: "outdated",
+              anchor: {
+                ...feedbackThread().anchor,
+                side: "RIGHT",
+                start_line: 2,
+                end_line: 2,
+              },
+              original_context: [
+                {
+                  kind: "hunk",
+                  text: "@@ -1,3 +1,3 @@",
+                  left_line: null,
+                  right_line: null,
+                  anchored: false,
+                },
+                {
+                  kind: "context",
+                  text: " line before",
+                  left_line: 1,
+                  right_line: 1,
+                  anchored: false,
+                },
+                {
+                  kind: "addition",
+                  text: "+old value",
+                  left_line: null,
+                  right_line: 2,
+                  anchored: true,
+                },
+                {
+                  kind: "context",
+                  text: " line after",
+                  left_line: 3,
+                  right_line: 3,
+                  anchored: false,
+                },
+              ],
+            }),
+          ],
+        }),
+        "diffFeedback/reply": reply,
+        "diffFeedback/archive": archive,
+      },
+    });
+
+    const historical = await screen.findByLabelText("Historical diff thread 1");
+    const toggle = within(historical).getByRole("button", {
+      name: "Show historical diff thread 1",
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(within(historical).getByText("web/src/a.ts:RIGHT 2")).toBeTruthy();
+    expect(
+      within(historical).queryByText("Please revisit this range."),
+    ).toBeNull();
+    expect(screen.queryByLabelText("Previous diff threads")).toBeNull();
+    expect(
+      historical.closest("tr")?.previousElementSibling?.textContent,
+    ).toContain("new value");
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const card = within(historical).getByLabelText("Diff thread 1");
+    expect(within(card).getByText("Outdated")).toBeTruthy();
+    fireEvent.change(within(card).getByLabelText("Reply to thread 1"), {
+      target: { value: "Still relevant" },
+    });
+    fireEvent.click(within(card).getByRole("button", { name: "Reply" }));
+    await waitFor(() =>
+      expect(reply).toHaveBeenCalledWith(
+        expect.objectContaining({ thread_id: 1, body: "Still relevant" }),
+      ),
+    );
+    fireEvent.pointerDown(
+      within(card).getByRole("button", {
+        name: "Actions for diff thread 1",
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+    await waitFor(() =>
+      expect(archive).toHaveBeenCalledWith(
+        expect.objectContaining({ thread_id: 1, archived: true }),
+      ),
+    );
+  });
+
   it("falls back to previous diff threads when the original range is hidden", async () => {
     renderDialog({
       handlers: {
