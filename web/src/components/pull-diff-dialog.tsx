@@ -2987,6 +2987,14 @@ function RenderedDiffPane({
     ? diff.data.files[0]
     : undefined;
   const fullWidthClass = viewMode === "split" ? "col-span-2" : "col-span-1";
+  const unifiedLoadingSide =
+    viewMode === "unified"
+      ? base.isLoading
+        ? "LEFT"
+        : head.isLoading
+          ? "RIGHT"
+          : null
+      : null;
   // A mutation result is a new object on every render, so this depends on the pieces the card
   // actually uses — the mutate functions are stable — and only a pending flag rebuilds the cards.
   // Otherwise every keystroke in the composer would rebuild every block's decoration.
@@ -3101,6 +3109,7 @@ function RenderedDiffPane({
         selection={selection}
         onSelect={setSelection}
         threadContent={threadContent}
+        showLoading={viewMode === "split" || unifiedLoadingSide === "LEFT"}
         // Only the side the selection is on can host the composer, so the other side keeps its
         // rendered document untouched while the draft changes.
         composer={
@@ -3121,6 +3130,7 @@ function RenderedDiffPane({
         selection={selection}
         onSelect={setSelection}
         threadContent={threadContent}
+        showLoading={viewMode === "split" || unifiedLoadingSide === "RIGHT"}
         composer={
           viewMode === "unified" && selection?.side === "RIGHT"
             ? commentComposer
@@ -3192,6 +3202,7 @@ function RenderedDiffSide({
   selection,
   onSelect,
   threadContent,
+  showLoading,
   composer,
 }: {
   side: "LEFT" | "RIGHT";
@@ -3205,6 +3216,7 @@ function RenderedDiffSide({
   selection: RenderedCommentSelection | null;
   onSelect: (selection: RenderedCommentSelection) => void;
   threadContent: (thread: DiffFeedbackThread) => ReactNode;
+  showLoading: boolean;
   /** Rendered directly below the selected block; null when the pane places it itself. */
   composer: ReactNode;
 }) {
@@ -3413,9 +3425,11 @@ function RenderedDiffSide({
         )}
       >
         {file.isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Loading rendered diff…
-          </div>
+          showLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" /> Loading rendered diff…
+            </div>
+          ) : null
         ) : file.isError ? (
           <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
             Failed to load {label.toLowerCase()} preview.

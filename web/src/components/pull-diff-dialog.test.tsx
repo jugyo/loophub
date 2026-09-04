@@ -4048,6 +4048,33 @@ describe("DiffFileDialog", () => {
     expect(screen.getByText("Failed to load diff annotations.")).toBeTruthy();
   });
 
+  it("同時に読み込み中の rendered diff でも loading 表示を一つに保つ", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-# old\n+# new",
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/fileAtRef": () => new Promise(() => {}),
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    expect(await screen.findAllByText("Loading rendered diff…")).toHaveLength(
+      1,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(screen.getAllByText("Loading rendered diff…")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+    expect(screen.getAllByText("Loading rendered diff…")).toHaveLength(1);
+  });
+
   it("keeps a rendered content failure visible after switching views", async () => {
     const mdFile: PullFile = {
       filename: "README.md",
