@@ -5549,3 +5549,117 @@ test("a refused discard reports nothing discarded instead of failing the Verify 
     process.env.PATH = originalPath;
   }
 }, 30_000);
+
+// A Verify relaunch is handed the review it may read forward from, but only while that review's
+// head is still a direct ancestor of the HEAD being reviewed (#2537). Whether to actually review
+// only that range is the Verify agent's call, not the engine's.
+test("a Verify relaunch carries the previous review pointer only when it is an ancestor", async () => {
+  const { repo } = freshRepo("me/workflow-previous-review");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Previous review pointer",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "previous-review-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const prIssueId = S.getIssue(repo.id, started.pr.number)!.id;
+  const base = gitAt(started.worktree, ["rev-parse", "HEAD"]);
+
+  const headA = commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  const first = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: first.session_id,
+      agentName: first.agent_name,
+      pointers: first.pointers,
+      headSha: first.head_sha,
+    },
+    parent,
+  );
+  // The first launch has nothing to read forward from.
+  expect(first.pointers.map((p) => p.label)).not.toContain("previous review");
+  createWorkflowReview({
+    prIssueId,
+    runId: started.run.id,
+    sequence: 1,
+    event: "REQUEST_CHANGES",
+    headSha: headA,
+    body: "One change required.",
+    findings: 1,
+  });
+  const reviewId = (
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id })
+  ).steps.verify.latest_review!.id;
+
+  // A fix on top of headA keeps the reviewed head an ancestor, so the relaunch gets the pointer.
+  const headB = commit(started.worktree, "fix.txt", "v2\n");
+  const second = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: second.session_id,
+      agentName: second.agent_name,
+      pointers: second.pointers,
+      headSha: second.head_sha,
+    },
+    parent,
+  );
+  expect(second.head_sha).toBe(headB);
+  // `base sha` keeps its meaning: the PR's merge base, not the previous review's head.
+  expect(second.base_sha).toBe(
+    gitAt(started.worktree, ["merge-base", "main", headB]),
+  );
+  expect(second.pointers).toContainEqual({
+    label: "previous review",
+    value: `#${reviewId}`,
+  });
+
+  // `--full` withholds it so a human can demand a whole-range review.
+  const full = await svc.workflowRuns.stepInput(repo.full_name, {
+    run: started.run.id,
+    step: "verify",
+    full: true,
+  });
+  expect(full.pointers.map((p) => p.label)).not.toContain("previous review");
+
+  // A rewritten history leaves no "since the previous review" range, so no pointer either.
+  gitAt(started.worktree, ["reset", "--hard", base]);
+  commit(started.worktree, "rewritten.txt", "v3\n");
+  const rewritten = await svc.workflowRuns.stepInput(repo.full_name, {
+    run: started.run.id,
+    step: "verify",
+  });
+  expect(rewritten.pointers.map((p) => p.label)).not.toContain(
+    "previous review",
+  );
+}, 30_000);

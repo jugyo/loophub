@@ -759,8 +759,9 @@ function workflowRunWorktree(input: {
 }
 
 // The pointers handed to a step child at launch. Execute gets domain references it pulls
-// itself over the lh CLI; Verify gets the fixed (issue, base SHA, head SHA) triple it reviews,
-// plus the PR number solely as its review submission target. No content is synthesized.
+// itself over the lh CLI; Verify gets the (issue, base SHA, head SHA) triple it reviews, plus the
+// PR number solely as its review submission target, and — when one exists — the previous review it
+// may read forward from. No content is synthesized.
 function buildStepPointers(input: {
   repoName: string;
   run: S.WorkflowRunRow;
@@ -769,6 +770,7 @@ function buildStepPointers(input: {
   reviewId?: number;
   baseSha?: string;
   headSha?: string;
+  previousReviewId?: number;
 }): WorkflowInputPointer[] {
   const repo = inlineText(input.repoName);
   switch (input.step) {
@@ -794,6 +796,14 @@ function buildStepPointers(input: {
           label: `review submission target (${messages.reviewSubmissionInstruction})`,
           value: `pr #${input.run.pr_number}`,
         },
+        ...(input.previousReviewId !== undefined
+          ? [
+              {
+                label: "previous review",
+                value: `#${input.previousReviewId}`,
+              },
+            ]
+          : []),
       ];
     }
   }
@@ -938,6 +948,26 @@ function reviewObservation(
     event: review.event === "PASS" ? "pass" : "request_changes",
     headSha: review.head_sha,
   };
+}
+
+// The review a Verify launch may read forward from: this run's previous Verify review, kept only
+// when the head it reviewed is a direct ancestor of the HEAD about to be reviewed. After a rebase
+// or force-push no "since the last review" range exists, so no pointer is handed over. This is a
+// filter on facts — whether to review only that range stays the Verify agent's own call.
+async function previousVerifyReviewId(input: {
+  prIssueId: number;
+  runId: number;
+  projection: WorkflowRunProjection;
+  worktree: string;
+  headSha: string;
+}): Promise<number | undefined> {
+  const review = reviewObservation(
+    latestWorkflowRunReview(input.prIssueId, input.runId, input.projection),
+  );
+  if (!review) return undefined;
+  return (await isHeadAheadOfReview(input.worktree, review, input.headSha))
+    ? review.id
+    : undefined;
 }
 
 function turnDoneObservation(
@@ -2667,6 +2697,8 @@ export const workflowRuns = {
       step: string;
       note?: string;
       review?: number;
+      /** Launch Verify without the previous-review pointer, forcing a whole-range review. */
+      full?: boolean;
       model?: string | null;
       deliveryId?: string;
       // Fallback anchor for a run whose parent pane was never registered — the caller's own pane, if
@@ -2727,6 +2759,17 @@ export const workflowRuns = {
       step === "verify" && headSha
         ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
         : undefined;
+    // `--full` withholds the pointer so a human can ask for a whole-range review.
+    const previousReviewId =
+      step === "verify" && headSha && !input.full
+        ? await previousVerifyReviewId({
+            prIssueId: prIssue.id,
+            runId: run.id,
+            projection,
+            worktree,
+            headSha,
+          })
+        : undefined;
     const pointers = buildStepPointers({
       repoName: r.full_name,
       run,
@@ -2735,6 +2778,7 @@ export const workflowRuns = {
       reviewId,
       baseSha,
       headSha,
+      previousReviewId,
     });
     const composed = composeWorkflowLaunchPrompt(
       {
@@ -3205,6 +3249,7 @@ export const workflowRuns = {
       step: string;
       note?: string;
       review?: number;
+      full?: boolean;
     },
     _sessionId?: string | null,
   ): Promise<WorkflowStepInputResult> {
@@ -3236,6 +3281,16 @@ export const workflowRuns = {
       step === "verify" && headSha
         ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
         : undefined;
+    const previousReviewId =
+      step === "verify" && headSha && !input.full
+        ? await previousVerifyReviewId({
+            prIssueId: prIssue.id,
+            runId: run.id,
+            projection: workflowRunEventProjection(run),
+            worktree,
+            headSha,
+          })
+        : undefined;
     const pointers = buildStepPointers({
       repoName: r.full_name,
       run,
@@ -3244,6 +3299,7 @@ export const workflowRuns = {
       reviewId,
       baseSha,
       headSha,
+      previousReviewId,
     });
     const composed = composeWorkflowLaunchPrompt(
       {

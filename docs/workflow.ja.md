@@ -33,8 +33,10 @@ prompt で設定する。workflow を起動する前提は次のとおり。
   criteria・scope が十分に書かれていると判断してから起動する。**
 - Execute agent はドメインを知る pull 型開発者である。issue・PR・review を lh CLI で自分で読み、実装
   計画も自分の session 内で立てる。人間は実行中の pane へ介入して計画を確認・変更できる。
-- Verify agent は Execute とは別の fresh session で、(issue 参照, base SHA, head SHA) の 3 ポインタが
-  指す固定 diff を独立検証する。PR body・実装者の説明は読まない。
+- Verify agent は Execute とは別の fresh session で、(issue 参照, base SHA, head SHA) のポインタが
+  指す固定 diff を独立検証する。PR body・実装者の説明は読まない。直前の Verify review が現在の HEAD の
+  直系祖先であるときだけ `previous review` ポインタも渡り、差分だけを読む partial review にするかは
+  Verify agent が判断する。
 - workflow agent（親）は残す。親はコードを書かず、子の起動、HEAD / review 観測に基づく遷移、rework、
   停滞時の人間への escalation を担当する。
 
@@ -45,7 +47,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 | 親 → Execute | input: issue / PR の参照。rework 時は対応すべき review の id | 起動プロンプト、または生きている pane への注入（instruction） |
 | Execute → 世界 | commits、PR body・attachment・comment | git / domain（lh CLI で自分で読み書き） |
 | Execute → 親 | ターン完了の宣言（payload なし） | `lh workflow turn done --run <run>` が event を記録（fact）。worker が state と合わせて instruction にする |
-| 親 → Verify | input: (issue 参照, base SHA, head SHA) の 3 ポインタ | 起動プロンプト。合成ファイルなし |
+| 親 → Verify | input: (issue 参照, base SHA, head SHA) のポインタ。直前 review が HEAD の直系祖先なら `previous review` も | 起動プロンプト。合成ファイルなし |
 | Verify → 世界 | pass / request_changes ＋ findings | head SHA に pin された PR review（fact） |
 | 世界 → 親 | turn done、workflow review 登録、GitHub PR feedback の観測 | worker が event 順に観測済み state と action を生成し、parent pane へ注入する |
 | Verify ↔ Execute | 直接のやりとりなし | diff と review という domain object 経由 |
@@ -255,7 +257,9 @@ commit せず turn done してよい（親は HEAD 不変なら既存 pass を�
 ### 3.3 Verify agent（固定ポインタの独立検証者）
 
 launch 時に (issue 参照, base SHA, head SHA) を受け取り、`git diff <base>..<head>` を自分で計算して
-その固定 diff だけをレビューする。レビュー範囲をその diff から拡張せず、PR body・実装者の説明は
+その固定 diff だけをレビューする。直前の Verify review が現在の HEAD の直系祖先のときは `previous review`
+も渡され、その review の head から head までの差分だけを読む partial review にするかを Verify agent が
+決める（`lh workflow launch-step --full` はこのポインタを渡さず、全域の review を要求する）。レビュー範囲をその diff から拡張せず、PR body・実装者の説明は
 読まない（PR 番号は review の提出先としてのみ与えられる）。source は編集せず、必要なテストは実行できる。
 出力は `lh pr review submit --commit <head sha>` による、head SHA に pin された PR review
 （pass / request_changes）のみ。毎回 fresh session で起動される。
@@ -436,7 +440,7 @@ child は中断しない。人間の判断なしには増額も再開もしな�
 lh workflow create <name> [--execute-prompt <text>] [--verify-prompt <text>]
 lh workflow update <name> [--step execute|verify --file <path|->]
 lh workflow start <issue> --workflow <name>
-lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note <text|->]
+lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note <text|->] [--full]
 # lifecycle command
 lh workflow run advance-to-verify|request-rework|await-human|resume --run <id>
 lh workflow run increase-cost-limit --run <id> --expected-limit <usd>
@@ -445,7 +449,7 @@ lh workflow turn done --run <id>          # Execute child がターン完了を�
 lh workflow escalate --reason <text> --run <id> # Execute child が人間の判断の必要性を宣言
 lh workflow escalate-human --reason <text> --run <id> # 親 agent のリンク済み PR への comment を冪等に記録
 lh workflow instruction <run> (--event <id> --requires-changes true|false | --note <text|->) --json # 親の入力（GitHub reference の判断 / 人間の直接指示）に対する instruction を返す
-lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
+lh workflow step input <run> <step> [--full] # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測
 ```
 

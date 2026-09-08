@@ -526,6 +526,8 @@ async function launchStep(): Promise<void> {
         step,
         note,
         review,
+        // `--full`: review the whole base..head range, ignoring the previous review (#2537).
+        full: flags.full === true,
         deliveryId: flags["delivery-id"],
         // The step inherits the parent run's model; only forward an explicit --model override.
         model: explicitModelFlag(),
@@ -795,7 +797,7 @@ async function stepInput(): Promise<void> {
   const step = rest[2];
   if (!step) {
     fail(
-      "usage: lh workflow step input <run> <step> [--note <text|->] [--review <id>]",
+      "usage: lh workflow step input <run> <step> [--note <text|->] [--review <id>] [--full]",
     );
   }
   const note =
@@ -813,6 +815,7 @@ async function stepInput(): Promise<void> {
       step,
       note,
       review,
+      full: flags.full === true,
     }),
   );
   if (flags.json) {
