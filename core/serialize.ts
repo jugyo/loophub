@@ -1785,6 +1785,9 @@ export interface WorkflowStepStatusWire {
   // Whether a Verify child was launched after the latest turn done. False means the Verify marked
   // active was launched for older work, so waiting on it would never produce a review (#1857).
   verify_launched_after_turn_done: boolean;
+  // Whether the latest Verify child is still reviewing the current HEAD. True means a turn done at
+  // this SHA would only duplicate a review already in flight (#2528).
+  verify_running_for_current_head: boolean;
   steps: WorkflowStepStatuses;
 }
 

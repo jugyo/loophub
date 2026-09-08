@@ -30,6 +30,13 @@ export type WorkflowReconcileInput = {
    * while Execute keeps committing; this tells the two apart (#1857).
    */
   verifyLaunchedAfterTurnDone: boolean;
+  /**
+   * Whether the latest Verify child was launched for the current HEAD and is still reviewing it.
+   * A turn done at that same SHA has nothing new to review (#2528). This does not follow
+   * `activeStep`: an Execute pane reactivated for live input takes that field over while the
+   * Verify child keeps reviewing, which is how most duplicate launches were reached.
+   */
+  verifyRunningForCurrentHead: boolean;
   steps: WorkflowStepStatuses;
   wake: WorkflowWakeInput | null;
   outOfBandReviewTargets?: Readonly<
@@ -764,6 +771,17 @@ export function reconcileWorkflow(
   }
 
   if (input.turnDoneForActiveExecute) {
+    // A Verify child launched for this exact HEAD is already reviewing this diff, so a second one
+    // would grade the same bytes twice. Answer the turn done as no progress instead; the stall
+    // timeout behind this flag keeps a dead verifier from pinning the run here (#2528).
+    if (input.currentStep === "verify" && input.verifyRunningForCurrentHead) {
+      return {
+        action: "deliver",
+        reason:
+          "Execute declared turn done, but Verify is already reviewing the current HEAD.",
+        delivery_reason: "no_progress",
+      };
+    }
     if (input.steps.execute.complete) {
       return input.currentStep === "execute"
         ? {

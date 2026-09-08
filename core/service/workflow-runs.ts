@@ -122,7 +122,12 @@ import {
   workflowDisplayStage,
   workflowDone,
 } from "../workflow/steps.ts";
-import { priorVerifyChildSessions } from "../workflow/verify-children.ts";
+import {
+  latestVerifyClaimRelease,
+  priorVerifyChildSessions,
+  verifyLaunchPending,
+  verifyRunningForHead,
+} from "../workflow/verify-children.ts";
 import {
   isHeadAheadOfReview,
   workflowRunProgress as observeWorkflowRunProgress,
@@ -915,6 +920,15 @@ function latestWorkflowRunReview(
   return null;
 }
 
+/** The id of the event that last announced `review`, the boundary a Verify launch is dated against. */
+function latestReviewSubmissionId(
+  projection: WorkflowRunProjection,
+  review: S.ReviewRow | null,
+): number | null {
+  if (!review) return null;
+  return projection.reviewSubmissions.get(review.id)?.latest.id ?? null;
+}
+
 function reviewObservation(
   review: S.ReviewRow | null,
 ): WorkflowLatestReviewState | null {
@@ -1453,6 +1467,16 @@ async function observeWorkflowRunStatus(
     last_turn_done_at: turnDone.at,
     turn_done_for_active_execute: turnDone.forActiveExecute,
     verify_launched_after_turn_done: turnDone.verifyLaunchedAfter,
+    verify_running_for_current_head: verifyRunningForHead({
+      launch: projection.latestVerifyLaunch,
+      latestReviewSubmissionId: latestReviewSubmissionId(
+        projection,
+        latestReview,
+      ),
+      claimRelease: latestVerifyClaimRelease(projection.events),
+      currentHead: progress.currentHead,
+      now: Date.now(),
+    }),
     steps: progress.steps,
   };
 }
@@ -1556,20 +1580,16 @@ async function workflowRunState(
     typeof verifyLaunch?.payload.head_sha === "string"
       ? verifyLaunch.payload.head_sha
       : null;
-  const latestReviewSubmission = review
-    ? projection.reviewSubmissions.get(review.id)?.latest
-    : undefined;
   // `active_step` names the last activated pane and remains `verify` after its child submits a
   // review. Event order distinguishes that completed launch from a newer verifier still working.
-  const verifyLaunchPending =
-    verifyLaunch !== null &&
-    (latestReviewSubmission === undefined ||
-      latestReviewSubmission.id < verifyLaunch.id);
   const verifyActive =
     run.status === "running" &&
     run.needs_human_reason === null &&
     run.active_step === "verify" &&
-    verifyLaunchPending;
+    verifyLaunchPending(
+      verifyLaunch,
+      latestReviewSubmissionId(projection, review),
+    );
   const latestStepRuns = latestWorkflowStepRuns(run, projection, review);
   return workflowRunStateJSON({
     run,
@@ -3374,6 +3394,7 @@ export const workflowRuns = {
       mergeConflict: observed.merge_conflict,
       turnDoneForActiveExecute: observed.turn_done_for_active_execute,
       verifyLaunchedAfterTurnDone: observed.verify_launched_after_turn_done,
+      verifyRunningForCurrentHead: observed.verify_running_for_current_head,
       steps: observed.steps,
       outOfBandReviewTargets: Object.fromEntries(
         observed.unaddressed_out_of_band_reviews.map((review) => [

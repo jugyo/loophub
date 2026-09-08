@@ -3,7 +3,12 @@ import {
   projectWorkflowRunEvents,
   type WorkflowRunEventRow,
 } from "./run-projection.ts";
-import { priorVerifyChildSessions } from "./verify-children.ts";
+import {
+  latestVerifyClaimRelease,
+  priorVerifyChildSessions,
+  VERIFY_STALL_TIMEOUT_MS,
+  verifyRunningForHead,
+} from "./verify-children.ts";
 
 let nextId = 0;
 
@@ -36,4 +41,116 @@ test("a legacy launch without a head is selected when its session is known", () 
   ]).verifyLaunches;
 
   expect(priorVerifyChildSessions(launches)).toEqual(["legacy"]);
+});
+
+function verifyLaunch(headSha: string, createdAt: string) {
+  return projectWorkflowRunEvents([
+    {
+      id: 100,
+      type: "workflow_step.launched",
+      payload: JSON.stringify({
+        id: 1,
+        step: "verify",
+        session_id: "verifier",
+        head_sha: headSha,
+      }),
+      created_at: createdAt,
+    },
+  ]).latestVerifyLaunch;
+}
+
+const LAUNCHED_AT = "2026-01-01T00:00:00Z";
+const RUNNING = Date.parse(LAUNCHED_AT) + 60_000;
+
+test("a verify child launched for the current head is still reviewing it", () => {
+  expect(
+    verifyRunningForHead({
+      launch: verifyLaunch("aaa", LAUNCHED_AT),
+      latestReviewSubmissionId: null,
+      claimRelease: null,
+      currentHead: "aaa",
+      now: RUNNING,
+    }),
+  ).toBe(true);
+});
+
+test("a verify child launched for an older head does not cover the current one", () => {
+  expect(
+    verifyRunningForHead({
+      launch: verifyLaunch("aaa", LAUNCHED_AT),
+      latestReviewSubmissionId: null,
+      claimRelease: null,
+      currentHead: "bbb",
+      now: RUNNING,
+    }),
+  ).toBe(false);
+});
+
+test("a verify child that already submitted its review is no longer running", () => {
+  expect(
+    verifyRunningForHead({
+      launch: verifyLaunch("aaa", LAUNCHED_AT),
+      latestReviewSubmissionId: 101,
+      claimRelease: null,
+      currentHead: "aaa",
+      now: RUNNING,
+    }),
+  ).toBe(false);
+});
+
+test("a verify child past the stall timeout stops holding its head (#1857)", () => {
+  expect(
+    verifyRunningForHead({
+      launch: verifyLaunch("aaa", LAUNCHED_AT),
+      latestReviewSubmissionId: null,
+      claimRelease: null,
+      currentHead: "aaa",
+      now: Date.parse(LAUNCHED_AT) + VERIFY_STALL_TIMEOUT_MS + 1,
+    }),
+  ).toBe(false);
+});
+
+test("an Execute pane reactivated for live input leaves the verify child reviewing (#2528)", () => {
+  const events = projectWorkflowRunEvents([
+    {
+      id: 100,
+      type: "workflow_run.updated",
+      payload: JSON.stringify({
+        id: 1,
+        transition: "activate_step",
+        active_step: "execute",
+      }),
+      created_at: LAUNCHED_AT,
+    },
+  ]).events;
+
+  expect(latestVerifyClaimRelease(events)).toBeNull();
+});
+
+test("a human hold releases the verify child's claim on its head (#1872)", () => {
+  const events = projectWorkflowRunEvents([
+    {
+      id: 101,
+      type: "workflow_run.updated",
+      payload: JSON.stringify({ id: 1, transition: "await_human" }),
+      created_at: LAUNCHED_AT,
+    },
+    {
+      id: 102,
+      type: "workflow_run.updated",
+      payload: JSON.stringify({ id: 1, transition: "resume_after_human" }),
+      created_at: LAUNCHED_AT,
+    },
+  ]).events;
+
+  expect(latestVerifyClaimRelease(events)?.id).toBe(102);
+  expect(
+    verifyRunningForHead({
+      launch: verifyLaunch("aaa", LAUNCHED_AT),
+      latestReviewSubmissionId: null,
+      claimRelease: latestVerifyClaimRelease(events),
+      currentHead: "aaa",
+      now: RUNNING,
+    }),
+  ).toBe(false);
 });
