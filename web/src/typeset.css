@@ -292,10 +292,14 @@
 }
 
 /* A composite block expands so its nested table can use the wide track, but
-   prose sharing that block keeps the normal reading measure. */
+   prose sharing that block keeps the normal reading measure. Comment threads
+   are rendered inside those blocks and are not document prose, so exclude them:
+   the reading measure would center each comment body inside its own card. */
 .typeset-diff-preview
   > :where(:has(table))
-  :where(p, h1, h2, h3, h4, h5, h6),
+  :where(p, h1, h2, h3, h4, h5, h6):not(
+    :where(.markdown-diff-thread, .markdown-diff-comment-composer) *
+  ),
 .typeset-diff-preview
   > :where(ul, ol):has(table)
   > li:not(:has(table)) {
