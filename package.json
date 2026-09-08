@@ -27,7 +27,8 @@
     "lh-job-queue": "worker/job-queue-index.ts"
   },
   "scripts": {
-    "postinstall": "bun install --cwd web --frozen-lockfile",
+    "postinstall": "bun run setup-hooks && bun install --cwd web --frozen-lockfile",
+    "setup-hooks": "bun scripts/setup-git-hooks.ts",
     "lh": "bun cli/index.ts",
     "lh-web": "bun web/server/index.ts",
     "lh-worker": "bun worker/index.ts",
