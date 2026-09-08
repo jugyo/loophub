@@ -293,6 +293,8 @@ export const reviews = {
       body?: string;
       model?: string;
       headSha?: string;
+      // The base of the range the reviewer actually read (#2536). Omitted means a full review.
+      baseSha?: string;
       comments?: { path: string; line?: number; side?: string; body: string }[];
       acResults?: {
         criterion_id: string;
@@ -326,6 +328,15 @@ export const reviews = {
       throw new ServiceError(
         422,
         "head-sha は 40 文字の 16 進数 SHA で指定してください",
+      );
+    }
+    // A partial review records the base of the range it read (#2536). Absent means a full review;
+    // we do not infer it from the run's launch information, because whether to read only the delta
+    // is the reviewer's own call at submission time.
+    if (input.baseSha !== undefined && !FULL_SHA.test(input.baseSha)) {
+      throw new ServiceError(
+        422,
+        "base-sha は 40 文字の 16 進数 SHA で指定してください",
       );
     }
     const { actor, authorType } = commentActor(sessionId);
@@ -371,6 +382,7 @@ export const reviews = {
         acResults,
         authorType,
         reviewSessionId,
+        input.baseSha ?? null,
       );
       for (const cm of lineComments) {
         S.createReviewComment(row.id, v.id, actor, authorType, {

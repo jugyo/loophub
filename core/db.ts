@@ -293,6 +293,9 @@ CREATE TABLE IF NOT EXISTS reviews (
   event       TEXT NOT NULL,
   body        TEXT NOT NULL DEFAULT '',
   head_sha    TEXT,
+  -- The base of the commit range this review read (#2536). NULL means it read the whole PR
+  -- (a full review); a SHA means it is a partial review that read only base_sha..head_sha.
+  base_sha    TEXT,
   model       TEXT,
   -- The agent session that submitted this review (#2387). Its start is what grounds the
   -- review's duration; NULL for a review with no registered session (human/manual submission,

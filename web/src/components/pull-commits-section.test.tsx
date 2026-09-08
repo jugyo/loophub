@@ -279,6 +279,7 @@ describe("PullCommitsSection", () => {
           state: "PASS",
           body: "Looks good.",
           head_sha: pushedCommits[0].sha,
+          base_sha: null,
           model: null,
           submitted_at: "2026-06-18T12:30:00Z",
           duration_seconds: null,
@@ -312,6 +313,7 @@ describe("PullCommitsSection", () => {
         state: "PASS",
         body: "**Looks good.** [Details](https://example.com)",
         head_sha: commits![0].sha,
+        base_sha: null,
         model: "claude-opus-4-8",
         submitted_at: "2026-06-18T12:30:00Z",
         duration_seconds: null,
@@ -416,6 +418,7 @@ describe("PullCommitsSection", () => {
         state: "PASS",
         body: "Read the whole diff.",
         head_sha: commits![0].sha,
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-18T12:30:00Z",
         duration_seconds: 252,
@@ -428,6 +431,7 @@ describe("PullCommitsSection", () => {
         state: "FEEDBACK",
         body: "Posted by hand.",
         head_sha: commits![0].sha,
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-18T12:40:00Z",
         duration_seconds: null,
@@ -460,6 +464,62 @@ describe("PullCommitsSection", () => {
     expect(within(items[1]).queryByText(/0s/)).toBeNull();
   });
 
+  // A partial review (#2536) read only part of the PR, so the range it read is shown beside it. A
+  // full review carries no base_sha and gets no badge, which is how the two are told apart.
+  it("badges a partial review with the range it read and leaves a full review unmarked", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 8,
+        user: { login: "verifier #7-1" },
+        author_type: "agent",
+        state: "PASS",
+        body: "Read the delta only.",
+        head_sha: commits![0].sha,
+        base_sha: "b".repeat(40),
+        model: null,
+        submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
+        ac_results: [],
+      },
+      {
+        id: 9,
+        user: { login: "verifier #7-2" },
+        author_type: "agent",
+        state: "PASS",
+        body: "Read the whole PR.",
+        head_sha: commits![0].sha,
+        base_sha: null,
+        model: null,
+        submitted_at: "2026-06-18T12:40:00Z",
+        duration_seconds: null,
+        ac_results: [],
+      },
+    ];
+
+    renderSection({ reviews });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View 2 reviews for aaaaaaa: Latest change",
+      }),
+    );
+    const reviewDialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    const items = Array.from(
+      reviewDialog.querySelectorAll<HTMLElement>(
+        '[data-debug-component="ReviewItem"]',
+      ),
+    );
+    const partial = within(items[0]).getByText(
+      `partial bbbbbbb..${commits![0].sha.slice(0, 7)}`,
+    );
+    expect(partial.title).toBe(
+      `Partial review of ${"b".repeat(40)}..${commits![0].sha}`,
+    );
+    expect(within(items[1]).queryByText(/partial/)).toBeNull();
+  });
+
   // Rubric grades (#1897) belong to the review that recorded them: counted on the commit row,
   // listed criterion by criterion in the review dialog.
   it("counts rubric grades on the commit row and lists them in the review dialog", async () => {
@@ -471,6 +531,7 @@ describe("PullCommitsSection", () => {
         state: "REQUEST_CHANGES",
         body: "One criterion unmet.",
         head_sha: commits![0].sha,
+        base_sha: null,
         model: "claude-opus-5",
         submitted_at: "2026-06-18T12:30:00Z",
         duration_seconds: null,
@@ -545,6 +606,7 @@ describe("PullCommitsSection", () => {
         state: "PASS",
         body: "Looks good.",
         head_sha: commits![0].sha,
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-18T12:30:00Z",
         duration_seconds: null,
@@ -783,6 +845,7 @@ describe("PullCommitsSection", () => {
         state: "PASS",
         body: `## Evidence\n\n![shot.png](/attachments/${"a".repeat(64)})`,
         head_sha: commits![0].sha,
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-18T12:30:00Z",
         duration_seconds: null,
@@ -795,6 +858,7 @@ describe("PullCommitsSection", () => {
         state: "PASS",
         body: "Looks good.",
         head_sha: commits![1].sha,
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-17T12:30:00Z",
         duration_seconds: null,
@@ -829,6 +893,7 @@ describe("PullCommitsSection", () => {
         state: "PASS",
         body: "Known review",
         head_sha: commits![0].sha,
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-18T12:30:00Z",
         duration_seconds: null,
@@ -841,6 +906,7 @@ describe("PullCommitsSection", () => {
         state: "COMMENT",
         body: "Legacy review",
         head_sha: null,
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-16T10:00:00Z",
         duration_seconds: null,
@@ -853,6 +919,7 @@ describe("PullCommitsSection", () => {
         state: "REQUEST_CHANGES",
         body: "Review for a commit outside this diff",
         head_sha: "cccccccccccccccccccccccccccccccccccccccc",
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-17T10:00:00Z",
         duration_seconds: null,
@@ -892,6 +959,7 @@ describe("PullCommitsSection", () => {
         state: "REQUEST_CHANGES",
         body: "Round 1",
         head_sha: commits![0].sha,
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-18T10:00:00Z",
         duration_seconds: null,
@@ -904,6 +972,7 @@ describe("PullCommitsSection", () => {
         state: "PASS",
         body: "Round 2",
         head_sha: commits![0].sha,
+        base_sha: null,
         model: null,
         submitted_at: "2026-06-18T11:00:00Z",
         duration_seconds: null,

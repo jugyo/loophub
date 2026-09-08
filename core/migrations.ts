@@ -1671,6 +1671,15 @@ export const MIGRATIONS: Migration[] = [
       db.exec("DROP TABLE IF EXISTS pr_test_maps;");
     },
   },
+  // #2536: the base of the commit range a review actually read. NULL means the review read the
+  // whole PR (a full review); a non-NULL value is what makes a review a partial one — there is no
+  // separate mode column. Existing rows stay NULL, so no existing PR's display or merge gate moves.
+  addColumn(
+    "20260908072341-add-review-base-sha",
+    "reviews",
+    "base_sha",
+    "TEXT",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

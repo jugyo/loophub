@@ -10,6 +10,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("../service.ts");
 let S: typeof import("../store.ts");
+let dbModule: typeof import("../db.ts");
 let repoPath: string;
 let repoId: number;
 let workflowId: number;
@@ -107,6 +108,7 @@ async function newPullForRubric(
 beforeAll(async () => {
   svc = await import("../service.ts");
   S = await import("../store.ts");
+  dbModule = await import("../db.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-reviews-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -672,4 +674,40 @@ test("明示的に送信した head SHA は完全な 16 進数 SHA でなけれ�
     headSha: "A".repeat(40),
   });
   expect(review.head_sha).toBe("A".repeat(40));
+});
+
+test("--base records the range a partial review read; omitting it is a full review (#2536)", async () => {
+  const pr = await newPull("partial-base");
+  const baseSha = "b".repeat(40);
+
+  const partial = await svc.reviews.create("me/reviews", pr, {
+    event: "PASS",
+    body: "read the delta only",
+    baseSha,
+  });
+  expect(partial.base_sha).toBe(baseSha);
+
+  const full = await svc.reviews.create("me/reviews", pr, {
+    event: "PASS",
+    body: "read everything",
+  });
+  expect(full.base_sha).toBeNull();
+
+  // The state is countable from the column alone (#2536 AC 5).
+  const counts = dbModule.db
+    .query(`SELECT COUNT(*) AS total, COUNT(base_sha) AS partial FROM reviews`)
+    .get() as { total: number; partial: number };
+  expect(counts.partial).toBe(1);
+  expect(counts.total).toBeGreaterThan(1);
+});
+
+test("a base-sha that is not a full SHA is rejected (#2536)", async () => {
+  const pr = await newPull("partial-base-invalid");
+  await expect(
+    svc.reviews.create("me/reviews", pr, {
+      event: "PASS",
+      body: "bad base",
+      baseSha: "abc",
+    }),
+  ).rejects.toThrow(/base-sha/);
 });

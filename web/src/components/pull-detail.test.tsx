@@ -220,6 +220,7 @@ const reviews: PullReview[] = [
     state: "PASS",
     body: "LGTM",
     head_sha: pull.commits![0].sha,
+    base_sha: null,
     model: "claude-opus-4-8",
     submitted_at: "2026-06-18T11:30:00Z",
     duration_seconds: null,

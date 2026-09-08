@@ -357,6 +357,8 @@ export async function run(): Promise<void> {
           // Pin the review to an explicit commit (defaults to the PR's current head). A Workflow
           // Verify child passes the head SHA it was launched against (#1358).
           ...(flags.commit ? { headSha: flags.commit } : {}),
+          // The base of the range that was actually read (#2536). Omitted records a full review.
+          ...(flags.base ? { baseSha: flags.base } : {}),
           comments,
           acResults,
         },

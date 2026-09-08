@@ -10,6 +10,9 @@ export interface ReviewRow {
   event: string;
   body: string;
   head_sha: string | null;
+  // The base of the commit range this review read (#2536): NULL for a review that read the whole
+  // PR, a SHA for a partial review that only read `base_sha..head_sha`.
+  base_sha: string | null;
   model: string | null;
   // The agent session that submitted the review (#2387); null when none was recorded.
   session_id: string | null;
@@ -71,12 +74,13 @@ export function createReview(
   model: string | null = null,
   authorType: CommentAuthorType = "system",
   sessionId: string | null = null,
+  baseSha: string | null = null,
 ): ReviewRow {
   return db
     .query(
       `INSERT INTO reviews
-       (issue_id, author, author_type, event, body, head_sha, model, session_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+       (issue_id, author, author_type, event, body, head_sha, base_sha, model, session_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       issueId,
@@ -85,6 +89,7 @@ export function createReview(
       event,
       body,
       headSha,
+      baseSha,
       model,
       sessionId,
       now(),
@@ -106,6 +111,7 @@ export function createReviewWithAcResults(
   acResults: { criterionId: number; verdict: string; note: string }[],
   authorType: CommentAuthorType = "system",
   sessionId: string | null = null,
+  baseSha: string | null = null,
 ): ReviewRow {
   return db.transaction(() => {
     const review = createReview(
@@ -117,6 +123,7 @@ export function createReviewWithAcResults(
       model,
       authorType,
       sessionId,
+      baseSha,
     );
     for (const r of acResults)
       createReviewAcResult(review.id, r.criterionId, r.verdict, r.note);

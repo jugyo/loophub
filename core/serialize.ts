@@ -1206,6 +1206,9 @@ export interface ReviewWire {
   // The commit this review was made against (lets clients group reviews by
   // commit, e.g. #208); may be null.
   head_sha: string | null;
+  // The base of the commit range this review read (#2536). Null means the review read the whole PR
+  // (a full review); a SHA means it is a partial review that read only `base_sha..head_sha`.
+  base_sha: string | null;
   // The agent/model that produced the review (#1107); null when unattributed.
   model: string | null;
   submitted_at: string;
@@ -1251,6 +1254,7 @@ export function reviewJSON(
     state: v.event,
     body: v.body,
     head_sha: v.head_sha ?? null,
+    base_sha: v.base_sha ?? null,
     model: v.model ?? null,
     submitted_at: v.created_at,
     duration_seconds: reviewDurationSeconds(v),

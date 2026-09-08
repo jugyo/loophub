@@ -282,6 +282,8 @@ Options:
   --event <verdict>       Review verdict: comment (default), pass, or request_changes.
   --body <text>           Review summary; @file reads a file and - reads stdin.
   --commit <sha>          Pin the review to this head commit (defaults to the current PR head).
+  --base <sha>            Record the base of the commit range that was read, marking the review
+                          partial (defaults to none, i.e. the whole PR was read).
   --comments <json|file>  Line comments as [{ "path", "line", "side"?, "body" }].
   --ac-results <json|file>
                           Acceptance-criterion grades as

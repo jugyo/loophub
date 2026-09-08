@@ -635,6 +635,17 @@ function ReviewItem({
         <span className="text-xs text-muted-foreground">
           {relativeTime(review.submitted_at)}
         </span>
+        {/* A partial review read only part of the PR (#2536): the range it read is shown so a human
+            can see what was and was not looked at. A full review carries no base_sha and no badge. */}
+        {review.base_sha ? (
+          <span
+            className="ml-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
+            title={`Partial review of ${review.base_sha}..${review.head_sha ?? "?"}`}
+          >
+            partial {review.base_sha.slice(0, 7)}..
+            {review.head_sha ? review.head_sha.slice(0, 7) : "?"}
+          </span>
+        ) : null}
         {/* How long the review itself took (#2387). Omitted — never 0 — for a review whose
             duration the wire could not derive. formatDuration keeps the two largest units, so the
             title carries the exact seconds for a span long enough to drop them. */}
