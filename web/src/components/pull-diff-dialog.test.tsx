@@ -3675,7 +3675,12 @@ describe("DiffFileDialog", () => {
           node.selector.includes("markdown-diff-unified-document") &&
           node.selector.includes(":has(table)"),
       );
-    expect(unifiedTableRule?.toString()).toContain("width: 100%");
+    expect(unifiedTableRule?.toString()).toContain(
+      "width: var(--typeset-diff-wide)",
+    );
+    expect(unifiedTableRule?.toString()).toContain(
+      "max-width: var(--typeset-diff-wide)",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Split" }));
     expect(renderedPane?.getAttribute("data-view-mode")).toBe("split");
@@ -3707,7 +3712,9 @@ describe("DiffFileDialog", () => {
           node.selector.includes("markdown-diff-split-document") &&
           node.selector.includes(":has(table)"),
       );
-    expect(splitTableRule?.toString()).toContain("width: 100%");
+    expect(splitTableRule?.toString()).toContain(
+      "width: var(--typeset-diff-wide)",
+    );
   });
 
   it("interleaves rendered blocks from multiple hunks in source diff order", async () => {
@@ -5248,21 +5255,30 @@ ${Array.from({ length: 120 }, (_, index) => `Long paragraph ${index + 1}.`).join
     expect(regularListItem?.parentElement?.contains(nestedPre ?? null)).toBe(
       true,
     );
-    const rules: { selector: string; maxWidth?: string }[] = [];
+    const rules: {
+      selector: string;
+      maxWidth?: string;
+      marginInline?: string;
+    }[] = [];
     postcss.parse(typesetCss).walkRules((rule) => {
       let maxWidth: string | undefined;
+      let marginInline: string | undefined;
       rule.walkDecls("max-width", (declaration) => {
         maxWidth = declaration.value;
+      });
+      rule.walkDecls("margin-inline", (declaration) => {
+        marginInline = declaration.value;
       });
       rules.push({
         selector: rule.selector,
         maxWidth,
+        marginInline,
       });
     });
     const wideRule = rules.find(
       (rule) =>
         rule.selector.includes(":where(table, :has(table))") &&
-        rule.maxWidth === "100%",
+        rule.maxWidth === "var(--typeset-diff-wide)",
     );
     const readingMeasureRule = rules.find(
       (rule) =>
@@ -5276,6 +5292,10 @@ ${Array.from({ length: 120 }, (_, index) => `Long paragraph ${index + 1}.`).join
     );
     expect(wideRule).not.toBeUndefined();
     expect(wideRule?.selector).not.toContain(":has(pre");
+    // A wide block starts where the centered reading track starts, so prose and
+    // tables share one left edge and only the right side grows.
+    expect(wideRule?.marginInline).toBe("var(--typeset-diff-track-inset) 0");
+    expect(mixedContentRule?.marginInline).toBe("0");
     expect(readingMeasureRule).not.toBeUndefined();
     expect(mixedContentRule).not.toBeUndefined();
     expect(mixedContentRule?.selector).toContain(

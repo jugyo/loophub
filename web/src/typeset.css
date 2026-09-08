@@ -222,7 +222,10 @@
 
    The preview spans its pane so wide tables can use the available space.
    Other direct children retain the narrower reading measure. The pane padding
-   in MarkdownPreviewPane remains the outer gutter for both widths. */
+   in MarkdownPreviewPane remains the outer gutter for both widths.
+
+   A wide block starts at the reading track's left edge instead of the pane's,
+   so prose and tables share one left margin; only the right side grows. */
 .typeset-diff-preview {
   --typeset-font-body: ui-serif, Georgia, Cambria, "Times New Roman", Times,
     serif;
@@ -237,6 +240,10 @@
   --typeset-rule: var(--markdown-diff-border);
   --typeset-surface: var(--markdown-diff-surface);
   --typeset-table-heading: var(--markdown-diff-table-heading);
+  /* Space the centered reading track leaves on the left of the pane, and the
+     width a wide block gets when it starts there. */
+  --typeset-diff-track-inset: max(0px, (100% - 46rem) / 2);
+  --typeset-diff-wide: calc(100% - var(--typeset-diff-track-inset));
 
   width: 100%;
   min-width: 0;
@@ -252,8 +259,8 @@
 .typeset-diff-preview > :where(table, :has(table)) {
   box-sizing: border-box;
   min-width: 0;
-  margin-inline: auto;
-  max-width: 100%;
+  margin-inline: var(--typeset-diff-track-inset) 0;
+  max-width: var(--typeset-diff-wide);
 }
 
 /* Unified diff renders two Markdown trees through display: contents into one
@@ -272,8 +279,8 @@
 
 .typeset-diff-preview.markdown-diff-unified-document
   > :where(table, :has(table)) {
-  max-width: 100%;
-  width: 100%;
+  max-width: var(--typeset-diff-wide);
+  width: var(--typeset-diff-wide);
 }
 
 /* Split diff keeps each pane independent, but every top-level block still
@@ -288,13 +295,15 @@
 
 .typeset-diff-preview.markdown-diff-split-document
   > :where(table, :has(table)) {
-  width: 100%;
+  width: var(--typeset-diff-wide);
 }
 
 /* A composite block expands so its nested table can use the wide track, but
-   prose sharing that block keeps the normal reading measure. Comment threads
-   are rendered inside those blocks and are not document prose, so exclude them:
-   the reading measure would center each comment body inside its own card. */
+   prose sharing that block keeps the normal reading measure. The block already
+   starts at the reading track, so its prose stays flush left rather than
+   centering again inside the wider block. Comment threads are rendered inside
+   those blocks and are not document prose, so exclude them: the reading measure
+   would indent each comment body inside its own card. */
 .typeset-diff-preview
   > :where(:has(table))
   :where(p, h1, h2, h3, h4, h5, h6):not(
@@ -303,6 +312,6 @@
 .typeset-diff-preview
   > :where(ul, ol):has(table)
   > li:not(:has(table)) {
-  margin-inline: auto;
+  margin-inline: 0;
   max-width: 46rem;
 }
