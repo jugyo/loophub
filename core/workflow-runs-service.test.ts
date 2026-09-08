@@ -5553,6 +5553,163 @@ test("a refused discard reports nothing discarded instead of failing the Verify 
 // A Verify relaunch is handed the review it may read forward from, but only while that review's
 // head is still a direct ancestor of the HEAD being reviewed (#2537). Whether to actually review
 // only that range is the Verify agent's call, not the engine's.
+test("a human's full review request makes the next Verify launch read the whole PR (#2538)", async () => {
+  const { repo } = freshRepo("me/workflow-full-review-request");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Full review request",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "full-review-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "d25380d2-5380-4538-8538-d25380d25380";
+  const webSession = "e25380e2-5380-4538-8538-e25380e25380";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const prIssueId = S.getIssue(repo.id, started.pr.number)!.id;
+
+  const headA = commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  createWorkflowReview({
+    prIssueId,
+    runId: started.run.id,
+    sequence: 1,
+    event: "REQUEST_CHANGES",
+    headSha: headA,
+    body: "One change required.",
+    findings: 1,
+  });
+  commit(started.worktree, "fix.txt", "v2\n");
+
+  // Without the request the relaunch reads only the range since that review.
+  expect(
+    (
+      await svc.workflowRuns.stepInput(repo.full_name, {
+        run: started.run.id,
+        step: "verify",
+      })
+    ).pointers.map((p) => p.label),
+  ).toContain("previous review");
+
+  expect(
+    await svc.workflowRuns.requestFullReviewForHuman(
+      repo.full_name,
+      { run: started.run.id },
+      webSession,
+    ),
+  ).toEqual({ run: started.run.id, passed_scope: null });
+  expect(
+    (
+      await svc.workflowRuns.stateForPull(repo.full_name, {
+        pull: started.pr.number,
+      })
+    )?.next_verify_full,
+  ).toBe(true);
+
+  // Rendering the prompt reads the request without taking it; the launch takes it.
+  expect(
+    (
+      await svc.workflowRuns.stepInput(repo.full_name, {
+        run: started.run.id,
+        step: "verify",
+      })
+    ).pointers.map((p) => p.label),
+  ).not.toContain("previous review");
+  const launched = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: launched.session_id,
+      agentName: launched.agent_name,
+      pointers: launched.pointers,
+      headSha: launched.head_sha,
+    },
+    parent,
+  );
+  expect(launched.pointers.map((p) => p.label)).not.toContain(
+    "previous review",
+  );
+
+  // Consumed: the Verify after it is incremental again.
+  expect(
+    (
+      await svc.workflowRuns.stepInput(repo.full_name, {
+        run: started.run.id,
+        step: "verify",
+      })
+    ).pointers.map((p) => p.label),
+  ).toContain("previous review");
+}, 30_000);
+
+test("a full review request records the scope of the pass at the live head (#2538)", async () => {
+  const { repo } = freshRepo("me/workflow-full-review-scope");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Full review request scope",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "full-review-scope-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "d25381d2-5381-4538-8538-d25381d25381";
+  const webSession = "e25381e2-5381-4538-8538-e25381e25381";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const prIssueId = S.getIssue(repo.id, started.pr.number)!.id;
+  const base = gitAt(started.worktree, ["rev-parse", "HEAD"]);
+  const head = commit(started.worktree, "impl.txt", "v1\n");
+
+  // The pass is pinned to the live head, which the watcher has not recorded on the PR yet — the
+  // request must read the gate the human saw, not the stale one.
+  S.createReview(
+    prIssueId,
+    "verifier",
+    "PASS",
+    "Read the range since the previous review.",
+    head,
+    null,
+    "agent",
+    null,
+    base,
+  );
+  expect(S.getPull(prIssueId)?.head_sha).not.toBe(head);
+
+  expect(
+    await svc.workflowRuns.requestFullReviewForHuman(
+      repo.full_name,
+      { run: started.run.id },
+      webSession,
+    ),
+  ).toEqual({ run: started.run.id, passed_scope: "partial" });
+}, 30_000);
+
 test("a Verify relaunch carries the previous review pointer only when it is an ancestor", async () => {
   const { repo } = freshRepo("me/workflow-previous-review");
   const issue = S.createIssue(

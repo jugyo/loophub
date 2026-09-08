@@ -1680,6 +1680,14 @@ export const MIGRATIONS: Migration[] = [
     "base_sha",
     "TEXT",
   ),
+  // #2538: a human's standing request that the next Verify read the whole PR. Set from the Web,
+  // consumed by the next Verify launch, which then withholds the previous-review pointer.
+  addColumn(
+    "20260908093000-add-workflow-run-next-verify-full",
+    "workflow_runs",
+    "next_verify_full",
+    "INTEGER NOT NULL DEFAULT 0",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

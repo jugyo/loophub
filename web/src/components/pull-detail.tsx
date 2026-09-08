@@ -302,6 +302,12 @@ export function PullDetail({
               isReviewsLoading={false}
               isReviewsError={false}
               showGithubPushState={!!pull.github_pull}
+              partialPass={
+                pull.state === "open" &&
+                !pull.merged &&
+                pull.mergeable_state === "clean" &&
+                pull.review_gate.passed_scope === "partial"
+              }
             />
             {timelineCommit ? (
               <CommitDiffDialog
@@ -660,6 +666,14 @@ function PullBody({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {/* #2538: a partial PASS opens the merge gate like a full one, so the person about to
+            merge is told what that PASS actually read, right where they press Merge. */}
+        {canMerge && pull.review_gate.passed_scope === "partial" ? (
+          <p className="mr-auto text-sm text-muted-foreground">
+            Passed on a partial review: it read only the latest commit range,
+            not the whole PR.
+          </p>
+        ) : null}
         {!pull.merged ? (
           <Button
             variant="secondary"

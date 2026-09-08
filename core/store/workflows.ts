@@ -228,6 +228,8 @@ export interface WorkflowRunRow {
   cost_increment_usd: number | null;
   cost_limit_usd: number | null;
   manifest_version: number | null;
+  // 1 while a human's request that the next Verify read the whole PR is pending (#2538).
+  next_verify_full: number;
   created_at: string;
   updated_at: string;
   // Fixed when the run first leaves `running`; terminal maintenance must not move it.
@@ -262,6 +264,35 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
       t,
       t,
     ) as WorkflowRunRow;
+}
+
+/**
+ * Record a human's request that the next Verify read the whole PR (#2538). Idempotent: a second
+ * request while one is pending is still a request, so it returns true either way.
+ */
+export function requestWorkflowRunFullReview(id: number): boolean {
+  const row = db
+    .query(
+      `UPDATE workflow_runs
+       SET next_verify_full = 1, updated_at = ?
+       WHERE id = ? AND status = 'running'
+       RETURNING id`,
+    )
+    .get(now(), id) as { id: number } | null;
+  return !!row;
+}
+
+/** Take the pending full-review request, if any. Returns whether this call consumed one. */
+export function consumeWorkflowRunFullReview(id: number): boolean {
+  const row = db
+    .query(
+      `UPDATE workflow_runs
+       SET next_verify_full = 0, updated_at = ?
+       WHERE id = ? AND next_verify_full = 1
+       RETURNING id`,
+    )
+    .get(now(), id) as { id: number } | null;
+  return !!row;
 }
 
 export function increaseWorkflowRunReworkLimit(

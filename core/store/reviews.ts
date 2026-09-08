@@ -154,7 +154,16 @@ export interface ReviewGate {
   headSha: string | null;
   /** Why a reviewed PR is still blocked; null when the gate is open or unreviewed. */
   blockingReason: ReviewBlockingReason | null;
+  /**
+   * Display-only scope of the PASS that opened the gate (#2538): "partial" when that review read
+   * only `base_sha..head_sha`, "full" when it read the whole PR, null when the gate is not open.
+   * It never moves `passed` or `blockingReason` — a partial PASS still opens the gate, and the
+   * human deciding to merge is shown what the PASS actually covered.
+   */
+  passedScope: ReviewPassedScope | null;
 }
+
+export type ReviewPassedScope = "full" | "partial";
 
 export type ReviewBlockingReason = "stale" | "request_changes";
 
@@ -181,6 +190,7 @@ function reviewGate(
       passed: false,
       headSha: null,
       blockingReason: null,
+      passedScope: null,
     };
   if (latest.event === "REQUEST_CHANGES")
     return {
@@ -188,6 +198,7 @@ function reviewGate(
       passed: false,
       headSha: latest.head_sha,
       blockingReason: "request_changes",
+      passedScope: null,
     };
   // A PASS that went stale needs a re-review. Passes with no recorded
   // head_sha (pre-tracking) cannot be determined stale, so they still pass.
@@ -197,12 +208,14 @@ function reviewGate(
       passed: false,
       headSha: latest.head_sha,
       blockingReason: "stale",
+      passedScope: null,
     };
   return {
     reviewed: true,
     passed: true,
     headSha: latest.head_sha,
     blockingReason: null,
+    passedScope: latest.base_sha ? "partial" : "full",
   };
 }
 

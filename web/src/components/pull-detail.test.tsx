@@ -79,6 +79,7 @@ const pull: PullRequest = {
     passed: true,
     head_sha: "aaa",
     blocking_reason: null,
+    passed_scope: "full",
   },
   changes_addressed_at: null,
   changes_addressed_by: null,
@@ -1036,6 +1037,45 @@ describe("PullDetail", () => {
     ).toBeTruthy();
   });
 
+  it("says beside Merge when the passing review was partial (#2538)", async () => {
+    renderDetailWithPull({
+      review_gate: {
+        reviewed: true,
+        passed: true,
+        head_sha: "aaa",
+        blocking_reason: null,
+        passed_scope: "partial",
+      },
+    });
+
+    expect(await screen.findByText(/Passed on a partial review/)).toBeTruthy();
+  });
+
+  it("drops the partial-pass note once the PR is merged (#2538)", async () => {
+    renderDetailWithPull({
+      state: "closed",
+      merged: true,
+      mergeable_state: "merged",
+      review_gate: {
+        reviewed: true,
+        passed: true,
+        head_sha: "aaa",
+        blocking_reason: null,
+        passed_scope: "partial",
+      },
+    });
+
+    expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
+    expect(screen.queryByText(/partial review/)).toBeNull();
+  });
+
+  it("leaves the merge action unqualified after a full pass (#2538)", async () => {
+    renderDetailWithPull({});
+
+    expect(await screen.findByRole("button", { name: "Merge" })).toBeTruthy();
+    expect(screen.queryByText(/Passed on a partial review/)).toBeNull();
+  });
+
   it("does not offer a ready action after changes are requested", async () => {
     renderDetailWithPull({
       review_state: "CHANGES_REQUESTED",
@@ -1044,6 +1084,7 @@ describe("PullDetail", () => {
         passed: false,
         head_sha: "aaa",
         blocking_reason: "request_changes",
+        passed_scope: null,
       },
     });
 

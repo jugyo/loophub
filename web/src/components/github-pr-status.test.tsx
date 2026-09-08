@@ -40,6 +40,7 @@ const LOOPHUB_PULL: PullRequest = {
     passed: true,
     head_sha: "head-sha",
     blocking_reason: null,
+    passed_scope: "full",
   },
   changes_addressed_at: null,
   changes_addressed_by: null,

@@ -487,6 +487,18 @@ export function increaseWorkflowRunReworkLimit(
   });
 }
 
+/** Ask a run's next Verify to read the whole PR (#2538). */
+export function requestWorkflowRunFullReview(
+  repo: string,
+  run: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ run: number; passed_scope: "full" | "partial" | null }>(
+    "workflowRuns/requestFullReview",
+    { repo, run, session_id: sessionId },
+  );
+}
+
 // --- global settings ---
 // Instance-level settings (#474), as opposed to the per-repo settings above.
 export function getSettings() {

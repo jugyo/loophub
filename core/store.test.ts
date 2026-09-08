@@ -578,6 +578,7 @@ test("computeReviewGate: no reviews yet is not gathered and never clean (#427)",
     passed: false,
     headSha: null,
     blockingReason: null,
+    passedScope: null,
   });
 });
 
@@ -595,6 +596,7 @@ test("computeReviewGate: the latest substantive review decides the gate (#1934)"
     passed: false,
     headSha: "sha-1",
     blockingReason: "request_changes",
+    passedScope: null,
   });
 
   // A later PASS resolves it — no matching label required, unlike the retired per-topic gate.
@@ -604,6 +606,7 @@ test("computeReviewGate: the latest substantive review decides the gate (#1934)"
     passed: true,
     headSha: "sha-1",
     blockingReason: null,
+    passedScope: "full",
   });
 
   // A COMMENT after the pass is not substantive and leaves the gate open.
@@ -623,6 +626,7 @@ test("computeReviewGate: a stale PASS does not pass (#427)", () => {
     passed: true,
     headSha: "sha-1",
     blockingReason: null,
+    passedScope: "full",
   });
 
   // Head advances past the reviewed commit -> the pass is stale, not passing.
@@ -632,6 +636,7 @@ test("computeReviewGate: a stale PASS does not pass (#427)", () => {
     passed: false,
     headSha: "sha-1",
     blockingReason: "stale",
+    passedScope: null,
   });
 
   // Re-pass against the new head -> passes again.
@@ -641,6 +646,7 @@ test("computeReviewGate: a stale PASS does not pass (#427)", () => {
     passed: true,
     headSha: "sha-2",
     blockingReason: null,
+    passedScope: "full",
   });
 });
 
@@ -657,7 +663,63 @@ test("computeReviewGate: a PASS with no recorded head passes (pre-tracking)", ()
     passed: true,
     headSha: null,
     blockingReason: null,
+    passedScope: "full",
   });
+});
+
+test("computeReviewGate: a partial PASS still opens the gate, labelled partial (#2538)", () => {
+  const repo = S.createRepo("me/gate-partial", "/tmp/gate-partial");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-2", issue.id);
+
+  // A PASS that read only sha-1..sha-2 passes exactly like a full one; only the scope differs, so
+  // the human about to merge is told what the pass covered.
+  S.createReview(
+    pr.id,
+    "rev",
+    "PASS",
+    "lgtm",
+    "sha-2",
+    null,
+    "system",
+    null,
+    "sha-1",
+  );
+  expect(S.computeReviewGate(pr.id)).toEqual({
+    reviewed: true,
+    passed: true,
+    headSha: "sha-2",
+    blockingReason: null,
+    passedScope: "partial",
+  });
+});
+
+test("workflow run full review request is taken by exactly one consumer (#2538)", () => {
+  const repo = S.createRepo("me/full-review", "/tmp/full-review");
+  const workflow = S.createWorkflow({
+    name: "full-review-store-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 1,
+    prNumber: 2,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 1,
+    costLimitUsd: 1,
+  });
+
+  expect(S.getWorkflowRun(run.id)?.next_verify_full).toBe(0);
+  expect(S.requestWorkflowRunFullReview(run.id)).toBe(true);
+  expect(S.getWorkflowRun(run.id)?.next_verify_full).toBe(1);
+  expect(S.consumeWorkflowRunFullReview(run.id)).toBe(true);
+  expect(S.consumeWorkflowRunFullReview(run.id)).toBe(false);
+  expect(S.getWorkflowRun(run.id)?.next_verify_full).toBe(0);
 });
 
 test("linkedPullsForIssue caps the fan-out and orders open PRs first", () => {

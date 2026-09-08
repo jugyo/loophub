@@ -23,7 +23,8 @@ export type WorkflowRunTransition =
   | "await_human"
   | "resume_after_human"
   | "request_rework"
-  | "rework_limit_increased";
+  | "rework_limit_increased"
+  | "full_review_requested";
 
 /**
  * `id` is the run id every run-scoped payload carries — `eventsForWorkflowRun` selects on it, so a
@@ -97,6 +98,11 @@ export interface WorkflowEventPayloadMap {
       /** Present only on `activate_step`, which names the pane taking live input. */
       active_step?: string | null;
       active_session_id?: string | null;
+      /**
+       * Present only on `full_review_requested` (#2538): the scope of the PASS standing when the
+       * human asked for a full review, so requests that followed a partial pass can be counted.
+       */
+      passed_scope?: "full" | "partial" | null;
     };
   "workflow_step.launched": WorkflowRunScoped &
     WorkflowRunSubject & {

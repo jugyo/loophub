@@ -1267,6 +1267,8 @@ export interface ReviewGateWire {
   passed: boolean;
   head_sha: string | null;
   blocking_reason: S.ReviewBlockingReason | null;
+  // Display-only scope of the PASS that opened the gate (#2538). Null unless the gate is open.
+  passed_scope: S.ReviewPassedScope | null;
 }
 
 export function reviewGateJSON(gate: S.ReviewGate): ReviewGateWire {
@@ -1275,6 +1277,7 @@ export function reviewGateJSON(gate: S.ReviewGate): ReviewGateWire {
     passed: gate.passed,
     head_sha: gate.headSha,
     blocking_reason: gate.blockingReason,
+    passed_scope: gate.passedScope,
   };
 }
 
@@ -1716,6 +1719,8 @@ export interface WorkflowRunStateWire {
   pr_merged: boolean;
   merge_ready: boolean;
   merge_conflict: boolean;
+  // A human's pending request that the next Verify read the whole PR (#2538).
+  next_verify_full: boolean;
   workflow_config: WorkflowRunConfigWire | null;
 }
 
@@ -1846,6 +1851,7 @@ export function workflowRunStateJSON(input: {
     pr_merged: input.prMerged,
     merge_ready: input.mergeReady,
     merge_conflict: input.mergeConflict,
+    next_verify_full: run.next_verify_full === 1,
     workflow_config: input.workflowConfig,
   };
 }
@@ -2071,9 +2077,12 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
                   "Execute completed"
                 : transition === "request_rework"
                   ? "Run rework requested"
-                  : transition === "activate_step"
-                    ? "Step agent activated"
-                    : "Run state updated";
+                  : transition === "full_review_requested"
+                    ? // A human asked for the next Verify to read the whole PR (#2538).
+                      "Full review requested"
+                    : transition === "activate_step"
+                      ? "Step agent activated"
+                      : "Run state updated";
     },
     description: (context) => {
       const { status, transition, touchedNeedsHuman, needsHumanReason } =
@@ -2082,7 +2091,9 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
       return [
         transition === "advance_to_verify"
           ? "Execute finished implementing; the run moved on to Verify."
-          : null,
+          : transition === "full_review_requested"
+            ? "A human asked for the next Verify to read the whole PR."
+            : null,
         `Status: ${workflowStepLabel(status) ?? status}.`,
         touchedNeedsHuman
           ? needsHumanReason !== null

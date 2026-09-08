@@ -1,5 +1,5 @@
 import { db } from "./db.ts";
-import { currentMergeableState } from "./pull-mergeable-state.ts";
+import { currentPullStatus } from "./pull-mergeable-state.ts";
 import * as S from "./store.ts";
 
 const MERGE_READY_NOTIFICATION_DELAY_MS = 10_000;
@@ -18,7 +18,8 @@ export async function sweepMergeReadyNotifications(): Promise<MergeReadyNotifica
   for (const pull of pulls) {
     // The mergeable state comes from git and GitHub, so it is resolved before the PR's observation,
     // notification and event commit as one.
-    const state = await currentMergeableState(pull);
+    const status = await currentPullStatus(pull);
+    const state = status?.mergeable_state ?? "unknown";
     const row = db.transaction(() => {
       const observed = S.recordMergeReadyState(
         pull.repo_id,
@@ -37,7 +38,12 @@ export async function sweepMergeReadyNotifications(): Promise<MergeReadyNotifica
         repoId: pull.repo_id,
         kind: "merge_ready",
         title: "Ready to merge",
-        body: `PR #${pull.number} in ${pull.repo_full_name} is ready to merge.`,
+        // #2538: a partial PASS opens the gate like any other, so the notification that invites the
+        // merge says what the passing review actually read.
+        body:
+          status?.passedScope === "partial"
+            ? `PR #${pull.number} in ${pull.repo_full_name} is ready to merge. Its passing review was partial — it read only the latest commit range, not the whole PR.`
+            : `PR #${pull.number} in ${pull.repo_full_name} is ready to merge.`,
         resourceKind: "pull",
         resourceNumber: pull.number,
         sourceKey: `merge-ready:${pull.repo_id}:${pull.number}:${observed.transition_count}`,

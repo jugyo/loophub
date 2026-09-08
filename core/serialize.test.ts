@@ -291,6 +291,21 @@ const RENDERED_EVENT_CASES: Array<{
     significance: "notable",
   },
   {
+    name: "updated/full-review-requested",
+    type: "workflow_run.updated",
+    payload: {
+      status: "running",
+      transition: "full_review_requested",
+      current_step: "verify",
+      rework_count: 1,
+      passed_scope: "partial",
+    },
+    label: "Full review requested",
+    description:
+      "A human asked for the next Verify to read the whole PR. Status: Running. Current step: Verify. Rework count: 1.",
+    significance: "routine",
+  },
+  {
     name: "updated/activate",
     type: "workflow_run.updated",
     payload: {

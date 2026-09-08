@@ -11,6 +11,7 @@ import {
   getWorkflowRunTotalCost,
   increaseWorkflowRunCostLimit,
   increaseWorkflowRunReworkLimit,
+  requestWorkflowRunFullReview,
 } from "@/api/client";
 import { queryKeys } from "./keys";
 
@@ -86,6 +87,28 @@ export function useIncreaseWorkflowRunReworkLimit(
         }),
         queryClient.invalidateQueries({ queryKey: queryKeys.issues(full) }),
       ]);
+    },
+  });
+}
+
+/**
+ * Ask the run linked to a PR to make its next Verify read the whole PR (#2538). The run state is
+ * refetched so the pending request shows without waiting for the event poll.
+ */
+export function useRequestWorkflowRunFullReview(
+  owner: string,
+  repo: string,
+  pull: number,
+) {
+  const full = `${owner}/${repo}`;
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ run }: { run: number }) =>
+      requestWorkflowRunFullReview(full, run),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.workflowRunForPull(full, pull),
+      });
     },
   });
 }

@@ -1026,6 +1026,9 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   -- limit advances only through the explicit cost-limit increase operation.
   cost_increment_usd REAL NOT NULL,
   cost_limit_usd     REAL NOT NULL,
+  -- A human's standing request that the next Verify read the whole PR instead of the increment
+  -- since the previous review (#2538). The next Verify launch consumes it.
+  next_verify_full   INTEGER NOT NULL DEFAULT 0,
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL,
   -- Set once when the run leaves the running lifecycle. Unlike updated_at, this does not move when

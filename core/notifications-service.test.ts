@@ -120,6 +120,43 @@ test("list generates merge-ready and over-budget notifications", async () => {
   expect((await svc.notifications.unreadCount()).count).toBe(2);
 });
 
+test("a merge-ready notification says when the passing review was partial (#2538)", async () => {
+  const repo = S.getRepo("me", "notify")!;
+  const pr = S.createIssue(repo.id, "pull", "Partial PR", "", "me");
+  git(primaryRepoPath, ["checkout", "-qb", "partial"]);
+  writeFileSync(join(primaryRepoPath, "partial.txt"), "partial\n");
+  git(primaryRepoPath, ["add", "partial.txt"]);
+  git(primaryRepoPath, ["commit", "-qm", "partial"]);
+  const headSha = git(primaryRepoPath, ["rev-parse", "HEAD"]).stdout.trim();
+  const baseSha = git(primaryRepoPath, ["rev-parse", "HEAD~1"]).stdout.trim();
+  git(primaryRepoPath, ["checkout", "-q", "main"]);
+  S.createPull(pr.id, "partial", "main", headSha, null);
+  S.createReview(
+    pr.id,
+    "reviewer",
+    "PASS",
+    "looks good",
+    headSha,
+    null,
+    "system",
+    null,
+    baseSha,
+  );
+
+  await svc.notifications.sweep();
+  ageMergeReadyState(repo.id, pr.number);
+  await svc.notifications.sweep();
+  const notifications = await svc.notifications.list({ limit: 20 });
+  expect(notifications).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "merge_ready",
+        body: `PR #${pr.number} in me/notify is ready to merge. Its passing review was partial — it read only the latest commit range, not the whole PR.`,
+      }),
+    ]),
+  );
+});
+
 test("list creates warning notifications for Workflow cost and rework limit events", async () => {
   const repoPath = initGitRepo("lh-notifications-workflow-limits-");
   await svc.repos.create({ path: repoPath, name: "me/workflow-limits" });

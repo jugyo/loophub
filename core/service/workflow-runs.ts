@@ -237,6 +237,13 @@ export type WorkflowRunReworkLimitIncreaseResult = {
   current_limit: number;
 };
 
+export type WorkflowRunFullReviewRequestResult = {
+  run: number;
+  // Scope of the PASS standing when the request was made, so the request can be counted against
+  // the partial passes it followed (#2538).
+  passed_scope: S.ReviewPassedScope | null;
+};
+
 export type WorkflowLaunchStepResult = {
   run: WorkflowRunUpdateResult["run"];
   step: WorkflowStep;
@@ -2637,6 +2644,61 @@ export const workflowRuns = {
     return { run: run.id, ...increased };
   },
 
+  // A human asks for the next Verify to read the whole PR (#2538). It is a reservation on the run,
+  // not a launch: Verify may be running, Execute may be running, or nothing may be — the next
+  // Verify launch consumes it and withholds the previous-review pointer.
+  async requestFullReviewForHuman(
+    name: string,
+    input: { run: number },
+    sessionId: string,
+  ): Promise<WorkflowRunFullReviewRequestResult> {
+    if (!sessionId) {
+      throw new ServiceError(403, "Human Workflow action requires a session");
+    }
+    const { repo, run } = runInRepo(name, input.run);
+    assertRunningLifecycle(run);
+    const prIssue = issueOr404(repo, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull)
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    // Read the gate against the live Git head like every other gate reader, so the scope recorded
+    // on the event is the one the human saw. The watcher's stored SHA is only the fallback.
+    const headSha = await revParse(
+      repo.local_path,
+      localBranchRef(pull.head_ref),
+    );
+    const passedScope = S.computeReviewGate(
+      prIssue.id,
+      headSha ?? pull.head_sha,
+    ).passedScope;
+    return db.transaction(() => {
+      if (!S.requestWorkflowRunFullReview(run.id)) {
+        throw new ServiceError(
+          409,
+          "Workflow full review was not requested because the run state changed",
+        );
+      }
+      S.emitWorkflowEvent(
+        repo.id,
+        "workflow_run.updated",
+        actorFor(sessionId),
+        {
+          id: run.id,
+          issue_number: run.issue_number,
+          pr_number: run.pr_number,
+          transition: "full_review_requested",
+          status: run.status,
+          current_step: run.current_step,
+          rework_count: run.rework_count,
+          // No `needs_human_reason`: the key itself means this update touched the human wait, and
+          // this one does not.
+          passed_scope: passedScope,
+        },
+      );
+      return { run: run.id, passed_scope: passedScope };
+    });
+  },
+
   async requestRework(
     name: string,
     input: { run: number },
@@ -2759,9 +2821,12 @@ export const workflowRuns = {
       step === "verify" && headSha
         ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
         : undefined;
-    // `--full` withholds the pointer so a human can ask for a whole-range review.
+    // `--full` withholds the pointer so a human can ask for a whole-range review. The same effect
+    // is reserved on the run by the Web's full-review request (#2538); it is only consumed once
+    // this launch is committed to spawning, so a failed launch leaves the request standing.
+    const fullRequested = step === "verify" && run.next_verify_full === 1;
     const previousReviewId =
-      step === "verify" && headSha && !input.full
+      step === "verify" && headSha && !input.full && !fullRequested
         ? await previousVerifyReviewId({
             prIssueId: prIssue.id,
             runId: run.id,
@@ -2876,6 +2941,11 @@ export const workflowRuns = {
       );
       throw error;
     }
+    // Take the human's full-review request so the next Verify does not read it again (#2538). This
+    // is as late as it can be taken here — the caller still spawns the plan this returns, and a
+    // failure there loses the request, which a human recovers by asking again. Moving it to launch
+    // confirmation would instead eat a request made while the spawn was in flight.
+    if (fullRequested) S.consumeWorkflowRunFullReview(run.id);
 
     return {
       run: runJSON(run),
@@ -3281,8 +3351,10 @@ export const workflowRuns = {
       step === "verify" && headSha
         ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
         : undefined;
+    // stepInput only renders the prompt, so it reads the pending full-review request (#2538)
+    // without consuming it — the launch that actually spawns Verify is what takes it.
     const previousReviewId =
-      step === "verify" && headSha && !input.full
+      step === "verify" && headSha && !input.full && run.next_verify_full !== 1
         ? await previousVerifyReviewId({
             prIssueId: prIssue.id,
             runId: run.id,

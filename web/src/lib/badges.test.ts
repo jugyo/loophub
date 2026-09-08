@@ -49,6 +49,7 @@ function pull(partial: Partial<PullRequest> = {}): PullRequest {
       passed: false,
       head_sha: null,
       blocking_reason: null,
+      passed_scope: null,
     },
     changes_addressed_at: null,
     changes_addressed_by: null,

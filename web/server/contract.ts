@@ -492,6 +492,22 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "workflowRuns/requestFullReview": {
+    description:
+      "Ask a running Workflow run to make its next Verify read the whole PR instead of the increment since the previous review (#2538). It is a reservation on the run, so it is accepted whether or not a Verify is running.",
+    params: params({ repo, run: positiveInt, session_id: sid }, [
+      "repo",
+      "run",
+      "session_id",
+    ]),
+    result: anyObject,
+    handler: (p) =>
+      svc.workflowRuns.requestFullReviewForHuman(
+        p.repo,
+        { run: p.run },
+        p.session_id,
+      ),
+  },
 
   // ---- terminal launch ----
   "terminal/launch": {

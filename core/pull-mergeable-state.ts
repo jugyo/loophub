@@ -40,6 +40,7 @@ export async function currentPullStatus(
   changedFiles: number;
   commitsAhead: number;
   baseCommitsBehind: number;
+  passedScope: S.ReviewPassedScope | null;
 } | null> {
   const [headSha, baseSha] = await Promise.all([
     revParse(pull.local_path, localBranchRef(pull.head_ref)),
@@ -71,6 +72,7 @@ export async function currentPullStatus(
       changedFiles: reusableProjection.changed_files,
       commitsAhead: reusableProjection.commits_ahead,
       baseCommitsBehind: reusableProjection.base_commits_behind,
+      passedScope: reviewGate.passedScope,
     };
   }
   const status = await pullShaStatus(pull.local_path, baseSha, headSha);
@@ -98,5 +100,6 @@ export async function currentPullStatus(
     changedFiles: status.changedFiles,
     commitsAhead: status.commitsAhead,
     baseCommitsBehind,
+    passedScope: reviewGate.passedScope,
   };
 }

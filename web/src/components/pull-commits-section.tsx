@@ -14,18 +14,28 @@
 
 import { Check, ImageIcon, Loader2, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { PullLineComment, PullRequest, PullReview } from "@/api/types";
+import type {
+  PullLineComment,
+  PullRequest,
+  PullReview,
+  WorkflowRunState,
+} from "@/api/types";
 import { CommentAuthorLabel } from "@/components/comment-author-label";
 import { CommentMetadata } from "@/components/comment-metadata";
 import { CommitDiffDialog } from "@/components/commit-diff-dialog";
 import { Markdown } from "@/components/markdown";
+import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/lib/badges";
+import { errorMessage } from "@/lib/error-message";
 import { hasMarkdownImage } from "@/lib/markdown-images";
 import { formatDuration, relativeTime } from "@/lib/time";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
-import { useWorkflowRunForPull } from "@/queries/workflow-runs";
+import {
+  useRequestWorkflowRunFullReview,
+  useWorkflowRunForPull,
+} from "@/queries/workflow-runs";
 
 type PullCommit = NonNullable<PullRequest["commits"]>[number];
 type ReviewAcResult = PullReview["ac_results"][number];
@@ -44,6 +54,7 @@ export function PullCommitsSection({
   isReviewsLoading,
   isReviewsError,
   showGithubPushState,
+  partialPass = false,
 }: {
   owner: string;
   repo: string;
@@ -54,12 +65,18 @@ export function PullCommitsSection({
   isReviewsLoading: boolean;
   isReviewsError: boolean;
   showGithubPushState: boolean;
+  // The PR is mergeable right now on a PASS that read only part of it (#2538). Decided by the
+  // caller, which owns the merge state this sentence is about.
+  partialPass?: boolean;
 }) {
   const [selectedCommit, setSelectedCommit] = useState<PullCommit | null>(null);
   const [selectedReviewGroup, setSelectedReviewGroup] =
     useState<SelectedReviewGroup | null>(null);
   const workflowRun = useWorkflowRunForPull(owner, repo, number).data;
   const orderedCommits = [...commits].reverse();
+  // The newest commit is what the next Verify would read, so the full-review request sits on its
+  // row (#2538) rather than above the list.
+  const latestSha = orderedCommits.at(-1)?.sha ?? null;
   // The latest pushed commit marks how far the GitHub branch reaches: everything before it is pushed
   // as well, and repeating the badge on those rows says nothing new (#2039).
   const latestPushedSha = showGithubPushState
@@ -82,6 +99,14 @@ export function PullCommitsSection({
       className="flex scroll-mt-11 flex-col gap-3"
     >
       <h2 className="text-lg font-semibold">Commits ({commits.length})</h2>
+      {/* #2538: a partial PASS opens the merge gate like a full one, so the section that shows the
+          partial badge also says what that PASS means for merging. */}
+      {partialPass ? (
+        <p className="text-sm text-muted-foreground">
+          This PR is mergeable on a partial review: the passing review read only
+          the latest commit range, not the whole PR.
+        </p>
+      ) : null}
       {isReviewsLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading reviews…
@@ -143,6 +168,14 @@ export function PullCommitsSection({
                   {isReviewing ? (
                     <ReviewingBadge
                       startedAt={workflowRun?.active_verify_started_at ?? null}
+                    />
+                  ) : null}
+                  {commit.sha === latestSha ? (
+                    <FullReviewRequest
+                      owner={owner}
+                      repo={repo}
+                      number={number}
+                      run={workflowRun}
                     />
                   ) : null}
                   {commit.sha === latestPushedSha ? (
@@ -596,6 +629,53 @@ function ReviewVerdictSummary({ reviews }: { reviews: PullReview[] }) {
         {reviews.length} review{reviews.length === 1 ? "" : "s"}
       </span>
     </>
+  );
+}
+
+// #2538: the human's way to say the next review must read the whole PR, sitting on the newest
+// commit's row — the commit the next Verify would read up to. It is a reservation on the run, not a
+// launch — a Verify may be running, Execute may be running, or nothing may be — so the button is
+// offered for as long as the run is running, and the pending state replaces it.
+function FullReviewRequest({
+  owner,
+  repo,
+  number,
+  run,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  run: WorkflowRunState | null | undefined;
+}) {
+  const request = useRequestWorkflowRunFullReview(owner, repo, number);
+  const { showError } = useToast();
+  if (run?.status !== "running") return null;
+  if (run.next_verify_full) {
+    return (
+      <span className="shrink-0 text-xs text-muted-foreground">
+        When Verify next runs, it will review the whole PR.
+      </span>
+    );
+  }
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      className="shrink-0"
+      disabled={request.isPending}
+      onClick={() =>
+        request.mutate(
+          { run: run.id },
+          {
+            onError: (e) =>
+              showError(errorMessage(e, "Full review request failed")),
+          },
+        )
+      }
+    >
+      {request.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+      Request full review
+    </Button>
   );
 }
 

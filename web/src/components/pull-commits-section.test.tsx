@@ -111,6 +111,7 @@ function renderSection({
   isReviewsLoading = false,
   isReviewsError = false,
   showGithubPushState = false,
+  partialPass = false,
   handlers = {},
 }: {
   commits?: PullRequest["commits"];
@@ -119,6 +120,7 @@ function renderSection({
   isReviewsLoading?: boolean;
   isReviewsError?: boolean;
   showGithubPushState?: boolean;
+  partialPass?: boolean;
   handlers?: Record<string, (params: any) => unknown>;
 } = {}) {
   vi.stubGlobal(
@@ -144,10 +146,72 @@ function renderSection({
         isReviewsLoading={isReviewsLoading}
         isReviewsError={isReviewsError}
         showGithubPushState={showGithubPushState}
+        partialPass={partialPass}
       />
     </QueryClientProvider>,
   );
 }
+
+describe("PullCommitsSection — partial pass and full review (#2538)", () => {
+  it("says the passing review was partial", () => {
+    renderSection({ partialPass: true });
+
+    expect(screen.getByText(/mergeable on a partial review/i)).toBeTruthy();
+  });
+
+  it("keeps the note off a full pass", () => {
+    renderSection({ partialPass: false });
+
+    expect(screen.queryByText(/mergeable on a partial review/i)).toBeNull();
+  });
+
+  it("requests a full review for the running run", async () => {
+    renderSection({
+      partialPass: true,
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          id: 7,
+          status: "running",
+          next_verify_full: false,
+        }),
+        "workflowRuns/requestFullReview": () => ({
+          run: 7,
+          passed_scope: "partial",
+        }),
+      },
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Request full review" }),
+    );
+    await waitFor(() =>
+      expect(rpcCall("workflowRuns/requestFullReview")).toMatchObject({
+        params: { repo: "me/proj", run: 7 },
+      }),
+    );
+  });
+
+  it("shows the pending request instead of the button", async () => {
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          id: 7,
+          status: "running",
+          next_verify_full: true,
+        }),
+      },
+    });
+
+    expect(
+      await screen.findByText(
+        "When Verify next runs, it will review the whole PR.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Request full review" }),
+    ).toBeNull();
+  });
+});
 
 describe("PullCommitsSection", () => {
   it("labels only the commit targeted by an active Verify step", async () => {
