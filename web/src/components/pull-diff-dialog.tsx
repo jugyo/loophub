@@ -209,7 +209,7 @@ const DIFF_LINE_MARKER: Record<DiffLineKind, string> = {
 
 const INITIAL_FILE_SIDEBAR_WIDTH = 336;
 const MIN_FILE_SIDEBAR_WIDTH = 160;
-const MAX_FILE_SIDEBAR_WIDTH = 480;
+const FALLBACK_MAX_FILE_SIDEBAR_WIDTH = 480;
 const DIFF_FEEDBACK_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
 
 // Sidebar tree indentation: rows start at the sticky header's px-3 and each depth adds one step.
@@ -310,7 +310,7 @@ export function DiffDialogState({
           aria-label="Resize changed files sidebar"
           aria-orientation="vertical"
           aria-valuemin={MIN_FILE_SIDEBAR_WIDTH}
-          aria-valuemax={MAX_FILE_SIDEBAR_WIDTH}
+          aria-valuemax={FALLBACK_MAX_FILE_SIDEBAR_WIDTH}
           aria-valuenow={INITIAL_FILE_SIDEBAR_WIDTH}
           className="relative w-1 shrink-0 border-x bg-border/40"
         />
@@ -621,6 +621,7 @@ export function DiffFileDialog({
     startX: number;
     startWidth: number;
   } | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const backdropDismiss = useBackdropDismiss(onClose);
   const viewsQuery = usePullFileViews(
     owner,
@@ -721,10 +722,15 @@ export function DiffFileDialog({
   useEffect(() => {
     if (!sidebarDrag) return;
     const drag = sidebarDrag;
+    const maxWidth = Math.max(
+      MIN_FILE_SIDEBAR_WIDTH,
+      (dialogRef.current?.clientWidth ?? 0) / 2 ||
+        FALLBACK_MAX_FILE_SIDEBAR_WIDTH,
+    );
     function onPointerMove(event: PointerEvent) {
       setFileSidebarWidth(
         Math.min(
-          MAX_FILE_SIDEBAR_WIDTH,
+          maxWidth,
           Math.max(
             MIN_FILE_SIDEBAR_WIDTH,
             drag.startWidth + event.clientX - drag.startX,
@@ -750,6 +756,7 @@ export function DiffFileDialog({
     >
       <div
         data-debug-component="DiffFileDialog"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={
@@ -899,7 +906,11 @@ export function DiffFileDialog({
           aria-label="Resize changed files sidebar"
           aria-orientation="vertical"
           aria-valuemin={MIN_FILE_SIDEBAR_WIDTH}
-          aria-valuemax={MAX_FILE_SIDEBAR_WIDTH}
+          aria-valuemax={Math.max(
+            MIN_FILE_SIDEBAR_WIDTH,
+            (dialogRef.current?.clientWidth ?? 0) / 2 ||
+              FALLBACK_MAX_FILE_SIDEBAR_WIDTH,
+          )}
           aria-valuenow={fileSidebarWidth}
           className={cn(
             "relative w-1 shrink-0 cursor-col-resize touch-none border-x bg-border/40",
