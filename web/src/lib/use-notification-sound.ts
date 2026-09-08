@@ -15,6 +15,16 @@ import { useSettings } from "@/queries/settings";
 // A worker sweep can create several notifications at once, each arriving as its own list refresh.
 // One bell covers the burst instead of ringing over itself.
 const BELL_COOLDOWN_MS = 2000;
+const NOTIFICATION_SOUND_LOCK = "loophub-notification-sound";
+const LAST_NOTIFICATION_SOUND_ID = "loophub-last-notification-sound-id";
+
+interface NotificationSoundLockManager {
+  request<T>(
+    name: string,
+    options: { ifAvailable: boolean },
+    callback: (lock: object | null) => Promise<T>,
+  ): Promise<T>;
+}
 
 // この識別子は読み込まれたページのモジュール内だけに存在する。永続化せず、セッションを
 // またいで追跡できない範囲で複数タブの debug ログを比較するために使う。
@@ -32,6 +42,45 @@ function cooldownElapsedMs(
   now: number,
 ): number | null {
   return lastPlayedAt == null ? null : Math.max(0, now - lastPlayedAt);
+}
+
+/** Play the bell only when this tab wins the browser-wide notification lock. */
+export function playNotificationBellOnce(
+  notificationId: number,
+): Promise<NotificationSoundPlayback | null> {
+  const locks = (
+    globalThis.navigator as Navigator & { locks?: NotificationSoundLockManager }
+  ).locks;
+  if (!locks) return playNotificationBell();
+
+  return locks.request(
+    NOTIFICATION_SOUND_LOCK,
+    { ifAvailable: true },
+    async (lock) => {
+      if (!lock) return null;
+
+      let lastNotificationId: number | null = null;
+      try {
+        const stored = globalThis.localStorage.getItem(
+          LAST_NOTIFICATION_SOUND_ID,
+        );
+        lastNotificationId = stored == null ? null : Number(stored);
+      } catch {
+        // The lock still prevents concurrent playback when storage is unavailable.
+      }
+      if (lastNotificationId === notificationId) return null;
+
+      try {
+        globalThis.localStorage.setItem(
+          LAST_NOTIFICATION_SOUND_ID,
+          String(notificationId),
+        );
+      } catch {
+        // Continue with playback when storage is unavailable.
+      }
+      return playNotificationBell();
+    },
+  );
 }
 
 export function useNotificationSound(pathname: string): void {
@@ -104,8 +153,9 @@ export function useNotificationSound(pathname: string): void {
     }
 
     lastPlayedAt.current = at;
-    void Promise.resolve(playNotificationBell()).then(
-      (playback: NotificationSoundPlayback) => {
+    void playNotificationBellOnce(newestId).then(
+      (playback: NotificationSoundPlayback | null) => {
+        if (playback == null) return;
         recordNotificationSound({
           at,
           instanceId: SOUND_INSTANCE_ID,

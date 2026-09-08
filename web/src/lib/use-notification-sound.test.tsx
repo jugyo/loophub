@@ -8,7 +8,10 @@ import {
   useDebugLog,
 } from "@/lib/debug-log";
 import { queryKeys } from "@/queries/keys";
-import { useNotificationSound } from "./use-notification-sound";
+import {
+  playNotificationBellOnce,
+  useNotificationSound,
+} from "./use-notification-sound";
 
 const { playNotificationBell } = vi.hoisted(() => ({
   playNotificationBell: vi.fn<() => Promise<"success" | "failure">>(() =>
@@ -20,6 +23,7 @@ vi.mock("@/lib/notification-sound", () => ({ playNotificationBell }));
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.restoreAllMocks();
   vi.clearAllMocks();
   clearDebugLog();
@@ -110,6 +114,56 @@ function renderHook(
 }
 
 describe("useNotificationSound", () => {
+  it("plays through the browser-wide lock when this tab acquires it", async () => {
+    const request = vi.fn(async (_name, _options, callback) => callback({}));
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: { request },
+    });
+
+    await expect(playNotificationBellOnce(1)).resolves.toBe("success");
+    expect(request).toHaveBeenCalledWith(
+      "loophub-notification-sound",
+      { ifAvailable: true },
+      expect.any(Function),
+    );
+    expect(playNotificationBell).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not play when another tab owns the browser-wide lock", async () => {
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: vi.fn(async (_name, _options, callback) => callback(null)),
+      },
+    });
+
+    await expect(playNotificationBellOnce(1)).resolves.toBeNull();
+    expect(playNotificationBell).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the existing playback when Web Locks is unavailable", async () => {
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: undefined,
+    });
+
+    await expect(playNotificationBellOnce(1)).resolves.toBe("success");
+    expect(playNotificationBell).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay a notification after the first tab releases the lock", async () => {
+    const request = vi.fn(async (_name, _options, callback) => callback({}));
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: { request },
+    });
+
+    await expect(playNotificationBellOnce(7)).resolves.toBe("success");
+    await expect(playNotificationBellOnce(7)).resolves.toBeNull();
+    expect(playNotificationBell).toHaveBeenCalledTimes(1);
+  });
+
   it("stays silent for the unread notifications already waiting at page load", async () => {
     renderHook([makeNotification(4), makeNotification(3)]);
     await settle();
