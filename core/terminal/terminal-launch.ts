@@ -643,6 +643,28 @@ export function buildHerdrLaunchPlan(input: {
   };
 }
 
+// Pins a tab-creating launch to the workspace that owns its target worktree. Workflow step
+// launches resolve that workspace immediately before spawning, after the JSON-RPC plan has been
+// built, so a focused unrelated workspace can never receive the child pane.
+export function withHerdrWorkspace(
+  plan: HerdrLaunchPlan,
+  workspaceId: string,
+): HerdrLaunchPlan {
+  const createIndex = plan.paneArgv.findIndex(
+    (token, index) => token === "create" && plan.paneArgv[index - 1] === "tab",
+  );
+  if (createIndex < 0) return plan;
+  return {
+    ...plan,
+    paneArgv: [
+      ...plan.paneArgv.slice(0, createIndex + 1),
+      "--workspace",
+      workspaceId,
+      ...plan.paneArgv.slice(createIndex + 1),
+    ],
+  };
+}
+
 // The step agent's launch, dispatched on the parent run's runtime (#516, #1521). The per-runtime
 // shape — claude's --session-id / --append-system-prompt-file, codex/grok folding the rendered
 // contract into a positional prompt, the sandbox-vs-approval posture — comes from the

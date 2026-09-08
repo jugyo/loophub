@@ -23,6 +23,7 @@ import {
   herdrWorkspaceFocusArgv,
   herdrWorkspaceListArgv,
   herdrWorktreeOpenArgv,
+  withHerdrWorkspace,
   parseHerdrAgentPaneId,
   parseHerdrRootPaneId,
   parseHerdrTabId,
@@ -402,6 +403,21 @@ describe("herdr terminal launch", () => {
     });
     expect(plan.paneArgv).toContain("--workspace");
     expect(plan.paneArgv[plan.paneArgv.indexOf("--workspace") + 1]).toBe("w9");
+  });
+
+  test("pins an existing tab launch to the resolved worktree workspace", () => {
+    const plan = buildHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      command: "claude",
+      label: "executor #1-1",
+      cwd: "/repo/worktrees/pr-42",
+    });
+    const pinned = withHerdrWorkspace(plan, "w42");
+    expect(pinned.paneArgv).toContain("--workspace");
+    expect(pinned.paneArgv[pinned.paneArgv.indexOf("--workspace") + 1]).toBe(
+      "w42",
+    );
+    expect(pinned.cwd).toBe(plan.cwd);
   });
 
   test("a split placement wins over a workspace: the child lands in its parent's tab", () => {

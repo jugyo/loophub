@@ -94,7 +94,9 @@ function fakeRuntime(
     paneCloseExit = 0,
     paneListJson = "",
     processInfoErrorPane = "",
-    worktreeOpenJson = "",
+    worktreeOpenJson = JSON.stringify({
+      result: { already_open: true, workspace: { workspace_id: "w1" } },
+    }),
     tabCreateJson = REUSE_TAB_JSON,
     sessionRunning = true,
     sessionListExit = 0,
@@ -721,7 +723,9 @@ test("workflow launch-step starts each child in an independent tab", () => {
     expect(launched.stdout).toContain(`agent\texecutor #${body.run.id}-1`);
     const log = readFileSync(runtime.log, "utf8");
     expect(log).toMatch(
-      new RegExp(`tab create --cwd .+ --label executor #${body.run.id}-1`),
+      new RegExp(
+        `tab create --workspace w1 --cwd .+ --label executor #${body.run.id}-1`,
+      ),
     );
     expect(log).toContain(`pane rename w1:p10 executor #${body.run.id}-1`);
     expect(log).toMatch(/pane send-text w1:p10 .*claude /);
