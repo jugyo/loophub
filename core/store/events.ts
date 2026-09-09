@@ -347,6 +347,28 @@ export function eventsForWorkflowRun(
     .all(repoId, runId) as EventRow[];
 }
 
+// The persisted counter is an operational budget and can restart after a human resumes a run.
+// Display surfaces instead report how many Verify -> Execute rework transitions actually happened
+// in this run. Keep the row value as a fallback for legacy runs whose lifecycle events are absent.
+export function workflowRunReworkCount(
+  repoId: number,
+  runId: number,
+  persistedCount: number,
+): number {
+  const row = db
+    .query(
+      `SELECT COUNT(*) AS count FROM events
+       WHERE repo_id = ?
+         AND (type GLOB 'workflow_run.*'
+           OR type GLOB 'workflow_step.*')
+         AND type = 'workflow_run.updated'
+         AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
+         AND json_extract(payload, '$.transition') = 'request_rework'`,
+    )
+    .get(repoId, runId) as { count: number };
+  return Math.max(row.count, persistedCount);
+}
+
 // Cost detection runs on every usage sweep, so this INSERT collapses a run's repeated over-limit
 // observations into at most one event per `reemitAfterMs` for the same cumulative limit (#1844).
 // It re-emits rather than emitting once: a parent that stopped between the delivered instruction

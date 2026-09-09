@@ -1792,6 +1792,7 @@ export function workflowRunStateJSON(input: {
   workflowName: string | null;
   latestReview: WorkflowRunReviewSummaryWire | null;
   verificationStatus: WorkflowRunStateWire["verification_status"];
+  reworkCount: number;
   reworkLimit: number;
   reworkLimitIncreaseAvailable: boolean;
   costIncrementUsd: number;
@@ -1819,7 +1820,7 @@ export function workflowRunStateJSON(input: {
         : (run.current_step as "execute" | "verify"),
     active_verify_head_sha: input.activeVerifyHeadSha,
     active_verify_started_at: input.activeVerifyStartedAt,
-    rework_count: run.rework_count,
+    rework_count: input.reworkCount,
     rework_limit: input.reworkLimit,
     rework_limit_increase_available: input.reworkLimitIncreaseAvailable,
     cost_increment_usd: input.costIncrementUsd,

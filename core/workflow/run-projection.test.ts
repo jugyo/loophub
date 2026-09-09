@@ -42,6 +42,32 @@ test("turn done, verify launch and execute round resolve to the latest of each",
   expect(projection.latestExecuteRound?.id).toBe(trail[4].id);
 });
 
+test("rework count remains cumulative when persisted payload counts restart", () => {
+  const projection = projectWorkflowRunEvents([
+    ...Array.from({ length: 3 }, (_value, index) =>
+      row("workflow_run.updated", {
+        id: 1,
+        transition: "request_rework",
+        rework_count: index + 1,
+      }),
+    ),
+    row("workflow_run.updated", {
+      id: 1,
+      transition: "resume_after_human",
+      rework_count: 0,
+    }),
+    ...Array.from({ length: 2 }, (_value, index) =>
+      row("workflow_run.updated", {
+        id: 1,
+        transition: "request_rework",
+        rework_count: index + 1,
+      }),
+    ),
+  ]);
+
+  expect(projection.reworkCount).toBe(5);
+});
+
 // Discarding stale verifiers needs every Verify child a run has launched, not only the newest —
 // a run can have more than one alive at once (#1857).
 test("every verify launch is kept, oldest first, with the latest also exposed alone", () => {

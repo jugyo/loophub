@@ -156,7 +156,7 @@ test("issues.list keeps batched related data associated with each issue", async 
   expect(secondItem.linked_pull_requests).toEqual([]);
 });
 
-test("issues.list carries the linked PR's workflow rework count (#2147)", async () => {
+test("issues.list carries the linked PR's complete workflow rework count (#539)", async () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");
   const issue = svc.issues.create("me/proj", {
@@ -195,14 +195,31 @@ test("issues.list carries the linked PR's workflow rework count (#2147)", async 
   // yet" from "no run at all"; only the UI decides that zero is not worth showing.
   expect(withoutRework.linked_pull_requests[0].workflow_rework_count).toBe(0);
 
-  S.updateWorkflowRun(run.id, { reworkCount: 3 });
+  for (let count = 1; count <= 5; count++) {
+    S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+      id: run.id,
+      transition: "request_rework",
+      status: "running",
+      current_step: "execute",
+      rework_count: count <= 3 ? count : count - 3,
+      issue_number: issue.number,
+      pr_number: pull.number,
+    });
+  }
+  // Human resume resets the operational budget, but display count remains cumulative for the run.
+  S.updateWorkflowRun(run.id, { reworkCount: 2 });
   const reworked = (
     (await svc.issues.list("me/proj", {
       kind: "issue",
       state: "open",
     })) as any[]
   ).find((item) => item.number === issue.number);
-  expect(reworked.linked_pull_requests[0].workflow_rework_count).toBe(3);
+  expect(reworked.linked_pull_requests[0].workflow_rework_count).toBe(5);
+
+  const [detailState] = await svc.workflowRuns.statesForPulls("me/proj", {
+    pulls: [pull.number],
+  });
+  expect(detailState.rework_count).toBe(5);
 });
 
 test("issues.list omits the rework count for a PR with no workflow run (#2147)", async () => {

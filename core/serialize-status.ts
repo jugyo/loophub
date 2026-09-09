@@ -438,7 +438,15 @@ async function linkedPullDetail(
         }
       : {}),
     // #2147: rework loops of the linked workflow run, omitted when the PR has no run.
-    ...(workflowRun ? { workflow_rework_count: workflowRun.rework_count } : {}),
+    ...(workflowRun
+      ? {
+          workflow_rework_count: S.workflowRunReworkCount(
+            workflowRun.repo_id,
+            workflowRun.id,
+            workflowRun.rework_count,
+          ),
+        }
+      : {}),
   };
 }
 

@@ -1585,6 +1585,9 @@ async function workflowRunState(
     workflowName,
     latestReview,
     verificationStatus,
+    // The row counter is an operational budget that can restart after a human resume; display the
+    // complete run history while retaining the row as a fallback for eventless legacy runs.
+    reworkCount: Math.max(projection.reworkCount, run.rework_count),
     reworkLimit: run.rework_limit,
     reworkLimitIncreaseAvailable:
       run.status === "running" &&

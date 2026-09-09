@@ -194,6 +194,23 @@ test("eventsForWorkflowRun seeks the workflow run-id partial index", () => {
   ).toContain("idx_events_repo_workflow_run_id");
 });
 
+test("workflowRunReworkCount seeks the workflow run-id partial index", () => {
+  // Mirrors store/events.ts workflowRunReworkCount. The exact event type does not let SQLite
+  // infer the partial-index predicate, so this query must retain the workflow GLOB pair.
+  expect(
+    explain(
+      `SELECT COUNT(*) AS count FROM events
+       WHERE repo_id = ?
+         AND (type GLOB 'workflow_run.*'
+           OR type GLOB 'workflow_step.*')
+         AND type = 'workflow_run.updated'
+         AND CAST(json_extract(payload, '$.id') AS INTEGER) = ?
+         AND json_extract(payload, '$.transition') = 'request_rework'`,
+      [1, 5],
+    ),
+  ).toContain("idx_events_repo_workflow_run_id");
+});
+
 test("workflowRunStartedEventId が開始イベント用部分式インデックスを使う", () => {
   expect(
     explain(
