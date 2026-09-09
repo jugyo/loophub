@@ -166,6 +166,27 @@ test("contracts quote only commands and flags the CLI documents", () => {
   }
 });
 
+test("Execute requires every follow-up route to receive a LoopHub response", () => {
+  const routeCommands = [
+    "lh pr comment <pr> --body <text>",
+    "lh pr feedback reply <t> --pr <pr> --body <text>",
+    "lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>",
+  ];
+
+  for (const language of WORKFLOW_CONTRACT_LANGUAGES) {
+    const contract = workflowContractText("execute", language);
+    for (const command of routeCommands) expect(contract).toContain(command);
+    expect(contract).toMatch(/Every follow-up must|すべての follow-up/u);
+    expect(contract).toMatch(/no source change|source の変更が不要/u);
+    expect(contract).toMatch(
+      /escalation does not replace|escalate は.+代わりにはなりません/u,
+    );
+    expect(contract).toMatch(
+      /only in the session or pane|session または pane に出力しただけ/u,
+    );
+  }
+});
+
 test("Supervisor contract は sub issue の実施順序と停止条件を明示する", () => {
   const expectations = {
     en: [

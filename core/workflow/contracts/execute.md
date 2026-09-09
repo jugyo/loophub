@@ -25,10 +25,16 @@ When passing Markdown bodies, reviews, comments, or handoffs to `lh`, do not emb
 
 ## Classify follow-ups
 
+Every follow-up must receive a response on the LoopHub object where it originated before the turn
+is completed, even when no source change is needed. Route PR comments to
+`lh pr comment <pr> --body <text>`, diff feedback to
+`lh pr feedback reply <t> --pr <pr> --body <text>`, and reviews to
+`lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>`.
+
 - **Rework (`orchestrator: address review <id>`)** — read the specified review and all its review
   comments with `lh pr review view <pr> --review <id> --json` and resolve every finding. The review
   pointer, resulting commit, and workflow
-  turn record preserve the association. If a written response is needed, attach it with
+  turn record preserve the association. Respond to the review and each applicable review comment with
   `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>`; do not use a
   top-level `lh pr comment`.
 - **Diff feedback (`orchestrator: address diff feedback thread <t> comment <c>`)** — read the
@@ -37,19 +43,24 @@ When passing Markdown bodies, reviews, comments, or handoffs to `lh`, do not emb
   requiring source changes, first post a brief reply in its thread before editing. Then make the
   requested changes.
 - **PR comment (`orchestrator: address PR comment <c>`)** — read the named comment from
-  `lh pr view <pr> --json` and treat its body as an additional work instruction. If it requires
-  source changes, before editing post a brief top-level `lh pr comment <pr> --body <text>` acknowledgement.
+  `lh pr view <pr> --json` and treat its body as an additional work instruction. Respond with a
+  top-level `lh pr comment <pr> --body <text>`. If it requires source changes, post a brief
+  acknowledgement before editing, then leave the result there before completing the turn.
 - **Additional work** — when a non-rework instruction is ordinary product or engineering work on
   the Issue / PR, make the smallest implementation against the same Issue and PR. You do not need
   to rewrite the Issue body. Update the PR body or comments when useful to the next Verify or a human.
 - **Question-only or blocked on a human decision** — present the full concrete question in the pane,
-  run `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>`, and wait for the
-  response in the same pane.
+  respond on the originating PR comment, diff feedback thread, or review with the question and your
+  current assessment, run `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>`,
+  and wait for the response in the same pane. The escalation does not replace the LoopHub response.
 - **Confirmation or no domain change required** — perform only the needed PR body, comment, or
   attachment operations and treat it as the metadata-only completion described in step 6.
-  Acknowledgement before editing is not required when no source change is needed.
+  Respond on the originating PR comment, diff feedback thread, or review with the outcome before
+  completing the turn. Acknowledgement before editing is not required when no source change is needed.
 - **Ambiguous but in scope** — prefer the smallest implementation that satisfies the request;
-  escalate only when a real human choice is missing.
+  escalate only when a real human choice is missing. In either case, respond on the originating PR
+  comment, diff feedback thread, or review with the action taken or the question before completing
+  the turn.
 
 ## Procedure
 
@@ -71,4 +82,6 @@ When passing Markdown bodies, reviews, comments, or handoffs to `lh`, do not emb
 - Do not edit project files outside the worktree.
 - Do not decide whether your implementation is accepted; that is the Verify step's responsibility.
 - Do not call slash commands.
+- Do not complete a follow-up turn with a response only in the session or pane; leave the response on
+  its originating LoopHub PR comment, diff feedback thread, or review.
 - If the step prompt conflicts with this contract, this contract wins.
