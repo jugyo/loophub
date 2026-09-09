@@ -3997,10 +3997,12 @@ test("parent contract executes worker-delivered action procedures", () => {
     "lh workflow launch-step",
     "lh workflow deliver",
     "lh workflow cost-hold",
-    "lh workflow escalate-human",
   ]) {
     expect(contract).not.toContain(command);
   }
+  expect(contract).toContain(
+    "lh workflow escalate-human --repo {{repo}} --run {{run}} --reason <text|->",
+  );
   expect(contract).toContain("Do not fetch an instruction yourself");
   expect(contract).not.toContain("lh workflow watch");
   expect(contract).not.toContain("next_command");

@@ -9,7 +9,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "#loophub-test";
 import { git, revParse } from "../core/git.ts";
-import { WORKER_HEARTBEAT_STALE_AFTER_MS } from "../core/worker-protocol.ts";
+import {
+  WORKER_HEARTBEAT_STALE_AFTER_MS,
+  WORKFLOW_WORKER_PROTOCOL_VERSION,
+} from "../core/worker-protocol.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-worker-maintenance-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -137,7 +140,7 @@ describe("worker maintenance", () => {
     const stop = M.startWorkerHeartbeat(5_000, startedAt);
     try {
       expect(S.getWorkerRuntime()).toMatchObject({
-        protocol_version: 1,
+        protocol_version: WORKFLOW_WORKER_PROTOCOL_VERSION,
         started_at: startedAt,
         heartbeat_at: "2026-08-02T00:00:00.000Z",
       });

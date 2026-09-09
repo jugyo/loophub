@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test, vi } from "#loophub-test";
+import { WORKFLOW_WORKER_PROTOCOL_VERSION } from "../../core/worker-protocol.ts";
 
 // Isolate the DB before contract.ts -> service.ts -> db.ts runs its import-time setup.
 const HOME = mkdtempSync(join(tmpdir(), "lh-rpc-"));
@@ -186,7 +187,7 @@ test("worker status is exposed and an unconfirmed worker blocks only workflow la
   const status: any = await call("worker/status", {});
   expect(status.result).toMatchObject({
     status: "missing",
-    required_protocol_version: 1,
+    required_protocol_version: WORKFLOW_WORKER_PROTOCOL_VERSION,
     observed_protocol_version: null,
   });
 
