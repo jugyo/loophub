@@ -23,12 +23,12 @@ import {
   herdrWorkspaceFocusArgv,
   herdrWorkspaceListArgv,
   herdrWorktreeOpenArgv,
-  withHerdrWorkspace,
   parseHerdrAgentPaneId,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
   parseHerdrWorktreeOpenResult,
+  withHerdrWorkspace,
 } from "./terminal-launch.ts";
 
 describe("herdr terminal launch", () => {

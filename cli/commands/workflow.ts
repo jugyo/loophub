@@ -572,9 +572,8 @@ async function launchStep(): Promise<void> {
       ok: !proc.error && proc.signalCode == null && (proc.exitCode ?? 0) === 0,
     };
   };
-  let acquired: Awaited<
-    ReturnType<typeof acquireHerdrWorktreeWorkspace>
-  > = null;
+  let acquired: Awaited<ReturnType<typeof acquireHerdrWorktreeWorkspace>> =
+    null;
   let worktreeRepo: { full_name: string; local_path: string } | null = null;
   let launchPlan = result.herdr;
   if (result.step === "execute") {
@@ -592,7 +591,7 @@ async function launchStep(): Promise<void> {
       runHerdr,
     );
     if (!acquired)
-      await failUnspawnedLaunch(
+      return await failUnspawnedLaunch(
         "対象 worktree の Herdr workspace を解決できません",
       );
     launchPlan = withHerdrWorkspace(result.herdr, acquired.workspaceId);
@@ -616,10 +615,7 @@ async function launchStep(): Promise<void> {
   if (!outcome.ok) {
     if (acquired?.createdWorkspace && worktreeRepo) {
       await runHerdr(
-        herdrWorkspaceCloseArgv(
-          worktreeRepo,
-          acquired.workspaceId,
-        ),
+        herdrWorkspaceCloseArgv(worktreeRepo, acquired.workspaceId),
       );
     }
     await failUnspawnedLaunch(
@@ -633,12 +629,7 @@ async function launchStep(): Promise<void> {
   if (acquired?.createdWorkspace && acquired.seedTabId && worktreeRepo) {
     // The worktree-open seed tab cannot carry the step's environment; the real launch owns the
     // replacement tab, so remove the empty seed after success.
-    await runHerdr(
-      herdrTabCloseArgv(
-        worktreeRepo,
-        acquired.seedTabId,
-      ),
-    );
+    await runHerdr(herdrTabCloseArgv(worktreeRepo, acquired.seedTabId));
   }
   const childPaneId = outcome.paneId;
   if (!childPaneId) {

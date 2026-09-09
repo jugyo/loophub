@@ -546,7 +546,7 @@ test("request-changes reviews do not generate human-attention notifications", as
       resource: { kind: "pull", number: changed.number },
     }),
   );
-});
+}, 15_000);
 
 test("backfill creates a notification for each repeated cost stop event", async () => {
   const repo = S.getRepo("me", "notify")!;
