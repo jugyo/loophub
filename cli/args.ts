@@ -101,6 +101,15 @@ export type Flags = {
   step?: string;
   workflow?: string;
   "workflow-id"?: string;
+  "parent-runtime"?: string;
+  "parent-model"?: string;
+  "parent-effort"?: string;
+  "execute-runtime"?: string;
+  "execute-model"?: string;
+  "execute-effort"?: string;
+  "verify-runtime"?: string;
+  "verify-model"?: string;
+  "verify-effort"?: string;
   "no-launch"?: boolean;
   run?: string;
   watch?: boolean;
@@ -215,6 +224,15 @@ const { values, positionals } = parseArgs({
     step: { type: "string" },
     workflow: { type: "string" },
     "workflow-id": { type: "string" },
+    "parent-runtime": { type: "string" },
+    "parent-model": { type: "string" },
+    "parent-effort": { type: "string" },
+    "execute-runtime": { type: "string" },
+    "execute-model": { type: "string" },
+    "execute-effort": { type: "string" },
+    "verify-runtime": { type: "string" },
+    "verify-model": { type: "string" },
+    "verify-effort": { type: "string" },
     "no-launch": { type: "boolean" },
     run: { type: "string" },
     watch: { type: "boolean" },

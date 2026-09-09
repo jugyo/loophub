@@ -90,16 +90,6 @@ describe("workflow manifest", () => {
         ...manifest,
         agents: {
           ...manifest.agents,
-          verify: { ...manifest.agents.verify, runtime: "grok" },
-        },
-      },
-      "一致",
-    ],
-    [
-      {
-        ...manifest,
-        agents: {
-          ...manifest.agents,
           execute: { ...manifest.agents.execute, model: "" },
         },
       },

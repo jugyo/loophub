@@ -2,6 +2,10 @@ import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Loader2, Workflow } from "lucide-react";
 import { useState } from "react";
 import type { Issue } from "@/api/types";
+import {
+  CustomWorkflowDialog,
+  type WorkflowRoleConfig,
+} from "@/components/custom-workflow-dialog";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,12 +46,19 @@ export function StartWorkflowControls({
   const { canStartWorkflow, showRemediation } = useWorkerLaunchGate();
   const [isLaunching, startLaunching] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
   const workflowList = Array.isArray(workflows) ? workflows : [];
 
   // Launch with the repo effective agent/model (no one-shot override). The
   // terminal / CLI path resolves runtime from repo config when agent and model
   // are omitted.
-  function start(workflowId: number) {
+  function start(
+    workflowId: number,
+    workflowAgents?: Record<
+      "parent" | "execute" | "verify",
+      WorkflowRoleConfig
+    >,
+  ) {
     startLaunching();
     setMenuOpen(false);
     launchTerminal({
@@ -56,6 +67,7 @@ export function StartWorkflowControls({
       workflow: "workflow-run",
       issueNumber: issue.number,
       workflowId,
+      workflowAgents,
     });
   }
 
@@ -129,7 +141,31 @@ export function StartWorkflowControls({
             </p>
           </>
         ) : null}
+        {workflowList.length > 0 && effective ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => {
+                setMenuOpen(false);
+                setCustomOpen(true);
+              }}
+            >
+              Custom settings…
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
+      {customOpen && effective ? (
+        <CustomWorkflowDialog
+          workflows={workflowList}
+          initial={effective}
+          onClose={() => setCustomOpen(false)}
+          onStart={(workflowId, agents) => {
+            setCustomOpen(false);
+            start(workflowId, agents);
+          }}
+        />
+      ) : null}
       {showRemediation ? <WorkerLaunchUnavailable compact={compact} /> : null}
     </DropdownMenu>
   );

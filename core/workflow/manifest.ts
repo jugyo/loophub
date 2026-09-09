@@ -122,15 +122,6 @@ export function parseWorkflowManifest(text: string): WorkflowManifest {
       parseAgent(agents[kind], `manifest.agents.${kind}`),
     ]),
   ) as WorkflowManifest["agents"];
-  const runtime = parsedAgents.parent.runtime;
-  for (const kind of AGENT_KINDS) {
-    if (parsedAgents[kind].runtime !== runtime) {
-      invalid(
-        `manifest.agents.${kind}.runtime は parent と一致しなければなりません`,
-      );
-    }
-  }
-
   const prompts = record(root.prompts, "manifest.prompts");
   exactKeys(prompts, PROMPT_KEYS, "manifest.prompts");
   return {

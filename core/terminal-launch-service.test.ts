@@ -12,6 +12,7 @@ import {
   test,
   vi,
 } from "#loophub-test";
+import { WORKFLOW_WORKER_PROTOCOL_VERSION } from "./worker-protocol.ts";
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-tl-"));
@@ -257,7 +258,7 @@ beforeEach(() => {
   lhDev.script.length = 0;
   const timestamp = new Date().toISOString();
   S.upsertWorkerRuntime({
-    protocol_version: 1,
+    protocol_version: WORKFLOW_WORKER_PROTOCOL_VERSION,
     started_at: timestamp,
     heartbeat_at: timestamp,
   });
@@ -269,7 +270,7 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
     [
       "incompatible",
       {
-        protocol_version: 2,
+        protocol_version: WORKFLOW_WORKER_PROTOCOL_VERSION + 1,
         started_at: new Date().toISOString(),
         heartbeat_at: new Date().toISOString(),
       },
@@ -323,6 +324,50 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
     expect(herdr.calls).toHaveLength(0);
     expect(result).toMatchObject({ backend: "herdr" });
     expect(result.attach).toBe(`herdr session attach ${result.session_name}`);
+  });
+
+  test("forwards one-shot settings for every workflow role", async () => {
+    lhDev.script.push(exitWith(0));
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "workflow-run",
+      issueNumber: 1,
+      workflowId: 9,
+      workflowAgents: {
+        parent: { runtime: "codex", model: "gpt-5.6-sol", effort: "medium" },
+        execute: { runtime: "codex", model: "gpt-5.6-luna", effort: "low" },
+        verify: { runtime: "claude-code", model: "opus", effort: "high" },
+      },
+    });
+
+    expect(lhDev.calls[0]).toEqual([
+      "bun",
+      expect.stringMatching(/cli\/index\.ts$/),
+      "workflow",
+      "start",
+      "me/proj/1",
+      "--workflow-id",
+      "9",
+      "--herdr",
+      "--parent-runtime",
+      "codex",
+      "--parent-model",
+      "gpt-5.6-sol",
+      "--parent-effort",
+      "medium",
+      "--execute-runtime",
+      "codex",
+      "--execute-model",
+      "gpt-5.6-luna",
+      "--execute-effort",
+      "low",
+      "--verify-runtime",
+      "claude-code",
+      "--verify-model",
+      "opus",
+      "--verify-effort",
+      "high",
+    ]);
   });
 
   test("surfaces a failed CLI launch with the retry command", async () => {

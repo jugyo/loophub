@@ -1619,6 +1619,48 @@ describe("IssueDetail", () => {
     expect(footer.className).toContain("py-1");
   });
 
+  it("starts a workflow with one-shot settings for every role", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr, {
+      "workflows/list": () => [
+        {
+          id: 9,
+          name: "Standard",
+          scope: { kind: "global" },
+        },
+      ],
+    });
+
+    const button = await screen.findByRole("button", {
+      name: "Start workflow",
+    });
+    fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Custom settings…" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Custom workflow settings",
+    });
+    expect(within(dialog).getByLabelText("parent coding agent")).toBeTruthy();
+    expect(within(dialog).getByLabelText("execute coding agent")).toBeTruthy();
+    expect(within(dialog).getByLabelText("verify coding agent")).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Start workflow" }),
+    );
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflowId: 9,
+        workflowAgents: {
+          parent: { runtime: "claude-code", model: "opus", effort: "medium" },
+          execute: { runtime: "claude-code", model: "opus", effort: "medium" },
+          verify: { runtime: "claude-code", model: "opus", effort: "medium" },
+        },
+      }),
+    );
+  });
+
   // #96: the effective config is fetched independently of the workflow list; while it is still
   // loading (or fails) the menu must render and launch as before, just without the footer.
   it("keeps the workflow menu launching while the effective config is loading", async () => {

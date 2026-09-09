@@ -53,6 +53,7 @@ import {
   type TerminalLaunchRepo,
 } from "../terminal/terminal-launch.ts";
 import { workerCompatibility } from "../worker-protocol.ts";
+import type { WorkflowManifestAgent } from "../workflow/manifest.ts";
 import {
   legacyWorktreePath,
   resolveWorktreeIdentity,
@@ -92,6 +93,10 @@ export interface TerminalLaunchInput {
   agent?: CodingAgent;
   model?: string;
   effort?: string;
+  workflowAgents?: Record<
+    "parent" | "execute" | "verify",
+    WorkflowManifestAgent
+  >;
 }
 
 // Spawns a launcher CLI (`lh workflow start ... --herdr`) that owns its own herdr pane. This is not
@@ -259,7 +264,11 @@ async function launchWorkflowRunHerdr(
   r: S.Repo,
   issueNumber: number,
   workflowId: number,
-  override: { agent?: CodingAgent; model?: string },
+  override: {
+    agent?: CodingAgent;
+    model?: string;
+    workflowAgents?: TerminalLaunchInput["workflowAgents"];
+  },
   reportError: (message: string) => void,
 ): Promise<TerminalLaunchResultWire> {
   const repo = { full_name: r.full_name, local_path: r.local_path };
@@ -273,6 +282,19 @@ async function launchWorkflowRunHerdr(
   ];
   if (override.agent) args.push(`--${override.agent}`);
   if (override.model?.trim()) args.push("--model", override.model.trim());
+  if (override.workflowAgents) {
+    for (const role of ["parent", "execute", "verify"] as const) {
+      const config = override.workflowAgents[role];
+      args.push(
+        `--${role}-runtime`,
+        config.runtime,
+        `--${role}-model`,
+        config.model,
+        `--${role}-effort`,
+        config.effort,
+      );
+    }
+  }
   try {
     await runLhDevLaunch(args, r.local_path, "lh workflow start", reportError);
   } catch (e) {
@@ -535,7 +557,11 @@ export const terminal = {
         r,
         input.issueNumber,
         input.workflowId,
-        { agent: input.agent, model: input.model },
+        {
+          agent: input.agent,
+          model: input.model,
+          workflowAgents: input.workflowAgents,
+        },
         reportError,
       );
     }

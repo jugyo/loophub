@@ -522,6 +522,26 @@ export const methods: Record<string, MethodDef> = {
         agent: codingAgentEnum,
         model: str,
         effort: str,
+        workflowAgents: {
+          type: "object",
+          additionalProperties: false,
+          required: ["parent", "execute", "verify"],
+          properties: Object.fromEntries(
+            ["parent", "execute", "verify"].map((role) => [
+              role,
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["runtime", "model", "effort"],
+                properties: {
+                  runtime: codingAgentEnum,
+                  model: str,
+                  effort: str,
+                },
+              },
+            ]),
+          ),
+        },
       },
       // `repo` is required for every workflow except the global "workflow-create" (New workflow),
       // which has no repo to pin to (#1889); the service enforces the requirement per-workflow.
@@ -543,6 +563,7 @@ export const methods: Record<string, MethodDef> = {
           agent: p.agent,
           model: p.model,
           effort: p.effort,
+          workflowAgents: p.workflowAgents,
         },
         log.error,
       ),

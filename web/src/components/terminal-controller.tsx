@@ -50,6 +50,10 @@ export interface OpenTerminalOptions {
   agent?: CodingAgent;
   model?: string;
   effort?: string;
+  workflowAgents?: Record<
+    "parent" | "execute" | "verify",
+    { runtime: CodingAgent; model: string; effort: string }
+  >;
 }
 
 export type OpenTerminal = (opts?: OpenTerminalOptions) => void;
@@ -137,6 +141,7 @@ export function useTerminalLauncher(): {
           agent: opts.agent,
           model: opts.model,
           effort: opts.effort,
+          workflowAgents: opts.workflowAgents,
         },
         {
           onError: (e) =>

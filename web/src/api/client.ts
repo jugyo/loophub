@@ -497,6 +497,10 @@ export interface UpdateSettingsInput {
   agent?: CodingAgent;
   model?: string;
   effort?: string;
+  workflowAgents?: Record<
+    "parent" | "execute" | "verify",
+    { runtime: CodingAgent; model: string; effort: string }
+  >;
   codingAgent?: CodingAgent;
   devCostLimitUsd?: number;
   notificationSound?: boolean;

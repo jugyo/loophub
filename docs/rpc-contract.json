@@ -1027,6 +1027,92 @@
           },
           "effort": {
             "type": "string"
+          },
+          "workflowAgents": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "parent",
+              "execute",
+              "verify"
+            ],
+            "properties": {
+              "parent": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "runtime",
+                  "model",
+                  "effort"
+                ],
+                "properties": {
+                  "runtime": {
+                    "enum": [
+                      "claude-code",
+                      "codex",
+                      "grok",
+                      "opencode"
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": "string"
+                  }
+                }
+              },
+              "execute": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "runtime",
+                  "model",
+                  "effort"
+                ],
+                "properties": {
+                  "runtime": {
+                    "enum": [
+                      "claude-code",
+                      "codex",
+                      "grok",
+                      "opencode"
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": "string"
+                  }
+                }
+              },
+              "verify": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "runtime",
+                  "model",
+                  "effort"
+                ],
+                "properties": {
+                  "runtime": {
+                    "enum": [
+                      "claude-code",
+                      "codex",
+                      "grok",
+                      "opencode"
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
         },
         "required": [],

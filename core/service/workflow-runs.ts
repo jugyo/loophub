@@ -1927,6 +1927,7 @@ export const workflowRuns = {
       runtime?: CodingAgent;
       model?: string | null;
       effort?: string | null;
+      agents?: Partial<WorkflowLaunchConfig["agents"]>;
       lockPid?: number;
     },
     sessionId: string = randomUUID(),
@@ -1935,11 +1936,17 @@ export const workflowRuns = {
     ensureWritable(r);
     const workflow = workflowByInput(input, r);
     const issue = issueOr404(r, input.issue, "issue");
-    const runtime: CodingAgent = input.runtime ?? "claude-code";
+    const runtime: CodingAgent =
+      input.agents?.parent?.runtime ?? input.runtime ?? "claude-code";
     const effective = effectiveRepoAgentConfigFor(r);
     const effort =
+      input.agents?.parent?.effort.trim() ||
       input.effort?.trim() ||
       (effective.runtime === runtime ? effective.effort : agentEffort(runtime));
+    const parentModel =
+      input.agents?.parent?.model.trim() ||
+      input.model?.trim() ||
+      agentModel(runtime);
     const contractLanguage = workflowContractLanguage();
 
     S.registerAgentSession(
@@ -1949,7 +1956,9 @@ export const workflowRuns = {
       `Workflow #${issue.number} ${issue.title}`,
       runtime,
       "dev",
-      input.model ?? agentModel(runtime),
+      parentModel,
+      undefined,
+      effort,
     );
 
     const opened = await dev.openPr(
@@ -2029,7 +2038,7 @@ export const workflowRuns = {
           currentStep: "execute",
           autoMode: true,
           runtime,
-          model: input.model?.trim() || null,
+          model: input.agents ? parentModel : input.model?.trim() || null,
           effort,
           contractLanguage,
           parentSessionId: sessionId,
@@ -2064,9 +2073,9 @@ export const workflowRuns = {
         manifest_version: 1,
         contract_language: contractLanguage,
         agents: {
-          parent: { runtime, model, effort },
-          execute: { runtime, model, effort },
-          verify: { runtime, model, effort },
+          parent: input.agents?.parent ?? { runtime, model, effort },
+          execute: input.agents?.execute ?? { runtime, model, effort },
+          verify: input.agents?.verify ?? { runtime, model, effort },
         },
         prompts: {
           execute: executePromptName,

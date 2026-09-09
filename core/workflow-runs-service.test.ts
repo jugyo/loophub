@@ -638,6 +638,57 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   expect(S.getAgentSession(launched.session_id)?.runtime).toBe("codex");
 });
 
+test("start snapshots one-shot role settings without changing defaults", async () => {
+  const { repo } = freshRepo("me/custom-workflow-run");
+  const issue = S.createIssue(repo.id, "issue", "Custom agents", "", "me");
+  const workflow = S.createWorkflow({
+    name: "custom-agents",
+    description: "",
+    executePrompt: "Execute.",
+    verifyPrompt: "Verify.",
+  });
+  const agents = {
+    parent: {
+      runtime: "codex" as const,
+      model: "gpt-5.6-sol",
+      effort: "medium",
+    },
+    execute: {
+      runtime: "codex" as const,
+      model: "gpt-5.6-luna",
+      effort: "low",
+    },
+    verify: { runtime: "claude-code" as const, model: "opus", effort: "high" },
+  };
+
+  const result = await svc.workflowRuns.start(repo.full_name, {
+    issue: issue.number,
+    workflowId: workflow.id,
+    agents,
+  });
+  const manifest = JSON.parse(
+    readFileSync(
+      join(HOME, "runs", "workflow", String(result.run.id), "manifest.json"),
+      "utf8",
+    ),
+  );
+
+  expect(manifest.agents).toEqual(agents);
+  expect(S.getWorkflowRun(result.run.id)).toMatchObject({
+    runtime: "codex",
+    model: "gpt-5.6-sol",
+    effort: "medium",
+  });
+  expect(S.getAgentSession(result.session_id)).toMatchObject({
+    runtime: "codex",
+    model: "gpt-5.6-sol",
+    effort: "medium",
+  });
+  expect(
+    svc.repos.agentConfig(repo.full_name).effective.runtime,
+  ).not.toBeUndefined();
+}, 20_000);
+
 test("launch-step creates every child in an independent Herdr tab", async () => {
   const { repo } = freshRepo("me/workflow-anchor-pane");
   const issue = S.createIssue(repo.id, "issue", "Anchored panes", "", "me");

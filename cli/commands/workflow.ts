@@ -1,4 +1,8 @@
-import { agentModel, type CodingAgent } from "../../core/config.ts";
+import {
+  agentEffort,
+  agentModel,
+  type CodingAgent,
+} from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { spawnSyncProcess } from "../../core/process.ts";
 import { buildRuntimeFlags } from "../../core/runtime-args.ts";
@@ -331,7 +335,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode] [--model <name>] [--herdr] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode] [--model <name>] [--parent-runtime <runtime> --parent-model <model> --parent-effort <effort>] [--execute-runtime <runtime> --execute-model <model> --execute-effort <effort>] [--verify-runtime <runtime> --verify-model <model> --verify-effort <effort>] [--herdr] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -370,7 +374,44 @@ async function startWorkflow(): Promise<void> {
     (runtime === agentCfg.effective.runtime
       ? agentCfg.effective.model
       : agentModel(runtime));
-  if (flags["no-launch"] !== true) preflightParentLaunch(runtime);
+  const roleAgents = Object.fromEntries(
+    (["parent", "execute", "verify"] as const).map((role) => {
+      const requestedRuntime = flags[`${role}-runtime`];
+      if (requestedRuntime && !(requestedRuntime in RUNTIMES)) {
+        fail(
+          `--${role}-runtime must be one of: ${Object.keys(RUNTIMES).join(", ")}`,
+        );
+      }
+      const roleRuntime = requestedRuntime
+        ? resolveDevRuntime({
+            claudeCode: requestedRuntime === "claude-code",
+            codex: requestedRuntime === "codex",
+            grok: requestedRuntime === "grok",
+            opencode: requestedRuntime === "opencode",
+            defaultRuntime: requestedRuntime as CodingAgent,
+          })
+        : runtime;
+      return [
+        role,
+        {
+          runtime: roleRuntime,
+          model:
+            flags[`${role}-model`]?.trim() ||
+            (roleRuntime === runtime ? model : agentModel(roleRuntime)),
+          effort:
+            flags[`${role}-effort`]?.trim() ||
+            (roleRuntime === agentCfg.effective.runtime
+              ? agentCfg.effective.effort
+              : agentEffort(roleRuntime)),
+        },
+      ];
+    }),
+  ) as Record<
+    "parent" | "execute" | "verify",
+    { runtime: CodingAgent; model: string; effort: string }
+  >;
+  if (flags["no-launch"] !== true)
+    preflightParentLaunch(roleAgents.parent.runtime);
   const result = await runOp(() =>
     s.workflowRuns.start(
       repo,
@@ -382,6 +423,7 @@ async function startWorkflow(): Promise<void> {
         // Persist the resolved model (explicit override or config default) so steps inherit it
         // without re-reading config (#516/#594).
         model,
+        agents: roleAgents,
         lockPid: process.pid,
       },
       sessionId,
@@ -408,12 +450,12 @@ async function startWorkflow(): Promise<void> {
       local_path: repoRecord.local_path,
     },
     runId: result.run.id,
-    runtime,
+    runtime: roleAgents.parent.runtime,
     worktree: result.worktree,
     sessionId: result.session_id,
     systemPromptPath: result.parent.system_prompt_path,
     userPromptPath: result.parent.user_prompt_path,
-    model,
+    model: roleAgents.parent.model,
     effort: result.parent.effort,
     // `--herdr` starts the parent fire-and-forget (no interactive attach) so lh-web can spawn this
     // headless (#1007); without it the CLI attaches for a human at a terminal.
