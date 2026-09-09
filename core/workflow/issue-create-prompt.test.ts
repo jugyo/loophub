@@ -120,3 +120,57 @@ test("both prompts build a draft from the request before asking questions", () =
     expect(prompt).toContain(ambiguity);
   }
 });
+
+test("both prompts require a concise issue body with ordered, non-repeated content", () => {
+  for (const language of ["en", "ja"]) {
+    const prompt = issueCreatePrompt(language);
+    const problem =
+      language === "en" ? "problem or goal first" : "問題または goal";
+    const scope = language === "en" ? "then only the scope" : "必要な scope";
+    const resources =
+      language === "en"
+        ? "followed by related resources"
+        : "関連リソースがある場合はその情報";
+    const implementationSteps =
+      language === "en" ? "Exclude implementation steps" : "実装手順";
+    const excessiveEmphasis =
+      language === "en" ? "excessive emphasis" : "過度な強調";
+    const repeated =
+      language === "en"
+        ? "explanations that repeat the same information"
+        : "同じ情報の重複説明";
+
+    expect(prompt).toContain(
+      language === "en" ? "issue body concise" : "issue body は簡潔",
+    );
+    expect(prompt.indexOf(problem)).toBeLessThan(prompt.indexOf(scope));
+    expect(prompt.indexOf(scope)).toBeLessThan(prompt.indexOf(resources));
+    expect(prompt).toContain(implementationSteps);
+    expect(prompt).toContain(excessiveEmphasis);
+    expect(prompt).toContain(repeated);
+  }
+});
+
+test("both prompts separate structured criteria and summarize detailed resources", () => {
+  for (const language of ["en", "ja"]) {
+    const prompt = issueCreatePrompt(language);
+    const structured =
+      language === "en"
+        ? "structured criteria"
+        : "structured criteria としてのみ";
+    const duplicate =
+      language === "en"
+        ? "do not duplicate them in the body"
+        : "body に重複させない";
+    const sourceMaterial =
+      language === "en" ? "detailed source material" : "詳細な資料";
+    const summary = language === "en" ? "brief summary" : "短い要約";
+    const reference = language === "en" ? "its reference" : "参照先";
+
+    expect(prompt).toContain(structured);
+    expect(prompt).toContain(duplicate);
+    expect(prompt).toContain(sourceMaterial);
+    expect(prompt).toContain(summary);
+    expect(prompt).toContain(reference);
+  }
+});
