@@ -213,6 +213,199 @@ test("list creates warning notifications for Workflow cost and rework limit even
   S.setMerged(pull.id, "merged-workflow-limits", "merge");
 });
 
+test("Workflow cost notification supersedes only the matching task cost stop", async () => {
+  const repoPath = initGitRepo("lh-notifications-cost-dedup-");
+  await svc.repos.create({ path: repoPath, name: "me/cost-dedup" });
+  const repo = S.getRepo("me", "cost-dedup")!;
+  const issue = S.createIssue(repo.id, "issue", "Cost issue", "", "me");
+  const pull = S.createIssue(repo.id, "pull", "Cost pull", "", "me");
+  S.createPull(pull.id, "cost-dedup", "main", "sha-cost-dedup", issue.id);
+  const workflow = S.createWorkflow({
+    name: "cost-dedup",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+  });
+
+  S.emitEvent(repo.id, "dev.cost_stopped", "lh-worker", {
+    number: pull.number,
+    session_id: "matching-session",
+    cost_usd: 10.25,
+    limit_usd: 10,
+  });
+  S.emitEvent(repo.id, "dev.cost_stopped", "lh-worker", {
+    number: pull.number,
+    session_id: "independent-session",
+    cost_usd: 10.5,
+    limit_usd: 10,
+  });
+  await svc.notifications.sweep();
+
+  S.emitEvent(repo.id, "workflow_run.cost_exceeded", "lh-worker", {
+    id: run.id,
+    number: pull.number,
+    pr_number: pull.number,
+    parent_session_id: null,
+    session_id: "matching-session",
+    usage_session_id: "matching-session",
+    active_step: "execute",
+    active_session_id: "matching-session",
+    cost_usd: 11,
+    limit_usd: 10,
+    increment_usd: 10,
+    next_limit_usd: 20,
+  });
+  await svc.notifications.sweep();
+
+  const notifications = (await svc.notifications.list({ limit: 100 })).filter(
+    (notification: any) =>
+      notification.repo.name === "me/cost-dedup" &&
+      notification.kind === "over_budget",
+  );
+  expect(notifications).toHaveLength(2);
+  expect(notifications).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        title: "Workflow cost limit exceeded",
+        workflow_run_id: run.id,
+      }),
+      expect.objectContaining({
+        title: "Over budget",
+        workflow_run_id: null,
+      }),
+    ]),
+  );
+});
+
+test("same-sweep task and Workflow cost signals create only the Workflow notification", async () => {
+  const repoPath = initGitRepo("lh-notifications-cost-same-sweep-");
+  await svc.repos.create({ path: repoPath, name: "me/cost-same-sweep" });
+  const repo = S.getRepo("me", "cost-same-sweep")!;
+  const issue = S.createIssue(repo.id, "issue", "Same sweep issue", "", "me");
+  const pull = S.createIssue(repo.id, "pull", "Same sweep pull", "", "me");
+  S.createPull(pull.id, "cost-same-sweep", "main", "sha", issue.id);
+  const workflow = S.createWorkflow({
+    name: "cost-same-sweep",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+  });
+  S.emitEvent(repo.id, "dev.cost_stopped", "lh-worker", {
+    number: pull.number,
+    session_id: "same-session",
+    cost_usd: 10.75,
+    limit_usd: 10,
+  });
+  S.emitEvent(repo.id, "workflow_run.cost_exceeded", "lh-worker", {
+    id: run.id,
+    number: pull.number,
+    pr_number: pull.number,
+    parent_session_id: null,
+    session_id: "same-session",
+    usage_session_id: "same-session",
+    active_step: "verify",
+    active_session_id: "same-session",
+    cost_usd: 11,
+    limit_usd: 10,
+    increment_usd: 10,
+    next_limit_usd: 20,
+  });
+
+  await svc.notifications.sweep();
+  const notifications = (await svc.notifications.list({ limit: 100 })).filter(
+    (notification: any) => notification.repo.name === "me/cost-same-sweep",
+  );
+  expect(notifications).toEqual([
+    expect.objectContaining({
+      kind: "over_budget",
+      title: "Workflow cost limit exceeded",
+      workflow_run_id: run.id,
+    }),
+  ]);
+});
+
+test("same-session task and Workflow signals keep notifications for different limits", async () => {
+  const repoPath = initGitRepo("lh-notifications-cost-different-limit-");
+  await svc.repos.create({ path: repoPath, name: "me/cost-different-limit" });
+  const repo = S.getRepo("me", "cost-different-limit")!;
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Different limit issue",
+    "",
+    "me",
+  );
+  const pull = S.createIssue(repo.id, "pull", "Different limit pull", "", "me");
+  S.createPull(pull.id, "cost-different-limit", "main", "sha", issue.id);
+  const workflow = S.createWorkflow({
+    name: "cost-different-limit",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 20,
+    costLimitUsd: 20,
+  });
+  S.emitEvent(repo.id, "dev.cost_stopped", "lh-worker", {
+    number: pull.number,
+    session_id: "shared-session",
+    cost_usd: 6,
+    limit_usd: 5,
+  });
+  S.emitEvent(repo.id, "workflow_run.cost_exceeded", "lh-worker", {
+    id: run.id,
+    number: pull.number,
+    pr_number: pull.number,
+    parent_session_id: null,
+    session_id: "shared-session",
+    usage_session_id: "shared-session",
+    active_step: "execute",
+    active_session_id: "shared-session",
+    cost_usd: 21,
+    limit_usd: 20,
+    increment_usd: 20,
+    next_limit_usd: 40,
+  });
+
+  await svc.notifications.sweep();
+  const notifications = (await svc.notifications.list({ limit: 100 })).filter(
+    (notification: any) =>
+      notification.repo.name === "me/cost-different-limit" &&
+      notification.kind === "over_budget",
+  );
+  expect(notifications).toHaveLength(2);
+  expect(notifications.map((notification: any) => notification.title)).toEqual(
+    expect.arrayContaining(["Over budget", "Workflow cost limit exceeded"]),
+  );
+});
+
 test("list does not create Workflow limit warnings below the limits", async () => {
   const repoPath = initGitRepo("lh-notifications-workflow-normal-");
   await svc.repos.create({ path: repoPath, name: "me/workflow-normal" });

@@ -306,6 +306,23 @@ export function listNotificationSignalRows(
            AND e.id > ?
            AND e.id <= ?
            AND p.merged = 0
+           AND NOT EXISTS (
+             SELECT 1
+             FROM events workflow_event
+             JOIN workflow_runs workflow_run
+               ON workflow_run.repo_id = workflow_event.repo_id
+              AND workflow_run.id = json_extract(workflow_event.payload, '$.id')
+             WHERE workflow_event.repo_id = e.repo_id
+               AND workflow_event.type = 'workflow_run.cost_exceeded'
+               AND workflow_event.id <= ?
+               AND workflow_run.pr_number = i.number
+               AND json_extract(e.payload, '$.session_id') IN (
+                 json_extract(workflow_event.payload, '$.active_session_id'),
+                 json_extract(workflow_event.payload, '$.usage_session_id')
+               )
+               AND json_extract(e.payload, '$.limit_usd') =
+                 json_extract(workflow_event.payload, '$.limit_usd')
+           )
          UNION ALL
          SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
                 'human_attention' AS kind,
@@ -390,6 +407,7 @@ export function listNotificationSignalRows(
     .all(
       cursors.events,
       highWatermarks.events,
+      highWatermarks.events,
       cursors.events,
       highWatermarks.events,
       cursors.events,
@@ -397,4 +415,36 @@ export function listNotificationSignalRows(
       cursors.events,
       highWatermarks.events,
     ) as NotificationSignalRow[];
+}
+
+export function deleteSupersededCostStopNotifications(
+  signal: NotificationSignalRow,
+): void {
+  if (signal.reason !== "workflow_cost_exceeded") return;
+  db.run(
+    `DELETE FROM notifications
+       WHERE repo_id = ?
+         AND kind = 'over_budget'
+         AND resource_kind = 'pull'
+         AND resource_number = ?
+         AND EXISTS (
+           SELECT 1
+           FROM events cost_event
+           JOIN events workflow_event
+             ON workflow_event.repo_id = cost_event.repo_id
+            AND workflow_event.type = 'workflow_run.cost_exceeded'
+            AND json_extract(workflow_event.payload, '$.id') = ?
+           WHERE cost_event.repo_id = notifications.repo_id
+             AND cost_event.type = 'dev.cost_stopped'
+             AND notifications.source_key =
+               'cost:' || notifications.repo_id || ':' || notifications.resource_number || ':' || cost_event.id
+             AND json_extract(cost_event.payload, '$.session_id') IN (
+               json_extract(workflow_event.payload, '$.active_session_id'),
+               json_extract(workflow_event.payload, '$.usage_session_id')
+             )
+             AND json_extract(cost_event.payload, '$.limit_usd') =
+               json_extract(workflow_event.payload, '$.limit_usd')
+         )`,
+    [signal.repo_id, signal.number, signal.workflow_run_id],
+  );
 }

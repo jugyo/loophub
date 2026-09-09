@@ -117,6 +117,9 @@ function backfillFromSignals(): number {
       cursors,
       highWatermarks,
     )) {
+      // The task stop can be swept before the workflow-level event arrives. Once the richer run
+      // signal exists, replace that matching notification so the run action remains available.
+      S.deleteSupersededCostStopNotifications(signal);
       const content = contentForSignal(signal);
       const row = S.createNotification({
         repoId: signal.repo_id,
