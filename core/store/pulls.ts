@@ -554,6 +554,19 @@ export interface PullConflictTransition {
   current: MergeableState;
 }
 
+export function getPullConflictState(
+  repoId: number,
+  pullNumber: number,
+): MergeableState | null {
+  const row = db
+    .query(
+      `SELECT state FROM pull_conflict_states
+       WHERE repo_id = ? AND pull_number = ?`,
+    )
+    .get(repoId, pullNumber) as { state: MergeableState } | undefined;
+  return row?.state ?? null;
+}
+
 // Record an open PR's current mergeable state for the conflict sweep (#1232) and return the
 // previous vs current pair the sweep needs to detect a clean -> conflict transition. Recording
 // every tick makes the sweep idempotent: once `conflict` is stored the previous state stops being
@@ -564,12 +577,7 @@ export function recordPullConflictState(
   pullNumber: number,
   state: MergeableState,
 ): PullConflictTransition {
-  const prev = db
-    .query(
-      `SELECT state FROM pull_conflict_states
-       WHERE repo_id = ? AND pull_number = ?`,
-    )
-    .get(repoId, pullNumber) as { state: MergeableState } | undefined;
+  const previous = getPullConflictState(repoId, pullNumber);
   db.query(
     `INSERT INTO pull_conflict_states (repo_id, pull_number, state, updated_at)
      VALUES (?, ?, ?, ?)
@@ -577,7 +585,7 @@ export function recordPullConflictState(
        state = excluded.state,
        updated_at = excluded.updated_at`,
   ).run(repoId, pullNumber, state, now());
-  return { previous: prev?.state ?? null, current: state };
+  return { previous, current: state };
 }
 
 export function setMerged(

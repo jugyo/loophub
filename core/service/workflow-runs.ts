@@ -1355,7 +1355,7 @@ async function workflowRunProgress(
   const pull = S.getPull(prIssue.id);
   if (!pull)
     throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-  return observeWorkflowRunProgress({
+  const progress = await observeWorkflowRunProgress({
     worktree: workflowRunWorktree({
       repo,
       prNumber: run.pr_number,
@@ -1366,6 +1366,12 @@ async function workflowRunProgress(
       latestWorkflowRunReview(prIssue.id, run.id, projection),
     ),
   });
+  return {
+    ...progress,
+    mergeConflict:
+      progress.mergeConflict ||
+      S.getPullConflictState(repo.id, run.pr_number) === "conflict",
+  };
 }
 
 // Observe everything `workflow step status` reports, from one already-loaded event projection. It

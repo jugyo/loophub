@@ -1,4 +1,5 @@
 import { db } from "./db.ts";
+import type { GhPrStatus } from "./github.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { currentMergeableState } from "./pull-mergeable-state.ts";
 import * as S from "./store.ts";
@@ -37,11 +38,33 @@ export interface ConflictSweepDeps {
   // すべての open PR を再検知する。
   repoId?: number;
   baseRef?: string;
+  // GitHub status refreshes target one linked PR immediately; periodic sweeps leave this unset.
+  issueId?: number;
+  // A fresh GitHub result is cached atomically with its targeted state transition and events.
+  githubStatus?: GhPrStatus;
 }
 
 export interface ConflictSweepResult {
   checked: number;
   emitted: number;
+}
+
+function cachedGithubMergeable(
+  issueId: number,
+): "mergeable" | "conflicting" | "unknown" | null {
+  const cached = S.getGithubPullStatus(issueId);
+  if (!cached) return null;
+  try {
+    const mergeable = (JSON.parse(cached.payload) as { mergeable?: unknown })
+      .mergeable;
+    return mergeable === "mergeable" ||
+      mergeable === "conflicting" ||
+      mergeable === "unknown"
+      ? mergeable
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 // One sweep tick: reconcile every open PR's mergeable state, and for each that just transitioned
@@ -55,36 +78,96 @@ export async function sweepPullConflicts(
   const pulls = S.openPulls().filter(
     (pull) =>
       (deps.repoId === undefined || pull.repo_id === deps.repoId) &&
-      (deps.baseRef === undefined || pull.base_ref === deps.baseRef),
+      (deps.baseRef === undefined || pull.base_ref === deps.baseRef) &&
+      (deps.issueId === undefined || pull.issue_id === deps.issueId),
   );
   let emitted = 0;
   for (const pull of pulls) {
-    const state = await computeState(
-      pull,
-      S.getCurrentPullStatusProjection(pull.issue_id),
-    );
-    // "unknown" means the computation itself failed this tick (e.g. a ref lookup error), not an
-    // observed PR state. Recording it would overwrite a stored "clean" and permanently consume
-    // the clean -> conflict edge — a conflicted PR can never return to clean — so skip the tick.
-    if (state === "unknown") continue;
+    let localState: MergeableState;
+    try {
+      localState = await computeState(
+        pull,
+        S.getCurrentPullStatusProjection(pull.issue_id),
+      );
+    } catch (error) {
+      // A freshly fetched GitHub status is still authoritative when local git is temporarily
+      // unreadable. Preserve the existing visible failure for periodic local-only sweeps.
+      if (!deps.githubStatus) throw error;
+      localState = "unknown";
+    }
     // Recording the state consumes the clean -> conflict edge, so it must commit with the event it
     // fires: a stored `conflict` whose event was lost leaves every later tick reading
     // conflict -> conflict, and the conflict is never reported.
     if (
       db.transaction(() => {
+        if (deps.githubStatus)
+          S.saveGithubPullStatus(
+            pull.issue_id,
+            JSON.stringify(deps.githubStatus),
+          );
+        // Read the GitHub signal only after entering the write transaction. A periodic sweep may
+        // have computed local state before another process refreshed GitHub; this fresh read keeps
+        // that stale local result from overwriting a newly recorded GitHub conflict.
+        const githubMergeable = cachedGithubMergeable(pull.issue_id);
+        const previous = S.getPullConflictState(pull.repo_id, pull.number);
+        const localConflict = localState === "conflict";
+        const githubConflict = githubMergeable === "conflicting";
+        const state =
+          githubConflict || localConflict
+            ? "conflict"
+            : githubMergeable === "unknown"
+              ? (previous ?? localState)
+              : localState;
+        if (state === "unknown") return false;
         const transition = S.recordPullConflictState(
           pull.repo_id,
           pull.number,
           state,
         );
+        // A definite GitHub conflict is an independent edge whenever the shared state was not
+        // already conflicting. Local state may legitimately be blocked or no_commits before a run
+        // reaches review, so requiring a local clean baseline would consume the remote edge without
+        // notifying its workflow.
+        const githubConflictTransition =
+          githubConflict && transition.previous !== "conflict";
         if (
+          !githubConflictTransition &&
           !classifyConflictTransition(transition.previous, transition.current)
         )
           return false;
-        S.emitEvent(pull.repo_id, "pull_request.merge_conflict", "lh-worker", {
-          number: pull.number,
-          source_payload_version: SOURCE_PAYLOAD_VERSION,
-        });
+        const conflictSource =
+          localConflict && githubConflict
+            ? "both"
+            : githubConflict
+              ? "github"
+              : "local";
+        const source = S.emitEvent(
+          pull.repo_id,
+          "pull_request.merge_conflict",
+          "lh-worker",
+          {
+            number: pull.number,
+            source_payload_version: SOURCE_PAYLOAD_VERSION,
+            conflict_source: conflictSource,
+          },
+        );
+        const run = S.latestWorkflowRunForPull(pull.repo_id, pull.number);
+        if (run?.status === "running") {
+          S.emitEvent(
+            pull.repo_id,
+            "workflow_run.merge_conflict",
+            "lh-worker",
+            {
+              id: run.id,
+              number: pull.number,
+              parent_session_id: run.parent_session_id,
+              pr_number: pull.number,
+              source_event_id: source.id,
+              source_event_type: source.type,
+              conflict_source: conflictSource,
+            },
+          );
+        }
         return true;
       })
     )

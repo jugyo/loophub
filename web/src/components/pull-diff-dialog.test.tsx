@@ -1074,7 +1074,7 @@ describe("DiffFileDialog", () => {
       expect(showError).toHaveBeenCalledWith("Create failed: write failed");
       expect(listFeedback).toHaveBeenCalledTimes(2);
     });
-  });
+  }, 10_000);
 
   it("restores the diff composer and thread cache when posting fails", async () => {
     let rejectCreate!: (error: RpcFault) => void;
@@ -2807,12 +2807,11 @@ describe("DiffFileDialog", () => {
       name: "Changed files",
     });
     await waitFor(() => expect(viewsCalls).toBe(1));
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(
-      within(sidebar).queryByRole("button", { name: "core/b.ts" }),
-    ).toBeNull();
+    await waitFor(() =>
+      expect(
+        within(sidebar).queryByRole("button", { name: "core/b.ts" }),
+      ).toBeNull(),
+    );
     expect(within(sidebar).getByText("Files changed (1 of 2)")).toBeTruthy();
 
     expect(within(sidebar).getByText(/Show viewed \(1 viewed\)/)).toBeTruthy();

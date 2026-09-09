@@ -167,12 +167,16 @@ export interface WorkflowEventPayloadMap {
       target: WorkflowCommentTarget;
     };
   /**
-   * Legacy notification twins, retained for typed reads of persisted rows. Nothing writes them any
-   * more: each announced a PR fact the run now reads off the source event itself.
+   * Run-scoped projections of PR facts. Merge conflict remains an explicit projection for the run
+   * timeline; marked source events keep the pair from becoming two instructions. The other shapes
+   * are retained for typed reads of legacy rows.
    */
   "workflow_run.merge_conflict": WorkflowRunScoped &
     WorkflowRunDelivery &
-    WorkflowRunProjectionSource & { pr_number: number };
+    WorkflowRunProjectionSource & {
+      pr_number: number;
+      conflict_source: "local" | "github" | "both";
+    };
   /** Legacy merge trigger retained for typed reads of persisted events; new writers emit closed. */
   "workflow_run.merged": WorkflowRunScoped &
     WorkflowRunDelivery &
@@ -235,6 +239,8 @@ type WorkflowEventPayloadKey = KeysOfUnion<WorkflowEventPayload>;
 interface WorkflowSourceEventKeys {
   /** Marks a payload written by a cutover producer (see core/workflow/source-events.ts). */
   source_payload_version: number;
+  /** Identifies which observation produced a merge-conflict edge. */
+  conflict_source: "local" | "github" | "both";
   /** `pull_request.diff_feedback_replied` names its new message this way. */
   reply_message_id: number;
   /** `pull_request.commented` tells a human comment from an agent's own. */

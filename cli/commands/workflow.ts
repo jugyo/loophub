@@ -585,16 +585,20 @@ async function launchStep(): Promise<void> {
       full_name: repoRecord.full_name,
       local_path: repoRecord.local_path,
     };
-    acquired = await acquireHerdrWorktreeWorkspace(
+    const worktreeWorkspace = await acquireHerdrWorktreeWorkspace(
       worktreeRepo,
       result.worktree,
       runHerdr,
     );
-    if (!acquired)
+    if (!worktreeWorkspace)
       return await failUnspawnedLaunch(
         "対象 worktree の Herdr workspace を解決できません",
       );
-    launchPlan = withHerdrWorkspace(result.herdr, acquired.workspaceId);
+    acquired = worktreeWorkspace;
+    launchPlan = withHerdrWorkspace(
+      result.herdr,
+      worktreeWorkspace.workspaceId,
+    );
   }
   const outcome = await executeHerdrLaunchPlan(launchPlan, async (argv) => {
     const proc = spawnSyncProcess(argv, {

@@ -67,7 +67,7 @@ export function isWorkflowRunEventType(type: string): boolean {
   return type.startsWith("workflow_run.") || type.startsWith("workflow_step.");
 }
 
-/** The notification-only twins whose producers this change removed. */
+/** Run-scoped twins; most are legacy-only, while merge conflict is still projected for the run. */
 const TWIN_EVENT_TYPES = new Set([
   "workflow_run.closed",
   "workflow_run.merged",

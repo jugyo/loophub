@@ -54,6 +54,17 @@ function mergeConflictEventsFor(repoId: number, number: number): number {
   ).length;
 }
 
+function workflowMergeConflictEventsFor(
+  repoId: number,
+  number: number,
+): number {
+  return S.listEvents(0, repoId, 1000).filter(
+    (e) =>
+      e.type === "workflow_run.merge_conflict" &&
+      (JSON.parse(e.payload) as { number?: number }).number === number,
+  ).length;
+}
+
 function conflictSourcePayloadsFor(repoId: number, prNumber: number) {
   return S.listEvents(0, repoId, 1000)
     .filter((e) => e.type === "pull_request.merge_conflict")
@@ -62,6 +73,7 @@ function conflictSourcePayloadsFor(repoId: number, prNumber: number) {
         JSON.parse(e.payload) as {
           number: number;
           source_payload_version?: number;
+          conflict_source?: "local" | "github" | "both";
         },
     )
     .filter((p) => p.number === prNumber);
@@ -230,16 +242,22 @@ test("marks the conflict source so a Workflow run reacts to it directly", async 
   await D.sweepPullConflicts(deps); // conflict: the source fires
 
   expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
-  // The sweep resolves no run and writes no run-scoped twin. The run's own subscription selects
-  // the source, which carries the cutover marker so it is read as the one instruction.
-  expect(
-    S.listEvents(0, repo.id, 1000).filter(
-      (e) => e.type === "workflow_run.merge_conflict",
-    ),
-  ).toHaveLength(0);
+  const projected = S.listEvents(0, repo.id, 1000).filter(
+    (e) => e.type === "workflow_run.merge_conflict",
+  );
+  expect(projected).toHaveLength(1);
   const sources = conflictSourcePayloadsFor(repo.id, issue.number);
   expect(sources).toHaveLength(1);
   expect(sources[0].source_payload_version).toBe(1);
+  expect(sources[0].conflict_source).toBe("local");
+  expect(JSON.parse(projected[0].payload)).toMatchObject({
+    id: run.id,
+    number: issue.number,
+    parent_session_id: "parent-session-1",
+    pr_number: issue.number,
+    source_event_type: "pull_request.merge_conflict",
+    conflict_source: "local",
+  });
   expect(S.getWorkflowRun(run.id)?.status).toBe("running");
 });
 
@@ -262,5 +280,282 @@ test("a transient unknown tick does not consume the clean -> conflict edge", asy
   const result = await D.sweepPullConflicts(deps); // conflict: the edge still fires
 
   expect(result.emitted).toBe(1);
+  expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
+});
+
+test("GitHub conflict is ORed with local state and does not re-fire", async () => {
+  const repo = S.getRepo("me", "conflict")!;
+  const issue = S.createIssue(repo.id, "pull", "GitHub conflict PR", "", "me");
+  S.createPull(issue.id, "github-conflict", "main", "github-sha", null);
+
+  await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "clean",
+  });
+  S.saveGithubPullStatus(
+    issue.id,
+    JSON.stringify({ mergeable: "conflicting" }),
+  );
+
+  const conflict = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "clean",
+  });
+  const repeated = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "conflict",
+  });
+
+  expect(conflict).toEqual({ checked: 1, emitted: 1 });
+  expect(repeated).toEqual({ checked: 1, emitted: 0 });
+  expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
+  expect(workflowMergeConflictEventsFor(repo.id, issue.number)).toBe(0);
+  expect(conflictSourcePayloadsFor(repo.id, issue.number)[0]).toMatchObject({
+    conflict_source: "github",
+  });
+});
+
+test("GitHub conflict fires when the previous local state was blocked", async () => {
+  const repo = S.getRepo("me", "conflict")!;
+  const issue = S.createIssue(repo.id, "pull", "Blocked GitHub PR", "", "me");
+  S.createPull(issue.id, "blocked-github", "main", "blocked-sha", null);
+  S.recordPullConflictState(repo.id, issue.number, "blocked");
+
+  const result = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "blocked",
+    githubStatus: {
+      state: "open",
+      merged: false,
+      mergeable: "conflicting",
+      reviewDecision: null,
+      checks: "pending",
+      comments: 0,
+      reviews: 0,
+      updatedAt: "2026-09-09T00:00:00Z",
+      commitShas: [],
+    },
+  });
+
+  expect(result).toEqual({ checked: 1, emitted: 1 });
+  expect(conflictSourcePayloadsFor(repo.id, issue.number)[0]).toMatchObject({
+    conflict_source: "github",
+  });
+});
+
+test("a conflict observed locally and on GitHub records both sources", async () => {
+  const repo = S.getRepo("me", "conflict")!;
+  const issue = S.createIssue(repo.id, "pull", "Dual conflict PR", "", "me");
+  S.createPull(issue.id, "dual-conflict", "main", "dual-sha", null);
+  S.recordPullConflictState(repo.id, issue.number, "clean");
+  S.saveGithubPullStatus(
+    issue.id,
+    JSON.stringify({ mergeable: "conflicting" }),
+  );
+
+  const result = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "conflict",
+  });
+
+  expect(result).toEqual({ checked: 1, emitted: 1 });
+  expect(conflictSourcePayloadsFor(repo.id, issue.number)[0]).toMatchObject({
+    conflict_source: "both",
+  });
+});
+
+test("the first GitHub conflict uses the same tick's local clean baseline", async () => {
+  const repo = S.getRepo("me", "conflict")!;
+  const issue = S.createIssue(
+    repo.id,
+    "pull",
+    "First GitHub conflict",
+    "",
+    "me",
+  );
+  S.createPull(issue.id, "first-github-conflict", "main", "first-sha", null);
+  const githubStatus = {
+    state: "open" as const,
+    merged: false,
+    mergeable: "conflicting" as const,
+    reviewDecision: "approved" as const,
+    checks: "success" as const,
+    comments: 0,
+    reviews: 1,
+    updatedAt: "2026-09-09T00:00:00Z",
+    commitShas: [],
+  };
+
+  const first = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "clean",
+    githubStatus,
+  });
+  const repeated = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "clean",
+    githubStatus,
+  });
+
+  expect(first).toEqual({ checked: 1, emitted: 1 });
+  expect(repeated).toEqual({ checked: 1, emitted: 0 });
+  expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
+});
+
+test("the first GitHub conflict is not lost when local state is unknown", async () => {
+  const repo = S.getRepo("me", "conflict")!;
+  const issue = S.createIssue(
+    repo.id,
+    "pull",
+    "Unknown local GitHub conflict",
+    "",
+    "me",
+  );
+  S.createPull(
+    issue.id,
+    "unknown-local-conflict",
+    "main",
+    "unknown-local",
+    null,
+  );
+  const githubStatus = {
+    state: "open" as const,
+    merged: false,
+    mergeable: "conflicting" as const,
+    reviewDecision: "approved" as const,
+    checks: "success" as const,
+    comments: 0,
+    reviews: 1,
+    updatedAt: "2026-09-09T00:00:00Z",
+    commitShas: [],
+  };
+
+  const first = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "unknown",
+    githubStatus,
+  });
+  const recovered = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "clean",
+    githubStatus,
+  });
+
+  expect(first).toEqual({ checked: 1, emitted: 1 });
+  expect(recovered).toEqual({ checked: 1, emitted: 0 });
+  expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
+});
+
+test("a local state failure does not discard a fresh GitHub conflict", async () => {
+  const repo = S.getRepo("me", "conflict")!;
+  const issue = S.createIssue(
+    repo.id,
+    "pull",
+    "Failed local GitHub conflict",
+    "",
+    "me",
+  );
+  S.createPull(issue.id, "failed-local-conflict", "main", "failed-local", null);
+  const githubStatus = {
+    state: "open" as const,
+    merged: false,
+    mergeable: "conflicting" as const,
+    reviewDecision: "approved" as const,
+    checks: "success" as const,
+    comments: 0,
+    reviews: 1,
+    updatedAt: "2026-09-09T00:00:00Z",
+    commitShas: [],
+  };
+
+  const result = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => {
+      throw new Error("local git unavailable");
+    },
+    githubStatus,
+  });
+
+  expect(result).toEqual({ checked: 1, emitted: 1 });
+  expect(JSON.parse(S.getGithubPullStatus(issue.id)!.payload)).toEqual(
+    githubStatus,
+  );
+  expect(conflictSourcePayloadsFor(repo.id, issue.number)[0]).toMatchObject({
+    conflict_source: "github",
+  });
+});
+
+test("cached GitHub unknown leaves local conflict detection active", async () => {
+  const repo = S.getRepo("me", "conflict")!;
+  const issue = S.createIssue(repo.id, "pull", "GitHub unknown PR", "", "me");
+  S.createPull(issue.id, "github-unknown", "main", "unknown-sha", null);
+  S.saveGithubPullStatus(issue.id, JSON.stringify({ mergeable: "unknown" }));
+  const states: MergeableState[] = ["clean", "conflict"];
+
+  await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => states.shift() ?? "unknown",
+  });
+  const result = await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => states.shift() ?? "unknown",
+  });
+
+  expect(result).toEqual({ checked: 1, emitted: 1 });
+  expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
+});
+
+test("a stale local sweep cannot overwrite a concurrent GitHub conflict", async () => {
+  const repo = S.getRepo("me", "conflict")!;
+  const issue = S.createIssue(
+    repo.id,
+    "pull",
+    "Concurrent conflict PR",
+    "",
+    "me",
+  );
+  S.createPull(issue.id, "concurrent-conflict", "main", "concurrent-sha", null);
+  S.recordPullConflictState(repo.id, issue.number, "clean");
+  S.saveGithubPullStatus(issue.id, JSON.stringify({ mergeable: "mergeable" }));
+  let releaseLocal!: () => void;
+  const localReady = Promise.withResolvers<void>();
+  const localRelease = new Promise<void>((resolve) => {
+    releaseLocal = resolve;
+  });
+  const staleLocalSweep = D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => {
+      localReady.resolve();
+      await localRelease;
+      return "clean";
+    },
+  });
+  await localReady.promise;
+  const githubStatus = {
+    state: "open" as const,
+    merged: false,
+    mergeable: "conflicting" as const,
+    reviewDecision: "approved" as const,
+    checks: "success" as const,
+    comments: 0,
+    reviews: 1,
+    updatedAt: "2026-09-09T00:00:00Z",
+    commitShas: [],
+  };
+
+  await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "clean",
+    githubStatus,
+  });
+  releaseLocal();
+  await staleLocalSweep;
+  await D.sweepPullConflicts({
+    issueId: issue.id,
+    computeState: async () => "clean",
+    githubStatus,
+  });
+
+  expect(S.getPullConflictState(repo.id, issue.number)).toBe("conflict");
   expect(mergeConflictEventsFor(repo.id, issue.number)).toBe(1);
 });

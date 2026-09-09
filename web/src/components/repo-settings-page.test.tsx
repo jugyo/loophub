@@ -405,7 +405,8 @@ describe("RepoSettingsPage", () => {
       }),
     );
     expect(
-      (rpcCall("terminal/launch")?.params as { prompt: string }).prompt,
+      (rpcCall("terminal/launch")?.params as { prompt: string } | undefined)
+        ?.prompt,
     ).toContain("--repo me/proj");
   });
 

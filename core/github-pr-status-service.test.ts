@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "#loophub-test";
 import type { GhPrStatus, GithubPrStatusDeps } from "./github.ts";
+import type { GithubPrStatusSyncDeps } from "./github-status-sync.ts";
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-gh-pr-status-"));
@@ -76,12 +77,13 @@ const SAMPLE: GhPrStatus = {
 function depsReturning(
   status: GhPrStatus,
   onCall: () => void = () => {},
-): GithubPrStatusDeps {
+): GithubPrStatusSyncDeps {
   return {
     fetchStatus: async () => {
       onCall();
       return status;
     },
+    fetchOrigin: async () => ({ code: 0, stdout: "", stderr: "" }),
   };
 }
 
@@ -162,6 +164,7 @@ test("the eager status sweep fills the same cache used by githubStatus (#152)", 
       calls++;
       return SAMPLE;
     },
+    fetchOrigin: async () => ({ code: 0, stdout: "", stderr: "" }),
   });
 
   expect(result.checked).toBeGreaterThan(0);
@@ -170,6 +173,82 @@ test("the eager status sweep fills the same cache used by githubStatus (#152)", 
   expect(
     await svc.pulls.githubStatus("me/proj", number, depsReturning(SAMPLE)),
   ).toMatchObject({ state: "open", checks: "failure" });
+});
+
+test("the eager status sweep emits a GitHub conflict edge once", async () => {
+  const number = await openGithubLinkedPull();
+  const repo = await svc.repos.get("me/proj");
+  const issue = S.getIssue(repo!.id, number)!;
+  S.recordPullConflictState(repo!.id, number, "clean");
+
+  await statusSync.syncGithubPrStatus(depsReturning(SAMPLE));
+  DB.db.run("UPDATE github_pull_status SET synced_at = ? WHERE issue_id = ?", [
+    "2000-01-01T00:00:00Z",
+    issue.id,
+  ]);
+  await statusSync.syncGithubPrStatus(depsReturning(SAMPLE));
+
+  const events = S.listEvents(0, repo!.id, 1000).filter(
+    (event) =>
+      event.type === "pull_request.merge_conflict" &&
+      (JSON.parse(event.payload) as { number?: number }).number === number,
+  );
+  expect(events).toHaveLength(1);
+});
+
+test("the eager status sweep fetches origin before projecting a GitHub conflict", async () => {
+  await openGithubLinkedPull();
+  const calls: string[] = [];
+
+  await statusSync.syncGithubPrStatus({
+    fetchStatus: async () => SAMPLE,
+    fetchOrigin: async (path, remote) => {
+      calls.push(`${path}:${remote}`);
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
+
+  expect(calls).toContain(`${repoPath}:origin`);
+});
+
+test("a failed origin fetch does not discard the GitHub conflict edge", async () => {
+  const number = await openGithubLinkedPull();
+  const repo = await svc.repos.get("me/proj");
+  S.recordPullConflictState(repo!.id, number, "blocked");
+
+  const result = await statusSync.syncGithubPrStatus({
+    fetchStatus: async () => SAMPLE,
+    fetchOrigin: async () => ({
+      code: 1,
+      stdout: "",
+      stderr: "origin unavailable",
+    }),
+  });
+
+  expect(result.failures).toBeGreaterThan(0);
+  expect(result.refreshed).toBeGreaterThan(0);
+  expect(
+    S.listEvents(0, repo!.id, 1000).filter(
+      (event) =>
+        event.type === "pull_request.merge_conflict" &&
+        (JSON.parse(event.payload) as { number?: number }).number === number,
+    ),
+  ).toHaveLength(1);
+});
+
+test("GitHub unknown does not overwrite the recorded conflict state", async () => {
+  const number = await openGithubLinkedPull();
+  const repo = await svc.repos.get("me/proj");
+  S.recordPullConflictState(repo!.id, number, "conflict");
+
+  await statusSync.syncGithubPrStatus(
+    depsReturning({ ...SAMPLE, mergeable: "unknown" }),
+  );
+
+  expect(S.recordPullConflictState(repo!.id, number, "conflict")).toEqual({
+    previous: "conflict",
+    current: "conflict",
+  });
 });
 
 test("the eager status sweep keeps stale cache data when GitHub fails (#152)", async () => {

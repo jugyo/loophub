@@ -20,6 +20,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
 let A: typeof import("./attachments.ts");
+let conflicts: typeof import("./pull-conflict-events.ts");
 
 function confirmStepLaunch(
   name: string,
@@ -125,6 +126,7 @@ beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
   A = await import("./attachments.ts");
+  conflicts = await import("./pull-conflict-events.ts");
 });
 
 afterAll(() => {
@@ -524,6 +526,55 @@ test("instruction delivery preserves the real next decision for the same state",
     rmSync(bin, { recursive: true, force: true });
     rmSync(path, { recursive: true, force: true });
   }
+}, 20_000);
+
+test("a GitHub-only conflict reaches the workflow reconcile decision", async () => {
+  const { repo } = freshRepo("me/github-conflict-delivery");
+  const issue = S.createIssue(repo.id, "issue", "GitHub conflict", "", "me");
+  const workflow = S.createWorkflow({
+    name: "github-conflict-delivery",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    "13131313-1313-4313-8313-131313131313",
+  );
+  await conflicts.sweepPullConflicts({
+    issueId: S.getIssue(repo.id, started.pr.number)!.id,
+    computeState: async () => "clean",
+    githubStatus: {
+      state: "open",
+      merged: false,
+      mergeable: "conflicting",
+      reviewDecision: "approved",
+      checks: "success",
+      comments: 0,
+      reviews: 1,
+      updatedAt: "2026-09-09T00:00:00Z",
+      commitShas: [],
+    },
+  });
+  const source = S.listEvents(0, repo.id, 1000).find(
+    (event) =>
+      event.type === "pull_request.merge_conflict" &&
+      (JSON.parse(event.payload) as { number?: number }).number ===
+        started.pr.number,
+  );
+
+  expect(source).toBeDefined();
+  await expect(
+    svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: source!.id,
+    }),
+  ).resolves.toMatchObject({
+    action: "deliver",
+    delivery_reason: "merge_conflict",
+    observed: { merge_conflict: true },
+  });
 }, 20_000);
 
 test("start persists the resolved runtime/model and every step inherits them (#516)", async () => {
