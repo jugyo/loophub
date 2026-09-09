@@ -1583,6 +1583,99 @@ describe("DiffFileDialog", () => {
     await waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
   });
 
+  it("drops the line highlight of an archived thread and keeps it while one stays active", async () => {
+    const patch = "@@ -1 +1,2 @@\n-old\n+new one\n+new two";
+    const twoLineDiff = () => ({
+      base_sha: "a".repeat(40),
+      head_sha: "b".repeat(40),
+      files: [
+        {
+          path: "web/src/a.ts",
+          original_path: null,
+          status: "modified",
+          additions: 2,
+          deletions: 1,
+          patch,
+          lines: [
+            {
+              kind: "hunk",
+              text: "@@ -1 +1,2 @@",
+              left_line: null,
+              right_line: null,
+            },
+            {
+              kind: "deletion",
+              text: "-old",
+              left_line: 1,
+              right_line: null,
+            },
+            {
+              kind: "addition",
+              text: "+new one",
+              left_line: null,
+              right_line: 1,
+            },
+            {
+              kind: "addition",
+              text: "+new two",
+              left_line: null,
+              right_line: 2,
+            },
+          ],
+        },
+      ],
+    });
+    const archivedThread = feedbackThread({
+      archived_at: "2026-07-29T00:00:00Z",
+    });
+
+    const archivedOnly = renderDialog({
+      file: { ...file, additions: 2, patch },
+      handlers: {
+        "pulls/diff": twoLineDiff,
+        "diffFeedback/list": () => ({ threads: [archivedThread] }),
+      },
+    });
+
+    expect(await screen.findAllByLabelText("Diff thread 1")).toHaveLength(1);
+    expect(
+      archivedOnly.container.querySelectorAll('[data-thread-anchor="true"]'),
+    ).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(
+      archivedOnly.container.querySelectorAll('[data-thread-anchor="true"]'),
+    ).toHaveLength(0);
+    archivedOnly.unmount();
+
+    // One active thread on the same range is enough to keep the lines highlighted.
+    const mixed = renderDialog({
+      file: { ...file, additions: 2, patch },
+      handlers: {
+        "pulls/diff": twoLineDiff,
+        "diffFeedback/list": () => ({
+          threads: [
+            archivedThread,
+            feedbackThread({
+              id: 2,
+              messages: [
+                { ...feedbackThread().messages[0], id: 12, thread_id: 2 },
+              ],
+            }),
+          ],
+        }),
+      },
+    });
+
+    expect(await screen.findAllByLabelText("Diff thread 2")).toHaveLength(1);
+    expect(
+      mixed.container.querySelectorAll('[data-thread-anchor="true"]'),
+    ).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    expect(
+      mixed.container.querySelectorAll('[data-thread-anchor="true"]'),
+    ).toHaveLength(2);
+  });
+
   it("expands and shrinks diff comment composers with their content", async () => {
     renderDialog({
       handlers: {
@@ -4277,6 +4370,92 @@ describe("DiffFileDialog", () => {
     await assertContainerThreads(true);
     fireEvent.click(screen.getByRole("button", { name: "Split" }));
     await assertContainerThreads(false);
+  });
+
+  it("drops the rendered block highlight of an archived thread", async () => {
+    const patch = "@@ -1 +1 @@\n-Old paragraph\n+New paragraph";
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch,
+    };
+    const renderMarkdownDiff = (threads: DiffFeedbackThread[]) =>
+      renderDialog({
+        file: mdFile,
+        handlers: {
+          "pulls/diff": () => ({
+            base_sha: "a".repeat(40),
+            head_sha: "b".repeat(40),
+            files: [
+              {
+                path: "README.md",
+                original_path: null,
+                status: "modified",
+                additions: 1,
+                deletions: 1,
+                patch,
+                lines: [
+                  {
+                    kind: "hunk",
+                    text: "@@ -1 +1 @@",
+                    left_line: null,
+                    right_line: null,
+                  },
+                  {
+                    kind: "deletion",
+                    text: "-Old paragraph",
+                    left_line: 1,
+                    right_line: null,
+                  },
+                  {
+                    kind: "addition",
+                    text: "+New paragraph",
+                    left_line: null,
+                    right_line: 1,
+                  },
+                ],
+              },
+            ],
+          }),
+          "pulls/fileAtRef": (params: { side: string }) => ({
+            status: "ok",
+            content:
+              params.side === "base" ? "Old paragraph\n" : "New paragraph\n",
+          }),
+          "diffFeedback/list": () => ({ threads }),
+        },
+      });
+    const blockThread = (patchThread: Partial<DiffFeedbackThread> = {}) =>
+      feedbackThread({
+        anchor: {
+          ...feedbackThread().anchor,
+          path: "README.md",
+          start_line: 1,
+          end_line: 1,
+        },
+        ...patchThread,
+      });
+
+    const active = renderMarkdownDiff([blockThread()]);
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    await screen.findByLabelText("Diff thread 1");
+    expect(screen.getByText("New paragraph").classList).toContain(
+      "markdown-diff-block-commented",
+    );
+    active.unmount();
+
+    const archived = renderMarkdownDiff([
+      blockThread({ archived_at: "2026-07-29T00:00:00Z" }),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    // The conversation stays listed under its block; only the highlight goes away.
+    await screen.findByLabelText("Diff thread 1");
+    expect(screen.getByText("New paragraph").classList).not.toContain(
+      "markdown-diff-block-commented",
+    );
+    archived.unmount();
   });
 
   it("does not duplicate side-specific rendered threads as previous threads", async () => {

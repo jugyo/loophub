@@ -1673,6 +1673,8 @@ function threadsEndingAt(
   });
 }
 
+// Archived threads are out of review, so they stop highlighting their lines; a line that still
+// carries one active thread keeps the highlight.
 function threadAnchorsLine(
   threads: DiffThreadPlacement[],
   side: "LEFT" | "RIGHT",
@@ -1682,6 +1684,7 @@ function threadAnchorsLine(
     line != null &&
     threads.some((thread) => {
       return (
+        thread.thread.archived_at == null &&
         thread.anchor.side === side &&
         line >= thread.anchor.startLine &&
         line <= thread.anchor.endLine
@@ -3368,11 +3371,16 @@ function RenderedDiffSide({
       if (result.has(key)) continue;
       const order = orderByBlock.get(key) ?? null;
       const blockThreads = threadsByBlock.get(key);
+      // Same rule as the line highlight: an archived thread stays listed under its block but no
+      // longer marks the block as commented.
+      const commented = blockThreads?.some(
+        (placement) => placement.thread.archived_at == null,
+      );
       result.set(key, {
         className: cn(
           changeByBlock.get(key) &&
             `markdown-diff-block-${changeByBlock.get(key)}`,
-          blockThreads && "markdown-diff-block-commented",
+          commented && "markdown-diff-block-commented",
           unified &&
             (order == null
               ? "markdown-diff-unified-block-hidden"
