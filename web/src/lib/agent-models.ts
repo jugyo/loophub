@@ -7,6 +7,11 @@
 import type { CodingAgent } from "@/api/types";
 import { CODING_AGENTS, RUNTIMES } from "../../../core/runtimes.ts";
 
+// The effort levels a specific runtime+model pair accepts (#522). Codex's GPT-6 Astra drops
+// `minimal` and adds `xhigh`/`max`, so the pickers ask per model instead of reading
+// EFFORT_SUGGESTIONS directly; models without an override resolve back to the runtime ladder.
+export { effortSuggestionsForModel } from "../../../core/runtimes.ts";
+
 // Human-readable agent names for pickers.
 export const CODING_AGENT_LABELS: Record<CodingAgent, string> =
   Object.fromEntries(

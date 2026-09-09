@@ -154,3 +154,27 @@ test("OpenCode provider/model ids price known models and leave free/unknown mode
     }),
   ).toBeCloseTo(18);
 });
+
+test("priceForModel prices gpt-6-astra from its confirmed OpenAI standard rate", () => {
+  expect(priceForModel("gpt-6-astra")).toMatchObject({
+    input: 10,
+    cacheCreation: 12.5,
+    cacheRead: 1,
+    output: 50,
+  });
+  // A Codex session on the new default model reports a cost instead of "n/a".
+  expect(
+    calculateCostUsd("gpt-6-astra", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 1_000_000,
+      cache_read_input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+    }),
+  ).toBeCloseTo(73.5);
+  // The >272K-input tier is deliberately not modelled: the standard rate applies
+  // whatever the prompt size, as for the other long-context models here.
+  expect(priceForModel("gpt-6-astra")).toEqual(priceForModel("GPT-6-Astra"));
+  // The neighbouring codex rates keep their own values.
+  expect(priceForModel("gpt-5.6-sol")).toMatchObject({ input: 5 });
+  expect(priceForModel("gpt-6-nova")).toBeNull();
+});

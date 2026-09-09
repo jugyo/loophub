@@ -39,7 +39,7 @@ test("settings.get defaults to the model/effort for every agent and claude-code"
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": agentWire("opus", "medium"),
-      codex: agentWire("gpt-5.6-sol", "medium"),
+      codex: agentWire("gpt-6-astra", "medium"),
       opencode: agentWire("opencode/big-pickle", ""),
       grok: agentWire("grok-code-fast-1", "medium"),
     },
@@ -100,7 +100,7 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
       "claude-code": agentWire("claude-opus-4-8", "medium", {
         model: "claude-opus-4-8",
       }),
-      codex: agentWire("gpt-5.6-sol", "medium"),
+      codex: agentWire("gpt-6-astra", "medium"),
       opencode: agentWire("opencode/big-pickle", ""),
       grok: agentWire("grok-code-fast-1", "medium"),
     },

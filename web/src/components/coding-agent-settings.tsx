@@ -22,6 +22,7 @@ import {
 import {
   CODING_AGENT_LABELS,
   EFFORT_SUGGESTIONS,
+  effortSuggestionsForModel,
   MODEL_SUGGESTIONS,
 } from "@/lib/agent-models";
 import { cn } from "@/lib/utils";
@@ -109,11 +110,11 @@ export function CodingAgentSettingsList({
               {agentLabel}
             </label>
             <AgentModelDropdown
+              agent={agent}
               agentLabel={agentLabel}
               model={model}
               effort={effort}
               modelSuggestions={MODEL_SUGGESTIONS[agent]}
-              effortSuggestions={EFFORT_SUGGESTIONS[agent]}
               disabled={disabled}
               saving={saving}
               onSave={(selectedModel, selectedEffort) =>
@@ -128,20 +129,20 @@ export function CodingAgentSettingsList({
 }
 
 function AgentModelDropdown({
+  agent,
   agentLabel,
   model,
   effort,
   modelSuggestions,
-  effortSuggestions,
   disabled,
   saving,
   onSave,
 }: {
+  agent: CodingAgent;
   agentLabel: string;
   model: string;
   effort: string;
   modelSuggestions: string[];
-  effortSuggestions: string[];
   disabled: boolean;
   saving: boolean;
   onSave: (model: string, effort: string) => void;
@@ -152,10 +153,17 @@ function AgentModelDropdown({
   const models = modelOptions.includes(model)
     ? modelOptions
     : [model, ...modelOptions];
-  const effortOptions = ["", ...effortSuggestions];
-  const efforts = effortOptions.includes(effort)
-    ? effortOptions
-    : [effort, ...effortOptions];
+  // Whether this runtime offers an effort ladder at all; the levels themselves are asked per model
+  // (#522), since a runtime's models can accept different ones.
+  const effortSuggestions = EFFORT_SUGGESTIONS[agent];
+  // The levels listed under one model, with the saved effort leading the list when that model is
+  // the selected one, so an override outside the suggestions stays visible.
+  const effortsFor = (candidate: string): string[] => {
+    const options = ["", ...effortSuggestionsForModel(agent, candidate)];
+    return candidate === model && !options.includes(effort)
+      ? [effort, ...options]
+      : options;
+  };
   // Summarize the saved selection on the closed trigger (#100) so model and effort are both
   // readable without opening the submenu. Agents whose registry entry offers no effort levels
   // never save one, so they show the model alone instead of an empty separator.
@@ -223,7 +231,7 @@ function AgentModelDropdown({
                 </span>
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="max-h-[min(24rem,calc(100vh-5rem))] min-w-40 overflow-y-auto">
-                {efforts.map((candidateEffort) => {
+                {effortsFor(candidate).map((candidateEffort) => {
                   const selected = selectedModel && candidateEffort === effort;
                   return (
                     <DropdownMenuItem

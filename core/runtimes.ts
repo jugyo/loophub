@@ -43,6 +43,11 @@ export interface RuntimeDefinition {
   // mirror the `claude --effort` flag; codex's mirror the `model_reasoning_effort` config values.
   // grok's are TENTATIVE — grok has no verified user-facing reasoning-effort scale here.
   effortSuggestions: string[];
+  // Per-model overrides of effortSuggestions, for models whose accepted levels differ from the
+  // runtime's usual ladder (#522: GPT-6 Astra drops `minimal` and adds `xhigh`/`max`). Keyed by the
+  // exact model id; a model absent here uses effortSuggestions. Resolve the two with
+  // effortSuggestionsForModel() rather than reading either field directly.
+  modelEffortSuggestions?: Readonly<Record<string, readonly string[]>>;
   // Whether the `--sandbox`/`--allow` managed-settings launch options apply to this runtime. Only
   // claude has that concept; other runtimes don't, and the CLI rejects the `--sandbox`/`--allow`
   // combination for them up front.
@@ -84,9 +89,10 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     bin: "codex",
     label: "Codex",
     buildFlag: "--codex",
-    defaultModel: "gpt-5.6-sol",
+    defaultModel: "gpt-6-astra",
     defaultEffort: "medium",
     modelSuggestions: [
+      "gpt-6-astra",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -96,6 +102,12 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
       "gpt-5.3-codex-spark",
     ],
     effortSuggestions: ["minimal", "low", "medium", "high"],
+    // GPT-6 Astra does not accept `minimal` (nor `none`) and adds `xhigh`/`max`
+    // (https://developers.openai.com/api/docs/guides/latest-model); the older gpt-5.x tiers keep
+    // the ladder above.
+    modelEffortSuggestions: {
+      "gpt-6-astra": ["low", "medium", "high", "xhigh", "max"],
+    },
     sandboxCapable: false,
     // Codex's closest single flag to Claude Code's auto mode; it also drops the sandbox.
     autoApproveArgs: ["--dangerously-bypass-approvals-and-sandbox"],
@@ -171,6 +183,21 @@ export const RUNTIMES: Record<CodingAgent, RuntimeDefinition> =
 export const CODING_AGENTS: readonly CodingAgent[] = RUNTIME_LIST.map(
   (r) => r.id,
 );
+
+// The reasoning-effort levels offered for one runtime + model pair. An empty model means "use the
+// runtime default", so it resolves to the default model's levels; a model with no per-model entry
+// falls back to the runtime's effortSuggestions.
+export function effortSuggestionsForModel(
+  runtime: CodingAgent,
+  model: string,
+): readonly string[] {
+  const definition = RUNTIMES[runtime];
+  const resolved = model || definition.defaultModel;
+  return (
+    definition.modelEffortSuggestions?.[resolved] ??
+    definition.effortSuggestions
+  );
+}
 
 export function isCodingAgent(value: unknown): value is CodingAgent {
   return typeof value === "string" && value in RUNTIMES;

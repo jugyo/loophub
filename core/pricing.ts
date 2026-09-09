@@ -82,6 +82,19 @@ const GPT_56_SOL_PRICE: UsagePrice = {
   cacheRead: 0.5,
   output: 30,
 };
+// Confirmed OpenAI rate for gpt-6-astra (codex) from the OpenAI API pricing page
+// (https://developers.openai.com/api/docs/models/gpt-6-astra, checked 2026-09-09): input $10.00 /
+// cached input $1.00 / cache writes $12.50 (1.25x the uncached input rate, as for gpt-5.6+) /
+// output $50.00 per 1M tokens. Only that standard rate is stored: prompts over 272K input tokens
+// are billed at 2x input and cache rates and 1.5x output for the whole request, and cost is
+// resolved per model here with no per-request prompt-size awareness — the same simplification the
+// Claude and Grok long-context tiers get.
+const GPT_6_ASTRA_PRICE: UsagePrice = {
+  input: 10,
+  cacheCreation: 12.5,
+  cacheRead: 1,
+  output: 50,
+};
 const GPT_56_LUNA_PRICE: UsagePrice = {
   input: 1,
   cacheCreation: 1.25,
@@ -139,6 +152,7 @@ export function priceForModel(model: string): UsagePrice | null {
   if (m.includes("opus")) return PRICES.opus;
   if (m.includes("sonnet")) return PRICES.sonnet;
   if (m.includes("haiku")) return PRICES.haiku;
+  if (m.includes("gpt-6-astra")) return GPT_6_ASTRA_PRICE;
   if (m.includes("gpt-5.6-sol")) return GPT_56_SOL_PRICE;
   if (m.includes("gpt-5.6-luna")) return GPT_56_LUNA_PRICE;
   if (m.includes("gpt-5.5")) return GPT_55_PRICE;

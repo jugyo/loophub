@@ -1844,7 +1844,7 @@ test("workflow start launches the configured codingAgent (codex) without requiri
     // typed into its pane. `--session-id` is not passed to codex.
     expect(log).toMatch(/pane send-text \S+ .*\bcodex '/);
     expect(log).not.toMatch(/pane send-text \S+ .*\bclaude '/);
-    expect(log).toContain("'--model' 'gpt-5.6-sol'");
+    expect(log).toContain("'--model' 'gpt-6-astra'");
     expect(log).toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(log).not.toContain("code_mode");
     expect(log).not.toContain("deferred_executor");

@@ -189,6 +189,31 @@ describe("SettingsPage", () => {
     ).toBeTruthy();
   });
 
+  it("offers Astra's effort levels without minimal, and keeps minimal on the older Codex models (#522)", async () => {
+    renderSettings("codex");
+    const modelMenu = await openDropdown("Codex model");
+    fireEvent.pointerMove(
+      within(modelMenu).getByRole("menuitem", {
+        name: "GPT 6 Astra effort options",
+      }),
+      { pointerType: "mouse" },
+    );
+    expect(await screen.findByRole("menuitem", { name: "Max" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Extra high" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Minimal" })).toBeNull();
+
+    fireEvent.pointerMove(
+      within(modelMenu).getByRole("menuitem", {
+        name: "GPT 5.6 Sol effort options",
+      }),
+      { pointerType: "mouse" },
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: "Minimal" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Max" })).toBeNull();
+  });
+
   it("persists model and effort independently", async () => {
     renderSettings();
     const modelMenu = await openDropdown("Claude Code model");
