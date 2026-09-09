@@ -54,6 +54,29 @@ test("Verify carries one child result format shared by both languages", () => {
   }
 });
 
+test("parent safely distinguishes a pre-invocation failure", () => {
+  for (const language of WORKFLOW_CONTRACT_LANGUAGES) {
+    const contract = workflowContractText("parent", language);
+    expect(contract).toContain(
+      "lh workflow run --repo {{repo}} --run {{run}} --reason <text|-> await-human",
+    );
+    expect(contract).toContain(
+      "lh workflow escalate-human --repo {{repo}} --run {{run}} --reason <text|->",
+    );
+    expect(contract).toMatch(
+      /before command invocation|command invocation の開始前/u,
+    );
+    expect(contract).toMatch(/same structured|同じ構造化 command/u);
+    expect(contract).toMatch(
+      /Preserve its argv and session|argv と session を維持/u,
+    );
+    expect(contract).toMatch(
+      /pending effects or reservations|pending effect や reservation/u,
+    );
+    expect(contract).toMatch(/do not retry|retry しない/u);
+  }
+});
+
 /**
  * Command lines quoted by a contract, normalized to one line each. Quotes live either in a fenced
  * block (where a trailing backslash continues the line) or in an inline code span (which may wrap

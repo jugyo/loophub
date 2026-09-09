@@ -45,7 +45,15 @@ prompt に重複して持たない。parent 自身の判断は untrusted な参�
 人間から直接指示された場合は、待たずに
 `lh workflow instruction {{run}} --repo {{repo}} --note <text|-> --json` を実行し、返された構造化 instructions を実行する。
 
-不正な instruction や action の non-zero error は retry せず、人間へ判断を求める。error は見える状態で保持する。
+command invocation の開始前に失敗したと断定できる場合は、同じ構造化 command をもう一度実行する。command は
+実行されておらず副作用も起こり得ないため、これは action の retry ではない。argv と session を維持し、別の操作や
+実行経路に置き換えない。
+
+command の開始、または副作用の有無が不明な場合と、command が non-zero を返した場合は retry しない。error を
+見える状態で保持し、失敗した action と人間が判断すべき正確な次の操作を reason にして
+lh workflow run --repo {{repo}} --run {{run}} --reason <text|-> await-human を実行する。同じ事実を reason にして
+lh workflow escalate-human --repo {{repo}} --run {{run}} --reason <text|-> を実行して人間へ通知し、指示を待つ。
+run status を確認した人間から recovery を明示的に指示されるまで、pending effect や reservation を解除しない。
 
 ## 構造化 instructions
 
@@ -66,8 +74,9 @@ prompt に重複して持たない。parent 自身の判断は untrusted な参�
   表示し、回答まで自動進行を止める。
 - `after` は次の instruction を待つか停止するかを示す。
 
-各 command は 1 回だけ実行する。action の非 0 error と、それ以前に完了した command を可視のまま保持し、
-retry や recovery を追加せず、人間に進め方を確認する。delivery text は、返された reason と observed source
+各 command は開始後 1 回だけ実行する。command 実行前と断定できる tool-runtime failure は、上記の実行前 recovery
+規則に従う。action の非 0 error と、それ以前に完了した command を可視のまま保持し、上記のとおり人間待ちを
+記録・通知して進め方を確認する。delivery text は、返された reason と observed source
 だけから具体的な 1 行の指示を書く。reason や observed に由来しない手順を追加してはならず、特に
 parent は child に push、merge、remote への書き込みを指示しない。review rework では返却 command が正確な
 `orchestrator: address review <id>` を既に含むため、finding を要約・解釈しない。cost hold と escalation の

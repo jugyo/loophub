@@ -45,7 +45,17 @@ delivery text. A fresh pass is not a stop condition; wait for another instructio
 For a direct human instruction, run `lh workflow instruction {{run}} --repo {{repo}} --note <text|-> --json` immediately
 instead of waiting, then execute the returned structured instructions.
 
-Keep a malformed instruction or non-zero action error visible and ask for human judgement; do not retry it.
+If a failure conclusively occurs before command invocation begins, execute that same structured
+command again. This is not an action retry because no command ran and no side effect is possible.
+Preserve its argv and session; do not substitute another operation or execution path.
+
+If command execution may have started, its side effects are uncertain, or the command returns a
+non-zero result, do not retry it. Keep the error visible, then run
+lh workflow run --repo {{repo}} --run {{run}} --reason <text|-> await-human to record the failed
+action and the exact next operation requiring a decision. Run
+lh workflow escalate-human --repo {{repo}} --run {{run}} --reason <text|-> with the same facts to
+notify the human, then wait for guidance. Do not clear pending effects or reservations unless a human
+explicitly directs recovery after checking the run status.
 
 ## Structured instructions
 
@@ -66,8 +76,9 @@ Every delivered result includes `instructions`, the complete procedure for its a
   questions must be shown verbatim and automatic progression held for the answer.
 - `after` says whether to wait for another delivered instruction or stop.
 
-Run each command once. Keep a non-zero action error and any completed prior command visible, do not retry or add recovery,
-and ask a human how to proceed. For delivery text, write one concrete single-line instruction only from the returned reason and
+Run each command once after it starts. A tool-runtime failure that conclusively precedes command execution follows the
+pre-execution recovery rule above. Keep a non-zero action error and any completed prior command visible, record and notify
+the human as described above, and ask how to proceed. For delivery text, write one concrete single-line instruction only from the returned reason and
 observed source. Do not add procedures not grounded in either reason or observed; in particular, the parent must not instruct
 the child to push, merge, or write to a remote. For review rework, the returned command already contains the exact `orchestrator: address review <id>`
 message; do not summarize or interpret the findings. Cost hold and escalation commands own their receipts and human
