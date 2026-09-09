@@ -1,6 +1,6 @@
 // Increment only when persisted workflow events, instructions, receipts, handshakes, or another
 // Web/CLI-to-worker coordination contract changes incompatibly.
-export const WORKFLOW_WORKER_PROTOCOL_VERSION = 1;
+export const WORKFLOW_WORKER_PROTOCOL_VERSION = 2;
 export const WORKER_HEARTBEAT_INTERVAL_MS = 5_000;
 // Leave enough headroom for synchronous local maintenance queries without turning this
 // development-time compatibility check into a separate thread or process.

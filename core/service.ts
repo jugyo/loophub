@@ -30,6 +30,7 @@ export { workflowCostHold } from "./service/workflow-cost-hold.ts";
 export { workflowEffects } from "./service/workflow-effects.ts";
 export { workflowEscalation } from "./service/workflow-escalation.ts";
 export { workflowInstructions } from "./service/workflow-instructions.ts";
+export { workflowAgentStop } from "./service/workflow-agent-stop.ts";
 export { workflowRuns } from "./service/workflow-runs.ts";
 export { workflows } from "./service/workflows.ts";
 export { workspaces } from "./service/workspaces.ts";

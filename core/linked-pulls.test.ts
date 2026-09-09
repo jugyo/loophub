@@ -64,7 +64,7 @@ function attachWorkflowRun(
   parentSessionId: string,
 ) {
   const workflow = S.createWorkflow({
-    name: `linked-pull-close-${prNumber}`,
+    name: `linked-pull-close-${repoId}-${prNumber}-${parentSessionId}`,
     description: "",
     executePrompt: "",
     verifyPrompt: "",
@@ -82,6 +82,17 @@ function attachWorkflowRun(
   });
 }
 
+function registerWorkflowPane(repoId: number, runId: number, paneId: string) {
+  const launchId = `workflow-run-${runId}-${paneId}`;
+  S.registerHerdrPane({ repoId, launchId, paneId });
+  S.linkHerdrPaneResource({
+    repoId,
+    launchId,
+    resourceKind: "workflow_run",
+    resourceKey: String(runId),
+  });
+}
+
 beforeAll(async () => {
   S = await import("./store.ts");
   svc = await import("./service.ts");
@@ -90,6 +101,154 @@ beforeAll(async () => {
 afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
   for (const path of repoPaths) rmSync(path, { recursive: true, force: true });
+});
+
+test("closing a PR enqueues a worker job that stops only its workflow agents", async () => {
+  const repo = await makeRepo("me/close-workflow-agents");
+  const issue = svc.issues.create("me/close-workflow-agents", {
+    title: "stop this run",
+  });
+  branch(repo.path, "target");
+  branch(repo.path, "unrelated");
+  const target = await createHistoricalLinkedPull(
+    "me/close-workflow-agents",
+    issue.number,
+    "target",
+  );
+  const unrelatedIssue = svc.issues.create("me/close-workflow-agents", {
+    title: "keep this run",
+  });
+  const unrelated = await createHistoricalLinkedPull(
+    "me/close-workflow-agents",
+    unrelatedIssue.number,
+    "unrelated",
+  );
+  const olderTargetRun = attachWorkflowRun(
+    repo.id,
+    issue.number,
+    target.number,
+    "older-target-parent",
+  );
+  const targetRun = attachWorkflowRun(
+    repo.id,
+    issue.number,
+    target.number,
+    "target-parent",
+  );
+  const unrelatedRun = attachWorkflowRun(
+    repo.id,
+    unrelatedIssue.number,
+    unrelated.number,
+    "unrelated-parent",
+  );
+  registerWorkflowPane(repo.id, olderTargetRun.id, "w1:p0");
+  registerWorkflowPane(repo.id, targetRun.id, "w1:p1");
+  registerWorkflowPane(repo.id, unrelatedRun.id, "w1:p9");
+  svc.sessions.register({
+    id: "target-executor",
+    agent: "workflow-step",
+    session: "target-executor",
+  });
+  S.registerAgentExecutionTarget({
+    sessionId: "target-executor",
+    provider: "herdr",
+    targetId: "w1:p2",
+  });
+  S.updateWorkflowRun(targetRun.id, {
+    activeStep: "execute",
+    activeSessionId: "target-executor",
+  });
+
+  const stopped: string[] = [];
+  svc.pulls.update(
+    "me/close-workflow-agents",
+    target.number,
+    { state: "closed" },
+    "closer",
+  );
+
+  const jobs = [svc.jobs.claimNext(), svc.jobs.claimNext()];
+  expect(jobs).toEqual([
+    expect.objectContaining({
+      type: "workflow_agents.stop",
+      repo_id: repo.id,
+      status: "running",
+    }),
+    expect.objectContaining({
+      type: "workflow_agents.stop",
+      repo_id: repo.id,
+      status: "running",
+    }),
+  ]);
+  expect(jobs.map((job) => JSON.parse(job!.params))).toEqual([
+    { run: olderTargetRun.id },
+    { run: targetRun.id },
+  ]);
+  expect(
+    (await svc.pulls.get("me/close-workflow-agents", target.number)).state,
+  ).toBe("closed");
+  expect(
+    (await svc.pulls.get("me/close-workflow-agents", unrelated.number)).state,
+  ).toBe("open");
+  for (const run of [olderTargetRun, targetRun]) {
+    S.updateWorkflowRun(run.id, { status: "completed" });
+    await svc.workflowAgentStop.run(
+      "me/close-workflow-agents",
+      { run: run.id },
+      {
+        killPaneForegroundProcess: async (_repo, paneId) => {
+          stopped.push(paneId);
+          return true;
+        },
+      },
+    );
+  }
+  expect(stopped).toEqual(["w1:p0", "w1:p1", "w1:p2"]);
+  for (const job of jobs) svc.jobs.finish(job!.id, { status: "done" });
+});
+
+test("parent registration enqueues the stop after a PR closes during launch", async () => {
+  const repo = await makeRepo("me/close-starting-workflow");
+  const issue = svc.issues.create("me/close-starting-workflow", {
+    title: "starting run",
+  });
+  branch(repo.path, "starting");
+  const pull = await createHistoricalLinkedPull(
+    "me/close-starting-workflow",
+    issue.number,
+    "starting",
+  );
+  const run = attachWorkflowRun(
+    repo.id,
+    issue.number,
+    pull.number,
+    "starting-parent",
+  );
+  svc.pulls.update(
+    "me/close-starting-workflow",
+    pull.number,
+    { state: "closed" },
+    "closer",
+  );
+  expect(
+    (await svc.pulls.get("me/close-starting-workflow", pull.number)).state,
+  ).toBe("closed");
+  expect(svc.jobs.claimNext()).toBeNull();
+
+  svc.workflowInstructions.registerParentPane("me/close-starting-workflow", {
+    run: run.id,
+    launch_id: "starting-parent",
+    session_name: "me-close-starting-workflow",
+    pane_id: "w3:p1",
+    launched_at: new Date().toISOString(),
+  });
+  const stopJob = svc.jobs.claimNext();
+  expect(stopJob).toMatchObject({
+    type: "workflow_agents.stop",
+    repo_id: repo.id,
+  });
+  expect(JSON.parse(stopJob!.params)).toEqual({ run: run.id });
+  svc.jobs.finish(stopJob!.id, { status: "done" });
 });
 
 test("merging a historical linked PR closes its Issue and sibling PRs", async () => {

@@ -59,6 +59,7 @@ import {
 import { pullJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
+import { enqueueWorkflowAgentStop } from "../workflow-agent-stop-job.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -71,6 +72,7 @@ import {
   paginate,
   repoOr404,
 } from "./shared.ts";
+import { workflowRunParentPaneId } from "./workflow-panes.ts";
 
 async function githubCommitSync(
   repoPath: string,
@@ -538,6 +540,9 @@ export const pulls = {
     }
     const actor = actorFor(sessionId);
     const closesPull = row.state === "open" && patch.state === "closed";
+    const workflowRuns = closesPull
+      ? S.runningWorkflowRunsForPull(r.id, row.number)
+      : [];
     const issuePatch: Parameters<typeof S.updateIssue>[1] = {
       title: patch.title,
       body: patch.body,
@@ -546,6 +551,11 @@ export const pulls = {
     const updated = db.transaction(() => {
       S.updateIssue(row.id, issuePatch);
       if (closesPull) {
+        for (const workflowRun of workflowRuns) {
+          if (workflowRunParentPaneId(workflowRun)) {
+            enqueueWorkflowAgentStop(workflowRun);
+          }
+        }
         publish({
           type: "pull.closed",
           repoId: r.id,

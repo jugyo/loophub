@@ -489,7 +489,12 @@ describe("dev.openPr", () => {
       ),
     ).rejects.toThrow(/already has an open pull request/);
     // Closing the open PR frees the slot so a fresh PR can be opened for the issue.
-    svc.pulls.update("me/proj", reuse.number, { state: "closed" }, "sess-1");
+    await svc.pulls.update(
+      "me/proj",
+      reuse.number,
+      { state: "closed" },
+      "sess-1",
+    );
     const pr2 = await svc.dev.openPr(
       "me/proj",
       {

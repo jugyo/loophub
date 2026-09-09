@@ -124,7 +124,7 @@ test("merge() rejects a closed PR before publishing another terminal fact", asyn
     { title: "closed", head: "loophub/closed", base: "main" },
     undefined,
   )) as any;
-  svc.pulls.update("me/proj", pr.number, { state: "closed" });
+  await svc.pulls.update("me/proj", pr.number, { state: "closed" });
 
   await expect(
     svc.pulls.merge("me/proj", pr.number, "merge", undefined),

@@ -10,6 +10,7 @@ import {
   type WorkflowTwinSourceRef,
   workflowSubscriptionLowerBound,
 } from "../workflow/source-events.ts";
+import { enqueueWorkflowAgentStop } from "../workflow-agent-stop-job.ts";
 import { sendHerdrPrompt } from "./herdr-prompt.ts";
 import { repoOr404 } from "./shared.ts";
 import { workflowRunParentPaneId } from "./workflow-panes.ts";
@@ -193,6 +194,10 @@ export const workflowInstructions = {
         resourceKind: "workflow_run",
         resourceKey: String(run.id),
       });
+      const pull = S.getIssue(repo.id, run.pr_number);
+      if (pull?.state === "closed") {
+        enqueueWorkflowAgentStop(run);
+      }
       return pane;
     });
   },

@@ -2705,7 +2705,9 @@ test("closing an unmerged PR completes the run", async () => {
   );
   const run = started.run.id;
 
-  svc.pulls.update(repo.full_name, started.pr.number, { state: "closed" });
+  await svc.pulls.update(repo.full_name, started.pr.number, {
+    state: "closed",
+  });
 
   const source = S.listEvents(0, repo.id, 1_000).findLast(
     (event) =>

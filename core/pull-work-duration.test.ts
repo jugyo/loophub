@@ -263,7 +263,7 @@ test("closed without merging: total/implementation are closed (not growing)", as
     "sess-d",
   );
   backdateSession("sess-d", 500);
-  svc.pulls.update("me/proj", number, { state: "closed" }, "sess-d");
+  await svc.pulls.update("me/proj", number, { state: "closed" }, "sess-d");
 
   const first = (await svc.pulls.get("me/proj", number)) as any;
   expect(first.work_duration.total.basis).toBe("closed");
@@ -297,7 +297,7 @@ test("closed without merging: a later title/body edit does not inflate the close
     "sess-e",
   );
   backdateSession("sess-e", 200);
-  svc.pulls.update("me/proj", number, { state: "closed" }, "sess-e");
+  await svc.pulls.update("me/proj", number, { state: "closed" }, "sess-e");
   // Push closed_at 100s further into the past (session start to closed_at now ~100s, not ~200s) so
   // it is unambiguously earlier than the "now" the title edit below will stamp onto updated_at —
   // otherwise both timestamps could land in the same store.now() second (whole-second resolution)
@@ -313,7 +313,7 @@ test("closed without merging: a later title/body edit does not inflate the close
   // not — this is the bug a naive updated_at-based anchor would have re-introduced. Had it, the
   // duration below would jump up to roughly the full 200s session backdate (updated_at ≈ now, not
   // the backdated closed_at), instead of staying at ~100s.
-  svc.pulls.update(
+  await svc.pulls.update(
     "me/proj",
     number,
     { title: "renamed after close" },
@@ -339,7 +339,7 @@ test("closed then reopened then closed again: total un-freezes on reopen and re-
     "sess-h",
   );
   backdateSession("sess-h", 300);
-  svc.pulls.update("me/proj", number, { state: "closed" }, "sess-h");
+  await svc.pulls.update("me/proj", number, { state: "closed" }, "sess-h");
   backdateIssueClosedAt(number, 100); // closed_at ~200s after session start
 
   const closedOnce = (await svc.pulls.get("me/proj", number)) as any;
@@ -349,14 +349,14 @@ test("closed then reopened then closed again: total un-freezes on reopen and re-
 
   // Reopen: closed_at must clear (store.ts updateIssue), so total un-freezes and resumes counting
   // from the original session start — not from the stale closed_at.
-  svc.pulls.update("me/proj", number, { state: "open" }, "sess-h");
+  await svc.pulls.update("me/proj", number, { state: "open" }, "sess-h");
   const reopened = (await svc.pulls.get("me/proj", number)) as any;
   expect(reopened.work_duration.total.basis).toBe("in_progress");
   expect(reopened.work_duration.total.seconds).toBeGreaterThanOrEqual(300);
   expect(reopened.work_duration.total.seconds).toBeLessThan(310);
 
   // Close again: re-freezes at the NEW closed_at, not the one from the first close.
-  svc.pulls.update("me/proj", number, { state: "closed" }, "sess-h");
+  await svc.pulls.update("me/proj", number, { state: "closed" }, "sess-h");
   const closedAgain = (await svc.pulls.get("me/proj", number)) as any;
   expect(closedAgain.work_duration.total.basis).toBe("closed");
   expect(closedAgain.work_duration.total.seconds).toBeGreaterThanOrEqual(300);

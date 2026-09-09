@@ -652,6 +652,19 @@ export function latestWorkflowRunForPull(
     .get(repoId, prNumber) as WorkflowRunRow | null;
 }
 
+export function runningWorkflowRunsForPull(
+  repoId: number,
+  prNumber: number,
+): WorkflowRunRow[] {
+  return db
+    .query(
+      `SELECT * FROM workflow_runs
+       WHERE repo_id = ? AND pr_number = ? AND status = 'running'
+       ORDER BY id ASC`,
+    )
+    .all(repoId, prNumber) as WorkflowRunRow[];
+}
+
 export function workflowRunForLegacyParent(
   repoId: number,
   prNumber: number,

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { spawnProcess } from "../core/process.ts";
-import { jobs } from "../core/service.ts";
+import { jobs, workflowAgentStop } from "../core/service.ts";
+import { STOP_WORKFLOW_AGENTS_JOB } from "../core/workflow-agent-stop-job.ts";
 import {
   createJobQueue,
   DEFAULT_JOB_CONCURRENCY,
@@ -89,11 +90,34 @@ const runShell = (job: { id: number; params: string }): Promise<void> => {
   });
 };
 
+const runWorkflowAgentStop = async (job: {
+  id: number;
+  repo_id: number | null;
+  params: string;
+}): Promise<void> => {
+  try {
+    const params = JSON.parse(job.params) as { run?: number };
+    if (!job.repo_id || !Number.isInteger(params.run)) {
+      throw new Error("workflow agent stop job parameters are invalid");
+    }
+    const repo = jobs.repoName(job.repo_id);
+    const result = await workflowAgentStop.run(repo, { run: params.run! });
+    jobs.finish(job.id, { status: "done", result });
+  } catch (error) {
+    jobs.finish(job.id, {
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
 const queue = createJobQueue({
   concurrency,
   claimNext: jobs.claimNext,
   run: async (job) => {
     if (job.type === "shell") await runShell(job);
+    else if (job.type === STOP_WORKFLOW_AGENTS_JOB)
+      await runWorkflowAgentStop(job);
     else
       jobs.finish(job.id, {
         status: "failed",
