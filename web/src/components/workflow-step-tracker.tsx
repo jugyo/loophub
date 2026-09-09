@@ -1,10 +1,10 @@
-// Shared Execute → Verify → Ready to merge step tracker for a workflow run. Rendered both compact in a PR list
+// Shared Execute → Verify → Done step tracker for a workflow run. Rendered both compact in a PR list
 // row (LinkedPullSummaryRow) and larger in the issue / PR detail Workflow run section
 // (workflow-run-status.tsx). An optional parent-agent bot connects to the stage pills; hovering it
 // exposes the parent/orchestrator pane action. The current stage is colored, the rest are grey, and
 // traversed connectors fill in to convey progression.
 //
-// `execute` / `verify` are the run's real steps; "Ready to merge" is the canonical pre-merge state
+// `execute` / `verify` are the run's real steps; "Done" is the canonical pre-merge state
 // from core (`done`) — NOT `status === completed`, which means the linked PR closed or merged (#1808). A stale verification keeps the
 // Verify label as-is and is conveyed by the pill's amber tone plus its popover status (#1906); a
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker unless the caller
@@ -36,7 +36,7 @@ import { useFocusHerdrAgent } from "@/queries/terminal";
 const STAGES = [
   { key: "execute", label: "Execute" },
   { key: "verify", label: "Verify" },
-  { key: "done", label: "Ready to merge" },
+  { key: "done", label: "Done" },
 ] as const;
 
 type WorkflowTrackerState = {
@@ -99,7 +99,7 @@ function workflowTrackerTitle(
     return "The pull request was merged — the workflow is Merged";
   }
   if (done) {
-    return "The pull request is Ready to merge";
+    return "The workflow is Done — the pull request is not merged yet";
   }
   if (stale) {
     return "HEAD changed after Verify passed — a fresh Verify is required";
@@ -503,7 +503,7 @@ export function WorkflowStepTracker({
         const isCurrent = index === activeIndex;
         const isPast = index < activeIndex;
         // A PR-level conflict wins the terminal pill regardless of the run's step: an un-mergeable
-        // PR is the most actionable state to surface, so "Ready to merge" becomes "Conflict!" (#1659).
+        // PR is the most actionable state to surface, so "Done" becomes "Conflict!" (#1659).
         const isDoneConflict =
           stage.key === "done" &&
           !tracker.merged &&
@@ -604,9 +604,7 @@ export function WorkflowStepTracker({
                 ? "Conflict!"
                 : stage.key === "done" && tracker.merged
                   ? "Merged"
-                  : stage.key === "done" && tracker.done
-                    ? "Ready to merge"
-                    : stage.label}
+                  : stage.label}
             </WorkflowStagePill>
           </Fragment>
         );

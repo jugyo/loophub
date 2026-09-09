@@ -3387,7 +3387,7 @@ describe("PullDetail", () => {
     });
 
     await screen.findByText("Implementation loop");
-    expect(screen.getAllByText("Ready to merge").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Done").length).toBeGreaterThan(0);
     expect(
       screen.getByText("Verify passed for the current HEAD."),
     ).toBeTruthy();

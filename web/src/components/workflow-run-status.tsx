@@ -151,7 +151,7 @@ export function WorkflowRunStatusSection({
     : workflowDisplayStage(displayState) === "merged"
       ? { label: "Merged", tone: "review-passed" as const }
       : workflowDisplayStage(displayState) === "ready_to_merge"
-        ? { label: "Ready to merge", tone: "review-passed" as const }
+        ? { label: "Done", tone: "review-passed" as const }
         : displayState.status === "running" &&
             displayState.verification_status === "stale"
           ? { label: "Reverify required", tone: "review-changes" as const }

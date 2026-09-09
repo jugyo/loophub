@@ -334,7 +334,7 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
     expect(document.querySelector("[data-workflow-step-tracker]")).toBeNull();
   });
 
-  it("renders the Execute → Verify → Ready to merge tracker and highlights the current step", async () => {
+  it("renders the Execute → Verify → Done tracker and highlights the current step", async () => {
     renderRowWithRun(
       makeWorkflowRunState({
         current_step: "execute",
@@ -349,17 +349,17 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
     // All three pipeline stages are shown so the whole workflow is visible.
     expect(within_.getByText("Execute")).toBeTruthy();
     expect(within_.getByText("Verify")).toBeTruthy();
-    expect(within_.getByText("Ready to merge")).toBeTruthy();
+    expect(within_.getByText("Done")).toBeTruthy();
     // The run is on Execute, so that stage is the current one.
     expect(within_.getByText("Execute").getAttribute("aria-current")).toBe(
       "step",
     );
     expect(within_.getByText("Verify").getAttribute("aria-current")).toBeNull();
-    // Ready to merge is not reached yet — no verified check.
+    // Done is not reached yet — no verified check.
     expect(within_.queryByLabelText("verified")).toBeNull();
   });
 
-  it("advances the tracker to Ready to merge when Verify passes", async () => {
+  it("advances the tracker to Done when Verify passes", async () => {
     renderRowWithRun(
       makeWorkflowRunState({
         current_step: "verify",
@@ -367,15 +367,13 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
         merge_ready: true,
       }),
     );
-    const tracker = (await screen.findByText("Ready to merge")).closest(
+    const tracker = (await screen.findByText("Done")).closest(
       "[data-workflow-step-tracker]",
     );
     expect(tracker).toBeTruthy();
     const within_ = within(tracker as HTMLElement);
-    // Verify pass is the terminal: Ready to merge becomes the current stage.
-    expect(
-      within_.getByText("Ready to merge").getAttribute("aria-current"),
-    ).toBe("step");
+    // Verify pass is the terminal: Done becomes the current stage.
+    expect(within_.getByText("Done").getAttribute("aria-current")).toBe("step");
   });
 
   it("keeps the Verify stage label plain when verification is stale (#1906)", async () => {
@@ -385,7 +383,7 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
         verification_status: "stale",
       }),
     );
-    const tracker = (await screen.findByText("Ready to merge")).closest(
+    const tracker = (await screen.findByText("Done")).closest(
       "[data-workflow-step-tracker]",
     );
     const verify = within(tracker as HTMLElement).getByText("Verify");
@@ -408,7 +406,7 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
     expect(within(tracker as HTMLElement).getByText("Verify")).toBeTruthy();
   });
 
-  it("flips the mini tracker's Ready to merge pill to Conflict! when the PR is in merge conflict (#1659)", async () => {
+  it("flips the mini tracker's Done pill to Conflict! when the PR is in merge conflict (#1659)", async () => {
     renderRowWithRun(
       makeWorkflowRunState({
         current_step: "execute",
@@ -421,13 +419,13 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
     expect(tracker).toBeTruthy();
     const within_ = within(tracker as HTMLElement);
     // Terminal pill reads Conflict! (danger), the earlier stages are unchanged.
-    expect(within_.queryByText("Ready to merge")).toBeNull();
+    expect(within_.queryByText("Done")).toBeNull();
     expect(within_.getByText("Conflict!").className).toContain("text-red");
     expect(within_.getByText("Execute")).toBeTruthy();
     expect(within_.getByText("Verify")).toBeTruthy();
   });
 
-  it("does not reach Ready to merge for a completed run (completed is not the terminal signal)", async () => {
+  it("does not reach Done for a completed run (completed is not the terminal signal)", async () => {
     renderRowWithRun(
       makeWorkflowRunState({
         status: "completed",
@@ -436,18 +434,16 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
         merge_ready: false,
       }),
     );
-    // `status === completed` is a separate lifecycle state, so canonical Ready to merge stays unreached and
+    // `status === completed` is a separate lifecycle state, so canonical Done stays unreached and
     // Verify remains the current stage.
-    const tracker = (await screen.findByText("Ready to merge")).closest(
+    const tracker = (await screen.findByText("Done")).closest(
       "[data-workflow-step-tracker]",
     );
     const within_ = within(tracker as HTMLElement);
     expect(within_.getByText("Verify").getAttribute("aria-current")).toBe(
       "step",
     );
-    expect(
-      within_.getByText("Ready to merge").getAttribute("aria-current"),
-    ).toBeNull();
+    expect(within_.getByText("Done").getAttribute("aria-current")).toBeNull();
   });
 });
 
@@ -550,7 +546,7 @@ describe("LinkedPullSummaryRow workflow agent activity", () => {
     }
   });
 
-  it("keeps Ready to merge while a PR agent is working", async () => {
+  it("keeps Done while a PR agent is working", async () => {
     herdrSessionsData.value = herdrWorkingOnPull("execute");
     renderRowWithRun(
       makeWorkflowRunState({
@@ -561,12 +557,8 @@ describe("LinkedPullSummaryRow workflow agent activity", () => {
       }),
     );
     await screen.findByRole("link", { name: "PR #10" });
-    expect(screen.getByText("Ready to merge").className).toContain(
-      "text-green",
-    );
-    expect(
-      screen.getByText("Ready to merge").querySelector("svg"),
-    ).toBeTruthy();
+    expect(screen.getByText("Done").className).toContain("text-green");
+    expect(screen.getByText("Done").querySelector("svg")).toBeTruthy();
   });
 
   it("shows no bot when no workflow run is linked", async () => {

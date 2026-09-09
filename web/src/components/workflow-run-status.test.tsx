@@ -486,7 +486,7 @@ describe("WorkflowRunStatusSection", () => {
         document.querySelector(
           '[data-debug-component="WorkflowRunStatusSection"]',
         )?.textContent,
-      ).toContain("Ready to merge"),
+      ).toContain("Done"),
     );
     expect(
       screen.getByText("Verify passed for the current HEAD."),
@@ -525,7 +525,7 @@ describe("WorkflowRunStatusSection", () => {
         document.querySelector(
           '[data-debug-component="WorkflowRunStatusSection"]',
         )?.textContent,
-      ).toContain("Ready to merge"),
+      ).toContain("Done"),
     );
     expect(screen.queryByText("Verified")).toBeNull();
     expect(screen.queryByText(/Verify passed/)).toBeNull();
@@ -550,7 +550,7 @@ describe("WorkflowRunStatusSection", () => {
         document.querySelector(
           '[data-debug-component="WorkflowRunStatusSection"]',
         )?.textContent,
-      ).toContain("Ready to merge"),
+      ).toContain("Done"),
     );
     const done = document
       .querySelector('[data-debug-component="WorkflowRunStatusSection"]')

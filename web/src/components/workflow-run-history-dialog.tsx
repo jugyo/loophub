@@ -40,7 +40,7 @@ type DetailTab = (typeof DETAIL_TABS)[number]["id"];
 function statusLabel(state: WorkflowRunState): string {
   const stage = workflowDisplayStage(state);
   if (stage === "merged") return "Merged";
-  if (stage === "ready_to_merge") return "Ready to merge";
+  if (stage === "ready_to_merge") return "Done";
   if (state.status === "running" && state.needs_human_reason !== null) {
     return "Needs human";
   }
@@ -56,7 +56,7 @@ function displayName(value: string): string {
 function currentStepLabel(state: WorkflowRunState): string {
   const stage = workflowDisplayStage(state);
   if (stage === "merged") return "Merged";
-  if (stage === "ready_to_merge") return "Ready to merge";
+  if (stage === "ready_to_merge") return "Done";
   return displayName(state.current_step);
 }
 
