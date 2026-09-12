@@ -84,6 +84,8 @@ import {
   inlineText,
   parentUserPrompt,
   stepContractForLaunch,
+  truncateInlineReason,
+  WORKFLOW_REASON_MAX_LENGTH,
   workflowStepPrompt,
 } from "../workflow/prompts.ts";
 import {
@@ -591,15 +593,9 @@ function workflowByInput(
 }
 
 function workflowHumanReason(reason: string, action: string): string {
-  const normalized = inlineText(reason);
+  const normalized = truncateInlineReason(reason, WORKFLOW_REASON_MAX_LENGTH);
   if (!normalized) {
     throw new ServiceError(422, `${action} requires a reason`);
-  }
-  if (normalized.length > 500) {
-    throw new ServiceError(
-      422,
-      `${action} reason must be at most 500 characters`,
-    );
   }
   return normalized;
 }
@@ -1856,6 +1852,15 @@ function recordWorkflowStepLaunchFailure(
 }
 
 export const workflowRuns = {
+  // The repo a run belongs to, so a run-scoped command can default `--repo`. An unknown run returns
+  // null rather than raising: the caller still has its own repo resolution, and the command it is
+  // about to run reports the missing run itself.
+  repoName(runId: number): string | null {
+    const run = S.getWorkflowRun(runId);
+    if (!run) return null;
+    return S.getRepoById(run.repo_id)?.full_name ?? null;
+  },
+
   manifestPath(name: string, runId: number): string {
     const repo = repoOr404(name);
     const run = workflowRunOr404(runId);

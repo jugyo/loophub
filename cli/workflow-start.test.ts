@@ -378,9 +378,20 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
     );
   }
 
-  // Outside any registered root/worktree, repo context is still required.
-  const missingRepoContext = run(
+  // Outside any registered root/worktree, the run itself supplies the repo (#547).
+  const outsideAnyRepo = run(
     ["workflow", "turn", "done", "--run", String(runResult.run.id)],
+    sessionEnv,
+    HOME,
+  );
+  expect(outsideAnyRepo.exitCode, outsideAnyRepo.stderr).toBe(0);
+  expect(outsideAnyRepo.stdout).toContain(
+    `declared turn done for Workflow run #${runResult.run.id}`,
+  );
+
+  // An unknown run has no repo to resolve, so the cwd rule still reports the missing context.
+  const missingRepoContext = run(
+    ["workflow", "turn", "done", "--run", "999999"],
     sessionEnv,
     HOME,
   );

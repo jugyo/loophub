@@ -487,6 +487,142 @@ test("a parent that never signals readiness after launch grace fails visibly and
   }
 });
 
+// The launch-failure receipt shares the instruction prefix, so a parent that comes up after the
+// grace window must still be able to take the handshake.
+test("a late readiness signal retracts the launch-failure receipt and delivers", async () => {
+  const input = fixture("late-ready-parent");
+  const fake = fakeHerdr();
+  registerParentPane(input);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const now = vi
+    .spyOn(Date, "now")
+    .mockReturnValue(Date.parse(input.run.created_at) + 15 * 60_000);
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
+  try {
+    await svc.workflowInstructions.dispatchPending();
+    expect(
+      S.getWorkflowEventEffectWithPrefix(
+        input.run.id,
+        input.event.id,
+        "workflow.instruction:",
+      )?.status,
+    ).toBe("pending");
+
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).resolves.toMatchObject({
+      run: input.run.id,
+      instruction: {
+        status: "delivered",
+        event: input.event.id,
+        pane_id: "w1:p1",
+      },
+    });
+    expect(herdrCalls(fake.log)).toContain("pane send-text w1:p1");
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(input.event.id);
+  } finally {
+    now.mockRestore();
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+// The pane can register after the grace window too, so the missing-pane receipt is retracted on the
+// same readiness signal.
+test("a late readiness signal retracts the missing-pane receipt and delivers", async () => {
+  const input = fixture("late-pane-parent");
+  const fake = fakeHerdr();
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const now = vi
+    .spyOn(Date, "now")
+    .mockReturnValue(Date.parse(input.run.created_at) + 15 * 60_000);
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
+  try {
+    await svc.workflowInstructions.dispatchPending();
+    expect(
+      S.getWorkflowEventEffect(
+        input.run.id,
+        input.event.id,
+        "workflow.instruction:parent-pane-missing",
+      )?.status,
+    ).toBe("pending");
+
+    registerParentPane(input);
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).resolves.toMatchObject({
+      run: input.run.id,
+      instruction: { status: "delivered", event: input.event.id },
+    });
+    expect(herdrCalls(fake.log)).toContain("pane send-text w1:p1");
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(input.event.id);
+  } finally {
+    now.mockRestore();
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+// Readiness recorded while a dispatch is between its grace check and its claim must win: a receipt
+// written after it would describe a parent that is already usable, and nothing would retract it.
+test("a readiness signal that lands mid-dispatch keeps the event deliverable", async () => {
+  const input = fixture("ready-mid-dispatch");
+  const fake = fakeHerdr();
+  registerParentPane(input);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const now = vi
+    .spyOn(Date, "now")
+    .mockReturnValue(Date.parse(input.run.created_at) + 15 * 60_000);
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
+  try {
+    markParentReady(input);
+    // The dispatcher still holds the pre-readiness row it loaded, which is what makes the claim
+    // race observable; the guard inside the insert is what rejects it.
+    expect(
+      S.beginWorkflowEventEffect(
+        input.run.id,
+        input.event.id,
+        "workflow.instruction:parent-not-ready",
+        "subject",
+        { onlyWhileParentUnready: true },
+      ),
+    ).toBeNull();
+    expect(
+      S.pendingWorkflowEventEffectWithPrefix(
+        input.run.id,
+        "workflow.instruction:",
+      ),
+    ).toBeNull();
+
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({ status: "delivered", event: input.event.id });
+  } finally {
+    now.mockRestore();
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
 test("a repeated confirmed readiness signal keeps the first one", async () => {
   const input = fixture("repeated-ready");
   const fake = fakeHerdr();

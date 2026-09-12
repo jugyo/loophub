@@ -307,9 +307,41 @@ Usage:
   lh workflow escalate --reason <text> [options]
 
 Options:
-  --reason <text|@file|-> Short summary; @file reads a file and - reads stdin (required).
+  --reason <text|@file|-> Short summary; @file reads a file, - reads stdin, and a body redirected
+                        on stdin is accepted without the flag. Trimmed to 500 characters rather
+                        than rejected (required).
   --run <id>            Workflow run (required).
-  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --repo <owner/name>   Repository (defaults to the run's repository).
+  --session-id <uuid>   Attribute the escalation to a registered agent session.
+  --json                Print the recorded escalation as JSON.
+  --help                Show this help without changing the database.`;
+
+const WORKFLOW_RUN_AWAIT_HUMAN_DETAILS = `
+
+Usage:
+  lh workflow run await-human --run <id> --reason <text|@file|-> [options]
+
+Options:
+  --reason <text|@file|-> Why the run needs a human; @file reads a file, - reads stdin, and a body
+                        redirected on stdin is accepted without the flag. Trimmed to 500 characters
+                        rather than rejected (required).
+  --run <id>            Workflow run (required).
+  --repo <owner/name>   Repository (defaults to the run's repository).
+  --session-id <uuid>   Attribute the hold to a registered agent session.
+  --json                Print the held run as JSON.
+  --help                Show this help without changing the database.`;
+
+const WORKFLOW_ESCALATE_HUMAN_DETAILS = `
+
+Usage:
+  lh workflow escalate-human --run <id> --reason <text|@file|-> [options]
+
+Options:
+  --reason <text|@file|-> The human-facing comment body; @file reads a file, - reads stdin, and a
+                        body redirected on stdin is accepted without the flag. Trimmed to 5000
+                        characters rather than rejected (required).
+  --run <id>            Workflow run (required).
+  --repo <owner/name>   Repository (defaults to the run's repository).
   --session-id <uuid>   Attribute the escalation to a registered agent session.
   --json                Print the recorded escalation as JSON.
   --help                Show this help without changing the database.`;
@@ -562,6 +594,11 @@ Constraints:
     description: "Record and release an orphaned step launch.",
   },
   {
+    path: ["workflow", "run", "await-human"],
+    description: "Hold a workflow run for a human decision.",
+    details: WORKFLOW_RUN_AWAIT_HUMAN_DETAILS,
+  },
+  {
     path: ["workflow", "parent-ready"],
     description: "Declare the parent agent is up and reads its pane.",
     details: WORKFLOW_PARENT_READY_DETAILS,
@@ -584,6 +621,7 @@ Constraints:
   {
     path: ["workflow", "escalate-human"],
     description: "Notify a human about a workflow escalation.",
+    details: WORKFLOW_ESCALATE_HUMAN_DETAILS,
   },
   {
     path: ["workflow", "instruction"],

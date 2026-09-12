@@ -844,16 +844,7 @@ describe("workflowActionPlan", () => {
     ).toEqual([
       {
         command: "lh",
-        args: [
-          "workflow",
-          "launch-step",
-          "--repo",
-          "me/repo",
-          "--run",
-          "42",
-          "--step",
-          "execute",
-        ],
+        args: ["workflow", "launch-step", "--run", "42", "--step", "execute"],
       },
     ]);
     expect(
@@ -877,17 +868,7 @@ describe("workflowActionPlan", () => {
     ).toEqual([
       {
         command: "lh",
-        args: [
-          "workflow",
-          "run",
-          "resume",
-          "--repo",
-          "me/repo",
-          "--run",
-          "42",
-          "--step",
-          "verify",
-        ],
+        args: ["workflow", "run", "resume", "--run", "42", "--step", "verify"],
       },
     ]);
     expect(
@@ -908,8 +889,6 @@ describe("workflowActionPlan", () => {
     ).toEqual([
       "workflow",
       "deliver",
-      "--repo",
-      "me/repo",
       "--run",
       "42",
       "--delivery-id",
@@ -972,8 +951,6 @@ describe("workflowActionPlan", () => {
           args: [
             "workflow",
             "deliver",
-            "--repo",
-            "me/repo",
             "--run",
             "42",
             "--text",
@@ -1033,8 +1010,6 @@ describe("workflowActionPlan", () => {
       "workflow",
       "instruction",
       "42",
-      "--repo",
-      "me/repo",
       "--event",
       "12",
       "--requires-changes",
@@ -1056,8 +1031,6 @@ describe("workflowActionPlan", () => {
       "workflow",
       "instruction",
       "42",
-      "--repo",
-      "me/repo",
       "--note",
       "<human answer>",
       "--json",
@@ -1083,7 +1056,10 @@ describe("workflowActionPlan", () => {
         reason: "limit",
         escalation_reason: "execute_request",
       }).commands[0],
-    ).toMatchObject({ input: { argument: "--reason" } });
+    ).toMatchObject({
+      args: ["workflow", "escalate-human", "--run", "42", "--reason", "-"],
+      input: { argument: "--reason", form: "stdin" },
+    });
     expect(
       plan({
         action: "escalate",

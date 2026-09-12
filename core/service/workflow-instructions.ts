@@ -19,6 +19,9 @@ import { workflowRuns } from "./workflow-runs.ts";
 const EFFECT_PREFIX = "workflow.instruction:";
 const MISSING_PARENT_EFFECT = `${EFFECT_PREFIX}parent-pane-missing`;
 const UNREADY_PARENT_EFFECT = `${EFFECT_PREFIX}parent-not-ready`;
+// Receipts that record only that the parent was not usable yet. They share the instruction prefix,
+// so readiness has to retract them before it can be recorded.
+const PARENT_LAUNCH_EFFECTS = [MISSING_PARENT_EFFECT, UNREADY_PARENT_EFFECT];
 const HERDR_TIMEOUT_MS = 15_000;
 // Wide enough that machine load, not a broken launch, never closes the window: an unloaded parent
 // signals readiness within ~30s of run creation, and a heavily loaded one has been measured past
@@ -219,10 +222,13 @@ export const workflowInstructions = {
     if (!run || run.repo_id !== repo.id) {
       throw new ServiceError(404, `Workflow run #${input.run} not found`);
     }
-    const readyRow = S.markWorkflowRunParentReadyIfNoEffect(
-      run.id,
-      EFFECT_PREFIX,
-    );
+    // Readiness resolves the launch-failure receipts: nothing was written to the pane for them, so
+    // retracting them leaves the state a parent that answered in time would have. Every other
+    // receipt under the prefix stands for a delivery attempt and still blocks the handshake.
+    const readyRow = db.transaction(() => {
+      S.deleteWorkflowEventEffects(run.id, PARENT_LAUNCH_EFFECTS);
+      return S.markWorkflowRunParentReadyIfNoEffect(run.id, EFFECT_PREFIX);
+    });
     if (!readyRow?.parent_ready_at || readyRow.parent_ready_confirmed !== 1) {
       const pending = S.pendingWorkflowEventEffectWithPrefix(
         run.id,
@@ -346,13 +352,27 @@ export const workflowInstructions = {
     const paneMissing = registeredPane === undefined;
     if (paneMissing || !run.parent_ready_at) {
       if (parentLaunchPending(run)) return { status: "idle" };
+      // The unready-parent claim is guarded on readiness still being unset, so a readiness signal
+      // that commits while this dispatch is running wins instead of leaving a receipt behind it.
       const claimed = S.beginWorkflowEventEffect(
         run.id,
         event.id,
         paneMissing ? MISSING_PARENT_EFFECT : UNREADY_PARENT_EFFECT,
         "subject",
+        { onlyWhileParentUnready: !paneMissing },
       );
-      if (!claimed?.acquired) {
+      if (!claimed) {
+        if (S.getWorkflowRun(run.id)?.parent_ready_at) {
+          // Readiness won. Nothing was written to the pane, so the event is still owed its
+          // delivery and the next dispatch sees a usable parent.
+          return { status: "idle" };
+        }
+        throw new ServiceError(
+          409,
+          `could not record unusable parent pane for Workflow run #${run.id}`,
+        );
+      }
+      if (!claimed.acquired) {
         throw new ServiceError(
           409,
           `could not record unusable parent pane for Workflow run #${run.id}`,

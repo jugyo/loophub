@@ -544,6 +544,10 @@ export function beginWorkflowEventEffect(
   eventId: number,
   effect: string,
   scope: WorkflowEventEffectScope = "lifecycle",
+  // `onlyWhileParentUnready` keeps the readiness check inside the insert. A readiness signal that
+  // commits between a caller's check and its write would otherwise leave a receipt that describes
+  // a parent which is now usable, and nothing retracts it.
+  options: { onlyWhileParentUnready?: boolean } = {},
 ): { row: WorkflowEventEffectRow; acquired: boolean } | null {
   const ownership =
     scope === "subject"
@@ -566,6 +570,7 @@ export function beginWorkflowEventEffect(
          WHERE run.id = ?
            AND event.repo_id = run.repo_id
            AND ${ownership}
+           ${options.onlyWhileParentUnready ? "AND run.parent_ready_at IS NULL" : ""}
        )
        ON CONFLICT(run_id, event_id, effect) DO NOTHING
        RETURNING *`,
@@ -582,6 +587,25 @@ export function beginWorkflowEventEffect(
   if (inserted) return { row: inserted, acquired: true };
   const existing = getWorkflowEventEffect(runId, eventId, effect);
   return existing ? { row: existing, acquired: false } : null;
+}
+
+// Retract receipts recorded under specific effect names. Only the parent-launch failure receipts
+// use this: they record "the parent never came up", so the parent coming up is their resolution,
+// not a delivery whose claim must survive. Deleting rather than completing keeps the event
+// dispatchable — a completed receipt would read as "already delivered" and skip the instruction.
+export function deleteWorkflowEventEffects(
+  runId: number,
+  effects: readonly string[],
+): number {
+  if (effects.length === 0) return 0;
+  const placeholders = effects.map(() => "?").join(", ");
+  return db
+    .query(
+      `DELETE FROM workflow_event_effects
+       WHERE run_id = ? AND effect IN (${placeholders})
+       RETURNING run_id`,
+    )
+    .all(runId, ...effects).length;
 }
 
 export function completeWorkflowEventEffect(

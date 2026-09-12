@@ -137,7 +137,11 @@ test("every rendered contract carries the configured-language instruction", () =
         workflowMessages(language).languageInstruction,
       );
       expect(contract).not.toContain("{{repo}}");
-      expect(contract).toContain("--repo 'me/proj'");
+      // The parent's commands resolve their repo from --run, so only the step contracts still
+      // render a shell-quoted repo name (#547).
+      expect(contract).toContain(
+        step === "parent" ? "parent-ready 7" : "--repo 'me/proj'",
+      );
       expect(contract).toContain(
         language === "en"
           ? "pull request titles and bodies"

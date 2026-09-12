@@ -173,10 +173,14 @@ export type WorkflowNextAction =
 export type WorkflowActionInstruction = {
   command: "lh" | "gh";
   args: string[];
-  /** The parent supplies this value only at the explicitly named judgement boundary. */
+  /**
+   * The parent supplies this value only at the explicitly named judgement boundary. `form: "stdin"`
+   * means the argv already carries the flag with `-` and the body is read from stdin.
+   */
   input?: {
     argument: "--text" | "--reason";
     source: "delivery_instruction" | "escalation_reason";
+    form?: "stdin";
   };
 };
 
@@ -197,7 +201,9 @@ export function workflowActionPlan(
   context: { repo: string; run: number; issue: number; pr: number },
 ): WorkflowActionPlan {
   const base = ["workflow"];
-  const scoped = ["--repo", context.repo, "--run", String(context.run)];
+  // Run-scoped `lh workflow` commands resolve their repo from `--run`, so the argv never repeats an
+  // owner/name for the parent to reproduce.
+  const scoped = ["--run", String(context.run)];
   const command = (...args: string[]): WorkflowActionInstruction => ({
     command: "lh",
     args: [...base, ...args],
@@ -358,8 +364,6 @@ export function workflowActionPlan(
           submit: command(
             "instruction",
             String(context.run),
-            "--repo",
-            context.repo,
             "--event",
             String(action.event_id),
             "--requires-changes",
@@ -393,10 +397,11 @@ export function workflowActionPlan(
     case "wait":
       return watch([]);
     case "escalate": {
-      const escalate = command("escalate-human", ...scoped);
+      const escalate = command("escalate-human", ...scoped, "--reason", "-");
       escalate.input = {
         argument: "--reason",
         source: "escalation_reason",
+        form: "stdin",
       };
       if (action.escalation_reason !== "execute_request") {
         return watch([escalate], "parent_judgement");
@@ -423,8 +428,6 @@ export function workflowActionPlan(
           submit: command(
             "instruction",
             String(context.run),
-            "--repo",
-            context.repo,
             "--note",
             "<human answer>",
             "--json",

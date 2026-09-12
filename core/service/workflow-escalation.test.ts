@@ -114,6 +114,22 @@ test("escalateHuman records the parent's organized decision context", () => {
   expect(S.listComments(pr.id)[0]?.body).toContain(reason);
 });
 
+// The four-section body the parent contract asks for regularly exceeds the cap, and rejecting it
+// held the run instead of notifying anyone.
+test("escalateHuman trims a long comment body instead of rejecting it", () => {
+  const { repo, pr, run } = createRun("me/escalation-long");
+
+  const result = svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    { run: run.id, reason: "y".repeat(5001) },
+    run.parent_session_id,
+  );
+
+  expect(result.ok).toBe(true);
+  expect(result.reason).toBe(`${"y".repeat(4999)}…`);
+  expect(S.listComments(pr.id)[0]?.body).toContain(`${"y".repeat(4999)}…`);
+});
+
 test("escalateHuman exposes failure and does not replay a pending effect", () => {
   const { repo, pr, run } = createRun("me/escalation-partial");
 

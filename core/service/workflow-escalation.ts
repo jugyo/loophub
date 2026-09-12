@@ -1,6 +1,9 @@
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
-import { inlineText } from "../workflow/prompts.ts";
+import {
+  truncateInlineReason,
+  WORKFLOW_ESCALATION_REASON_MAX_LENGTH,
+} from "../workflow/prompts.ts";
 import { comments } from "./comments.ts";
 import { actorFor, ensureWritable, repoOr404 } from "./shared.ts";
 
@@ -22,16 +25,16 @@ const defaultDeps: WorkflowEscalationDeps = {
   createComment: comments.createForPull,
 };
 
+// The body the parent writes here is the human-facing escalation comment, so it is trimmed to the
+// escalation limit instead of being rejected: an over-long comment is still the notification the
+// human needs, while a 422 held the run without notifying anyone.
 function reasonText(value: string): string {
-  const reason = inlineText(value);
+  const reason = truncateInlineReason(
+    value,
+    WORKFLOW_ESCALATION_REASON_MAX_LENGTH,
+  );
   if (!reason) {
     throw new ServiceError(422, "escalate-human requires a reason");
-  }
-  if (reason.length > 500) {
-    throw new ServiceError(
-      422,
-      "escalate-human reason must be at most 500 characters",
-    );
   }
   return reason;
 }

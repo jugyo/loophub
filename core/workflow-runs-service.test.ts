@@ -1877,8 +1877,6 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
         args: [
           "workflow",
           "launch-step",
-          "--repo",
-          repo.full_name,
           "--run",
           String(started.run.id),
           "--step",
@@ -3833,13 +3831,17 @@ test("Execute escalation records a validated event without changing run lifecycl
       execute,
     ),
   ).toThrowError(/requires a reason/);
-  expect(() =>
-    svc.workflowRuns.escalate(
-      repo.full_name,
-      { run: started.run.id, reason: "x".repeat(501) },
-      execute,
-    ),
-  ).toThrowError(/at most 500 characters/);
+  // An over-long reason is trimmed, not rejected: failing here used to stop the run at the exact
+  // moment the child was reporting a problem (#547).
+  const trimmed = svc.workflowRuns.escalate(
+    repo.full_name,
+    { run: started.run.id, reason: "x".repeat(501) },
+    execute,
+  );
+  const trimmedEvent = S.eventsForWorkflowRun(repo.id, started.run.id).find(
+    (item) => item.id === trimmed.event_id,
+  );
+  expect(JSON.parse(trimmedEvent!.payload).reason).toBe(`${"x".repeat(499)}…`);
   expect(() =>
     svc.workflowRuns.escalate(
       repo.full_name,
@@ -4000,9 +4002,12 @@ test("parent contract executes worker-delivered action procedures", () => {
   ]) {
     expect(contract).not.toContain(command);
   }
+  // The parent writes no repo name of its own, and free text goes in on stdin (#547).
   expect(contract).toContain(
-    "lh workflow escalate-human --repo {{repo}} --run {{run}} --reason <text|->",
+    "`lh workflow escalate-human --run {{run}} --reason -`",
   );
+  expect(contract).not.toContain("--repo {{repo}}");
+  expect(contract).toContain("500 characters for `escalate`");
   expect(contract).toContain("Do not fetch an instruction yourself");
   expect(contract).not.toContain("lh workflow watch");
   expect(contract).not.toContain("next_command");
@@ -4018,7 +4023,7 @@ test("parent contract executes worker-delivered action procedures", () => {
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   expect(contract).toContain("`pass`");
   expect(contract).toContain("stays `running` after reaching the goal");
-  expect(contract).toContain("--note <text|->");
+  expect(contract).toContain("--note -");
   expect(contract).not.toContain("rework limit");
   expect(contract).not.toContain("--step execute --review <id>");
   expect(contract).toContain("Verify is **always a fresh child**");
@@ -4499,13 +4504,6 @@ test("human lifecycle intents sanitize reasons and authorize explicit resume (#1
     return JSON.parse(events.at(-1)!.payload) as Record<string, unknown>;
   };
 
-  expect(() =>
-    svc.workflowRuns.awaitHuman(
-      repo.full_name,
-      { run: run.id, reason: "x".repeat(501) },
-      parent,
-    ),
-  ).toThrowError(/500/);
   const held = svc.workflowRuns.awaitHuman(
     repo.full_name,
     { run: run.id, reason: "rework limit\nexceeded" },
@@ -4539,6 +4537,15 @@ test("human lifecycle intents sanitize reasons and authorize explicit resume (#1
   });
   expect(latestUpdatedPayload().needs_human_reason).toBeNull();
   expect("needs_human_reason" in latestUpdatedPayload()).toBe(true);
+
+  // Over-long reasons are trimmed rather than rejected, so reporting a problem never fails (#547).
+  expect(
+    svc.workflowRuns.awaitHuman(
+      repo.full_name,
+      { run: run.id, reason: "x".repeat(501) },
+      parent,
+    ).run.needs_human_reason,
+  ).toBe(`${"x".repeat(499)}…`);
 });
 
 test("history returns readable lifecycle events scoped to one Workflow run (#1290)", () => {

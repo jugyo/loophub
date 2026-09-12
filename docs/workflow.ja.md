@@ -154,8 +154,10 @@ CLI は parent の Herdr 起動成功後に pane 座標を run へ登録し、�
 `lh workflow parent-ready <run>` を実行して readiness を記録する。pane 登録は pane の存在しか示さず、
 起動途中の agent はまだ pane を読んでいないため、この 2 つが揃うまで配送しない。worker は最古の event を
 run 作成から 10 分間だけ未処理のまま待つ。猶予後も pane row が無ければ missing-parent receipt、readiness が
-無ければ parent-not-ready receipt と worker error を一度残し、自動再試行しない。両方が揃うと event id 順に
-判断する。各 event の判断は action、reason、
+無ければ parent-not-ready receipt と worker error を一度残し、自動再試行しない。この 2 つは parent が使えな
+かった事実だけを記録し pane へは何も書いていないため、parent が猶予後に readiness を宣言した時点で取り下げ、
+run はそのまま進む。それ以外の instruction receipt は pending のまま operator 判断に委ねる。両方が揃うと
+event id 順に判断する。各 event の判断は action、reason、
 instructions の fingerprint を receipt に記録し、直前の event と同じ instruction だけを入力せずに処理済みにする。
 注入開始前に `workflow.instruction:<fingerprint>` effect receipt を claim し、成功後に complete する。
 登録済み pane の座標不備や送信途中の失敗は、自動再実行すると二重入力になり得るため pending receipt と
@@ -163,10 +165,15 @@ worker error log を残し、operator 判断に委ねる。注入成功または
 worker 再起動後は処理済み event を再配信せず、未処理 event は引き続き対象になる。terminal run の event は
 progression instruction を送らず cursor だけ進める。
 
+run-scoped な `lh workflow` command は `--repo` を省略すると run から repo を解決する。親が repo 名を書き
+写す経路を無くすためで、`--repo` を明示した場合はそちらが優先される。`--reason` は上限（`escalate` /
+`await-human` / `recover-launch` は 500 文字、`escalate-human` は 5000 文字）を超えても 422 で失敗させず
+切り詰める。報告そのものが失敗して run が止まるのを避けるため。
+
 GitHub reference の event は親の変更要否判断を必要とするため、`read_github_reference`
 action を届ける。action は event id と canonical reference だけを含み、untrusted な comment 本文は含まない。
 親は `gh api` で参照を読んでから
-`lh workflow instruction <run> --repo <repo> --event <event_id> --requires-changes true|false --json` を実行する。
+`lh workflow instruction <run> --event <event_id> --requires-changes true|false --json` を実行する。
 この二段目が必要かどうかは action が示すため、親の prompt にこの規則を持たない。
 人間からの直接指示は待たずに `lh workflow instruction <run> --note <text|->` で渡す。
 
@@ -178,8 +185,8 @@ pane 通知や PR comment のような DB transaction 外の side effect は、�
 receipt を claim し、成功後に complete する。
 
 ```sh
-lh workflow effect begin --repo "$repo" --run "$run" --event "$event" --effect "$key" --json
-lh workflow effect complete --repo "$repo" --run "$run" --event "$event" --effect "$key" --json
+lh workflow effect begin --run "$run" --event "$event" --effect "$key" --json
+lh workflow effect complete --run "$run" --event "$event" --effect "$key" --json
 ```
 
 `begin` が `execute: true` を返した場合だけ effect を実行する。recovery や意図的な再処理で receipt が `pending`
@@ -355,7 +362,7 @@ reconcile がその状態から判断する。結果として、review 済みの
 実現し、service 層で 409 拒否はしない。親が助言に従わなかった場合の超過は、人が気づいて対処できる
 範囲として明示的に受け入れる。`cost-hold` の hold に失敗した場合は成功扱いせず、親 pane に command と
 error を表示し、
-`lh workflow escalate-human --repo <repo> --run <run> --reason <text>` でリンク済み PR の comment に通知して
+`lh workflow escalate-human --run <run> --reason -` でリンク済み PR の comment に通知して
 hold を維持する。
 同じ edge の再処理で暗黙 retry や通知の重複を行わない。
 

@@ -40,7 +40,7 @@ import {
   type HerdrLaunchResult,
   launchAgentInWorktreeHerdr,
 } from "../herdr-launch.ts";
-import { readTextInput } from "../text-input.ts";
+import { readRedirectedStdin, readTextInput } from "../text-input.ts";
 import { usage } from "../usage.ts";
 
 type PromptField = "execute_prompt" | "verify_prompt";
@@ -100,6 +100,25 @@ function workflowIdFlag(): number | undefined {
   return Number(flags["workflow-id"]);
 }
 
+// `--reason` free text: direct text, `-` for stdin, `@path` for a file, or a body redirected into
+// the command without the flag.
+async function reasonInput(command: string): Promise<string> {
+  if (typeof flags.reason === "string") return readTextInput(flags.reason);
+  const redirected = await readRedirectedStdin();
+  if (redirected) return redirected;
+  return fail(
+    `${command} requires --reason <text|@file|-> (a body redirected on stdin is also accepted)`,
+  );
+}
+
+// An explicit --repo wins; otherwise the run supplies it. An unknown run falls back to the
+// cwd/worktree resolution so its error message is unchanged.
+async function runRepo(runId: number): Promise<string> {
+  if (flags.repo) return flags.repo;
+  const fromRun = (await svc()).workflowRuns.repoName(runId);
+  return fromRun ?? (await resolveRepo());
+}
+
 function manifestRunId(): number {
   return positiveInt(rest[1], "run");
 }
@@ -108,7 +127,7 @@ async function manifestCommand(): Promise<void> {
   const action = rest[0];
   if (action !== "show" && action !== "path") usage();
   const runId = manifestRunId();
-  const repo = await resolveRepo();
+  const repo = await runRepo(runId);
   const service = (await svc()).workflowRuns;
   if (action === "path") {
     console.log(await runOp(() => service.manifestPath(repo, runId)));
@@ -468,7 +487,7 @@ async function launchStep(): Promise<void> {
   const runId = positiveInt(flags.run, "--run");
   const step = flags.step;
   if (!step) fail("--step is required");
-  const repo = await resolveRepo();
+  const repo = await runRepo(runId);
   const note =
     typeof flags.note === "string"
       ? await readTextInput(flags.note)
@@ -691,7 +710,7 @@ async function launchStep(): Promise<void> {
 async function runLifecycle(): Promise<void> {
   const action = rest[0];
   const runId = positiveInt(flags.run, "--run");
-  const repo = await resolveRepo();
+  const repo = await runRepo(runId);
   const sessionId = await writeSession();
   const service = (await svc()).workflowRuns;
   if (action === "increase-cost-limit") {
@@ -731,8 +750,7 @@ async function runLifecycle(): Promise<void> {
       );
     }
     if (action === "await-human") {
-      if (!flags.reason) fail("--reason is required");
-      const reason = await readTextInput(flags.reason);
+      const reason = await reasonInput("await-human");
       return service.awaitHuman(repo, { run: runId, reason }, sessionId);
     }
     if (action === "resume") {
@@ -744,8 +762,7 @@ async function runLifecycle(): Promise<void> {
       );
     }
     if (action === "recover-launch") {
-      if (!flags.reason) fail("--reason is required");
-      const reason = await readTextInput(flags.reason);
+      const reason = await reasonInput("recover-launch");
       return service.recoverStepLaunch(repo, { run: runId, reason }, sessionId);
     }
     usage();
@@ -787,7 +804,7 @@ async function stepInput(): Promise<void> {
     flags.review !== undefined
       ? positiveInt(flags.review, "--review")
       : undefined;
-  const repo = await resolveRepo();
+  const repo = await runRepo(runId);
   const result = await runOp(async () =>
     (await svc()).workflowRuns.stepInput(repo, {
       run: runId,
@@ -812,7 +829,7 @@ async function stepInput(): Promise<void> {
 
 async function stepStatus(): Promise<void> {
   const runId = positiveInt(rest[1], "<run>");
-  const repo = await resolveRepo();
+  const repo = await runRepo(runId);
   const result = await runOp(async () =>
     (await svc()).workflowRuns.status(repo, { run: runId }),
   );
@@ -890,7 +907,7 @@ async function instruction(): Promise<void> {
   if (event !== undefined && requiresChanges === undefined) {
     fail("--event requires --requires-changes");
   }
-  const repo = await resolveRepo();
+  const repo = await runRepo(runId);
   const result = await runOp(async () =>
     (await svc()).workflowRuns.next(repo, {
       run: runId,
@@ -918,7 +935,7 @@ async function instruction(): Promise<void> {
 async function turnDone(): Promise<void> {
   if (rest[0] !== "done") usage();
   const runId = positiveInt(flags.run, "--run");
-  const repo = flags.repo ?? (await resolveRepo());
+  const repo = await runRepo(runId);
   const result = await runOp(async () =>
     (await svc()).workflowRuns.turnDone(
       repo,
@@ -938,7 +955,7 @@ async function turnDone(): Promise<void> {
 // lost and the delivery still records itself as done (#2156).
 async function parentReady(): Promise<void> {
   const runId = positiveInt(rest[0], "<run>");
-  const repo = await resolveRepo();
+  const repo = await runRepo(runId);
   const result = await runOp(async () =>
     (await svc()).workflowInstructions.parentReady(repo, { run: runId }),
   );
@@ -956,10 +973,9 @@ async function parentReady(): Promise<void> {
 }
 
 async function escalate(): Promise<void> {
-  if (!flags.reason) fail("--reason is required");
-  const reason = await readTextInput(flags.reason);
+  const reason = await reasonInput("escalate");
   const runId = positiveInt(flags.run, "--run");
-  const repo = flags.repo ?? (await resolveRepo());
+  const repo = await runRepo(runId);
   const result = await runOp(async () =>
     (await svc()).workflowRuns.escalate(
       repo,
@@ -978,7 +994,7 @@ async function deliver(): Promise<void> {
   const runId = positiveInt(flags.run, "--run");
   if (flags.text === undefined) fail("--text is required");
   const text = await readTextInput(flags.text);
-  const repo = await resolveRepo();
+  const repo = await runRepo(runId);
   const result = await runOp(async () =>
     (await svc()).workflowRuns.deliver(
       repo,
@@ -1003,10 +1019,9 @@ async function deliver(): Promise<void> {
 }
 
 async function escalateHuman(): Promise<void> {
-  if (!flags.reason) fail("--reason is required");
-  const reason = await readTextInput(flags.reason);
+  const reason = await reasonInput("escalate-human");
   const runId = positiveInt(flags.run, "--run");
-  const repo = flags.repo ?? (await resolveRepo());
+  const repo = await runRepo(runId);
   const result = await runOp(async () =>
     (await svc()).workflowEscalation.escalateHuman(
       repo,
@@ -1033,7 +1048,7 @@ async function effect(): Promise<void> {
   const run = positiveInt(flags.run, "--run");
   const event = positiveInt(flags.event, "--event");
   if (!flags.effect) fail("--effect is required");
-  const repo = await resolveRepo();
+  const repo = await runRepo(run);
   const service = (await svc()).workflowEffects;
   const input = { repo, run, event, effect: flags.effect };
   const result = await runOp(() =>
@@ -1056,7 +1071,7 @@ async function effect(): Promise<void> {
 async function costHold(): Promise<void> {
   const run = positiveInt(flags.run, "--run");
   const event = positiveInt(flags.event, "--event");
-  const repo = await resolveRepo();
+  const repo = await runRepo(run);
   const result = await runOp(async () =>
     (await svc()).workflowCostHold.run(
       repo,

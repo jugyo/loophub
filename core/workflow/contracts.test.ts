@@ -57,11 +57,12 @@ test("Verify carries one child result format shared by both languages", () => {
 test("parent safely distinguishes a pre-invocation failure", () => {
   for (const language of WORKFLOW_CONTRACT_LANGUAGES) {
     const contract = workflowContractText("parent", language);
+    // The parent writes no repo name of its own, and free text goes in on stdin (#547).
     expect(contract).toContain(
-      "lh workflow run --repo {{repo}} --run {{run}} --reason <text|-> await-human",
+      "lh workflow run await-human --run {{run}} --reason -",
     );
     expect(contract).toContain(
-      "lh workflow escalate-human --repo {{repo}} --run {{run}} --reason <text|->",
+      "lh workflow escalate-human --run {{run}} --reason -",
     );
     expect(contract).toMatch(
       /before command invocation|command invocation の開始前/u,

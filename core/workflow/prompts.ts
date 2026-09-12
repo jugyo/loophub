@@ -18,6 +18,25 @@ export function inlineText(value: string): string {
     .trim();
 }
 
+/**
+ * How long a `--reason` a workflow command keeps.
+ *
+ * `WORKFLOW_REASON_MAX_LENGTH` covers the short summaries recorded as run state (`escalate`,
+ * `await-human`, `recover-launch`). `WORKFLOW_ESCALATION_REASON_MAX_LENGTH` covers
+ * `escalate-human`, whose reason becomes a human-facing PR comment that the parent contract
+ * requires to carry four labelled sections.
+ */
+export const WORKFLOW_REASON_MAX_LENGTH = 500;
+export const WORKFLOW_ESCALATION_REASON_MAX_LENGTH = 5000;
+
+// A reason is recorded and read, never parsed, so an over-long one is trimmed rather than rejected:
+// rejecting it stopped the run at the exact moment the parent was reporting a problem, turning a
+// formatting slip into a human hold.
+export function truncateInlineReason(value: string, limit: number): string {
+  const reason = inlineText(value);
+  return reason.length <= limit ? reason : `${reason.slice(0, limit - 1)}…`;
+}
+
 export function parentUserPrompt(
   input: {
     runId: number;
