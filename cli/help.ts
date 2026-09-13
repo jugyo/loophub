@@ -4,6 +4,42 @@ export type CommandHelp = {
   details?: string;
 };
 
+const SKILL_INSTALL_DETAILS = `
+
+Usage:
+  lh skill install (--runtime <id> | --all) [options]
+
+Options:
+  --runtime <id>          Install for this runtime: claude-code, codex, grok, or opencode.
+  --all                   Install for every runtime LoopHub can launch.
+  --scope user|project    Where to write the skill. user (default) installs under the user's home;
+                          project installs under the current git repository's root.
+  --json                  Print the scope, byte count, and each install (runtimes, dir, path) as JSON.
+  --help                  Show this help without writing anything.
+
+Target:
+  Exactly one of --runtime and --all is required; there is no default and the configured coding
+  agent is not consulted. Installing into a runtime nobody named would create its config directory
+  on a machine that never runs it, and add directories to the repository under --scope project.
+
+Destinations:
+  SKILL.md is the agent-neutral Agent Skills format; only the directory a runtime scans differs.
+  claude-code   .claude/skills/loophub/
+  codex         .agents/skills/loophub/
+  grok          .grok/skills/loophub/
+  opencode      .agents/skills/loophub/ (shared with codex; OpenCode reads that location too)
+  Each path is relative to $HOME for --scope user and to the repository root for --scope project.
+  Missing directories are created, for the named runtimes only.
+
+Output:
+  Every installed SKILL.md path is printed on stdout, one per line. An existing file at a path is
+  overwritten, which is how an agent picks up a newer skill.
+
+Example:
+  lh skill install --runtime claude-code
+  lh skill install --all
+  lh skill install --runtime codex --scope project`;
+
 const ISSUE_CREATE_DETAILS = `
 
 Usage:
@@ -449,6 +485,17 @@ export const commandHelp: readonly CommandHelp[] = [
   {
     path: ["session", "usage", "recalculate"],
     description: "Recalculate all available session usage.",
+  },
+  {
+    path: ["skill"],
+    description: "Install the LoopHub skill for coding agents.",
+    details: SKILL_INSTALL_DETAILS,
+  },
+  {
+    path: ["skill", "install"],
+    description:
+      "Write the LoopHub skill into a named runtime's skills directory.",
+    details: SKILL_INSTALL_DETAILS,
   },
   {
     path: ["supervisor"],

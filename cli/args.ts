@@ -100,6 +100,7 @@ export type Flags = {
   "verify-prompt"?: string;
   "reflect-prompt"?: string;
   step?: string;
+  scope?: string;
   workflow?: string;
   "workflow-id"?: string;
   "parent-runtime"?: string;
@@ -224,6 +225,7 @@ const { values, positionals } = parseArgs({
     "verify-prompt": { type: "string" },
     "reflect-prompt": { type: "string" },
     step: { type: "string" },
+    scope: { type: "string" },
     workflow: { type: "string" },
     "workflow-id": { type: "string" },
     "parent-runtime": { type: "string" },

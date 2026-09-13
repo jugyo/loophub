@@ -57,6 +57,12 @@ export interface RuntimeDefinition {
   // claude has that concept; other runtimes don't, and the CLI rejects the `--sandbox`/`--allow`
   // combination for them up front.
   sandboxCapable: boolean;
+  // Where this runtime discovers Agent Skills (SKILL.md), as the path segment under $HOME for a
+  // user-level install and under the repository root for a project-level one. SKILL.md itself is
+  // the agent-neutral Agent Skills format; only the directory differs per runtime. OpenCode reads
+  // several locations, including Codex's `.agents/skills`, so it shares that entry and one write
+  // serves both.
+  skillsDir: string;
   // The argv fragment that runs this runtime without approval prompts or sandbox restrictions.
   // Every launch path — cli/dev.ts's argv builders,
   // `lh workflow`'s parent agent, and core/terminal/terminal-launch.ts — appends this verbatim
@@ -99,6 +105,8 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     ],
     effortSuggestions: ["low", "medium", "high", "xhigh", "max"],
     sandboxCapable: true,
+    // https://code.claude.com/docs/en/skills
+    skillsDir: ".claude/skills",
     autoApproveArgs: ["--permission-mode", "auto"],
     launchPromptNeedsSubmit: false,
   },
@@ -127,6 +135,9 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
       "gpt-6-astra": ["low", "medium", "high", "xhigh", "max"],
     },
     sandboxCapable: false,
+    // https://learn.chatgpt.com/docs/build-skills — Codex scans `.agents/skills` from the cwd up to
+    // the repository root, plus `$HOME/.agents/skills`.
+    skillsDir: ".agents/skills",
     // Codex's closest single flag to Claude Code's auto mode; it also drops the sandbox.
     autoApproveArgs: ["--dangerously-bypass-approvals-and-sandbox"],
     launchPromptNeedsSubmit: false,
@@ -147,6 +158,8 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     ],
     effortSuggestions: ["low", "medium", "high"],
     sandboxCapable: false,
+    // https://docs.x.ai/build/features/skills-plugins-marketplaces
+    skillsDir: ".grok/skills",
     // Auto-approve all tool executions. The older tentative `--force` is rejected by current `grok`
     // CLIs as unknown, which made Web Start workflow exit the agent pane at once (#1540).
     autoApproveArgs: ["--always-approve"],
@@ -185,6 +198,9 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     ],
     effortSuggestions: [],
     sandboxCapable: false,
+    // https://opencode.ai/docs/skills/ — OpenCode also reads `.claude/skills` and its own
+    // `.opencode/skills`; `.agents/skills` is shared with Codex so one file serves both.
+    skillsDir: ".agents/skills",
     // Verified against `opencode --help` (1.18.13): auto-approve permissions that are not
     // explicitly denied. Must stay a flag the interactive TUI accepts — unknown auto-approve
     // flags exit the agent pane immediately (see grok `#1540`).

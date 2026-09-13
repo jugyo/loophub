@@ -15,6 +15,7 @@ export function usage(): void {
   lh session usage [confirm] [--session <id>] [--json]
   lh session usage sync [--session <id>] [--full] [--json]
   lh session usage recalculate [--session <id>] [--json]
+  lh skill install (--runtime claude-code|codex|grok|opencode | --all) [--scope user|project] [--json]   # write the LoopHub skill into the named runtime's skills dir, under $HOME or the repo root
   lh supervisor start --runtime <runtime> --prompt <text|@file|-> [--repo owner/name] [--herdr]   # start a Supervisor without LoopHub state tracking
   lh issue search|list|view|create|import|update|comment|close|label|sub|ac  [--repo owner/repo]
   lh issue sub list|add|remove|reorder ... [--repo owner/repo]
