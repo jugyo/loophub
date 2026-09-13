@@ -34,11 +34,12 @@ export async function run(): Promise<void> {
   }
   if (flags.json) out(result);
   else {
-    // One path per line on stdout, so the output stays usable from a script; the summary goes to
-    // stderr and names the runtimes rather than repeating the paths.
+    // One path per line, then a summary naming the runtimes rather than repeating the paths. Both
+    // go to stdout like the other success output in `lh` (#558): on stderr the summary reads as a
+    // failure in a terminal. A script that wants the paths alone uses --json.
     for (const install of result.installs) console.log(install.path);
     const runtimes = result.installs.flatMap((install) => install.runtimes);
-    console.error(
+    console.log(
       `installed the LoopHub skill for ${runtimes.join(", ")} (${scope} scope, ${result.bytes} bytes)`,
     );
   }

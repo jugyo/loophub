@@ -35,6 +35,10 @@ function lh(args: string[], cwd: string = home) {
 const skillPath = (root: string, dir: string) =>
   join(root, dir, "loophub", "SKILL.md");
 
+// Human output is one installed path per line followed by the summary line (#558).
+const installedPaths = (stdout: string) =>
+  stdout.trim().split("\n").slice(0, -1);
+
 beforeAll(() => {
   // realpath: macOS resolves /var to /private/var, and the CLI reports the resolved path.
   home = realpathSync(mkdtempSync(join(tmpdir(), "lh-skill-")));
@@ -67,8 +71,10 @@ test("the configured coding agent is not consulted", () => {
     expect(lh(["skill", "install"]).exitCode).toBe(1);
     // ...and does not override the named one.
     expect(
-      lh(["skill", "install", "--runtime", "claude-code"]).stdout.trim(),
-    ).toBe(skillPath(home, ".claude/skills"));
+      installedPaths(
+        lh(["skill", "install", "--runtime", "claude-code"]).stdout,
+      ),
+    ).toEqual([skillPath(home, ".claude/skills")]);
     expect(existsSync(join(home, ".grok"))).toBe(false);
   } finally {
     rmSync(config, { force: true });
@@ -76,13 +82,17 @@ test("the configured coding agent is not consulted", () => {
 });
 
 test("the human summary names the runtimes without repeating the paths", () => {
-  const { stdout, stderr } = lh(["skill", "install", "--all"]);
-  expect(stdout.trim().split("\n")).toHaveLength(3);
-  expect(stderr.trim()).toMatch(
+  const { stdout, stderr, exitCode } = lh(["skill", "install", "--all"]);
+  expect(exitCode).toBe(0);
+  const lines = stdout.trim().split("\n");
+  expect(installedPaths(stdout)).toHaveLength(3);
+  expect(lines.at(-1)).toMatch(
     /^installed the LoopHub skill for claude-code, codex, opencode, opencode2, grok \(user scope, \d+ bytes\)$/,
   );
-  // The paths belong to stdout alone, so a terminal does not show each one twice.
-  expect(stderr).not.toContain("/");
+  // The summary names the runtimes, not the paths, so a terminal does not show each one twice.
+  expect(lines.at(-1)).not.toContain("/");
+  // Success says nothing on stderr: there it would read as a failure (#558).
+  expect(stderr).toBe("");
 });
 
 test("--all installs for every runtime, sharing one write per directory", () => {
@@ -117,7 +127,9 @@ test("--runtime installs for one runtime only", () => {
       },
     );
     expect(r.status ?? 0).toBe(0);
-    expect(r.stdout.trim()).toBe(skillPath(only, ".agents/skills"));
+    expect(installedPaths(r.stdout)).toEqual([
+      skillPath(only, ".agents/skills"),
+    ]);
     expect(existsSync(skillPath(only, ".claude/skills"))).toBe(false);
     expect(existsSync(skillPath(only, ".grok/skills"))).toBe(false);
   } finally {
@@ -135,7 +147,7 @@ test("--runtime opencode2 installs into the shared .agents/skills (#556)", () =>
     "opencode2",
   ]);
   expect(exitCode).toBe(0);
-  expect(stdout.trim()).toBe(skillPath(home, ".agents/skills"));
+  expect(installedPaths(stdout)).toEqual([skillPath(home, ".agents/skills")]);
 });
 
 test("re-installing overwrites the existing skill", () => {
@@ -154,7 +166,7 @@ test("--scope project writes under the repository root", () => {
   );
   expect(exitCode).toBe(0);
   // Resolved at the git top level, so a subdirectory installs once per repository.
-  expect(stdout.trim().split("\n")).toEqual([
+  expect(installedPaths(stdout)).toEqual([
     skillPath(repo, ".claude/skills"),
     skillPath(repo, ".agents/skills"),
     skillPath(repo, ".grok/skills"),

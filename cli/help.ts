@@ -32,8 +32,9 @@ Destinations:
   Missing directories are created, for the named runtimes only.
 
 Output:
-  Every installed SKILL.md path is printed on stdout, one per line. An existing file at a path is
-  overwritten, which is how an agent picks up a newer skill.
+  Every installed SKILL.md path is printed on stdout, one per line, followed by a summary line
+  naming the runtimes; use --json when a script wants the paths alone. An existing file at a path
+  is overwritten, which is how an agent picks up a newer skill.
 
 Example:
   lh skill install --runtime claude-code
