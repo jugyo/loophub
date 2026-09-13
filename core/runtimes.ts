@@ -1,5 +1,5 @@
-// Single registry (SSOT) for coding runtimes: claude-code (default), codex, grok, and
-// opencode. Every runtime-specific fact that was previously duplicated across core/config.ts,
+// Single registry (SSOT) for coding runtimes: claude-code (default), codex, grok, opencode, and
+// opencode2. Every runtime-specific fact that was previously duplicated across core/config.ts,
 // cli/dev.ts, cli/args.ts, core/service/{terminal,settings}.ts, and the web (agent-models.ts /
 // settings-page.tsx / linked-pull-summary.tsx / agent-sessions-page.tsx) lives here once, so adding
 // a runtime is (close to) adding one entry below.
@@ -12,10 +12,15 @@
 
 // Which coding agent launches use. The runtime id doubles as the persisted `codingAgent`
 // config value and the `runtime` recorded on a session.
-export type CodingAgent = "claude-code" | "codex" | "grok" | "opencode";
+export type CodingAgent =
+  | "claude-code"
+  | "codex"
+  | "grok"
+  | "opencode"
+  | "opencode2";
 
 // The runtime binary spawned for each runtime (`claude` / `codex` / `grok` / …).
-export type RuntimeBin = "claude" | "codex" | "grok" | "opencode";
+export type RuntimeBin = "claude" | "codex" | "grok" | "opencode" | "opencode2";
 
 // One runtime's complete definition. Everything a caller needs to know about a runtime is a field
 // here — no branch keyed on the id belongs anywhere else.
@@ -58,6 +63,18 @@ export interface RuntimeDefinition {
   // instead of re-branching on the runtime id (#1588). Other per-runtime launch differences stay
   // with the caller.
   autoApproveArgs: readonly string[];
+  // Whether the launch has to press Enter once to send the prompt its argv already handed the
+  // runtime. Every runtime here starts working on that prompt by itself; OpenCode 2's default TUI
+  // is the exception — `--prompt` only pre-fills its input box, so an AFK launch that does not
+  // submit leaves the agent sitting on an unsent prompt forever.
+  //
+  // That is specific to the argv LoopHub launches: on v0.0.0-beta-19425 it is `--auto` that makes
+  // the TUI hold the prompt instead of sending it. Drop `--auto` and the same command submits by
+  // itself — and also stops honouring the model config in the environment. The two behaviours move
+  // together, so measure both with the launch's real argv before changing either.
+  //
+  // The launch paths read this rather than branching on the runtime id (see buildHerdrLaunchPlan).
+  launchPromptNeedsSubmit: boolean;
 }
 
 // The registry entries, in the canonical display/enumeration order. `CODING_AGENTS` and the RUNTIMES
@@ -83,6 +100,7 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     effortSuggestions: ["low", "medium", "high", "xhigh", "max"],
     sandboxCapable: true,
     autoApproveArgs: ["--permission-mode", "auto"],
+    launchPromptNeedsSubmit: false,
   },
   {
     id: "codex",
@@ -111,6 +129,7 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     sandboxCapable: false,
     // Codex's closest single flag to Claude Code's auto mode; it also drops the sandbox.
     autoApproveArgs: ["--dangerously-bypass-approvals-and-sandbox"],
+    launchPromptNeedsSubmit: false,
   },
   {
     id: "grok",
@@ -131,6 +150,7 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     // Auto-approve all tool executions. The older tentative `--force` is rejected by current `grok`
     // CLIs as unknown, which made Web Start workflow exit the agent pane at once (#1540).
     autoApproveArgs: ["--always-approve"],
+    launchPromptNeedsSubmit: false,
   },
   {
     id: "opencode",
@@ -169,6 +189,45 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     // explicitly denied. Must stay a flag the interactive TUI accepts — unknown auto-approve
     // flags exit the agent pane immediately (see grok `#1540`).
     autoApproveArgs: ["--auto"],
+    launchPromptNeedsSubmit: false,
+  },
+  {
+    id: "opencode2",
+    bin: "opencode2",
+    label: "OpenCode 2",
+    buildFlag: "--opencode2",
+    // Verified against `opencode2 models` (v0.0.0-beta-19425). The model list differs from
+    // OpenCode 1's, so this entry has its own suggestions rather than reusing `opencode`'s.
+    defaultModel: "opencode/big-pickle",
+    // No Settings effort ladder, same as OpenCode 1: the default TUI has no reasoning-effort flag.
+    defaultEffort: "",
+    // Subset of `opencode2 models`: the built-in free models plus coding-oriented providers.
+    modelSuggestions: [
+      "opencode/big-pickle",
+      "opencode/mimo-v2.5-free",
+      "opencode-go/deepseek-v4-flash",
+      "opencode-go/deepseek-v4-pro",
+      "opencode-go/glm-5.3",
+      "opencode-go/gpt-5.6-luna",
+      "opencode-go/grok-4.6",
+      "opencode-go/kimi-k2.7-code",
+      "opencode-go/kimi-k3",
+      "opencode-go/mimo-v2.5-pro",
+      "opencode-go/qwen3.8-max",
+      "openai/gpt-5.6",
+      "openai/gpt-5.5",
+      "openai/gpt-5.4",
+      "openai/gpt-5.3-codex",
+    ],
+    effortSuggestions: [],
+    sandboxCapable: false,
+    // Verified against `opencode2 --help` (v0.0.0-beta-19425): the permission-bypass flag is defined
+    // on the root command and `run` only, so the default TUI this launches accepts it. Unknown flags
+    // print help and exit 1, killing the agent pane at once (see grok `#1540`) — hence
+    // `--model` is *not* on this runtime's argv; the model travels as an env var instead
+    // (see runtimeLaunchEnv in core/runtime-args.ts).
+    autoApproveArgs: ["--auto"],
+    launchPromptNeedsSubmit: true,
   },
 ];
 

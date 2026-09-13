@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type CodingAgent, codingAgent } from "../config.ts";
-import { buildRuntimeFlags } from "../runtime-args.ts";
+import { buildRuntimeFlags, runtimeLaunchEnv } from "../runtime-args.ts";
 import { RUNTIMES } from "../runtimes.ts";
 import type { WorkflowStep } from "../workflow/compose.ts";
 import { workflowStepHerdrAgentName } from "../workflow/herdr-agents.ts";
@@ -32,6 +32,10 @@ export interface HerdrLaunchPlan {
   paneArgv: string[];
   renameArgv: string[];
   argv: string[];
+  // Set only for runtimes whose TUI pre-fills the prompt instead of sending it
+  // (RuntimeDefinition.launchPromptNeedsSubmit): wait for that TUI to draw, then press Enter once.
+  readyArgv?: string[];
+  submitArgv?: string[];
 }
 
 function pathSafePart(value: string): string {
@@ -106,9 +110,15 @@ export function displayArg(value: string): string {
 // then type the command into it), so both are shown; the pane id is left as
 // HERDR_PANE_PLACEHOLDER because it only exists once the first call has run.
 export function herdrCommandLine(plan: HerdrLaunchPlan): string {
-  return [plan.paneArgv, plan.argv]
-    .map((argv) => argv.map(displayArg).join(" "))
-    .join(" && ");
+  const step = (argv: string[]) => argv.map(displayArg).join(" ");
+  const steps = [step(plan.paneArgv), step(plan.argv)];
+  // The wait before a prompt submit is allowed to fail — executeHerdrLaunchPlan ignores its result
+  // and presses Enter anyway — so the pasted line must not stop on it the way `&&` would. herdr
+  // exits non-zero whenever the pattern does not turn up before the timeout, which is the common
+  // case for a launch that already got far enough to be worth reproducing.
+  if (plan.readyArgv) steps.push(`(${step(plan.readyArgv)} || true)`);
+  if (plan.submitArgv) steps.push(step(plan.submitArgv));
+  return steps.join(" && ");
 }
 
 export interface HerdrLaunchInput {
@@ -152,6 +162,14 @@ export function agentCommandLine(input: {
     ...input.args.map(shellArg),
     `"$(cat ${shellArg(input.promptPath)})"`,
   ].join(" ");
+}
+
+// Whether a command built by commandForHerdrLaunch has to have its prompt submitted afterwards.
+// True when the coding agent it ends up starting — directly, or through the `lh issue new` it runs —
+// is one whose TUI only pre-fills the prompt. Resolves an omitted agent the same way
+// commandForHerdrLaunch does, so the two always agree about which runtime the pane will hold.
+export function herdrLaunchNeedsPromptSubmit(agent?: CodingAgent): boolean {
+  return RUNTIMES[agent ?? codingAgent()].launchPromptNeedsSubmit;
 }
 
 export function commandForHerdrLaunch(input: HerdrLaunchInput): string {
@@ -310,6 +328,64 @@ export function herdrPaneSendTextArgv(
     "send-text",
     paneId,
     `${command}\n`,
+  ];
+}
+
+// How a launch submits a prompt its argv only pre-filled (RuntimeDefinition.launchPromptNeedsSubmit).
+// Two steps: wait for the runtime's full-screen UI to draw, then press Enter once.
+//
+// The wait exists because the keystroke has to arrive *after* the TUI starts reading input. Bytes
+// written earlier do not survive: a TUI drains whatever the shell left in the pty when it takes
+// over, so an Enter sent alongside the command is simply lost (verified against opencode2
+// v0.0.0-beta-19425).
+//
+// The pattern matches the keybinding hints these TUIs print along the bottom of their home screen,
+// which is where a pre-filled prompt sits. `pane wait-output` searches the pane's existing output
+// first and only then polls, so this depends on the pane being new: a launch always creates its
+// own, whose prior output is just a shell prompt and the echoed command line.
+//
+// The wait only shortens the delay — the Enter is sent whether the match lands or the wait times
+// out — so a future UI that stops printing this hint costs a slower launch, never a stuck agent.
+const LAUNCH_PROMPT_READY_PATTERN = "shift\\+tab";
+const LAUNCH_PROMPT_READY_TIMEOUT_MS = 20_000;
+
+// Waits for a pane to produce output matching `pattern`, or until `timeoutMs` elapses. herdr exits
+// non-zero on the timeout, so callers that treat the wait as best-effort ignore its result.
+export function herdrPaneWaitOutputArgv(
+  repo: TerminalLaunchRepo,
+  paneId: string,
+  pattern: string,
+  timeoutMs: number,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "pane",
+    "wait-output",
+    paneId,
+    "--regex",
+    pattern,
+    "--timeout",
+    String(timeoutMs),
+  ];
+}
+
+// Presses keys in a pane. Used to submit a pre-filled prompt; unlike send-text this is delivered as
+// key presses, so the TUI sees a real Enter rather than a newline inside pasted text.
+export function herdrPaneSendKeysArgv(
+  repo: TerminalLaunchRepo,
+  paneId: string,
+  ...keys: string[]
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "pane",
+    "send-keys",
+    paneId,
+    ...keys,
   ];
 }
 
@@ -606,6 +682,9 @@ export function buildHerdrLaunchPlan(input: {
   // without changing the herdr session name, which stays derived from the repo so every launch
   // for it — worktree-pinned or not — lands in the same herdr session.
   cwd?: string;
+  // Pass RUNTIMES[runtime].launchPromptNeedsSubmit. When true the plan gains the wait+Enter steps
+  // that send a prompt the command line only pre-filled.
+  submitPrompt?: boolean;
 }): HerdrLaunchPlan {
   const sessionName = herdrSessionName(input.repo);
   const label = normalizeAgentName(input.label || "LoopHub workflow");
@@ -640,6 +719,21 @@ export function buildHerdrLaunchPlan(input: {
       HERDR_PANE_PLACEHOLDER,
       input.command,
     ),
+    ...(input.submitPrompt
+      ? {
+          readyArgv: herdrPaneWaitOutputArgv(
+            input.repo,
+            HERDR_PANE_PLACEHOLDER,
+            LAUNCH_PROMPT_READY_PATTERN,
+            LAUNCH_PROMPT_READY_TIMEOUT_MS,
+          ),
+          submitArgv: herdrPaneSendKeysArgv(
+            input.repo,
+            HERDR_PANE_PLACEHOLDER,
+            "Enter",
+          ),
+        }
+      : {}),
   };
 }
 
@@ -691,6 +785,8 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
 }): HerdrLaunchPlan {
   const env = {
     LOOPHUB_SESSION_ID: input.sessionId,
+    // Runtimes whose model is not an argv flag (opencode2) carry it in the launch environment.
+    ...runtimeLaunchEnv({ runtime: input.runtime, model: input.model }),
   };
   return buildHerdrLaunchPlan({
     repo: input.repo,
@@ -709,6 +805,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
     env,
     label: workflowStepHerdrAgentName(input.runId, input.step, input.sequence),
     cwd: input.worktree,
+    submitPrompt: RUNTIMES[input.runtime].launchPromptNeedsSubmit,
   });
 }
 
@@ -745,7 +842,7 @@ export interface HerdrLaunchOutcome {
   // The tab the pane step created, when it created one (absent for a split placement).
   tabId: string | null;
   // Which step failed, for the caller's error message. Null on success.
-  failed: "pane" | "agent" | null;
+  failed: "pane" | "agent" | "prompt" | null;
   stdout: string;
   stderr: string;
 }
@@ -758,6 +855,10 @@ export interface HerdrLaunchOutcome {
 // window in which the agent is running but uninstructed (#2354). Writing to a pane whose shell has
 // not reached its prompt yet is safe — the bytes wait in the pty and the shell reads them when it
 // starts — so the launch does not gate on pane readiness either.
+//
+// A runtime whose TUI only pre-fills that prompt (RuntimeDefinition.launchPromptNeedsSubmit) is the
+// one exception: its plan carries a wait+Enter pair that is run last, because a keystroke sent any
+// earlier is drained by the TUI along with the rest of the shell's leftover input.
 //
 // The rename is best-effort: the label is how LoopHub recognizes the pane later, but an agent that
 // is already running must not be reported as a failed launch because its label did not stick.
@@ -790,6 +891,23 @@ export async function executeHerdrLaunchPlan(
       stdout: agentRes.stdout,
       stderr: agentRes.stderr,
     };
+  }
+
+  if (plan.submitArgv) {
+    // The wait is best-effort: it only shortens the delay before the keystroke, which is sent
+    // either way (see LAUNCH_PROMPT_READY_PATTERN).
+    if (plan.readyArgv) await run(withHerdrPane(plan.readyArgv, paneId));
+    const submitRes = await run(withHerdrPane(plan.submitArgv, paneId));
+    if (!submitRes.ok) {
+      return {
+        ok: false,
+        paneId,
+        tabId,
+        failed: "prompt",
+        stdout: submitRes.stdout,
+        stderr: submitRes.stderr,
+      };
+    }
   }
   return {
     ok: true,

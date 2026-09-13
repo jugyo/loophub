@@ -44,6 +44,7 @@ export async function run(): Promise<void> {
         codex: flags.codex === true,
         grok: flags.grok === true,
         opencode: flags.opencode === true,
+        opencode2: flags.opencode2 === true,
       });
     } catch (e: any) {
       fail(e.message);
@@ -233,6 +234,7 @@ export async function run(): Promise<void> {
       codex: flags.codex === true,
       grok: flags.grok === true,
       opencode: flags.opencode === true,
+      opencode2: flags.opencode2 === true,
       defaultRuntime: agentCfg.effective.runtime,
     });
     const model =
@@ -247,7 +249,11 @@ export async function run(): Promise<void> {
         : runtime === agentCfg.effective.runtime
           ? agentCfg.effective.effort
           : agentEffort(runtime);
-    const { bin: runtimeBin, args: runtimeArgs } = buildRuntimeLaunch({
+    const {
+      bin: runtimeBin,
+      args: runtimeArgs,
+      env: runtimeEnv,
+    } = buildRuntimeLaunch({
       runtime,
       sessionId,
       slashCommand,
@@ -280,6 +286,7 @@ export async function run(): Promise<void> {
       cwd: r.local_path,
       env: {
         ...process.env,
+        ...runtimeEnv,
         [ENV_ISSUE_CREATE_SESSION]: sessionId,
         ...(typeof flags["target-branch"] === "string"
           ? {

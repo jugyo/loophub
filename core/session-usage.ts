@@ -1089,6 +1089,16 @@ export function findGrokSessionUpdates(input: {
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+// The two session layouts OpenCode's shared DB holds. OpenCode 1 writes `session` + `message`;
+// OpenCode 2 writes `session_v2` + `session_message`, where the assistant/user role is the
+// `type` column rather than a field inside the message JSON. Both live in the same file
+// (`opencode2 debug paths` reports ~/.local/share/opencode/opencode.db), so a worktree is scanned
+// under both layouts and the results are merged.
+const OPENCODE_SESSION_LAYOUTS = [
+  { sessions: "session", messages: "message", role: null },
+  { sessions: "session_v2", messages: "session_message", role: "type" },
+] as const;
+
 // Locate OpenCode sessions that ran in a worktree cwd. OpenCode does not accept a
 // LoopHub session id and writes one shared SQLite DB, so correlation is by the
 // session.directory column (same cwd approach as Codex/Grok).
@@ -1112,53 +1122,84 @@ export function findOpencodeSessions(input: {
   try {
     const st = statSync(dbPath);
     const placeholders = directories.map(() => "?").join(", ");
-    const sessionRows = db
-      .prepare(
-        `SELECT id, parent_id, directory, model,
-                tokens_input, tokens_output, tokens_reasoning,
-                tokens_cache_read, tokens_cache_write, time_updated
-         FROM session
-         WHERE directory IN (${placeholders})`,
-      )
-      .all(...directories) as unknown as OpencodeSessionRow[];
+    // One candidate per session, merged across layouts. A migrated DB holds the same session in
+    // both (224 of 227 on a real install), message ids included, so pushing per layout would hand
+    // the caller the same usage twice — aggregateUsage sums entries without de-duplicating them,
+    // which silently doubled every existing OpenCode 1 session's tokens and cost.
+    //
+    // Neither table is reliably the complete one: v2 usually carries one row more, but a session
+    // part-way through migration can have more rows in v1. So the entries are unioned by message id
+    // rather than one layout being preferred, and the first layout to report a given message wins.
+    const bySession = new Map<string, OpencodeSessionCandidate>();
+    for (const layout of OPENCODE_SESSION_LAYOUTS) {
+      let sessionRows: OpencodeSessionRow[];
+      try {
+        sessionRows = db
+          .prepare(
+            `SELECT id, parent_id, directory, model,
+                    tokens_input, tokens_output, tokens_reasoning,
+                    tokens_cache_read, tokens_cache_write, time_updated
+             FROM ${layout.sessions}
+             WHERE directory IN (${placeholders})`,
+          )
+          .all(...directories) as unknown as OpencodeSessionRow[];
+      } catch {
+        // An older DB predates the layout; the other one still answers.
+        continue;
+      }
 
-    const messageStmt = db.prepare(
-      `SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created, id`,
-    );
-
-    const out: OpencodeSessionCandidate[] = [];
-    for (const row of sessionRows) {
-      if (typeof row.id !== "string" || !row.id) continue;
-      const messageRows = messageStmt.all(row.id) as unknown as {
-        id: string;
-        data: string;
-      }[];
-      const messageEntries = messageRows.flatMap((message) =>
-        parseOpencodeMessageUsage(message.id, message.data),
+      const roleColumn = layout.role ? `, ${layout.role} AS role` : "";
+      const messageStmt = db.prepare(
+        `SELECT id, data${roleColumn} FROM ${layout.messages}
+         WHERE session_id = ? ORDER BY time_created, id`,
       );
-      const entries =
-        messageEntries.length > 0
-          ? messageEntries
-          : sessionLevelOpencodeEntries(row);
-      if (entries.length === 0) continue;
-      out.push({
-        path: `${dbPath}#${row.id}`,
-        size: st.size,
-        mtimeMs:
+
+      for (const row of sessionRows) {
+        if (typeof row.id !== "string" || !row.id) continue;
+        const messageRows = messageStmt.all(row.id) as unknown as {
+          id: string;
+          data: string;
+          role?: string;
+        }[];
+        const messageEntries = messageRows.flatMap((message) =>
+          parseOpencodeMessageUsage(message.id, message.data, message.role),
+        );
+        const entries =
+          messageEntries.length > 0
+            ? messageEntries
+            : sessionLevelOpencodeEntries(row);
+        if (entries.length === 0) continue;
+        const mtimeMs =
           typeof row.time_updated === "number" &&
           Number.isFinite(row.time_updated)
             ? row.time_updated
-            : st.mtimeMs,
-        sessionId: row.id,
-        parentSessionId:
-          typeof row.parent_id === "string" && row.parent_id
-            ? row.parent_id
-            : null,
-        directory: typeof row.directory === "string" ? row.directory : "",
-        entries,
-      });
+            : st.mtimeMs;
+        const existing = bySession.get(row.id);
+        if (!existing) {
+          bySession.set(row.id, {
+            path: `${dbPath}#${row.id}`,
+            size: st.size,
+            mtimeMs,
+            sessionId: row.id,
+            parentSessionId:
+              typeof row.parent_id === "string" && row.parent_id
+                ? row.parent_id
+                : null,
+            directory: typeof row.directory === "string" ? row.directory : "",
+            entries,
+          });
+          continue;
+        }
+        const seen = new Set(existing.entries.map((entry) => entry.message_id));
+        existing.entries.push(
+          ...entries.filter((entry) => !seen.has(entry.message_id)),
+        );
+        existing.mtimeMs = Math.max(existing.mtimeMs, mtimeMs);
+      }
     }
-    return out.sort((a, b) => a.sessionId.localeCompare(b.sessionId));
+    return [...bySession.values()].sort((a, b) =>
+      a.sessionId.localeCompare(b.sessionId),
+    );
   } catch {
     return [];
   } finally {
@@ -1197,6 +1238,8 @@ function opencodeDirectoryCandidates(cwd: string): string[] {
 function parseOpencodeMessageUsage(
   messageId: string,
   raw: string,
+  // OpenCode 2 keeps the role in the `session_message.type` column instead of inside the JSON.
+  role?: string,
 ): UsageEntry[] {
   let parsed: unknown;
   try {
@@ -1207,7 +1250,7 @@ function parseOpencodeMessageUsage(
   const data = objectValue(parsed);
   if (!data) return [];
   // Only assistant turns carry billed token counters.
-  if (stringValue(data.role) !== "assistant") return [];
+  if ((role ?? stringValue(data.role)) !== "assistant") return [];
 
   const model = opencodeModelName(
     stringValue(data.providerID) ?? stringValue(data.providerId),

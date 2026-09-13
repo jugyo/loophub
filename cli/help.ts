@@ -87,6 +87,7 @@ Options:
   --codex                Launch Codex.
   --grok                 Launch Grok Build.
   --opencode             Launch OpenCode.
+  --opencode2            Launch OpenCode 2.
   --model <name>         Override the selected runtime's default model.
   --effort <level>       Override the selected runtime's reasoning effort when supported.
   --target-branch <ref>  Carry an existing target branch into the issue-filing session.
@@ -151,7 +152,7 @@ Options:
   --agent <kind>        Agent or launcher kind.
   --session <id>        Runtime session identifier.
   --name <text>         Human-readable session name.
-  --runtime <runtime>   Runtime: claude-code, codex, grok, or opencode.
+  --runtime <runtime>   Runtime: claude-code, codex, grok, opencode, or opencode2.
   --model <name>        Runtime model identifier.
   --kind <kind>         Session kind such as dev, review, or issue-create.
   --help                Show this help without changing the database.`;
@@ -458,7 +459,7 @@ Usage:
   lh supervisor start --runtime <runtime> --prompt <text|@file|-> [options]
 
 Options:
-  --runtime <runtime>   Runtime: claude-code, codex, grok, or opencode.
+  --runtime <runtime>   Runtime: claude-code, codex, grok, opencode, or opencode2.
   --prompt <text>       Prompt; @file reads a file and - reads stdin.
   --repo <owner/name>   Repository (defaults to the repository at the current path).
   --herdr               Start in a herdr pane and return without attaching.

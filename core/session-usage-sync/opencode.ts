@@ -1,4 +1,8 @@
-import { RUNTIME_OPENCODE, sessionRuntime } from "../session-runtime.ts";
+import {
+  RUNTIME_OPENCODE,
+  RUNTIME_OPENCODE2,
+  sessionRuntime,
+} from "../session-runtime.ts";
 import {
   aggregateUsage,
   calculateCostUsd,
@@ -24,6 +28,11 @@ import {
 
 const CHILD_SESSION_KIND = "opencode-child-session";
 
+// OpenCode 2 keeps its sessions in OpenCode 1's DB (`opencode2 debug paths` reports the same
+// ~/.local/share/opencode/opencode.db), so both runtimes are one cohort here: the worktree
+// aggregate is owned by a single session whatever mix of the two ran under the PR.
+const OPENCODE_RUNTIMES = [RUNTIME_OPENCODE, RUNTIME_OPENCODE2] as const;
+
 /**
  * OpenCode usage sync. OpenCode does not take a LoopHub session id; it records
  * sessions in ~/.local/share/opencode/opencode.db keyed by worktree directory.
@@ -35,13 +44,13 @@ const CHILD_SESSION_KIND = "opencode-child-session";
  * than inventing a rate.
  */
 export const opencodeUsageSync: SessionUsageSyncModule = {
-  owns: (row) => sessionRuntime(row) === RUNTIME_OPENCODE,
+  owns: (row) => OPENCODE_RUNTIMES.some((id) => sessionRuntime(row) === id),
 
   plan(rows, options) {
     const targetBySession = new Map<string, WorktreeUsageTarget>();
     const targets = new Map<string, WorktreeUsageTarget>();
     for (const row of rows) {
-      const target = worktreeUsageTarget(row, RUNTIME_OPENCODE);
+      const target = worktreeUsageTarget(row, OPENCODE_RUNTIMES);
       if (!target) continue;
       const key = worktreeUsageTargetKey(target);
       const shared = targets.get(key) ?? target;
@@ -99,7 +108,7 @@ function planOpencodeSession(
   const aggregated = aggregateUsage(fresh);
   const subagents = opencodeChildSessionUsage(opencodeSessions);
   const stored = S.listSessionUsage(row.id);
-  const clearUsageFor = supersededWorktreeSessions(target, RUNTIME_OPENCODE);
+  const clearUsageFor = supersededWorktreeSessions(target, OPENCODE_RUNTIMES);
   const topLevelUnchanged =
     !options.full && modelUsageEqualsStored(aggregated, stored);
 

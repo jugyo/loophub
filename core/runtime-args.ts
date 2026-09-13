@@ -50,8 +50,8 @@ export interface RuntimeFlagsInput {
   // `--model <name>` for every runtime (sanitized; omitted when empty).
   model?: string;
   // Reasoning effort. claude: `--effort <level>`; codex: `-c model_reasoning_effort=<level>`;
-  // grok/opencode ignore it: grok has no verified effort flag; OpenCode's `--variant` exists only on
-  // the `opencode run` command, not on the interactive TUI that
+  // grok/opencode/opencode2 ignore it: grok has no verified effort flag; OpenCode's `--variant`
+  // exists only on the `opencode run` command, not on the interactive TUI that
   // every LoopHub launch path uses (passing it makes the TUI print help and exit 1).
   effort?: string;
   // claude-only: `--session-id <id>`. Other runtimes correlate through their transcript metadata.
@@ -80,6 +80,33 @@ export function runtimePrompt(input: RuntimeArgsInput): string {
     : foldPrompt(input.systemPrompt, input.prompt);
 }
 
+// OpenCode 2 reads its model from an inline JSON config in the environment rather than from a flag
+// (see buildRuntimeFlags). Both `OPENCODE_CONFIG_CONTENT` (inline JSON) and `OPENCODE_CONFIG` (a
+// config file path) work; the inline form is used so a launch never writes a config file into the
+// worktree it runs in.
+const OPENCODE_CONFIG_CONTENT = "OPENCODE_CONFIG_CONTENT";
+
+// The environment a launch must add for the runtime to honour its resolved model. Every runtime
+// except opencode2 answers with an empty object, because their model is an argv flag. An unset or
+// blank model also answers empty, leaving the runtime on its own default.
+//
+// Note that an unknown model name here fails silently: OpenCode 2 falls back to the last-used model
+// instead of erroring the way `--model` does. The Settings picker's suggestion list is what keeps
+// typos out in practice.
+//
+// This config is read only when the TUI also gets `--auto` (v0.0.0-beta-19425). Without it the same
+// environment is ignored and the TUI picks its own model, so the approval-bypass flag and the model
+// travel together — see RuntimeDefinition.launchPromptNeedsSubmit.
+export function runtimeLaunchEnv(input: {
+  runtime: CodingAgent;
+  model?: string | null;
+}): Record<string, string> {
+  if (input.runtime !== "opencode2") return {};
+  const model = display(input.model ?? "").trim();
+  if (!model) return {};
+  return { [OPENCODE_CONFIG_CONTENT]: JSON.stringify({ model }) };
+}
+
 // Build the flag argv (without the runtime binary and without the trailing positional prompt) for
 // one launch. Split out from buildRuntimeArgs for the herdr launches, which put the flags on the
 // command line they type into the pane and append the prompt as a `"$(cat …)"` positional read back
@@ -95,7 +122,7 @@ export function buildRuntimeFlags(input: RuntimeFlagsInput): string[] {
     }
     return args;
   }
-  if (runtime === "opencode") {
+  if (runtime === "opencode" || runtime === "opencode2") {
     // OpenCode TUI: `--auto`, `--model`, and `--prompt <text>`. The bare positional is a project
     // path, not a message — so the prompt is a flag value. End with `--prompt` so
     // agentCommandLine's `"$(cat …)"` becomes that value (same shape as buildRuntimeArgs, which
@@ -104,8 +131,16 @@ export function buildRuntimeFlags(input: RuntimeFlagsInput): string[] {
     // Do not forward Settings effort as `--variant`: that flag is accepted only by `opencode run`
     // (1.18.13). The interactive TUI rejects unknown options by printing help and exiting 1, which
     // is the same class of immediate pane death as grok's old rejected `--force` (#1540).
+    //
+    // OpenCode 2's default TUI has no `--model` at all (`Unrecognized flag: --model`, exit 1;
+    // verified against v0.0.0-beta-19425), so its model travels in the launch environment instead —
+    // see runtimeLaunchEnv. That environment only reaches the model resolution when the launch runs
+    // its own server: without `--standalone` the TUI attaches to the shared `opencode2 serve
+    // --service` process, which resolved its config at its own startup and silently keeps whatever
+    // model it already had. `--standalone` is a documented root flag, so it is safe on the TUI.
     const args = runtimeApprovalArgs(runtime);
-    args.push(...modelFlag(input.model));
+    if (runtime === "opencode") args.push(...modelFlag(input.model));
+    else args.push("--standalone");
     args.push("--prompt");
     return args;
   }

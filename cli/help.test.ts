@@ -137,7 +137,7 @@ describe("--help", () => {
 
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "--runtime <runtime>   Runtime: claude-code, codex, grok, or opencode.",
+      "--runtime <runtime>   Runtime: claude-code, codex, grok, opencode, or opencode2.",
     );
     expect(existsSync(join(home, "loophub.db"))).toBe(false);
   });

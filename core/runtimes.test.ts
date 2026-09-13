@@ -40,6 +40,39 @@ test("every runtime defines the auto-approve argv the launch paths append", () =
   expect(CODING_AGENTS).toContain("opencode");
 });
 
+test("OpenCode 2 is registered as its own runtime with its own model list (#545)", () => {
+  expect(CODING_AGENTS).toContain("opencode2");
+  expect(RUNTIMES.opencode2).toMatchObject({
+    id: "opencode2",
+    bin: "opencode2",
+    label: "OpenCode 2",
+    buildFlag: "--opencode2",
+    defaultModel: "opencode/big-pickle",
+    defaultEffort: "",
+    // No effort ladder, so the Settings screen shows no effort picker for it.
+    effortSuggestions: [],
+    sandboxCapable: false,
+    autoApproveArgs: ["--auto"],
+  });
+  // Taken from `opencode2 models`, which is not the same list OpenCode 1 reports.
+  expect(RUNTIMES.opencode2.modelSuggestions).toContain("opencode-go/grok-4.6");
+  expect(RUNTIMES.opencode2.modelSuggestions).not.toContain(
+    "opencode/deepseek-v4-flash-free",
+  );
+  expect(effortSuggestionsForModel("opencode2", "")).toEqual([]);
+  // Its TUI only pre-fills `--prompt`, so the launch has to submit it (#545).
+  expect(RUNTIMES.opencode2.launchPromptNeedsSubmit).toBe(true);
+  // OpenCode 1 keeps its own binary and flag.
+  expect(RUNTIMES.opencode.bin).toBe("opencode");
+  expect(RUNTIMES.opencode.buildFlag).toBe("--opencode");
+});
+
+test("only OpenCode 2 needs its launch prompt submitted (#545)", () => {
+  for (const runtime of ["claude-code", "codex", "grok", "opencode"] as const) {
+    expect(RUNTIMES[runtime].launchPromptNeedsSubmit).toBe(false);
+  }
+});
+
 test("runtime definitions do not expose a session resume capability", () => {
   for (const runtime of Object.values(RUNTIMES)) {
     expect(runtime).not.toHaveProperty("resumable");

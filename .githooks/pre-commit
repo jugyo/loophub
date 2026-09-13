@@ -2,5 +2,8 @@
 
 set -e
 
+# Lint only. The test suite is deliberately not run here: git exports GIT_DIR to a hook, the tests
+# inherit it, and their `git init` / `git config` calls on temp repositories then write to *this*
+# repository instead — which rewrote .git/config to `bare = true` and broke every worktree. Run
+# `npm test` yourself (or in CI) rather than from the hook.
 npm run lint
-npm test

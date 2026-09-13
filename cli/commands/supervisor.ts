@@ -1,6 +1,10 @@
 import { agentEffort, agentModel } from "../../core/config.ts";
 import { spawnSyncProcess } from "../../core/process.ts";
-import { buildRuntimeArgs, runtimePrompt } from "../../core/runtime-args.ts";
+import {
+  buildRuntimeArgs,
+  runtimeLaunchEnv,
+  runtimePrompt,
+} from "../../core/runtime-args.ts";
 import {
   type CodingAgent,
   isCodingAgent,
@@ -76,6 +80,11 @@ async function startSupervisor(): Promise<void> {
     contract,
     contractPath: runtimeContractPath,
   });
+  // Runtimes whose model is not an argv flag (opencode2) carry it in the launch environment.
+  const launchEnv = runtimeLaunchEnv({
+    runtime,
+    model: agentModel(runtime),
+  });
 
   if (flags.herdr === true) {
     const promptPath = writeLaunchPrompt(
@@ -86,6 +95,7 @@ async function startSupervisor(): Promise<void> {
       }),
     );
     const command = agentCommandLine({
+      env: launchEnv,
       bin: RUNTIMES[runtime].bin,
       args: args.slice(0, -1),
       promptPath,
@@ -97,6 +107,7 @@ async function startSupervisor(): Promise<void> {
         worktree: repo.local_path,
         command,
         label: "Supervisor",
+        submitPrompt: RUNTIMES[runtime].launchPromptNeedsSubmit,
       });
     } catch (error) {
       if (error instanceof HerdrLaunchError) fail(error.message);
@@ -120,6 +131,7 @@ async function startSupervisor(): Promise<void> {
   const proc = spawnSyncProcess([RUNTIMES[runtime].bin, ...args], {
     cwd: repo.local_path,
     stdio: ["inherit", "inherit", "inherit"],
+    env: { ...process.env, ...launchEnv },
   });
   if (proc.error) {
     const error = proc.error as NodeJS.ErrnoException;

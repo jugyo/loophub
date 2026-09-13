@@ -19,6 +19,8 @@ export const RUNTIME_CLAUDE_CODE = RUNTIMES["claude-code"].id;
 export const RUNTIME_CODEX = RUNTIMES.codex.id;
 export const RUNTIME_GROK = RUNTIMES.grok.id;
 export const RUNTIME_OPENCODE = RUNTIMES.opencode.id;
+// OpenCode 2 shares OpenCode 1's data directory and DB, so both ids resolve to the same usage sync.
+export const RUNTIME_OPENCODE2 = RUNTIMES.opencode2.id;
 
 // Claude accepts UUIDs for caller-supplied session ids. Validate them before they become argv so a
 // flag-like value cannot be interpreted as another option.

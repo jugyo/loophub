@@ -109,6 +109,7 @@ function fakeRuntime(
   const codex = join(dir, "codex");
   const grok = join(dir, "grok");
   const opencode = join(dir, "opencode");
+  const opencode2 = join(dir, "opencode2");
   const sessionName = herdrSessionName({
     full_name: REPO,
     local_path: REPO_PATH,
@@ -188,11 +189,16 @@ exit 0
     opencode,
     '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
   );
+  writeFileSync(
+    opencode2,
+    '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
+  );
   chmodSync(herdr, 0o755);
   chmodSync(claude, 0o755);
   chmodSync(codex, 0o755);
   chmodSync(grok, 0o755);
   chmodSync(opencode, 0o755);
+  chmodSync(opencode2, 0o755);
   return { dir, focusedStatePath, log };
 }
 
@@ -2051,6 +2057,58 @@ test("workflow start --opencode launches OpenCode with --auto/--model/--prompt a
     expect(log).toContain("--auto");
     expect(log).toContain("--prompt");
     // `--variant` is `opencode run`-only; the interactive TUI rejects it and exits immediately.
+    expect(log).not.toContain("--variant");
+    expect(log).not.toContain("--session-id");
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+// #545: opencode2 is selected the same way as the other runtimes, but its model has to reach the
+// pane as an env var — `--model` makes its TUI print help and exit 1.
+test("workflow start --opencode2 launches OpenCode 2 with its model in the pane environment", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "OpenCode 2 parent session",
+    "--body",
+    "Do it with OpenCode 2",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = opencodeOnlyRuntime();
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--opencode2",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    expect(log).toMatch(/pane send-text \S+ .*\bopencode2 '/);
+    expect(log).toContain(
+      'OPENCODE_CONFIG_CONTENT=\'{"model":"opencode/big-pickle"}\'',
+    );
+    expect(log).toContain("--auto");
+    expect(log).toContain("--standalone");
+    expect(log).toContain("--prompt");
+    expect(log).not.toContain("--model");
     expect(log).not.toContain("--variant");
     expect(log).not.toContain("--session-id");
   } finally {

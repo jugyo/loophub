@@ -5,7 +5,10 @@ import {
 } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { spawnSyncProcess } from "../../core/process.ts";
-import { buildRuntimeFlags } from "../../core/runtime-args.ts";
+import {
+  buildRuntimeFlags,
+  runtimeLaunchEnv,
+} from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
 import { isClaudeSessionId } from "../../core/session-runtime.ts";
 import {
@@ -278,7 +281,11 @@ async function launchParentHerdr(input: {
   // attach it has no TTY for.
   detach?: boolean;
 }): Promise<void> {
-  const env = { LOOPHUB_SESSION_ID: input.sessionId };
+  const env = {
+    LOOPHUB_SESSION_ID: input.sessionId,
+    // Runtimes whose model is not an argv flag (opencode2) carry it in the launch environment.
+    ...runtimeLaunchEnv({ runtime: input.runtime, model: input.model }),
+  };
   const command = agentCommandLine({
     env,
     bin: runtimeBin(input.runtime),
@@ -298,6 +305,7 @@ async function launchParentHerdr(input: {
       env,
       command,
       label,
+      submitPrompt: RUNTIMES[input.runtime].launchPromptNeedsSubmit,
     });
   } catch (e) {
     if (e instanceof HerdrLaunchError) fail(e.message);
@@ -354,7 +362,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode] [--model <name>] [--parent-runtime <runtime> --parent-model <model> --parent-effort <effort>] [--execute-runtime <runtime> --execute-model <model> --execute-effort <effort>] [--verify-runtime <runtime> --verify-model <model> --verify-effort <effort>] [--herdr] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode | --opencode2] [--model <name>] [--parent-runtime <runtime> --parent-model <model> --parent-effort <effort>] [--execute-runtime <runtime> --execute-model <model> --execute-effort <effort>] [--verify-runtime <runtime> --verify-model <model> --verify-effort <effort>] [--herdr] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -385,6 +393,7 @@ async function startWorkflow(): Promise<void> {
     codex: flags.codex === true,
     grok: flags.grok === true,
     opencode: flags.opencode === true,
+    opencode2: flags.opencode2 === true,
     defaultRuntime: agentCfg.effective.runtime,
   });
   const sessionId = requestedSessionId();
@@ -407,6 +416,7 @@ async function startWorkflow(): Promise<void> {
             codex: requestedRuntime === "codex",
             grok: requestedRuntime === "grok",
             opencode: requestedRuntime === "opencode",
+            opencode2: requestedRuntime === "opencode2",
             defaultRuntime: requestedRuntime as CodingAgent,
           })
         : runtime;

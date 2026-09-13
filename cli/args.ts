@@ -19,6 +19,7 @@ export type Flags = {
   grok?: boolean;
   cursor?: boolean;
   opencode?: boolean;
+  opencode2?: boolean;
   full?: boolean;
   json?: boolean;
   allow?: string;
@@ -144,6 +145,7 @@ const { values, positionals } = parseArgs({
     grok: { type: "boolean" },
     cursor: { type: "boolean" },
     opencode: { type: "boolean" },
+    opencode2: { type: "boolean" },
     full: { type: "boolean" },
     json: { type: "boolean" },
     allow: { type: "string" },

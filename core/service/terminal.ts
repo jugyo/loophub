@@ -40,6 +40,7 @@ import {
   type HerdrLaunchRunner,
   herdrAgentFocusArgv,
   herdrCommandLine,
+  herdrLaunchNeedsPromptSubmit,
   herdrPaneCloseArgv,
   herdrSessionName,
   herdrTabCloseArgv,
@@ -399,6 +400,7 @@ async function launchWorkflowCreateHerdr(
     command,
     label: input.label,
     workspaceId,
+    submitPrompt: herdrLaunchNeedsPromptSubmit(input.agent),
   });
   const outcome = await executeHerdrLaunchPlan(
     plan,
@@ -764,6 +766,9 @@ export const terminal = {
       command,
       label: input.label,
       workspaceId: placementWorkspaceId,
+      submitPrompt: herdrLaunchNeedsPromptSubmit(
+        input.workflow === "issue-create" ? input.agent : undefined,
+      ),
     });
     // Non-blocking: lh-web is a single process serving RPC for every client, so a
     // synchronous spawnSync here would stall the whole server for as long as the Herdr launch

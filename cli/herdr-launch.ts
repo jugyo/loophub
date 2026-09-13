@@ -25,6 +25,7 @@ export class HerdrLaunchError extends Error {}
 const HERDR_LAUNCH_FAILURE = {
   pane: "create the agent's pane",
   agent: "start the agent",
+  prompt: "send the agent its prompt",
 } as const;
 
 export interface HerdrLaunchResult {
@@ -92,6 +93,9 @@ export async function launchAgentInWorktreeHerdr(input: {
   // The command the launch types into its pane, prompt included (see agentCommandLine).
   command: string;
   label: string;
+  // Pass RUNTIMES[runtime].launchPromptNeedsSubmit: a runtime whose TUI only pre-fills the prompt
+  // needs the launch to press Enter once the TUI is up.
+  submitPrompt?: boolean;
 }): Promise<HerdrLaunchResult> {
   const { repo, worktree, label } = input;
   // Best-effort herdr runner for the ancillary workspace calls (open and close). spawnSync suits
@@ -144,6 +148,7 @@ export async function launchAgentInWorktreeHerdr(input: {
     command: input.command,
     env: input.env,
     label,
+    submitPrompt: input.submitPrompt,
     // The pane is pinned to the worktree (not repo.local_path) but keeps the repo's herdr session
     // name, so it lands alongside every other launch for this repo.
     workspaceId: acquired?.workspaceId,

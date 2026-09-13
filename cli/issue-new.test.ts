@@ -136,10 +136,11 @@ beforeAll(() => {
 printf 'bin=%s\\n' "$(basename "$0")" > "$RUNTIME_LOG"
 printf 'workspace=%s\\n' "$LOOPHUB_WORKSPACE" >> "$RUNTIME_LOG"
 printf 'parent=%s\\n' "$LOOPHUB_PARENT_ISSUE" >> "$RUNTIME_LOG"
+printf 'config=%s\\n' "$OPENCODE_CONFIG_CONTENT" >> "$RUNTIME_LOG"
 for arg in "$@"; do printf 'arg=%s\\n' "$arg" >> "$RUNTIME_LOG"; done
 exit 0
 `;
-  for (const bin of ["claude", "codex", "grok", "opencode"]) {
+  for (const bin of ["claude", "codex", "grok", "opencode", "opencode2"]) {
     const path = join(runtimeDir, bin);
     writeFileSync(path, runtime);
     chmodSync(path, 0o755);
@@ -294,6 +295,32 @@ test.each([
   );
   expect(sessions().at(-1)?.runtime).toBe(expectedRuntime);
   expect(sessions().at(-1)?.model).toBe(model);
+});
+
+// #545: opencode2's TUI has no --model, so the selected model reaches it as an env var instead.
+test("issue new forwards --opencode2 with its model in the environment, not argv", () => {
+  writeConfig({ codingAgent: "claude-code" });
+
+  const result = issueNew([
+    "--opencode2",
+    "--model",
+    "opencode/big-pickle",
+    "--effort",
+    "high",
+  ]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.runtimeLog).toContain("bin=opencode2");
+  expect(result.runtimeLog).toContain('config={"model":"opencode/big-pickle"}');
+  expect(result.runtimeLog).toContain("arg=--auto");
+  // Without --standalone the TUI joins the shared service and ignores the config environment.
+  expect(result.runtimeLog).toContain("arg=--standalone");
+  expect(result.runtimeLog).toContain("arg=--prompt");
+  expect(result.runtimeLog).not.toContain("arg=--model");
+  expect(result.runtimeLog).not.toContain("arg=opencode/big-pickle");
+  expect(result.runtimeLog).not.toContain("arg=--variant");
+  expect(sessions().at(-1)?.runtime).toBe("opencode2");
+  expect(sessions().at(-1)?.model).toBe("opencode/big-pickle");
 });
 
 test("issue new rejects multiple runtime flags before registering or spawning", () => {

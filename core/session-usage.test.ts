@@ -559,6 +559,236 @@ test("findOpencodeSessions falls back to session totals and leaves unknown model
   rmSync(root, { recursive: true, force: true });
 });
 
+// #545: OpenCode 2 shares OpenCode 1's DB file but writes `session_v2` / `session_message`, where
+// the role is the `type` column and the model is a nested object on the assistant message.
+test("findOpencodeSessions reads OpenCode 2's session_v2 layout from the same DB", () => {
+  const root = mkdtempSync(join(tmpdir(), "lh-opencode2-"));
+  const dbPath = join(root, "opencode.db");
+  const cwd = join(root, "worktree");
+  mkdirSync(cwd);
+
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT,
+      directory TEXT NOT NULL,
+      model TEXT,
+      tokens_input INTEGER DEFAULT 0 NOT NULL,
+      tokens_output INTEGER DEFAULT 0 NOT NULL,
+      tokens_reasoning INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      data TEXT NOT NULL
+    );
+    CREATE TABLE session_v2 (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT,
+      directory TEXT NOT NULL,
+      model TEXT,
+      tokens_input INTEGER DEFAULT 0 NOT NULL,
+      tokens_output INTEGER DEFAULT 0 NOT NULL,
+      tokens_reasoning INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE session_message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      data TEXT NOT NULL
+    );
+  `);
+  db.prepare(
+    `INSERT INTO session_v2 (
+      id, parent_id, directory, model,
+      tokens_input, tokens_output, tokens_reasoning,
+      tokens_cache_read, tokens_cache_write, time_created, time_updated
+    ) VALUES (?, NULL, ?, NULL, 0, 0, 0, 0, 0, 1, 2)`,
+  ).run("ses_v2", cwd);
+  const insert = db.prepare(
+    `INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  // The user turn carries no tokens and must not be counted.
+  insert.run(
+    "msg_user",
+    "ses_v2",
+    "user",
+    1,
+    1,
+    1,
+    JSON.stringify({ text: "say hi" }),
+  );
+  insert.run(
+    "msg_assistant",
+    "ses_v2",
+    "assistant",
+    2,
+    2,
+    2,
+    JSON.stringify({
+      // No `role` field: OpenCode 2 keeps it in the column, and the model is nested.
+      model: { id: "big-pickle", providerID: "opencode" },
+      tokens: {
+        input: 6892,
+        output: 13,
+        reasoning: 11,
+        cache: { read: 4, write: 2 },
+      },
+    }),
+  );
+  db.close();
+
+  const found = findOpencodeSessions({ cwd, dbPath });
+  expect(found).toHaveLength(1);
+  expect(found[0]).toMatchObject({
+    sessionId: "ses_v2",
+    entries: [
+      {
+        message_id: "msg_assistant",
+        model: "opencode/big-pickle",
+        input_tokens: 6892,
+        cache_creation_input_tokens: 2,
+        cache_read_input_tokens: 4,
+        // reasoning is folded into output_tokens
+        output_tokens: 24,
+      },
+    ],
+  });
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+// #545 regression: a migrated DB holds the same session in *both* layouts (224 of 227 on a real
+// install), message ids included. Scanning both must not report that session — or its tokens —
+// twice, because aggregateUsage sums entries without de-duplicating them.
+test("findOpencodeSessions counts a session present in both layouts once", () => {
+  const root = mkdtempSync(join(tmpdir(), "lh-opencode-both-"));
+  const dbPath = join(root, "opencode.db");
+  const cwd = join(root, "worktree");
+  mkdirSync(cwd);
+
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, model TEXT,
+      tokens_input INTEGER DEFAULT 0 NOT NULL, tokens_output INTEGER DEFAULT 0 NOT NULL,
+      tokens_reasoning INTEGER DEFAULT 0 NOT NULL, tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
+      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL
+    );
+    CREATE TABLE session_v2 (
+      id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, model TEXT,
+      tokens_input INTEGER DEFAULT 0 NOT NULL, tokens_output INTEGER DEFAULT 0 NOT NULL,
+      tokens_reasoning INTEGER DEFAULT 0 NOT NULL, tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
+      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE session_message (
+      id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL, seq INTEGER NOT NULL,
+      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL
+    );
+  `);
+  const v1Session = db.prepare(
+    `INSERT INTO session (id, parent_id, directory, model,
+       tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+       time_created, time_updated) VALUES (?, NULL, ?, NULL, 0, 0, 0, 0, 0, 1, 2)`,
+  );
+  const v2Session = db.prepare(
+    `INSERT INTO session_v2 (id, parent_id, directory, model,
+       tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+       time_created, time_updated) VALUES (?, NULL, ?, NULL, 0, 0, 0, 0, 0, 1, 2)`,
+  );
+  v1Session.run("ses_both", cwd);
+  v2Session.run("ses_both", cwd);
+
+  const assistant = (tokens: number) =>
+    JSON.stringify({
+      role: "assistant",
+      providerID: "opencode",
+      modelID: "big-pickle",
+      tokens: {
+        input: tokens,
+        output: 1,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    });
+  const v1Message = db.prepare(
+    `INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)`,
+  );
+  const v2Message = db.prepare(
+    `INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data)
+     VALUES (?, ?, 'assistant', ?, ?, ?, ?)`,
+  );
+  // The shared message both layouts record, plus one each layout has on its own: a part-way
+  // migration leaves either side able to hold the extra row, so the union is what must survive.
+  v1Message.run("msg_shared", "ses_both", 1, 1, assistant(100));
+  v2Message.run("msg_shared", "ses_both", 1, 1, 1, assistant(100));
+  v1Message.run("msg_v1_only", "ses_both", 2, 2, assistant(10));
+  v2Message.run("msg_v2_only", "ses_both", 2, 2, 2, assistant(3));
+  db.close();
+
+  const found = findOpencodeSessions({ cwd, dbPath });
+  expect(found).toHaveLength(1);
+  expect(found[0].entries.map((entry) => entry.message_id).sort()).toEqual([
+    "msg_shared",
+    "msg_v1_only",
+    "msg_v2_only",
+  ]);
+  // 100 + 10 + 3, i.e. the shared message counted once.
+  expect(aggregateUsage(found[0].entries)[0].input_tokens).toBe(113);
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+// A DB written by an OpenCode old enough to have no session_v2 table must still be readable.
+test("findOpencodeSessions tolerates a DB without the OpenCode 2 tables", () => {
+  const root = mkdtempSync(join(tmpdir(), "lh-opencode-legacy-"));
+  const dbPath = join(root, "opencode.db");
+  const cwd = join(root, "worktree");
+  mkdirSync(cwd);
+
+  writeOpencodeFixtureDb(dbPath, [
+    {
+      id: "ses_legacy",
+      directory: cwd,
+      messages: [
+        {
+          id: "msg_assistant",
+          role: "assistant",
+          providerID: "opencode",
+          modelID: "big-pickle",
+          tokens: { input: 10, output: 2 },
+        },
+      ],
+    },
+  ]);
+
+  const found = findOpencodeSessions({ cwd, dbPath });
+  expect(found.map((x) => x.sessionId)).toEqual(["ses_legacy"]);
+
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("aggregateUsage drops all-zero model totals", () => {
   const usage = aggregateUsage([
     {

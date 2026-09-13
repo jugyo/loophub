@@ -46,11 +46,29 @@ export interface WorktreeUsageTarget {
   pullIssueId: number;
 }
 
+/**
+ * The runtime ids one sync module claims. Usually a single id, but OpenCode 1 and OpenCode 2 share
+ * a data directory and DB, so they are one cohort: matching on a set keeps their sessions on a
+ * single owner instead of double counting the same worktree aggregate once per id.
+ */
+export type UsageRuntimes = string | readonly string[];
+
+function matchesRuntime(
+  row: S.AgentSessionRow,
+  runtime: UsageRuntimes,
+): boolean {
+  const actual = sessionRuntime(row);
+  if (actual === null) return false;
+  return typeof runtime === "string"
+    ? actual === runtime
+    : runtime.includes(actual);
+}
+
 export function worktreeUsageTarget(
   row: S.AgentSessionRow,
-  runtime: string,
+  runtime: UsageRuntimes,
 ): WorktreeUsageTarget | null {
-  if (sessionRuntime(row) !== runtime) return null;
+  if (!matchesRuntime(row, runtime)) return null;
   const base = pullWorktreeTarget(row);
   if (!base) return null;
   return {
@@ -62,15 +80,15 @@ export function worktreeUsageTarget(
 
 function worktreeUsageOwner(
   pullIssueId: number,
-  runtime: string,
+  runtime: UsageRuntimes,
   fallbackSessionId: string,
 ): string {
   const primarySessionId = S.primaryDevSessionForPull(pullIssueId);
   const primary = primarySessionId ? S.getAgentSession(primarySessionId) : null;
-  if (primary && sessionRuntime(primary) === runtime) return primarySessionId!;
+  if (primary && matchesRuntime(primary, runtime)) return primarySessionId!;
   return (
-    S.listSessionsForIssue(pullIssueId).find(
-      (session) => sessionRuntime(session) === runtime,
+    S.listSessionsForIssue(pullIssueId).find((session) =>
+      matchesRuntime(session, runtime),
     )?.id ?? fallbackSessionId
   );
 }
@@ -82,13 +100,13 @@ export function worktreeUsageTargetKey(target: WorktreeUsageTarget): string {
 /** Sessions whose stale per-session usage the owner's worktree aggregate replaces. */
 export function supersededWorktreeSessions(
   target: WorktreeUsageTarget,
-  runtime: string,
+  runtime: UsageRuntimes,
 ): string[] {
   return S.listSessionsForIssue(target.pullIssueId)
     .filter(
       (session) =>
         session.id !== target.ownerSessionId &&
-        sessionRuntime(session) === runtime,
+        matchesRuntime(session, runtime),
     )
     .map((session) => session.id);
 }

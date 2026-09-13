@@ -448,6 +448,103 @@ test("the OpenCode module aggregates worktree sessions and leaves unknown models
   rmSync(dbPath, { force: true });
 });
 
+// #545: opencode2 writes into OpenCode 1's DB (`opencode2 debug paths` reports the same
+// ~/.local/share/opencode/opencode.db), so both ids are one cohort — a PR that ran both keeps a
+// single owner session for the worktree aggregate instead of counting it twice.
+test("the OpenCode module claims opencode2 sessions and shares one worktree owner", () => {
+  const repo = createRepoWithPath("me/opencode2-usage");
+  const owner = registerSession("opencode2");
+  const peer = registerSession("opencode", { kind: "workflow-step" });
+  const pr = createPullFor(repo, owner.id);
+  S.linkSession(owner.id, pr.id);
+  S.linkSession(peer.id, pr.id);
+
+  const cwd = worktreeCwd(repo.full_name, pr.number);
+  mkdirSync(cwd, { recursive: true });
+  const dbPath = join(
+    mkdtempSync(join(tmpdir(), "lh-opencode2-sync-")),
+    "opencode.db",
+  );
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT,
+      directory TEXT NOT NULL,
+      model TEXT,
+      tokens_input INTEGER DEFAULT 0 NOT NULL,
+      tokens_output INTEGER DEFAULT 0 NOT NULL,
+      tokens_reasoning INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      data TEXT NOT NULL
+    );
+  `);
+  db.prepare(
+    `INSERT INTO session (
+      id, parent_id, directory, model,
+      tokens_input, tokens_output, tokens_reasoning,
+      tokens_cache_read, tokens_cache_write, time_created, time_updated
+    ) VALUES (?, NULL, ?, ?, 0, 0, 0, 0, 0, 1, 2)`,
+  ).run(
+    "ses_v2",
+    cwd,
+    JSON.stringify({ id: "big-pickle", providerID: "opencode" }),
+  );
+  db.prepare(
+    `INSERT INTO message (id, session_id, time_created, time_updated, data)
+     VALUES (?, ?, 5, 5, ?)`,
+  ).run(
+    "msg_v2",
+    "ses_v2",
+    JSON.stringify({
+      role: "assistant",
+      providerID: "opencode",
+      modelID: "big-pickle",
+      tokens: {
+        input: 70,
+        output: 7,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    }),
+  );
+  db.close();
+
+  const cohorts = sync.planSessionUsageSync([owner, peer], {
+    opencodeDbPath: dbPath,
+  });
+  const ownerPlan = planFor(cohorts, owner.id);
+  // The OpenCode 1 peer is superseded by the OpenCode 2 owner, not given its own aggregate.
+  expect(ownerPlan.clearUsageFor).toEqual([peer.id]);
+  expect(ownerPlan.usage).toEqual([
+    expect.objectContaining({
+      model: "opencode/big-pickle",
+      input_tokens: 70,
+    }),
+  ]);
+  expect(planFor(cohorts, peer.id)).toMatchObject({
+    resetUsage: true,
+    report: { status: "skipped" },
+  });
+
+  sync.applySessionUsageSync(cohorts);
+  expect(S.listSessionUsage(owner.id)).toEqual([
+    expect.objectContaining({ model: "opencode/big-pickle", input_tokens: 70 }),
+  ]);
+  expect(S.listSessionUsage(peer.id)).toEqual([]);
+
+  rmSync(dbPath, { force: true });
+});
+
 test("the executor refuses a plan whose expected usage moved on", () => {
   const session = registerSession("codex");
   S.upsertSessionUsage(session.id, {

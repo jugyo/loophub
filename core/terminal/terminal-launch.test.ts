@@ -12,6 +12,7 @@ import {
   HERDR_PANE_PLACEHOLDER,
   type HerdrCmdRunner,
   herdrAgentFocusArgv,
+  herdrCommandLine,
   herdrPaneCloseArgv,
   herdrSessionName,
   herdrTabCloseArgv,
@@ -354,6 +355,146 @@ describe("herdr terminal launch", () => {
     // The typed line is the whole launch: one send-text call, no follow-up.
     expect(plan.argv.slice(3, 5)).toEqual(["pane", "send-text"]);
     expect(plan.argv.at(-1)).toBe(`${plan.command}\n`);
+  });
+
+  // #545: opencode2 has no --model flag, so its model has to reach the pane as an env var — both in
+  // the pane's own environment and on the command line the launch types into it.
+  test("an OpenCode 2 Workflow step carries its model in the launch environment", () => {
+    const plan = buildWorkflowStepHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      runId: 12,
+      step: "execute",
+      sequence: 1,
+      runtime: "opencode2",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      worktree: "/repo/worktrees/pr-7",
+      systemPromptPath: "/tmp/run/execute-contract.md",
+      userPromptPath: "/tmp/run/execute-prompt.md",
+      model: "opencode/big-pickle",
+      effort: "high",
+    });
+    expect(plan.command).toBe(
+      `LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111' OPENCODE_CONFIG_CONTENT='{"model":"opencode/big-pickle"}' opencode2 '--auto' '--standalone' '--prompt' "$(cat '/tmp/run/execute-prompt.md')"`,
+    );
+    expect(plan.command).not.toContain("--model");
+    expect(plan.paneArgv).toContain(
+      'OPENCODE_CONFIG_CONTENT={"model":"opencode/big-pickle"}',
+    );
+  });
+
+  // #545: opencode2's TUI only pre-fills `--prompt`, so the launch presses Enter once the TUI has
+  // drawn. The wait is best-effort — the keystroke is sent either way — but it must come last,
+  // after the command, because a TUI drains the shell's leftover input when it takes over.
+  test("an OpenCode 2 launch submits its pre-filled prompt after the TUI is up", () => {
+    const plan = buildWorkflowStepHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      runId: 12,
+      step: "execute",
+      sequence: 1,
+      runtime: "opencode2",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      worktree: "/repo/worktrees/pr-7",
+      systemPromptPath: "/tmp/run/execute-contract.md",
+      userPromptPath: "/tmp/run/execute-prompt.md",
+      model: "opencode/big-pickle",
+    });
+    expect(plan.readyArgv?.slice(3)).toEqual([
+      "pane",
+      "wait-output",
+      HERDR_PANE_PLACEHOLDER,
+      "--regex",
+      "shift\\+tab",
+      "--timeout",
+      "20000",
+    ]);
+    expect(plan.submitArgv?.slice(3)).toEqual([
+      "pane",
+      "send-keys",
+      HERDR_PANE_PLACEHOLDER,
+      "Enter",
+    ]);
+    // The reproduce hint a failed launch prints has to include the steps that actually ran, and
+    // must not stop on the wait: herdr exits non-zero when the pattern does not turn up, and the
+    // launch presses Enter regardless.
+    const hint = herdrCommandLine(plan);
+    expect(hint).toContain("send-keys");
+    expect(hint).toContain("|| true) && herdr");
+  });
+
+  test("runtimes that send their own prompt get no submit steps", () => {
+    for (const runtime of [
+      "claude-code",
+      "codex",
+      "grok",
+      "opencode",
+    ] as const) {
+      const plan = buildWorkflowStepHerdrLaunchPlan({
+        repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+        runId: 12,
+        step: "execute",
+        sequence: 1,
+        runtime,
+        sessionId: "11111111-1111-4111-8111-111111111111",
+        worktree: "/repo/worktrees/pr-7",
+        systemPromptPath: "/tmp/run/execute-contract.md",
+        userPromptPath: "/tmp/run/execute-prompt.md",
+      });
+      expect(plan.readyArgv).toBeUndefined();
+      expect(plan.submitArgv).toBeUndefined();
+    }
+  });
+
+  test("executeHerdrLaunchPlan presses Enter last, and reports a failed submit", async () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const paneCreateJson = JSON.stringify({
+      result: { root_pane: { pane_id: "w1:p2" }, tab: { tab_id: "w1:t2" } },
+    });
+    const plan = buildHerdrLaunchPlan({
+      repo,
+      command:
+        "opencode2 '--auto' '--standalone' '--prompt' \"$(cat '/tmp/p')\"",
+      label: "execute #12",
+      submitPrompt: true,
+    });
+    const calls: string[][] = [];
+    const ok = await executeHerdrLaunchPlan(plan, async (argv) => {
+      calls.push(argv);
+      return { stdout: paneCreateJson, stderr: "", ok: true };
+    });
+    expect(ok.ok).toBe(true);
+    // send-text first, then the wait, then the keystroke.
+    expect(calls.map((argv) => argv[4])).toEqual([
+      "create",
+      "rename",
+      "send-text",
+      "wait-output",
+      "send-keys",
+    ]);
+
+    // A wait that times out (herdr exits non-zero) must not stop the keystroke.
+    const waited: string[][] = [];
+    const stillOk = await executeHerdrLaunchPlan(plan, async (argv) => {
+      waited.push(argv);
+      const isWait = argv[4] === "wait-output";
+      return {
+        stdout: isWait ? "" : paneCreateJson,
+        stderr: isWait ? "timed out waiting for output match" : "",
+        ok: !isWait,
+      };
+    });
+    expect(stillOk.ok).toBe(true);
+    expect(waited.at(-1)?.[4]).toBe("send-keys");
+
+    // A failed keystroke leaves the agent running but uninstructed — a visible launch failure.
+    const failed = await executeHerdrLaunchPlan(plan, async (argv) => {
+      const isSubmit = argv[4] === "send-keys";
+      return {
+        stdout: isSubmit ? "" : paneCreateJson,
+        stderr: isSubmit ? "pane_not_found" : "",
+        ok: !isSubmit,
+      };
+    });
+    expect(failed).toMatchObject({ ok: false, failed: "prompt" });
   });
 
   test("a launch whose entrypoint is not a runtime binary types its command the same way", () => {

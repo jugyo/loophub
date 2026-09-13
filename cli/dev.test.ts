@@ -224,6 +224,14 @@ test("resolveDevRuntime prefers an explicit flag over defaultRuntime (#516)", ()
   ).toBe("codex");
 });
 
+test("resolveDevRuntime selects opencode2 for --opencode2 (#545)", () => {
+  expect(resolveDevRuntime({ opencode2: true })).toBe("opencode2");
+  expect(resolveDevRuntime({ defaultRuntime: "opencode2" })).toBe("opencode2");
+  expect(() => resolveDevRuntime({ opencode: true, opencode2: true })).toThrow(
+    /mutually exclusive/,
+  );
+});
+
 test("resolveDevRuntime selects grok for --grok", () => {
   expect(resolveDevRuntime({ grok: true })).toBe("grok");
   expect(resolveDevRuntime({ defaultRuntime: "grok" })).toBe("grok");
@@ -419,11 +427,43 @@ test("buildRuntimeLaunch returns opencode with --auto/--model/--prompt (effort n
       "--prompt",
       "Create an issue.",
     ],
+    // OpenCode 1 takes its model as a flag, so the launch needs no extra environment.
+    env: {},
   });
   expect(launch.args).not.toContain("--variant");
   expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toMatch(
     /^opencode /,
   );
+});
+
+test("buildRuntimeLaunch sends opencode2's model through the environment, not --model", () => {
+  const launch = buildRuntimeLaunch({
+    runtime: "opencode2",
+    sessionId: "sid-1",
+    slashCommand: "Create an issue.",
+    model: "opencode/big-pickle",
+    // Effort is accepted on the launch path but not forwarded, same as OpenCode 1.
+    effort: "high",
+  });
+  expect(launch).toEqual({
+    bin: "opencode2",
+    args: ["--auto", "--standalone", "--prompt", "Create an issue."],
+    // `--model` makes the opencode2 TUI print help and exit 1, so the model travels as config.
+    env: { OPENCODE_CONFIG_CONTENT: '{"model":"opencode/big-pickle"}' },
+  });
+  expect(launch.args).not.toContain("--model");
+  expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toMatch(
+    /^opencode2 /,
+  );
+});
+
+test("buildRuntimeLaunch leaves opencode2 on its own model when none is selected", () => {
+  const launch = buildRuntimeLaunch({
+    runtime: "opencode2",
+    sessionId: "sid-1",
+    slashCommand: "Create an issue.",
+  });
+  expect(launch.env).toEqual({});
 });
 
 // ---- spawn command line (pure) ----

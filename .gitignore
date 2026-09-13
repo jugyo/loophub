@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The repository's lockfile is bun.lock; a stray `npm install` writes this one.
+package-lock.json
 # Leftover from an interrupted `bun build --compile`.
 *.bun-build
 *.log

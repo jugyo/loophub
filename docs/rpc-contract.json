@@ -355,7 +355,8 @@
               "claude-code",
               "codex",
               "grok",
-              "opencode"
+              "opencode",
+              "opencode2"
             ]
           },
           "model": {
@@ -480,7 +481,8 @@
               "claude-code",
               "codex",
               "grok",
-              "opencode"
+              "opencode",
+              "opencode2"
             ]
           },
           "model": {
@@ -494,7 +496,8 @@
               "claude-code",
               "codex",
               "grok",
-              "opencode"
+              "opencode",
+              "opencode2"
             ]
           },
           "devCostLimitUsd": {
@@ -1019,7 +1022,8 @@
               "claude-code",
               "codex",
               "grok",
-              "opencode"
+              "opencode",
+              "opencode2"
             ]
           },
           "model": {
@@ -1051,7 +1055,8 @@
                       "claude-code",
                       "codex",
                       "grok",
-                      "opencode"
+                      "opencode",
+                      "opencode2"
                     ]
                   },
                   "model": {
@@ -1076,7 +1081,8 @@
                       "claude-code",
                       "codex",
                       "grok",
-                      "opencode"
+                      "opencode",
+                      "opencode2"
                     ]
                   },
                   "model": {
@@ -1101,7 +1107,8 @@
                       "claude-code",
                       "codex",
                       "grok",
-                      "opencode"
+                      "opencode",
+                      "opencode2"
                     ]
                   },
                   "model": {

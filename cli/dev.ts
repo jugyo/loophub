@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { buildRuntimeArgs } from "../core/runtime-args.ts";
+import { buildRuntimeArgs, runtimeLaunchEnv } from "../core/runtime-args.ts";
 import { CODING_AGENTS, type CodingAgent, RUNTIMES } from "../core/runtimes.ts";
 import {
   legacyWorktreeBranch,
@@ -104,6 +104,7 @@ export function resolveDevRuntime(flags: {
   codex?: boolean;
   grok?: boolean;
   opencode?: boolean;
+  opencode2?: boolean;
   defaultRuntime?: DevRuntime;
 }): DevRuntime {
   const passed: Record<CodingAgent, boolean | undefined> = {
@@ -111,6 +112,7 @@ export function resolveDevRuntime(flags: {
     codex: flags.codex,
     grok: flags.grok,
     opencode: flags.opencode,
+    opencode2: flags.opencode2,
   };
   const selected = CODING_AGENTS.filter((id) => passed[id]);
   if (selected.length > 1) {
@@ -230,7 +232,13 @@ export function buildRuntimeLaunch({
   effort,
 }: RuntimeArgvInput & {
   runtime: DevRuntime;
-}): { bin: (typeof RUNTIMES)[CodingAgent]["bin"]; args: string[] } {
+}): {
+  bin: (typeof RUNTIMES)[CodingAgent]["bin"];
+  args: string[];
+  // Extra environment the spawn must add on top of the caller's. Empty for every runtime whose
+  // model is an argv flag; opencode2's model travels here instead (see runtimeLaunchEnv).
+  env: Record<string, string>;
+} {
   return {
     bin: RUNTIMES[runtime].bin,
     args: buildRuntimeArgs({
@@ -241,6 +249,7 @@ export function buildRuntimeLaunch({
       effort,
       prompt: slashCommand,
     }),
+    env: runtimeLaunchEnv({ runtime, model }),
   };
 }
 
