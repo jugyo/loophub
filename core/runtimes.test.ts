@@ -53,6 +53,8 @@ test("OpenCode 2 is registered as its own runtime with its own model list (#545)
     effortSuggestions: [],
     sandboxCapable: false,
     autoApproveArgs: ["--auto"],
+    // Shared with Codex and OpenCode 1, so one skill write serves all three (#556).
+    skillsDir: ".agents/skills",
   });
   // Taken from `opencode2 models`, which is not the same list OpenCode 1 reports.
   expect(RUNTIMES.opencode2.modelSuggestions).toContain("opencode-go/grok-4.6");
@@ -114,4 +116,48 @@ test("effortSuggestionsForModel offers Astra's levels without minimal (#522)", (
     RUNTIMES["claude-code"].effortSuggestions,
   );
   expect(effortSuggestionsForModel("opencode", "")).toEqual([]);
+});
+
+// Every field callers dereference has to exist on every entry. TypeScript already requires them,
+// but a registry that only typechecks in CI lets a missing one reach a caller as `undefined` —
+// `lh skill install --all` joined `undefined` into a path when opencode2 shipped without
+// `skillsDir` (#556). Check the whole registry here so the next runtime cannot repeat it.
+test("every runtime defines every registry field (#556)", () => {
+  for (const id of CODING_AGENTS) {
+    const runtime = RUNTIMES[id];
+    for (const field of [
+      "id",
+      "bin",
+      "label",
+      "buildFlag",
+      "defaultModel",
+      "defaultEffort",
+      "modelSuggestions",
+      "effortSuggestions",
+      "sandboxCapable",
+      "skillsDir",
+      "autoApproveArgs",
+      "launchPromptNeedsSubmit",
+    ] as const) {
+      expect(runtime[field], `${id}.${field}`).toBeDefined();
+    }
+    // The fields with no meaningful empty value: a blank one would silently install, launch or
+    // display nothing.
+    expect(runtime.id, "id").toBe(id);
+    expect(runtime.bin.length, `${id}.bin`).toBeGreaterThan(0);
+    expect(runtime.label.length, `${id}.label`).toBeGreaterThan(0);
+    expect(runtime.buildFlag, `${id}.buildFlag`).toMatch(/^--/);
+    expect(runtime.defaultModel.length, `${id}.defaultModel`).toBeGreaterThan(
+      0,
+    );
+    expect(
+      runtime.modelSuggestions.length,
+      `${id}.modelSuggestions`,
+    ).toBeGreaterThan(0);
+    expect(runtime.skillsDir, `${id}.skillsDir`).toMatch(/^\.[^/]+\/skills$/);
+    expect(
+      runtime.autoApproveArgs.length,
+      `${id}.autoApproveArgs`,
+    ).toBeGreaterThan(0);
+  }
 });

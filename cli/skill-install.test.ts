@@ -79,7 +79,7 @@ test("the human summary names the runtimes without repeating the paths", () => {
   const { stdout, stderr } = lh(["skill", "install", "--all"]);
   expect(stdout.trim().split("\n")).toHaveLength(3);
   expect(stderr.trim()).toMatch(
-    /^installed the LoopHub skill for claude-code, codex, opencode, grok \(user scope, \d+ bytes\)$/,
+    /^installed the LoopHub skill for claude-code, codex, opencode, opencode2, grok \(user scope, \d+ bytes\)$/,
   );
   // The paths belong to stdout alone, so a terminal does not show each one twice.
   expect(stderr).not.toContain("/");
@@ -88,10 +88,10 @@ test("the human summary names the runtimes without repeating the paths", () => {
 test("--all installs for every runtime, sharing one write per directory", () => {
   const result = JSON.parse(lh(["skill", "install", "--all", "--json"]).stdout);
   expect(result.scope).toBe("user");
-  // claude-code, codex/opencode (shared), grok — one write per distinct directory.
+  // claude-code, codex/opencode/opencode2 (shared), grok — one write per distinct directory.
   expect(
     result.installs.map((i: { runtimes: string[] }) => i.runtimes),
-  ).toEqual([["claude-code"], ["codex", "opencode"], ["grok"]]);
+  ).toEqual([["claude-code"], ["codex", "opencode", "opencode2"], ["grok"]]);
   expect(result.installs.map((i: { path: string }) => i.path)).toEqual([
     skillPath(home, ".claude/skills"),
     skillPath(home, ".agents/skills"),
@@ -123,6 +123,19 @@ test("--runtime installs for one runtime only", () => {
   } finally {
     rmSync(only, { recursive: true, force: true });
   }
+});
+
+// Regression for #556: opencode2 had no skillsDir, so every install that reached it failed with
+// `The "paths[1]" property must be of type string, got undefined`.
+test("--runtime opencode2 installs into the shared .agents/skills (#556)", () => {
+  const { stdout, exitCode } = lh([
+    "skill",
+    "install",
+    "--runtime",
+    "opencode2",
+  ]);
+  expect(exitCode).toBe(0);
+  expect(stdout.trim()).toBe(skillPath(home, ".agents/skills"));
 });
 
 test("re-installing overwrites the existing skill", () => {

@@ -237,6 +237,11 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     ],
     effortSuggestions: [],
     sandboxCapable: false,
+    // Verified against `opencode2 debug config` (v0.0.0-beta-19425): it lists a `claude` and an
+    // `agents` configuration source for both $HOME and the project, and scans `skills/` under each.
+    // So OpenCode 2 reads Codex's `.agents/skills` just as OpenCode 1 does, and one write serves
+    // all three runtimes.
+    skillsDir: ".agents/skills",
     // Verified against `opencode2 --help` (v0.0.0-beta-19425): the permission-bypass flag is defined
     // on the root command and `run` only, so the default TUI this launches accepts it. Unknown flags
     // print help and exit 1, killing the agent pane at once (see grok `#1540`) — hence
