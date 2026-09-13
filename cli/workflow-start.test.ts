@@ -780,9 +780,12 @@ test("workflow launch-step starts each child in an independent tab", () => {
     );
     expect(legacyLaunch.exitCode, legacyLaunch.stderr).toBe(0);
     const relaunchedLog = readFileSync(runtime.log, "utf8").slice(log.length);
-    // A child without a caller pane also gets its own fresh tab.
+    // A child without a caller pane also gets its own fresh tab, in the target worktree's
+    // workspace rather than the unrelated focused one.
     expect(relaunchedLog).toMatch(
-      new RegExp(`tab create --cwd .+ --label verifier #${body.run.id}-2`),
+      new RegExp(
+        `tab create --workspace w1 --cwd .+ --label verifier #${body.run.id}-2`,
+      ),
     );
     expect(relaunchedLog).toMatch(/pane send-text w1:p10 /);
     expect(relaunchedLog).not.toContain("pane split");

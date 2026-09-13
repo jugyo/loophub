@@ -643,34 +643,24 @@ async function launchStep(): Promise<void> {
       ok: !proc.error && proc.signalCode == null && (proc.exitCode ?? 0) === 0,
     };
   };
-  let acquired: Awaited<ReturnType<typeof acquireHerdrWorktreeWorkspace>> =
-    null;
-  let worktreeRepo: { full_name: string; local_path: string } | null = null;
-  let launchPlan = result.herdr;
-  if (result.step === "execute") {
-    // Resolve the target worktree's own Herdr workspace before creating the executor pane.
-    // Falling back to an unscoped tab would make it inherit whichever unrelated workspace is
-    // focused. Verify keeps its existing independent-tab launch path.
-    const repoRecord = await runOp(() => s.repos.get(repo));
-    worktreeRepo = {
-      full_name: repoRecord.full_name,
-      local_path: repoRecord.local_path,
-    };
-    const worktreeWorkspace = await acquireHerdrWorktreeWorkspace(
-      worktreeRepo,
-      result.worktree,
-      runHerdr,
+  // Resolve the target worktree's own Herdr workspace before creating the step's pane, for
+  // Execute and Verify alike. Falling back to an unscoped tab would make the pane inherit
+  // whichever unrelated workspace happens to be focused.
+  const repoRecord = await runOp(() => s.repos.get(repo));
+  const worktreeRepo = {
+    full_name: repoRecord.full_name,
+    local_path: repoRecord.local_path,
+  };
+  const acquired = await acquireHerdrWorktreeWorkspace(
+    worktreeRepo,
+    result.worktree,
+    runHerdr,
+  );
+  if (!acquired)
+    return await failUnspawnedLaunch(
+      "対象 worktree の Herdr workspace を解決できません",
     );
-    if (!worktreeWorkspace)
-      return await failUnspawnedLaunch(
-        "対象 worktree の Herdr workspace を解決できません",
-      );
-    acquired = worktreeWorkspace;
-    launchPlan = withHerdrWorkspace(
-      result.herdr,
-      worktreeWorkspace.workspaceId,
-    );
-  }
+  const launchPlan = withHerdrWorkspace(result.herdr, acquired.workspaceId);
   const outcome = await executeHerdrLaunchPlan(launchPlan, async (argv) => {
     const proc = spawnSyncProcess(argv, {
       stdio: ["inherit", "pipe", "pipe"],
@@ -688,7 +678,7 @@ async function launchStep(): Promise<void> {
   });
   if (outcome.stdout) process.stdout.write(outcome.stdout);
   if (!outcome.ok) {
-    if (acquired?.createdWorkspace && worktreeRepo) {
+    if (acquired.createdWorkspace) {
       await runHerdr(
         herdrWorkspaceCloseArgv(worktreeRepo, acquired.workspaceId),
       );
@@ -701,7 +691,7 @@ async function launchStep(): Promise<void> {
       }: ${outcome.stderr.trim()}`,
     );
   }
-  if (acquired?.createdWorkspace && acquired.seedTabId && worktreeRepo) {
+  if (acquired.createdWorkspace && acquired.seedTabId) {
     // The worktree-open seed tab cannot carry the step's environment; the real launch owns the
     // replacement tab, so remove the empty seed after success.
     await runHerdr(herdrTabCloseArgv(worktreeRepo, acquired.seedTabId));
