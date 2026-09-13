@@ -358,17 +358,21 @@ describe("PullCommitsSection", () => {
     const closeButton = within(reviewDialog).getByRole("button", {
       name: "Close reviews",
     });
-    const detailsLink = within(reviewDialog).getByRole("link", {
-      name: "Details",
+    const detailsToggle = within(reviewDialog).getByRole("button", {
+      name: "Show details",
     });
     expect(document.activeElement).toBe(closeButton);
     fireEvent.keyDown(closeButton, { key: "Tab" });
-    expect(document.activeElement).toBe(detailsLink);
-    fireEvent.keyDown(detailsLink, { key: "Tab" });
+    expect(document.activeElement).toBe(detailsToggle);
+    fireEvent.keyDown(detailsToggle, { key: "Tab" });
     expect(document.activeElement).toBe(closeButton);
     fireEvent.keyDown(closeButton, { key: "Tab", shiftKey: true });
-    expect(document.activeElement).toBe(detailsLink);
+    expect(document.activeElement).toBe(detailsToggle);
     expect(reviewDialog.dataset.debugComponent).toBe("ReviewDetailsDialog");
+    fireEvent.click(detailsToggle);
+    expect(
+      within(reviewDialog).getByRole("link", { name: "Details" }),
+    ).toBeTruthy();
     expect(
       reviewDialog.querySelector('[data-debug-component="ReviewItem"]'),
     ).toBeTruthy();
@@ -441,6 +445,9 @@ describe("PullCommitsSection", () => {
     const reviewDialog = await screen.findByRole("dialog", {
       name: "Reviews for aaaaaaa: Latest change",
     });
+    fireEvent.click(
+      within(reviewDialog).getByRole("button", { name: "Show details" }),
+    );
     const items = Array.from(
       reviewDialog.querySelectorAll<HTMLElement>(
         '[data-debug-component="ReviewItem"]',
@@ -508,6 +515,9 @@ describe("PullCommitsSection", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Reviews for aaaaaaa: Latest change",
     });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Show details" }),
+    );
     expect(within(dialog).getByText("AC 1")).toBeTruthy();
     expect(within(dialog).getByText("AC 2")).toBeTruthy();
     expect(within(dialog).getByText("AC 3")).toBeTruthy();
@@ -554,6 +564,214 @@ describe("PullCommitsSection", () => {
       name: "Reviews for aaaaaaa: Latest change",
     });
     expect(within(dialog).getByText(/No AC grading/)).toBeTruthy();
+  });
+
+  // Summary mode (#554) is what the dialog opens in: per-criterion pass / fail, plus the blockers —
+  // failed criteria and the bodies of reviews that requested changes. The review body, line
+  // comments and metadata wait for detailed mode.
+  it("opens the review dialog in summary mode and expands to the full details", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 11,
+        user: { login: "verifier #9-1" },
+        author_type: "agent",
+        state: "REQUEST_CHANGES",
+        body: "The toggle loses focus on close.",
+        head_sha: commits![0].sha,
+        model: "claude-opus-5",
+        submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: 252,
+        ac_results: [
+          {
+            criterion_id: "9-1",
+            number: 1,
+            text: "summary mode is the default",
+            verdict: "pass",
+            note: "opens collapsed",
+          },
+          {
+            criterion_id: "9-2",
+            number: 2,
+            text: "blockers list failed criteria",
+            verdict: "fail",
+            note: "focus is lost",
+          },
+        ],
+      },
+    ];
+    const lineComments: PullLineComment[] = [
+      {
+        id: 20,
+        pull_request_review_id: 11,
+        user: { login: "verifier #9-1" },
+        author_type: "agent",
+        path: "web/src/a.ts",
+        line: 4,
+        side: "RIGHT",
+        body: "Restore focus here.",
+        created_at: "2026-06-18T12:31:00Z",
+      },
+    ];
+
+    renderSection({ reviews, lineComments });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View 1 review for aaaaaaa: Latest change",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    const summary = dialog.querySelector<HTMLElement>(
+      '[data-debug-component="ReviewSummary"]',
+    )!;
+    expect(summary).toBeTruthy();
+    // Both criteria are listed with their verdict; the failed one repeats under Blockers together
+    // with the body of the review that requested changes.
+    expect(
+      within(summary).getByText("summary mode is the default"),
+    ).toBeTruthy();
+    expect(
+      within(summary).getAllByText("blockers list failed criteria"),
+    ).toHaveLength(2);
+    expect(
+      within(summary).getByText("The toggle loses focus on close."),
+    ).toBeTruthy();
+    // Detailed-only material stays out of summary mode.
+    expect(within(summary).queryByText("opens collapsed")).toBeNull();
+    expect(within(dialog).queryByText("Restore focus here.")).toBeNull();
+    expect(within(dialog).queryByText("claude-opus-5")).toBeNull();
+    expect(within(dialog).queryByText(/took 4m 12s/)).toBeNull();
+    expect(
+      dialog.querySelector('[data-debug-component="ReviewItem"]'),
+    ).toBeNull();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Show details" }),
+    );
+    expect(
+      dialog.querySelector('[data-debug-component="ReviewSummary"]'),
+    ).toBeNull();
+    expect(
+      dialog.querySelector('[data-debug-component="ReviewItem"]'),
+    ).toBeTruthy();
+    expect(within(dialog).getByText("Restore focus here.")).toBeTruthy();
+    expect(within(dialog).getByText("claude-opus-5")).toBeTruthy();
+    expect(within(dialog).getByText(/took 4m 12s/)).toBeTruthy();
+    expect(within(dialog).getByText("opens collapsed")).toBeTruthy();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Show summary" }),
+    );
+    expect(
+      dialog.querySelector('[data-debug-component="ReviewSummary"]'),
+    ).toBeTruthy();
+  });
+
+  // A passing review has nothing to stop on, and a criterion regraded by a later review keeps that
+  // later verdict — the latest-wins rule the group badge already follows.
+  it("reports no blockers and keeps the latest grade per criterion in summary mode", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 12,
+        user: { login: "verifier #9-1" },
+        author_type: "agent",
+        state: "REQUEST_CHANGES",
+        body: "Focus is lost.",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
+        ac_results: [
+          {
+            criterion_id: "9-1",
+            number: 1,
+            text: "summary mode is the default",
+            verdict: "fail",
+            note: "",
+          },
+        ],
+      },
+      {
+        id: 13,
+        user: { login: "verifier #9-2" },
+        author_type: "agent",
+        state: "PASS",
+        body: "Fixed.",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T13:00:00Z",
+        duration_seconds: null,
+        ac_results: [
+          {
+            criterion_id: "9-1",
+            number: 1,
+            text: "summary mode is the default",
+            verdict: "pass",
+            note: "",
+          },
+        ],
+      },
+    ];
+
+    renderSection({ reviews });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View 2 reviews for aaaaaaa: Latest change",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    const summary = dialog.querySelector<HTMLElement>(
+      '[data-debug-component="ReviewSummary"]',
+    )!;
+    expect(
+      within(summary).getAllByText("summary mode is the default"),
+    ).toHaveLength(1);
+    expect(within(summary).getByLabelText("pass")).toBeTruthy();
+    expect(within(summary).queryByLabelText("fail")).toBeNull();
+    expect(within(summary).getByText(/No blockers/)).toBeTruthy();
+    expect(within(summary).queryByText("Focus is lost.")).toBeNull();
+  });
+
+  // The holistic fallback has no rubric to summarize (design §7): summary mode says so rather than
+  // showing an empty checklist, and a body that requested changes is still surfaced as the blocker.
+  it("keeps summary mode readable for a review that graded no criteria", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 14,
+        user: { login: "verifier #9-1" },
+        author_type: "agent",
+        state: "REQUEST_CHANGES",
+        body: "Needs a test for the toggle.",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
+        ac_results: [],
+      },
+    ];
+
+    renderSection({ reviews });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View 1 review for aaaaaaa: Latest change",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    const summary = dialog.querySelector<HTMLElement>(
+      '[data-debug-component="ReviewSummary"]',
+    )!;
+    expect(within(summary).getByText(/No AC grading/)).toBeTruthy();
+    expect(
+      within(summary).getByText("Needs a test for the toggle."),
+    ).toBeTruthy();
   });
 
   it("marks only the commit rows whose reviews carry a screenshot", () => {
@@ -652,6 +870,9 @@ describe("PullCommitsSection", () => {
     const knownDialog = await screen.findByRole("dialog", {
       name: "Reviews for aaaaaaa: Latest change",
     });
+    fireEvent.click(
+      within(knownDialog).getByRole("button", { name: "Show details" }),
+    );
     expect(within(knownDialog).getByText("Known review")).toBeTruthy();
     expect(screen.queryByText("Reviews for unknown commits")).toBeNull();
     expect(screen.queryByText("unknown commit")).toBeNull();
@@ -709,6 +930,9 @@ describe("PullCommitsSection", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Reviews for aaaaaaa: Latest change",
     });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Show details" }),
+    );
     expect(within(dialog).getByText("Round 1")).toBeTruthy();
     expect(within(dialog).getByText("Round 2")).toBeTruthy();
   });

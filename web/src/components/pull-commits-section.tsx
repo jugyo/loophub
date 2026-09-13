@@ -6,6 +6,11 @@
 // pass / fail counts next to "Reviewed", and the review dialog lists each graded criterion with its
 // note. Grades therefore inherit the commit grouping — a grade is only ever read against the SHA it
 // was made on — and need no freshness state of their own.
+//
+// The review dialog opens in summary mode (#554): only the per-criterion pass / fail and the
+// blockers, so "did it pass, and what is stopping it" reads in seconds. Detailed mode holds the
+// unchanged review list — full bodies, line comments, model and duration. Blockers are derived from
+// the review data already on the wire (state + `ac_results`); nothing new is stored for them.
 
 import { Check, ImageIcon, Loader2, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -23,6 +28,7 @@ import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 
 type PullCommit = NonNullable<PullRequest["commits"]>[number];
+type ReviewAcResult = PullReview["ac_results"][number];
 type SelectedReviewGroup = {
   label: string;
   reviews: PullReview[];
@@ -345,6 +351,7 @@ export function ReviewDetailsDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const backdropDismiss = useBackdropDismiss(onClose);
+  const [detailed, setDetailed] = useState(false);
 
   useEffect(() => {
     const returnFocus = document.activeElement;
@@ -401,30 +408,180 @@ export function ReviewDetailsDialog({
             </h3>
             <ReviewVerdictSummary reviews={reviews} />
           </div>
-          <Button
-            ref={closeButtonRef}
-            variant="secondary"
-            size="sm"
-            aria-label="Close reviews"
-            className="h-7 w-7 shrink-0 p-0"
-            onClick={onClose}
-          >
-            <X className="size-4" />
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-7"
+              aria-pressed={detailed}
+              onClick={() => setDetailed((current) => !current)}
+            >
+              {detailed ? "Show summary" : "Show details"}
+            </Button>
+            <Button
+              ref={closeButtonRef}
+              variant="secondary"
+              size="sm"
+              aria-label="Close reviews"
+              className="h-7 w-7 shrink-0 p-0"
+              onClick={onClose}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
         </header>
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4">
-          {reviews.map((review) => (
-            <ReviewItem
-              key={review.id}
-              owner={owner}
-              repo={repo}
-              review={review}
-              comments={commentsByReview.get(review.id) ?? []}
-            />
-          ))}
+          {detailed ? (
+            reviews.map((review) => (
+              <ReviewItem
+                key={review.id}
+                owner={owner}
+                repo={repo}
+                review={review}
+                comments={commentsByReview.get(review.id) ?? []}
+              />
+            ))
+          ) : (
+            <ReviewSummary owner={owner} repo={repo} reviews={reviews} />
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+// The grades that still speak for this commit (#554). Reviews arrive submitted_at ascending, so a
+// criterion regraded by a later review keeps that later verdict — the same latest-wins rule
+// reviewGroupVerdict applies to the review state.
+function latestGrades(reviews: PullReview[]): ReviewAcResult[] {
+  const byCriterion = new Map<string, ReviewAcResult>();
+  for (const review of reviews) {
+    for (const result of review.ac_results) {
+      byCriterion.set(result.criterion_id, result);
+    }
+  }
+  return [...byCriterion.values()].sort((a, b) => a.number - b.number);
+}
+
+// The reviews still requesting changes. Earlier ones no longer speak once a later substantive review
+// has landed — the latest-wins rule reviewGroupVerdict follows — so a commit whose last verdict is
+// PASS lists no blocking body, while a superseded REQUEST_CHANGES stays out of the way.
+function blockingReviews(reviews: PullReview[]): PullReview[] {
+  let latestSubstantive = -1;
+  for (const [index, review] of reviews.entries()) {
+    if (review.state === "PASS" || review.state === "REQUEST_CHANGES")
+      latestSubstantive = index;
+  }
+  if (latestSubstantive < 0) return [];
+  return reviews
+    .slice(latestSubstantive)
+    .filter(
+      (review) =>
+        review.state === "REQUEST_CHANGES" && review.body.trim() !== "",
+    );
+}
+
+// What a human wants first (#554): whether each criterion passed, and what is blocking. A blocker is
+// a failed criterion or the body of a review that requested changes — both read off the existing
+// review data, with no blocker field of their own.
+function ReviewSummary({
+  owner,
+  repo,
+  reviews,
+}: {
+  owner: string;
+  repo: string;
+  reviews: PullReview[];
+}) {
+  const grades = latestGrades(reviews);
+  const failed = grades.filter((grade) => grade.verdict === "fail");
+  const changesRequested = blockingReviews(reviews);
+  const hasBlockers = failed.length > 0 || changesRequested.length > 0;
+  return (
+    <div data-debug-component="ReviewSummary" className="flex flex-col gap-4">
+      <section className="flex flex-col gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Acceptance criteria
+        </h4>
+        {grades.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No AC grading — these reviews graded no structured acceptance
+            criteria.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {grades.map((grade) => (
+              <li key={grade.criterion_id} className="flex items-start gap-2">
+                <AcVerdictIcon verdict={grade.verdict} />
+                <span className="min-w-0 break-words">
+                  <span className="mr-2 font-mono text-xs text-muted-foreground">
+                    AC {grade.number}
+                  </span>
+                  {grade.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="flex flex-col gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Blockers
+        </h4>
+        {hasBlockers ? (
+          <ul className="flex flex-col gap-2 text-sm">
+            {failed.map((grade) => (
+              <li
+                key={grade.criterion_id}
+                className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/5 p-2"
+              >
+                <AcVerdictIcon verdict="fail" />
+                <span className="min-w-0 break-words">
+                  <span className="mr-2 font-mono text-xs text-muted-foreground">
+                    AC {grade.number}
+                  </span>
+                  {grade.text}
+                </span>
+              </li>
+            ))}
+            {changesRequested.map((review) => (
+              <li
+                key={review.id}
+                className="rounded-md border border-destructive/50 bg-destructive/5 p-2"
+              >
+                <div className="mb-1 text-xs font-medium text-destructive">
+                  ● {review.state}{" "}
+                  <span className="font-normal text-muted-foreground">
+                    <CommentAuthorLabel
+                      author={review.user.login}
+                      authorType={review.author_type}
+                    />
+                  </span>
+                </div>
+                <Markdown owner={owner} repo={repo}>
+                  {review.body}
+                </Markdown>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No blockers — nothing here is requesting changes.
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function AcVerdictIcon({ verdict }: { verdict: ReviewAcResult["verdict"] }) {
+  return verdict === "pass" ? (
+    <Check
+      aria-label="pass"
+      className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-400"
+    />
+  ) : (
+    <X aria-label="fail" className="mt-0.5 size-4 shrink-0 text-destructive" />
   );
 }
 
@@ -541,17 +698,7 @@ function ReviewAcGrades({ review }: { review: PullReview }) {
     <ul className="mt-2 flex flex-col gap-2 text-sm">
       {review.ac_results.map((result) => (
         <li key={result.criterion_id} className="flex items-start gap-2">
-          {result.verdict === "pass" ? (
-            <Check
-              aria-label="pass"
-              className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-400"
-            />
-          ) : (
-            <X
-              aria-label="fail"
-              className="mt-0.5 size-4 shrink-0 text-destructive"
-            />
-          )}
+          <AcVerdictIcon verdict={result.verdict} />
           <span className="flex min-w-0 flex-col gap-0.5 break-words">
             <span>
               <span className="mr-2 font-mono text-xs text-muted-foreground">

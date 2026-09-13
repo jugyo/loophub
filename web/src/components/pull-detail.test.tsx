@@ -1075,6 +1075,9 @@ describe("PullDetail", () => {
     const reviewDialog = await screen.findByRole("dialog", {
       name: "Reviews for aaaaaaa: Latest change",
     });
+    fireEvent.click(
+      within(reviewDialog).getByRole("button", { name: "Show details" }),
+    );
     expect(within(reviewDialog).getByText("LGTM")).toBeTruthy();
     // Review model tag (#1107).
     expect(within(reviewDialog).getByText("claude-opus-4-8")).toBeTruthy();
@@ -1479,6 +1482,9 @@ describe("PullDetail", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Reviews for aaaaaaa: Latest change",
     });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Show details" }),
+    );
     expect(within(dialog).getByText("LGTM")).toBeTruthy();
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Close reviews" }),
@@ -1514,6 +1520,9 @@ describe("PullDetail", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Reviews for Unknown commit",
     });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Show details" }),
+    );
     expect(within(dialog).getByText("Historical review")).toBeTruthy();
   });
 
@@ -2834,6 +2843,9 @@ describe("PullDetail", () => {
     const currentDialog = await screen.findByRole("dialog", {
       name: "Reviews for aaaaaaa: Latest change",
     });
+    fireEvent.click(
+      within(currentDialog).getByRole("button", { name: "Show details" }),
+    );
     expect(within(currentDialog).getByText("LGTM now")).toBeTruthy();
     fireEvent.click(
       within(currentDialog).getByRole("button", { name: "Close reviews" }),
