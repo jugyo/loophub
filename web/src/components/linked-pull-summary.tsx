@@ -24,6 +24,7 @@ import { workflowRunDisplayState } from "@/lib/workflow-run";
 import { useHerdrSessions } from "@/queries/terminal";
 import {
   useIncreaseWorkflowRunCostLimit,
+  useIncreaseWorkflowRunReworkLimit,
   useWorkflowRunForPull,
 } from "@/queries/workflow-runs";
 import { codingAgentLabel } from "../../../core/runtimes.ts";
@@ -353,6 +354,69 @@ export function WorkflowBudgetControl({
   );
 }
 
+export function WorkflowReworkControl({
+  owner,
+  repo,
+  pull,
+  state,
+}: {
+  owner: string;
+  repo: string;
+  pull: number;
+  state: WorkflowRunState;
+}) {
+  const increase = useIncreaseWorkflowRunReworkLimit(owner, repo, pull);
+  const { showError } = useToast();
+  const popover = useHoverPopover();
+  const nextLimit = state.rework_limit * 2;
+  if (!state.rework_limit_increase_available) return null;
+  return (
+    <div
+      data-workflow-rework
+      className="relative shrink-0"
+      onMouseEnter={popover.onMouseEnter}
+      onMouseLeave={popover.onMouseLeave}
+      onFocus={popover.onFocus}
+    >
+      <span
+        tabIndex={0}
+        aria-haspopup="dialog"
+        className={cn(OVER_BUDGET_BADGE, COST_STOPPED_TEXT)}
+      >
+        <TriangleAlert className="size-3" aria-hidden="true" /> rework limit
+      </span>
+      {popover.open ? (
+        <div className="absolute right-0 top-full z-30 pt-1">
+          <div
+            role="dialog"
+            aria-label="Workflow rework limit"
+            className="rounded-md border bg-background p-2 text-foreground shadow-lg"
+          >
+            <YesNoPrompt
+              question={`Increase rework limit to ${nextLimit}?`}
+              pending={increase.isPending}
+              onYes={() =>
+                increase.mutate(
+                  { run: state.id, expectedLimit: state.rework_limit },
+                  {
+                    onError: (error) =>
+                      showError(
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to increase the workflow rework limit.",
+                      ),
+                  },
+                )
+              }
+              onNo={popover.close}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // Compact workflow-run step tracker for a PR list row. Renders nothing when the PR has no linked
 // workflow run. Uses `useWorkflowRunForPull`, which is event-poll-invalidated (lib/event-keys.ts),
 // so the tracker stays fresh as the run advances. The tracker itself is the shared
@@ -427,6 +491,14 @@ function WorkflowMiniProgress({
           state={displayState}
           onInteract={onStageInteract}
           onIncreased={setAcknowledgedCostHold}
+        />
+      ) : null}
+      {displayState.rework_limit_increase_available ? (
+        <WorkflowReworkControl
+          owner={owner}
+          repo={repo}
+          pull={pull.number}
+          state={displayState}
         />
       ) : null}
     </>

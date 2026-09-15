@@ -20,6 +20,7 @@ import type { WorkflowRunState, WorkflowRunTotalCost } from "@/api/types";
 import {
   type AcknowledgedCostHold,
   WorkflowBudgetControl,
+  WorkflowReworkControl,
 } from "@/components/linked-pull-summary";
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
@@ -222,6 +223,14 @@ export function WorkflowRunStatusSection({
             pull={displayState.pr_number}
             state={displayState}
             onIncreased={setAcknowledgedCostHold}
+          />
+        ) : null}
+        {displayState.rework_limit_increase_available ? (
+          <WorkflowReworkControl
+            owner={owner}
+            repo={repo}
+            pull={displayState.pr_number}
+            state={displayState}
           />
         ) : null}
 
