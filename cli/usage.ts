@@ -4,6 +4,7 @@ export function usage(): void {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
+  lh rpc <method> [--params <json>] [--json]       # call a JSON-RPC method through lh-web
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>

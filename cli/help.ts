@@ -403,6 +403,11 @@ Constraints:
   --event requires --requires-changes.`;
 
 export const commandHelp: readonly CommandHelp[] = [
+  {
+    path: ["rpc"],
+    description: "Call a LoopHub JSON-RPC method.",
+    details: `\n\nUsage:\n  lh rpc <method> [--params <json>] [--json]\n\nOptions:\n  --params <json>  JSON-RPC params object or value (default: {})\n  --json           Print the result as formatted JSON.`,
+  },
   { path: ["info"], description: "Show the resolved LoopHub environment." },
   { path: ["repo"], description: "Manage registered repositories." },
   { path: ["repo", "add"], description: "Register a local repository." },

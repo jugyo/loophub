@@ -8,6 +8,7 @@ import * as infoCmd from "./commands/info.ts";
 import * as issueCmd from "./commands/issue.ts";
 import * as notificationCmd from "./commands/notification.ts";
 import * as prCmd from "./commands/pr.ts";
+import * as rpcCmd from "./commands/rpc.ts";
 import * as repoCmd from "./commands/repo.ts";
 import * as retroCmd from "./commands/retro.ts";
 import * as sessionCmd from "./commands/session.ts";
@@ -38,6 +39,7 @@ async function main() {
   if (group === "supervisor") return supervisorCmd.run();
   if (group === "attachment") return attachmentCmd.run();
   if (group === "pr") return prCmd.run();
+  if (group === "rpc") return rpcCmd.run();
   if (group === "handoff") return handoffCmd.run();
   if (group === "notification") return notificationCmd.run();
   if (group === "workspace") return workspaceCmd.run();

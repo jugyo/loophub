@@ -46,6 +46,7 @@ export type Flags = {
   issue?: string;
   parent?: string;
   method?: string;
+  params?: string;
   comments?: string;
   "ac-results"?: string;
   commit?: string;
@@ -171,6 +172,7 @@ const { values, positionals } = parseArgs({
     issue: { type: "string" },
     parent: { type: "string" },
     method: { type: "string" },
+    params: { type: "string" },
     comments: { type: "string" },
     "ac-results": { type: "string" },
     commit: { type: "string" },
