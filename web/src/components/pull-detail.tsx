@@ -294,6 +294,8 @@ export function PullDetail({
               owner={owner}
               repo={repo}
               number={number}
+              baseSha={pull.base.sha}
+              headSha={pull.head.sha}
               commits={pull.commits}
               reviews={reviewsQuery.data}
               lineComments={lineCommentsQuery.data}
@@ -971,7 +973,6 @@ function FilesChanged({
   repo,
   number,
   files,
-  commits,
   commentCounts,
   openFilename,
   openThreadId,
@@ -1106,7 +1107,6 @@ function FilesChanged({
               number={number}
               files={files}
               file={openFile}
-              commits={commits}
               commentCounts={commentCounts}
               initialThreadId={openThreadId}
               onSelectFile={onOpenFile}

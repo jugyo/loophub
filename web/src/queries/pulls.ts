@@ -22,6 +22,7 @@ import {
   getPullFileAtRef,
   getPullUsage,
   listCommitFiles,
+  listCommitHistory,
   listDiffFeedback,
   listPullComments,
   listPullFiles,
@@ -263,6 +264,21 @@ export function useCommitDiff(
     ],
     queryFn: () => getCommitDiff(owner, repo, sha, path, ignoreWhitespace),
     enabled,
+  });
+}
+
+export function useCommitHistory(
+  owner: string,
+  repo: string,
+  base: string | null,
+  head: string | null,
+  path: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["repo", full(owner, repo), "commitHistory", base, head, path],
+    queryFn: () => listCommitHistory(owner, repo, base!, head!, path),
+    enabled: enabled && Boolean(base && head && path),
   });
 }
 

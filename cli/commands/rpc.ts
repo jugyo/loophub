@@ -11,7 +11,9 @@ export async function run(): Promise<void> {
     try {
       params = JSON.parse(flags.params);
     } catch (error) {
-      fail(`invalid params JSON: ${error instanceof Error ? error.message : String(error)}`);
+      fail(
+        `invalid params JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -23,7 +25,9 @@ export async function run(): Promise<void> {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     });
   } catch (error) {
-    fail(`RPC request failed: ${error instanceof Error ? error.message : String(error)}`);
+    fail(
+      `RPC request failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   let body: any;

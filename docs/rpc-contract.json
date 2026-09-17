@@ -2842,6 +2842,41 @@
       }
     },
     {
+      "name": "repos/commitHistory",
+      "description": "PR の範囲内で指定ファイルを変更したコミット履歴を新しい順に返します。",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "base": {
+            "type": "string",
+            "minLength": 1
+          },
+          "head": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "base",
+          "head",
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
       "name": "repos/commitDiff",
       "description": "リポジトリの commit の first-parent diff を読み込み、必要に応じて 1 ファイルに限定します。",
       "params": {

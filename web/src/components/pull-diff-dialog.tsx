@@ -97,6 +97,7 @@ import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import { cn } from "@/lib/utils";
 import {
   useCommitDiff,
+  useCommitHistory,
   useCreateDiffFeedback,
   useDiffFeedback,
   useDiffForSource,
@@ -363,10 +364,12 @@ function filesFromDiff(diff: PullDiff): PullFile[] {
 
 function DiffScopeSelector({
   commits,
+  historyError,
   selectedSha,
   onSelect,
 }: {
   commits: PullCommit[];
+  historyError?: unknown;
   selectedSha: string | null;
   onSelect: (sha: string | null) => void;
 }) {
@@ -400,6 +403,15 @@ function DiffScopeSelector({
           />
           <span>All changes</span>
         </DropdownMenuItem>
+        {commits.length === 0 ? (
+          <DropdownMenuItem disabled>
+            <span className="pl-6 text-muted-foreground">
+              {historyError
+                ? `Failed to load file history${historyError instanceof Error ? `: ${historyError.message}` : "."}`
+                : "No commits changed this file"}
+            </span>
+          </DropdownMenuItem>
+        ) : null}
         {commits.map((commit) => (
           <DropdownMenuItem
             key={commit.sha}
@@ -425,9 +437,10 @@ export function PullDiffDialog({
   owner,
   repo,
   number,
+  baseSha,
+  headSha,
   files,
   file,
-  commits,
   commentCounts = {},
   initialThreadId = null,
   onSelectFile,
@@ -436,20 +449,37 @@ export function PullDiffDialog({
   owner: string;
   repo: string;
   number: number;
+  baseSha: string | null;
+  headSha: string | null;
   files: PullFile[];
   file: PullFile;
-  commits: PullRequest["commits"];
   commentCounts?: Readonly<Record<string, number>>;
   initialThreadId?: number | null;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
+  const historyQuery = useCommitHistory(
+    owner,
+    repo,
+    baseSha,
+    headSha,
+    copyFilename(file),
+  );
+  useEffect(() => {
+    if (
+      selectedSha &&
+      historyQuery.data &&
+      !historyQuery.data.some((commit) => commit.sha === selectedSha)
+    ) {
+      setSelectedSha(null);
+    }
+  }, [historyQuery.data, selectedSha]);
   const diffQuery = useCommitDiff(
     owner,
     repo,
     selectedSha ?? "",
-    undefined,
+    selectedSha ? copyFilename(file) : undefined,
     false,
     selectedSha !== null,
   );
@@ -465,10 +495,14 @@ export function PullDiffDialog({
       : { base_sha: undefined, head_sha: undefined },
     selectedSha !== null && Boolean(diffQuery.data),
   );
-  const selectedCommit = commits.find((commit) => commit.sha === selectedSha);
+  const historyCommits = historyQuery.data ?? [];
+  const selectedCommit = historyCommits.find(
+    (commit) => commit.sha === selectedSha,
+  );
   const scopeSelector = (
     <DiffScopeSelector
-      commits={commits}
+      commits={historyCommits}
+      historyError={historyQuery.error}
       selectedSha={selectedSha}
       onSelect={setSelectedSha}
     />

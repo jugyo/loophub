@@ -1136,6 +1136,19 @@ export function listCommitFiles(owner: string, repo: string, sha: string) {
   });
 }
 
+export function listCommitHistory(
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+  path: string,
+) {
+  return rpc<NonNullable<import("./types").PullRequest["commits"]>>(
+    "repos/commitHistory",
+    { repo: full(owner, repo), base, head, path },
+  );
+}
+
 export function getCommitDiff(
   owner: string,
   repo: string,

@@ -1287,6 +1287,16 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.repos.commitFiles(p.repo, p.sha),
   },
+  "repos/commitHistory": {
+    description:
+      "PR の範囲内で指定ファイルを変更したコミット履歴を新しい順に返します。",
+    params: params(
+      { repo, base: strNonEmpty, head: strNonEmpty, path: strNonEmpty },
+      ["repo", "base", "head", "path"],
+    ),
+    result: anyArray,
+    handler: (p) => svc.repos.commitHistory(p.repo, p.base, p.head, p.path),
+  },
   "repos/commitDiff": {
     description:
       "リポジトリの commit の first-parent diff を読み込み、必要に応じて 1 ファイルに限定します。",

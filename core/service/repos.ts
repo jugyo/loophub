@@ -10,6 +10,7 @@ import {
   branchExists,
   commitDiffBase,
   commitDiffFiles,
+  commitLog,
   currentBranch,
   defaultBranch,
   diffFileSummariesBetween,
@@ -101,6 +102,16 @@ async function originSyncCounts(
 
 // ===== repos =====
 export const repos = {
+  async commitHistory(name: string, base: string, head: string, path: string) {
+    if (![base, head].every((sha) => /^[0-9a-f]{40}$/i.test(sha)))
+      throw new ServiceError(404, "Not Found");
+    const r = repoOr404(name);
+    return commitLog(r.local_path, base, head, {
+      firstParentOnly: true,
+      paths: [path],
+    });
+  },
+
   async commitFiles(name: string, sha: string) {
     if (!/^[0-9a-f]{40}$/i.test(sha)) throw new ServiceError(404, "Not Found");
     const r = repoOr404(name);

@@ -926,6 +926,7 @@ export interface CommitLogOptions {
   // current base tip, so no fixed set of `--not` bases can name them all — but they all arrive
   // through a merge's second parent, which is exactly what this skips.
   firstParentOnly?: boolean;
+  paths?: string[];
 }
 
 /** The newest PR commit that changed one file: its sha and committer date. */
@@ -997,6 +998,9 @@ export async function commitLog(
     "--not",
     base,
     ...additionalBases,
+    ...(opts.paths?.length
+      ? ["--", ...opts.paths.map((path) => `:(literal)${path}`)]
+      : []),
   ]);
   if (r.code !== 0) {
     throw new Error(

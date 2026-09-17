@@ -166,6 +166,8 @@ function renderDialog({
         owner="me"
         repo="proj"
         number={30}
+        baseSha={"a".repeat(40)}
+        headSha={"b".repeat(40)}
         files={files ?? [dialogFile]}
         file={dialogFile}
         initialThreadId={initialThreadId}
@@ -232,7 +234,13 @@ function renderPullDialog(
   handlers: Record<string, (params: any) => unknown> = {},
   onClose = () => {},
 ) {
-  vi.stubGlobal("fetch", mockRpcFetch(handlers));
+  vi.stubGlobal(
+    "fetch",
+    mockRpcFetch({
+      "repos/commitHistory": () => commits,
+      ...handlers,
+    }),
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -242,9 +250,10 @@ function renderPullDialog(
         owner="me"
         repo="proj"
         number={30}
+        baseSha={"a".repeat(40)}
+        headSha={"b".repeat(40)}
         files={[file]}
         file={file}
-        commits={commits}
         onSelectFile={() => {}}
         onClose={onClose}
       />
@@ -306,11 +315,47 @@ describe("PullDiffDialog", () => {
     expect(commitDiff).toHaveBeenCalledWith({
       repo: "me/proj",
       sha: commits[1].sha,
+      path: "web/src/a.ts",
     });
 
     await selectDiffScope("All changes");
     expect(await screen.findByText("const x = 1;")).toBeTruthy();
     expect(screen.queryByText("earlier after")).toBeNull();
+  });
+
+  it("選択ファイルに変更履歴がない場合は空状態を表示する", async () => {
+    renderPullDialog({
+      "pulls/diff": stableDiff,
+      "repos/commitHistory": () => [],
+    });
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Select diff scope" }),
+      { button: 0, ctrlKey: false },
+    );
+    expect(
+      await screen.findByText("No commits changed this file"),
+    ).toBeTruthy();
+  });
+
+  it("コミット履歴の取得失敗を空状態と区別して表示する", async () => {
+    renderPullDialog({
+      "pulls/diff": stableDiff,
+      "repos/commitHistory": () => {
+        throw new RpcFault(500, "history unavailable");
+      },
+    });
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Select diff scope" }),
+      { button: 0, ctrlKey: false },
+    );
+    expect(
+      await screen.findByText(
+        "Failed to load file history: history unavailable",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("No commits changed this file")).toBeNull();
   });
 
   it("コミット差分の取得失敗を表示し、PR 全体へ戻せる", async () => {

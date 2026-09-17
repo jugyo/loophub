@@ -20,22 +20,48 @@ async function lh(args: string[]) {
 }
 
 beforeAll(async () => {
-  server = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(req) {
-    const body = await req.json();
-    const result = body.method === "missing"
-      ? { jsonrpc: "2.0", id: body.id, error: { code: -32601, message: "Method not found" } }
-      : { jsonrpc: "2.0", id: body.id, result: { method: body.method, params: body.params } };
-    return Response.json(result);
-  }});
+  server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    async fetch(req) {
+      const body = (await req.json()) as {
+        method: string;
+        id: unknown;
+        params: unknown;
+      };
+      const result =
+        body.method === "missing"
+          ? {
+              jsonrpc: "2.0",
+              id: body.id,
+              error: { code: -32601, message: "Method not found" },
+            }
+          : {
+              jsonrpc: "2.0",
+              id: body.id,
+              result: { method: body.method, params: body.params },
+            };
+      return Response.json(result);
+    },
+  });
   url = `http://127.0.0.1:${server.port}`;
 });
 
 afterAll(() => server.stop());
 
 test("calls an RPC method and prints its result", async () => {
-  const result = await lh(["rpc", "issues/list", "--params", '{"repo":"me/app"}', "--json"]);
+  const result = await lh([
+    "rpc",
+    "issues/list",
+    "--params",
+    '{"repo":"me/app"}',
+    "--json",
+  ]);
   expect(result.exitCode, result.stderr).toBe(0);
-  expect(JSON.parse(result.stdout)).toEqual({ method: "issues/list", params: { repo: "me/app" } });
+  expect(JSON.parse(result.stdout)).toEqual({
+    method: "issues/list",
+    params: { repo: "me/app" },
+  });
 });
 
 test("reports invalid params and RPC errors", async () => {
