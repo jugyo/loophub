@@ -87,7 +87,7 @@ test("the human summary names the runtimes without repeating the paths", () => {
   const lines = stdout.trim().split("\n");
   expect(installedPaths(stdout)).toHaveLength(3);
   expect(lines.at(-1)).toMatch(
-    /^installed the LoopHub skill for claude-code, codex, opencode, opencode2, grok \(user scope, \d+ bytes\)$/,
+    /^installed the LoopHub skill for claude-code, codex, opencode, opencode2, agy, grok \(user scope, \d+ bytes\)$/,
   );
   // The summary names the runtimes, not the paths, so a terminal does not show each one twice.
   expect(lines.at(-1)).not.toContain("/");
@@ -98,10 +98,14 @@ test("the human summary names the runtimes without repeating the paths", () => {
 test("--all installs for every runtime, sharing one write per directory", () => {
   const result = JSON.parse(lh(["skill", "install", "--all", "--json"]).stdout);
   expect(result.scope).toBe("user");
-  // claude-code, codex/opencode/opencode2 (shared), grok — one write per distinct directory.
+  // claude-code, codex/opencode/opencode2/agy (shared), grok — one write per directory.
   expect(
     result.installs.map((i: { runtimes: string[] }) => i.runtimes),
-  ).toEqual([["claude-code"], ["codex", "opencode", "opencode2"], ["grok"]]);
+  ).toEqual([
+    ["claude-code"],
+    ["codex", "opencode", "opencode2", "agy"],
+    ["grok"],
+  ]);
   expect(result.installs.map((i: { path: string }) => i.path)).toEqual([
     skillPath(home, ".claude/skills"),
     skillPath(home, ".agents/skills"),

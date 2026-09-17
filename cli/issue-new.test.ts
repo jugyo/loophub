@@ -140,7 +140,14 @@ printf 'config=%s\\n' "$OPENCODE_CONFIG_CONTENT" >> "$RUNTIME_LOG"
 for arg in "$@"; do printf 'arg=%s\\n' "$arg" >> "$RUNTIME_LOG"; done
 exit 0
 `;
-  for (const bin of ["claude", "codex", "grok", "opencode", "opencode2"]) {
+  for (const bin of [
+    "claude",
+    "codex",
+    "grok",
+    "opencode",
+    "opencode2",
+    "agy",
+  ]) {
     const path = join(runtimeDir, bin);
     writeFileSync(path, runtime);
     chmodSync(path, 0o755);
@@ -269,6 +276,7 @@ test.each([
   ["--codex", "codex", "codex", "claude-code"],
   ["--grok", "grok", "grok", "claude-code"],
   ["--opencode", "opencode", "opencode", "claude-code"],
+  ["--agy", "agy", "agy", "claude-code"],
 ])("issue new forwards %s and --model to the final %s launch boundary", (flag, expectedBin, expectedRuntime, configuredAgent) => {
   writeConfig({ codingAgent: configuredAgent });
   const model = `${expectedRuntime}-custom-model`;
@@ -289,6 +297,10 @@ test.each([
     expect(result.runtimeLog).toContain("arg=--prompt");
     expect(result.runtimeLog).not.toContain("arg=--variant");
     expect(result.runtimeLog).not.toContain("arg=high");
+  } else if (expectedBin === "agy") {
+    expect(result.runtimeLog).toContain("arg=--dangerously-skip-permissions");
+    expect(result.runtimeLog).toContain("arg=--prompt-interactive");
+    expect(result.runtimeLog).toContain("arg=--effort");
   }
   expect(result.runtimeLog).toContain(
     "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",

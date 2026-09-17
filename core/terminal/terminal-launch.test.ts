@@ -382,6 +382,28 @@ describe("herdr terminal launch", () => {
     );
   });
 
+  test("an Antigravity Workflow step starts its interactive prompt without a second submit", () => {
+    const plan = buildWorkflowStepHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      runId: 12,
+      step: "execute",
+      sequence: 1,
+      runtime: "agy",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      worktree: "/repo/worktrees/pr-7",
+      systemPromptPath: "/tmp/run/execute-contract.md",
+      userPromptPath: "/tmp/run/execute-prompt.md",
+      model: "gemini-3.8-flash-medium",
+      effort: "medium",
+    });
+    expect(plan.command).toContain(
+      "agy '--dangerously-skip-permissions' '--model' 'gemini-3.8-flash-medium' '--effort' 'medium' '--prompt-interactive'",
+    );
+    expect(plan.command).toContain("\"$(cat '/tmp/run/execute-prompt.md')\"");
+    expect(plan.readyArgv).toBeUndefined();
+    expect(plan.submitArgv).toBeUndefined();
+  });
+
   // #545: opencode2's TUI only pre-fills `--prompt`, so the launch presses Enter once the TUI has
   // drawn. The wait is best-effort — the keystroke is sent either way — but it must come last,
   // after the command, because a TUI drains the shell's leftover input when it takes over.

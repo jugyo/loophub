@@ -29,6 +29,7 @@ const PUBLIC_DIR = join(WEB_ROOT, "public");
 // everything else (server/, other web/ configs) does not affect the SPA. The dist itself never
 // feeds the hash. `src` is listed as a directory and hashed file by file.
 const HASH_INPUTS = [
+  "../core/runtimes.ts",
   "index.html",
   "package-lock.json",
   "tailwind.config.js",

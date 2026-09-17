@@ -110,6 +110,7 @@ function fakeRuntime(
   const grok = join(dir, "grok");
   const opencode = join(dir, "opencode");
   const opencode2 = join(dir, "opencode2");
+  const agy = join(dir, "agy");
   const sessionName = herdrSessionName({
     full_name: REPO,
     local_path: REPO_PATH,
@@ -193,12 +194,14 @@ exit 0
     opencode2,
     '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
   );
+  writeFileSync(agy, '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n');
   chmodSync(herdr, 0o755);
   chmodSync(claude, 0o755);
   chmodSync(codex, 0o755);
   chmodSync(grok, 0o755);
   chmodSync(opencode, 0o755);
   chmodSync(opencode2, 0o755);
+  chmodSync(agy, 0o755);
   return { dir, focusedStatePath, log };
 }
 
@@ -2114,6 +2117,96 @@ test("workflow start --opencode2 launches OpenCode 2 with its model in the pane 
     expect(log).not.toContain("--model");
     expect(log).not.toContain("--variant");
     expect(log).not.toContain("--session-id");
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --agy launches the interactive prompt with auto approval", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Antigravity parent session",
+    "--body",
+    "Start with Antigravity",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime();
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--agy",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    expect(log).toMatch(/pane send-text \S+ .*\bagy '/);
+    expect(log).toContain("'--model' 'gemini-3.8-flash-medium'");
+    expect(log).toContain("'--dangerously-skip-permissions'");
+    expect(log).toContain("'--prompt-interactive'");
+    const runId = started.stdout.match(/started Workflow run #(\d+)/)?.[1];
+    const parentSession = started.stdout.match(/session\t([0-9a-f-]+)/)?.[1];
+    if (!runId || !parentSession) throw new Error(started.stdout);
+    const child = run(
+      [
+        "workflow",
+        "launch-step",
+        "--repo",
+        REPO,
+        "--run",
+        runId,
+        "--step",
+        "execute",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+        LOOPHUB_SESSION_ID: parentSession,
+      },
+    );
+    expect(child.exitCode, child.stderr).toBe(0);
+    const { Database } = REQUIRE("bun:sqlite") as typeof import("bun:sqlite");
+    const db = new Database(join(HOME, "loophub.db"), { readonly: true });
+    try {
+      const sessions = db
+        .query(
+          "SELECT id, runtime FROM agent_sessions WHERE runtime = 'agy' ORDER BY rowid",
+        )
+        .all() as Array<{ id: string; runtime: string }>;
+      expect(sessions.length).toBeGreaterThanOrEqual(2);
+      expect(sessions.at(-1)?.runtime).toBe("agy");
+      expect(
+        db
+          .query("SELECT pane_id FROM herdr_panes WHERE launch_id = ?")
+          .get(parentSession),
+      ).toMatchObject({ pane_id: expect.any(String) });
+      expect(
+        db
+          .query(
+            "SELECT provider, target_id FROM agent_execution_targets WHERE session_id = ?",
+          )
+          .get(sessions.at(-1)?.id ?? ""),
+      ).toMatchObject({ provider: "herdr", target_id: expect.any(String) });
+    } finally {
+      db.close();
+    }
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

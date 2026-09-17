@@ -20,7 +20,7 @@ export function usage(): void {
   lh supervisor start --runtime <runtime> --prompt <text|@file|-> [--repo owner/name] [--herdr]   # start a Supervisor without LoopHub state tracking
   lh issue search|list|view|create|import|update|comment|close|label|sub|ac  [--repo owner/repo]
   lh issue sub list|add|remove|reorder ... [--repo owner/repo]
-  lh issue new [--repo owner/name] [--claude-code | --codex | --grok | --opencode | --opencode2] [--model <name>] [--effort <level>] [--target-branch <branch>] [--prompt <text>]
+  lh issue new [--repo owner/name] [--claude-code | --codex | --grok | --opencode | --opencode2 | --agy] [--model <name>] [--effort <level>] [--target-branch <branch>] [--prompt <text>]
   lh issue list [--state open|closed|all] [--page <n>] [--limit <n>] [--repo owner/name] [--json]   # issues only; prints "showing X of N" on stderr when a page hides rows
   lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
   lh issue view <number> [--include-archived] [--repo owner/name] [--json]   # archived comments are left out of comment_list unless --include-archived
@@ -31,7 +31,7 @@ export function usage(): void {
   lh notification send --kind merge_ready|over_budget|human_attention|agent_comment|github_pr_linked --title <text> --body <text|@file|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|archive|delete <name> [--repo <owner/name>] [--workflow-id <id>] [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage workflow prompt bundles
-  lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok | --opencode | --opencode2] [--model <name>] [--herdr] [--no-launch]   # start a Workflow run (default runtime/model from app settings; agents launch in auto mode)
+  lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok | --opencode | --opencode2 | --agy] [--model <name>] [--herdr] [--no-launch]   # start a Workflow run (default runtime/model from app settings)
   lh workflow manifest show|path <run> [--repo owner/name] [--json]   # inspect or print the path of a Workflow run manifest
   # every lh workflow command below resolves --repo from --run when it is omitted; a --reason longer
   # than its cap (500 chars; 5000 for escalate-human) is trimmed rather than rejected

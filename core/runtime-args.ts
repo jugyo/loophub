@@ -23,7 +23,7 @@ export function display(v: string): string {
   return stripVTControlCharacters(v).replace(/[\x00-\x1f\x7f-\x9f]/g, "");
 }
 
-// Every new agent launch runs in auto mode, using the runtime registry's approval-bypass argv.
+// Apply the runtime registry's launch permission posture.
 export function runtimeApprovalArgs(runtime: CodingAgent): string[] {
   return [...RUNTIMES[runtime].autoApproveArgs];
 }
@@ -147,6 +147,16 @@ export function buildRuntimeFlags(input: RuntimeFlagsInput): string[] {
   if (runtime === "grok") {
     const args = runtimeApprovalArgs(runtime);
     args.push(...modelFlag(input.model));
+    return args;
+  }
+  if (runtime === "agy") {
+    const args = runtimeApprovalArgs(runtime);
+    args.push(...modelFlag(input.model));
+    if (input.effort) {
+      const effort = display(input.effort).trim();
+      if (effort) args.push("--effort", effort);
+    }
+    args.push("--prompt-interactive");
     return args;
   }
   // claude-code

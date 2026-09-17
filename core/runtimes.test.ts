@@ -75,6 +75,18 @@ test("only OpenCode 2 needs its launch prompt submitted (#545)", () => {
   }
 });
 
+test("Antigravity auto-approves tools and uses the shared skills directory", () => {
+  expect(CODING_AGENTS).toContain("agy");
+  expect(RUNTIMES.agy).toMatchObject({
+    bin: "agy",
+    label: "Antigravity",
+    buildFlag: "--agy",
+    skillsDir: ".agents/skills",
+    autoApproveArgs: ["--dangerously-skip-permissions"],
+    launchPromptNeedsSubmit: false,
+  });
+});
+
 test("runtime definitions do not expose a session resume capability", () => {
   for (const runtime of Object.values(RUNTIMES)) {
     expect(runtime).not.toHaveProperty("resumable");

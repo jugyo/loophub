@@ -356,7 +356,8 @@
               "codex",
               "grok",
               "opencode",
-              "opencode2"
+              "opencode2",
+              "agy"
             ]
           },
           "model": {
@@ -482,7 +483,8 @@
               "codex",
               "grok",
               "opencode",
-              "opencode2"
+              "opencode2",
+              "agy"
             ]
           },
           "model": {
@@ -497,7 +499,8 @@
               "codex",
               "grok",
               "opencode",
-              "opencode2"
+              "opencode2",
+              "agy"
             ]
           },
           "devCostLimitUsd": {
@@ -1023,7 +1026,8 @@
               "codex",
               "grok",
               "opencode",
-              "opencode2"
+              "opencode2",
+              "agy"
             ]
           },
           "model": {
@@ -1056,7 +1060,8 @@
                       "codex",
                       "grok",
                       "opencode",
-                      "opencode2"
+                      "opencode2",
+                      "agy"
                     ]
                   },
                   "model": {
@@ -1082,7 +1087,8 @@
                       "codex",
                       "grok",
                       "opencode",
-                      "opencode2"
+                      "opencode2",
+                      "agy"
                     ]
                   },
                   "model": {
@@ -1108,7 +1114,8 @@
                       "codex",
                       "grok",
                       "opencode",
-                      "opencode2"
+                      "opencode2",
+                      "agy"
                     ]
                   },
                   "model": {

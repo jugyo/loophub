@@ -1,5 +1,5 @@
-// Single registry (SSOT) for coding runtimes: claude-code (default), codex, grok, opencode, and
-// opencode2. Every runtime-specific fact that was previously duplicated across core/config.ts,
+// Single registry (SSOT) for coding runtimes: claude-code (default), codex, grok, opencode,
+// opencode2, and agy. Every runtime-specific fact that was previously duplicated across core/config.ts,
 // cli/dev.ts, cli/args.ts, core/service/{terminal,settings}.ts, and the web (agent-models.ts /
 // settings-page.tsx / linked-pull-summary.tsx / agent-sessions-page.tsx) lives here once, so adding
 // a runtime is (close to) adding one entry below.
@@ -17,10 +17,17 @@ export type CodingAgent =
   | "codex"
   | "grok"
   | "opencode"
-  | "opencode2";
+  | "opencode2"
+  | "agy";
 
 // The runtime binary spawned for each runtime (`claude` / `codex` / `grok` / …).
-export type RuntimeBin = "claude" | "codex" | "grok" | "opencode" | "opencode2";
+export type RuntimeBin =
+  | "claude"
+  | "codex"
+  | "grok"
+  | "opencode"
+  | "opencode2"
+  | "agy";
 
 // One runtime's complete definition. Everything a caller needs to know about a runtime is a field
 // here — no branch keyed on the id belongs anywhere else.
@@ -63,7 +70,7 @@ export interface RuntimeDefinition {
   // several locations, including Codex's `.agents/skills`, so it shares that entry and one write
   // serves both.
   skillsDir: string;
-  // The argv fragment that runs this runtime without approval prompts or sandbox restrictions.
+  // The argv fragment for this runtime's launch permission posture.
   // Every launch path — cli/dev.ts's argv builders,
   // `lh workflow`'s parent agent, and core/terminal/terminal-launch.ts — appends this verbatim
   // instead of re-branching on the runtime id (#1588). Other per-runtime launch differences stay
@@ -249,6 +256,30 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     // (see runtimeLaunchEnv in core/runtime-args.ts).
     autoApproveArgs: ["--auto"],
     launchPromptNeedsSubmit: true,
+  },
+  {
+    id: "agy",
+    bin: "agy",
+    label: "Antigravity",
+    buildFlag: "--agy",
+    // Verified with `agy models` (1.2.4). The CLI has no stable model alias.
+    defaultModel: "gemini-3.8-flash-medium",
+    defaultEffort: "medium",
+    modelSuggestions: [
+      "gemini-3.8-flash-high",
+      "gemini-3.8-flash-medium",
+      "gemini-3.8-flash-low",
+      "gemini-3.1-pro-high",
+      "gemini-3.1-pro-low",
+      "claude-sonnet-4-6",
+    ],
+    effortSuggestions: ["low", "medium", "high"],
+    sandboxCapable: false,
+    skillsDir: ".agents/skills",
+    // Explicitly grant all tool requests for unattended workflows. Unlike accept-edits, this
+    // also bypasses terminal command approval; initial worktree trust remains separate.
+    autoApproveArgs: ["--dangerously-skip-permissions"],
+    launchPromptNeedsSubmit: false,
   },
 ];
 

@@ -45,6 +45,7 @@ export async function run(): Promise<void> {
         grok: flags.grok === true,
         opencode: flags.opencode === true,
         opencode2: flags.opencode2 === true,
+        agy: flags.agy === true,
       });
     } catch (e: any) {
       fail(e.message);
@@ -235,6 +236,7 @@ export async function run(): Promise<void> {
       grok: flags.grok === true,
       opencode: flags.opencode === true,
       opencode2: flags.opencode2 === true,
+      agy: flags.agy === true,
       defaultRuntime: agentCfg.effective.runtime,
     });
     const model =

@@ -86,28 +86,42 @@ test("a missing hash forces a rebuild", async () => {
 
 test("computeBuildHash changes when a hashed input changes", async () => {
   const root = mkdtempSync(join(tmpdir(), "lh-build-hash-"));
+  const webRoot = join(root, "web");
   try {
-    writeFileSync(join(root, "index.html"), "<h1>a</h1>");
-    mkdirSync(join(root, "src"));
-    writeFileSync(join(root, "src", "main.tsx"), "export const a = 1;");
-    const before = await computeBuildHash(root);
+    mkdirSync(join(root, "core"));
+    writeFileSync(
+      join(root, "core", "runtimes.ts"),
+      "export const label = 'A';",
+    );
+    mkdirSync(join(webRoot, "src"), { recursive: true });
+    writeFileSync(join(webRoot, "index.html"), "<h1>a</h1>");
+    writeFileSync(join(webRoot, "src", "main.tsx"), "export const a = 1;");
+    const before = await computeBuildHash(webRoot);
 
     // Unchanged inputs hash identically.
-    expect(await computeBuildHash(root)).toBe(before);
+    expect(await computeBuildHash(webRoot)).toBe(before);
+
+    // Runtime labels come from core, outside web/, and must rebuild the SPA.
+    writeFileSync(
+      join(root, "core", "runtimes.ts"),
+      "export const label = 'B';",
+    );
+    expect(await computeBuildHash(webRoot)).not.toBe(before);
+    const afterRuntime = await computeBuildHash(webRoot);
 
     // A change under a hashed directory (src) invalidates the hash.
-    writeFileSync(join(root, "src", "main.tsx"), "export const a = 2;");
-    expect(await computeBuildHash(root)).not.toBe(before);
+    writeFileSync(join(webRoot, "src", "main.tsx"), "export const a = 2;");
+    expect(await computeBuildHash(webRoot)).not.toBe(afterRuntime);
 
     // A change to a hashed file (index.html) invalidates it again.
-    const afterSrc = await computeBuildHash(root);
-    writeFileSync(join(root, "index.html"), "<h1>b</h1>");
-    expect(await computeBuildHash(root)).not.toBe(afterSrc);
+    const afterSrc = await computeBuildHash(webRoot);
+    writeFileSync(join(webRoot, "index.html"), "<h1>b</h1>");
+    expect(await computeBuildHash(webRoot)).not.toBe(afterSrc);
 
     // A missing input also invalidates the hash rather than being ignored silently.
-    const afterBoth = await computeBuildHash(root);
-    rmSync(join(root, "index.html"));
-    expect(await computeBuildHash(root)).not.toBe(afterBoth);
+    const afterBoth = await computeBuildHash(webRoot);
+    rmSync(join(webRoot, "index.html"));
+    expect(await computeBuildHash(webRoot)).not.toBe(afterBoth);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

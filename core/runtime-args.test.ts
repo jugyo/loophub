@@ -31,6 +31,28 @@ test("OpenCode launch argv uses --auto, --model, and --prompt (no --variant)", (
   expect(buildRuntimeFlags(input).join(" ")).not.toContain("--variant");
 });
 
+test("Antigravity launches an interactive prompt with model and effort", () => {
+  const input = {
+    runtime: "agy" as const,
+    model: "gemini-3.8-flash-medium",
+    effort: "medium",
+    prompt: "Implement the change.",
+  };
+  expect(buildRuntimeFlags(input)).toEqual([
+    "--dangerously-skip-permissions",
+    "--model",
+    "gemini-3.8-flash-medium",
+    "--effort",
+    "medium",
+    "--prompt-interactive",
+  ]);
+  expect(buildRuntimeArgs(input)).toEqual([
+    ...buildRuntimeFlags(input),
+    "Implement the change.",
+  ]);
+  expect(runtimeLaunchEnv(input)).toEqual({});
+});
+
 test("OpenCode omits --model when unset and still takes --prompt", () => {
   const input = {
     runtime: "opencode" as const,

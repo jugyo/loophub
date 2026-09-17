@@ -260,6 +260,14 @@ test("resolveDevRuntime selects opencode and keeps runtime flags mutually exclus
   );
 });
 
+test("resolveDevRuntime selects agy and rejects conflicting flags", () => {
+  expect(resolveDevRuntime({ agy: true })).toBe("agy");
+  expect(resolveDevRuntime({ defaultRuntime: "agy" })).toBe("agy");
+  expect(() => resolveDevRuntime({ agy: true, codex: true })).toThrow(
+    /mutually exclusive/,
+  );
+});
+
 test("buildCodexArgs always adds --dangerously-bypass-approvals-and-sandbox", () => {
   expect(
     buildCodexArgs({

@@ -362,7 +362,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode | --opencode2] [--model <name>] [--parent-runtime <runtime> --parent-model <model> --parent-effort <effort>] [--execute-runtime <runtime> --execute-model <model> --execute-effort <effort>] [--verify-runtime <runtime> --verify-model <model> --verify-effort <effort>] [--herdr] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode | --opencode2 | --agy] [--model <name>] [--parent-runtime <runtime> --parent-model <model> --parent-effort <effort>] [--execute-runtime <runtime> --execute-model <model> --execute-effort <effort>] [--verify-runtime <runtime> --verify-model <model> --verify-effort <effort>] [--herdr] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -394,6 +394,7 @@ async function startWorkflow(): Promise<void> {
     grok: flags.grok === true,
     opencode: flags.opencode === true,
     opencode2: flags.opencode2 === true,
+    agy: flags.agy === true,
     defaultRuntime: agentCfg.effective.runtime,
   });
   const sessionId = requestedSessionId();
@@ -417,6 +418,7 @@ async function startWorkflow(): Promise<void> {
             grok: requestedRuntime === "grok",
             opencode: requestedRuntime === "opencode",
             opencode2: requestedRuntime === "opencode2",
+            agy: requestedRuntime === "agy",
             defaultRuntime: requestedRuntime as CodingAgent,
           })
         : runtime;

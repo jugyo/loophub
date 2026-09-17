@@ -125,6 +125,7 @@ Options:
   --grok                 Launch Grok Build.
   --opencode             Launch OpenCode.
   --opencode2            Launch OpenCode 2.
+  --agy                  Launch Antigravity.
   --model <name>         Override the selected runtime's default model.
   --effort <level>       Override the selected runtime's reasoning effort when supported.
   --target-branch <ref>  Carry an existing target branch into the issue-filing session.
