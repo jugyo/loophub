@@ -325,8 +325,9 @@ conflict、GitHub feedback、close / merge は、通知専用の run-scoped even
 `pull_request.diff_feedback_created` / `pull_request.diff_feedback_replied`、`pull_request.commented`、
 `pull_request.merge_conflict`、close / merge の source event を 1 件だけ記録し、その PR を所有する run が
 購読で選択する。source payload には run が読む stable id と producer の session id、および
-`source_payload_version: 1` が載る。自分の parent / child が書いた diff reply や agent の PR comment は、
-選択されても instruction にはならない（source の `session_id` と PR comment の `author_type` で判定する）。
+`source_payload_version: 1` が載る。自分の parent / child が書いた diff reply や PR comment は、
+選択されても instruction にはならない（source の `session_id` で判定する）。別 PR の executor を含む
+他の agent や人間からの PR comment は instruction として配送する。
 親はこの wake で `orchestrator: address diff feedback thread #<t> comment #<c>` を Execute へ配送し、
 Execute は `lh pr feedback pending <pr> --run <run>` で未対応の会話と anchor 周辺の diff を読む。
 source の修正が必要なら、対象 thread へ認識と対応意思を返信してから編集する。

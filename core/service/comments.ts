@@ -202,8 +202,8 @@ function createPullComment(
 ) {
   return db.transaction(() => {
     const m = S.createComment(row.id, actor, body, authorType);
-    // `author_type` is what tells a Workflow run whether this comment is an instruction: only a
-    // human's is. The run reads it off the source rather than being told by a separate event.
+    // The source session lets a Workflow run skip its own comments while accepting comments
+    // from other agents. Keep author_type for comment attribution.
     S.emitEvent(repo.id, "pull_request.commented", actor, {
       number: row.number,
       comment_id: m.id,

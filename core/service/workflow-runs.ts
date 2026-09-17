@@ -1099,14 +1099,9 @@ function workflowWakeObservation(input: {
     event.type === "workflow_run.pr_comment" ||
     event.type === "pull_request.commented"
   ) {
-    // Only a human's comment is an instruction. An agent's — including the run's own progress
-    // notes — is not, which is why the twin producer only ever projected human comments.
-    if (
-      event.type === "pull_request.commented" &&
-      payload.author_type !== "human"
-    ) {
-      return null;
-    }
+    // Comments from other sessions, including agents on other PRs, are instructions. Skip
+    // this run's own replies so they cannot be delivered back to their author.
+    if (isWorkflowRunOwnSession(input.run, payload.session_id)) return null;
     const commentId = payload.comment_id;
     if (typeof commentId !== "number") {
       throw new ServiceError(

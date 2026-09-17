@@ -11,6 +11,7 @@ process.env.LOOPHUB_DB = join(home, "test.db");
 const repoName = "me/pr-comments";
 const parentSession = "11111111-1111-4111-8111-111111111111";
 const agentSession = "22222222-2222-4222-8222-222222222222";
+const ownExecutorSession = "33333333-3333-4333-8333-333333333333";
 
 let svc: typeof import("../service.ts");
 let store: typeof import("../store.ts");
@@ -59,6 +60,18 @@ beforeAll(async () => {
     "agent-runtime",
     "executor #1-1",
   );
+  store.registerAgentSession(
+    parentSession,
+    "codex",
+    "workflow-parent-runtime",
+    "workflow parent",
+  );
+  store.registerAgentSession(
+    ownExecutorSession,
+    "codex",
+    "workflow-executor-runtime",
+    "workflow executor",
+  );
   const workflow = store.createWorkflow({
     name: "PR comment workflow",
     description: "",
@@ -76,6 +89,7 @@ beforeAll(async () => {
     costIncrementUsd: 10,
     costLimitUsd: 10,
   }).id;
+  store.appendWorkflowRunStepSession(runId, "execute", ownExecutorSession);
 });
 
 afterAll(() => {
@@ -83,7 +97,7 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("classifies PR commenters and only instructs the workflow for a human", async () => {
+test("delivers human and other-agent PR comments but skips the run's own", async () => {
   const human = svc.comments.createHumanForPull(
     repoName,
     prNumber,
@@ -92,8 +106,20 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
   const agent = svc.comments.createForPull(
     repoName,
     prNumber,
-    "Implemented.",
+    "Please update this from another PR.",
     agentSession,
+  );
+  const own = svc.comments.createForPull(
+    repoName,
+    prNumber,
+    "Workflow progress note.",
+    ownExecutorSession,
+  );
+  const parent = svc.comments.createForPull(
+    repoName,
+    prNumber,
+    "Workflow parent note.",
+    parentSession,
   );
   const system = svc.comments.createForPull(
     repoName,
@@ -106,8 +132,7 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
     "agent",
     "system",
   ]);
-  // No run-scoped twin is written any more: the run reads `author_type` off the source event and
-  // decides for itself which comment is an instruction.
+  // No run-scoped twin is written any more: the run reads the source session and skips its own.
   expect(
     store
       .eventsForWorkflowRun(repoId, runId)
@@ -117,7 +142,7 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
     .eventsForPull(repoId, prNumber, null)
     .filter((event) => event.type === "pull_request.commented")
     .reverse();
-  expect(sources).toHaveLength(3);
+  expect(sources).toHaveLength(5);
   expect(JSON.parse(sources[0].payload)).toMatchObject({
     number: prNumber,
     comment_id: human.id,
@@ -134,12 +159,27 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
     comment_id: human.id,
     targets: ["executor"],
   });
-  // An agent's own comment is selected too, but reconciles to state observation only.
+  // A different agent's comment is an instruction, while this run's own comment is not.
   const agentWake = await svc.workflowRuns.next(repoName, {
     run: runId,
     event: sources[1].id,
   });
-  expect(agentWake.action).not.toBe("deliver");
+  expect(agentWake).toMatchObject({
+    action: "deliver",
+    delivery_reason: "pr_comment",
+    comment_id: agent.id,
+    targets: ["executor"],
+  });
+  const ownWake = await svc.workflowRuns.next(repoName, {
+    run: runId,
+    event: sources[2].id,
+  });
+  expect(ownWake.action).not.toBe("deliver");
+  const parentWake = await svc.workflowRuns.next(repoName, {
+    run: runId,
+    event: sources[3].id,
+  });
+  expect(parentWake.action).not.toBe("deliver");
   expect(next.instructions.commands[0]?.args).toEqual([
     "pr",
     "comment",
@@ -157,7 +197,7 @@ test("classifies PR commenters and only instructs the workflow for a human", asy
   );
 
   const detail = await svc.pulls.get(repoName, prNumber);
-  expect(detail.comment_list).toEqual([human, agent, system]);
+  expect(detail.comment_list).toEqual([human, agent, own, parent, system]);
 });
 
 test("routes one PR comment to each distinct mentioned workflow agent", async () => {
