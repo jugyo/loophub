@@ -25,7 +25,7 @@ import type {
   RepoMergeMode,
   Workspace,
 } from "@/api/types";
-import { RUNTIMES } from "../../../core/runtimes.ts";
+import { CODING_AGENTS, RUNTIMES } from "../../../core/runtimes.ts";
 import {
   RepoSettingsPage,
   type RepoSettingsSection,
@@ -897,7 +897,9 @@ describe("RepoSettingsPage", () => {
     const agents = await screen.findByRole("radiogroup", {
       name: "Coding agent",
     });
-    expect(within(agents).getAllByRole("radio")).toHaveLength(4);
+    expect(within(agents).getAllByRole("radio")).toHaveLength(
+      CODING_AGENTS.length,
+    );
     expect(
       (within(agents).getByRole("radio", { name: "Codex" }) as HTMLInputElement)
         .checked,

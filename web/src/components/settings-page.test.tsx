@@ -18,6 +18,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { CodingAgent } from "@/api/types";
+import { CODING_AGENTS } from "../../../core/runtimes.ts";
 import { SettingsPage } from "./settings-page";
 
 afterEach(() => {
@@ -134,7 +135,9 @@ describe("SettingsPage", () => {
     const group = await screen.findByRole("radiogroup", {
       name: "Coding agent",
     });
-    expect(within(group).getAllByRole("radio")).toHaveLength(4);
+    expect(within(group).getAllByRole("radio")).toHaveLength(
+      CODING_AGENTS.length,
+    );
     expect(within(group).getByText("Claude Code")).toBeTruthy();
     expect(within(group).getByText("OpenCode")).toBeTruthy();
     expect(within(group).queryByText("—")).toBeNull();
