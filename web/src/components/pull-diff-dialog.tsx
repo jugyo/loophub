@@ -1807,8 +1807,6 @@ function UnifiedDiff({
                   <td
                     className={cn(
                       "whitespace-pre-wrap break-words pr-4 align-top",
-                      (leftAnchored || rightAnchored) &&
-                        "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
                       (leftSelected || rightSelected) && "bg-blue-500/10",
                     )}
                   >
@@ -2149,8 +2147,6 @@ function SplitLine({
         className={cn(
           "min-w-0 align-top",
           line && DIFF_LINE_CLASS[line.kind],
-          anchored &&
-            "bg-amber-500/10 shadow-[inset_3px_0_0_0] shadow-amber-500/70",
           selected && "bg-blue-500/10",
         )}
         data-line-kind={line?.kind}

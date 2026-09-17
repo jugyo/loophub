@@ -674,6 +674,31 @@ describe("DiffFileDialog", () => {
     expect(within(thread).getByText("Please revisit this range.")).toBeTruthy();
   });
 
+  it("limits an inline diff feedback highlight to the line number cell", async () => {
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+
+    await screen.findByLabelText("Diff thread 1");
+    const lineNumber = await screen.findByLabelText("New line 1");
+    const content = lineNumber.nextElementSibling;
+    expect(lineNumber.classList).toContain("bg-amber-500/15");
+    expect(content?.classList).not.toContain("bg-amber-500/10");
+    expect(content?.classList).not.toContain("shadow-[inset_3px_0_0_0]");
+  });
+
   it("starts in unified view and switches to split view", () => {
     const splitFile: PullFile = {
       ...file,
