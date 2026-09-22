@@ -1086,6 +1086,21 @@ export function DiffFileDialog({
                           disabled={setViewed.isPending}
                           onChange={(event) => {
                             const viewed = event.target.checked;
+                            const selectedIndex = filteredFiles.findIndex(
+                              (candidate) =>
+                                candidate.filename === selectedFile.filename,
+                            );
+                            const nextUnviewedFile = viewed
+                              ? filteredFiles
+                                  .slice(selectedIndex + 1)
+                                  .find(
+                                    (candidate) =>
+                                      pullFileViewState(
+                                        candidate,
+                                        viewsByPath,
+                                      ) !== "viewed",
+                                  )
+                              : undefined;
                             setViewed.mutate(
                               {
                                 path: selectedFile.filename,
@@ -1094,7 +1109,12 @@ export function DiffFileDialog({
                               },
                               {
                                 onSuccess: () => {
-                                  if (viewed) setSelectedFilename(null);
+                                  if (!viewed) return;
+                                  if (nextUnviewedFile) {
+                                    selectFile(nextUnviewedFile.filename);
+                                  } else {
+                                    setSelectedFilename(null);
+                                  }
                                 },
                                 onError: (error) =>
                                   showError(

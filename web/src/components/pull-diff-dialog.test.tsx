@@ -2828,7 +2828,49 @@ describe("DiffFileDialog", () => {
     );
   });
 
-  it("clears the open file after marking it viewed", async () => {
+  it("selects the next unviewed file after marking the open file viewed", async () => {
+    const onSelectFile = vi.fn();
+    const viewedFile = {
+      ...file,
+      filename: "core/already-viewed.ts",
+      last_changed_sha: "d".repeat(40),
+    };
+    const nextFile = {
+      ...file,
+      filename: "core/next.ts",
+      last_changed_sha: "e".repeat(40),
+    };
+    renderDialog({
+      file: { ...file, last_changed_sha: "c".repeat(40) },
+      files: [file, viewedFile, nextFile],
+      onSelectFile,
+      handlers: {
+        "pullFileViews/list": () => [
+          {
+            path: viewedFile.filename,
+            sha: viewedFile.last_changed_sha,
+            viewed_at: "2026-09-22T00:00:00Z",
+          },
+        ],
+        "pullFileViews/set": () => [],
+      },
+    });
+
+    await screen.findByText(/Show viewed \(1 viewed\)/);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
+
+    await waitFor(() =>
+      expect(onSelectFile).toHaveBeenCalledWith("core/next.ts"),
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "core/next.ts" })
+        .getAttribute("aria-current"),
+    ).toBe("true");
+    expect(screen.getByRole("heading", { name: "core/next.ts" })).toBeTruthy();
+  });
+
+  it("clears the open file when no later unviewed file remains", async () => {
     const onClose = vi.fn();
     renderDialog({
       file: { ...file, last_changed_sha: "c".repeat(40) },

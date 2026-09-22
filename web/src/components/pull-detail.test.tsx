@@ -649,7 +649,7 @@ describe("PullDetail", () => {
     expect(within(section).getByText(/Show viewed \(1 viewed\)/)).toBeTruthy();
   });
 
-  it("clears the selected file after marking it viewed", async () => {
+  it("selects the next file after marking the open file viewed", async () => {
     renderDetail({
       "pulls/files": () => [
         { ...files[0], last_changed_sha: "a".repeat(40) },
@@ -686,13 +686,17 @@ describe("PullDetail", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
 
-    const dialog = await screen.findByRole("dialog", { name: /Diff for/ });
+    const dialog = await screen.findByRole("dialog", {
+      name: "Diff for web/src/b.ts",
+    });
     expect(dialog).toBeTruthy();
     await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: "Diff files" })).toBeTruthy();
       expect(
         screen.queryByRole("heading", { name: "web/src/a.ts" }),
       ).toBeNull();
+      expect(
+        screen.getByRole("heading", { name: "web/src/b.ts" }),
+      ).toBeTruthy();
       const summaryRows = Array.from(
         fileSummaryList.querySelectorAll<HTMLElement>(
           '[data-debug-component="FileSummaryRow"]',
