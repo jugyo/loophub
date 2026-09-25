@@ -333,6 +333,71 @@ exec "${realGit}" "$@"
   }
 });
 
+test("files flag only the files the head commit changed", async () => {
+  const path = mkdtempSync(join(tmpdir(), "lh-pull-latest-files-repo-"));
+  const g = (args: string[]) => gitAt(path, args);
+  const commitAll = (message: string) => {
+    g(["add", "-A"]);
+    g(["commit", "-qm", message]);
+  };
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  for (const name of ["modified.txt", "deleted.txt", "earlier.txt"])
+    writeFileSync(join(path, name), "base\n");
+  commitAll("base");
+  g(["checkout", "-qb", "feature"]);
+  writeFileSync(join(path, "modified.txt"), "earlier\n");
+  writeFileSync(join(path, "earlier.txt"), "earlier\n");
+  commitAll("earlier");
+  writeFileSync(join(path, "modified.txt"), "latest\n");
+  writeFileSync(join(path, "added.txt"), "latest\n");
+  rmSync(join(path, "deleted.txt"));
+  commitAll("latest");
+  g(["checkout", "-q", "main"]);
+  await svc.repos.create({ path, name: "me/latest-files" });
+  const pull = await svc.pulls.create("me/latest-files", {
+    title: "latest files",
+    head: "feature",
+    base: "main",
+  });
+
+  const flags = async () => {
+    const [files, detail] = await Promise.all([
+      svc.pulls.files("me/latest-files", pull.number),
+      svc.pageData.pullDetail("me/latest-files", pull.number),
+    ]);
+    const summaryFlags = Object.fromEntries(
+      detail.files.map((file) => [file.filename, file.latest_commit]),
+    );
+    const fileFlags = Object.fromEntries(
+      files.map((file) => [file.filename, file.latest_commit]),
+    );
+    expect(summaryFlags).toEqual(fileFlags);
+    return fileFlags;
+  };
+
+  expect(await flags()).toEqual({
+    "added.txt": true,
+    "deleted.txt": true,
+    "earlier.txt": false,
+    "modified.txt": true,
+  });
+
+  // A new head commit moves the flag to the files it changed.
+  g(["checkout", "-q", "feature"]);
+  writeFileSync(join(path, "earlier.txt"), "newest\n");
+  commitAll("newest");
+  g(["checkout", "-q", "main"]);
+  expect(await flags()).toEqual({
+    "added.txt": false,
+    "deleted.txt": false,
+    "earlier.txt": true,
+    "modified.txt": false,
+  });
+  rmSync(path, { recursive: true, force: true });
+});
+
 test("pulls/diff limits a selected file's git diff to that path", async () => {
   const diff = await svc.pulls.diff(
     "me/commit-files",

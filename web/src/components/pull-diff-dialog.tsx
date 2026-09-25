@@ -919,6 +919,14 @@ export function DiffFileDialog({
                     />
                     <span aria-hidden="true" />
                     <span className="flex items-center gap-1.5">
+                      {source.kind === "pull" && sidebarFile.latest_commit ? (
+                        <span
+                          title="Changed in the latest commit"
+                          aria-label="Changed in the latest commit"
+                          data-latest-commit="true"
+                          className="size-2 shrink-0 rounded-full bg-sky-500"
+                        />
+                      ) : null}
                       {source.kind === "pull" ? (
                         <FileViewedBadge
                           state={pullFileViewState(sidebarFile, viewsByPath)}

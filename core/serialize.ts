@@ -2567,6 +2567,8 @@ export interface PullFileSummaryWire {
    * record pins so later commits to the file can be told apart from it (#2502).
    */
   last_changed_sha?: string;
+  /** Whether that commit is the head commit, i.e. the latest commit changed this file. */
+  latest_commit?: boolean;
   status: string;
   additions: number;
   deletions: number;

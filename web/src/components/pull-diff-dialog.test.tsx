@@ -2847,6 +2847,56 @@ describe("DiffFileDialog", () => {
     expect(onSelectFile).toHaveBeenCalledWith("core/nested/b.ts");
   });
 
+  it("marks only files the latest commit changed with a blue dot", () => {
+    const latest = { ...file, latest_commit: true };
+    const earlier = {
+      ...file,
+      filename: "core/earlier.ts",
+      latest_commit: false,
+    };
+    const unstamped = { ...file, filename: "core/unstamped.ts" };
+    vi.stubGlobal("fetch", mockRpcFetch({}));
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const dialog = (files: PullFile[]) => (
+      <QueryClientProvider client={queryClient}>
+        <DiffFileDialog
+          owner="me"
+          repo="proj"
+          number={30}
+          files={files}
+          file={latest}
+          onSelectFile={() => {}}
+          onClose={() => {}}
+        />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(dialog([latest, earlier, unstamped]));
+
+    const sidebar = screen.getByRole("complementary", {
+      name: "Changed files",
+    });
+    const dot = (name: string) =>
+      within(within(sidebar).getByRole("button", { name })).queryByLabelText(
+        "Changed in the latest commit",
+      );
+    expect(dot("web/src/a.ts")?.className).toContain("bg-sky-500");
+    expect(dot("core/earlier.ts")).toBeNull();
+    expect(dot("core/unstamped.ts")).toBeNull();
+
+    // A new head commit moves the dot to the files that commit changed.
+    rerender(
+      dialog([
+        { ...latest, latest_commit: false },
+        { ...earlier, latest_commit: true },
+        unstamped,
+      ]),
+    );
+    expect(dot("web/src/a.ts")).toBeNull();
+    expect(dot("core/earlier.ts")).not.toBeNull();
+  });
+
   it("records the open file's current commit when Viewed is ticked", async () => {
     const set = vi.fn(() => []);
     renderDialog({

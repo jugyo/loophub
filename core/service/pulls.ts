@@ -156,9 +156,7 @@ export async function pullDiffFiles(
   baseSha: string;
   baseShas: string[];
   headSha: string;
-  files: Array<
-    DiffFile & { last_changed_at?: string; last_changed_sha?: string }
-  >;
+  files: Array<DiffFile & LastChangedFields>;
 }> {
   const operands = await resolvePullDiffOperands(name, number);
   return {
@@ -177,9 +175,7 @@ export async function diffFilesWithLastChanged(operands: {
   baseSha: string;
   baseShas: string[];
   headSha: string;
-}): Promise<
-  Array<DiffFile & { last_changed_at?: string; last_changed_sha?: string }>
-> {
+}): Promise<Array<DiffFile & LastChangedFields>> {
   const [files, lastChangedCommits] = await Promise.all([
     diffFilesBetween(operands.repoPath, operands.baseSha, operands.headSha),
     lastChangedCommitsByFile(
@@ -188,7 +184,30 @@ export async function diffFilesWithLastChanged(operands: {
       operands.headSha,
     ).catch((): Record<string, LastChangedCommit> => ({})),
   ]);
-  const enriched = files.map((file) => {
+  return addSyntaxHighlight(
+    operands.repoPath,
+    operands.baseSha,
+    operands.headSha,
+    withLastChanged(files, lastChangedCommits, operands.headSha),
+  );
+}
+
+type LastChangedFields = {
+  last_changed_at?: string;
+  last_changed_sha?: string;
+  latest_commit?: boolean;
+};
+
+/**
+ * Stamp each file with its newest PR commit, and flag files the head commit itself changed. The
+ * walk is first-parent, so a head merge commit counts only what it changed against its first parent.
+ */
+function withLastChanged<T extends DiffFileSummary>(
+  files: T[],
+  lastChangedCommits: Record<string, LastChangedCommit>,
+  headSha: string,
+): Array<T & LastChangedFields> {
+  return files.map((file) => {
     const lastChanged = lastChangedCommits[file.headFilename ?? file.filename];
     return {
       ...file,
@@ -196,16 +215,11 @@ export async function diffFilesWithLastChanged(operands: {
         ? {
             last_changed_at: lastChanged.date,
             last_changed_sha: lastChanged.sha,
+            latest_commit: lastChanged.sha === headSha,
           }
         : {}),
     };
   });
-  return addSyntaxHighlight(
-    operands.repoPath,
-    operands.baseSha,
-    operands.headSha,
-    enriched,
-  );
 }
 
 /** PR 詳細画面用に、patch と syntax token を生成せず変更ファイルのメタデータを返す。 */
@@ -214,11 +228,7 @@ export async function diffFileSummariesWithLastChanged(operands: {
   baseSha: string;
   baseShas: string[];
   headSha: string;
-}): Promise<
-  Array<
-    DiffFileSummary & { last_changed_at?: string; last_changed_sha?: string }
-  >
-> {
+}): Promise<Array<DiffFileSummary & LastChangedFields>> {
   const [files, lastChangedCommits] = await Promise.all([
     diffFileSummariesBetween(
       operands.repoPath,
@@ -231,18 +241,7 @@ export async function diffFileSummariesWithLastChanged(operands: {
       operands.headSha,
     ).catch((): Record<string, LastChangedCommit> => ({})),
   ]);
-  return files.map((file) => {
-    const lastChanged = lastChangedCommits[file.headFilename ?? file.filename];
-    return {
-      ...file,
-      ...(lastChanged
-        ? {
-            last_changed_at: lastChanged.date,
-            last_changed_sha: lastChanged.sha,
-          }
-        : {}),
-    };
-  });
+  return withLastChanged(files, lastChangedCommits, operands.headSha);
 }
 
 export async function resolvePullDiffOperands(
