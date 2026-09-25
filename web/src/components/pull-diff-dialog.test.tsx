@@ -323,7 +323,18 @@ describe("PullDiffDialog", () => {
     ).toContain("All changes");
     expect(screen.getByText("const x = 1;")).toBeTruthy();
 
-    await selectDiffScope(/ccccccc.*Latest commit/);
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Select diff scope" }),
+      { button: 0, ctrlKey: false },
+    );
+    const scopeMenu = await screen.findByRole("menu");
+    const latestCommit = await within(scopeMenu).findByRole("menuitem", {
+      name: /ccccccc.*Latest commit/,
+    });
+    expect(within(latestCommit).getByText("Latest commit").className).toContain(
+      "min-w-0 flex-1 truncate",
+    );
+    fireEvent.click(latestCommit);
     expect(screen.getByText("Loading commit diff…")).toBeTruthy();
     expect(screen.queryByText("const x = 1;")).toBeNull();
 
@@ -332,6 +343,11 @@ describe("PullDiffDialog", () => {
     });
     expect(await screen.findByText("latest after")).toBeTruthy();
     expect(screen.getByRole("button", { name: "latest.ts" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Select diff scope" })
+        .querySelector("span")?.className,
+    ).toContain("min-w-0 flex-1 truncate");
 
     await selectDiffScope(/ddddddd.*Earlier commit/);
     expect(await screen.findByText("earlier after")).toBeTruthy();

@@ -336,8 +336,9 @@ export function PullDetail({
               owner={owner}
               repo={repo}
               number={number}
+              baseSha={pull.base.sha}
+              headSha={pull.head.sha}
               files={filesQuery.data}
-              commits={pull.commits}
               commentCounts={pageQuery.data?.diff_feedback.comment_counts ?? {}}
               openFilename={openFilename}
               onOpenFile={openDiffFile}
@@ -972,6 +973,8 @@ function FilesChanged({
   owner,
   repo,
   number,
+  baseSha,
+  headSha,
   files,
   commentCounts,
   openFilename,
@@ -984,8 +987,9 @@ function FilesChanged({
   owner: string;
   repo: string;
   number: number;
+  baseSha: string | null;
+  headSha: string | null;
   files: PullFile[] | undefined;
-  commits: PullRequest["commits"];
   /** Per-file diff feedback counts, from the same page query that produced `files` (#123). */
   commentCounts: Record<string, number>;
   /** Which file's diff dialog is open. */
@@ -1105,6 +1109,8 @@ function FilesChanged({
               owner={owner}
               repo={repo}
               number={number}
+              baseSha={baseSha}
+              headSha={headSha}
               files={files}
               file={openFile}
               commentCounts={commentCounts}

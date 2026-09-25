@@ -384,7 +384,7 @@ function DiffScopeSelector({
           aria-label="Select diff scope"
           className="h-7 max-w-80 gap-1.5"
         >
-          <span className="truncate">
+          <span className="min-w-0 flex-1 truncate">
             {selectedCommit
               ? `${selectedCommit.sha.slice(0, 7)}: ${selectedCommit.subject}`
               : "All changes"}
@@ -425,7 +425,7 @@ function DiffScopeSelector({
               aria-hidden="true"
             />
             <code className="shrink-0 text-xs">{commit.sha.slice(0, 7)}</code>
-            <span className="truncate">{commit.subject}</span>
+            <span className="min-w-0 flex-1 truncate">{commit.subject}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

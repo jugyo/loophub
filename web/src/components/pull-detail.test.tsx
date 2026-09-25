@@ -319,6 +319,7 @@ function mockFetch(
   return mockRpcFetch({
     "pulls/get": () => pull,
     "pulls/files": () => files,
+    "repos/commitHistory": () => pull.commits ?? [],
     "reviews/list": () => reviews,
     "reviews/listComments": () => lineComments,
     "diffFeedback/list": () => ({ threads: [], comment_counts: {} }),
@@ -578,6 +579,36 @@ describe("PullDetail", () => {
       fireEvent.click(screen.getByRole("button", { name: "Close diff" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     }
+  });
+
+  it("passes the pull range to the file commit history query", async () => {
+    const commitHistory = vi.fn(() => pull.commits ?? []);
+    renderDetail({
+      "pulls/diff": ({ path }: { path: string }) => representativeDiff(path),
+      "repos/commitHistory": commitHistory,
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /File status: modified web\/src\/a\.ts/,
+      }),
+    );
+    await waitFor(() =>
+      expect(commitHistory).toHaveBeenCalledWith({
+        repo: "me/proj",
+        base: "bbb",
+        head: "aaa",
+        path: "web/src/a.ts",
+      }),
+    );
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Select diff scope" }),
+      { button: 0, ctrlKey: false },
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: /Latest change/ }),
+    ).toBeTruthy();
   });
 
   it("shows a file's last change time before its comment count", async () => {
