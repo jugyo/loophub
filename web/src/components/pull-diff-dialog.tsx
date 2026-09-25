@@ -1805,8 +1805,13 @@ function UnifiedDiff({
             return (
               <Fragment key={`${line.oldLine}:${line.newLine}:${index}`}>
                 <tr
-                  className={DIFF_LINE_CLASS[line.kind]}
+                  className={cn(
+                    DIFF_LINE_CLASS[line.kind],
+                    line.latestCommit &&
+                      "shadow-[inset_3px_0_0_0] shadow-sky-500/70",
+                  )}
                   data-line-kind={line.kind}
+                  data-latest-commit={line.latestCommit || undefined}
                 >
                   <LineNumber
                     line={line.oldLine}
@@ -2145,6 +2150,7 @@ function SplitLine({
         className={cn(
           "group relative w-12 select-none border-r px-2 text-right align-top text-muted-foreground/70",
           line && DIFF_LINE_CLASS[line.kind],
+          line?.latestCommit && "shadow-[inset_3px_0_0_0] shadow-sky-500/70",
           side === "new" && "border-l",
           choice && "cursor-pointer hover:bg-blue-500/15",
           anchored &&
@@ -2152,6 +2158,7 @@ function SplitLine({
           selected && "bg-blue-500/20 text-foreground",
         )}
         data-thread-anchor={anchored || undefined}
+        data-latest-commit={line?.latestCommit || undefined}
         data-selected={selected || undefined}
         {...lineDragProps(choice, lineSelection)}
       >

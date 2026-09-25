@@ -10,6 +10,7 @@ import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
 import {
   aheadBehind,
+  commitDiffFiles,
   commitLog,
   commitShas,
   commitsAhead,
@@ -39,6 +40,7 @@ import {
   realGithubPrStatusDeps,
 } from "../github.ts";
 import { notifyGithubPullLinked } from "../github-pull-notifications.ts";
+import { latestChangedLines } from "../latest-diff-lines.ts";
 import { parseClosingIssueNumber } from "../links.ts";
 import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
 import {
@@ -313,6 +315,7 @@ function pullDiffWireFiles(
     | (HighlightedDiffFile & { lines?: S.PullDiffProjectionFile["lines"] })
   >,
   projectRoot: string,
+  latestFiles: DiffFile[],
 ) {
   return files.map((file) => {
     const syntax =
@@ -326,6 +329,7 @@ function pullDiffWireFiles(
             left_line: line.leftLine,
             right_line: line.rightLine,
           }));
+    const latestLines = latestChangedLines(file, latestFiles);
     return {
       path: file.headFilename ?? file.filename,
       absolute_path: join(projectRoot, file.headFilename ?? file.filename),
@@ -337,6 +341,7 @@ function pullDiffWireFiles(
       ...(syntax ? { syntax_highlight: syntax } : {}),
       lines: parsedLines.map((line, index) => ({
         ...line,
+        latest_commit: latestLines.has(index),
         ...(syntax?.lines[index]
           ? { syntax_highlight: syntax.lines[index] }
           : {}),
@@ -657,16 +662,14 @@ export const pulls = {
               file.previousFilename === path ||
               file.filename === path,
           );
-    const highlightedFiles = await addSyntaxHighlight(
-      r.local_path,
-      baseSha,
-      headSha,
-      selectedFiles,
-    );
+    const [highlightedFiles, latestFiles] = await Promise.all([
+      addSyntaxHighlight(r.local_path, baseSha, headSha, selectedFiles),
+      commitDiffFiles(r.local_path, headSha, { ignoreWhitespace }),
+    ]);
     return {
       base_sha: baseSha,
       head_sha: headSha,
-      files: pullDiffWireFiles(highlightedFiles, projectRoot),
+      files: pullDiffWireFiles(highlightedFiles, projectRoot, latestFiles),
     };
   },
 

@@ -14,6 +14,7 @@ export interface DiffLine {
 export interface PositionedDiffLine extends DiffLine {
   oldLine: number | null;
   newLine: number | null;
+  latestCommit?: boolean;
   syntaxHighlight?: SyntaxHighlightLineWire;
 }
 
@@ -47,7 +48,10 @@ export function parsePatch(patch: string | undefined | null): DiffLine[] {
 /** Parse a unified patch while tracking old/new coordinates from each hunk header. */
 export function parsePositionedPatch(
   patch: string | undefined | null,
-  syntaxLines?: Array<{ syntax_highlight?: SyntaxHighlightLineWire }>,
+  syntaxLines?: Array<{
+    latest_commit?: boolean;
+    syntax_highlight?: SyntaxHighlightLineWire;
+  }>,
 ): PositionedDiffLine[] {
   let oldLine = 0;
   let newLine = 0;
@@ -55,6 +59,7 @@ export function parsePositionedPatch(
 
   return parsePatch(patch).map((line, index) => {
     const syntaxHighlight = syntaxLines?.[index]?.syntax_highlight;
+    const latestCommit = syntaxLines?.[index]?.latest_commit;
     if (line.kind === "hunk") {
       const range = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line.text);
       if (range) {
@@ -62,7 +67,13 @@ export function parsePositionedPatch(
         newLine = Number(range[2]);
         inHunk = true;
       }
-      return { ...line, oldLine: null, newLine: null, syntaxHighlight };
+      return {
+        ...line,
+        oldLine: null,
+        newLine: null,
+        latestCommit,
+        syntaxHighlight,
+      };
     }
     if (!inHunk) {
       return {
@@ -70,25 +81,50 @@ export function parsePositionedPatch(
         kind: "meta",
         oldLine: null,
         newLine: null,
+        latestCommit,
         syntaxHighlight,
       };
     }
     if (line.kind === "add") {
-      const positioned = { ...line, oldLine: null, newLine, syntaxHighlight };
+      const positioned = {
+        ...line,
+        oldLine: null,
+        newLine,
+        latestCommit,
+        syntaxHighlight,
+      };
       newLine += 1;
       return positioned;
     }
     if (line.kind === "del") {
-      const positioned = { ...line, oldLine, newLine: null, syntaxHighlight };
+      const positioned = {
+        ...line,
+        oldLine,
+        newLine: null,
+        latestCommit,
+        syntaxHighlight,
+      };
       oldLine += 1;
       return positioned;
     }
     if (line.kind === "context") {
-      const positioned = { ...line, oldLine, newLine, syntaxHighlight };
+      const positioned = {
+        ...line,
+        oldLine,
+        newLine,
+        latestCommit,
+        syntaxHighlight,
+      };
       oldLine += 1;
       newLine += 1;
       return positioned;
     }
-    return { ...line, oldLine: null, newLine: null, syntaxHighlight };
+    return {
+      ...line,
+      oldLine: null,
+      newLine: null,
+      latestCommit,
+      syntaxHighlight,
+    };
   });
 }

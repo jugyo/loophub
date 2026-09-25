@@ -82,6 +82,31 @@ function stableDiff() {
   };
 }
 
+it("highlights latest-commit changes in unified and split views", async () => {
+  const diff = stableDiff();
+  Object.assign(diff.files[0].lines[2], { latest_commit: true });
+  renderDialog({
+    handlers: {
+      "pulls/diff": () => diff,
+    },
+  });
+
+  const latestUnified = await screen.findByText("const x = 1;");
+  await waitFor(() =>
+    expect(latestUnified.closest("tr")?.dataset.latestCommit).toBe("true"),
+  );
+  expect(
+    screen.getByText("const x = 0;").closest("tr")?.dataset.latestCommit,
+  ).toBeUndefined();
+
+  fireEvent.click(screen.getByRole("button", { name: "Split" }));
+  const latestSplit = screen.getByText("const x = 1;");
+  expect(
+    (latestSplit.closest("td")?.previousElementSibling as HTMLElement).dataset
+      .latestCommit,
+  ).toBe("true");
+});
+
 function feedbackThread(
   patch: Partial<DiffFeedbackThread> = {},
 ): DiffFeedbackThread {

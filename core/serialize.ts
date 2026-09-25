@@ -543,6 +543,7 @@ export interface PullDiffWire {
       text: string;
       left_line: number | null;
       right_line: number | null;
+      latest_commit?: boolean;
       syntax_highlight?: SyntaxHighlightLineWire;
     }[];
   }[];
