@@ -51,6 +51,15 @@ export interface OpenPullSweepRow {
   local_path: string;
 }
 
+export interface PullWorktreeRow {
+  number: number;
+  state: "open" | "closed";
+  closed_at: string | null;
+  head_ref: string;
+  merged: number;
+  merged_at: string | null;
+}
+
 export interface PullStatusProjection {
   base_sha: string;
   head_sha: string;
@@ -99,6 +108,20 @@ export function listPulls(
        ORDER BY ${order}`,
     )
     .all(...params) as IssueRow[];
+}
+
+// All PR branch identities for one repository. Worktree pruning uses this compact result set to
+// match the branches reported by one `git worktree list` without issuing a DB query per checkout.
+export function pullWorktrees(repoId: number): PullWorktreeRow[] {
+  return db
+    .query(
+      `SELECT i.number, i.state, i.closed_at, p.head_ref, p.merged, p.merged_at
+       FROM pulls p
+       JOIN issues i ON i.id = p.issue_id
+       WHERE i.repo_id = ? AND i.kind = 'pull'
+       ORDER BY i.number`,
+    )
+    .all(repoId) as PullWorktreeRow[];
 }
 
 export function createPull(

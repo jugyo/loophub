@@ -3,7 +3,8 @@
 // (not issue, #463) so multiple PRs linked to the same issue get independent worktrees instead
 // of colliding on one. Kept in core (not cli/dev.ts) so both the CLI and core/service.ts (e.g.
 // worktree consumers share one source of truth. cli/dev.ts re-exports these for its existing callers/
-// tests. See also worktree-prune.ts (prNumberFromBranch) which decodes the same branch convention.
+// tests. See also worktree-prune.ts (prNumberFromBranch) which decodes the same branch convention
+// for path resolution; pruning itself uses the PR head_ref stored in the DB.
 import { realpathSync } from "node:fs";
 import {
   basename,

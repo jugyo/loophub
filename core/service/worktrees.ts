@@ -12,28 +12,32 @@ import {
   classifyWorktree,
   issueNumberFromBranch,
   porcelainIsDirty,
-  prNumberFromBranch,
   WORKTREE_AUTO_PRUNE_GRACE_MS,
   worktreeDoneAt,
 } from "../worktree-prune.ts";
 import { canonicalPath, repoOr404 } from "./shared.ts";
 
 // ===== worktree housekeeping =====
-// Batch GC of stale LoopHub worktrees: the current `<repo>-p<n>` convention and the legacy
-// `loophub/pr-<n>` / pre-#463 `loophub/issue-<n>` conventions (still recognized so a worktree
-// provisioned before a migration is not orphaned). The orchestration — scanning git worktrees, resolving
-// each one's issue/PR state, and the destructive removal — lives here so the CLI stays a thin
-// presenter and the logic is unit-testable. Pure decisioning (clean-tree guard, keep/remove/skip
-// classification) stays in worktree-prune.ts.
+// Batch GC of LoopHub worktrees. PR worktrees are identified from the DB's head_ref rather than
+// by decoding a branch naming convention. The pre-#463 issue branch remains as a fallback only
+// when no PR row claims that branch.
+function pullByHeadRef(
+  pulls: S.PullWorktreeRow[],
+): Map<string, S.PullWorktreeRow | null> {
+  const byHead = new Map<string, S.PullWorktreeRow | null>();
+  for (const pull of pulls) {
+    byHead.set(pull.head_ref, byHead.has(pull.head_ref) ? null : pull);
+  }
+  return byHead;
+}
 
-// The number encoded in a LoopHub-managed branch, current or legacy convention — used purely as
-// a lookup key into `issues` (which numbers issues and pulls in one sequence per repo), so it does
-// not matter here whether it names an issue or a PR row.
-function worktreeNumberFromBranch(
+function worktreeNumber(
   branch: string | null,
-  fullName: string,
+  pullsByHead: Map<string, S.PullWorktreeRow | null>,
 ): number | null {
-  return issueNumberFromBranch(branch) ?? prNumberFromBranch(branch, fullName);
+  if (!branch) return null;
+  if (pullsByHead.has(branch)) return pullsByHead.get(branch)?.number ?? null;
+  return issueNumberFromBranch(branch);
 }
 
 export interface WorktreePlanEntry {
@@ -41,7 +45,7 @@ export interface WorktreePlanEntry {
   repoPath: string; // primary checkout (shared .git)
   path: string; // worktree directory
   branch: string;
-  issue: number; // the number encoded in the branch (issue or PR, whichever convention applies)
+  issue: number; // the matched PR number, or the issue number for a legacy issue worktree
   action: "remove" | "keep" | "skip";
   reason: string;
   doneAt: string | null; // merge/close timestamp behind a "remove" verdict (see worktreeDoneAt)
@@ -63,14 +67,12 @@ export interface WorktreeRemoveResult {
 async function removeVerifiedWorktree(
   entry: WorktreeRemoveInput,
   fresh: Awaited<ReturnType<typeof worktreeList>>,
+  pullsByHead: Map<string, S.PullWorktreeRow | null>,
 ): Promise<WorktreeRemoveResult> {
   const match = fresh.find(
     (w) => canonicalPath(w.path) === canonicalPath(entry.path),
   );
-  if (
-    !match ||
-    worktreeNumberFromBranch(match.branch, entry.repo) !== entry.issue
-  ) {
+  if (!match || worktreeNumber(match.branch, pullsByHead) !== entry.issue) {
     return {
       removed: false,
       reason: `no longer a loophub-managed worktree for #${entry.issue}`,
@@ -110,8 +112,10 @@ async function removeMany(
   const results = new Array<WorktreeRemoveResult>(entries.length);
   for (const [repoPath, group] of byRepo) {
     const fresh = await worktreeList(repoPath);
+    const repo = repoOr404(group[0].entry.repo);
+    const pullsByHead = pullByHeadRef(S.pullWorktrees(repo.id));
     for (const { entry, index } of group) {
-      results[index] = await removeVerifiedWorktree(entry, fresh);
+      results[index] = await removeVerifiedWorktree(entry, fresh, pullsByHead);
     }
   }
   return results;
@@ -130,35 +134,35 @@ async function plan(opts: {
   const cwd = canonicalPath(opts.cwd);
   const entries: WorktreePlanEntry[] = [];
   for (const r of repoRows) {
+    const pullsByHead = pullByHeadRef(S.pullWorktrees(r.id));
     for (const wt of await worktreeList(r.local_path)) {
-      const n = worktreeNumberFromBranch(wt.branch, r.full_name);
-      if (n == null) continue; // primary checkout / off-convention worktrees are not ours
+      const n = worktreeNumber(wt.branch, pullsByHead);
+      if (n == null) continue; // primary checkout, unmatched, or ambiguous worktrees are not ours
 
       let issueState: "open" | "closed" | null = null;
       let issueClosedAt: string | null = null;
       let prMerged = false;
       let prMergedAt: string | null = null;
       let prState: "open" | "closed" | null = null;
-      // Done-ness comes from the row's own state. A legacy worktree's branch names its issue
-      // (row.kind === "issue"), so merged-ness comes from its linked PR; the current #463
-      // convention names the worktree after the PR itself (row.kind === "pull"), so its own
-      // merged/state apply directly.
-      const row = S.getIssue(r.id, n);
-      if (row) {
-        issueState = row.state;
-        issueClosedAt = row.closed_at;
-        if (row.kind === "issue") {
-          const pr = S.linkedPullForIssue(row.id);
-          if (pr) {
-            prMerged = !!pr.merged;
-            prMergedAt = pr.merged_at;
-            prState = pr.state;
+      const pull = wt.branch ? pullsByHead.get(wt.branch) : undefined;
+      if (pull) {
+        issueState = pull.state;
+        issueClosedAt = pull.closed_at;
+        prMerged = !!pull.merged;
+        prMergedAt = pull.merged_at;
+        prState = pull.state;
+      } else {
+        // A branch not claimed by a PR may still be a pre-#463 issue worktree.
+        const row = S.getIssue(r.id, n);
+        if (row) {
+          issueState = row.state;
+          issueClosedAt = row.closed_at;
+          const linkedPull = S.linkedPullForIssue(row.id);
+          if (linkedPull) {
+            prMerged = !!linkedPull.merged;
+            prMergedAt = linkedPull.merged_at;
+            prState = linkedPull.state;
           }
-        } else {
-          const pull = S.getPull(row.id);
-          prMerged = !!pull?.merged;
-          prMergedAt = pull?.merged_at ?? null;
-          prState = row.state;
         }
       }
 

@@ -128,9 +128,10 @@ test("plan marks a worktree as remove when its linked PR is merged", async () =>
     repo: "me/merged",
     cwd: "/nowhere",
   });
-  const e1 = entries.find((e) => e.issue === 1);
-  expect(e1?.action).toBe("remove");
-  expect(e1?.reason).toBe("PR merged");
+  // The PR row claims this legacy-looking head_ref, so its PR number is the identity.
+  const e2 = entries.find((e) => e.issue === 2);
+  expect(e2?.action).toBe("remove");
+  expect(e2?.reason).toBe("PR merged");
 
   await git(repo.path, ["worktree", "remove", "--force", wtPath]);
 });
@@ -322,16 +323,16 @@ test("remove refuses when the path is no longer the expected worktree", async ()
   expect(res.reason).toContain("no longer a loophub-managed worktree for #7");
 });
 
-// plan()/remove() recognize the current <repo>-p<n> convention as well as legacy branches.
-test("plan and remove recognize the current <repo>-p<n> convention", async () => {
+// plan()/remove() use the stored PR head_ref, independently of branch naming conventions.
+test("plan and remove recognize a PR by its stored custom head_ref", async () => {
   const repo = await makeRepo("me/prconv");
   const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any; // #1
   const pr = S.createIssue(repo.id, "pull", "impl", "", "me") as any; // #2
-  S.createPull(pr.id, "prconv-p2", "main", null, issue.id);
+  S.createPull(pr.id, "feature/custom-head", "main", null, issue.id);
   S.setMerged(pr.id, "deadbeef", "squash");
 
   const wtPath = worktreePath(`wt-prconv-${repo.id}-2`);
-  await worktreeAdd(repo.path, wtPath, "prconv-p2", "main");
+  await worktreeAdd(repo.path, wtPath, "feature/custom-head", "main");
 
   const entries = await svc.worktrees.plan({
     repo: "me/prconv",
@@ -349,6 +350,53 @@ test("plan and remove recognize the current <repo>-p<n> convention", async () =>
   });
   expect(res.removed).toBe(true);
   expect(existsSync(wtPath)).toBe(false);
+});
+
+test("plan ignores unmatched and ambiguously matched PR branches", async () => {
+  const repo = await makeRepo("me/ambiguous");
+  const first = S.createIssue(repo.id, "pull", "first", "", "me") as any;
+  S.createPull(first.id, "shared-head", "main", null);
+  const second = S.createIssue(repo.id, "pull", "second", "", "me") as any;
+  S.createPull(second.id, "shared-head", "main", null);
+
+  const sharedPath = worktreePath(`wt-ambiguous-${repo.id}-shared`);
+  const unmatchedPath = worktreePath(`wt-ambiguous-${repo.id}-unmatched`);
+  await worktreeAdd(repo.path, sharedPath, "shared-head", "main");
+  await worktreeAdd(repo.path, unmatchedPath, "ambiguous-p999", "main");
+
+  const entries = await svc.worktrees.plan({
+    repo: "me/ambiguous",
+    cwd: "/nowhere",
+  });
+  expect(entries).toEqual([]);
+
+  for (const path of [sharedPath, unmatchedPath]) {
+    await git(repo.path, ["worktree", "remove", "--force", path]);
+  }
+});
+
+test("remove rechecks head_ref ambiguity before deleting", async () => {
+  const repo = await makeRepo("me/recheck");
+  const first = S.createIssue(repo.id, "pull", "first", "", "me") as any;
+  S.createPull(first.id, "custom/rechecked", "main", null);
+  const wtPath = worktreePath(`wt-recheck-${repo.id}`);
+  await worktreeAdd(repo.path, wtPath, "custom/rechecked", "main");
+
+  const entry = (
+    await svc.worktrees.plan({
+      repo: "me/recheck",
+      cwd: "/nowhere",
+    })
+  )[0]!;
+  expect(entry.issue).toBe(first.number);
+
+  const second = S.createIssue(repo.id, "pull", "second", "", "me") as any;
+  S.createPull(second.id, "custom/rechecked", "main", null);
+  const result = await svc.worktrees.remove(entry);
+  expect(result.removed).toBe(false);
+  expect(existsSync(wtPath)).toBe(true);
+
+  await git(repo.path, ["worktree", "remove", "--force", wtPath]);
 });
 
 // #1837: the worker's unattended sweep. It scans every registered repository and removes only the

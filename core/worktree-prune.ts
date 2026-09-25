@@ -7,8 +7,8 @@
 // #463 may still be on disk, so prune must keep recognizing it.
 const LEGACY_LOOPHUB_BRANCH_RE = /^loophub\/issue-(\d+)$/;
 
-// Legacy PR-number convention (#463): launchers no longer create these, but existing worktrees
-// must remain manageable after the naming change.
+// Legacy PR-number convention (#463). This parser remains available to branch/path helpers, but
+// worktree pruning identifies PR worktrees from the DB's head_ref instead.
 const LEGACY_LOOPHUB_PR_BRANCH_RE = /^loophub\/pr-(\d+)$/;
 
 // Preserve ordinary repository names in branch names while escaping bytes that Git forbids in
