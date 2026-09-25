@@ -19,7 +19,7 @@ import { porcelainIsDirty } from "./worktree-prune.ts";
 
 export interface PullWorktreeDirtyInput {
   fullName: string; // repo "owner/name"
-  headRef: string | null; // PR head branch (worktree convention: loophub/pr-<n>, or legacy issue-<n>)
+  headRef: string | null; // PR head branch (worktree convention: <repo>-p<n>, or a legacy convention)
   prNumber: number; // worktree key when headRef is off-convention (#463: PR-id based)
   merged: boolean;
   state: string; // "open" | "closed"

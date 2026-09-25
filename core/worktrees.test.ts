@@ -197,6 +197,7 @@ test("remove deletes a clean worktree; tidy prunes admin entries", async () => {
 
   const { result: res, commands } = await traceGitCommands(() =>
     svc.worktrees.remove({
+      repo: "me/remove",
       repoPath: repo.path,
       path: wtPath,
       issue: 1,
@@ -247,6 +248,7 @@ test("force plans and removes modified, untracked, and clean done worktrees", as
 
   for (const fixture of fixtures) {
     const res = await svc.worktrees.remove({
+      repo: "me/force-remove",
       repoPath: repo.path,
       path: fixture.path,
       issue: fixture.issue.number,
@@ -311,6 +313,7 @@ test("removeMany verifies worktrees once per repository before removing multiple
 test("remove refuses when the path is no longer the expected worktree", async () => {
   const repo = await makeRepo("me/guard");
   const res = await svc.worktrees.remove({
+    repo: "me/guard",
     repoPath: repo.path,
     path: worktreePath("does-not-exist"),
     issue: 7,
@@ -319,17 +322,16 @@ test("remove refuses when the path is no longer the expected worktree", async ()
   expect(res.reason).toContain("no longer a loophub-managed worktree for #7");
 });
 
-// plan()/remove() also recognize the current loophub/pr-<n> convention (#463), not just the
-// legacy loophub/issue-<n> one exercised above.
-test("plan and remove recognize the current loophub/pr-<n> convention", async () => {
+// plan()/remove() recognize the current <repo>-p<n> convention as well as legacy branches.
+test("plan and remove recognize the current <repo>-p<n> convention", async () => {
   const repo = await makeRepo("me/prconv");
   const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any; // #1
   const pr = S.createIssue(repo.id, "pull", "impl", "", "me") as any; // #2
-  S.createPull(pr.id, "loophub/pr-2", "main", null, issue.id);
+  S.createPull(pr.id, "prconv-p2", "main", null, issue.id);
   S.setMerged(pr.id, "deadbeef", "squash");
 
   const wtPath = worktreePath(`wt-prconv-${repo.id}-2`);
-  await worktreeAdd(repo.path, wtPath, "loophub/pr-2", "main");
+  await worktreeAdd(repo.path, wtPath, "prconv-p2", "main");
 
   const entries = await svc.worktrees.plan({
     repo: "me/prconv",
@@ -340,6 +342,7 @@ test("plan and remove recognize the current loophub/pr-<n> convention", async ()
   expect(e2?.reason).toBe("PR merged");
 
   const res = await svc.worktrees.remove({
+    repo: "me/prconv",
     repoPath: repo.path,
     path: wtPath,
     issue: 2,
@@ -369,7 +372,7 @@ test("autoPrune removes finished worktrees past the grace period and keeps the r
     "main",
   );
   await worktreeAdd(repo.path, openPath, `loophub/pr-${open.number}`, "main");
-  await worktreeAdd(repo.path, adhocPath, "scratch", "main");
+  await worktreeAdd(repo.path, adhocPath, `release-p${merged.number}`, "main");
   // Uncommitted work in the finished attempt: force removal must not be blocked by it.
   writeFileSync(join(mergedPath, "wip.txt"), "unfinished\n");
 
@@ -380,7 +383,7 @@ test("autoPrune removes finished worktrees past the grace period and keeps the r
     cwd: "/nowhere",
     nowMs: mergedAt + WORKTREE_AUTO_PRUNE_GRACE_MS - 1,
   });
-  // Only the two loophub/pr-<n> worktrees are scanned; the ad-hoc branch is not ours.
+  // Only the two legacy LoopHub worktrees are scanned; the colliding *-p<n> branch is not ours.
   expect(held).toEqual({ scanned: 2, candidates: 0, removed: 0, failed: [] });
   expect(existsSync(mergedPath)).toBe(true);
 

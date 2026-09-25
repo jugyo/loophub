@@ -120,7 +120,9 @@ export const dev = {
           : issueRow.title,
         body,
         head: input.head,
-        headFromNumber: input.head ? undefined : worktreeBranch,
+        headFromNumber: input.head
+          ? undefined
+          : (number) => worktreeBranch(name, number),
         base,
         issue: input.issue,
       },

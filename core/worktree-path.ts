@@ -1,5 +1,5 @@
-// The deterministic PR worktree convention: path and branch are derived purely from
-// the PR number (no slug), so any consumer can reconstruct them without a ledger. Keyed by PR
+// The deterministic PR worktree convention: path and branch are derived from
+// the repository name and PR number, so any consumer can reconstruct them without a ledger. Keyed by PR
 // (not issue, #463) so multiple PRs linked to the same issue get independent worktrees instead
 // of colliding on one. Kept in core (not cli/dev.ts) so both the CLI and core/service.ts (e.g.
 // worktree consumers share one source of truth. cli/dev.ts re-exports these for its existing callers/
@@ -14,7 +14,10 @@ import {
   resolve,
   sep,
 } from "node:path";
-import { issueNumberFromBranch } from "./worktree-prune.ts";
+import {
+  branchRepositoryName,
+  issueNumberFromBranch,
+} from "./worktree-prune.ts";
 
 export type WorktreeScheme = "pr" | "legacy-issue";
 
@@ -67,8 +70,9 @@ export function assertSafeRepoSegments(
   }
 }
 
-export function worktreeBranch(pr: number): string {
-  return `loophub/pr-${pr}`;
+export function worktreeBranch(fullName: string, pr: number): string {
+  assertSafeRepoSegments(fullName, "worktree branch");
+  return `${branchRepositoryName(fullName)}-p${pr}`;
 }
 
 // <worktreeRoot>/<owner>/<repo>/pr-<n>. fullName is the repo's "owner/name".

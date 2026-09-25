@@ -49,7 +49,7 @@ UI とバックエンドの両方を、既存の issue / PR / worktree / build �
 
 #463 以降、作業単位は issue ではなく PR:
 
-- branch `loophub/pr-<m>`、worktree `~/.loophub/worktrees/<owner>/<repo>/pr-<m>`
+- branch `<repo>-p<m>`、worktree `~/.loophub/worktrees/<owner>/<repo>/pr-<m>`
   (`core/worktree-path.ts`)。
 - dev lock も PR 番号キー(`core/dev-lock.ts`、`dev-locks/<owner>/<repo>/pr-<m>.json`)。
 - PEVR run(`pevr_runs`、[pevr-workflow.ja.md](./pevr-workflow.ja.md) 参照)も
@@ -129,7 +129,7 @@ flowchart TD
     Existing -- "なし" --> Normal["通常フロー<br/>(base = base branch HEAD,<br/>base_sha を記録)"]
     Existing -- "あり (#100)" --> Base["PR #100 の base_sha を読む<br/>(NULL なら merge-base で推定)"]
     Base --> OpenPr["pulls.create(parallel: true)<br/>→ 新 PR #101, base_sha は #100 と同値"]
-    OpenPr --> WT["provisionWorktree<br/>git worktree add -b loophub/pr-101 ... <base_sha>"]
+    OpenPr --> WT["provisionWorktree<br/>git worktree add -b repo-p101 ... <base_sha>"]
     WT --> Spawn["agent spawn<br/>cwd = pr-101 worktree"]
 ```
 

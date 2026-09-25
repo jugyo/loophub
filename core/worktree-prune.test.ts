@@ -20,15 +20,21 @@ test("issueNumberFromBranch matches only the legacy loophub/issue-<n> convention
   expect(issueNumberFromBranch(null)).toBeNull();
 });
 
-test("prNumberFromBranch matches only the current loophub/pr-<n> convention (#463)", () => {
-  expect(prNumberFromBranch("loophub/pr-95")).toBe(95);
-  expect(prNumberFromBranch("loophub/pr-1")).toBe(1);
-  expect(prNumberFromBranch("main")).toBeNull();
-  expect(prNumberFromBranch("loophub/pr-")).toBeNull();
-  expect(prNumberFromBranch("loophub/pr-12a")).toBeNull();
-  expect(prNumberFromBranch("feature/loophub/pr-3")).toBeNull();
-  expect(prNumberFromBranch("loophub/issue-95")).toBeNull();
-  expect(prNumberFromBranch(null)).toBeNull();
+test("prNumberFromBranch matches current and legacy PR branch conventions", () => {
+  expect(prNumberFromBranch("my-repo-p1", "acme/my-repo")).toBe(1);
+  expect(prNumberFromBranch("foo%7Ebar-p42", "acme/foo~bar")).toBe(42);
+  expect(prNumberFromBranch("release-p42", "acme/my-repo")).toBeNull();
+  expect(prNumberFromBranch("my-repo-p0", "acme/my-repo")).toBeNull();
+  expect(prNumberFromBranch("my-repo-p01", "acme/my-repo")).toBeNull();
+  expect(prNumberFromBranch("loophub/pr-95", "me/loophub")).toBe(95);
+  expect(prNumberFromBranch("loophub/pr-1", "me/loophub")).toBe(1);
+  expect(prNumberFromBranch("main", "me/loophub")).toBeNull();
+  expect(prNumberFromBranch("loophub/pr-", "me/loophub")).toBeNull();
+  expect(prNumberFromBranch("loophub/pr-12a", "me/loophub")).toBeNull();
+  expect(prNumberFromBranch("feature/loophub/pr-3", "me/loophub")).toBeNull();
+  expect(prNumberFromBranch("loophub-p12a", "me/loophub")).toBeNull();
+  expect(prNumberFromBranch("loophub/issue-95", "me/loophub")).toBeNull();
+  expect(prNumberFromBranch(null, "me/loophub")).toBeNull();
 });
 
 test("porcelainIsDirty ignores the injected .claude/ artifact but flags real changes", () => {

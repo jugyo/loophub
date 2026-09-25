@@ -7,8 +7,33 @@
 // #463 may still be on disk, so prune must keep recognizing it.
 const LEGACY_LOOPHUB_BRANCH_RE = /^loophub\/issue-(\d+)$/;
 
-// Current (#463+) branch convention: loophub/pr-<n> (see core/worktree-path.ts worktreeBranch).
-const LOOPHUB_PR_BRANCH_RE = /^loophub\/pr-(\d+)$/;
+// Legacy PR-number convention (#463): launchers no longer create these, but existing worktrees
+// must remain manageable after the naming change.
+const LEGACY_LOOPHUB_PR_BRANCH_RE = /^loophub\/pr-(\d+)$/;
+
+// Preserve ordinary repository names in branch names while escaping bytes that Git forbids in
+// refs. Percent itself is escaped, so the result remains an unambiguous representation of the
+// repository name. Dot and hyphen need special handling only where they would make the ref
+// invalid (a leading dot/hyphen or two consecutive dots).
+export function branchRepositoryName(fullName: string): string {
+  const name = fullName.split("/").at(-1) ?? "";
+  let encoded = "";
+  const chars = Array.from(name);
+  for (const [index, char] of chars.entries()) {
+    const safe =
+      /^[A-Za-z0-9_]$/.test(char) ||
+      (char === "-" && index > 0) ||
+      (char === "." && index > 0 && chars[index - 1] !== ".");
+    if (safe) {
+      encoded += char;
+      continue;
+    }
+    for (const byte of new TextEncoder().encode(char)) {
+      encoded += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+    }
+  }
+  return encoded;
+}
 
 // Issue number for a legacy LoopHub-managed branch, or null for anything off that convention
 // (the primary checkout's default branch, ad-hoc worktrees, or the current pr-<n> convention).
@@ -18,13 +43,22 @@ export function issueNumberFromBranch(branch: string | null): number | null {
   return m ? Number(m[1]) : null;
 }
 
-// PR number for a current-convention LoopHub-managed branch, or null for anything off that
-// convention (the primary checkout's default branch, ad-hoc worktrees, or a legacy issue-<n>
+// PR number for a current or legacy LoopHub-managed PR branch, or null for anything off those
+// conventions (the primary checkout's default branch, ad-hoc worktrees, or a legacy issue-<n>
 // branch — see issueNumberFromBranch).
-export function prNumberFromBranch(branch: string | null): number | null {
+export function prNumberFromBranch(
+  branch: string | null,
+  fullName: string,
+): number | null {
   if (!branch) return null;
-  const m = LOOPHUB_PR_BRANCH_RE.exec(branch);
-  return m ? Number(m[1]) : null;
+  const legacy = LEGACY_LOOPHUB_PR_BRANCH_RE.exec(branch);
+  if (legacy) return Number(legacy[1]);
+  const repoName = branchRepositoryName(fullName);
+  if (!repoName) return null;
+  const prefix = `${repoName}-p`;
+  if (!branch.startsWith(prefix)) return null;
+  const number = branch.slice(prefix.length);
+  return /^[1-9]\d*$/.test(number) ? Number(number) : null;
 }
 
 // Claude settings copied into worktrees by provisionWorktree (syncClaudeDir) may not be

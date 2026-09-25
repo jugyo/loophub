@@ -19,9 +19,9 @@ import {
 import { canonicalPath, repoOr404 } from "./shared.ts";
 
 // ===== worktree housekeeping =====
-// Batch GC of stale LoopHub worktrees: the current `loophub/pr-<n>` convention (#463) and the
-// legacy pre-#463 `loophub/issue-<n>` convention (still recognized so a worktree provisioned
-// before the migration is not orphaned). The orchestration — scanning git worktrees, resolving
+// Batch GC of stale LoopHub worktrees: the current `<repo>-p<n>` convention and the legacy
+// `loophub/pr-<n>` / pre-#463 `loophub/issue-<n>` conventions (still recognized so a worktree
+// provisioned before a migration is not orphaned). The orchestration — scanning git worktrees, resolving
 // each one's issue/PR state, and the destructive removal — lives here so the CLI stays a thin
 // presenter and the logic is unit-testable. Pure decisioning (clean-tree guard, keep/remove/skip
 // classification) stays in worktree-prune.ts.
@@ -29,8 +29,11 @@ import { canonicalPath, repoOr404 } from "./shared.ts";
 // The number encoded in a LoopHub-managed branch, current or legacy convention — used purely as
 // a lookup key into `issues` (which numbers issues and pulls in one sequence per repo), so it does
 // not matter here whether it names an issue or a PR row.
-function worktreeNumberFromBranch(branch: string | null): number | null {
-  return issueNumberFromBranch(branch) ?? prNumberFromBranch(branch);
+function worktreeNumberFromBranch(
+  branch: string | null,
+  fullName: string,
+): number | null {
+  return issueNumberFromBranch(branch) ?? prNumberFromBranch(branch, fullName);
 }
 
 export interface WorktreePlanEntry {
@@ -45,6 +48,7 @@ export interface WorktreePlanEntry {
 }
 
 export interface WorktreeRemoveInput {
+  repo: string;
   repoPath: string;
   path: string;
   issue: number;
@@ -63,7 +67,10 @@ async function removeVerifiedWorktree(
   const match = fresh.find(
     (w) => canonicalPath(w.path) === canonicalPath(entry.path),
   );
-  if (!match || worktreeNumberFromBranch(match.branch) !== entry.issue) {
+  if (
+    !match ||
+    worktreeNumberFromBranch(match.branch, entry.repo) !== entry.issue
+  ) {
     return {
       removed: false,
       reason: `no longer a loophub-managed worktree for #${entry.issue}`,
@@ -124,7 +131,7 @@ async function plan(opts: {
   const entries: WorktreePlanEntry[] = [];
   for (const r of repoRows) {
     for (const wt of await worktreeList(r.local_path)) {
-      const n = worktreeNumberFromBranch(wt.branch);
+      const n = worktreeNumberFromBranch(wt.branch, r.full_name);
       if (n == null) continue; // primary checkout / off-convention worktrees are not ours
 
       let issueState: "open" | "closed" | null = null;

@@ -91,7 +91,9 @@ export async function provisionWorktree(
       ? legacyWorktreePath(worktreeRoot, fullName, pr)
       : worktreePath(worktreeRoot, fullName, pr);
   const conventionBranch =
-    scheme === "legacy-issue" ? legacyWorktreeBranch(pr) : worktreeBranch(pr);
+    scheme === "legacy-issue"
+      ? legacyWorktreeBranch(pr)
+      : worktreeBranch(fullName, pr);
   // The branch to check out: an explicit headRef wins (a PR target's actual head, which may or
   // may not exist yet — see below); otherwise the scheme's own convention branch.
   const branch = headRef ?? conventionBranch;

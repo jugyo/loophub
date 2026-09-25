@@ -57,10 +57,9 @@ run development loops while a human supervises with minimal attention.
   Starting work on an issue uses `lh workflow start` (Web: **Start workflow**). The
   event-triggered `.loophub/workflow.yml` worker configuration is separate repository automation.
   (`lh build` was removed; do not present it as a current procedure.)
-- **Worktree**: a Git linked checkout dedicated to a PR. Convention: branch
-  `loophub/pr-<m>` at `$LOOPHUB_HOME/worktrees/<owner>/<repo>/pr-<m>`, keyed by PR number.
-  Provisioned by shared helpers (`cli/dev.ts` / `dev.openPr` / worktree provision) when a
-  Workflow (or other launcher) starts work.
+- **Worktree**: a Git linked checkout dedicated to a PR. Provisioned by shared helpers
+  (`cli/dev.ts` / `dev.openPr` / worktree provision) when a Workflow (or other launcher) starts
+  work.
 
 See [worktree lifecycle](docs/worktree.ja.md),
 [historical parallel-attempt design](docs/parallel-issue-attempts-design.ja.md), and

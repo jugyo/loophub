@@ -75,7 +75,7 @@ describe("dev.openPr", () => {
     expect(first.created).toBe(true);
 
     let pull = (await svc.pulls.get("me/proj", first.number)) as any;
-    expect(pull.head.ref).toBe(`loophub/pr-${first.number}`);
+    expect(pull.head.ref).toBe(`proj-p${first.number}`);
     expect(pull.base.ref).toBe("main");
     expect(pull.linked_issue?.number).toBe(issue.number);
     expect(pull.body).toContain(`Closes #${issue.number}`);

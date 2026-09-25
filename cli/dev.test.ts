@@ -521,8 +521,8 @@ test("formatSpawnCommand matches the argv handed to spawnSync (single source of 
 
 // ---- worktree naming (pure) ----
 
-test("worktree path and branch are deterministic from the PR number (#463)", () => {
-  expect(worktreeBranch(42)).toBe("loophub/pr-42");
+test("worktree path is deterministic from the repo and PR number", () => {
+  expect(worktreeBranch("acme/foo~bar", 42)).toBe("foo%7Ebar-p42");
   expect(worktreePath("/root", "me/loophub", 42)).toBe(
     "/root/me/loophub/pr-42",
   );
@@ -558,6 +558,18 @@ async function makeRepo(): Promise<string> {
   return p;
 }
 
+test("escaped repository names produce valid Git branch names", async () => {
+  const repo = await makeRepo();
+  const branch = worktreeBranch("acme/foo~bar", 42);
+  expect((await git(repo, ["check-ref-format", "--branch", branch])).code).toBe(
+    0,
+  );
+  expect(
+    (await git(repo, ["check-ref-format", "--branch", "foo~bar-p42"])).code,
+  ).not.toBe(0);
+  rmSync(repo, { recursive: true, force: true });
+});
+
 function tmpRoot(): string {
   return mkdtempSync(join(tmpdir(), "lh-build-root-"));
 }
@@ -585,14 +597,14 @@ function provision(
   });
 }
 
-test("creates a new loophub/pr-<n> branch worktree off the default branch (#463)", async () => {
+test("creates a new <repo>-p<n> branch worktree off the default branch", async () => {
   const repo = await makeRepo();
   const root = tmpRoot();
   const path = await provision(repo, root, 7);
   expect(path).toBe(join(root, "me/proj", "pr-7"));
   expect(existsSync(join(path, "f.txt"))).toBe(true);
   const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("pr-7"));
-  expect(wt?.branch).toBe("loophub/pr-7");
+  expect(wt?.branch).toBe("proj-p7");
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
@@ -616,12 +628,12 @@ test("re-attaches an existing branch whose worktree was removed (disk-truth self
   const path = await provision(repo, root, 7);
   await git(repo, ["worktree", "remove", "--force", path]);
   expect(existsSync(path)).toBe(false);
-  expect(await branchExists(repo, "loophub/pr-7")).toBe(true);
+  expect(await branchExists(repo, "proj-p7")).toBe(true);
   const again = await provision(repo, root, 7);
   expect(again).toBe(path);
-  expect(
-    (await worktreeList(repo)).some((w) => w.branch === "loophub/pr-7"),
-  ).toBe(true);
+  expect((await worktreeList(repo)).some((w) => w.branch === "proj-p7")).toBe(
+    true,
+  );
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
@@ -633,7 +645,7 @@ test("checks out an existing off-convention head branch for a PR without creatin
   const _path = await provision(repo, root, 9, "feature-x");
   const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("pr-9"));
   expect(wt?.branch).toBe("feature-x");
-  expect(await branchExists(repo, "loophub/pr-9")).toBe(false);
+  expect(await branchExists(repo, "proj-p9")).toBe(false);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
@@ -641,20 +653,13 @@ test("checks out an existing off-convention head branch for a PR without creatin
 test("creates the convention branch fresh when allowCreatingConventionBranch is set and it doesn't exist yet (#463: PR opened before its worktree)", async () => {
   const repo = await makeRepo();
   const root = tmpRoot();
-  // dev.openPr records head_ref = loophub/pr-<n> before the branch/worktree are provisioned;
+  // dev.openPr records head_ref = <repo>-p<n> before the branch/worktree are provisioned;
   // `lh build` then passes that same headRef in here (with allowCreatingConventionBranch, since
   // this is an issue target's own just-resolved PR) — it must be created, not rejected.
-  const path = await provision(
-    repo,
-    root,
-    11,
-    "loophub/pr-11",
-    undefined,
-    true,
-  );
+  const path = await provision(repo, root, 11, "proj-p11", undefined, true);
   expect(path).toBe(join(root, "me/proj", "pr-11"));
   const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("pr-11"));
-  expect(wt?.branch).toBe("loophub/pr-11");
+  expect(wt?.branch).toBe("proj-p11");
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
@@ -673,7 +678,7 @@ test("resumes a pre-created zero-commit draft attempt by creating its missing co
     repo,
     root,
     1185,
-    "loophub/pr-1185",
+    "proj-p1185",
     undefined,
     allowCreatingConventionBranch,
     "main",
@@ -682,7 +687,7 @@ test("resumes a pre-created zero-commit draft attempt by creating its missing co
 
   expect(allowCreatingConventionBranch).toBe(true);
   expect((await git(path, ["rev-parse", "HEAD"])).stdout.trim()).toBe(baseSha);
-  expect(await branchExists(repo, "loophub/pr-1185")).toBe(true);
+  expect(await branchExists(repo, "proj-p1185")).toBe(true);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
@@ -695,7 +700,7 @@ test("reuses a partial pending worktree while its HEAD still matches the recorde
     repo,
     root,
     1186,
-    "loophub/pr-1186",
+    "proj-p1186",
     undefined,
     true,
     "main",
@@ -703,16 +708,7 @@ test("reuses a partial pending worktree while its HEAD still matches the recorde
   );
 
   await expect(
-    provision(
-      repo,
-      root,
-      1186,
-      "loophub/pr-1186",
-      undefined,
-      true,
-      "main",
-      baseSha,
-    ),
+    provision(repo, root, 1186, "proj-p1186", undefined, true, "main", baseSha),
   ).resolves.toBe(path);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
@@ -726,7 +722,7 @@ test("rejects a stale pending worktree whose HEAD differs from the recorded base
     repo,
     root,
     1187,
-    "loophub/pr-1187",
+    "proj-p1187",
     undefined,
     true,
     "main",
@@ -737,16 +733,7 @@ test("rejects a stale pending worktree whose HEAD differs from the recorded base
   await git(path, ["commit", "-qm", "stale attempt"]);
 
   await expect(
-    provision(
-      repo,
-      root,
-      1187,
-      "loophub/pr-1187",
-      undefined,
-      true,
-      "main",
-      baseSha,
-    ),
+    provision(repo, root, 1187, "proj-p1187", undefined, true, "main", baseSha),
   ).rejects.toThrow(/does not match recorded base/);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
@@ -760,7 +747,7 @@ test("rejects a stale pending branch left behind after its worktree is removed",
     repo,
     root,
     1188,
-    "loophub/pr-1188",
+    "proj-p1188",
     undefined,
     true,
     "main",
@@ -772,16 +759,7 @@ test("rejects a stale pending branch left behind after its worktree is removed",
   await git(repo, ["worktree", "remove", "--force", path]);
 
   await expect(
-    provision(
-      repo,
-      root,
-      1188,
-      "loophub/pr-1188",
-      undefined,
-      true,
-      "main",
-      baseSha,
-    ),
+    provision(repo, root, 1188, "proj-p1188", undefined, true, "main", baseSha),
   ).rejects.toThrow(/does not match recorded base/);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
@@ -823,7 +801,7 @@ test("creates a fresh convention branch from the supplied PR base branch", async
     repo,
     root,
     12,
-    "loophub/pr-12",
+    "proj-p12",
     undefined,
     true,
     "integration/stack",
@@ -846,7 +824,7 @@ test("creates a fresh convention branch from a recorded base SHA after the base 
     repo,
     root,
     13,
-    "loophub/pr-13",
+    "proj-p13",
     undefined,
     true,
     "main",
@@ -869,15 +847,15 @@ test("errors when an explicit off-convention headRef does not exist (nothing to 
   rmSync(root, { recursive: true, force: true });
 });
 
-test("refuses to fabricate the convention branch when allowCreatingConventionBranch is not set (#463: a direct PR target's branch must not be silently recreated)", async () => {
+test("refuses to fabricate the convention branch when allowCreatingConventionBranch is not set", async () => {
   const repo = await makeRepo();
   const root = tmpRoot();
   // headRef matches the PR-id convention but the branch was never created (or was deleted
   // out-of-band) and the caller has not asserted this is a brand-new PR's own branch — a direct
   // `lh build <pr>` re-entering an established PR must refuse rather than silently start on a
   // fresh, empty branch under the same name.
-  await expect(provision(repo, root, 11, "loophub/pr-11")).rejects.toThrow(
-    /branch "loophub\/pr-11" does not exist/,
+  await expect(provision(repo, root, 11, "proj-p11")).rejects.toThrow(
+    /branch "proj-p11" does not exist/,
   );
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
