@@ -17,6 +17,23 @@ const PRICES: Record<string, UsagePrice> = {
   haiku: { input: 1, cacheCreation: 1.25, cacheRead: 0.1, output: 5 },
 };
 
+// Claude Opus 5.5 and Fable 5.1 (https://platform.claude.com/docs/en/about-claude/pricing, checked
+// 2026-09-29) break from their families' rates: Opus 5.5 is $4 / $5 5m cache write / $20 with cache
+// hits at 0.05x input ($0.20), and Fable 5.1 keeps Fable's $10 / $12.50 / $50 but prices cache hits
+// at 0.025x input ($0.25). Sonnet 5.5 matches SONNET_5_INTRO_PRICE, which Anthropic made Sonnet 5's
+// standard rate, so it shares that entry via the "sonnet-5" match.
+const OPUS_55_PRICE: UsagePrice = {
+  input: 4,
+  cacheCreation: 5,
+  cacheRead: 0.2,
+  output: 20,
+};
+const FABLE_51_PRICE: UsagePrice = {
+  input: 10,
+  cacheCreation: 12.5,
+  cacheRead: 0.25,
+  output: 50,
+};
 const SONNET_5_INTRO_PRICE: UsagePrice = {
   input: 2,
   cacheCreation: 2.5,
@@ -95,6 +112,24 @@ const GPT_6_ASTRA_PRICE: UsagePrice = {
   cacheRead: 1,
   output: 50,
 };
+// Confirmed OpenAI rates for the GPT-6 Sol and Luna tiers (checked 2026-09-29):
+// https://developers.openai.com/api/docs/models/gpt-6-sol — input $2.00 / cached input $0.20 /
+// cache writes $2.50 / output $10.00 per 1M tokens;
+// https://developers.openai.com/api/docs/models/gpt-6-luna — input $0.10 / cached input $0.01 /
+// cache writes $0.125 / output $0.50 per 1M tokens. As for gpt-6-astra, only the standard rate is
+// stored, not the >272K-input tier.
+const GPT_6_SOL_PRICE: UsagePrice = {
+  input: 2,
+  cacheCreation: 2.5,
+  cacheRead: 0.2,
+  output: 10,
+};
+const GPT_6_LUNA_PRICE: UsagePrice = {
+  input: 0.1,
+  cacheCreation: 0.125,
+  cacheRead: 0.01,
+  output: 0.5,
+};
 const GPT_56_LUNA_PRICE: UsagePrice = {
   input: 1,
   cacheCreation: 1.25,
@@ -138,6 +173,8 @@ const GROK_43_PRICE: UsagePrice = {
 
 export function priceForModel(model: string): UsagePrice | null {
   const m = model.toLowerCase();
+  if (m.includes("opus-5-5")) return OPUS_55_PRICE;
+  if (m.includes("fable-5-1")) return FABLE_51_PRICE;
   if (m.includes("sonnet-5")) return SONNET_5_INTRO_PRICE;
   if (/opus-4-(8|7|6|5)/.test(m)) return PRICES.opus;
   if (
@@ -153,6 +190,8 @@ export function priceForModel(model: string): UsagePrice | null {
   if (m.includes("sonnet")) return PRICES.sonnet;
   if (m.includes("haiku")) return PRICES.haiku;
   if (m.includes("gpt-6-astra")) return GPT_6_ASTRA_PRICE;
+  if (m.includes("gpt-6-sol")) return GPT_6_SOL_PRICE;
+  if (m.includes("gpt-6-luna")) return GPT_6_LUNA_PRICE;
   if (m.includes("gpt-5.6-sol")) return GPT_56_SOL_PRICE;
   if (m.includes("gpt-5.6-luna")) return GPT_56_LUNA_PRICE;
   if (m.includes("gpt-5.5")) return GPT_55_PRICE;

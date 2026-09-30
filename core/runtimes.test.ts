@@ -173,3 +173,42 @@ test("every runtime defines every registry field (#556)", () => {
     ).toBeGreaterThan(0);
   }
 });
+
+test("Claude Code suggests the latest Claude 5 models and keeps the older ones (#593)", () => {
+  const claude = RUNTIMES["claude-code"];
+  for (const model of [
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-fable-5-1",
+  ]) {
+    expect(claude.modelSuggestions).toContain(model);
+    // Claude Code accepts the same effort ladder on these models.
+    expect(effortSuggestionsForModel("claude-code", model)).toEqual(
+      claude.effortSuggestions,
+    );
+  }
+  expect(claude.defaultModel).toBe("opus");
+  expect(claude.modelSuggestions).toContain("claude-opus-5");
+  expect(claude.modelSuggestions).toContain("claude-sonnet-5");
+  expect(claude.modelSuggestions).toContain("claude-fable-5");
+});
+
+test("Codex suggests GPT-6 Sol and Luna with Astra's effort ladder (#593)", () => {
+  const codex = RUNTIMES.codex;
+  expect(codex.defaultModel).toBe("gpt-6-astra");
+  expect(codex.modelSuggestions[0]).toBe("gpt-6-astra");
+  for (const model of ["gpt-6-sol", "gpt-6-luna"]) {
+    expect(codex.modelSuggestions).toContain(model);
+    expect(effortSuggestionsForModel("codex", model)).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+  }
+  // The gpt-5.x tiers keep the runtime ladder.
+  expect(effortSuggestionsForModel("codex", "gpt-5.5")).toEqual(
+    codex.effortSuggestions,
+  );
+});

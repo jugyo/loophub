@@ -178,3 +178,65 @@ test("priceForModel prices gpt-6-astra from its confirmed OpenAI standard rate",
   expect(priceForModel("gpt-5.6-sol")).toMatchObject({ input: 5 });
   expect(priceForModel("gpt-6-nova")).toBeNull();
 });
+
+test("priceForModel prices the latest Claude 5 models at their own standard rates (#593)", () => {
+  expect(priceForModel("claude-opus-5-5")).toEqual({
+    input: 4,
+    cacheCreation: 5,
+    cacheRead: 0.2,
+    output: 20,
+  });
+  expect(priceForModel("claude-sonnet-5-5")).toEqual({
+    input: 2,
+    cacheCreation: 2.5,
+    cacheRead: 0.2,
+    output: 10,
+  });
+  expect(priceForModel("claude-fable-5-1")).toEqual({
+    input: 10,
+    cacheCreation: 12.5,
+    cacheRead: 0.25,
+    output: 50,
+  });
+  expect(
+    calculateCostUsd("claude-opus-5-5", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 1_000_000,
+      cache_read_input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+    }),
+  ).toBeCloseTo(29.2);
+  // The previous generation and the bare aliases keep their rates.
+  expect(priceForModel("claude-opus-5")).toMatchObject({ input: 5 });
+  expect(priceForModel("opus")).toMatchObject({ input: 5 });
+  expect(priceForModel("claude-sonnet-5")).toMatchObject({ input: 2 });
+  expect(priceForModel("claude-fable-5")).toMatchObject({ cacheRead: 1 });
+  expect(priceForModel("fable")).toMatchObject({ cacheRead: 1 });
+});
+
+test("priceForModel prices GPT-6 Sol and Luna from their confirmed OpenAI rates (#593)", () => {
+  expect(priceForModel("gpt-6-sol")).toEqual({
+    input: 2,
+    cacheCreation: 2.5,
+    cacheRead: 0.2,
+    output: 10,
+  });
+  expect(priceForModel("gpt-6-luna")).toEqual({
+    input: 0.1,
+    cacheCreation: 0.125,
+    cacheRead: 0.01,
+    output: 0.5,
+  });
+  expect(
+    calculateCostUsd("gpt-6-luna", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1_000_000,
+    }),
+  ).toBeCloseTo(0.6);
+  // The gpt-5.6 tiers with similar names keep their own rates.
+  expect(priceForModel("gpt-5.6-sol")).toMatchObject({ input: 5 });
+  expect(priceForModel("gpt-5.6-luna")).toMatchObject({ input: 1 });
+  expect(priceForModel("gpt-6-astra")).toMatchObject({ input: 10 });
+});

@@ -104,6 +104,9 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
       "opus",
       "sonnet",
       "haiku",
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-fable-5-1",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-sonnet-5",
@@ -126,6 +129,8 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     defaultEffort: "medium",
     modelSuggestions: [
       "gpt-6-astra",
+      "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -137,9 +142,12 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     effortSuggestions: ["minimal", "low", "medium", "high"],
     // GPT-6 Astra does not accept `minimal` (nor `none`) and adds `xhigh`/`max`
     // (https://developers.openai.com/api/docs/guides/latest-model); the older gpt-5.x tiers keep
-    // the ladder above.
+    // the ladder above. GPT-6 Sol and Luna additionally accept `none` in the API, but Codex's own
+    // effort ladder (https://learn.chatgpt.com/docs/models) starts at `low`, so they share Astra's.
     modelEffortSuggestions: {
       "gpt-6-astra": ["low", "medium", "high", "xhigh", "max"],
+      "gpt-6-sol": ["low", "medium", "high", "xhigh", "max"],
+      "gpt-6-luna": ["low", "medium", "high", "xhigh", "max"],
     },
     sandboxCapable: false,
     // https://learn.chatgpt.com/docs/build-skills — Codex scans `.agents/skills` from the cwd up to
