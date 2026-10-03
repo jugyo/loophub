@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "#loophub-test";
 import { git } from "./git.ts";
+import { worktreeBranch } from "./worktree-path.ts";
 import { provisionWorktree } from "./worktree-provision.ts";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-number-worktree-"));
@@ -37,7 +38,7 @@ test("archived PR numbers and their worktrees are not reused by a later attempt"
   const firstPr = S.createIssue(repo.id, "pull", "first attempt", "", "me");
   S.createPull(
     firstPr.id,
-    `loophub/pr-${firstPr.number}`,
+    worktreeBranch(repo.full_name, firstPr.number),
     "main",
     null,
     firstIssue.id,
@@ -54,7 +55,7 @@ test("archived PR numbers and their worktrees are not reused by a later attempt"
     defaultBranch: "main",
     worktreeRoot: join(HOME, "worktrees"),
     pr: firstPr.number,
-    headRef: `loophub/pr-${firstPr.number}`,
+    headRef: worktreeBranch(repo.full_name, firstPr.number),
     allowCreatingConventionBranch: true,
     baseSha,
   });
@@ -81,7 +82,7 @@ test("archived PR numbers and their worktrees are not reused by a later attempt"
   const nextPr = S.createIssue(repo.id, "pull", "next attempt", "", "me");
   S.createPull(
     nextPr.id,
-    `loophub/pr-${nextPr.number}`,
+    worktreeBranch(repo.full_name, nextPr.number),
     "main",
     null,
     nextIssue.id,
@@ -95,7 +96,7 @@ test("archived PR numbers and their worktrees are not reused by a later attempt"
     defaultBranch: "main",
     worktreeRoot: join(HOME, "worktrees"),
     pr: nextPr.number,
-    headRef: `loophub/pr-${nextPr.number}`,
+    headRef: worktreeBranch(repo.full_name, nextPr.number),
     allowCreatingConventionBranch: true,
     baseSha,
   });
