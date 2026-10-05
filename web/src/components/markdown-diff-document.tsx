@@ -197,7 +197,9 @@ const COMPONENTS: Components = {
       <>
         {row}
         <tr>
-          <td colSpan={100}>{decoration.after}</td>
+          <td colSpan={100} className="markdown-diff-thread-cell">
+            {decoration.after}
+          </td>
         </tr>
       </>
     ) : (

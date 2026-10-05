@@ -181,35 +181,36 @@ describe("reconcileWorkflow", () => {
   // SHA reviewing exactly this diff; a second one would grade the same bytes twice (#2528).
   // `active_step` names the pane that last took live input — an Execute pane reactivated for a
   // delivery owns it while Verify keeps reviewing — so it must not gate the suppression.
-  test.each([["verify"], ["execute"], [null]] as const)(
-    "answers a turn done at the HEAD the running Verify is already reviewing with no progress (active_step=%s)",
-    (activeStep) => {
-      expect(
-        reconcileWorkflow(
-          observed({
-            currentStep: "verify",
-            activeStep,
-            turnDoneForActiveExecute: true,
-            verifyLaunchedAfterTurnDone: false,
-            verifyRunningForCurrentHead: true,
-            steps: {
-              execute: { complete: true, missing: [] },
-              verify: {
-                complete: false,
-                missing: ["no workflow review pinned to current head"],
-                latest_review: {
-                  id: 12,
-                  event: "pass",
-                  headSha: OLD,
-                  fresh: false,
-                },
+  test.each([
+    ["verify"],
+    ["execute"],
+    [null],
+  ] as const)("answers a turn done at the HEAD the running Verify is already reviewing with no progress (active_step=%s)", (activeStep) => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          currentStep: "verify",
+          activeStep,
+          turnDoneForActiveExecute: true,
+          verifyLaunchedAfterTurnDone: false,
+          verifyRunningForCurrentHead: true,
+          steps: {
+            execute: { complete: true, missing: [] },
+            verify: {
+              complete: false,
+              missing: ["no workflow review pinned to current head"],
+              latest_review: {
+                id: 12,
+                event: "pass",
+                headSha: OLD,
+                fresh: false,
               },
             },
-          }),
-        ),
-      ).toMatchObject({ action: "deliver", delivery_reason: "no_progress" });
-    },
-  );
+          },
+        }),
+      ),
+    ).toMatchObject({ action: "deliver", delivery_reason: "no_progress" });
+  });
 
   test("still advances an Execute-phase run even while a Verify child holds the current HEAD", () => {
     // The suppression only replaces a redundant relaunch. A run that has not left Execute yet

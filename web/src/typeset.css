@@ -315,3 +315,24 @@
   margin-inline: 0;
   max-width: 46rem;
 }
+
+/* A thread under a table row lives in a cell, and auto table layout sizes that
+   cell from the thread's widest content, so a long code line in a comment
+   stretched the table — and the card — far past the pane. A percentage cannot
+   bound an intrinsic size, so cap the cell's content at the wide track measured
+   in container units of the preview; long lines then scroll inside the card.
+   The preview is the container because the unified document has no box. */
+.markdown-diff-preview {
+  container-type: inline-size;
+}
+
+.typeset-diff-preview .markdown-diff-thread-cell > * {
+  /* The wide track in container units, less the cell's padding (the content
+     inherits the cell's font size) and collapsed borders. Rounding down keeps
+     a fractional track from leaving the table a 1px scroll. */
+  max-width: round(
+    down,
+    100cqi - max(0px, (100cqi - 46rem) / 2) - 1.8em - 2px,
+    1px
+  );
+}
