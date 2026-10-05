@@ -237,6 +237,39 @@ describe("Markdown", () => {
     }
   });
 
+  it("copies the full Markdown source from a Markdown attachment preview", async () => {
+    const source = "# 調査結果\n\n- 項目 `code`\n";
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(source, {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+    );
+    try {
+      renderWithClient(
+        <Markdown>{`[findings.md](/attachments/${"e".repeat(64)})`}</Markdown>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
+      const dialog = await screen.findByRole("dialog", {
+        name: "findings.md のプレビュー",
+      });
+      fireEvent.click(
+        await within(dialog).findByRole("button", {
+          name: "Markdown をコピー",
+        }),
+      );
+      expect(writeText).toHaveBeenCalledWith(source);
+      expect(
+        await within(dialog).findByRole("button", { name: "Copied" }),
+      ).toBeTruthy();
+    } finally {
+      fetchSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("renders a TXT attachment as UTF-8 text in a named dialog", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("日本語のメモ\n2 行目", {
@@ -255,6 +288,9 @@ describe("Markdown", () => {
       expect(dialog.querySelector("pre")?.textContent).toBe(
         "日本語のメモ\n2 行目",
       );
+      expect(
+        within(dialog).queryByRole("button", { name: "Markdown をコピー" }),
+      ).toBeNull();
     } finally {
       fetchSpy.mockRestore();
     }

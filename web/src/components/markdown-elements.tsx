@@ -15,6 +15,7 @@ import {
 import { createPortal } from "react-dom";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CopyButton } from "@/components/copy-button";
 import { ImageLightbox } from "@/components/image-lightbox";
 
 // Matches the hrefs produced by remarkIssueRefs: /r/<owner>/<repo>/<segment>/<number>.
@@ -281,13 +282,20 @@ function AttachmentPreview({
                 <h2 className="truncate font-medium">
                   {filename} のプレビュー
                 </h2>
-                <button
-                  type="button"
-                  className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                  onClick={close}
-                >
-                  閉じる
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  {status === "ready" &&
+                    content !== null &&
+                    kind === "markdown" && (
+                      <CopyButton value={content} label="Markdown をコピー" />
+                    )}
+                  <button
+                    type="button"
+                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                    onClick={close}
+                  >
+                    閉じる
+                  </button>
+                </div>
               </div>
               {status === "loading" && (
                 <p className="p-6 text-sm text-muted-foreground" role="status">
