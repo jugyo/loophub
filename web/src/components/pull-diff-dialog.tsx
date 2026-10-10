@@ -75,6 +75,17 @@ import {
   selectionContains,
   singleSelection,
 } from "@/lib/diff-feedback";
+import {
+  type DiffDialogMode,
+  type DiffViewMode,
+  getDiffViewMode,
+  getMarkdownDiffMode,
+  getStandardDiffMode,
+  type StandardDiffDialogMode,
+  setDiffViewMode as storeDiffViewMode,
+  setMarkdownDiffMode as storeMarkdownDiffMode,
+  setStandardDiffMode as storeStandardDiffMode,
+} from "@/lib/diff-view-preferences";
 import { errorMessage } from "@/lib/error-message";
 import { buildFileTree, visibleFileTreeRows } from "@/lib/file-tree";
 import {
@@ -176,9 +187,6 @@ function visibleCopyPath(path: string) {
   }).join("");
 }
 
-type DiffDialogMode = "diff" | "raw" | "base" | "head" | "rendered";
-type StandardDiffDialogMode = "diff" | "raw";
-type DiffViewMode = "unified" | "split";
 export type DiffDialogSource =
   | { kind: "pull"; number: number }
   | { kind: "commit"; sha: string; baseSha: string; headSha: string };
@@ -641,9 +649,11 @@ export function DiffFileDialog({
   onClose: () => void;
 }) {
   const [standardMode, setStandardMode] =
-    useState<StandardDiffDialogMode>("diff");
-  const [markdownMode, setMarkdownMode] = useState<DiffDialogMode>("diff");
-  const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("unified");
+    useState<StandardDiffDialogMode>(getStandardDiffMode);
+  const [markdownMode, setMarkdownMode] =
+    useState<DiffDialogMode>(getMarkdownDiffMode);
+  const [diffViewMode, setDiffViewMode] =
+    useState<DiffViewMode>(getDiffViewMode);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [showFileFilters, setShowFileFilters] = useState(false);
   const [includePattern, setIncludePattern] = useState("");
@@ -721,13 +731,24 @@ export function DiffFileDialog({
     });
   }
 
+  function selectMarkdownMode(nextMode: DiffDialogMode) {
+    setMarkdownMode(nextMode);
+    storeMarkdownDiffMode(nextMode);
+  }
+
   function selectMode(nextMode: DiffDialogMode) {
     if (nextMode === "base" || nextMode === "head" || nextMode === "rendered") {
-      setMarkdownMode(nextMode);
+      selectMarkdownMode(nextMode);
       return;
     }
     setStandardMode(nextMode);
-    if (selectedIsMarkdown) setMarkdownMode(nextMode);
+    storeStandardDiffMode(nextMode);
+    if (selectedIsMarkdown) selectMarkdownMode(nextMode);
+  }
+
+  function selectDiffViewMode(nextMode: DiffViewMode) {
+    setDiffViewMode(nextMode);
+    storeDiffViewMode(nextMode);
   }
 
   function selectFile(filename: string) {
@@ -1071,13 +1092,13 @@ export function DiffFileDialog({
                     >
                       <ModeButton
                         active={diffViewMode === "unified"}
-                        onClick={() => setDiffViewMode("unified")}
+                        onClick={() => selectDiffViewMode("unified")}
                       >
                         Unified
                       </ModeButton>
                       <ModeButton
                         active={diffViewMode === "split"}
-                        onClick={() => setDiffViewMode("split")}
+                        onClick={() => selectDiffViewMode("split")}
                       >
                         Split
                       </ModeButton>

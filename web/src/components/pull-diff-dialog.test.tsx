@@ -32,6 +32,7 @@ const indexCss = readFileSync(resolve("src/index.css"), "utf8");
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   showError.mockClear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -793,6 +794,48 @@ describe("DiffFileDialog", () => {
     expect(
       container.querySelectorAll('[data-line-kind="context"]'),
     ).toHaveLength(2);
+  });
+
+  it("restores the chosen display modes when the dialog is opened again", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-# old\n+# new",
+    };
+    const handlers = {
+      "pulls/fileAtRef": (p: { side: string }) =>
+        p.side === "base"
+          ? { status: "ok", content: "# old\n" }
+          : { status: "ok", content: "# new\n" },
+    };
+    const pressed = (name: string) =>
+      screen.getByRole("button", { name }).getAttribute("aria-pressed");
+
+    renderDialog({ file: mdFile, handlers });
+    fireEvent.click(screen.getByRole("button", { name: "Rendered diff" }));
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    cleanup();
+
+    renderDialog({ file: mdFile, handlers });
+    expect(pressed("Rendered diff")).toBe("true");
+    expect(pressed("Split")).toBe("true");
+    cleanup();
+
+    // A plain file keeps its own mode and shares the unified/split choice.
+    renderDialog();
+    expect(pressed("Diff")).toBe("true");
+    expect(pressed("Split")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    cleanup();
+
+    renderDialog();
+    expect(pressed("Raw")).toBe("true");
+    cleanup();
+
+    renderDialog({ file: mdFile, handlers });
+    expect(pressed("Rendered diff")).toBe("true");
   });
 
   it("keeps line numbers on the first line of wrapped rows in both views", () => {
@@ -5378,17 +5421,6 @@ ${Array.from({ length: 120 }, (_, index) => `Long paragraph ${index + 1}.`).join
     );
     expect(
       screen.getByRole("button", { name: "Head" }).getAttribute("aria-pressed"),
-    ).toBe("true");
-  });
-
-  it("starts in Diff mode when the dialog is reopened", () => {
-    const view = renderDialog();
-    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
-    view.unmount();
-
-    renderDialog();
-    expect(
-      screen.getByRole("button", { name: "Diff" }).getAttribute("aria-pressed"),
     ).toBe("true");
   });
 
