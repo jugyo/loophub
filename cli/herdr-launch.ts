@@ -39,7 +39,7 @@ export interface HerdrLaunchResult {
 }
 
 // Workflow parents always launch into a herdr session, but the session may not be running yet — a
-// cold machine, or Web's Start workflow spawning `lh workflow start --herdr` on a host that has
+// cold machine, or Web's Start workflow spawning `lh workflow start` on a host that has
 // never opened one. The launch calls below would then all fail against a missing session, so start
 // its server headless first via the same core helper the New Issue flow uses (#50). A session that
 // is already running is reused untouched; only a genuinely absent one triggers a start. Failures to
@@ -78,8 +78,8 @@ async function ensureHerdrSessionRunning(
 }
 
 // Opens (or reuses) the target worktree's own herdr workspace and starts the agent in a fresh tab
-// there, instead of splitting whatever pane is currently focused (#674, #873). `lh workflow start
-// --herdr` calls this so a Workflow parent lands in the target worktree's own workspace. When the
+// there, instead of splitting whatever pane is currently focused (#674, #873). `lh workflow start`
+// calls this so a Workflow parent lands in the target worktree's own workspace. When the
 // session is not running it is started headless first via ensureHerdrSessionRunning (#50); when the
 // worktree open can't be resolved (herdr not running, worktree_not_found, …) it falls back
 // to a plain repo-root tab. On any failure to start the agent it cleans up the tab/workspace it

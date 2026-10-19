@@ -85,7 +85,7 @@ const herdr = vi.hoisted(() => ({
   script: [] as Array<(child: ScriptedChild) => void>,
 }));
 
-// Launcher CLI spawns (`bun cli/index.ts workflow start --herdr`, #1007): workflow-run launches go through this
+// Launcher CLI spawns (`bun cli/index.ts workflow start`, #1007): workflow-run launches go through this
 // instead of terminal.launch orchestrating herdr tabs/workspaces itself.
 const lhDev = vi.hoisted(() => ({
   calls: [] as string[][],
@@ -264,7 +264,7 @@ beforeEach(() => {
   });
 });
 
-describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () => {
+describe("terminal.launch workflow-run spawns `lh workflow start`", () => {
   test.each([
     ["missing", null],
     [
@@ -318,7 +318,6 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
         "me/proj/1",
         "--workflow-id",
         "9",
-        "--herdr",
       ],
     ]);
     expect(herdr.calls).toHaveLength(0);
@@ -348,7 +347,6 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
       "me/proj/1",
       "--workflow-id",
       "9",
-      "--herdr",
       "--parent-runtime",
       "codex",
       "--parent-model",
@@ -387,7 +385,7 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
 
     expect(err?.message).toBe("lh workflow start exited with status 7");
     expect(err?.data?.command).toBe(
-      "lh workflow start me/proj/1 --workflow-id 9 --herdr",
+      "lh workflow start me/proj/1 --workflow-id 9",
     );
   });
 

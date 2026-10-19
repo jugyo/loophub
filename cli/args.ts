@@ -13,6 +13,7 @@ export type Flags = {
   "usage-session"?: string;
   verbose?: boolean;
   herdr?: boolean;
+  attach?: boolean;
   force?: boolean;
   "claude-code"?: boolean;
   codex?: boolean;
@@ -142,6 +143,7 @@ const { values, positionals } = parseArgs({
     "usage-session": { type: "string" },
     verbose: { type: "boolean" },
     herdr: { type: "boolean" },
+    attach: { type: "boolean" },
     force: { type: "boolean" },
     "claude-code": { type: "boolean" },
     codex: { type: "boolean" },

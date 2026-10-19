@@ -275,9 +275,9 @@ async function launchParentHerdr(input: {
   userPromptPath: string;
   model: string;
   effort: string;
-  // Fire-and-forget (`--herdr`): start the parent agent in its herdr pane and return without the
-  // interactive attach, so a non-interactive caller — lh-web's terminal.launch spawns
-  // `lh workflow start ... --herdr` headless (#1007) — gets a prompt exit instead of blocking on an
+  // Fire-and-forget (the default; `--attach` turns it off): start the parent agent in its herdr pane
+  // and return without the interactive attach, so a non-interactive caller — lh-web's
+  // terminal.launch (#1007) or an agent with no TTY — gets a prompt exit instead of blocking on an
   // attach it has no TTY for.
   detach?: boolean;
 }): Promise<void> {
@@ -323,7 +323,7 @@ async function launchParentHerdr(input: {
   );
   // Create/open stayed `--no-focus` so a half-built launch never steals the operator's view.
   // Once the Workflow parent is running, bring its tab (or pane) forward so Start workflow —
-  // Web UI and `lh workflow start --herdr` alike — lands on the new run. Best-effort: a failed
+  // Web UI and `lh workflow start` alike — lands on the new run. Best-effort: a failed
   // focus must not fail a successful launch (or block attach below).
   if (launched.tabId) {
     spawnSyncProcess(herdrTabFocusArgv(input.repo, launched.tabId), {
@@ -362,7 +362,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode | --opencode2 | --agy] [--model <name>] [--parent-runtime <runtime> --parent-model <model> --parent-effort <effort>] [--execute-runtime <runtime> --execute-model <model> --execute-effort <effort>] [--verify-runtime <runtime> --verify-model <model> --verify-effort <effort>] [--herdr] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok | --opencode | --opencode2 | --agy] [--model <name>] [--parent-runtime <runtime> --parent-model <model> --parent-effort <effort>] [--execute-runtime <runtime> --execute-model <model> --execute-effort <effort>] [--verify-runtime <runtime> --verify-model <model> --verify-effort <effort>] [--attach] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -488,9 +488,10 @@ async function startWorkflow(): Promise<void> {
     userPromptPath: result.parent.user_prompt_path,
     model: roleAgents.parent.model,
     effort: result.parent.effort,
-    // `--herdr` starts the parent fire-and-forget (no interactive attach) so lh-web can spawn this
-    // headless (#1007); without it the CLI attaches for a human at a terminal.
-    detach: flags.herdr === true,
+    // The parent starts fire-and-forget by default so lh-web (#1007) and TTY-less agents can run
+    // this headless; `--attach` attaches for a human at a terminal. `--herdr`, the former opt-in
+    // to detaching, is still accepted and has no effect.
+    detach: flags.attach !== true,
   };
   await launchParentHerdr(launchInput);
 }

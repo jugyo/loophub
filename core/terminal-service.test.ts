@@ -60,7 +60,7 @@ test("terminal.launch attaches a specific reason and the retryable herdr command
 });
 
 // terminal.launch does no git/PR work of its own for a worktree-backed run: for workflow-run it
-// just spawns `lh workflow start --herdr` (#1007), which owns PR open and worktree provisioning.
-// See core/terminal-launch-service.test.ts's "workflow-run spawns `lh workflow start --herdr`"
+// just spawns `lh workflow start` (#1007), which owns PR open and worktree provisioning.
+// See core/terminal-launch-service.test.ts's "workflow-run spawns `lh workflow start`"
 // suite for the (mocked-spawn) coverage of that call, and cli/dev.test.ts for worktree
 // provisioning itself.

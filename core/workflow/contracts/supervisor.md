@@ -11,7 +11,7 @@ is the execution order.
 
 Supervise one sub issue at a time in that order. Choose an ordinary `execute_verify` workflow with
 `lh workflow list --repo <owner/name> --json`, then start the current sub issue with
-`lh workflow start <child> --workflow <name> --repo <owner/name> --herdr`. Do not start the next
+`lh workflow start <child> --workflow <name> --repo <owner/name>`. Do not start the next
 sub issue until the current sub issue's pull request has completed and been merged. Do not merge a
 pull request without explicit human approval.
 

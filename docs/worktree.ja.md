@@ -107,9 +107,10 @@ lh worktree prune [--repo owner/name] [--dry-run] [--yes]
 ## auto / sandbox / herdr
 
 - Workflow の親と step を含む新規エージェントは、常に auto mode で起動する。
-- `--herdr` は herdr に作業を渡して呼び出し元を早く返す起動モード。`lh-worker` の
-  `.loophub/workflow.yml` など、run がすぐ終わる必要がある場所では
-  `lh workflow start "$LH_ISSUE_NUMBER" --workflow default --herdr` のように使う。
+- `lh workflow start` は既定で herdr に作業を渡して呼び出し元を早く返す（detach）。`lh-worker` の
+  `.loophub/workflow.yml` など、run がすぐ終わる必要がある場所でも
+  `lh workflow start "$LH_ISSUE_NUMBER" --workflow default` のように使う。起動後に herdr session へ
+  attach したい場合だけ `--attach` を付ける。旧 `--herdr` は互換のため受け付け、何もしない。
 
 worktree を作るのは起動側の共有基盤であり、エージェントは作成済み worktree 内で作業する。
 linked worktree では git が共有 `.git` への必要な書き込みを扱うため、通常の commit 操作に

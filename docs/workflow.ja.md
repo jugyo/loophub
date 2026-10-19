@@ -458,7 +458,7 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
 
 ### `lh workflow start` の herdr セッション
 
-`lh workflow start`（Web の **Start workflow** が spawn する `--herdr` 経路を含む）で parent を
+`lh workflow start`（Web の **Start workflow** が spawn する経路を含む）で parent を
 herdr に起動するとき、対象リポジトリの herdr セッションが未起動なら、まず headless の herdr server
 を起動してから workflow を実行する（#50）。セッションが既に起動していればそれを再利用する。herdr
 の binary 欠如・タイムアウト・`session list` の失敗など、セッションの状態確認や起動に失敗した場合は

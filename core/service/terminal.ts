@@ -100,7 +100,7 @@ export interface TerminalLaunchInput {
   >;
 }
 
-// Spawns a launcher CLI (`lh workflow start ... --herdr`) that owns its own herdr pane. This is not
+// Spawns a launcher CLI (`lh workflow start ...`) that owns its own herdr pane. This is not
 // routed through runHerdr: that helper's error messages are hardcoded around the `herdr` binary
 // ("herdr command not found on PATH", "Herdr exited with status N", …), which would misreport a
 // failure of `lh` itself (a missing PATH entry, an issue lookup failure, a worktree provisioning
@@ -206,7 +206,7 @@ function runLhDevLaunch(
     // Server-side only — never interpolated into a thrown ServiceError (see the const's comment).
     const logStderrTail = () => {
       const tail = Buffer.concat(chunks).toString("utf8").trim();
-      if (tail) reportError(`${label} --herdr failed:\n${tail}`);
+      if (tail) reportError(`${label} failed:\n${tail}`);
     };
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
@@ -255,7 +255,7 @@ function runLhDevLaunch(
   });
 }
 
-// Spawns `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr` for the issue-detail
+// Spawns `lh workflow start <owner>/<repo>/<n> --workflow-id <id>` for the issue-detail
 // Start workflow dropdown (#1007). This RPC only spawns the CLI
 // and lets `lh workflow start` own worktree/PR provisioning, the dev lock, run creation, and the
 // parent herdr launch (workflow design: CLI / UI). Args are passed as an array (no shell),
@@ -279,7 +279,6 @@ async function launchWorkflowRunHerdr(
     `${r.full_name}/${issueNumber}`,
     "--workflow-id",
     String(workflowId),
-    "--herdr",
   ];
   if (override.agent) args.push(`--${override.agent}`);
   if (override.model?.trim()) args.push("--model", override.model.trim());
@@ -460,7 +459,7 @@ export type HerdrSessionsResult = HerdrSessionsWire;
 // plain repo-root tab-create, same as any other herdr failure.
 //
 // workflow-run (Start workflow) has no case here: worktree/PR provisioning is entirely
-// `lh workflow start --herdr`'s responsibility (#1007), which spawns it directly instead of routing
+// `lh workflow start`'s responsibility (#1007), which spawns it directly instead of routing
 // through this tab/workspace-pinning path at all.
 async function resolveHerdrWorktreeTarget(
   r: S.Repo,
@@ -503,7 +502,7 @@ function herdrRunner(cwd: string): HerdrCmdRunner {
 
 // Opens (or reuses) the herdr workspace pinned to `worktreeCheckoutPath`, the workspace this
 // launch then creates its tab in. The parsing-heavy dance lives in
-// core/terminal/terminal-launch.ts's acquireHerdrWorktreeWorkspace so `lh workflow start --herdr`
+// core/terminal/terminal-launch.ts's acquireHerdrWorktreeWorkspace so `lh workflow start`
 // reuses it (#674); this thin wrapper binds it to runHerdr at the repo's local path. `cwd` is where
 // the herdr client is spawned — irrelevant to the `--session`-scoped calls themselves, but kept as
 // r.local_path for consistency with the rest of terminal.launch.
@@ -985,7 +984,7 @@ export const terminal = {
   // Kills the agent running in a pane (#521). This used to be `pane
   // close` against the agent's pane_id, but herdr refuses that with a `confirmation_required`
   // error ("closing this pane would close a worktree group") whenever the pane is the last one
-  // in a worktree-linked workspace — which every single-tab `lh workflow start --herdr` launch is, by
+  // in a worktree-linked workspace — which every single-tab `lh workflow start` launch is, by
   // default (#805). There is no CLI flag to force it through, so that refusal hard-blocked the
   // kill button. Killing the pane's foreground process directly (killPaneForegroundProcess)
   // sidesteps pane/tab/workspace state entirely, so it can never hit that guard. Unlike

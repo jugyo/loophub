@@ -639,7 +639,26 @@ Constraints:
   { path: ["workflow", "update"], description: "Update a workflow." },
   { path: ["workflow", "archive"], description: "Archive a workflow." },
   { path: ["workflow", "delete"], description: "Delete a workflow." },
-  { path: ["workflow", "start"], description: "Start a workflow run." },
+  {
+    path: ["workflow", "start"],
+    description: "Start a workflow run.",
+    details: `
+
+Usage:
+  lh workflow start <owner>/<repo>/<issue>|<issue> (--workflow <name> | --workflow-id <id>) [options]
+
+Options:
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --claude-code | --codex | --grok | --opencode | --opencode2 | --agy
+                        Runtime for every role (defaults to app settings).
+  --model <name>        Model for every role.
+  --<role>-runtime <runtime> --<role>-model <model> --<role>-effort <effort>
+                        Per-role override; <role> is parent, execute, or verify.
+  --attach              Attach to the herdr session after launching the Workflow parent.
+                        Without it, the command returns once the parent runs in its pane.
+  --no-launch           Create the run without launching the Workflow parent.
+  --help                Show this help without changing LoopHub state.`,
+  },
   { path: ["workflow", "launch-step"], description: "Launch a workflow step." },
   { path: ["workflow", "run"], description: "Manage a workflow run." },
   {

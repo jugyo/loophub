@@ -144,7 +144,7 @@ npm run lh-job-queue -- --concurrency 16 # job の最大並列度を指定
 ```sh
 lh issue create --title "do the thing"
 lh issue create --title "stacked change" --workspace integration/stack
-lh workflow start 1 --workflow default --herdr
+lh workflow start 1 --workflow default
 lh pr create --head feature-x --base main --title "impl" --issue 5
 lh pr merge 3 --method squash
 ```

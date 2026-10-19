@@ -10,7 +10,7 @@ LoopHub のデータベースや内部 API には直接アクセスせず、issu
 
 その順序で、一度に 1 件の sub issue だけを監督してください。`lh workflow list --repo <owner/name> --json`
 で通常の `execute_verify` workflow を選び、現在の sub issue を
-`lh workflow start <child> --workflow <name> --repo <owner/name> --herdr` で開始してください。
+`lh workflow start <child> --workflow <name> --repo <owner/name>` で開始してください。
 現在の sub issue の pull request が完了して merge されるまで、次の sub issue を開始してはいけません。
 pull request は、人間の明示的な許可なしに merge してはいけません。
 

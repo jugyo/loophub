@@ -31,7 +31,7 @@ export function usage(): void {
   lh notification send --kind merge_ready|over_budget|human_attention|agent_comment|github_pr_linked --title <text> --body <text|@file|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|archive|delete <name> [--repo <owner/name>] [--workflow-id <id>] [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage workflow prompt bundles
-  lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok | --opencode | --opencode2 | --agy] [--model <name>] [--herdr] [--no-launch]   # start a Workflow run (default runtime/model from app settings)
+  lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex | --grok | --opencode | --opencode2 | --agy] [--model <name>] [--attach] [--no-launch]   # start a Workflow run (default runtime/model from app settings)
   lh workflow manifest show|path <run> [--repo owner/name] [--json]   # inspect or print the path of a Workflow run manifest
   # every lh workflow command below resolves --repo from --run when it is omitted; a --reason longer
   # than its cap (500 chars; 5000 for escalate-human) is trimmed rather than rejected
@@ -69,7 +69,7 @@ export function usage(): void {
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"
     lh issue create --title "do the thing" [--parent <issue>] [--workspace integration]
-    lh workflow start 1 --workflow default --herdr
+    lh workflow start 1 --workflow default
   lh pr create --head feature-x --base main --title "impl" --issue 5
     lh pr comment 3 --body "starting work"
     lh pr comment react 12 --pr 3 --emoji "👀"

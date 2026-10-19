@@ -811,7 +811,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
 
 // An injected herdr command runner. Both callers of the worktree-launch orchestration below spawn
 // the `herdr` binary, but differently: lh-web runs it async (a synchronous spawn would stall the
-// single server process serving every client), while CLI launchers (`lh workflow start --herdr`,
+// single server process serving every client), while CLI launchers (`lh workflow start`,
 // etc.) run it in a short-lived process. Injecting the runner lets the orchestration itself stay
 // spawn-agnostic and unit-testable with a scripted fake. Contract: never throw — a failed call
 // resolves `ok:false` so the caller can fall back, mirroring the best-effort tolerance every
@@ -848,7 +848,7 @@ export interface HerdrLaunchOutcome {
 }
 
 // Runs a launch plan's steps in order: create the pane, label it, type the command into it. Shared
-// by every launcher (lh-web's terminal.launch, `lh workflow start --herdr`, `lh workflow
+// by every launcher (lh-web's terminal.launch, `lh workflow start`, `lh workflow
 // launch-step`) so the pane-first sequence herdr requires exists once.
 //
 // The command carries its own prompt, so there is nothing left to deliver once it is typed and no

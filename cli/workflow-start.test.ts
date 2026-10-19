@@ -1393,7 +1393,7 @@ test("an orphaned launch is visible and can be explicitly recovered", () => {
   }
 });
 
-test("workflow start --herdr opens the PR worktree workspace and starts the parent in its tab", () => {
+test("workflow start opens the PR worktree workspace and starts the parent in its tab", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1412,16 +1412,7 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
   });
   try {
     const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-      ],
+      ["workflow", "start", issue, "--repo", REPO, "--workflow", "standard"],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_FOCUSED_STATE: runtime.focusedStatePath,
@@ -1458,12 +1449,68 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     expect(log).not.toContain("pane send-keys");
     expectWorkflowParentHerdrFocusMoved(runtime);
     expect(started.stderr).toContain("Attach with: herdr session attach");
+    // Detached by default: a TTY-less caller returns without the interactive attach.
+    expect(log).not.toContain("session attach");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
 });
 
-test("workflow start --herdr starts a headless herdr server when the session is not running", () => {
+for (const flag of ["--attach", "--herdr"] as const) {
+  test(`workflow start ${flag} ${flag === "--attach" ? "attaches to" : "still detaches from"} the herdr session`, () => {
+    const issueOut = run([
+      "issue",
+      "create",
+      "--repo",
+      REPO,
+      "--title",
+      `Attach mode ${flag}`,
+      "--body",
+      "Do it",
+    ]);
+    const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+    if (!issue) throw new Error(issueOut.stdout);
+    const runtime = fakeRuntime({ worktreeOpenJson: FRESH_OPEN_JSON });
+    try {
+      const started = run(
+        [
+          "workflow",
+          "start",
+          issue,
+          "--repo",
+          REPO,
+          "--workflow",
+          "standard",
+          flag,
+        ],
+        {
+          PATH: `${runtime.dir}:${process.env.PATH}`,
+          HERDR_LOG: runtime.log,
+        },
+      );
+
+      expect(started.exitCode, started.stderr).toBe(0);
+      const log = readFileSync(runtime.log, "utf8");
+      expect(log).toMatch(/pane send-text w1:p2 .*claude /);
+      if (flag === "--attach") {
+        // The attach follows the launch, so the operator lands in the running parent.
+        expect(log).toMatch(/session attach me-workflow-start-[a-f0-9]{8}/);
+        expect(log.indexOf("pane send-text")).toBeLessThan(
+          log.indexOf("session attach"),
+        );
+        expect(started.stderr).not.toContain("Attach with:");
+      } else {
+        // `--herdr` is the former opt-in to detaching and is now a no-op.
+        expect(log).not.toContain("session attach");
+        expect(started.stderr).toContain("Attach with: herdr session attach");
+      }
+    } finally {
+      rmSync(runtime.dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test("workflow start starts a headless herdr server when the session is not running", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1482,16 +1529,7 @@ test("workflow start --herdr starts a headless herdr server when the session is 
   });
   try {
     const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-      ],
+      ["workflow", "start", issue, "--repo", REPO, "--workflow", "standard"],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_LOG: runtime.log,
@@ -1520,7 +1558,7 @@ test("workflow start --herdr starts a headless herdr server when the session is 
   }
 });
 
-test("workflow start --herdr reuses a running herdr session without starting a server", () => {
+test("workflow start reuses a running herdr session without starting a server", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1538,16 +1576,7 @@ test("workflow start --herdr reuses a running herdr session without starting a s
   });
   try {
     const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-      ],
+      ["workflow", "start", issue, "--repo", REPO, "--workflow", "standard"],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_LOG: runtime.log,
@@ -1567,7 +1596,7 @@ test("workflow start --herdr reuses a running herdr session without starting a s
   }
 });
 
-test("workflow start --herdr surfaces a session-list failure instead of launching", () => {
+test("workflow start surfaces a session-list failure instead of launching", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1586,16 +1615,7 @@ test("workflow start --herdr surfaces a session-list failure instead of launchin
   });
   try {
     const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-      ],
+      ["workflow", "start", issue, "--repo", REPO, "--workflow", "standard"],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_LOG: runtime.log,
@@ -1620,7 +1640,19 @@ test("CLI usage omits workflow start --auto", () => {
   expect(result.stdout).not.toContain("--auto");
 });
 
-test("workflow start --herdr reuses an already-open PR worktree workspace", () => {
+test("workflow start usage and help advertise --attach, not --herdr", () => {
+  const usage = run([]).stdout;
+  const startLine = usage
+    .split("\n")
+    .find((line) => line.trimStart().startsWith("lh workflow start <"));
+  expect(startLine).toContain("[--attach]");
+  expect(startLine).not.toContain("--herdr");
+  const help = run(["workflow", "start", "--help"]).stdout;
+  expect(help).toContain("--attach");
+  expect(help).not.toContain("--herdr");
+});
+
+test("workflow start reuses an already-open PR worktree workspace", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1640,16 +1672,7 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
   });
   try {
     const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-      ],
+      ["workflow", "start", issue, "--repo", REPO, "--workflow", "standard"],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_FOCUSED_STATE: runtime.focusedStatePath,
@@ -1675,7 +1698,7 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
   }
 });
 
-test("workflow start --herdr focuses the pane when the reused workspace's new tab id is unavailable", () => {
+test("workflow start focuses the pane when the reused workspace's new tab id is unavailable", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1697,16 +1720,7 @@ test("workflow start --herdr focuses the pane when the reused workspace's new ta
   });
   try {
     const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-      ],
+      ["workflow", "start", issue, "--repo", REPO, "--workflow", "standard"],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_FOCUSED_STATE: runtime.focusedStatePath,
@@ -1729,7 +1743,7 @@ test("workflow start --herdr focuses the pane when the reused workspace's new ta
   }
 });
 
-test("workflow start --herdr focuses the fallback repo-root tab when worktree placement fails", () => {
+test("workflow start focuses the fallback repo-root tab when worktree placement fails", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1749,16 +1763,7 @@ test("workflow start --herdr focuses the fallback repo-root tab when worktree pl
   });
   try {
     const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-      ],
+      ["workflow", "start", issue, "--repo", REPO, "--workflow", "standard"],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_FOCUSED_STATE: runtime.focusedStatePath,
@@ -1779,7 +1784,7 @@ test("workflow start --herdr focuses the fallback repo-root tab when worktree pl
   }
 });
 
-test("workflow start --herdr surfaces a failed parent launch and cleans up its workspace", () => {
+test("workflow start surfaces a failed parent launch and cleans up its workspace", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -1798,16 +1803,7 @@ test("workflow start --herdr surfaces a failed parent launch and cleans up its w
   });
   try {
     const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-      ],
+      ["workflow", "start", issue, "--repo", REPO, "--workflow", "standard"],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_LOG: runtime.log,
@@ -1844,16 +1840,7 @@ test("workflow start launches the configured codingAgent (codex) without requiri
   writeConfig({ codingAgent: "codex" });
   try {
     const started = run(
-      [
-        "workflow",
-        "start",
-        issue,
-        "--repo",
-        REPO,
-        "--workflow",
-        "standard",
-        "--herdr",
-      ],
+      ["workflow", "start", issue, "--repo", REPO, "--workflow", "standard"],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_LOG: runtime.log,
@@ -1905,7 +1892,6 @@ test("workflow start --claude-code overrides a codex codingAgent config (#516)",
         "--workflow",
         "standard",
         "--claude-code",
-        "--herdr",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
@@ -1954,7 +1940,6 @@ test("workflow start --codex --model overrides the config default model (#516)",
         "--codex",
         "--model",
         "gpt-custom",
-        "--herdr",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
@@ -1997,7 +1982,6 @@ test("workflow start --grok launches the grok runtime without requiring claude",
         "--workflow",
         "standard",
         "--grok",
-        "--herdr",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
@@ -2046,7 +2030,6 @@ test("workflow start --opencode launches OpenCode with --auto/--model/--prompt a
         "--workflow",
         "standard",
         "--opencode",
-        "--herdr",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
@@ -2097,7 +2080,6 @@ test("workflow start --opencode2 launches OpenCode 2 with its model in the pane 
         "--workflow",
         "standard",
         "--opencode2",
-        "--herdr",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
@@ -2147,7 +2129,6 @@ test("workflow start --agy launches the interactive prompt with auto approval", 
         "--workflow",
         "standard",
         "--agy",
-        "--herdr",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
