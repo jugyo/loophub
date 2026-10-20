@@ -979,6 +979,122 @@ test("terminal.cleanupClosedPullDevAgents never closes a workspace with another 
   }
 });
 
+// #602: "Create PR on GitHub" starts its agent in the PR's worktree, so its pane resolves to the PR
+// like the dev pane does and is closed and recorded by the same grace-gated sweep.
+test("terminal.cleanupClosedPullDevAgents closes a closed PR's GitHub export pane only", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/closed-pr-github-export",
+  });
+  const sessionName = herdrSessionName(repo);
+  const old = new Date(Date.now() - 61 * 60 * 1000)
+    .toISOString()
+    .replace(/\.\d+Z$/, "Z");
+  const fresh = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  const withDevSession = (title: string) => {
+    const prRow = S.createIssue(repo.id, "pull", title, "", "me");
+    S.createPull(prRow.id, `loophub/pr-${prRow.number}`, "main", null);
+    const sessionId = `session-export-${prRow.number}`;
+    S.registerAgentSession(
+      sessionId,
+      LEGACY_LH_DEV_SESSION_AGENT,
+      `export-external-${prRow.number}`,
+    );
+    S.setPullSession(prRow.id, sessionId);
+    return prRow;
+  };
+
+  const mergedPr = withDevSession("merged");
+  S.setMerged(mergedPr.id, "export-merge-sha", "merge");
+  db.run(`UPDATE pulls SET merged_at = ? WHERE issue_id = ?`, [
+    old,
+    mergedPr.id,
+  ]);
+  const freshClosedPr = withDevSession("fresh closed");
+  S.updateIssue(freshClosedPr.id, { state: "closed" });
+  db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
+    fresh,
+    fresh,
+    freshClosedPr.id,
+  ]);
+  const openPr = withDevSession("open");
+
+  const root = worktreeRoot();
+  const exportPane = (prRow: { number: number }, paneId: string) => ({
+    agent: "claude",
+    agent_status: "idle",
+    name: `PR #${prRow.number} - export`,
+    pane_id: paneId,
+    workspace_id: paneId.split(":")[0],
+    foreground_cwd: worktreePath(root, repo.full_name, prRow.number),
+  });
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        exportPane(mergedPr, "wM:p2"),
+        exportPane(freshClosedPr, "wF:p2"),
+        exportPane(openPr, "wO:p2"),
+        {
+          agent: "claude",
+          agent_status: "idle",
+          name: "New issue",
+          pane_id: "wI:p1",
+          workspace_id: "wI",
+          foreground_cwd: repo.local_path,
+        },
+      ],
+    },
+  });
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const callsFile = join(HOME, "closed-pr-github-export-calls.txt");
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `echo "$@" >> ${callsFile}`,
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "list" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$3" = "pane" ] && [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":12345}}}'; exit 0; fi`,
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+  try {
+    await expect(svc.terminal.cleanupClosedPullDevAgents()).resolves.toEqual({
+      killed: 1,
+      skipped: 2,
+      failed: 0,
+    });
+    expect(killSpy).toHaveBeenCalledTimes(1);
+    const calls = readFileSync(callsFile, "utf8");
+    expect(calls).toContain(`--session ${sessionName} pane close wM:p2`);
+    expect(calls).not.toContain("wF:p2");
+    expect(calls).not.toContain("wO:p2");
+    expect(calls).not.toContain("wI:p1");
+
+    const killed = S.listEvents(0, repo.id, 10).filter(
+      (event) => event.type === "agent_session.killed",
+    );
+    expect(killed.map((event) => JSON.parse(event.payload))).toEqual([
+      {
+        number: mergedPr.number,
+        pr: mergedPr.number,
+        session_id: `session-export-${mergedPr.number}`,
+        pane_id: "wM:p2",
+        reason: "pr_closed_grace_elapsed",
+      },
+    ]);
+  } finally {
+    killSpy.mockRestore();
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
 // #579: the issue-list Herdr badge's click action. Reuses `herdr agent focus` (#578's
 // herdrAgentFocusArgv), the same one-call workspace+tab+pane focus the Resume dedup above
 // already relies on.

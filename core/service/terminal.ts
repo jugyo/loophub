@@ -628,6 +628,9 @@ export const terminal = {
     // The empty tab such a fresh workspace was seeded with, closed once the launch's own tab exists.
     let seedTabId: string | null = null;
     let createdWorkspace = false;
+    // The worktree the launch's tab starts in when it is placed in that worktree's workspace, so the
+    // agent's cwd resolves back to its PR (closed-PR pane cleanup keys on that, #602).
+    let placementCwd: string | undefined;
     let newIssuePlacementArgv: string[] | null = null;
     try {
       if (usesRepoRootWorkspace) {
@@ -723,8 +726,9 @@ export const terminal = {
               worktreeTarget,
             )
           : null;
-        if (acquired) {
+        if (acquired && worktreeTarget) {
           placementWorkspaceId = acquired.workspaceId;
+          placementCwd = worktreeTarget;
           workspaceId = acquired.createdWorkspace ? acquired.workspaceId : null;
           seedTabId = acquired.seedTabId;
           createdWorkspace = acquired.createdWorkspace;
@@ -750,6 +754,7 @@ export const terminal = {
         throw error;
       }
       placementWorkspaceId = null;
+      placementCwd = undefined;
       workspaceId = null;
       seedTabId = null;
       createdWorkspace = false;
@@ -765,6 +770,7 @@ export const terminal = {
       command,
       label: input.label,
       workspaceId: placementWorkspaceId,
+      cwd: placementWorkspaceId ? placementCwd : undefined,
       submitPrompt: herdrLaunchNeedsPromptSubmit(
         input.workflow === "issue-create" ? input.agent : undefined,
       ),

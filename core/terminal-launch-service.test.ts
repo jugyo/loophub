@@ -618,10 +618,17 @@ describe("terminal.launch github-pr-export focus preservation", () => {
     expect(tabCreate).toEqual(
       expect.arrayContaining(["tab", "create", "--no-focus"]),
     );
+    // A tab placed in the worktree's workspace starts in that worktree, so the agent's cwd resolves
+    // back to this PR and the closed-PR sweep can close the pane (#602).
+    const { worktreeRoot } = await import("./config.ts");
+    const { worktreePath } = await import("./worktree-path.ts");
+    const tabCwd = tabCreate[tabCreate.indexOf("--cwd") + 1];
     if (scopedTab) {
       expect(tabCreate).toEqual(expect.arrayContaining(["--workspace", "w4"]));
+      expect(tabCwd).toBe(worktreePath(worktreeRoot(), "me/proj", pullNumber));
     } else {
       expect(tabCreate).not.toContain("--workspace");
+      expect(tabCwd).toBe(repoPath);
     }
     if (closesSeedTab) {
       await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
