@@ -385,6 +385,7 @@ test("a FEEDBACK review is gate-neutral: it does not block merge and does not pa
   expect(detail.review_gate).toEqual({
     reviewed: false,
     passed: false,
+    passed_scope: null,
     head_sha: null,
     blocking_reason: null,
   });

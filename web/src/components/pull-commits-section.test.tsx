@@ -570,11 +570,15 @@ describe("PullCommitsSection", () => {
     const reviewDialog = await screen.findByRole("dialog", {
       name: "Reviews for aaaaaaa: Latest change",
     });
+    fireEvent.click(
+      within(reviewDialog).getByRole("button", { name: "Show details" }),
+    );
     const items = Array.from(
       reviewDialog.querySelectorAll<HTMLElement>(
         '[data-debug-component="ReviewItem"]',
       ),
     );
+    expect(items).toHaveLength(2);
     const partial = within(items[0]).getByText(
       `partial bbbbbbb..${commits![0].sha.slice(0, 7)}`,
     );
