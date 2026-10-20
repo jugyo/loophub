@@ -83,7 +83,63 @@ test("escalateHuman records one PR comment across replays", () => {
   });
   expect(S.listComments(pr.id)).toHaveLength(1);
   expect(S.listComments(pr.id)[0].body).toBe(
-    `Workflow run ${run.id} requires human guidance: Rework limit reached.`,
+    `Workflow run ${run.id} requires human guidance.\n\nRework limit reached.`,
+  );
+});
+
+// The parent's session name embeds the issue title, so the comment carries the role name and
+// leaves the run id to the body.
+test("escalateHuman attributes the PR comment to the orchestrator", () => {
+  const { repo, pr, run } = createRun("me/escalation-author");
+  S.registerAgentSession(
+    run.parent_session_id!,
+    "lh-workflow",
+    run.parent_session_id!,
+    "Workflow #1 Needs a decision",
+    "claude-code",
+    "dev",
+  );
+
+  svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    { run: run.id, reason: "Rework limit reached." },
+    run.parent_session_id,
+  );
+
+  const [comment] = S.listComments(pr.id);
+  expect(comment).toMatchObject({
+    author: "orchestrator",
+    author_type: "agent",
+  });
+  expect(comment.body).toContain(`Workflow run ${run.id}`);
+});
+
+test("escalateHuman keeps the Markdown structure of the comment body", () => {
+  const { repo, pr, run } = createRun("me/escalation-markdown");
+  const reason = [
+    "## Background",
+    "",
+    "仕様の前提が未確定。",
+    "",
+    "## Options",
+    "",
+    "- 現行仕様を維持する",
+    "- 変更する",
+    "",
+    "```sh",
+    "lh workflow status",
+    "```",
+  ].join("\n");
+
+  const result = svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    { run: run.id, reason: `\r\n${reason.replaceAll("\n", "\r\n")}\r\n` },
+    run.parent_session_id,
+  );
+
+  expect(result.reason).toBe(reason);
+  expect(S.listComments(pr.id)[0]?.body).toBe(
+    `Workflow run ${run.id} requires human guidance.\n\n${reason}`,
   );
 });
 

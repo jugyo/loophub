@@ -37,6 +37,20 @@ export function truncateInlineReason(value: string, limit: number): string {
   return reason.length <= limit ? reason : `${reason.slice(0, limit - 1)}…`;
 }
 
+// The `escalate-human` body is a Markdown PR comment, so unlike `truncateInlineReason` it keeps
+// line breaks and tabs: collapsing them flattened the parent's headings and lists into one line.
+// Other control and bidi characters are still dropped so the comment cannot spoof its text.
+export function truncateMarkdownReason(value: string, limit: number): string {
+  const reason = value
+    .replace(/\r\n?/g, "\n")
+    .replace(
+      /[\x00-\x08\x0B-\x1F\x7F-\x9F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g,
+      "",
+    )
+    .trim();
+  return reason.length <= limit ? reason : `${reason.slice(0, limit - 1)}…`;
+}
+
 export function parentUserPrompt(
   input: {
     runId: number;

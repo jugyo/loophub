@@ -89,6 +89,22 @@ export const comments = {
     return createPullComment(r, row, body, actor, authorType, sessionId);
   },
 
+  // A comment an agent posts under a role name rather than its session name. The session is still
+  // recorded on the event, so a Workflow run keeps skipping its own comments.
+  createAgentForPull(
+    name: string,
+    number: number,
+    body: string,
+    actor: string,
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    if (!body) throw new ServiceError(422, "body is required");
+    return createPullComment(r, row, body, actor, "agent", sessionId);
+  },
+
   createHumanForPull(name: string, number: number, body: string) {
     const r = repoOr404(name);
     ensureWritable(r);

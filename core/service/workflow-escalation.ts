@@ -1,7 +1,7 @@
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
 import {
-  truncateInlineReason,
+  truncateMarkdownReason,
   WORKFLOW_ESCALATION_REASON_MAX_LENGTH,
 } from "../workflow/prompts.ts";
 import { comments } from "./comments.ts";
@@ -17,19 +17,25 @@ type WorkflowEscalationDeps = {
     name: string,
     pr: number,
     body: string,
+    actor: string,
     sessionId?: string | null,
   ): unknown;
 };
 
 const defaultDeps: WorkflowEscalationDeps = {
-  createComment: comments.createForPull,
+  createComment: comments.createAgentForPull,
 };
+
+// The comment speaks for the workflow's parent agent. Its session name embeds the issue title,
+// which is noise as a comment author, so the comment is attributed to the role instead; the body
+// names the run.
+const ESCALATION_COMMENT_AUTHOR = "orchestrator";
 
 // The body the parent writes here is the human-facing escalation comment, so it is trimmed to the
 // escalation limit instead of being rejected: an over-long comment is still the notification the
 // human needs, while a 422 held the run without notifying anyone.
 function reasonText(value: string): string {
-  const reason = truncateInlineReason(
+  const reason = truncateMarkdownReason(
     value,
     WORKFLOW_ESCALATION_REASON_MAX_LENGTH,
   );
@@ -103,9 +109,15 @@ export const workflowEscalation = {
         reason,
       },
     );
-    const body = `Workflow run ${run.id} requires human guidance: ${reason}`;
+    const body = `Workflow run ${run.id} requires human guidance.\n\n${reason}`;
     const prComment = runEffect(run.id, event.id, "escalation.pr-comment", () =>
-      deps.createComment(name, run.pr_number, body, sessionId),
+      deps.createComment(
+        name,
+        run.pr_number,
+        body,
+        ESCALATION_COMMENT_AUTHOR,
+        sessionId,
+      ),
     );
     const ok =
       prComment.status === "completed" ||

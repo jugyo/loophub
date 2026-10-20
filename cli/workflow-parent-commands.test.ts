@@ -105,7 +105,7 @@ test("escalate-human takes its reason from stdin, with or without the flag", () 
   expect(redirected.status, redirected.stderr).toBe(0);
   expect(
     S.listComments(S.getIssue(repoId, withoutFlag.pr)!.id)[0]?.body,
-  ).toContain("Background: 別の判断が要る。 Decision points: 人間が決める。");
+  ).toContain("Background: 別の判断が要る。\nDecision points: 人間が決める。");
 });
 
 test("escalate-human still reports a reason it was never given", () => {
