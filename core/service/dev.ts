@@ -1,4 +1,13 @@
 import { db } from "../db.ts";
+import { ServiceError } from "../errors.ts";
+import {
+  fetchRemote,
+  git,
+  isAncestor,
+  localBranchRef,
+  remoteUrl,
+  worktreeList,
+} from "../git.ts";
 import * as S from "../store.ts";
 import type { WorkflowContractLanguage } from "../workflow/contracts.ts";
 import { worktreeBranch } from "../worktree-path.ts";
@@ -52,6 +61,48 @@ function defaultPrBody(
   ].join("\n");
 }
 
+// Bring a local branch up to `origin/<branch>` before a new PR records it as its base (#601), so a
+// fresh worktree does not fork from a stale checkout and the PR's base stays the branch it forked
+// from. A repo without an origin keeps using the local branch as-is. A local branch that is already
+// up to date or ahead is left alone. Every failure — an unreachable remote, a diverged branch, a
+// dirty checkout the merge would overwrite — is reported with git's own message, never recovered.
+async function fastForwardFromOrigin(
+  repoPath: string,
+  branch: string,
+): Promise<void> {
+  if (!(await remoteUrl(repoPath))) return;
+  const fetched = await fetchRemote(repoPath);
+  if (fetched.code !== 0) {
+    const detail =
+      fetched.stderr.trim() || fetched.stdout.trim() || "unknown error";
+    throw new ServiceError(422, `git fetch origin failed: ${detail}`);
+  }
+  const remoteRef = `refs/remotes/origin/${branch}`;
+  if (await isAncestor(repoPath, remoteRef, localBranchRef(branch))) return;
+  // git refuses to move a branch checked out in some worktree by ref update alone, so that
+  // checkout fast-forwards with a merge; otherwise a local fetch updates the ref, which git also
+  // limits to fast-forwards.
+  const checkout = (await worktreeList(repoPath)).find(
+    (w) => w.branch === branch,
+  );
+  const updated = checkout
+    ? await git(checkout.path, ["merge", "--ff-only", "--quiet", remoteRef])
+    : await git(repoPath, [
+        "fetch",
+        "--quiet",
+        ".",
+        `${remoteRef}:${localBranchRef(branch)}`,
+      ]);
+  if (updated.code !== 0) {
+    const detail =
+      updated.stderr.trim() || updated.stdout.trim() || "unknown error";
+    throw new ServiceError(
+      422,
+      `cannot fast-forward ${branch} to origin/${branch}: ${detail}`,
+    );
+  }
+}
+
 // ===== dev (issue-dev loop support) =====
 //
 // Helpers for the development loop shared by Workflow runs: open a PR at the start of work and
@@ -72,6 +123,9 @@ export const dev = {
   // its (PR-keyed, #463) dev lock, so it calls this before the lock exists — pass `false` there to
   // defer the write until after the lock is won, so a losing concurrent run racing on the
   // same already-open PR can never overwrite the winner's session pointer.
+  //
+  // `input.syncBaseFromOrigin` fast-forwards a new PR's base from origin before the PR records it,
+  // when that base is the repo's default branch (#601). A reused PR keeps its recorded base.
   async openPr(
     name: string,
     input: {
@@ -80,6 +134,7 @@ export const dev = {
       base?: string;
       body?: string;
       language?: WorkflowContractLanguage;
+      syncBaseFromOrigin?: boolean;
     },
     sessionId?: string | null,
     opts: { attributeSession?: boolean } = {},
@@ -110,6 +165,9 @@ export const dev = {
       assertExistingLocalBranch(r.local_path, issueRow.target_branch);
     }
     const base = input.base ?? issueRow.target_branch ?? r.default_branch;
+    if (input.syncBaseFromOrigin && base === r.default_branch) {
+      await fastForwardFromOrigin(r.local_path, base);
+    }
     const body =
       input.body ?? defaultPrBody(input.issue, input.language ?? "ja");
     const pr = await pulls.create(

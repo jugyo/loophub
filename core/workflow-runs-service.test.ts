@@ -193,6 +193,153 @@ test("start by name uses the repository workflow over a same-name global workflo
   expect(result.run.workflow_id).toBe(scoped.id);
 }, 20_000);
 
+// A checkout with a bare `origin` that has moved one commit past the local main (#601). Returns the
+// remote's new main SHA alongside the checkout.
+function repoBehindOrigin(loophubName: string): {
+  repo: ReturnType<typeof S.createRepo>;
+  path: string;
+  originMain: string;
+} {
+  const { repo, path } = freshRepo(loophubName);
+  svc.workflows.create({ name: "origin-sync", repo: repo.full_name });
+  const origin = mkdtempSync(join(tmpdir(), "lh-workflow-runs-origin-"));
+  gitAt(origin, ["init", "-q", "--bare", "-b", "main"]);
+  gitAt(path, ["remote", "add", "origin", origin]);
+  gitAt(path, ["push", "-q", "origin", "main"]);
+  const upstream = mkdtempSync(join(tmpdir(), "lh-workflow-runs-upstream-"));
+  gitAt(upstream, ["clone", "-q", origin, "."]);
+  gitAt(upstream, ["config", "user.email", "t@example.local"]);
+  gitAt(upstream, ["config", "user.name", "tester"]);
+  const originMain = commit(upstream, "upstream.txt", "upstream\n");
+  gitAt(upstream, ["push", "-q", "origin", "main"]);
+  return { repo, path, originMain };
+}
+
+test("start fast-forwards a checked-out main from origin before forking the PR branch (#601)", async () => {
+  const { repo, path, originMain } = repoBehindOrigin("me/origin-ahead");
+  const issue = S.createIssue(repo.id, "issue", "Fork from origin", "", "me");
+
+  const result = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflow: "origin-sync" },
+    randomUUID(),
+  );
+
+  expect(gitAt(path, ["rev-parse", "refs/heads/main"])).toBe(originMain);
+  // The primary checkout's working tree follows its branch.
+  expect(existsSync(join(path, "upstream.txt"))).toBe(true);
+  expect(gitAt(result.worktree, ["rev-parse", "HEAD"])).toBe(originMain);
+  const pull = (await svc.pulls.get(repo.full_name, result.pr.number)) as any;
+  expect(pull.base.ref).toBe("main");
+  expect(pull.base_sha).toBe(originMain);
+  expect(pull.commits).toEqual([]);
+}, 20_000);
+
+test("start fast-forwards a main that is not checked out anywhere (#601)", async () => {
+  const { repo, path, originMain } = repoBehindOrigin(
+    "me/origin-ahead-detached",
+  );
+  gitAt(path, ["checkout", "-q", "-b", "elsewhere"]);
+  const issue = S.createIssue(repo.id, "issue", "Fork from origin", "", "me");
+
+  const result = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflow: "origin-sync" },
+    randomUUID(),
+  );
+
+  expect(gitAt(path, ["rev-parse", "refs/heads/main"])).toBe(originMain);
+  expect(gitAt(result.worktree, ["rev-parse", "HEAD"])).toBe(originMain);
+}, 20_000);
+
+test("start refuses, creating no PR or branch, when main has diverged from origin (#601)", async () => {
+  const { repo, path, originMain } = repoBehindOrigin("me/origin-diverged");
+  const localMain = commit(path, "local.txt", "local\n");
+  const issue = S.createIssue(repo.id, "issue", "Diverged", "", "me");
+
+  await expect(
+    svc.workflowRuns.start(
+      repo.full_name,
+      { issue: issue.number, workflow: "origin-sync" },
+      randomUUID(),
+    ),
+  ).rejects.toThrow(
+    /cannot fast-forward main to origin\/main: .*fast-forward/i,
+  );
+
+  expect(gitAt(path, ["rev-parse", "refs/heads/main"])).toBe(localMain);
+  expect(gitAt(path, ["rev-parse", "refs/remotes/origin/main"])).toBe(
+    originMain,
+  );
+  expect(S.openPullLinkedToIssue(issue.id)).toBeFalsy();
+  expect(gitAt(path, ["branch", "--list"])).not.toContain("-p");
+}, 20_000);
+
+test("start refuses, creating no PR or branch, when fetching origin fails (#601)", async () => {
+  const { repo, path } = freshRepo("me/origin-unreachable");
+  svc.workflows.create({ name: "origin-sync", repo: repo.full_name });
+  const before = gitAt(path, ["rev-parse", "refs/heads/main"]);
+  gitAt(path, [
+    "remote",
+    "add",
+    "origin",
+    join(tmpdir(), `lh-missing-origin-${randomUUID()}`),
+  ]);
+  const issue = S.createIssue(repo.id, "issue", "Unreachable", "", "me");
+
+  await expect(
+    svc.workflowRuns.start(
+      repo.full_name,
+      { issue: issue.number, workflow: "origin-sync" },
+      randomUUID(),
+    ),
+  ).rejects.toThrow(/git fetch origin failed: .+/);
+
+  expect(gitAt(path, ["rev-parse", "refs/heads/main"])).toBe(before);
+  expect(S.openPullLinkedToIssue(issue.id)).toBeFalsy();
+  expect(gitAt(path, ["branch", "--list"])).not.toContain("-p");
+}, 20_000);
+
+test("openPr leaves main alone for a non-default base or a reused PR (#601)", async () => {
+  const { repo, path } = repoBehindOrigin("me/origin-untouched");
+  const localMain = gitAt(path, ["rev-parse", "refs/heads/main"]);
+  gitAt(path, ["branch", "integration/stack"]);
+  const stacked = svc.issues.create(repo.full_name, {
+    title: "stacked",
+    target_branch: "integration/stack",
+  });
+
+  const opened = await svc.dev.openPr(repo.full_name, {
+    issue: stacked.number,
+    syncBaseFromOrigin: true,
+  });
+  const reused = await svc.dev.openPr(repo.full_name, {
+    issue: stacked.number,
+    base: "main",
+    syncBaseFromOrigin: true,
+  });
+
+  expect(reused).toEqual({ created: false, number: opened.number });
+  const pull = (await svc.pulls.get(repo.full_name, opened.number)) as any;
+  expect(pull.base.ref).toBe("integration/stack");
+  expect(gitAt(path, ["rev-parse", "refs/heads/main"])).toBe(localMain);
+});
+
+test("openPr without an origin remote forks from the local main as before (#601)", async () => {
+  const { repo, path } = freshRepo("me/origin-none");
+  const localMain = gitAt(path, ["rev-parse", "refs/heads/main"]);
+  const issue = svc.issues.create(repo.full_name, { title: "no origin" });
+
+  const opened = await svc.dev.openPr(repo.full_name, {
+    issue: issue.number,
+    syncBaseFromOrigin: true,
+  });
+
+  const pull = (await svc.pulls.get(repo.full_name, opened.number)) as any;
+  expect(pull.base.ref).toBe("main");
+  expect(pull.base_sha).toBe(localMain);
+});
+
 test("start prepares a run and hands the parent pointers, not synthesized inputs", async () => {
   const repo = S.createRepo("me/workflow-run", REPO_PATH);
   const issue = S.createIssue(

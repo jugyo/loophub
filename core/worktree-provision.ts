@@ -152,7 +152,7 @@ export async function provisionWorktree(
     } else {
       // Our own convention branch, not created yet (e.g. Workflow just opened this PR, #463) —
       // create it from the recorded fork point when supplied, otherwise the local default branch's
-      // current commit (no fetch).
+      // current commit (no fetch here; Workflow start fast-forwards it from origin first, #601).
       const startPoint = input.baseSha ?? defaultBranch;
       if (
         input.baseSha

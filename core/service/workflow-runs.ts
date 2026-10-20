@@ -2023,7 +2023,11 @@ export const workflowRuns = {
 
     const opened = await dev.openPr(
       r.full_name,
-      { issue: issue.number, language: contractLanguage },
+      {
+        issue: issue.number,
+        language: contractLanguage,
+        syncBaseFromOrigin: true,
+      },
       sessionId,
       { attributeSession: false },
     );
