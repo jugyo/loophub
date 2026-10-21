@@ -396,6 +396,33 @@ export function markWorkflowRunParentReadyIfNoEffect(
     .get(t, t, id, id, `${effectPrefix}*`) as WorkflowRunRow | null;
 }
 
+// Hand a running run to a fresh parent session. Readiness is cleared so nothing is delivered until
+// the new parent declares it reads its pane; the confirmed flag stays set because the readiness
+// handshake was already serialized once and the lost parent's receipts must not block the new one.
+// The active child and any launch reservation are cleared so the next instruction launches afresh.
+export function relaunchWorkflowRunParent(
+  id: number,
+  parentSessionId: string,
+): WorkflowRunRow | null {
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET parent_session_id = ?,
+           parent_ready_at = NULL,
+           parent_ready_confirmed = 1,
+           active_step = NULL,
+           active_session_id = NULL,
+           active_head_sha = NULL,
+           launching_step = NULL,
+           launching_session_id = NULL,
+           launching_head_sha = NULL,
+           updated_at = ?
+       WHERE id = ? AND status = 'running'
+       RETURNING *`,
+    )
+    .get(parentSessionId, now(), id) as WorkflowRunRow | null;
+}
+
 // Move the run event bookmark forward. The guard keeps the cursor monotonic when two consumers race.
 export function advanceWorkflowRunEventCursor(
   id: number,
@@ -673,11 +700,19 @@ export function runningWorkflowRunForSession(
       `SELECT * FROM workflow_runs run
        WHERE run.repo_id = ? AND run.pr_number = ? AND run.status = 'running'
          AND (run.parent_session_id = ?
+           OR EXISTS (SELECT 1 FROM json_each(run.step_sessions_json, '$.parent') WHERE value = ?)
            OR EXISTS (SELECT 1 FROM json_each(run.step_sessions_json, '$.execute') WHERE value = ?)
            OR EXISTS (SELECT 1 FROM json_each(run.step_sessions_json, '$.verify') WHERE value = ?))
        ORDER BY run.id DESC LIMIT 2`,
     )
-    .all(repoId, prNumber, sessionId, sessionId, sessionId) as WorkflowRunRow[];
+    .all(
+      repoId,
+      prNumber,
+      sessionId,
+      sessionId,
+      sessionId,
+      sessionId,
+    ) as WorkflowRunRow[];
   return matches.length === 1 ? matches[0] : null;
 }
 

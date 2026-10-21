@@ -87,8 +87,26 @@ function pendingEventRole(
   );
 }
 
+// The window opens when the current parent was launched: a run's creation for its first parent, the
+// relaunch for a replacement registered later.
 function parentLaunchPending(run: S.WorkflowRunRow): boolean {
-  return Date.now() - Date.parse(run.created_at) < PARENT_LAUNCH_GRACE_MS;
+  const parentCreatedAt = run.parent_session_id
+    ? Date.parse(S.getAgentSession(run.parent_session_id)?.created_at ?? "")
+    : Number.NaN;
+  const launchedAt = Math.max(
+    Date.parse(run.created_at),
+    Number.isFinite(parentCreatedAt) ? parentCreatedAt : 0,
+  );
+  return Date.now() - launchedAt < PARENT_LAUNCH_GRACE_MS;
+}
+
+// A relaunched parent has received nothing yet, so the instruction its relaunch carries must reach
+// it even when the lost parent was last sent the same decision.
+function isParentRelaunch(event: S.EventRow): boolean {
+  return (
+    event.type === "workflow_run.updated" &&
+    parseWorkflowEventPayload(event.payload)?.transition === "relaunch"
+  );
 }
 
 function instructionText(
@@ -391,11 +409,13 @@ export const workflowInstructions = {
       event: event.id,
     });
     const effect = instructionEffect(instruction);
-    const previous = S.latestCompletedWorkflowEventEffectWithPrefix(
-      run.id,
-      event.id,
-      EFFECT_PREFIX,
-    );
+    const previous = isParentRelaunch(event)
+      ? null
+      : S.latestCompletedWorkflowEventEffectWithPrefix(
+          run.id,
+          event.id,
+          EFFECT_PREFIX,
+        );
     if (previous?.effect === effect) {
       completeDecision(run.id, event.id, effect);
       return {

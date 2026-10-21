@@ -154,3 +154,25 @@ test("a human hold releases the verify child's claim on its head (#1872)", () =>
     }),
   ).toBe(false);
 });
+
+test("a relaunch releases the lost verify child's claim on its head", () => {
+  const events = projectWorkflowRunEvents([
+    {
+      id: 103,
+      type: "workflow_run.updated",
+      payload: JSON.stringify({ id: 1, transition: "relaunch" }),
+      created_at: LAUNCHED_AT,
+    },
+  ]).events;
+
+  expect(latestVerifyClaimRelease(events)?.id).toBe(103);
+  expect(
+    verifyRunningForHead({
+      launch: verifyLaunch("aaa", LAUNCHED_AT),
+      latestReviewSubmissionId: null,
+      claimRelease: latestVerifyClaimRelease(events),
+      currentHead: "aaa",
+      now: RUNNING,
+    }),
+  ).toBe(false);
+});

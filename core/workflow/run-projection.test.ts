@@ -190,3 +190,23 @@ test("payloads written before the typed shape existed keep their fallbacks", () 
   expect(projection.turnDones).toHaveLength(3);
   expect(projection.latestTurnDone?.payload.head_sha).toBe("ccc");
 });
+
+test("a relaunch ends the lost Execute child's round until a fresh one starts", () => {
+  const relaunch = row("workflow_run.updated", {
+    id: 1,
+    transition: "relaunch",
+    current_step: "verify",
+  });
+  const lost = projectWorkflowRunEvents([
+    row("workflow_step.launched", { id: 1, step: "execute" }),
+    row("workflow_run.turn_done", { id: 1, head_sha: "aaa" }),
+    relaunch,
+  ]);
+  expect(lost.latestRelaunch?.id).toBe(relaunch.id);
+  expect(lost.latestExecuteRound).toBeNull();
+
+  const fresh = row("workflow_step.launched", { id: 1, step: "execute" });
+  expect(
+    projectWorkflowRunEvents([relaunch, fresh]).latestExecuteRound?.id,
+  ).toBe(fresh.id);
+});

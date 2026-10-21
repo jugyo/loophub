@@ -141,6 +141,9 @@ test("parent pane registration records the successful process launch time", () =
       launchedAt,
     );
   } finally {
+    // The future launch keeps this run in its launch grace; end it so later dispatchPending tests
+    // do not pick it up.
+    S.updateWorkflowRun(input.run.id, { status: "completed" });
     rmSync(input.repoPath, { recursive: true, force: true });
   }
 });
@@ -1215,6 +1218,99 @@ test("a run with no recorded start fails visibly and keeps its cursor", async ()
     expect(next).not.toHaveBeenCalled();
   } finally {
     next.mockRestore();
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("a relaunched parent takes the run over and receives only new instructions", async () => {
+  const input = fixture("relaunch");
+  const fake = fakeHerdr();
+  const human = `${String(input.repo.id).padStart(8, "0")}-0000-4000-8000-0000000000ff`;
+  S.registerAgentSession(human, "me", human, null, null, "cli", null);
+  registerParent(input);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({ status: "delivered", pane_id: "w1:p1" });
+    S.updateWorkflowRun(input.run.id, {
+      activeStep: "execute",
+      activeSessionId: "lost-executor",
+    });
+    const lostParent = input.run.parent_session_id as string;
+
+    const relaunched = svc.workflowRuns.relaunch(
+      input.repo.full_name,
+      { pr: input.run.pr_number },
+      human,
+    );
+    const run = S.getWorkflowRun(input.run.id);
+    expect(run?.parent_session_id).toBe(relaunched.session_id);
+    expect(relaunched.session_id).not.toBe(lostParent);
+    expect(run?.parent_ready_at).toBeNull();
+    expect(run?.active_step).toBeNull();
+    expect(run?.active_session_id).toBeNull();
+    expect(JSON.parse(run?.step_sessions_json ?? "{}").parent).toEqual([
+      lostParent,
+    ]);
+    expect(readFileSync(relaunched.parent.user_prompt_path, "utf8")).toContain(
+      `run: ${input.run.id}`,
+    );
+
+    // Nothing reaches the lost pane, and nothing is sent before the new parent is up.
+    const sentToLost = readFileSync(fake.log, "utf8");
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toEqual({ status: "idle" });
+    expect(readFileSync(fake.log, "utf8")).toBe(sentToLost);
+
+    svc.workflowInstructions.registerParentPane(input.repo.full_name, {
+      run: input.run.id,
+      launch_id: relaunched.session_id,
+      session_name: "me-repo",
+      pane_id: "w1:p5",
+      launched_at: new Date().toISOString(),
+    });
+    // The lost parent was last sent the same decision; the relaunch still delivers it.
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).resolves.toMatchObject({
+      instruction: { status: "delivered", pane_id: "w1:p5" },
+    });
+    const calls = readFileSync(fake.log, "utf8");
+    expect(calls.match(/pane send-text w1:p1 /g)).toHaveLength(1);
+    expect(calls.match(/pane send-text w1:p5 /g)).toHaveLength(1);
+    // The delivered start event is not replayed: only the relaunch event was decided again.
+    expect(next).toHaveBeenCalledTimes(2);
+    expect(next.mock.calls[1][1].event).toBeGreaterThan(input.event.id);
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
+test("relaunching a PR with no running run fails visibly", () => {
+  const input = fixture("relaunch-none");
+  try {
+    S.updateWorkflowRun(input.run.id, { status: "completed" });
+    expect(() =>
+      svc.workflowRuns.relaunch(
+        input.repo.full_name,
+        { pr: input.run.pr_number },
+        input.run.parent_session_id,
+      ),
+    ).toThrow(
+      `PR #${input.run.pr_number} has no running Workflow run to relaunch`,
+    );
+  } finally {
     rmSync(input.repoPath, { recursive: true, force: true });
   }
 });

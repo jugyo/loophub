@@ -176,13 +176,16 @@ function runtimeBin(runtime: CodingAgent): RuntimeBin {
   return RUNTIMES[runtime].bin;
 }
 
-function preflightParentLaunch(runtime: CodingAgent): void {
+function preflightParentLaunch(
+  runtime: CodingAgent,
+  command = "workflow start",
+): void {
   if (!commandAvailable("herdr")) {
-    fail("workflow start requires herdr on PATH");
+    fail(`${command} requires herdr on PATH`);
   }
   const bin = runtimeBin(runtime);
   if (!commandAvailable(bin)) {
-    fail(`workflow start requires ${bin} on PATH`);
+    fail(`${command} requires ${bin} on PATH`);
   }
 }
 
@@ -712,8 +715,48 @@ async function launchStep(): Promise<void> {
   await confirm(childPaneId);
 }
 
+// Start a fresh parent for the running run of a PR whose agents were lost. Like start, the parent
+// launches fire-and-forget unless --attach is passed.
+async function relaunchRun(): Promise<void> {
+  const pr = positiveInt(flags.pr, "--pr");
+  const repo = flags.repo ?? (await resolveRepo());
+  const s = await svc();
+  // Check the launch can run before the run is handed to a parent that would never start.
+  const agent = await runOp(() =>
+    s.workflowRuns.relaunchParentAgent(repo, { pr }),
+  );
+  preflightParentLaunch(agent.runtime, "workflow run relaunch");
+  const sessionId = await writeSession();
+  const result = await runOp(() =>
+    s.workflowRuns.relaunch(repo, { pr }, sessionId),
+  );
+  if (flags.json) out(result);
+  else {
+    console.log(`relaunched Workflow run #${result.run.id}`);
+    console.log(`step\t${display(result.run.current_step)}`);
+    console.log(`session\t${display(result.session_id)}`);
+  }
+  const repoRecord = await runOp(() => s.repos.get(repo));
+  await launchParentHerdr({
+    repo: {
+      full_name: repoRecord.full_name,
+      local_path: repoRecord.local_path,
+    },
+    runId: result.run.id,
+    runtime: result.parent.runtime,
+    worktree: result.worktree,
+    sessionId: result.session_id,
+    systemPromptPath: result.parent.system_prompt_path,
+    userPromptPath: result.parent.user_prompt_path,
+    model: result.parent.model,
+    effort: result.parent.effort,
+    detach: flags.attach !== true,
+  });
+}
+
 async function runLifecycle(): Promise<void> {
   const action = rest[0];
+  if (action === "relaunch") return relaunchRun();
   const runId = positiveInt(flags.run, "--run");
   const repo = await runRepo(runId);
   const sessionId = await writeSession();

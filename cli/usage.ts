@@ -41,6 +41,7 @@ export function usage(): void {
   lh workflow run increase-cost-limit --run <id> --expected-limit <usd> [--repo owner/name]
   lh workflow run resume --run <id> --step execute|verify [--repo owner/name]
   lh workflow run recover-launch --run <id> --reason <text|@file|-> [--repo owner/name]
+  lh workflow run relaunch --pr <n> [--repo owner/name] [--attach]   # start a fresh parent for the PR's running run after its agents were lost
   lh workflow parent-ready <run> [--repo owner/name] [--json]   # (parent) declare the agent is up and reads its pane; instructions are held until this arrives
   lh workflow turn done --run <id> [--repo owner/name]   # (Execute child) declare the turn done — payload-less; the parent observes HEAD/review state
   lh workflow escalate --reason <text|@file|-> --run <id> [--repo owner/name]   # (Execute child) request human guidance; the parent notifies the human and waits for an instruction

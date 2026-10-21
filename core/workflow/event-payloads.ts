@@ -22,6 +22,7 @@ export type WorkflowRunTransition =
   | "activate_step"
   | "await_human"
   | "resume_after_human"
+  | "relaunch"
   | "request_rework"
   | "rework_limit_increased"
   | "full_review_requested";

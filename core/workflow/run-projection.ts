@@ -74,9 +74,12 @@ export interface WorkflowRunProjection {
   latestVerifyLaunch: WorkflowRunEvent | null;
   /**
    * The latest event that put an Execute child to work: a Verify-phase run reactivates Execute for
-   * live input via `activate_step` rather than a fresh launch, so both count.
+   * live input via `activate_step` rather than a fresh launch, so both count. A relaunch resets it:
+   * the Execute child it replaced is lost, so its rounds no longer belong to a live child.
    */
   latestExecuteRound: WorkflowRunEvent | null;
+  /** The latest relaunch. Children launched before it are lost and are never delivery targets. */
+  latestRelaunch: WorkflowRunEvent | null;
   /** Review submissions on this run's trail, keyed by review id. */
   reviewSubmissions: Map<number, WorkflowReviewSubmission>;
   /**
@@ -98,6 +101,7 @@ export function projectWorkflowRunEvents(
   const verifyLaunches: WorkflowRunEvent[] = [];
   const pendingDeliveries = new Map<string, WorkflowPendingDelivery>();
   let latestExecuteRound: WorkflowRunEvent | null = null;
+  let latestRelaunch: WorkflowRunEvent | null = null;
   let reworkCount = 0;
 
   for (const row of rows) {
@@ -134,6 +138,10 @@ export function projectWorkflowRunEvents(
       if (payload.step === "execute") latestExecuteRound = event;
     } else if (event.type === "workflow_run.updated") {
       if (payload.transition === "request_rework") reworkCount++;
+      if (payload.transition === "relaunch") {
+        latestRelaunch = event;
+        latestExecuteRound = null;
+      }
       if (
         payload.transition === "activate_step" &&
         payload.active_step === "execute"
@@ -176,6 +184,7 @@ export function projectWorkflowRunEvents(
     verifyLaunches,
     latestVerifyLaunch: verifyLaunches.at(-1) ?? null,
     latestExecuteRound,
+    latestRelaunch,
     reviewSubmissions,
     phaseTransitions,
     pendingDeliveries: [...pendingDeliveries.values()],

@@ -186,6 +186,18 @@ export type WorkflowRunStartResult = {
   };
 };
 
+export type WorkflowRunRelaunchResult = WorkflowRunUpdateResult & {
+  session_id: string;
+  worktree: string;
+  parent: {
+    runtime: CodingAgent;
+    model: string;
+    effort: string;
+    system_prompt_path: string;
+    user_prompt_path: string;
+  };
+};
+
 export type WorkflowManifestViewResult = {
   run: { id: number; issue: number; pr: number };
   manifest_path: string;
@@ -290,6 +302,7 @@ function workflowRunCostBudget(run: S.WorkflowRunRow) {
 
 function workflowRunCost(run: S.WorkflowRunRow) {
   const sessionIds = [
+    ...workflowStepSessionIds(run.step_sessions_json, "parent"),
     ...(run.parent_session_id ? [run.parent_session_id] : []),
     ...workflowStepSessionIds(run.step_sessions_json, "execute"),
     ...workflowStepSessionIds(run.step_sessions_json, "verify"),
@@ -325,6 +338,12 @@ function workflowRunAgentCosts(
     sessionId: string;
     role: WorkflowRunAgentCostWire["role"];
   }> = [
+    ...workflowStepSessionIds(run.step_sessions_json, "parent").map(
+      (sessionId) => ({
+        sessionId,
+        role: "parent" as const,
+      }),
+    ),
     ...(run.parent_session_id
       ? [
           {
@@ -706,6 +725,89 @@ function launchAgent(
   step: WorkflowStep | "parent",
 ): WorkflowManifestAgent {
   return config.agents[step];
+}
+
+// The parent's contract and positional prompt, written for the run's own launch config. Start and
+// relaunch both write them, so a relaunched parent reads exactly what a freshly started one would.
+function writeParentLaunchFiles(input: {
+  repo: S.Repo;
+  run: S.WorkflowRunRow;
+  workflow: S.WorkflowRow;
+  worktreePath: string;
+  baseRef: string;
+}): {
+  agent: WorkflowManifestAgent;
+  systemPromptPath: string;
+  userPrompt: string;
+  userPromptPath: string;
+} {
+  const { repo, run, workflow } = input;
+  const launchConfig = resolveLaunchConfig(run, workflow);
+  const agent = launchAgent(launchConfig, "parent");
+  const systemPrompt = renderWorkflowContract(
+    {
+      template: workflowContractText("parent", launchConfig.contractLanguage),
+      repo: repo.full_name,
+      step: "parent",
+      run: run.id,
+      worktreePath: input.worktreePath,
+      baseBranch: input.baseRef,
+    },
+    launchConfig.contractLanguage,
+  );
+  const systemPromptPath = writeParentContract(run.id, systemPrompt);
+  const userPrompt = parentUserPrompt(
+    {
+      runId: run.id,
+      repoName: repo.full_name,
+      workflowName: workflow.name,
+      issueNumber: run.issue_number,
+      prNumber: run.pr_number,
+      baseRef: input.baseRef,
+    },
+    launchConfig.contractLanguage,
+  );
+  // The positional prompt goes to a file the launch's command line reads back, resolved for the
+  // run's runtime first: Codex and Grok have no --append-system-prompt-file, so their file
+  // carries the contract folded in.
+  const userPromptPath = writeParentPrompt(
+    run.id,
+    runtimePrompt({ runtime: agent.runtime, systemPrompt, prompt: userPrompt }),
+  );
+  return { agent, systemPromptPath, userPrompt, userPromptPath };
+}
+
+// The one running run of a PR that a relaunch hands to a fresh parent, with the parent agent its
+// launch config names.
+function relaunchTarget(
+  repo: S.Repo,
+  pr: number,
+): {
+  run: S.WorkflowRunRow;
+  workflow: S.WorkflowRow;
+  agent: WorkflowManifestAgent;
+} {
+  const running = S.runningWorkflowRunsForPull(repo.id, pr);
+  if (running.length === 0) {
+    throw new ServiceError(
+      409,
+      `PR #${pr} has no running Workflow run to relaunch`,
+    );
+  }
+  if (running.length > 1) {
+    throw new ServiceError(
+      409,
+      `PR #${pr} has more than one running Workflow run (${running.map((run) => `#${run.id}`).join(", ")})`,
+    );
+  }
+  const run = running[0];
+  const workflow = run.workflow_id ? S.getWorkflowById(run.workflow_id) : null;
+  if (!workflow) throw new ServiceError(404, "Workflow not found");
+  return {
+    run,
+    workflow,
+    agent: launchAgent(resolveLaunchConfig(run, workflow), "parent"),
+  };
 }
 
 function runJSON(run: S.WorkflowRunRow): WorkflowRunUpdateResult["run"] {
@@ -1262,6 +1364,8 @@ function workflowTargetSessionId(
     const launch = projection.latestVerifyLaunch;
     if (
       !launch ||
+      (projection.latestRelaunch !== null &&
+        launch.id < projection.latestRelaunch.id) ||
       run.status !== "running" ||
       run.needs_human_reason !== null
     ) {
@@ -1275,6 +1379,18 @@ function workflowTargetSessionId(
     return typeof launch.payload.session_id === "string"
       ? launch.payload.session_id
       : undefined;
+  }
+  return liveExecuteSessionId(run, projection);
+}
+
+// The run's latest Execute child, unless a relaunch replaced it: a relaunch leaves no live executor
+// until a fresh Execute round starts, so a delivery waits for one and a rework launches one.
+function liveExecuteSessionId(
+  run: S.WorkflowRunRow,
+  projection: WorkflowRunProjection,
+): string | undefined {
+  if (projection.latestRelaunch !== null && !projection.latestExecuteRound) {
+    return undefined;
   }
   return workflowStepSessionIds(run.step_sessions_json, "execute").at(-1);
 }
@@ -2147,43 +2263,13 @@ export const workflowRuns = {
         },
       };
       writeWorkflowManifest(run.id, serializeWorkflowManifest(manifest));
-      const launchConfig = resolveLaunchConfig(run, workflow);
-      const parentAgent = launchAgent(launchConfig, "parent");
-
-      const systemPrompt = renderWorkflowContract(
-        {
-          template: workflowContractText("parent", contractLanguage),
-          repo: r.full_name,
-          step: "parent",
-          run: run.id,
-          worktreePath: wtPath,
-          baseBranch: pull.base_ref,
-        },
-        launchConfig.contractLanguage,
-      );
-      const systemPromptPath = writeParentContract(run.id, systemPrompt);
-      const userPrompt = parentUserPrompt(
-        {
-          runId: run.id,
-          repoName: r.full_name,
-          workflowName: workflow.name,
-          issueNumber: issue.number,
-          prNumber: opened.number,
-          baseRef: pull.base_ref,
-        },
-        launchConfig.contractLanguage,
-      );
-      // The positional prompt goes to a file the launch's command line reads back, resolved for the
-      // run's runtime first: Codex and Grok have no --append-system-prompt-file, so their file
-      // carries the contract folded in.
-      const userPromptPath = writeParentPrompt(
-        run.id,
-        runtimePrompt({
-          runtime: parentAgent.runtime,
-          systemPrompt,
-          prompt: userPrompt,
-        }),
-      );
+      const parent = writeParentLaunchFiles({
+        repo: r,
+        run,
+        workflow,
+        worktreePath: wtPath,
+        baseRef: pull.base_ref,
+      });
 
       return {
         run: {
@@ -2203,10 +2289,10 @@ export const workflowRuns = {
         head_ref: pull.head_ref,
         lock_path: lockPath,
         parent: {
-          system_prompt_path: systemPromptPath,
-          user_prompt: userPrompt,
-          user_prompt_path: userPromptPath,
-          effort: parentAgent.effort,
+          system_prompt_path: parent.systemPromptPath,
+          user_prompt: parent.userPrompt,
+          user_prompt_path: parent.userPromptPath,
+          effort: parent.agent.effort,
         },
       };
     } catch (e) {
@@ -2716,11 +2802,8 @@ export const workflowRuns = {
         `Workflow run cannot request rework from ${run.current_step}`,
       );
     }
-    const progress = await workflowRunProgress(
-      repo,
-      run,
-      workflowRunEventProjection(run),
-    );
+    const projection = workflowRunEventProjection(run);
+    const progress = await workflowRunProgress(repo, run, projection);
     if (!progress.steps.verify.complete) {
       throw new ServiceError(
         409,
@@ -2740,9 +2823,9 @@ export const workflowRuns = {
     // `active_step` straight back to it instead of clearing it first. Clearing left a window where
     // `current_step` was already `execute` while `active_step` was null: a worker dispatch landing
     // in that window reads "Execute has not started" and launches a second Execute child into the
-    // same worktree (#2150). The `deliver` that follows re-activates the same session.
-    const executeSessionId =
-      workflowStepSessionIds(run.step_sessions_json, "execute").at(-1) ?? null;
+    // same worktree (#2150). The `deliver` that follows re-activates the same session. An Execute
+    // lost before a relaunch is not handed back: the rework then launches a fresh one.
+    const executeSessionId = liveExecuteSessionId(run, projection) ?? null;
     return updateRunLifecycle(
       run,
       {
@@ -3033,6 +3116,108 @@ export const workflowRuns = {
       );
     }
     return { run: runJSON(recovered) };
+  },
+
+  // The parent agent a relaunch of the PR's running run would start, so the caller can check that
+  // it is launchable before the run is handed over.
+  relaunchParentAgent(
+    name: string,
+    input: { pr: number },
+  ): WorkflowManifestAgent {
+    return relaunchTarget(repoOr404(name), input.pr).agent;
+  },
+
+  // Replace a run whose agents were all lost with a fresh parent. A human decides that they are
+  // lost; nothing here checks. The new parent session takes the run over and must signal readiness
+  // again, and the lost parent's pane stops being the delivery target. The relaunch event releases
+  // the lost children too: the active child is cleared, a lost Verify no longer claims the HEAD,
+  // and neither a lost Execute nor a lost Verify is a delivery target or handed back by a rework, so
+  // the next instruction launches a fresh child and an executor delivery waits for it. The event cursor is untouched:
+  // instructions the lost parent already received are not delivered again, and the relaunch event
+  // itself is the first instruction the new parent reads.
+  relaunch(
+    name: string,
+    input: { pr: number },
+    actorSessionId?: string | null,
+    parentSessionId: string = randomUUID(),
+  ): WorkflowRunRelaunchResult {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const { run, workflow, agent } = relaunchTarget(r, input.pr);
+    assertRunUpdateActor(run, actorSessionId);
+    const issue = issueOr404(r, run.issue_number, "issue");
+    const prIssue = issueOr404(r, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull) {
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    }
+    const identity = resolveWorktreeIdentity(pull.head_ref, run.pr_number);
+    const wtPath =
+      identity.scheme === "legacy-issue"
+        ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
+        : prWorktreePath(worktreeRoot(), r.full_name, identity.number);
+
+    const updated = db.transaction(() => {
+      S.registerAgentSession(
+        parentSessionId,
+        "lh-workflow",
+        parentSessionId,
+        `Workflow #${issue.number} ${issue.title}`,
+        agent.runtime,
+        "dev",
+        agent.model,
+        undefined,
+        agent.effort,
+      );
+      // The replaced parent stays a run participant so its usage still counts toward the budget.
+      if (run.parent_session_id) {
+        S.appendWorkflowRunStepSession(run.id, "parent", run.parent_session_id);
+      }
+      const relaunched = S.relaunchWorkflowRunParent(run.id, parentSessionId);
+      if (!relaunched) {
+        throw new ServiceError(409, "Workflow run is no longer running");
+      }
+      S.unlinkHerdrPaneResource({
+        repoId: r.id,
+        resourceKind: "workflow_run",
+        resourceKey: String(run.id),
+      });
+      S.emitWorkflowEvent(
+        r.id,
+        "workflow_run.updated",
+        actorFor(actorSessionId),
+        {
+          id: relaunched.id,
+          transition: "relaunch",
+          status: relaunched.status,
+          current_step: relaunched.current_step,
+          rework_count: relaunched.rework_count,
+          issue_number: relaunched.issue_number,
+          pr_number: relaunched.pr_number,
+        },
+      );
+      return relaunched;
+    });
+    dev.attachSession(r.full_name, run.pr_number, parentSessionId);
+    const parent = writeParentLaunchFiles({
+      repo: r,
+      run: updated,
+      workflow,
+      worktreePath: wtPath,
+      baseRef: pull.base_ref,
+    });
+    return {
+      run: runJSON(updated),
+      session_id: parentSessionId,
+      worktree: wtPath,
+      parent: {
+        runtime: parent.agent.runtime,
+        model: parent.agent.model,
+        effort: parent.agent.effort,
+        system_prompt_path: parent.systemPromptPath,
+        user_prompt_path: parent.userPromptPath,
+      },
+    };
   },
 
   // A later Verify supersedes every earlier Verify child in the same run, including one reviewing

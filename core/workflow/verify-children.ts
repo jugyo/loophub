@@ -38,8 +38,8 @@ export function verifyLaunchPending(
 
 /**
  * The latest transition that ended a running child's claim on the HEAD it was launched for: a
- * human hold stops the children, and the resume that follows asks Verify to review with a fresh
- * child (#1872). `activate_step` is deliberately not one of them — reactivating an Execute pane for
+ * human hold stops the children, the resume that follows asks Verify to review with a fresh
+ * child (#1872), and a relaunch replaces children that were lost. `activate_step` is deliberately not one of them — reactivating an Execute pane for
  * live input leaves the Verify child reviewing.
  */
 export function latestVerifyClaimRelease(
@@ -50,7 +50,8 @@ export function latestVerifyClaimRelease(
       (event) =>
         event.type === "workflow_run.updated" &&
         (event.payload.transition === "await_human" ||
-          event.payload.transition === "resume_after_human"),
+          event.payload.transition === "resume_after_human" ||
+          event.payload.transition === "relaunch"),
     ) ?? null
   );
 }

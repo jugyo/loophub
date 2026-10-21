@@ -670,6 +670,24 @@ Options:
     description: "Record and release an orphaned step launch.",
   },
   {
+    path: ["workflow", "run", "relaunch"],
+    description: "Relaunch the agents of a PR's running workflow run.",
+    details: `
+
+Usage:
+  lh workflow run relaunch --pr <n> [--repo <owner/name>] [--attach]
+
+Starts a fresh parent for the PR's running Workflow run and hands the run to it. Use it when the
+run's agents (the parent and its Execute / Verify children) were lost; whether they were is a human
+decision, not something this command checks. The active child is cleared so the new parent launches
+a fresh one. Instructions the lost parent already received are not delivered again.
+
+Options:
+  --pr <n>              PR whose running Workflow run is relaunched. A PR with no running run is an error.
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --attach              Attach to the herdr session after launching the new parent.`,
+  },
+  {
     path: ["workflow", "run", "await-human"],
     description: "Hold a workflow run for a human decision.",
     details: WORKFLOW_RUN_AWAIT_HUMAN_DETAILS,

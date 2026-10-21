@@ -225,6 +225,19 @@ export function linkHerdrPaneResource(input: {
   return pane;
 }
 
+export function unlinkHerdrPaneResource(input: {
+  repoId: number;
+  resourceKind: string;
+  resourceKey: string;
+}): void {
+  db.run(
+    `DELETE FROM herdr_pane_resources
+     WHERE resource_kind = ? AND resource_key = ?
+       AND pane_id IN (SELECT id FROM herdr_panes WHERE repo_id = ?)`,
+    [input.resourceKind, input.resourceKey, input.repoId],
+  );
+}
+
 export function getHerdrPaneByLaunch(
   repoId: number,
   launchId: string,

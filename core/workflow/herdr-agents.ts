@@ -115,9 +115,10 @@ function workflowStepSessionHistory(
   return out;
 }
 
+// `parent` lists the parents a relaunch replaced; the current one is the run's parent_session_id.
 export function workflowStepSessionIds(
   stepSessionsJson: string,
-  step: WorkflowStep,
+  step: WorkflowStep | "parent",
 ): string[] {
   try {
     const sessions = JSON.parse(stepSessionsJson) as unknown;

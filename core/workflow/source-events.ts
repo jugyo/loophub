@@ -128,7 +128,8 @@ export interface WorkflowRunSessions {
 }
 
 /**
- * Whether a source event was written by the run's own parent or one of the children it launched.
+ * Whether a source event was written by the run's own parent (current or replaced by a relaunch)
+ * or one of the children it launched.
  *
  * Execute answers a diff feedback thread by replying to it. Waking the parent on that reply would
  * deliver the run's own answer straight back to the child that wrote it, so the run's own writes
@@ -141,6 +142,9 @@ export function isWorkflowRunOwnSession(
   if (!sessionId) return false;
   return (
     sessionId === run.parent_session_id ||
+    workflowStepSessionIds(run.step_sessions_json, "parent").includes(
+      sessionId,
+    ) ||
     workflowStepSessionIds(run.step_sessions_json, "execute").includes(
       sessionId,
     ) ||

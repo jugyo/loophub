@@ -444,6 +444,7 @@ lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note
 # lifecycle command
 lh workflow run advance-to-verify|request-rework|await-human|resume --run <id>
 lh workflow run increase-cost-limit --run <id> --expected-limit <usd>
+lh workflow run relaunch --pr <n> [--attach]    # エージェントを失った PR の running run に新しい親を起動する
 lh workflow deliver --run <id> --text <single-line-instruction> # 最新 Execute を activate して指示を注入
 lh workflow turn done --run <id>          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> --run <id> # Execute child が人間の判断の必要性を宣言
@@ -455,6 +456,30 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
 
 `lh workflow step output` は廃止した。Verify の出力は `lh pr review submit --commit <sha>`
 を用いる。
+
+### 失われたエージェントの再起動
+
+親と子（Execute / Verify）のエージェントがすべて失われた run は、run と PR が `running` のまま止まる。
+`lh workflow run relaunch --pr <n>` は、その PR の running run に fresh な親を起動して run を引き継がせる。
+失われたかどうかの判定はしない。人間が判断して実行する。coding-agent セッションの resume は行わない。
+
+relaunch は run の parent session を新しい session に差し替え、parent readiness を未宣言に戻し、active
+child と起動予約を外し、失われた親の pane を配送先から外す。置き換えた親の session は run の参加者に
+残し、その usage は引き続き cost に数える。event cursor は動かさないため、失われた親へ配送済みの
+instruction は再配送しない。relaunch 自身の `workflow_run.updated`（`transition: relaunch`）が、新しい親が
+`parent-ready` を宣言した後に受け取る最初の instruction になる。失われた親へ直前に同じ判断を送っていても、
+この event では同一判断の抑止をしない。readiness の猶予は現在の親の起動時刻から数える。
+
+relaunch event は失われた子も解放する。relaunch より前に起動した Verify は HEAD の claim を失い、配送先にも
+ならない。relaunch より前の Execute は配送先にならず、request_rework でも active な Execute として引き継がない。
+その turn done も active な Execute の宣言として扱わない。このため relaunch 後の instruction は current step の子を fresh に起動する。executor 宛ての配送は
+fresh な Execute が起動するまで queue され、queue 自体が Execute の起動につながる。
+
+失われた親への注入が途中で失敗して pending のまま残った instruction receipt は、relaunch でも解消しない。
+この場合、新しい親の `parent-ready` と以降の配送は pending receipt を理由に可視エラーで止まる。自動再実行は
+二重入力になり得るため、この receipt の扱いは引き続き operator の判断に委ねる。
+
+running run を持たない PR を指定した場合は可視エラーで non-zero exit する。
 
 ### `lh workflow start` の herdr セッション
 

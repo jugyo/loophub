@@ -1675,6 +1675,156 @@ test("resume continues a held Execute but relaunches Verify (#1872)", async () =
   ).toMatchObject({ action: "launch_verify" });
 }, 30_000);
 
+// A relaunch while Verify was reviewing must release both lost children: the lost Verify's claim on
+// the HEAD and the lost Execute as a delivery target. Otherwise a turn done answered "no progress"
+// goes to the lost executor and the run never launches a fresh child.
+test("a relaunch during Verify launches a fresh Verify, and its rework launches a fresh Execute", async () => {
+  const { repo } = freshRepo("me/workflow-relaunch-verify");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Relaunch verify",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "relaunch-verify-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "f6f6f6f6-f6f6-4f6f-8f6f-f6f6f6f6f6f6";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+  commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  const verify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verify.session_id,
+      agentName: verify.agent_name,
+      pointers: verify.pointers,
+      headSha: verify.head_sha,
+    },
+    parent,
+  );
+
+  const human = randomUUID();
+  S.registerAgentSession(human, "me", human, null, null, "cli", null);
+  const relaunched = svc.workflowRuns.relaunch(
+    repo.full_name,
+    { pr: started.pr.number },
+    human,
+  );
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: lastRunUpdate(started.run.id),
+    }),
+  ).toMatchObject({ action: "launch_verify" });
+
+  // The fresh Verify requests changes. The rework does not hand Execute back to the lost child.
+  const freshVerify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    relaunched.session_id,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: freshVerify.session_id,
+      agentName: freshVerify.agent_name,
+      pointers: freshVerify.pointers,
+      headSha: freshVerify.head_sha,
+    },
+    relaunched.session_id,
+  );
+  await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "REQUEST_CHANGES",
+      headSha: freshVerify.head_sha,
+      body: "One change required.",
+      comments: [{ path: "file-0.ts", line: 1, body: "needs a fix" }],
+    },
+    freshVerify.session_id,
+  );
+  await svc.workflowRuns.requestRework(
+    repo.full_name,
+    { run: started.run.id },
+    relaunched.session_id,
+  );
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
+    current_step: "execute",
+    active_step: null,
+    active_session_id: null,
+  });
+
+  // Executor work after the relaunch waits for a fresh Execute instead of reaching the lost one.
+  const delivered = await svc.workflowRuns.deliver(
+    repo.full_name,
+    { run: started.run.id, target: "executor", text: "address review 1" },
+    relaunched.session_id,
+  );
+  expect(delivered).toMatchObject({ queued: true, target: "executor" });
+  const queued = S.eventsForWorkflowRun(repo.id, started.run.id)
+    .filter((event) => event.type === "workflow_run.delivery_queued")
+    .at(-1);
+  const launch = await svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
+    event: queued!.id,
+  });
+  expect(launch).toMatchObject({ action: "launch_execute" });
+  const freshExec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      deliveryId: (launch as { delivery_id?: string }).delivery_id,
+    },
+    relaunched.session_id,
+  );
+  expect(freshExec.session_id).not.toBe(exec.session_id);
+}, 30_000);
+
 test("Verify launch reservations prevent concurrent spawns and allow a later replacement", async () => {
   const { repo } = freshRepo("me/workflow-verify-launch-reservation");
   const issue = S.createIssue(
