@@ -144,7 +144,7 @@ describe("PR 詳細ルート", () => {
       level: 1,
     });
     expect(document.title).toBe(
-      "open · PR #4 · Browser title verification PR 1 · me/proj · LoopHub",
+      "PR #4 · Browser title verification PR 1 · me/proj · LoopHub",
     );
 
     await act(async () => {
@@ -160,7 +160,7 @@ describe("PR 詳細ルート", () => {
     });
     await waitFor(() => {
       expect(document.title).toBe(
-        "passed · mergeable · PR #5 · Browser title verification PR 2 · me/proj · LoopHub",
+        "PR #5 · Browser title verification PR 2 · me/proj · LoopHub",
       );
     });
   });
