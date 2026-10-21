@@ -27,6 +27,8 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 
 loop に入る前に `lh workflow parent-ready {{run}}` を 1 回実行する。agent が読み取る前にこの pane へ
 書かれた text は失われるため、この signal が届くまで instruction は保留される。
+`current decision: wait|complete — <reason>` 行が出力された場合は、現時点で実行すべきことは無い。
+そのまま loop に入って待つ。
 
 その上で次の loop を繰り返す。
 

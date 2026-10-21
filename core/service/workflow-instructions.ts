@@ -31,7 +31,14 @@ const PARENT_LAUNCH_GRACE_MS = 600_000;
 
 export type WorkflowInstructionDispatchResult =
   | { status: "idle" }
-  | { status: "skipped"; run: number; event: number; reason: string }
+  | {
+      status: "skipped";
+      run: number;
+      event: number;
+      reason: string;
+      // Set when the event was decided as a wait/complete with nothing to send.
+      action?: string;
+    }
   | { status: "failed"; run: number; event?: number; error: string }
   | {
       status: "delivered";
@@ -234,6 +241,9 @@ export const workflowInstructions = {
     run: number;
     ready_at: string;
     instruction: WorkflowInstructionDispatchResult;
+    // The latest wait/complete decision released by readiness. Nothing is sent to the pane for it,
+    // so this output is how a (re)launched parent learns why no instruction follows.
+    decision: { action: string; reason: string } | null;
   }> {
     const repo = repoOr404(name);
     const run = S.getWorkflowRun(input.run);
@@ -276,8 +286,12 @@ export const workflowInstructions = {
     }
     const ready = { run: readyRow.id, ready_at: readyRow.parent_ready_at };
 
+    let decision: { action: string; reason: string } | null = null;
     let instruction = await this.dispatchRun(ready.run);
     while (instruction.status === "skipped") {
+      if (instruction.action) {
+        decision = { action: instruction.action, reason: instruction.reason };
+      }
       instruction = await this.dispatchRun(ready.run);
     }
     if (instruction.status === "idle") {
@@ -290,7 +304,11 @@ export const workflowInstructions = {
         );
       }
     }
-    return { ...ready, instruction };
+    return {
+      ...ready,
+      instruction,
+      decision: instruction.status === "delivered" ? null : decision,
+    };
   },
 
   async dispatchRun(runId: number): Promise<WorkflowInstructionDispatchResult> {
@@ -432,6 +450,7 @@ export const workflowInstructions = {
         run: run.id,
         event: event.id,
         reason: instruction.reason,
+        action: instruction.action,
       };
     }
 

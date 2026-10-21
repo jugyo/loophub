@@ -1017,6 +1017,10 @@ async function parentReady(): Promise<void> {
       console.log(
         `delivered Workflow instruction for event #${result.instruction.event}`,
       );
+    } else if (result.decision) {
+      console.log(
+        `current decision: ${result.decision.action} — ${result.decision.reason}`,
+      );
     }
   }
 }

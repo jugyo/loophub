@@ -1297,6 +1297,59 @@ test("a relaunched parent takes the run over and receives only new instructions"
   }
 });
 
+test("a relaunched parent learns a wait decision from readiness instead of silence", async () => {
+  const input = fixture("relaunch-wait");
+  const fake = fakeHerdr();
+  const human = `${String(input.repo.id).padStart(8, "0")}-0000-4000-8000-0000000000fe`;
+  S.registerAgentSession(human, "me", human, null, null, "cli", null);
+  registerParent(input);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fake.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValueOnce(instructionResult(input.event.id))
+    .mockResolvedValue({
+      ...instructionResult(input.event.id),
+      action: "wait" as never,
+      reason: "Fresh review passes the current HEAD.",
+    });
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({ status: "delivered" });
+    const relaunched = svc.workflowRuns.relaunch(
+      input.repo.full_name,
+      { pr: input.run.pr_number },
+      human,
+    );
+    svc.workflowInstructions.registerParentPane(input.repo.full_name, {
+      run: input.run.id,
+      launch_id: relaunched.session_id,
+      session_name: "me-repo",
+      pane_id: "w1:p6",
+      launched_at: new Date().toISOString(),
+    });
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).resolves.toMatchObject({
+      instruction: { status: "idle" },
+      decision: {
+        action: "wait",
+        reason: "Fresh review passes the current HEAD.",
+      },
+    });
+    // The decision is reported, not injected into the pane.
+    expect(readFileSync(fake.log, "utf8")).not.toMatch(/send-text w1:p6 /);
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fake.bin, { recursive: true, force: true });
+    rmSync(input.repoPath, { recursive: true, force: true });
+  }
+});
+
 test("relaunching a PR with no running run fails visibly", () => {
   const input = fixture("relaunch-none");
   try {

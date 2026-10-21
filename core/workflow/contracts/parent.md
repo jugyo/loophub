@@ -26,7 +26,8 @@ uses these shared invariants throughout:
 ## Instruction loop
 
 Before the loop, run `lh workflow parent-ready {{run}}` once. Instructions are held until that signal
-arrives, because text written to this pane before your agent reads it is lost.
+arrives, because text written to this pane before your agent reads it is lost. When it prints a
+`current decision: wait|complete — <reason>` line, nothing is due yet; enter the loop and wait.
 
 Then repeat this loop:
 
