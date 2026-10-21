@@ -26,6 +26,12 @@ export function workflowParentHerdrAgentName(runId: number): string {
   return `orchestrator #${runId}`;
 }
 
+// The label a relaunch gives the parent it replaced. It deliberately fails
+// parseWorkflowHerdrAgentName, so a leftover pane is no longer resolved as the run's parent.
+export function workflowReplacedParentHerdrAgentName(runId: number): string {
+  return `${workflowParentHerdrAgentName(runId)} (replaced)`;
+}
+
 export function workflowStepHerdrAgentName(
   runId: number,
   step: WorkflowStep,

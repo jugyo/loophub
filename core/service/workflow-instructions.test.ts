@@ -1251,6 +1251,7 @@ test("a relaunched parent takes the run over and receives only new instructions"
     const run = S.getWorkflowRun(input.run.id);
     expect(run?.parent_session_id).toBe(relaunched.session_id);
     expect(relaunched.session_id).not.toBe(lostParent);
+    expect(relaunched.replaced_pane_id).toBe("w1:p1");
     expect(run?.parent_ready_at).toBeNull();
     expect(run?.active_step).toBeNull();
     expect(run?.active_session_id).toBeNull();

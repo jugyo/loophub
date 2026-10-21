@@ -312,6 +312,29 @@ export function herdrPaneRenameArgv(
   ];
 }
 
+export function herdrTabRenameArgv(
+  repo: TerminalLaunchRepo,
+  tabId: string,
+  label: string,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "tab",
+    "rename",
+    tabId,
+    label,
+  ];
+}
+
+export function herdrPaneGetArgv(
+  repo: TerminalLaunchRepo,
+  paneId: string,
+): string[] {
+  return ["herdr", "--session", herdrSessionName(repo), "pane", "get", paneId];
+}
+
 // Types a shell command into a pane. This is how every launch starts its work: the pane's shell
 // receives the whole invocation — environment, binary, flags and prompt — as one line. The trailing
 // newline submits it.
@@ -597,6 +620,17 @@ export function parseHerdrTabId(stdout: string): string | null {
   try {
     const parsed = JSON.parse(stdout);
     const tabId = parsed?.result?.tab?.tab_id;
+    return typeof tabId === "string" && HERDR_ID.test(tabId) ? tabId : null;
+  } catch {
+    return null;
+  }
+}
+
+// `herdr pane get` reports the tab holding the pane at .result.pane.tab_id.
+export function parseHerdrPaneTabId(stdout: string): string | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    const tabId = parsed?.result?.pane?.tab_id;
     return typeof tabId === "string" && HERDR_ID.test(tabId) ? tabId : null;
   } catch {
     return null;

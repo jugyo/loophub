@@ -25,6 +25,7 @@ import {
   herdrWorkspaceListArgv,
   herdrWorktreeOpenArgv,
   parseHerdrAgentPaneId,
+  parseHerdrPaneTabId,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
@@ -956,6 +957,18 @@ describe("herdr terminal launch", () => {
     expect(parseHerdrTabId("not json")).toBeNull();
     expect(parseHerdrTabId('{"result":{"tab":{}}}')).toBeNull();
     expect(parseHerdrTabId('{"result":{"tab":{"tab_id":42}}}')).toBeNull();
+  });
+
+  test("parses the tab id from herdr pane get output", () => {
+    expect(
+      parseHerdrPaneTabId(
+        '{"id":"cli:pane:get","result":{"pane":{"pane_id":"w1:p3","tab_id":"w1:t3"},"type":"pane_info"}}',
+      ),
+    ).toBe("w1:t3");
+    expect(parseHerdrPaneTabId("")).toBeNull();
+    expect(
+      parseHerdrPaneTabId('{"result":{"pane":{"tab_id":"-x"}}}'),
+    ).toBeNull();
   });
 
   test("rejects tab ids that could be parsed as flags or shell noise", () => {

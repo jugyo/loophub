@@ -6,6 +6,7 @@ import {
   parseWorkflowHerdrAgentName,
   workflowHerdrPaneKind,
   workflowParentHerdrAgentName,
+  workflowReplacedParentHerdrAgentName,
   workflowStepHerdrAgentName,
   workflowStepSessionIds,
 } from "./herdr-agents.ts";
@@ -17,6 +18,13 @@ describe("Workflow Herdr agent names", () => {
       kind: "parent",
       runId: 34,
     });
+  });
+
+  test("the replaced parent name no longer parses as a Workflow agent", () => {
+    const name = workflowReplacedParentHerdrAgentName(34);
+    expect(name).toBe("orchestrator #34 (replaced)");
+    expect(parseWorkflowHerdrAgentName(name)).toBeNull();
+    expect(workflowHerdrPaneKind(name, 34)).toBeNull();
   });
 
   test.each([

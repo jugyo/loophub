@@ -17,12 +17,19 @@ import {
   executeHerdrLaunchPlan,
   HERDR_ID,
   herdrAgentFocusArgv,
+  herdrPaneGetArgv,
+  herdrPaneRenameArgv,
   herdrTabCloseArgv,
   herdrTabFocusArgv,
+  herdrTabRenameArgv,
   herdrWorkspaceCloseArgv,
+  parseHerdrPaneTabId,
   withHerdrWorkspace,
 } from "../../core/terminal/terminal-launch.ts";
-import { workflowParentHerdrAgentName } from "../../core/workflow/herdr-agents.ts";
+import {
+  workflowParentHerdrAgentName,
+  workflowReplacedParentHerdrAgentName,
+} from "../../core/workflow/herdr-agents.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   display,
@@ -715,6 +722,25 @@ async function launchStep(): Promise<void> {
   await confirm(childPaneId);
 }
 
+// Mark the replaced parent's pane and tab so they no longer carry the live parent's name.
+// Best-effort: the old pane may be a zombie or gone, and that must not fail the relaunch.
+function relabelReplacedParent(
+  repo: { full_name: string; local_path: string },
+  runId: number,
+  paneId: string,
+): void {
+  const label = workflowReplacedParentHerdrAgentName(runId);
+  const run = (argv: string[]) =>
+    spawnSyncProcess(argv, {
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 15_000,
+    });
+  const pane = run(herdrPaneGetArgv(repo, paneId));
+  run(herdrPaneRenameArgv(repo, paneId, label));
+  const tabId = parseHerdrPaneTabId(pane.stdout?.toString("utf8") ?? "");
+  if (tabId) run(herdrTabRenameArgv(repo, tabId, label));
+}
+
 // Start a fresh parent for the running run of a PR whose agents were lost. Like start, the parent
 // launches fire-and-forget unless --attach is passed.
 async function relaunchRun(): Promise<void> {
@@ -737,6 +763,9 @@ async function relaunchRun(): Promise<void> {
     console.log(`session\t${display(result.session_id)}`);
   }
   const repoRecord = await runOp(() => s.repos.get(repo));
+  if (result.replaced_pane_id) {
+    relabelReplacedParent(repoRecord, result.run.id, result.replaced_pane_id);
+  }
   await launchParentHerdr({
     repo: {
       full_name: repoRecord.full_name,

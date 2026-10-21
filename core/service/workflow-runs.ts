@@ -189,6 +189,8 @@ export type WorkflowRunStartResult = {
 export type WorkflowRunRelaunchResult = WorkflowRunUpdateResult & {
   session_id: string;
   worktree: string;
+  // The Herdr pane of the parent this relaunch replaced, so the caller can relabel it.
+  replaced_pane_id: string | null;
   parent: {
     runtime: CodingAgent;
     model: string;
@@ -3157,6 +3159,7 @@ export const workflowRuns = {
         ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
         : prWorktreePath(worktreeRoot(), r.full_name, identity.number);
 
+    let replacedPaneId: string | null = null;
     const updated = db.transaction(() => {
       S.registerAgentSession(
         parentSessionId,
@@ -3177,6 +3180,7 @@ export const workflowRuns = {
       if (!relaunched) {
         throw new ServiceError(409, "Workflow run is no longer running");
       }
+      replacedPaneId = workflowRunParentPaneId(run) ?? null;
       S.unlinkHerdrPaneResource({
         repoId: r.id,
         resourceKind: "workflow_run",
@@ -3210,6 +3214,7 @@ export const workflowRuns = {
       run: runJSON(updated),
       session_id: parentSessionId,
       worktree: wtPath,
+      replaced_pane_id: replacedPaneId,
       parent: {
         runtime: parent.agent.runtime,
         model: parent.agent.model,
