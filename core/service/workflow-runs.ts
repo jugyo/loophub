@@ -1755,9 +1755,12 @@ async function workflowRunState(
     // complete run history while retaining the row as a fallback for eventless legacy runs.
     reworkCount: Math.max(projection.reworkCount, run.rework_count),
     reworkLimit: run.rework_limit,
+    // Offered before the hold too (#2555): a run already at its limit with a Verify in flight
+    // would otherwise stop on the next request_changes before a human can raise it.
     reworkLimitIncreaseAvailable:
       run.status === "running" &&
-      run.needs_human_reason?.includes("rework limit") === true &&
+      (run.needs_human_reason === null ||
+        run.needs_human_reason.includes("rework limit")) &&
       run.rework_count >= run.rework_limit,
     costIncrementUsd: incrementUsd,
     costLimitUsd: limitUsd,

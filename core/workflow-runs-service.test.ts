@@ -1400,6 +1400,73 @@ test("cost exceeded is re-emitted until the run is held or its limit is raised (
   }
 });
 
+// #2555: a run already at its limit can be raised while Verify is still running, before the next
+// request_changes holds it.
+test("offers a rework limit increase before the rework-limit hold (#2555)", async () => {
+  const repo = S.createRepo("me/workflow-web-rework", REPO_PATH);
+  const pull = S.createIssue(repo.id, "pull", "Web rework PR", "", "me");
+  S.createPull(pull.id, "web-rework", "main", null);
+  const webSessionId = "9d9d9d9d-9d9d-4d9d-8d9d-9d9d9d9d9d9d";
+  const workflow = S.createWorkflow({
+    name: "web-rework-workflow",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: pull.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+  });
+  S.updateWorkflowRun(run.id, { activeStep: "verify", reworkCount: 7 });
+  const state = () =>
+    svc.workflowRuns.stateForPull(repo.full_name, { pull: pull.number });
+
+  // Below the limit there is nothing to raise.
+  expect(await state()).toMatchObject({
+    rework_limit_increase_available: false,
+  });
+
+  S.updateWorkflowRun(run.id, { reworkCount: 8 });
+  expect(await state()).toMatchObject({
+    needs_human_reason: null,
+    rework_limit: 8,
+    rework_limit_increase_available: true,
+  });
+
+  // A hold for another reason does not offer the rework increase.
+  S.updateWorkflowRun(run.id, { needsHumanReason: "Cost limit exceeded" });
+  expect(await state()).toMatchObject({
+    rework_limit_increase_available: false,
+  });
+  S.updateWorkflowRun(run.id, { needsHumanReason: null });
+
+  expect(
+    svc.workflowRuns.increaseReworkLimitForHuman(
+      repo.full_name,
+      { run: run.id, expectedLimit: 8 },
+      webSessionId,
+    ),
+  ).toEqual({ run: run.id, previous_limit: 8, current_limit: 16 });
+  // The next request_changes is compared against the raised row limit, so it reworks.
+  expect(await state()).toMatchObject({
+    status: "running",
+    needs_human_reason: null,
+    rework_limit: 16,
+    rework_limit_increase_available: false,
+  });
+
+  S.updateWorkflowRun(run.id, { reworkCount: 16, status: "completed" });
+  expect(await state()).toMatchObject({
+    rework_limit_increase_available: false,
+  });
+});
+
 test("a Web budget increase wakes the parent to resume the held step (#1828)", async () => {
   const repo = S.createRepo("me/workflow-web-budget", REPO_PATH);
   const pull = S.createIssue(repo.id, "pull", "Web budget PR", "", "me");

@@ -305,7 +305,7 @@ export function increaseWorkflowRunReworkLimit(
        SET rework_limit = rework_limit + ?, needs_human_reason = NULL, updated_at = ?
        WHERE id = ?
          AND status = 'running'
-         AND needs_human_reason LIKE '%rework limit%reached%'
+         AND (needs_human_reason IS NULL OR needs_human_reason LIKE '%rework limit%reached%')
          AND rework_count >= rework_limit
          AND rework_limit = ?
        RETURNING rework_limit`,

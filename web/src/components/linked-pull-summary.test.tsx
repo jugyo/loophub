@@ -821,6 +821,55 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
   });
 });
 
+// #2555: the increase is offered as soon as the run reaches its limit, while Verify still runs.
+describe("LinkedPullSummaryRow workflow rework limit (#2555)", () => {
+  it("offers the increase for a run at its limit while Verify is running", async () => {
+    renderRowWithRun(
+      makeWorkflowRunState({
+        current_step: "verify",
+        rework_count: 8,
+        rework_limit: 8,
+        rework_limit_increase_available: true,
+      }),
+      {},
+      {
+        "workflowRuns/increaseReworkLimit": () => ({
+          run: 1,
+          previous_limit: 8,
+          current_limit: 16,
+        }),
+      },
+    );
+
+    fireEvent.focus(await screen.findByText("rework limit"));
+    const prompt = screen.getByRole("group", {
+      name: "Increase rework limit to 16?",
+    });
+    await act(async () => {
+      fireEvent.click(within(prompt).getByRole("button", { name: "Yes" }));
+    });
+
+    expect(rpcCall("workflowRuns/increaseReworkLimit")?.params).toMatchObject({
+      repo: "me/proj",
+      run: 1,
+      expected_limit: 8,
+    });
+  });
+
+  it("shows nothing while the run is below its limit", async () => {
+    renderRowWithRun(
+      makeWorkflowRunState({
+        current_step: "verify",
+        rework_count: 7,
+        rework_limit_increase_available: false,
+      }),
+    );
+
+    await screen.findByText("Verify");
+    expect(screen.queryByText("rework limit")).toBeNull();
+  });
+});
+
 describe("LinkedPullSummaryRow hover popover", () => {
   it("identifies the popover and omits agents and follow-up input", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });

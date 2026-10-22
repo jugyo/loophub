@@ -1239,3 +1239,45 @@ test("increases a held workflow rework limit with an expected-value guard", () =
   expect(S.getWorkflowRun(run.id)?.rework_limit).toBe(16);
   expect(S.increaseWorkflowRunReworkLimit(run.id, 8)).toBeNull();
 });
+
+// #2555: a run at its limit can be raised before Verify's request_changes holds it.
+test("increases an unheld workflow rework limit only once it is reached", () => {
+  const repo = S.createRepo("me/rework-limit-unheld", "/tmp/rework-limit-u");
+  const issue = S.createIssue(repo.id, "issue", "Workflow", "", "me");
+  const pull = S.createIssue(repo.id, "pull", "Workflow PR", "", "me");
+  const workflow = S.createWorkflow({
+    name: "rework-limit-unheld",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 1,
+    costLimitUsd: 1,
+  });
+  S.updateWorkflowRun(run.id, { reworkCount: 7 });
+  expect(S.increaseWorkflowRunReworkLimit(run.id, 8)).toBeNull();
+
+  // Another hold is not a rework-limit hold, so the increase stays refused.
+  S.updateWorkflowRun(run.id, {
+    reworkCount: 8,
+    needsHumanReason: "Cost limit exceeded",
+  });
+  expect(S.increaseWorkflowRunReworkLimit(run.id, 8)).toBeNull();
+
+  S.updateWorkflowRun(run.id, { needsHumanReason: null });
+  expect(S.increaseWorkflowRunReworkLimit(run.id, 8)).toEqual({
+    previous_limit: 8,
+    current_limit: 16,
+  });
+  expect(S.getWorkflowRun(run.id)).toMatchObject({
+    rework_limit: 16,
+    needs_human_reason: null,
+  });
+});

@@ -474,7 +474,7 @@ export const methods: Record<string, MethodDef> = {
   },
   "workflowRuns/increaseReworkLimit": {
     description:
-      "Increase a rework-held Workflow run's limit by its current fixed limit.",
+      "Increase the rework limit of a running Workflow run that has reached it, held or not, by its current fixed limit.",
     params: params(
       {
         repo,
