@@ -126,6 +126,11 @@ pass の必要条件ですが単独では十分条件ではなく、rubric 外�
 line comment は任意です。file 位置がある指摘には添え、位置を持たない指摘は review body か grade の
 `note` に書きます。
 
+`request_changes` の review body では、rubric 外の blocking な指摘をすべて `## Blocking` 見出しの下に
+並べます。1 指摘につきトップレベルの list item を 1 つとし、その 1 行目を 1 行の要約にします。詳細は
+body の別の場所に書きます。PR ページの review summary はこの行だけを表示するため、この節に無い指摘は
+そこに出ません。fail の grade は `--ac-results` から表示されます。
+
 review の補助に skill や auxiliary agent を使えますが、上記の制約はそのまま適用します。補助の指摘は
 finding にする前に自分で検証します。
 

@@ -706,7 +706,18 @@ describe("PullCommitsSection", () => {
         user: { login: "verifier #9-1" },
         author_type: "agent",
         state: "REQUEST_CHANGES",
-        body: "The toggle loses focus on close.",
+        body: [
+          "full review. The toggle regressed.",
+          "",
+          "## Blocking",
+          "",
+          "- The toggle loses focus on close.",
+          "- The toggle has no test.",
+          "",
+          "## Detail",
+          "",
+          "Closing the dialog drops focus to the document body.",
+        ].join("\n"),
         head_sha: commits![0].sha,
         model: "claude-opus-5",
         submitted_at: "2026-06-18T12:30:00Z",
@@ -758,7 +769,7 @@ describe("PullCommitsSection", () => {
     )!;
     expect(summary).toBeTruthy();
     // Both criteria are listed with their verdict; the failed one repeats under Blockers together
-    // with the body of the review that requested changes.
+    // with one line per finding of the review that requested changes — not its full body.
     expect(
       within(summary).getByText("summary mode is the default"),
     ).toBeTruthy();
@@ -766,9 +777,15 @@ describe("PullCommitsSection", () => {
       within(summary).getAllByText("blockers list failed criteria"),
     ).toHaveLength(2);
     expect(
-      within(summary).getByText("The toggle loses focus on close."),
-    ).toBeTruthy();
+      within(summary)
+        .getAllByRole("listitem")
+        .filter((item) => item.classList.contains("truncate"))
+        .map((item) => item.textContent),
+    ).toEqual(["The toggle loses focus on close.", "The toggle has no test."]);
     // Detailed-only material stays out of summary mode.
+    expect(
+      within(summary).queryByText(/drops focus to the document body/),
+    ).toBeNull();
     expect(within(summary).queryByText("opens collapsed")).toBeNull();
     expect(within(dialog).queryByText("Restore focus here.")).toBeNull();
     expect(within(dialog).queryByText("claude-opus-5")).toBeNull();
@@ -787,6 +804,9 @@ describe("PullCommitsSection", () => {
       dialog.querySelector('[data-debug-component="ReviewItem"]'),
     ).toBeTruthy();
     expect(within(dialog).getByText("Restore focus here.")).toBeTruthy();
+    expect(
+      within(dialog).getByText(/drops focus to the document body/),
+    ).toBeTruthy();
     expect(within(dialog).getByText("claude-opus-5")).toBeTruthy();
     expect(within(dialog).getByText(/took 4m 12s/)).toBeTruthy();
     expect(within(dialog).getByText("opens collapsed")).toBeTruthy();
@@ -868,7 +888,7 @@ describe("PullCommitsSection", () => {
   });
 
   // The holistic fallback has no rubric to summarize (design §7): summary mode says so rather than
-  // showing an empty checklist, and a body that requested changes is still surfaced as the blocker.
+  // showing an empty checklist, and a review that requested changes is still surfaced as a blocker.
   it("keeps summary mode readable for a review that graded no criteria", async () => {
     const reviews: PullReview[] = [
       {
@@ -899,9 +919,119 @@ describe("PullCommitsSection", () => {
       '[data-debug-component="ReviewSummary"]',
     )!;
     expect(within(summary).getByText(/No AC grading/)).toBeTruthy();
+    // The review still counts as a blocker, but a body without a "## Blocking" section is not
+    // summarized: it points to the details instead of showing a guessed line.
     expect(
-      within(summary).getByText("Needs a test for the toggle."),
+      within(summary).getByText("REQUEST_CHANGES", { exact: false }),
     ).toBeTruthy();
+    expect(within(summary).getByText(/No Blocking section/)).toBeTruthy();
+    expect(
+      within(summary).queryByText("Needs a test for the toggle."),
+    ).toBeNull();
+  });
+
+  // A review that failed only rubric criteria has no Blocking section to summarize; its own failed
+  // criteria already say what blocks, so its row would only repeat them.
+  it("leaves out a review without Blocking findings when its own criteria failed", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 15,
+        user: { login: "verifier #9-1" },
+        author_type: "agent",
+        state: "REQUEST_CHANGES",
+        body: "full review. AC 1 is not met.",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
+        ac_results: [
+          {
+            criterion_id: "9-1",
+            number: 1,
+            text: "summary mode is the default",
+            verdict: "fail",
+            note: "",
+          },
+        ],
+      },
+    ];
+
+    renderSection({ reviews });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View 1 review for aaaaaaa: Latest change",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    const summary = dialog.querySelector<HTMLElement>(
+      '[data-debug-component="ReviewSummary"]',
+    )!;
+    expect(
+      within(summary).getAllByText("summary mode is the default"),
+    ).toHaveLength(2);
+    expect(within(summary).queryByText(/REQUEST_CHANGES/)).toBeNull();
+    expect(within(summary).queryByText(/No Blocking section/)).toBeNull();
+  });
+
+  // Failed criteria from one review say nothing about another review's request, so a later
+  // request without a Blocking section keeps its row.
+  it("keeps a request without Blocking findings when another review failed criteria", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 16,
+        user: { login: "verifier #9-1" },
+        author_type: "agent",
+        state: "REQUEST_CHANGES",
+        body: "full review. AC 1 is not met.",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T12:30:00Z",
+        duration_seconds: null,
+        ac_results: [
+          {
+            criterion_id: "9-1",
+            number: 1,
+            text: "summary mode is the default",
+            verdict: "fail",
+            note: "",
+          },
+        ],
+      },
+      {
+        id: 17,
+        user: { login: "reviewer" },
+        author_type: "human",
+        state: "REQUEST_CHANGES",
+        body: "Please rename X before merging.",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T13:00:00Z",
+        duration_seconds: null,
+        ac_results: [],
+      },
+    ];
+
+    renderSection({ reviews });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View 2 reviews for aaaaaaa: Latest change",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    const summary = dialog.querySelector<HTMLElement>(
+      '[data-debug-component="ReviewSummary"]',
+    )!;
+    expect(
+      within(summary).getAllByText("summary mode is the default"),
+    ).toHaveLength(2);
+    expect(within(summary).getAllByText(/REQUEST_CHANGES/)).toHaveLength(1);
+    expect(within(summary).getByText(/No Blocking section/)).toBeTruthy();
   });
 
   it("marks only the commit rows whose reviews carry a screenshot", () => {

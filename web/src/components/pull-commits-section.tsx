@@ -10,7 +10,8 @@
 // The review dialog opens in summary mode (#554): only the per-criterion pass / fail and the
 // blockers, so "did it pass, and what is stopping it" reads in seconds. Detailed mode holds the
 // unchanged review list — full bodies, line comments, model and duration. Blockers are derived from
-// the review data already on the wire (state + `ac_results`); nothing new is stored for them.
+// the review data already on the wire (state + `ac_results`, plus one line per finding listed in the
+// "## Blocking" section of a review's body, #2557); nothing new is stored for them.
 
 import { Check, ImageIcon, Loader2, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -30,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/lib/badges";
 import { errorMessage } from "@/lib/error-message";
 import { hasMarkdownImage } from "@/lib/markdown-images";
+import { reviewBlockerLines } from "@/lib/review-blockers";
 import { formatDuration, relativeTime } from "@/lib/time";
 import { useBackdropDismiss } from "@/lib/use-backdrop-dismiss";
 import {
@@ -475,7 +477,7 @@ export function ReviewDetailsDialog({
               />
             ))
           ) : (
-            <ReviewSummary owner={owner} repo={repo} reviews={reviews} />
+            <ReviewSummary reviews={reviews} />
           )}
         </div>
       </div>
@@ -515,20 +517,21 @@ function blockingReviews(reviews: PullReview[]): PullReview[] {
 }
 
 // What a human wants first (#554): whether each criterion passed, and what is blocking. A blocker is
-// a failed criterion or the body of a review that requested changes — both read off the existing
-// review data, with no blocker field of their own.
-function ReviewSummary({
-  owner,
-  repo,
-  reviews,
-}: {
-  owner: string;
-  repo: string;
-  reviews: PullReview[];
-}) {
+// a failed criterion or a finding listed in the "## Blocking" section of a review that requested
+// changes, one line each (#2557) — both read off the existing review data, with no blocker field of
+// their own. The full body waits for detailed mode.
+function ReviewSummary({ reviews }: { reviews: PullReview[] }) {
   const grades = latestGrades(reviews);
   const failed = grades.filter((grade) => grade.verdict === "fail");
-  const changesRequested = blockingReviews(reviews);
+  // A review that failed criteria but lists no Blocking findings adds nothing beside its own failed
+  // criteria, which already show; any other review keeps its row.
+  const changesRequested = blockingReviews(reviews)
+    .map((review) => ({ review, lines: reviewBlockerLines(review.body) }))
+    .filter(
+      ({ review, lines }) =>
+        lines.length > 0 ||
+        !review.ac_results.some((result) => result.verdict === "fail"),
+    );
   const hasBlockers = failed.length > 0 || changesRequested.length > 0;
   return (
     <div data-debug-component="ReviewSummary" className="flex flex-col gap-4">
@@ -577,7 +580,7 @@ function ReviewSummary({
                 </span>
               </li>
             ))}
-            {changesRequested.map((review) => (
+            {changesRequested.map(({ review, lines }) => (
               <li
                 key={review.id}
                 className="rounded-md border border-destructive/50 bg-destructive/5 p-2"
@@ -591,9 +594,7 @@ function ReviewSummary({
                     />
                   </span>
                 </div>
-                <Markdown owner={owner} repo={repo}>
-                  {review.body}
-                </Markdown>
+                <ReviewBlockerLines lines={lines} />
               </li>
             ))}
           </ul>
@@ -604,6 +605,24 @@ function ReviewSummary({
         )}
       </section>
     </div>
+  );
+}
+
+function ReviewBlockerLines({ lines }: { lines: string[] }) {
+  if (lines.length === 0)
+    return (
+      <p className="text-xs text-muted-foreground">
+        No Blocking section — open the details to read this review.
+      </p>
+    );
+  return (
+    <ul className="list-inside list-disc">
+      {lines.map((line, index) => (
+        <li key={index} className="truncate" title={line}>
+          {line}
+        </li>
+      ))}
+    </ul>
   );
 }
 

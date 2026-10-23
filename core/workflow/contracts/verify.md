@@ -136,6 +136,12 @@ contradicts itself: it is recorded with a visible warning rather than silently a
 Line comments are optional. Attach one where a finding has a file location; a finding without one
 belongs in the review body or in a grade `note`.
 
+In a `request_changes` review body, list every blocking finding outside the rubric under a
+`## Blocking` heading, one top-level list item per finding, with a one-line summary as the item's
+first line. Put the detail elsewhere in the body. The PR page's review summary shows only these
+lines, so a finding missing from this section does not appear there; a failing grade already
+appears from `--ac-results`.
+
 You may use a review skill or auxiliary agent as an aid, but the constraints above still apply.
 Validate its observations yourself before making a finding.
 
