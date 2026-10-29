@@ -252,7 +252,14 @@ issue・PR に対して実装する。完了後は通常の Execute と同じく
 （`address review <id>`）は review 対応であり追加要望とは別だが、どちらも完了後の経路は同じ。
 質問のみ・判断待ちは escalate して同 pane で待機し、確認のみや HEAD を進めない更新（PR body 等）は
 commit せず turn done してよい（親は HEAD 不変なら既存 pass を維持し、HEAD 前進時だけ fresh Verify
-する）。issue body への追記は必須ではない。
+する）。ただし、人間の PR comment による指示は、実装前に現在の issue 本文と enabled な acceptance
+criteria の全件に照らす。矛盾がなければ更新確認を求めず作業を続ける。矛盾があれば具体的な対立点を示して
+人間へ判断を求め、回答までは該当変更を進めない。回答後は実装再開前に、判断を issue 本文または structured
+acceptance criteria に反映し、再読して確認する。これにより Verify は PR comment を読むことなく、現在の
+issue と rubric を確定済み判断の正本として利用できる。rework の Execute も現在の issue 本文と enabled な
+acceptance criteria を再読し、各 finding を現行仕様と照合する。旧仕様に基づく finding が現行仕様を覆す場合は
+実装せず、その finding に紐づく review response で矛盾点と現行仕様の根拠を説明する。矛盾しない finding は
+従来どおりすべて解決する。
 
 ### 3.3 Verify agent（固定ポインタの独立検証者）
 

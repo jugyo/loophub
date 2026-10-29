@@ -32,8 +32,10 @@ is completed, even when no source change is needed. Route PR comments to
 `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>`.
 
 - **Rework (`orchestrator: address review <id>`)** — read the specified review and all its review
-  comments with `lh pr review view <pr> --review <id> --json` and resolve every finding. The review
-  pointer, resulting commit, and workflow
+  comments with `lh pr review view <pr> --review <id> --json`, re-read the current Issue and enabled
+  acceptance criteria, and resolve every finding consistent with them. Do not implement an old-spec
+  finding that conflicts with the current spec; explain that conflict in its review response. The
+  review pointer, resulting commit, and workflow
   turn record preserve the association. Respond to the review and each applicable review comment with
   `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>`; do not use a
   top-level `lh pr comment`.
@@ -43,12 +45,19 @@ is completed, even when no source change is needed. Route PR comments to
   requiring source changes, first post a brief reply in its thread before editing. Then make the
   requested changes.
 - **PR comment (`orchestrator: address PR comment <c>`)** — read the named comment from
-  `lh pr view <pr> --json` and treat its body as an additional work instruction. Respond with a
-  top-level `lh pr comment <pr> --body <text>`. If it requires source changes, post a brief
-  acknowledgement before editing, then leave the result there before completing the turn.
+  `lh pr view <pr> --json` and compare a human instruction with the current Issue body and enabled
+  acceptance criteria before implementing it. If consistent, proceed without requesting a spec
+  update. If conflicting, do not choose or implement either version: reply with the exact conflict
+  and your assessment, run
+  `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>`, and wait in the same
+  pane. After the human decides, use `lh issue update` or `lh issue ac` to record the decision, then
+  re-read the Issue before implementing. Respond with a top-level
+  `lh pr comment <pr> --body <text>`; when source changes are needed, acknowledge before editing and
+  leave the result there before completing the turn.
 - **Additional work** — when a non-rework instruction is ordinary product or engineering work on
   the Issue / PR, make the smallest implementation against the same Issue and PR. You do not need
-  to rewrite the Issue body. Update the PR body or comments when useful to the next Verify or a human.
+  to rewrite the Issue body unless the conflict procedure above applies. Update the PR body or
+  comments when useful to the next Verify or a human.
 - **Question-only or blocked on a human decision** — present the full concrete question in the pane,
   respond on the originating PR comment, diff feedback thread, or review with the question and your
   current assessment, run `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>`,

@@ -29,8 +29,10 @@ Markdown 本文や review、comment、handoff などの自由テキストを `lh
 `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>` を使います。
 
 - **Rework（`orchestrator: address review <id>`）** — 指定された review と全 review comments を
-  `lh pr review view <pr> --review <id> --json` で読みます。
-  すべての finding を解決します。review pointer、対応 commit、workflow の turn 記録が対応関係を保持します。
+  `lh pr review view <pr> --review <id> --json` で読み、現在の Issue と enabled な acceptance criteria を
+  再読して、それらと矛盾しない finding をすべて解決します。旧仕様に基づく finding が現行仕様と矛盾する
+  場合は実装せず、その review response で矛盾点を説明します。review pointer、対応 commit、workflow の
+  turn 記録が対応関係を保持します。
   review と該当する各 review comment には `lh pr review-response add <pr> --review <id> [--review-comment <id>]
   --body <text>` で対象に紐づけ、top-level の `lh pr comment` は使いません。
 - **Diff feedback（`orchestrator: address diff feedback thread <t> comment <c>`）** —
@@ -38,12 +40,15 @@ Markdown 本文や review、comment、handoff などの自由テキストを `lh
   `lh pr feedback reply <t> --pr <pr> --body <text>` ですべてに返信します。source の修正が必要な会話では、
   編集前にまずその thread へ短く返信します。その後、求められた修正を行います。
 - **PR comment（`orchestrator: address PR comment <c>`）** — `lh pr view <pr> --json` で指定された
-  comment を読み、本文を追加作業の指示として扱います。`lh pr comment <pr> --body <text>` で
-  top-level の返信を残します。source の修正が必要なら編集前に短い着手返信を投稿し、turn の完了前に
-  同じ場所へ結果を残します。
+  comment を読み、人間の指示を実装する前に、現在の Issue 本文と enabled な acceptance criteria を照合します。
+  矛盾しなければ仕様更新を求めず作業を続けます。矛盾する場合はどちらも選択・実装せず、具体的な矛盾点と
+  見解を返信し、`lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>` を実行して同じ pane
+  で回答を待ちます。人間の判断後は `lh issue update` または `lh issue ac` で判断を反映し、Issue を再読してから
+  実装します。`lh pr comment <pr> --body <text>` で top-level の返信を残し、source の修正が必要なら編集前に
+  着手返信を、turn の完了前に結果を同じ場所へ投稿します。
 - **追加作業** — non-rework の指示が Issue / PR への通常の product / engineering 要求なら、同じ Issue と
-  PR に最小限の実装を行います。Issue body の書き換えは不要です。次の Verify や人間に有用なら PR body
-  または comment を更新します。
+  PR に最小限の実装を行います。上記の矛盾解決手順に該当しない限り、Issue body の書き換えは不要です。
+  次の Verify や人間に有用なら PR body または comment を更新します。
 - **質問だけ、または人間の判断待ち** — pane に具体的な質問全文を示し、
   発生元の PR comment、diff feedback thread、または review に質問と現時点の見解を返信し、
   `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>` を実行して、同じ pane で

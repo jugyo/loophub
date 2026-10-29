@@ -188,6 +188,34 @@ test("Execute requires every follow-up route to receive a LoopHub response", () 
   }
 });
 
+test("human PR instructions reconcile conflicts into the Issue before implementation", () => {
+  for (const language of WORKFLOW_CONTRACT_LANGUAGES) {
+    const execute = workflowContractText("execute", language);
+    expect(execute).toMatch(
+      /compare a human instruction with the current Issue body and enabled\s+acceptance criteria|人間の指示を実装する前に、現在の Issue 本文と enabled な acceptance criteria を照合/u,
+    );
+    expect(execute).toMatch(
+      /If consistent, proceed without requesting a spec\s+update|矛盾しなければ仕様更新を求めず/u,
+    );
+    expect(execute).toMatch(
+      /do not choose or implement either version|どちらも選択・実装せず/u,
+    );
+    expect(execute).toContain(
+      "lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>",
+    );
+    expect(execute).toContain("lh issue update");
+    expect(execute).toContain("lh issue ac");
+    expect(execute).toMatch(/re-read the Issue|Issue を再読/u);
+    expect(execute).toMatch(
+      /resolve every finding consistent with them|矛盾しない finding をすべて解決/u,
+    );
+    expect(execute).toMatch(
+      /Do not implement an old-spec\s+finding that conflicts with the current spec|旧仕様に基づく finding が現行仕様と矛盾する\s+場合は実装せず/u,
+    );
+    expect(execute).toMatch(/in its review response|その review response/u);
+  }
+});
+
 test("Supervisor contract は sub issue の実施順序と停止条件を明示する", () => {
   const expectations = {
     en: [
