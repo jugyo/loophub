@@ -6,14 +6,12 @@
 // `workflow step status` — HEAD vs the pinned Verify review).
 //
 // - needs human (#1307): a running run with `needs_human_reason` set is waiting for an explicit
-//   human instruction. Surfaces that reason (plus the latest Verify review summary when present) and
-//   links to the issue, where the parent files its escalation comment. Legacy terminal `blocked`
-//   rows get the same prominent display.
+//   human instruction; legacy terminal `blocked` rows get the same status. Only the status badge
+//   shows it — the parent's escalation comment carries the details.
 // A running run can be verified for its current HEAD or need re-verification after HEAD advances.
 //
 // Renders nothing when the issue / PR has no run.
 
-import { Link } from "@tanstack/react-router";
 import { History } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { WorkflowRunState, WorkflowRunTotalCost } from "@/api/types";
@@ -250,10 +248,6 @@ export function WorkflowRunStatusSection({
           </p>
         ) : null}
 
-        {needsHuman(displayState) && !overBudget ? (
-          <NeedsHumanNotice owner={owner} repo={repo} state={displayState} />
-        ) : null}
-
         <div
           data-debug-component="WorkflowRunMetadata"
           className="flex flex-col gap-1 text-sm text-muted-foreground"
@@ -288,54 +282,5 @@ export function WorkflowRunStatusSection({
         />
       ) : null}
     </section>
-  );
-}
-
-// Needs human means the parent escalated (workflow design: parent transitions): it filed an issue
-// comment summarizing the situation and holds the run waiting for an explicit human instruction to
-// its session (#1307). Surface the stored wait reason, point the human at the issue, and add the
-// latest Verify review summary when one exists. Legacy terminal `blocked` rows render the same way,
-// minus the resumability (their parent is gone).
-function NeedsHumanNotice({
-  owner,
-  repo,
-  state,
-}: {
-  owner: string;
-  repo: string;
-  state: WorkflowRunState;
-}) {
-  const review = state.latest_review;
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
-      <p className="font-medium text-amber-700 dark:text-amber-300">
-        {state.status === "blocked"
-          ? "This run was escalated to a human and is no longer running."
-          : "This run is waiting for a human instruction to its parent session."}
-      </p>
-      {state.needs_human_reason !== null ? (
-        <p className="text-muted-foreground">{state.needs_human_reason}</p>
-      ) : null}
-      {review && review.event === "request_changes" ? (
-        <p className="text-muted-foreground">
-          Latest review requested changes
-          {review.findings_count > 0
-            ? ` (${review.findings_count} finding${
-                review.findings_count === 1 ? "" : "s"
-              })`
-            : ""}
-          : {review.summary}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap gap-3">
-        <Link
-          to="/r/$owner/$repo/issues/$number"
-          params={{ owner, repo, number: String(state.issue_number) }}
-          className="text-link hover:underline"
-        >
-          Read issue #{state.issue_number}
-        </Link>
-      </div>
-    </div>
   );
 }

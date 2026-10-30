@@ -560,7 +560,7 @@ describe("WorkflowRunStatusSection", () => {
     expect(done.querySelector("svg")).toBeTruthy();
   });
 
-  it("surfaces the wait reason, review summary, and issue link while waiting for a human", async () => {
+  it("shows only the Needs human badge while waiting for a human", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
@@ -582,20 +582,19 @@ describe("WorkflowRunStatusSection", () => {
     );
     expect(await screen.findByText("Needs human")).toBeTruthy();
     expect(
-      screen.getByText(/waiting for a human instruction to its parent session/),
-    ).toBeTruthy();
+      screen.queryByText(
+        /waiting for a human instruction to its parent session/,
+      ),
+    ).toBeNull();
     expect(
-      screen.getByText("rework limit exceeded: two criteria unmet"),
-    ).toBeTruthy();
-    expect(screen.getByText(/Two criteria unmet\./)).toBeTruthy();
-    const issueLink = screen.getByText("Read issue #42");
-    expect(issueLink.closest("a")?.getAttribute("href")).toBe(
-      "/r/me/loophub/issues/42",
-    );
+      screen.queryByText("rework limit exceeded: two criteria unmet"),
+    ).toBeNull();
+    expect(screen.queryByText(/Two criteria unmet\./)).toBeNull();
+    expect(screen.queryByText("Read issue #42")).toBeNull();
     expect(screen.queryByText("Open Inbox")).toBeNull();
   });
 
-  it("renders a legacy blocked run as a terminal Needs human state", async () => {
+  it("renders a legacy blocked run with only the Needs human badge", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
@@ -616,9 +615,9 @@ describe("WorkflowRunStatusSection", () => {
     );
     expect(await screen.findByText("Needs human")).toBeTruthy();
     expect(
-      screen.getByText(/escalated to a human and is no longer running/),
-    ).toBeTruthy();
-    expect(screen.getByText(/Two criteria unmet\./)).toBeTruthy();
-    expect(screen.getByText("Read issue #42")).toBeTruthy();
+      screen.queryByText(/escalated to a human and is no longer running/),
+    ).toBeNull();
+    expect(screen.queryByText(/Two criteria unmet\./)).toBeNull();
+    expect(screen.queryByText("Read issue #42")).toBeNull();
   });
 });
