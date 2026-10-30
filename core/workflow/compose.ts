@@ -14,6 +14,9 @@ export type WorkflowContractRenderInput = {
   repo: string;
   step: WorkflowStep | "parent";
   run: number;
+  // The launched agent's own session, which it passes to every `lh` call as `--session-id`.
+  // Absent for a rendering that is not tied to a launch.
+  sessionId?: string;
   worktreePath: string;
   baseBranch: string;
 };

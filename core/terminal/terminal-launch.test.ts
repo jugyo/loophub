@@ -289,7 +289,7 @@ describe("herdr terminal launch", () => {
     const plan = buildHerdrLaunchPlan({
       repo,
       command: "claude --model sonnet",
-      env: { LOOPHUB_SESSION_ID: "s-1" },
+      env: { LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH: "launch-1" },
       label: "dev #444",
       workspaceId: "w1",
     });
@@ -308,7 +308,7 @@ describe("herdr terminal launch", () => {
       "--label",
       "dev #444",
       "--env",
-      "LOOPHUB_SESSION_ID=s-1",
+      "LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH=launch-1",
       "--no-focus",
     ]);
     // The whole command is then typed into that pane's shell.
@@ -375,7 +375,7 @@ describe("herdr terminal launch", () => {
       effort: "high",
     });
     expect(plan.command).toBe(
-      `LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111' OPENCODE_CONFIG_CONTENT='{"model":"opencode/big-pickle"}' opencode2 '--auto' '--standalone' '--prompt' "$(cat '/tmp/run/execute-prompt.md')"`,
+      `OPENCODE_CONFIG_CONTENT='{"model":"opencode/big-pickle"}' opencode2 '--auto' '--standalone' '--prompt' "$(cat '/tmp/run/execute-prompt.md')"`,
     );
     expect(plan.command).not.toContain("--model");
     expect(plan.paneArgv).toContain(
@@ -681,13 +681,9 @@ describe("herdr terminal launch", () => {
     expect(plan.paneArgv[plan.paneArgv.indexOf("--cwd") + 1]).toBe(
       "/repo/worktrees/pr-7",
     );
-    // Session correlation remains ambient on the pane and in the shell command.
-    expect(plan.paneArgv).toContain(
-      "LOOPHUB_SESSION_ID=11111111-1111-4111-8111-111111111111",
-    );
-    expect(plan.command).toContain(
-      "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
-    );
+    // The session id reaches the agent through its contract, never through the environment.
+    expect(plan.paneArgv.join(" ")).not.toContain("LOOPHUB_SESSION_ID");
+    expect(plan.command).not.toContain("LOOPHUB_SESSION_ID");
     expect(plan.paneArgv.join(" ")).not.toContain("LOOPHUB_WORKFLOW_");
     expect(plan.command).not.toContain("LOOPHUB_WORKFLOW_");
     expect(plan.command).toContain(
@@ -717,10 +713,8 @@ describe("herdr terminal launch", () => {
       effort: "high",
     });
 
-    // Codex still correlates through the ambient session env, but never gets a --session-id flag.
-    expect(plan.command).toContain(
-      "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
-    );
+    // Codex gets neither a session env nor a --session-id flag; its prompt names the session.
+    expect(plan.command).not.toContain("LOOPHUB_SESSION_ID");
     expect(plan.command).toContain("codex ");
     expect(plan.command).not.toContain("claude");
     expect(plan.command).not.toContain("--session-id");
@@ -770,10 +764,8 @@ describe("herdr terminal launch", () => {
       model: "grok-code-fast-1",
     });
 
-    // Grok correlates through the ambient session env like Codex, and never gets a --session-id flag.
-    expect(plan.command).toContain(
-      "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
-    );
+    // Like Codex, Grok gets neither a session env nor a --session-id flag.
+    expect(plan.command).not.toContain("LOOPHUB_SESSION_ID");
     expect(plan.command).toContain("grok ");
     expect(plan.command).not.toContain("claude");
     expect(plan.command).not.toContain("codex");

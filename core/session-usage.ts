@@ -1044,7 +1044,7 @@ export function findCodexRollouts(input: {
 }
 
 // Locate Grok Build session transcripts for a worktree cwd. Grok does not take
-// --session-id and does not store LOOPHUB_SESSION_ID as its session folder name,
+// --session-id and does not store the LoopHub session id as its session folder name,
 // so correlation is by cwd (same approach as Codex rollouts), aggregating every
 // Grok session under that worktree.
 export function findGrokSessionUpdates(input: {

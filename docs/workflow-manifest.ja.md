@@ -423,7 +423,7 @@ Verify と違い、**Execute の変更を走行中の run に確実に効かせ�
 2. `lh workflow launch-step` は `assertParentActor()` を通り、run の `parent_session_id` 以外からは
    403 になる。既定の CLI 経路は `writeSession()` → `ensureHumanSession()` で human session を使うため、
    **人間が普通に叩いて通る経路は無い**（`assertParentActor()` が見るのは actor session id だけなので、
-   `LOOPHUB_SESSION_ID` に parent の session id を入れれば通る。それは運用手段ではない）。run state
+   `--session-id` に parent の session id を渡せば通る。それは運用手段ではない）。run state
    更新系が human session を明示的に許す `assertRunUpdateActor()` との対比から、この制限は意図的なもの。
 3. 仮に親が起こし直しても、Execute child のプロセスを止めただけでは `active_step` /
    `active_session_id` は残る。これらを NULL にするのは `advanceToVerify()` と Verify での

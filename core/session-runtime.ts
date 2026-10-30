@@ -10,8 +10,7 @@ export const LEGACY_LH_DEV_SESSION_AGENT = "lh-dev";
 export const LH_ISSUE_CREATE_SESSION_AGENT = "issue-create";
 export const SESSION_KIND_ISSUE_CREATE = "issue-create";
 
-// Env vars used to correlate an issue-creation agent with the issue and Herdr pane it creates.
-export const ENV_ISSUE_CREATE_SESSION = "LOOPHUB_ISSUE_CREATE_SESSION";
+// Env var used to correlate an issue-creation agent with the Herdr pane it creates.
 export const ENV_ISSUE_CREATE_HERDR_LAUNCH =
   "LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH";
 

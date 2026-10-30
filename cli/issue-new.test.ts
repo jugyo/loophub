@@ -25,7 +25,14 @@ let runtimeDir: string;
 let runtimeLog: string;
 
 function run(args: string[], runHome = home) {
-  const { LOOPHUB_SESSION_ID: _sessionId, ...baseEnv } = process.env;
+  // Strip the retired context variables a caller may still carry, so the log shows what lh set.
+  const {
+    LOOPHUB_SESSION_ID: _sessionId,
+    LOOPHUB_WORKSPACE: _workspace,
+    LOOPHUB_PARENT_ISSUE: _parentIssue,
+    LOOPHUB_ISSUE_CREATE_SESSION: _createSession,
+    ...baseEnv
+  } = process.env;
   const result = spawnSync(process.execPath, [CLI, ...args], {
     encoding: "utf8",
     env: {
@@ -55,6 +62,7 @@ function writeConfig(config: Record<string, unknown>): void {
 }
 
 function sessions(): Array<{
+  id: string;
   runtime: string | null;
   model: string | null;
   external_session: string;
@@ -63,9 +71,10 @@ function sessions(): Array<{
   try {
     return db
       .prepare(
-        "SELECT runtime, model, external_session FROM agent_sessions ORDER BY rowid",
+        "SELECT id, runtime, model, external_session FROM agent_sessions ORDER BY rowid",
       )
       .all() as Array<{
+      id: string;
       runtime: string | null;
       model: string | null;
       external_session: string;
@@ -134,8 +143,7 @@ beforeAll(() => {
 
   const runtime = `#!/bin/sh
 printf 'bin=%s\\n' "$(basename "$0")" > "$RUNTIME_LOG"
-printf 'workspace=%s\\n' "$LOOPHUB_WORKSPACE" >> "$RUNTIME_LOG"
-printf 'parent=%s\\n' "$LOOPHUB_PARENT_ISSUE" >> "$RUNTIME_LOG"
+printf 'context_env=%s\\n' "$LOOPHUB_SESSION_ID$LOOPHUB_WORKSPACE$LOOPHUB_PARENT_ISSUE$LOOPHUB_ISSUE_CREATE_SESSION" >> "$RUNTIME_LOG"
 printf 'config=%s\\n' "$OPENCODE_CONFIG_CONTENT" >> "$RUNTIME_LOG"
 for arg in "$@"; do printf 'arg=%s\\n' "$arg" >> "$RUNTIME_LOG"; done
 exit 0
@@ -195,11 +203,14 @@ test("issue new forwards a direct prompt instead of the default filing prompt", 
   );
 });
 
-test("issue new forwards the parent issue to the runtime environment", () => {
+test("issue new names its session and parent as explicit lh issue create flags", () => {
   const result = issueNew(["--parent", "12"]);
 
   expect(result.exitCode, result.stderr).toBe(0);
-  expect(result.runtimeLog).toContain("parent=12");
+  expect(result.runtimeLog).toContain(
+    `Pass these flags to \`lh issue create\`: \`--session-id ${sessions().at(-1)?.id}\` \`--parent 12\``,
+  );
+  expect(result.runtimeLog).toContain("context_env=\n");
 });
 
 test("issue new uses the repo Coding agent override over the app defaults (#1534)", () => {
@@ -268,7 +279,8 @@ test("issue new carries the target branch into the filing session", () => {
   const result = issueNew(["--target-branch", "workspace/alpha"]);
 
   expect(result.exitCode, result.stderr).toBe(0);
-  expect(result.runtimeLog).toContain("workspace=workspace/alpha");
+  expect(result.runtimeLog).toContain("`--target-branch workspace/alpha`");
+  expect(result.runtimeLog).toContain("context_env=\n");
 });
 
 test.each([

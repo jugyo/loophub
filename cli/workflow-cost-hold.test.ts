@@ -25,17 +25,20 @@ let workflowId: number;
 let nextNumber = 1;
 
 function runCli(args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
-  return spawnSync(process.execPath, [...NODE_ARGS, ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      PATH: `${bin}:${process.env.PATH ?? ""}`,
-      LOOPHUB_SESSION_ID: PARENT_SESSION_ID,
-      ...extraEnv,
+  return spawnSync(
+    process.execPath,
+    [...NODE_ARGS, ...args, "--session-id", PARENT_SESSION_ID],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        ...extraEnv,
+      },
+      timeout: 20_000,
     },
-    timeout: 20_000,
-  });
+  );
 }
 
 function createCostEvent(options: { activeChild?: boolean } = {}): {

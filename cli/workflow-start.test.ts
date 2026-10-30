@@ -31,7 +31,6 @@ const UNRELATED_HERDR_FOCUS = {
   pane_id: "w9:p7",
 };
 const {
-  LOOPHUB_SESSION_ID: _sessionId,
   LOOPHUB_WORKFLOW_REPO: _workflowRepo,
   LOOPHUB_WORKFLOW_RUN: _workflowRun,
   LOOPHUB_WORKFLOW_STEP: _workflowStep,
@@ -347,12 +346,19 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
   const parentSession = runResult.session_id;
   // The parent session is allowed to declare turn done (stepActorAllowed treats it as the run
   // owner), so it exercises the CLI plumbing without spawning a real Execute child.
-  const sessionEnv = { LOOPHUB_SESSION_ID: parentSession };
 
   // Worktree cwd alone is enough: resolveRepo infers the registered owner/name (#1595).
   const fromWorktree = run(
-    ["workflow", "turn", "done", "--run", String(runResult.run.id)],
-    sessionEnv,
+    [
+      "workflow",
+      "turn",
+      "done",
+      "--run",
+      String(runResult.run.id),
+      "--session-id",
+      parentSession,
+    ],
+    {},
     runResult.worktree,
   );
   expect(fromWorktree.exitCode, fromWorktree.stderr).toBe(0);
@@ -362,9 +368,8 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
 
   // Legacy Workflow env cannot silently select a run.
   const missingRun = run(
-    ["workflow", "turn", "done"],
+    ["workflow", "turn", "done", "--session-id", parentSession],
     {
-      ...sessionEnv,
       LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
     },
     runResult.worktree,
@@ -374,9 +379,15 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
 
   for (const command of ["escalate", "escalate-human"]) {
     const missingEscalationRun = run(
-      ["workflow", command, "--reason", "Need input"],
+      [
+        "workflow",
+        command,
+        "--reason",
+        "Need input",
+        "--session-id",
+        parentSession,
+      ],
       {
-        ...sessionEnv,
         LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
       },
       runResult.worktree,
@@ -389,8 +400,16 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
 
   // Outside any registered root/worktree, the run itself supplies the repo (#547).
   const outsideAnyRepo = run(
-    ["workflow", "turn", "done", "--run", String(runResult.run.id)],
-    sessionEnv,
+    [
+      "workflow",
+      "turn",
+      "done",
+      "--run",
+      String(runResult.run.id),
+      "--session-id",
+      parentSession,
+    ],
+    {},
     HOME,
   );
   expect(outsideAnyRepo.exitCode, outsideAnyRepo.stderr).toBe(0);
@@ -400,8 +419,16 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
 
   // An unknown run has no repo to resolve, so the cwd rule still reports the missing context.
   const missingRepoContext = run(
-    ["workflow", "turn", "done", "--run", "999999"],
-    sessionEnv,
+    [
+      "workflow",
+      "turn",
+      "done",
+      "--run",
+      "999999",
+      "--session-id",
+      parentSession,
+    ],
+    {},
     HOME,
   );
   expect(missingRepoContext.exitCode).not.toBe(0);
@@ -417,8 +444,10 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
       OTHER_REPO,
       "--run",
       String(runResult.run.id),
+      "--session-id",
+      parentSession,
     ],
-    sessionEnv,
+    {},
     runResult.worktree,
   );
   expect(wrongRepoContext.exitCode).not.toBe(0);
@@ -436,9 +465,10 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
       REPO,
       "--run",
       String(runResult.run.id),
+      "--session-id",
+      parentSession,
     ],
     {
-      ...sessionEnv,
       LOOPHUB_WORKFLOW_REPO: OTHER_REPO,
       LOOPHUB_WORKFLOW_RUN: "999999",
     },
@@ -447,8 +477,16 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
 
   // cwd repo resolution when only the run id is supplied.
   const cwd = run(
-    ["workflow", "turn", "done", "--run", String(runResult.run.id)],
-    sessionEnv,
+    [
+      "workflow",
+      "turn",
+      "done",
+      "--run",
+      String(runResult.run.id),
+      "--session-id",
+      parentSession,
+    ],
+    {},
     REPO_PATH,
   );
   expect(cwd.exitCode, cwd.stderr).toBe(0);
@@ -463,8 +501,10 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
       String(runResult.run.id),
       "--reason",
       "See issue comment",
+      "--session-id",
+      parentSession,
     ],
-    sessionEnv,
+    {},
   );
   expect(escalated.exitCode, escalated.stderr).toBe(0);
   expect(escalated.stdout).toContain(
@@ -481,8 +521,10 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
       String(runResult.run.id),
       "--reason",
       "Rework limit reached",
+      "--session-id",
+      parentSession,
     ],
-    { LOOPHUB_SESSION_ID: parentSession },
+    {},
   );
   expect(humanEscalation.exitCode, humanEscalation.stderr).toBe(0);
   expect(humanEscalation.stdout).toContain("pr comment\tcompleted");
@@ -498,8 +540,10 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
       String(runResult.run.id),
       "--reason",
       "Rework limit reached",
+      "--session-id",
+      parentSession,
     ],
-    { LOOPHUB_SESSION_ID: parentSession },
+    {},
   );
   expect(replay.exitCode, replay.stderr).toBe(0);
   expect(replay.stdout).toContain("pr comment\talready completed");
@@ -528,8 +572,10 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
       String(runResult.run.id),
       "--reason",
       "Comment failure must be visible",
+      "--session-id",
+      parentSession,
     ],
-    { LOOPHUB_SESSION_ID: parentSession },
+    {},
   );
   db.exec("DROP TRIGGER fail_escalation_comment");
   db.close();
@@ -547,8 +593,10 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
       String(runResult.run.id),
       "--reason",
       "Comment failure must be visible",
+      "--session-id",
+      parentSession,
     ],
-    { LOOPHUB_SESSION_ID: parentSession },
+    {},
   );
   expect(failedReplay.exitCode).not.toBe(0);
   expect(failedReplay.stdout).toContain("pr comment\tpending");
@@ -727,6 +775,8 @@ test("workflow launch-step starts each child in an independent tab", () => {
         String(body.run.id),
         "--step",
         "execute",
+        "--session-id",
+        body.session_id,
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
@@ -735,7 +785,6 @@ test("workflow launch-step starts each child in an independent tab", () => {
         // The caller's pane must not affect the independent-tab launch.
         HERDR_TAB_ID: "w1:t9",
         HERDR_PANE_ID: "w1:p2",
-        LOOPHUB_SESSION_ID: body.session_id,
       },
     );
 
@@ -769,6 +818,8 @@ test("workflow launch-step starts each child in an independent tab", () => {
         String(body.run.id),
         "--step",
         "verify",
+        "--session-id",
+        body.session_id,
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
@@ -778,7 +829,6 @@ test("workflow launch-step starts each child in an independent tab", () => {
         HERDR_PANE_TAB_ID: "",
         HERDR_TAB: "",
         HERDR_TAB_ID: "",
-        LOOPHUB_SESSION_ID: body.session_id,
       },
     );
     expect(legacyLaunch.exitCode, legacyLaunch.stderr).toBe(0);
@@ -828,7 +878,6 @@ test("a later Verify discards prior same-run verifiers before launching", async 
   ]);
   expect(started.exitCode, started.stderr).toBe(0);
   const body = JSON.parse(started.stdout);
-  const parentEnv = { LOOPHUB_SESSION_ID: body.session_id };
   const fixturePath = join(body.worktree, "verify-lifecycle.txt");
   const commitWorktree = (message: string) => {
     const added = spawnSync("git", ["-C", body.worktree, "add", "."], {
@@ -885,14 +934,26 @@ test("a later Verify discards prior same-run verifiers before launching", async 
         event,
         "--body",
         `Verify ${event}`,
+        "--session-id",
+        sid,
       ],
-      { LOOPHUB_SESSION_ID: sid },
+      {},
     );
   };
   const transition = (action: "advance-to-verify" | "request-rework") =>
     run(
-      ["workflow", "run", action, "--repo", REPO, "--run", String(body.run.id)],
-      parentEnv,
+      [
+        "workflow",
+        "run",
+        action,
+        "--repo",
+        REPO,
+        "--run",
+        String(body.run.id),
+        "--session-id",
+        body.session_id,
+      ],
+      {},
     );
   const launch = (
     step: "execute" | "verify",
@@ -910,9 +971,10 @@ test("a later Verify discards prior same-run verifiers before launching", async 
         String(body.run.id),
         "--step",
         step,
+        "--session-id",
+        body.session_id,
       ],
       {
-        ...parentEnv,
         HERDR_FOCUSED_STATE: join(runtimeDir, "focused-state.json"),
         PATH: `${runtimeDir}:${process.env.PATH}`,
         HERDR_LOG: log,
@@ -1241,9 +1303,10 @@ test("a stale Verify cleanup failure records and releases the unspawned launch",
         String(body.run.id),
         "--step",
         "verify",
+        "--session-id",
+        body.session_id,
       ],
       {
-        LOOPHUB_SESSION_ID: body.session_id,
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_LOG: runtime.log,
         HERDR_PANE_ID: "",
@@ -1361,8 +1424,10 @@ test("an orphaned launch is visible and can be explicitly recovered", () => {
         "--reason",
         "launch owner exited before confirmation",
         "--json",
+        "--session-id",
+        body.session_id,
       ],
-      { LOOPHUB_SESSION_ID: body.session_id },
+      {},
     );
     expect(recovered.exitCode, recovered.stderr).toBe(0);
     expect(JSON.parse(recovered.stdout).run).toMatchObject({
@@ -1429,8 +1494,9 @@ test("workflow start opens the PR worktree workspace and starts the parent in it
     );
     // The launch creates its own tab in that workspace, then starts the parent in that tab's pane.
     expect(log).toMatch(
-      /tab create --workspace w1 --cwd .+ --label orchestrator #\d+ --env LOOPHUB_SESSION_ID=/,
+      /tab create --workspace w1 --cwd .+ --label orchestrator #\d+/,
     );
+    expect(log).not.toContain("LOOPHUB_SESSION_ID");
     expect(log).toMatch(/pane send-text w1:p2 .*claude /);
     expect(log.indexOf("worktree open")).toBeLessThan(
       log.indexOf("pane send-text"),
@@ -2155,11 +2221,12 @@ test("workflow start --agy launches the interactive prompt with auto approval", 
         runId,
         "--step",
         "execute",
+        "--session-id",
+        parentSession,
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
         HERDR_LOG: runtime.log,
-        LOOPHUB_SESSION_ID: parentSession,
       },
     );
     expect(child.exitCode, child.stderr).toBe(0);

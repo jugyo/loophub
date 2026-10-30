@@ -17,8 +17,7 @@ export async function svc(): Promise<Service> {
 }
 
 // Human CLI persists a default session; agents pass --session-id explicitly.
-export const SESSION_ID =
-  flags["session-id"] || flags.sessionId || process.env.LOOPHUB_SESSION_ID;
+export const SESSION_ID = flags["session-id"] || flags.sessionId;
 let humanSessionId: string | null = null;
 
 function humanSessionPath() {

@@ -429,7 +429,7 @@ text 出力が変わる。深さ超過などの 422 は core のメッセージ�
 
 **目的**: 詳細画面の button から親 issue 番号を、起票する agent session まで運ぶ。
 
-**触る file**: `core/environment.ts`、`cli/commands/issue.ts`、
+**触る file**: `cli/commands/issue.ts`、
 `core/terminal/terminal-launch.ts`、`core/workflow/issue-create-prompt.ts`、
 `core/service/terminal.ts`、`web/server/contract.ts`、`docs/rpc-contract.json`、
 `web/src/api/client.ts`、`web/src/components/terminal-controller.tsx`、
@@ -437,13 +437,12 @@ text 出力が変わる。深さ超過などの 422 は core のメッセージ�
 `cli/issue-new.test.ts`、`cli/commands/issue.test.ts`、
 `core/terminal/terminal-launch.test.ts`、`web/src/components/create-issue-button.test.tsx`
 
-**手順**（設計書 6.5 の 9 段。下（core / CLI）から上（Web）へ通すと、各段で test を green にできる）
+**手順**（設計書 6.5 の配線を 9 段の手順にしたもの。下（core / CLI）から上（Web）へ通すと、各段で test を green にできる）
 
-1. `core/environment.ts` に `ENV_PARENT_ISSUE = "LOOPHUB_PARENT_ISSUE"`。
-2. `lh issue new` に `--parent` を足し、spawn する runtime の env に載せる
-   （同 file の `LOOPHUB_WORKSPACE` の扱いが手本）。
-3. `lh issue create` が `flags.parent ?? process.env[ENV_PARENT_ISSUE]` を読む
-   （`--target-branch` の env fallback と同じ形）。
+1. `lh issue new` に `--parent` を足す。
+2. `lh issue new` が起動する runtime の prompt 末尾に、`lh issue create` へ付ける明示フラグ
+   （`--session-id` / `--parent` / `--target-branch`）を書く（`issueCreateLaunchContext`）。
+3. `lh issue create` は `--parent` / `--target-branch` / `--session-id` の明示フラグだけを読む。
 4. `core/terminal/terminal-launch.ts` の `issue-create` 分岐に ` --parent <n>`（`shellArg` で escape）。
 5. `issueCreatePrompt(language)` に親 issue 番号の引数を足し、「`#<n>` の sub issue として、
    親の acceptance criteria に収まる粒度で起票する」の 1 文を加える。
@@ -458,15 +457,15 @@ text 出力が変わる。深さ超過などの 422 は core のメッセージ�
    button の副題は `in <branch>` に倣って `sub issue of #<n>`。
    **同 component が prompt も組み立てている**ので、`issueCreatePrompt(language, parentIssue)` に
    変える（手順 5 で足した引数を、ここで実際に渡す）。ここを飛ばすと Web 起点の起票では
-   親が env にしか乗らず、手順 5 の意味が無くなる。
+   親が明示フラグの指示にしか現れず、手順 5 の意味が無くなる。
 9. `SubIssueSection` の見出し右に `New sub issue` を置く。
    `canHaveSubIssues(issue.depth)` が false なら出さない。
 
 **完了条件 / test**
 
 - 組み立てた command に ` --parent <n>` が入る（`terminal-launch.test.ts`）。
-- spawn する env に `LOOPHUB_PARENT_ISSUE` が載る（`cli/issue-new.test.ts`）。
-- `lh issue create` が `--parent` 未指定でも env から親を読む（`cli/commands/issue.test.ts`）。
+- 起動する runtime の prompt に `--parent <n>` が明記される（`cli/issue-new.test.ts`）。
+- `lh issue create` が `--parent` で子として起票する（`cli/issue-update.test.ts`）。
 - `parentIssue` を渡すと `launchTerminal` の引数に載る（`create-issue-button.test.tsx`）。
 - 深さ 3 の issue に button が出ない。
 
@@ -474,7 +473,7 @@ text 出力が変わる。深さ超過などの 422 は core のメッセージ�
 
 - **`CreateIssueButton` は issue を作らない。** 作るのは起動された session の中の
   `lh issue create` である。「button に prop を渡すだけ」では親は届かない。
-- workspace は env だけで運ばれるが、**parent は prompt にも出す**。env だけだと agent が親を
+- workspace は明示フラグの指示だけで運ばれるが、**parent は範囲の指示としても prompt に出す**。フラグの指示だけだと agent が親を
   読まずに範囲のずれた子を起票しうる（設計書 6.5）。
 - UI 側の深さ判定は案内にすぎない。最終的な拒否は core の 422（親が途中で移動しうる）。
 

@@ -32,3 +32,21 @@ export function issueCreatePrompt(
     ? prompt
     : `${prompt}\n\n${isJapanese ? `#${parentIssue} の sub issue として、親の acceptance criteria に収まる粒度で起票してください。` : `Create it as sub issue #${parentIssue}, at a granularity that fits within the parent's acceptance criteria.`}`;
 }
+
+/** The explicit `lh issue create` flags a New issue session must pass to file into its context. */
+export function issueCreateLaunchContext(input: {
+  sessionId: string;
+  parentIssue?: number;
+  targetBranch?: string;
+}): string {
+  const flags = [
+    `--session-id ${input.sessionId}`,
+    ...(input.parentIssue === undefined
+      ? []
+      : [`--parent ${input.parentIssue}`]),
+    ...(input.targetBranch === undefined
+      ? []
+      : [`--target-branch ${input.targetBranch}`]),
+  ];
+  return `Pass these flags to \`lh issue create\`: ${flags.map((flag) => `\`${flag}\``).join(" ")}`;
+}

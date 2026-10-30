@@ -220,7 +220,7 @@ function requestedSessionId(): string | undefined {
 // Build the parent agent's flag argv for the resolved runtime (#516) via the registry-driven core
 // helper. Claude Code takes --session-id and --append-system-prompt-file; Codex and Grok have
 // neither, so the rendered contract is folded into their positional prompt (already done when the
-// run wrote its prompt file) and correlation happens only through the LOOPHUB_SESSION_ID env prefix.
+// run wrote its prompt file), which names the session id the agent passes as `lh --session-id`.
 function parentAgentFlags(input: {
   runtime: CodingAgent;
   sessionId: string;
@@ -291,11 +291,8 @@ async function launchParentHerdr(input: {
   // attach it has no TTY for.
   detach?: boolean;
 }): Promise<void> {
-  const env = {
-    LOOPHUB_SESSION_ID: input.sessionId,
-    // Runtimes whose model is not an argv flag (opencode2) carry it in the launch environment.
-    ...runtimeLaunchEnv({ runtime: input.runtime, model: input.model }),
-  };
+  // Runtimes whose model is not an argv flag (opencode2) carry it in the launch environment.
+  const env = runtimeLaunchEnv({ runtime: input.runtime, model: input.model });
   const command = agentCommandLine({
     env,
     bin: runtimeBin(input.runtime),

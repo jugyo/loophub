@@ -259,8 +259,8 @@ function runLhDevLaunch(
 // Start workflow dropdown (#1007). This RPC only spawns the CLI
 // and lets `lh workflow start` own worktree/PR provisioning, the dev lock, run creation, and the
 // parent herdr launch (workflow design: CLI / UI). Args are passed as an array (no shell),
-// so repo and id need no shell quoting; parent session id is never surfaced here — the CLI sets
-// LOOPHUB_SESSION_ID for attribution.
+// so repo and id need no shell quoting; parent session id is never surfaced here — the parent's
+// contract names it for attribution.
 async function launchWorkflowRunHerdr(
   r: S.Repo,
   issueNumber: number,

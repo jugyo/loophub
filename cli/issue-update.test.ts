@@ -23,8 +23,6 @@ function lh(args: string[], env: Record<string, string> = {}) {
     HERDR_PANE_ID: _herdrPaneId,
     HERDR_SESSION: _herdrSession,
     LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH: _launchId,
-    LOOPHUB_WORKSPACE: _workspace,
-    LOOPHUB_PARENT_ISSUE: _parentIssue,
     ...baseEnv
   } = process.env;
   const r = spawnSync(process.execPath, [CLI, ...args], {
@@ -187,43 +185,73 @@ test("lh issue create accepts a target branch", () => {
   expect(issue.target_branch).toBe("integration/stack");
 });
 
-test("lh issue create defaults the target branch from LOOPHUB_WORKSPACE", () => {
-  const issueNumber = createIssueWithEnv("workspace issue", {
+test("lh issue create ignores the retired context environment variables", () => {
+  const parent = createIssue("parent not from env", "");
+  const sessionId = "6d7f3c1e-0000-4000-8000-000000000001";
+  const registered = lh([
+    "session",
+    "register",
+    "--id",
+    sessionId,
+    "--agent",
+    "issue-create",
+    "--session",
+    sessionId,
+    "--kind",
+    "issue-create",
+  ]);
+  expect(registered.exitCode, registered.stderr).toBe(0);
+
+  const issueNumber = createIssueWithEnv("context env issue", {
+    LOOPHUB_SESSION_ID: sessionId,
     LOOPHUB_WORKSPACE: "integration/stack",
-  });
-
-  expect(viewJSON(issueNumber).target_branch).toBe("integration/stack");
-});
-
-test("lh issue create defaults the parent from LOOPHUB_PARENT_ISSUE", () => {
-  const parent = createIssue("parent from env", "");
-  const child = createIssueWithEnv("child from env", {
     LOOPHUB_PARENT_ISSUE: String(parent),
+    LOOPHUB_ISSUE_CREATE_SESSION: sessionId,
   });
 
-  expect(viewJSON(child).ancestors?.[0]?.number).toBe(parent);
+  const issue = viewJSON(issueNumber);
+  expect(issue.target_branch).toBeNull();
+  expect(issue.ancestors).toEqual([]);
+  expect(issue.user.login).toBe("me");
+  expect(issue.related_sessions).toEqual([]);
 });
 
-test("lh issue create explicit target branch overrides LOOPHUB_WORKSPACE", () => {
-  git(["branch", "workspace/explicit"]);
-  const result = lh(
-    [
-      "issue",
-      "create",
-      "--repo",
-      REPO,
-      "--title",
-      "explicit workspace issue",
-      "--target-branch",
-      "workspace/explicit",
-    ],
-    { LOOPHUB_WORKSPACE: "integration/stack" },
-  );
+test("lh issue create links an explicit issue-create --session-id to the filed issue", () => {
+  const sessionId = "6d7f3c1e-0000-4000-8000-000000000002";
+  const registered = lh([
+    "session",
+    "register",
+    "--id",
+    sessionId,
+    "--agent",
+    "issue-create",
+    "--session",
+    sessionId,
+    "--kind",
+    "issue-create",
+  ]);
+  expect(registered.exitCode, registered.stderr).toBe(0);
+
+  const result = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "filed by a new issue session",
+    "--session-id",
+    sessionId,
+  ]);
   expect(result.exitCode, result.stderr).toBe(0);
   const match = result.stdout.match(/created #(\d+)/);
   if (!match) throw new Error(`create failed: ${result.stdout}`);
 
-  expect(viewJSON(Number(match[1])).target_branch).toBe("workspace/explicit");
+  const issue = viewJSON(Number(match[1]));
+  // The filing session, not the human, is the issue's author.
+  expect(issue.user.login).toBe("issue-create");
+  expect(
+    issue.related_sessions.map((session: { id: string }) => session.id),
+  ).toEqual([sessionId]);
 });
 
 test("lh issue create accepts an active registered workspace", () => {
@@ -253,7 +281,7 @@ test("lh issue create accepts an active registered workspace", () => {
   expect(viewJSON(Number(match[1])).target_branch).toBe("workspace/active");
 });
 
-test("lh issue create explicit workspace overrides LOOPHUB_WORKSPACE", () => {
+test("lh issue create accepts an explicitly selected workspace", () => {
   const workspace = lh([
     "workspace",
     "create",
@@ -263,19 +291,16 @@ test("lh issue create explicit workspace overrides LOOPHUB_WORKSPACE", () => {
   ]);
   expect(workspace.exitCode, workspace.stderr).toBe(0);
 
-  const result = lh(
-    [
-      "issue",
-      "create",
-      "--repo",
-      REPO,
-      "--title",
-      "explicit registered workspace issue",
-      "--workspace",
-      "workspace/selected",
-    ],
-    { LOOPHUB_WORKSPACE: "integration/stack" },
-  );
+  const result = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "explicit registered workspace issue",
+    "--workspace",
+    "workspace/selected",
+  ]);
   expect(result.exitCode, result.stderr).toBe(0);
   const match = result.stdout.match(/created #(\d+)/);
   if (!match) throw new Error(`create failed: ${result.stdout}`);

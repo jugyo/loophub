@@ -33,13 +33,11 @@ function git(args: string[]): void {
 }
 
 function runCli(args: string[], parentSession: string) {
-  const result = spawnSync(process.execPath, [CLI, ...args], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      LOOPHUB_SESSION_ID: parentSession,
-    },
-  });
+  const result = spawnSync(
+    process.execPath,
+    [CLI, ...args, "--session-id", parentSession],
+    { encoding: "utf8", env: process.env },
+  );
   return {
     stdout: result.stdout,
     stderr: result.stderr,

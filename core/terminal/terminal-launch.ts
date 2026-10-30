@@ -703,7 +703,7 @@ export function buildHerdrLaunchPlan(input: {
   // The command the launch types into its pane — the whole invocation, prompt included.
   command: string;
   // Environment for the pane the command runs in. The command is typed into that pane's shell, so
-  // anything the agent must see (LOOPHUB_SESSION_ID and friends) is set when the pane is created.
+  // anything the agent's runtime must see is set when the pane is created.
   env?: Record<string, string>;
   label?: string;
   // Pane to split to make this launch's pane. Callers that omit it create a fresh tab instead.
@@ -804,8 +804,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
   sequence: number;
   // Runtime the parent run resolved (#516). Claude Code launches `claude` with --session-id and
   // --append-system-prompt-file; Codex and Grok have neither, so they launch their own binary with
-  // the rendered contract folded into the positional prompt and correlate only via the
-  // LOOPHUB_SESSION_ID env.
+  // the rendered contract folded into the positional prompt, which names the session id.
   runtime: CodingAgent;
   sessionId: string;
   worktree: string;
@@ -817,11 +816,8 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
   model?: string | null;
   effort?: string | null;
 }): HerdrLaunchPlan {
-  const env = {
-    LOOPHUB_SESSION_ID: input.sessionId,
-    // Runtimes whose model is not an argv flag (opencode2) carry it in the launch environment.
-    ...runtimeLaunchEnv({ runtime: input.runtime, model: input.model }),
-  };
+  // Runtimes whose model is not an argv flag (opencode2) carry it in the launch environment.
+  const env = runtimeLaunchEnv({ runtime: input.runtime, model: input.model });
   return buildHerdrLaunchPlan({
     repo: input.repo,
     command: agentCommandLine({

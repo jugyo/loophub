@@ -1,7 +1,3 @@
-// Tests create isolated databases that do not contain the invoking workflow's
-// session. Individual tests that exercise attribution set this env explicitly.
-delete process.env.LOOPHUB_SESSION_ID;
-
 export const allTestFiles = [
   "test-runner.config.test.ts",
   "scripts/**/*.test.ts",

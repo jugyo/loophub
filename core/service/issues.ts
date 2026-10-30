@@ -25,6 +25,7 @@ import {
   relatedSessionsJSON,
 } from "../serialize.ts";
 import { issueDetailJSON, issueListItemsJSON } from "../serialize-status.ts";
+import { SESSION_KIND_ISSUE_CREATE } from "../session-runtime.ts";
 import * as S from "../store.ts";
 import {
   actorFor,
@@ -485,6 +486,16 @@ export const issues = {
         if (trimmed) S.addAcceptanceCriterion(issue.id, trimmed);
       }
       if (currentPane) linkIssueToCurrentPane(r.id, issue.id, currentPane);
+      // A New issue session files through `--session-id`; link it to the issue it filed (#299) so it
+      // appears in the issue's related sessions.
+      const writer = sessionId ? S.getAgentSession(sessionId) : null;
+      if (writer?.kind === SESSION_KIND_ISSUE_CREATE) {
+        S.linkSession(writer.id, issue.id);
+        S.emitEvent(r.id, "agent_session.linked", actor, {
+          session_id: writer.id,
+          issue: issue.number,
+        });
+      }
       S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
       if (parent) {
         S.emitEvent(r.id, "issue.updated", actor, { number: parent.number });

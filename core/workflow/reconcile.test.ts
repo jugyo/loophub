@@ -898,6 +898,45 @@ describe("workflowActionPlan", () => {
   const plan = (action: WorkflowNextAction) =>
     workflowActionPlan(action, context);
 
+  test("every lh instruction carries the parent's --session-id", () => {
+    const withSession = (action: WorkflowNextAction) =>
+      workflowActionPlan(action, { ...context, sessionId: "parent-1" });
+    expect(
+      withSession({ action: "launch_execute", reason: "start" }).commands,
+    ).toEqual([
+      {
+        command: "lh",
+        args: [
+          "workflow",
+          "launch-step",
+          "--run",
+          "42",
+          "--step",
+          "execute",
+          "--session-id",
+          "parent-1",
+        ],
+      },
+    ]);
+    for (const action of [
+      { action: "request_rework", reason: "changes", review_id: 9 },
+      { action: "cost_hold", reason: "cost", event_id: 11 },
+      { action: "escalate", reason: "limit" },
+    ] as WorkflowNextAction[]) {
+      const result = withSession(action);
+      for (const instruction of [
+        ...result.commands,
+        ...(result.decision?.submit ? [result.decision.submit] : []),
+      ]) {
+        if (instruction.command !== "lh") continue;
+        expect(instruction.args.slice(-2)).toEqual([
+          "--session-id",
+          "parent-1",
+        ]);
+      }
+    }
+  });
+
   test("returns ordered mechanical commands for launch, advance, rework, and cost hold", () => {
     expect(
       plan({ action: "launch_execute", reason: "start" }).commands,

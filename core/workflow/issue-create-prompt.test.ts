@@ -1,5 +1,8 @@
 import { expect, test } from "#loophub-test";
-import { issueCreatePrompt } from "./issue-create-prompt.ts";
+import {
+  issueCreateLaunchContext,
+  issueCreatePrompt,
+} from "./issue-create-prompt.ts";
 
 test("unknown languages fall back to the English prompt", () => {
   expect(issueCreatePrompt(undefined)).toBe(issueCreatePrompt("en"));
@@ -173,4 +176,19 @@ test("both prompts separate structured criteria and summarize detailed resources
     expect(prompt).toContain(summary);
     expect(prompt).toContain(reference);
   }
+});
+
+test("the launch context spells out the explicit lh issue create flags", () => {
+  expect(issueCreateLaunchContext({ sessionId: "s-1" })).toBe(
+    "Pass these flags to `lh issue create`: `--session-id s-1`",
+  );
+  expect(
+    issueCreateLaunchContext({
+      sessionId: "s-1",
+      parentIssue: 12,
+      targetBranch: "integration/stack",
+    }),
+  ).toBe(
+    "Pass these flags to `lh issue create`: `--session-id s-1` `--parent 12` `--target-branch integration/stack`",
+  );
 });

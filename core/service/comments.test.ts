@@ -191,6 +191,8 @@ test("delivers human and other-agent PR comments but skips the run's own", async
     "👀",
     "--repo",
     repoName,
+    "--session-id",
+    parentSession,
   ]);
   expect(next.instructions.commands[1]?.args).toContain(
     `orchestrator: address PR comment ${human.id}`,

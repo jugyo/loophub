@@ -178,7 +178,7 @@ describe("dev.openPr", () => {
     expect(pullB.base.ref).toBe("integration/stack");
   });
 
-  test("uses the workspace environment from issue creation as the build PR base", async () => {
+  test("uses the target branch from issue creation as the build PR base", async () => {
     const created = spawnSync(
       process.execPath,
       [
@@ -189,6 +189,8 @@ describe("dev.openPr", () => {
         "me/proj",
         "--title",
         "workspace environment build",
+        "--target-branch",
+        "integration/stack",
       ],
       {
         encoding: "utf8",
@@ -196,7 +198,6 @@ describe("dev.openPr", () => {
           ...process.env,
           LOOPHUB_HOME: HOME,
           LOOPHUB_DB: join(HOME, "test.db"),
-          LOOPHUB_WORKSPACE: "integration/stack",
         },
       },
     );

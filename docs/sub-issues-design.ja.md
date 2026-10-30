@@ -507,10 +507,10 @@ lh issue list [--state open|closed|all]                 # 常に根のみ（--st
 lh issue view <n> [--json]                              # ancestors と sub issues を含む
 ```
 
-`lh issue new --parent` は `--target-branch` と同じ形で、spawn する runtime の env
-（`LOOPHUB_PARENT_ISSUE`）に親を載せる。session の中で agent が叩く `lh issue create` が
-その env を読み、`--parent` 未指定でも子として起票する。Web の `New sub issue` はこの経路の
-入口であり、配線の全段は [6.5](#65-new-sub-issue-の配線) にある。
+`lh issue new --parent` は `--target-branch` と同じ形で、起動する runtime の prompt 末尾に
+`lh issue create` へ付ける明示フラグ（`--session-id` / `--parent` / `--target-branch`）を書く。
+session の中で agent はそのフラグ付きで `lh issue create` を叩き、子として起票する。Web の
+`New sub issue` はこの経路の入口であり、配線の全段は [6.5](#65-new-sub-issue-の配線) にある。
 
 - `lh issue list` の text 出力は行末に `sub 2/5`（closed/total）を足す。
   子を平坦に見る flag は無いので、子へ降りる導線は `lh issue sub list <n>` を案内する
@@ -620,21 +620,20 @@ coding agent の session を起動するだけで、issue を作るのは sessio
 | # | 場所 | 追加するもの |
 |---|---|---|
 | 1 | `web/src/components/create-issue-button.tsx` | prop `parentIssue?: number` → `launchTerminal({ ..., parentIssue })`。button の副題は `in <branch>` に倣って `sub issue of #<n>` |
-| 1b | 同上 | **prompt にも親を載せる**: `issueCreatePrompt(settings?.workflowContractLanguage, parentIssue)` を呼ぶ。`issue-create` の prompt は core ではなくこの component が組み立てて `launchTerminal({ prompt })` に載せており、`core/service/terminal.ts` はそれを `lh issue new --prompt` にそのまま渡すだけなので、ここを直さないと Web 起点の起票では親が env にしか乗らない |
+| 1b | 同上 | **prompt にも親を載せる**: `issueCreatePrompt(settings?.workflowContractLanguage, parentIssue)` を呼ぶ。`issue-create` の prompt は core ではなくこの component が組み立てて `launchTerminal({ prompt })` に載せており、`core/service/terminal.ts` はそれを `lh issue new --prompt` にそのまま渡すだけなので、`--prompt` にも launch context（明示フラグ）は付くが、親を範囲の指示として prompt 本文に書かないと agent が親を読まずに起票しうる |
 | 2 | `web/src/components/terminal-controller.tsx` | launch options に `parentIssue` |
 | 3 | `web/src/api/client.ts` | `launchTerminal` の params に `parentIssue` |
 | 4 | `web/server/contract.ts` | `terminal/launch` の params に `parentIssue: positiveInt` |
 | 5 | `core/service/terminal.ts` | `issue-create` のときだけ下へ渡す（`targetBranch` と同じ扱い） |
 | 6 | `core/terminal/terminal-launch.ts` | 起動 command に ` --parent <n>` を足す（`shellArg` で escape） |
-| 7 | `cli/commands/issue.ts` の `new` | `--parent` を受け、spawn する runtime の env に `LOOPHUB_PARENT_ISSUE` を載せる（`LOOPHUB_WORKSPACE` と同じ形） |
-| 8 | `cli/commands/issue.ts` の `create` | `flags.parent ?? process.env[ENV_PARENT_ISSUE]` を読む（`--target-branch` の env fallback と同じ形） |
-| 9 | `core/environment.ts` | `ENV_PARENT_ISSUE = "LOOPHUB_PARENT_ISSUE"` |
+| 7 | `cli/commands/issue.ts` の `new` | `--parent` を受け、起動する runtime の prompt 末尾に `--parent <n>` を明示フラグとして書く（`--target-branch` と同じ形） |
+| 8 | `cli/commands/issue.ts` の `create` | `--parent` を読む |
 
-**workspace と違って prompt にも出す。** `targetBranch` は env だけで運ばれ、prompt には現れない。
+**workspace と違って指示文にも出す。** `targetBranch` は明示フラグの指示としてだけ prompt に現れる。
 sub issue では親が仕様そのものなので、`core/workflow/issue-create-prompt.ts` の
 `issueCreatePrompt(language)` に親 issue 番号を受ける引数を足し、「`#<n>` の sub issue として、
-親の acceptance criteria に収まる粒度で起票する」という 1 文を加える。env だけでは、agent は
-親を読まずに範囲のずれた子を起票しうる。
+親の acceptance criteria に収まる粒度で起票する」という 1 文を加える。フラグの指示だけでは、
+agent は親を読まずに範囲のずれた子を起票しうる。
 
 この関数の**呼び出し側は 2 つあり、両方を直す**必要がある。Web 起点は上表の 1b
 （`create-issue-button.tsx`）、CLI 起点は `cli/commands/issue.ts` の `new`（`--prompt` 未指定時の
@@ -678,8 +677,8 @@ fallback として同じ関数を呼んでいる）。片方だけ直すと、�
 | serialize | `core/serialize.ts` | `SubIssueSummaryWire` / `IssueRefSummaryWire` / `IssueWire` の追加フィールド（`depth` を含む）、`IssueDetailPageWire` に `workflow_runs`（詳細の子行にも mini tracker を出すため。現状は `{ issue, comments, acceptance_criteria }` のみ）、`SubIssueListPageWire` の追加 |
 | serialize | `core/serialize-status.ts` | 一覧・詳細への `depth` / `sub_issue_summary` / `sub_issues` / `ancestors` の載せ込み、`IssueListSelection` に `subIssueSummariesByParent` を追加 |
 | RPC | `web/server/contract.ts`, `docs/rpc-contract.json` | [5.4](#54-json-rpc-契約webservercontractts) の method、`terminal/launch` の `parentIssue` |
-| CLI | `cli/commands/issue.ts` | `sub` group、`create --parent`、`new --parent`（env で子 process へ）、text 出力 |
-| 起票の配線 | `core/service/terminal.ts`, `core/terminal/terminal-launch.ts`, `core/environment.ts`, `core/workflow/issue-create-prompt.ts` | [6.5](#65-new-sub-issue-の配線) の 5〜9 と prompt への親の明示 |
+| CLI | `cli/commands/issue.ts` | `sub` group、`create --parent`、`new --parent`（prompt 末尾の明示フラグで子 session へ）、text 出力 |
+| 起票の配線 | `core/service/terminal.ts`, `core/terminal/terminal-launch.ts`, `core/workflow/issue-create-prompt.ts` | [6.5](#65-new-sub-issue-の配線) の 5〜8 と prompt への親の明示 |
 | Web | `web/src/api/types.ts`, `api/client.ts`, `queries/keys.ts`, `queries/issues.ts` | 型導出、`launchTerminal` の `parentIssue`、`queryKeys.subIssues`（`issues` 配下）、`useSubIssues` |
 | Web | `components/dashboard-rows.tsx`, `issue-list.tsx`, `issue-detail.tsx`, `create-issue-button.tsx`, `terminal-controller.tsx` | disclosure、入れ子描画、`SubIssueSection`、breadcrumb、`New sub issue` の `parentIssue` prop |
 | docs | `docs/command-transaction-boundaries.ja.md` | 新 procedure 4 行を inventory に追加 |
@@ -739,8 +738,8 @@ fallback として同じ関数を呼んでいる）。片方だけ直すと、�
   それが載ること。この test は `useTerminalLauncher` を mock して引数を検証する形なので、
   [6.5](#65-new-sub-issue-の配線) の 1 段目を押さえる。5〜8 段は既存 file への追記で足りる:
   `core/terminal/terminal-launch.test.ts`（組み立てた command に ` --parent <n>` が入る）、
-  `cli/issue-new.test.ts`（spawn する env に `LOOPHUB_PARENT_ISSUE` が載る）、
-  `cli/commands/issue.test.ts`（`create` が `--parent` 未指定でも env から親を読む）。
+  `cli/issue-new.test.ts`（起動する runtime の prompt に `--parent <n>` が明記される）、
+  `cli/issue-update.test.ts`（`create` が `--parent` で子として起票する）。
 - 展開中の子一覧が、**子自身の `issue.closed`** で refetch されること（[4.4](#44-event) の key 配置の
   回帰 test）。狭い key に戻す変更をここで落とす。`pull_request.*` は `event-keys.ts` が repo 全体の
   prefix を積むのでどちらの key でも通ってしまう。guard にならないので test 項目にしない。
@@ -764,7 +763,7 @@ fallback として同じ関数を呼んでいる）。片方だけ直すと、�
 | S1 | schema + migration + store + `core/issue-hierarchy.ts` | 既存 test が green、新 unit test が通る。UI 変化なし |
 | S2 | service procedure（attach / detach / reorder / create --parent / workspace cascade）+ CLI `lh issue sub` / `lh issue create --parent` | CLI だけで階層を作って壊せる。transaction boundary doc 更新 |
 | S3 | wire + `issues.list` の既定 roots + detail の `ancestors` / `sub_issues` + RPC + contract 再生成 | `lh issue view --json` と RPC が階層を返す |
-| S4 | Web: issue 詳細の `SubIssueSection` と breadcrumb + **[6.5](#65-new-sub-issue-の配線) の起票配線 9 段**（`lh issue new --parent` と env、`terminal/launch` の `parentIssue`、prompt への親の明示を含む） | 詳細画面で子が一覧行 UI として見え、`New sub issue` から起票でき、workflow が開始できる |
+| S4 | Web: issue 詳細の `SubIssueSection` と breadcrumb + **[6.5](#65-new-sub-issue-の配線) の起票配線 8 段**（`lh issue new --parent` と prompt 末尾の明示フラグ、`terminal/launch` の `parentIssue`、prompt への親の明示を含む） | 詳細画面で子が一覧行 UI として見え、`New sub issue` から起票でき、workflow が開始できる |
 | S5 | Web: repo トップの折りたたみサマリーと入れ子展開 | AC 4 を満たす |
 | S6（後続） | Web からの attach / detach / drag reorder | 別 issue。v1 の受け入れ条件には含めない |
 

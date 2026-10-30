@@ -530,7 +530,10 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     { label: "pr", value: `#${result.pr.number}` },
   ]);
   expect(launched.herdr.command).not.toContain("LOOPHUB_WORKFLOW_");
-  expect(launched.herdr.command).toContain("LOOPHUB_SESSION_ID=");
+  expect(launched.herdr.command).not.toContain("LOOPHUB_SESSION_ID");
+  expect(readFileSync(launched.system_prompt_path, "utf8")).toContain(
+    "Pass `--session-id ",
+  );
   expect(launched.herdr.command).toContain("'--permission-mode' 'auto'");
   // The step's prompt travels the same way: written to a file, read back by the typed command line.
   const stepPromptPath = /"\$\(cat '([^']+)'\)"/.exec(
@@ -2245,6 +2248,8 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
           String(started.run.id),
           "--step",
           "execute",
+          "--session-id",
+          started.run.parent_session_id,
         ],
       },
     ],

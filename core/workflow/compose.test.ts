@@ -98,6 +98,30 @@ test("renders contract inputs and template placeholders into the system prompt",
   );
 });
 
+test("a launched contract names the session id the agent passes to lh", () => {
+  const input = {
+    template: "",
+    repo: "me/proj",
+    step: "execute" as const,
+    run: 56,
+    sessionId: "s-1",
+    worktreePath: "/tmp/worktree",
+    baseBranch: "main",
+  };
+
+  const en = renderWorkflowContract(input, "en");
+  expect(en).toContain("session id: s-1");
+  expect(en).toContain(
+    "Pass `--session-id s-1` to every `lh` command you run.",
+  );
+  expect(renderWorkflowContract(input, "ja")).toContain(
+    "`lh` コマンドには毎回 `--session-id s-1` を付ける。",
+  );
+  expect(
+    renderWorkflowContract({ ...input, sessionId: undefined }, "en"),
+  ).not.toContain("--session-id");
+});
+
 test("shell-quotes repo placeholders without re-expanding their value", () => {
   const contract = renderWorkflowContract(
     {

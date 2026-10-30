@@ -4,6 +4,7 @@ import type { WorkflowContractLanguage } from "./contracts.ts";
 export type WorkflowMessages = {
   contractContext(input: {
     step: WorkflowStep | "parent";
+    sessionId?: string;
     worktreePath: string;
     baseBranch: string;
   }): string[];
@@ -42,12 +43,24 @@ const WORKFLOW_MESSAGE_CATALOG = {
     en: (input) => [
       "## Workflow contract context",
       `step: ${input.step}`,
+      ...(input.sessionId
+        ? [
+            `session id: ${input.sessionId}`,
+            `Pass \`--session-id ${input.sessionId}\` to every \`lh\` command you run.`,
+          ]
+        : []),
       `worktree: ${input.worktreePath}`,
       `base branch: ${input.baseBranch}`,
     ],
     ja: (input) => [
       "## Workflow contract コンテキスト",
       `step: ${input.step}`,
+      ...(input.sessionId
+        ? [
+            `session id: ${input.sessionId}`,
+            `\`lh\` コマンドには毎回 \`--session-id ${input.sessionId}\` を付ける。`,
+          ]
+        : []),
       `worktree: ${input.worktreePath}`,
       `base branch: ${input.baseBranch}`,
     ],

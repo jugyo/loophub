@@ -1,17 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { agentEffort, agentModel } from "../../core/config.ts";
-import { ENV_PARENT_ISSUE, ENV_WORKSPACE } from "../../core/environment.ts";
 import {
   DEFAULT_LIST_PER_PAGE,
   MAX_LIST_PER_PAGE,
 } from "../../core/list-paging.ts";
 import { spawnSyncProcess } from "../../core/process.ts";
 import {
-  ENV_ISSUE_CREATE_SESSION,
   LH_ISSUE_CREATE_SESSION_AGENT,
   SESSION_KIND_ISSUE_CREATE,
 } from "../../core/session-runtime.ts";
-import { issueCreatePrompt } from "../../core/workflow/issue-create-prompt.ts";
+import {
+  issueCreateLaunchContext,
+  issueCreatePrompt,
+} from "../../core/workflow/issue-create-prompt.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   display,
@@ -226,10 +227,20 @@ export async function run(): Promise<void> {
     ) {
       fail("--parent requires a positive issue number");
     }
-    const slashCommand =
+    // The agent links its session to the issue it files, and sets its parent and target branch,
+    // only through the explicit `lh issue create` flags the prompt spells out.
+    const slashCommand = `${
       typeof flags.prompt === "string" && flags.prompt.trim()
         ? flags.prompt
-        : issueCreatePrompt("en", parentIssue);
+        : issueCreatePrompt("en", parentIssue)
+    }\n\n${issueCreateLaunchContext({
+      sessionId,
+      parentIssue,
+      targetBranch:
+        typeof flags["target-branch"] === "string"
+          ? flags["target-branch"]
+          : undefined,
+    })}`;
     const runtime = resolveDevRuntime({
       claudeCode: flags["claude-code"] === true,
       codex: flags.codex === true,
@@ -280,25 +291,10 @@ export async function run(): Promise<void> {
         bin: runtimeBin,
       }),
     );
-    // Carry the session id into the spawned runtime via env. A `lh issue create` run inside the
-    // session reads it and links the session to whatever issue it files (the number is unknown
-    // here, so the link is recorded after creation — see the create branch below).
     const proc = spawnSyncProcess([runtimeBin, ...runtimeArgs], {
       stdio: ["inherit", "inherit", "inherit"],
       cwd: r.local_path,
-      env: {
-        ...process.env,
-        ...runtimeEnv,
-        [ENV_ISSUE_CREATE_SESSION]: sessionId,
-        ...(typeof flags["target-branch"] === "string"
-          ? {
-              [ENV_WORKSPACE]: flags["target-branch"],
-            }
-          : {}),
-        ...(parentIssue !== undefined
-          ? { [ENV_PARENT_ISSUE]: String(parentIssue) }
-          : {}),
-      },
+      env: { ...process.env, ...runtimeEnv },
     });
     if (proc.error) {
       const err = proc.error as NodeJS.ErrnoException;
@@ -344,11 +340,7 @@ export async function run(): Promise<void> {
     const body =
       flags.body === undefined ? undefined : await readTextInput(flags.body);
     const parent =
-      flags.parent === undefined
-        ? process.env[ENV_PARENT_ISSUE] === undefined
-          ? undefined
-          : Number(process.env[ENV_PARENT_ISSUE])
-        : Number(flags.parent);
+      flags.parent === undefined ? undefined : Number(flags.parent);
     if (parent !== undefined && (!Number.isInteger(parent) || parent < 1)) {
       fail("--parent requires a positive issue number");
     }
@@ -363,9 +355,7 @@ export async function run(): Promise<void> {
           parent,
           workspace: flags.workspace,
           target_branch:
-            flags.workspace === undefined
-              ? (flags["target-branch"] ?? process.env[ENV_WORKSPACE])
-              : undefined,
+            flags.workspace === undefined ? flags["target-branch"] : undefined,
         },
         await writeSession(),
         currentHerdrPaneContext(),
@@ -373,22 +363,6 @@ export async function run(): Promise<void> {
     );
     out(i);
     if (!flags.json) console.log(`created #${i.number}`);
-    // When this create runs inside a `lh issue new` AI session, link that session to the issue
-    // it just filed (#299) so it appears in the issue's related-sessions list.
-    // Best-effort: a link failure must not fail the create the user asked for.
-    const createSession = process.env[ENV_ISSUE_CREATE_SESSION];
-    if (createSession) {
-      try {
-        await s.sessions.link(repo, {
-          sessionId: createSession,
-          issue: i.number,
-        });
-      } catch (e: any) {
-        console.error(
-          `warning: could not link issue-create session: ${e.message}`,
-        );
-      }
-    }
   } else if (sub === "import") {
     // #614: import a GitHub issue into the resolved repo, copying title/body verbatim and recording
     // the GitHub source link. The repo is the destination (from --repo or cwd); the argument is the

@@ -205,6 +205,40 @@ export type WorkflowActionPlan = {
 /** Turn a reconciliation decision into the complete, ordered procedure returned by `next`. */
 export function workflowActionPlan(
   action: WorkflowNextAction,
+  context: {
+    repo: string;
+    run: number;
+    issue: number;
+    pr: number;
+    // The parent's own session: every `lh` instruction carries it as `--session-id`, so running the
+    // argv exactly attributes the write to the parent.
+    sessionId?: string;
+  },
+): WorkflowActionPlan {
+  const plan = actionPlan(action, context);
+  const sessionId = context.sessionId;
+  if (!sessionId) return plan;
+  const withSession = (
+    instruction: WorkflowActionInstruction,
+  ): WorkflowActionInstruction =>
+    instruction.command === "lh"
+      ? {
+          ...instruction,
+          args: [...instruction.args, "--session-id", sessionId],
+        }
+      : instruction;
+  return {
+    ...plan,
+    commands: plan.commands.map(withSession),
+    decision: plan.decision && {
+      ...plan.decision,
+      submit: plan.decision.submit && withSession(plan.decision.submit),
+    },
+  };
+}
+
+function actionPlan(
+  action: WorkflowNextAction,
   context: { repo: string; run: number; issue: number; pr: number },
 ): WorkflowActionPlan {
   const base = ["workflow"];
