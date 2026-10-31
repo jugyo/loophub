@@ -3314,7 +3314,7 @@ describe("PullDetail", () => {
     expect(screen.queryByText("needs human")).toBeNull();
   });
 
-  it("shows a new human wait reason after increasing the budget", async () => {
+  it("shows the Needs human badge after increasing the budget", async () => {
     let increased = false;
     const held = {
       id: 12,
@@ -3363,7 +3363,7 @@ describe("PullDetail", () => {
     });
 
     expect(await screen.findByText("Needs human")).toBeTruthy();
-    expect(screen.getByText("waiting for a decision")).toBeTruthy();
+    expect(screen.queryByText("waiting for a decision")).toBeNull();
   });
 
   it("shows no budget action for a Workflow run that is within budget", async () => {
