@@ -84,6 +84,7 @@ import type {
   HerdrIssueWorkspace as HerdrIssueWorkspaceWire,
   HerdrPullWorkspace as HerdrPullWorkspaceWire,
 } from "../../../core/terminal/herdr-status.ts";
+import type { TerminalBackend } from "../../../core/terminal-backend.ts";
 
 export type WebConfig = WebConfigWire;
 
@@ -163,7 +164,7 @@ export type Repo = RepoWire;
 export type Workspace = WorkspaceWire;
 export type WorkspaceResolution = WorkspaceResolutionWire;
 
-export type { MergeMode };
+export type { MergeMode, TerminalBackend };
 
 /** Resolved merge-mode view for the repo settings UI (`repos/mergeMode`, #406). */
 export type RepoMergeMode = RepoMergeModeWire;

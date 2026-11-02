@@ -10,6 +10,9 @@ export interface ServiceErrorData {
   // The Herdr session name a launch failure relates to — lets the client suggest creating that
   // session first, since a launch's calls only work over the socket of an already-running session.
   session?: string;
+  // herdr-core (`hc`) failures keep its `{error: {kind, hint}}` so a caller can branch on `kind`.
+  kind?: string;
+  hint?: string;
 }
 
 export class ServiceError extends Error {

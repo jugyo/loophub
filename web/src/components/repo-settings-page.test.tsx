@@ -51,6 +51,7 @@ function repo(archived: boolean): Repo {
     created_at: "2026-01-01T00:00:00Z",
     merge_mode: null,
     herdr_session_name: "repo-abcd1234",
+    terminal_backend: "herdr",
   };
 }
 
@@ -189,6 +190,10 @@ function mockFetch(
       if (patchFails) throw new RpcFault(422, "already registered");
       return { ...repo(initialArchived), full_name: p.new_name };
     },
+    "repos/setTerminalBackend": (p) => ({
+      ...repo(initialArchived),
+      terminal_backend: p.backend,
+    }),
     "repos/setMergeMode": (p) => {
       if (patchFails) throw new RpcFault(500, "boom");
       return { ...repo(initialArchived), merge_mode: p.mode };
@@ -768,6 +773,24 @@ describe("RepoSettingsPage", () => {
       const call = rpcCall("repos/setMergeMode");
       expect(call).toBeTruthy();
       expect(call!.params).toMatchObject({ mode: "github_pr" });
+    });
+  });
+
+  it("defaults the terminal backend to herdr and switches it via repos/setTerminalBackend (#2571)", async () => {
+    renderSettings(false, false, "/r/me/proj/settings/coding-agent");
+    const group = await screen.findByRole("radiogroup", {
+      name: "Terminal backend",
+    });
+    const herdr = within(group).getByRole("radio", { name: "herdr" });
+    await waitFor(() =>
+      expect(herdr.getAttribute("aria-checked")).toBe("true"),
+    );
+    fireEvent.click(within(group).getByRole("radio", { name: "herdr-core" }));
+
+    await waitFor(() => {
+      const call = rpcCall("repos/setTerminalBackend");
+      expect(call).toBeTruthy();
+      expect(call!.params).toMatchObject({ backend: "herdr-core" });
     });
   });
 

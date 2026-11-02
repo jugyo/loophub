@@ -1,5 +1,10 @@
 import { ServiceError } from "../errors.ts";
 import { type CodingAgent, isCodingAgent } from "../runtimes.ts";
+import {
+  DEFAULT_TERMINAL_BACKEND,
+  isTerminalBackend,
+  type TerminalBackend,
+} from "../terminal-backend.ts";
 
 export const WORKFLOW_MANIFEST_VERSION = 1 as const;
 export const WORKFLOW_MANIFEST_LANGUAGES = ["en", "ja"] as const;
@@ -24,6 +29,9 @@ export type WorkflowManifest = {
     execute: string;
     verify: string;
   };
+  // #2571: the run's terminal backend, copied from the repo setting at start. Manifests written
+  // before this key existed omit it and read as the default.
+  terminal: TerminalBackend;
 };
 
 const MANIFEST_KEYS = [
@@ -32,6 +40,7 @@ const MANIFEST_KEYS = [
   "agents",
   "prompts",
 ] as const;
+const OPTIONAL_MANIFEST_KEYS = ["terminal"] as const;
 const AGENT_KINDS = ["parent", "execute", "verify"] as const;
 const AGENT_KEYS = ["runtime", "model", "effort"] as const;
 const PROMPT_KEYS = ["execute", "verify"] as const;
@@ -51,9 +60,11 @@ function exactKeys(
   value: Record<string, unknown>,
   allowed: readonly string[],
   field: string,
+  optional: readonly string[] = [],
 ): void {
   for (const key of Object.keys(value)) {
-    if (!allowed.includes(key)) invalid(`${field}.${key} は未知の key です`);
+    if (!allowed.includes(key) && !optional.includes(key))
+      invalid(`${field}.${key} は未知の key です`);
   }
   for (const key of allowed) {
     if (!(key in value)) invalid(`${field}.${key} がありません`);
@@ -104,7 +115,7 @@ export function parseWorkflowManifest(text: string): WorkflowManifest {
   }
 
   const root = record(value, "manifest");
-  exactKeys(root, MANIFEST_KEYS, "manifest");
+  exactKeys(root, MANIFEST_KEYS, "manifest", OPTIONAL_MANIFEST_KEYS);
   if (root.manifest_version !== WORKFLOW_MANIFEST_VERSION) {
     invalid(
       `manifest.manifest_version は ${WORKFLOW_MANIFEST_VERSION} でなければなりません`,
@@ -124,6 +135,13 @@ export function parseWorkflowManifest(text: string): WorkflowManifest {
   ) as WorkflowManifest["agents"];
   const prompts = record(root.prompts, "manifest.prompts");
   exactKeys(prompts, PROMPT_KEYS, "manifest.prompts");
+  const terminal =
+    root.terminal === undefined ? DEFAULT_TERMINAL_BACKEND : root.terminal;
+  if (!isTerminalBackend(terminal)) {
+    invalid(
+      `manifest.terminal は herdr または herdr-core でなければなりません`,
+    );
+  }
   return {
     manifest_version: WORKFLOW_MANIFEST_VERSION,
     contract_language: root.contract_language,
@@ -132,6 +150,7 @@ export function parseWorkflowManifest(text: string): WorkflowManifest {
       execute: parsePrompt(prompts.execute, "manifest.prompts.execute"),
       verify: parsePrompt(prompts.verify, "manifest.prompts.verify"),
     },
+    terminal,
   };
 }
 
@@ -153,6 +172,7 @@ export function serializeWorkflowManifest(manifest: WorkflowManifest): string {
       execute: manifest.prompts.execute,
       verify: manifest.prompts.verify,
     },
+    terminal: manifest.terminal,
   };
   return `${JSON.stringify(ordered, null, 2)}\n`;
 }

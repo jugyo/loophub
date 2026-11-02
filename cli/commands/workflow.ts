@@ -150,6 +150,7 @@ async function manifestCommand(): Promise<void> {
   }
   console.log(`動作条件 (manifest)\t${result.manifest_path}`);
   console.log(`contract_language\t${result.manifest.contract_language}`);
+  console.log(`terminal\t${result.manifest.terminal}`);
   for (const kind of ["parent", "execute", "verify"] as const) {
     const agent = result.manifest.agents[kind];
     console.log(`${kind}.runtime\t${agent.runtime}`);

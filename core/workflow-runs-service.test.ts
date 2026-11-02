@@ -427,6 +427,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       execute: "execute-step-prompt.md",
       verify: "verify-step-prompt.md",
     },
+    terminal: "herdr",
   });
   expect(manifest.agents.parent.effort).toBe(manifest.agents.execute.effort);
   expect(manifest.agents.execute.effort).toBe(manifest.agents.verify.effort);
@@ -837,6 +838,27 @@ test("start snapshots one-shot role settings without changing defaults", async (
   expect(
     svc.repos.agentConfig(repo.full_name).effective.runtime,
   ).not.toBeUndefined();
+}, 20_000);
+
+test("start records the repo's terminal backend; a later setting change leaves the run alone (#2571)", async () => {
+  const { repo } = freshRepo("me/workflow-terminal-backend");
+  const issue = S.createIssue(repo.id, "issue", "Terminal backend", "", "me");
+  const workflow = S.createWorkflow({
+    name: "terminal-backend",
+    description: "",
+    executePrompt: "Execute.",
+    verifyPrompt: "Verify.",
+  });
+  svc.repos.setTerminalBackend(repo.full_name, "herdr-core");
+
+  const result = await svc.workflowRuns.start(repo.full_name, {
+    issue: issue.number,
+    workflowId: workflow.id,
+  });
+  svc.repos.setTerminalBackend(repo.full_name, "herdr");
+
+  const view = svc.workflowRuns.manifestView(repo.full_name, result.run.id);
+  expect(view.manifest.terminal).toBe("herdr-core");
 }, 20_000);
 
 test("launch-step creates every child in an independent Herdr tab", async () => {

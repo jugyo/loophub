@@ -47,6 +47,7 @@ import type {
   SearchResult,
   Stats,
   SubIssuesPage,
+  TerminalBackend,
   TerminalLaunchResult,
   Theme,
   WebConfig,
@@ -274,6 +275,20 @@ export function setRepoMergeMode(
   return rpc<Repo>("repos/setMergeMode", {
     name: full(owner, repo),
     mode,
+    session_id: sessionId,
+  });
+}
+
+// #2571: pick the terminal backend new workflow runs on the repo launch with.
+export function setRepoTerminalBackend(
+  owner: string,
+  repo: string,
+  backend: TerminalBackend,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Repo>("repos/setTerminalBackend", {
+    name: full(owner, repo),
+    backend,
     session_id: sessionId,
   });
 }

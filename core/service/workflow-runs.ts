@@ -46,6 +46,7 @@ import {
   type HerdrLaunchPlan,
   herdrSessionName,
 } from "../terminal/terminal-launch.ts";
+import { normalizeTerminalBackend } from "../terminal-backend.ts";
 import {
   WORKFLOW_COMMENT_TARGETS,
   type WorkflowCommentTarget,
@@ -2267,6 +2268,7 @@ export const workflowRuns = {
           execute: executePromptName,
           verify: verifyPromptName,
         },
+        terminal: normalizeTerminalBackend(r.terminal_backend),
       };
       writeWorkflowManifest(run.id, serializeWorkflowManifest(manifest));
       const parent = writeParentLaunchFiles({

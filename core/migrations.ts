@@ -1688,6 +1688,15 @@ export const MIGRATIONS: Migration[] = [
     "next_verify_full",
     "INTEGER NOT NULL DEFAULT 0",
   ),
+  // #2571: which terminal backend new workflow runs on this repo launch with. NULL means the
+  // default ('herdr'); see core/terminal-backend.ts. A run records the value in its manifest at
+  // start, so changing this never moves an in-flight run.
+  addColumn(
+    "20261031134550-repos-terminal-backend",
+    "repos",
+    "terminal_backend",
+    "TEXT",
+  ),
 ];
 
 const LEDGER_SCHEMA = `

@@ -268,9 +268,14 @@ run 開始直後の状態。3 つの agent には同じ値が入る（§5.3「�
   "prompts": {
     "execute": "execute-step-prompt.md",
     "verify":  "verify-step-prompt.md"
-  }
+  },
+  "terminal": "herdr"
 }
 ```
+
+`terminal` はエージェントを起動するターミナル実行基盤（`herdr` / `herdr-core`）で、run 開始時のリポジトリ設定
+（`repos.terminal_backend`）を写したものである。run の方式はこの値で固定され、run 開始後に
+リポジトリ設定を変えても走行中の run には影響しない。この key が無い manifest は `herdr` として読む。
 
 人間が編集して agent ごとに変えた例。Execute だけ effort を上げ、Verify に別 model を指定している。
 `runtime` は v1 では 3 つとも同値である必要がある（§10-2）。
@@ -309,6 +314,7 @@ key は英語で固定する。`contract_language` は生成されるプロン�
 | `agents.<kind>.model` | `--model` に渡す値。非空 | 次の launch から反映 |
 | `agents.<kind>.effort` | reasoning effort。空文字可。argv に効くのは claude-code（`--effort`）と codex（`-c model_reasoning_effort=`）だけで、grok / cursor / opencode は `buildRuntimeFlags()` が無視する | 次の launch から反映 |
 | `prompts.<step>` | step prompt の sidecar ファイル名 | 参照先の `.md` を編集すれば次の launch から反映 |
+| `terminal` | run のターミナル実行基盤（`herdr` / `herdr-core`）。key が無ければ `herdr` | 記録と表示だけで、launch はまだこの値を読まない。不正な値は可視エラー |
 
 この schema には run 固有の値が 1 つも無い。したがって manifest は **run 非依存の設定ファイル**であり、
 ある run の manifest をそのまま別 run の run ディレクトリへコピーしても意味を持つ（§10-5）。
@@ -346,6 +352,7 @@ LoopHub が勝手に振り分けはしない。
 | `effort` | **model と対称に解決する** —— runtime が repo override のそれと一致すれば `effectiveRepoAgentConfigFor(repo).effort`、違えば `agentEffort(runtime)` |
 | `contract_language` | `workflowContractLanguage()`（現在 `workflow_runs.contract_language` に pin している値） |
 | `prompts.<step>` | `workflows` 行の `execute_prompt` / `verify_prompt` を sidecar へ書き出したファイル名 |
+| `terminal` | リポジトリ設定 `repos.terminal_backend`（未設定なら `herdr`） |
 
 effort だけは既存の解決経路が無いため、ここで新設する規則である。`lh workflow start` には `--model` に
 相当する `--effort` flag が無く（`cli/commands/workflow.ts` の usage 参照）、`workflow_runs` にも effort 列が

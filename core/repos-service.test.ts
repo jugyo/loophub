@@ -365,6 +365,27 @@ test("githubPrExportExtraPrompt is null by default and persists set/clear (#2422
   });
 });
 
+// #2571: per-repo terminal backend for new workflow runs.
+test("terminal_backend defaults to herdr and persists herdr-core (#2571)", async () => {
+  const created = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/terminal-backend",
+  });
+  expect(created.terminal_backend).toBe("herdr");
+
+  const saved = svc.repos.setTerminalBackend(
+    "me/terminal-backend",
+    "herdr-core",
+  );
+  expect(saved.terminal_backend).toBe("herdr-core");
+  expect(svc.repos.get("me/terminal-backend").terminal_backend).toBe(
+    "herdr-core",
+  );
+  expect(() =>
+    svc.repos.setTerminalBackend("me/terminal-backend", "tmux"),
+  ).toThrow(/backend must be one of/);
+});
+
 // #71: a checkout cloned from an origin reports its branch and its ahead/behind pair, and
 // pullFromOrigin fast-forwards it.
 test("originSync reports the checkout's standing against origin, pullFromOrigin advances it (#71)", async () => {

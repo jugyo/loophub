@@ -39,6 +39,7 @@ test("workflowRunConfigJSON reads the run manifest and prompt sources", () => {
         verify: { runtime: "codex", model: "verify", effort: "medium" },
       },
       prompts: { execute: "execute.md", verify: "verify.md" },
+      terminal: "herdr-core",
     }),
   );
 
@@ -55,6 +56,7 @@ test("workflowRunConfigJSON reads the run manifest and prompt sources", () => {
       verify: { runtime: "codex", model: "verify", effort: "medium" },
     },
     prompt_sources: { execute: "execute.md", verify: "verify.md" },
+    terminal: "herdr-core",
   });
 });
 
@@ -604,6 +606,7 @@ describe("pure row -> wire serializers", () => {
       agent_model: null,
       agent_effort: null,
       github_pr_export_extra_prompt: null,
+      terminal_backend: null,
     };
     expect(serialize.repoJSON(repo)).toEqual({
       id: 1,
@@ -620,6 +623,7 @@ describe("pure row -> wire serializers", () => {
       merge_mode: "github_pr",
       // Derived from full_name + local_path (terminal-launch.ts), so pin its shape, not the digest.
       herdr_session_name: expect.stringMatching(/^acme-app-[0-9a-f]{8}$/),
+      terminal_backend: "herdr",
     });
   });
 

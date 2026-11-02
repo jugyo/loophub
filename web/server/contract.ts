@@ -180,6 +180,21 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.repos.setMergeMode(p.name, p.mode, p.session_id),
   },
+  "repos/setTerminalBackend": {
+    description:
+      "Set the terminal backend ('herdr' | 'herdr-core') new workflow runs on the repo launch with (#2571).",
+    params: params(
+      {
+        name: repo,
+        backend: { enum: ["herdr", "herdr-core"] },
+        session_id: sid,
+      },
+      ["name", "backend"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.repos.setTerminalBackend(p.name, p.backend, p.session_id),
+  },
   "repos/mergeMode": {
     description:
       "Resolved merge-mode view: raw setting, GitHub-remote presence, and the effective mode (#406).",

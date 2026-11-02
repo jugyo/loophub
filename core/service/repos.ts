@@ -41,6 +41,7 @@ import {
   repoJSON,
 } from "../serialize.ts";
 import * as S from "../store.ts";
+import { isTerminalBackend } from "../terminal-backend.ts";
 import { normalizeGithubPrExportExtraPrompt } from "../workflow/github-pr-export-prompt.ts";
 import { worktreePath } from "../worktree-path.ts";
 import {
@@ -399,6 +400,24 @@ export const repos = {
       S.emitEvent(r.id, "repo.merge_mode_changed", actor, {
         full_name: r.full_name,
         merge_mode: stored,
+      });
+      return repoJSON(repoOr404(name));
+    });
+  },
+
+  // #2571: pick the terminal backend new workflow runs on this repo launch with. A run copies the
+  // value into its manifest at start, so this never moves an in-flight run. Archived repos stay
+  // editable — like setMergeMode, this is a config preference.
+  setTerminalBackend(name: string, backend: string, sessionId?: string | null) {
+    const r = repoOr404(name);
+    if (!isTerminalBackend(backend))
+      throw new ServiceError(422, "backend must be one of: herdr, herdr-core");
+    const actor = actorFor(sessionId);
+    return db.transaction(() => {
+      S.setRepoTerminalBackend(r.id, backend);
+      S.emitEvent(r.id, "repo.terminal_backend_changed", actor, {
+        full_name: r.full_name,
+        terminal_backend: backend,
       });
       return repoJSON(repoOr404(name));
     });

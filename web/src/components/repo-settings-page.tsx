@@ -18,7 +18,12 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { CodingAgent, MergeMode, Workspace } from "@/api/types";
+import type {
+  CodingAgent,
+  MergeMode,
+  TerminalBackend,
+  Workspace,
+} from "@/api/types";
 import {
   agentConfigSummary,
   CodingAgentSettingsList,
@@ -40,6 +45,7 @@ import {
   useSetRepoDefaultBranch,
   useSetRepoGithubPrExportExtraPrompt,
   useSetRepoMergeMode,
+  useSetRepoTerminalBackend,
 } from "@/queries/repos";
 import { useSettings } from "@/queries/settings";
 import {
@@ -197,7 +203,14 @@ export function RepoSettingsPage({
           </>
         ) : null}
         {section === "coding-agent" ? (
-          <AgentConfigSection owner={owner} repo={repo} />
+          <>
+            <AgentConfigSection owner={owner} repo={repo} />
+            <TerminalBackendSection
+              owner={owner}
+              repo={repo}
+              current={data?.terminal_backend ?? null}
+            />
+          </>
         ) : null}
         {section === "workspaces" ? (
           <WorkspacesSection owner={owner} repo={repo} />
@@ -817,6 +830,70 @@ function MergeModeSection({ owner, repo }: { owner: string; repo: string }) {
       </div>
       {setMode.error ? (
         <p className="mt-2 text-sm text-destructive">{String(setMode.error)}</p>
+      ) : null}
+    </section>
+  );
+}
+
+// #2571: which terminal backend new workflow runs on this repo launch their agents with. A run
+// records the choice in its manifest at start, so switching here never moves a running run.
+const TERMINAL_BACKEND_OPTIONS: { value: TerminalBackend; label: string }[] = [
+  { value: "herdr", label: "herdr" },
+  { value: "herdr-core", label: "herdr-core" },
+];
+
+function TerminalBackendSection({
+  owner,
+  repo,
+  current,
+}: {
+  owner: string;
+  repo: string;
+  current: TerminalBackend | null;
+}) {
+  const save = useSetRepoTerminalBackend(owner, repo);
+
+  return (
+    <section data-debug-component="TerminalBackendSection" className="mt-6">
+      <h2 className="text-sm font-medium">Terminal backend</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Recorded on each new workflow run when it starts; runs in progress keep
+        the value they started with. Agents still launch through herdr.
+      </p>
+      <div
+        role="radiogroup"
+        aria-label="Terminal backend"
+        className="mt-3 max-w-md rounded-md border"
+      >
+        {TERMINAL_BACKEND_OPTIONS.map((o) => {
+          const active = current === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={current === null || save.isPending}
+              className={cn(
+                "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                disabledButtonStateClasses,
+              )}
+              onClick={() => {
+                if (active) return;
+                save.mutate(o.value);
+              }}
+            >
+              <Check
+                className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
+                aria-hidden="true"
+              />
+              <span>{o.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      {save.error ? (
+        <p className="mt-2 text-sm text-destructive">{String(save.error)}</p>
       ) : null}
     </section>
   );

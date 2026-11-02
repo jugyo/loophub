@@ -19,8 +19,9 @@ import {
   setRepoFavorite,
   setRepoGithubPrExportExtraPrompt,
   setRepoMergeMode,
+  setRepoTerminalBackend,
 } from "@/api/client";
-import type { CodingAgent } from "@/api/types";
+import type { CodingAgent, TerminalBackend } from "@/api/types";
 import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
@@ -126,6 +127,21 @@ export function useSetRepoDefaultBranch(owner: string, repo: string) {
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: queryKeys.repos() });
       qc.invalidateQueries({ queryKey: queryKeys.issues(full(owner, repo)) });
+    },
+  });
+}
+
+/**
+ * Set the terminal backend new workflow runs launch with (#2571). The effective value rides on the
+ * repo itself, so refreshing the repo is enough; running runs keep their manifest's backend.
+ */
+export function useSetRepoTerminalBackend(owner: string, repo: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (backend: TerminalBackend) =>
+      setRepoTerminalBackend(owner, repo, backend),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
     },
   });
 }

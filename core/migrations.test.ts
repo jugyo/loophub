@@ -133,7 +133,7 @@ test("migration ID は一意で append-only の宣言順を維持する", () => 
     "002-drop-retired-issue-groups",
     "003-create-issue-search-grams",
   ]);
-  expect(ids.at(-1)).toBe("20260908093000-add-workflow-run-next-verify-full");
+  expect(ids.at(-1)).toBe("20261031134550-repos-terminal-backend");
   expect(ids).toContain("088-workflow-runs-manifest-version");
 });
 

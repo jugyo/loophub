@@ -43,6 +43,7 @@ const manifest: WorkflowManifest = {
     execute: "execute-step-prompt.md",
     verify: "verify-step-prompt.md",
   },
+  terminal: "herdr",
 };
 
 beforeAll(async () => {
@@ -92,6 +93,7 @@ test("workflow manifest show は manifest・DB pointer・導出 workspace を表
 
   expect(result.status, result.stderr).toBe(0);
   expect(result.stdout).toContain("動作条件 (manifest)");
+  expect(result.stdout).toContain("terminal\therdr");
   expect(result.stdout).toContain("pointer (DB)");
   expect(result.stdout).toContain("workspace (規約から導出)");
   expect(result.stdout).toContain("次に起動する子から反映");

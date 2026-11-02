@@ -61,6 +61,7 @@ export function workflowRunConfigJSON(
     contract_language: manifest.contract_language,
     agents: manifest.agents,
     prompt_sources: manifest.prompts,
+    terminal: manifest.terminal,
   };
 }
 

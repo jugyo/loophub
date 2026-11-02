@@ -28,6 +28,8 @@ export interface Repo {
   // #2422: optional per-repo text appended to the "Create PR on GitHub" agent prompt. NULL/empty
   // means the launch uses only the default template.
   github_pr_export_extra_prompt: string | null;
+  // #2571: 'herdr' | 'herdr-core' | null (unset → 'herdr', see core/terminal-backend.ts).
+  terminal_backend: string | null;
 }
 
 // ---- repos ----
@@ -137,6 +139,14 @@ export function setRepoGithubPrExportExtraPrompt(
     text,
     id,
   ]);
+}
+
+// #2571: set the terminal backend new workflow runs on this repo launch with. The caller validates.
+export function setRepoTerminalBackend(
+  id: number,
+  backend: "herdr" | "herdr-core",
+) {
+  db.run(`UPDATE repos SET terminal_backend = ? WHERE id = ?`, [backend, id]);
 }
 
 export function getRepoById(id: number): Repo | null {

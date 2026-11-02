@@ -18,6 +18,7 @@ const manifest: WorkflowManifest = {
     execute: "execute-step-prompt.md",
     verify: "verify-step-prompt.md",
   },
+  terminal: "herdr-core",
 };
 
 function expectInvalid(input: unknown, message: string): void {
@@ -63,6 +64,7 @@ describe("workflow manifest", () => {
           runtime: manifest.agents.parent.runtime,
         },
       },
+      terminal: manifest.terminal,
       contract_language: manifest.contract_language,
       manifest_version: manifest.manifest_version,
     } as WorkflowManifest;
@@ -103,8 +105,17 @@ describe("workflow manifest", () => {
       "prompt",
     ],
     [{ ...manifest, extra: true }, "未知の key"],
+    [{ ...manifest, terminal: "tmux" }, "manifest.terminal"],
+    [{ ...manifest, terminal: null }, "manifest.terminal"],
   ])("不正な入力を 422 にする: %s", (input, message) => {
     expectInvalid(input, message);
+  });
+
+  test("terminal の無い既存 manifest は herdr として読む", () => {
+    const { terminal: _omitted, ...legacy } = manifest;
+    expect(parseWorkflowManifest(JSON.stringify(legacy)).terminal).toBe(
+      "herdr",
+    );
   });
 
   test("未知の nested key も 422 にする", () => {

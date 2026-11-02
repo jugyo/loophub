@@ -20,6 +20,10 @@ import type {
   HerdrPullWorkspace,
 } from "./terminal/herdr-status.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
+import {
+  normalizeTerminalBackend,
+  type TerminalBackend,
+} from "./terminal-backend.ts";
 import type { Theme } from "./theme.ts";
 import {
   type WorkerCompatibility,
@@ -92,6 +96,8 @@ export interface RepoWire {
   // the same value every herdr launch derives (see herdrSessionName). Surfaced so the repo page can
   // show a copyable `herdr --session <name>` start/connect command without a herdr call.
   herdr_session_name: string;
+  // #2571: effective terminal backend new workflow runs launch with (NULL setting → 'herdr').
+  terminal_backend: TerminalBackend;
 }
 
 /** Minimal repository identity attached to aggregated dashboard data. */
@@ -183,6 +189,7 @@ export function repoJSON(r: S.Repo): RepoWire {
     favorited_at: r.favorited_at ?? null,
     merge_mode: (r.merge_mode as MergeMode | null) ?? null,
     herdr_session_name: herdrSessionName(r),
+    terminal_backend: normalizeTerminalBackend(r.terminal_backend),
   };
 }
 
@@ -1741,6 +1748,7 @@ export interface WorkflowRunConfigWire {
     execute: string;
     verify: string;
   };
+  terminal: TerminalBackend;
 }
 
 export interface WorkflowPendingEffectReceiptWire {
