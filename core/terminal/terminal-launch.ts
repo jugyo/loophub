@@ -172,6 +172,32 @@ export function herdrLaunchNeedsPromptSubmit(agent?: CodingAgent): boolean {
   return RUNTIMES[agent ?? codingAgent()].launchPromptNeedsSubmit;
 }
 
+// The flags of the `lh issue new` a New Issue launch runs, for both ways of starting it: quoted into
+// a herdr pane's command line, or passed as argv to a herdr-core terminal.
+function issueNewFlags(input: HerdrLaunchInput): [string, string?][] {
+  const model = input.model?.trim();
+  const effort = input.effort?.trim();
+  return [
+    ["--repo", input.repo],
+    ...(input.targetBranch
+      ? [["--target-branch", input.targetBranch] as [string, string]]
+      : []),
+    ...(input.parentIssue
+      ? [["--parent", String(input.parentIssue)] as [string, string]]
+      : []),
+    ...(input.codingAgent
+      ? [[RUNTIMES[input.codingAgent].buildFlag] as [string]]
+      : []),
+    ...(model ? [["--model", model] as [string, string]] : []),
+    ...(effort ? [["--effort", effort] as [string, string]] : []),
+    ...(input.prompt ? [["--prompt", input.prompt] as [string, string]] : []),
+  ];
+}
+
+export function issueNewArgv(input: HerdrLaunchInput): string[] {
+  return ["lh", "issue", "new", ...(issueNewFlags(input).flat() as string[])];
+}
+
 export function commandForHerdrLaunch(input: HerdrLaunchInput): string {
   const envPrefix = input.env
     ? Object.entries(input.env)
@@ -184,25 +210,12 @@ export function commandForHerdrLaunch(input: HerdrLaunchInput): string {
     // `lh issue new` is the recorded LoopHub entrypoint for the issue-create workflow.
     // When agent/model/effort are omitted, `lh issue new` resolves them from the repo's
     // effective Coding agent config (#1532/#1534) — same path as `lh workflow start`.
-    const agentFlag = input.codingAgent
-      ? ` ${RUNTIMES[input.codingAgent].buildFlag}`
-      : "";
-    const model = input.model?.trim();
-    const modelFlag = model ? ` --model ${shellArg(model)}` : "";
-    const effort = input.effort?.trim();
-    const effortFlag = effort ? ` --effort ${shellArg(effort)}` : "";
-    const targetBranchFlag = input.targetBranch
-      ? ` --target-branch ${shellArg(input.targetBranch)}`
-      : "";
-    const parentIssueFlag = input.parentIssue
-      ? ` --parent ${shellArg(String(input.parentIssue))}`
-      : "";
-    const promptFlag = input.prompt
-      ? ` --prompt ${shellArg(input.prompt)}`
-      : "";
-    return withEnv(
-      `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${parentIssueFlag}${agentFlag}${modelFlag}${effortFlag}${promptFlag}`,
-    );
+    const flags = issueNewFlags(input)
+      .map(([flag, value]) =>
+        value === undefined ? ` ${flag}` : ` ${flag} ${shellArg(value)}`,
+      )
+      .join("");
+    return withEnv(`lh issue new${flags}`);
   }
   if (input.workflow === "workflow-create" && input.promptPath) {
     // New workflow (Settings > Workflows): launch the coding agent interactively with the
@@ -793,6 +806,22 @@ export function withHerdrWorkspace(
   };
 }
 
+export function workflowStepRuntimeFlags(input: {
+  runtime: CodingAgent;
+  sessionId: string;
+  systemPromptPath: string;
+  model?: string | null;
+  effort?: string | null;
+}): string[] {
+  return buildRuntimeFlags({
+    runtime: input.runtime,
+    model: input.model?.trim(),
+    effort: input.effort?.trim(),
+    sessionId: input.sessionId,
+    systemPromptFile: input.systemPromptPath,
+  });
+}
+
 // The step agent's launch, dispatched on the parent run's runtime (#516, #1521). The per-runtime
 // shape — claude's --session-id / --append-system-prompt-file, codex/grok folding the rendered
 // contract into a positional prompt, the sandbox-vs-approval posture — comes from the
@@ -823,13 +852,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
     command: agentCommandLine({
       env,
       bin: RUNTIMES[input.runtime].bin,
-      args: buildRuntimeFlags({
-        runtime: input.runtime,
-        model: input.model?.trim(),
-        effort: input.effort?.trim(),
-        sessionId: input.sessionId,
-        systemPromptFile: input.systemPromptPath,
-      }),
+      args: workflowStepRuntimeFlags(input),
       promptPath: input.userPromptPath,
     }),
     env,

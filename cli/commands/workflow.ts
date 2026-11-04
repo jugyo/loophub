@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import type { AgentExecutionTarget } from "../../core/agent-control.ts";
 import {
   agentEffort,
   agentModel,
   type CodingAgent,
 } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
+import { herdrCoreEnv } from "../../core/herdr-core.ts";
 import { spawnSyncProcess } from "../../core/process.ts";
 import {
   buildRuntimeFlags,
@@ -11,6 +14,12 @@ import {
 } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
 import { isClaudeSessionId } from "../../core/session-runtime.ts";
+import {
+  HERDR_CORE_PROVIDER,
+  HERDR_CORE_SESSION_NAME,
+  herdrCoreLabels,
+  launchHerdrCoreTerminal,
+} from "../../core/terminal/herdr-core-terminal.ts";
 import {
   acquireHerdrWorktreeWorkspace,
   agentCommandLine,
@@ -26,6 +35,7 @@ import {
   parseHerdrPaneTabId,
   withHerdrWorkspace,
 } from "../../core/terminal/terminal-launch.ts";
+import type { TerminalBackend } from "../../core/terminal-backend.ts";
 import {
   workflowParentHerdrAgentName,
   workflowReplacedParentHerdrAgentName,
@@ -186,10 +196,12 @@ function runtimeBin(runtime: CodingAgent): RuntimeBin {
 
 function preflightParentLaunch(
   runtime: CodingAgent,
+  terminal: TerminalBackend,
   command = "workflow start",
 ): void {
-  if (!commandAvailable("herdr")) {
-    fail(`${command} requires herdr on PATH`);
+  const launcher = terminalCommand(terminal);
+  if (!commandAvailable(launcher)) {
+    fail(`${command} requires ${launcher} on PATH`);
   }
   const bin = runtimeBin(runtime);
   if (!commandAvailable(bin)) {
@@ -197,9 +209,17 @@ function preflightParentLaunch(
   }
 }
 
-function stepLaunchPreflightError(runtime: CodingAgent): string | null {
-  if (!commandAvailable("herdr")) {
-    return "workflow launch-step requires herdr on PATH";
+function terminalCommand(terminal: TerminalBackend): string {
+  return terminal === "herdr-core" ? "hc" : "herdr";
+}
+
+function stepLaunchPreflightError(
+  runtime: CodingAgent,
+  terminal: TerminalBackend,
+): string | null {
+  const launcher = terminalCommand(terminal);
+  if (!commandAvailable(launcher)) {
+    return `workflow launch-step requires ${launcher} on PATH`;
   }
   const bin = runtimeBin(runtime);
   if (!commandAvailable(bin)) {
@@ -276,9 +296,11 @@ function positiveNumber(value: string | undefined, name: string): number {
   return parsed;
 }
 
-async function launchParentHerdr(input: {
+type ParentLaunchInput = {
   repo: { full_name: string; local_path: string };
   runId: number;
+  pr: number;
+  terminal: TerminalBackend;
   runtime: CodingAgent;
   worktree: string;
   sessionId: string;
@@ -291,7 +313,58 @@ async function launchParentHerdr(input: {
   // terminal.launch (#1007) or an agent with no TTY — gets a prompt exit instead of blocking on an
   // attach it has no TTY for.
   detach?: boolean;
-}): Promise<void> {
+};
+
+async function launchParentHerdrCore(input: ParentLaunchInput): Promise<void> {
+  const launchedAt = new Date().toISOString();
+  const s = await svc();
+  const address = await runOp(() =>
+    launchHerdrCoreTerminal({
+      argv: [
+        runtimeBin(input.runtime),
+        ...parentAgentFlags(input),
+        readFileSync(input.userPromptPath, "utf8"),
+      ],
+      cwd: input.worktree,
+      env: runtimeLaunchEnv({ runtime: input.runtime, model: input.model }),
+      labels: herdrCoreLabels({
+        repo: input.repo.full_name,
+        pr: input.pr,
+        run: input.runId,
+        role: "orchestrator",
+      }),
+      submitPrompt: RUNTIMES[input.runtime].launchPromptNeedsSubmit,
+    }),
+  );
+  await runOp(() =>
+    s.workflowInstructions.registerParentPane(input.repo.full_name, {
+      run: input.runId,
+      launch_id: input.sessionId,
+      session_name: HERDR_CORE_SESSION_NAME,
+      pane_id: address,
+      launched_at: launchedAt,
+    }),
+  );
+  if (input.detach) {
+    console.error(
+      `Launched Workflow parent in herdr-core terminal ${address}. Attach with: hc attach ${address}`,
+    );
+    process.exit(0);
+  }
+  const attached = spawnSyncProcess(["hc", "attach", address], {
+    stdio: ["inherit", "inherit", "inherit"],
+    env: herdrCoreEnv() as Record<string, string>,
+  });
+  if (attached.error) {
+    fail(
+      `failed to attach hc: ${attached.error instanceof Error ? attached.error.message : attached.error}`,
+    );
+  }
+  process.exit(attached.exitCode ?? 0);
+}
+
+async function launchParentHerdr(input: ParentLaunchInput): Promise<void> {
+  if (input.terminal === "herdr-core") return launchParentHerdrCore(input);
   // Runtimes whose model is not an argv flag (opencode2) carry it in the launch environment.
   const env = runtimeLaunchEnv({ runtime: input.runtime, model: input.model });
   const command = agentCommandLine({
@@ -449,8 +522,13 @@ async function startWorkflow(): Promise<void> {
     "parent" | "execute" | "verify",
     { runtime: CodingAgent; model: string; effort: string }
   >;
-  if (flags["no-launch"] !== true)
-    preflightParentLaunch(roleAgents.parent.runtime);
+  if (flags["no-launch"] !== true) {
+    const repoForPreflight = await runOp(() => s.repos.get(repo));
+    preflightParentLaunch(
+      roleAgents.parent.runtime,
+      repoForPreflight.terminal_backend,
+    );
+  }
   const result = await runOp(() =>
     s.workflowRuns.start(
       repo,
@@ -489,6 +567,8 @@ async function startWorkflow(): Promise<void> {
       local_path: repoRecord.local_path,
     },
     runId: result.run.id,
+    pr: result.pr.number,
+    terminal: result.terminal,
     runtime: roleAgents.parent.runtime,
     worktree: result.worktree,
     sessionId: result.session_id,
@@ -576,7 +656,10 @@ async function launchStep(): Promise<void> {
     });
   };
   // Preflight the runtime the run resolved (#516) — claude-code needs `claude`, codex needs `codex`.
-  const preflightError = stepLaunchPreflightError(result.runtime);
+  const preflightError = stepLaunchPreflightError(
+    result.runtime,
+    result.herdr_core ? "herdr-core" : "herdr",
+  );
   if (preflightError) await failUnspawnedLaunch(preflightError);
   if (result.step === "verify") {
     // A later Verify supersedes every earlier verifier in this run, even on the same HEAD. Stop
@@ -615,7 +698,7 @@ async function launchStep(): Promise<void> {
     console.log(`input\t${display(pointer.label)}\t${display(pointer.value)}`);
   }
   let launchedAt: string | undefined;
-  const confirm = (paneId: string) =>
+  const confirm = (executionTarget: AgentExecutionTarget) =>
     runOp(() =>
       s.workflowRuns.confirmStepLaunch(
         repo,
@@ -625,11 +708,7 @@ async function launchStep(): Promise<void> {
           sessionId: result.session_id,
           runtime: result.runtime,
           agentName: result.agent_name,
-          executionTarget: {
-            provider: "herdr",
-            targetId: paneId,
-            context: result.herdr.sessionName,
-          },
+          executionTarget,
           pointers: result.pointers,
           headSha: result.head_sha,
           note,
@@ -641,6 +720,20 @@ async function launchStep(): Promise<void> {
       ),
     );
   launchedAt = new Date().toISOString();
+  if (result.herdr_core) {
+    let address: string;
+    try {
+      address = await launchHerdrCoreTerminal(result.herdr_core);
+    } catch (error) {
+      return await failUnspawnedLaunchWith(error);
+    }
+    await confirm({
+      provider: HERDR_CORE_PROVIDER,
+      targetId: address,
+      context: null,
+    });
+    return;
+  }
   const runHerdr = async (
     argv: string[],
     opts?: { captureStdout?: boolean },
@@ -717,7 +810,11 @@ async function launchStep(): Promise<void> {
   }
   // The child's command is in its own tab once the launch succeeds, so persist that truth before
   // returning. Launch-step never retries automatically (an explicit retry is a new session).
-  await confirm(childPaneId);
+  await confirm({
+    provider: "herdr",
+    targetId: childPaneId,
+    context: result.herdr.sessionName,
+  });
 }
 
 // Mark the replaced parent's pane and tab so they no longer carry the live parent's name.
@@ -749,7 +846,7 @@ async function relaunchRun(): Promise<void> {
   const agent = await runOp(() =>
     s.workflowRuns.relaunchParentAgent(repo, { pr }),
   );
-  preflightParentLaunch(agent.runtime, "workflow run relaunch");
+  preflightParentLaunch(agent.runtime, agent.terminal, "workflow run relaunch");
   const sessionId = await writeSession();
   const result = await runOp(() =>
     s.workflowRuns.relaunch(repo, { pr }, sessionId),
@@ -761,7 +858,7 @@ async function relaunchRun(): Promise<void> {
     console.log(`session\t${display(result.session_id)}`);
   }
   const repoRecord = await runOp(() => s.repos.get(repo));
-  if (result.replaced_pane_id) {
+  if (result.replaced_pane_id && result.terminal === "herdr") {
     relabelReplacedParent(repoRecord, result.run.id, result.replaced_pane_id);
   }
   await launchParentHerdr({
@@ -770,6 +867,8 @@ async function relaunchRun(): Promise<void> {
       local_path: repoRecord.local_path,
     },
     runId: result.run.id,
+    pr,
+    terminal: result.terminal,
     runtime: result.parent.runtime,
     worktree: result.worktree,
     sessionId: result.session_id,

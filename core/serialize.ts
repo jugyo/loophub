@@ -971,7 +971,7 @@ export interface HerdrSessionsWire {
   captured_at?: string | null;
 }
 
-export type TerminalLaunchBackendWire = "builtin" | "herdr";
+export type TerminalLaunchBackendWire = "builtin" | "herdr" | "herdr-core";
 
 // Result of `terminal/launch`: which backend handled it plus the herdr coordinates the client
 // surfaces (session_name / command / cwd / attach).

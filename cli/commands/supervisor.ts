@@ -10,6 +10,10 @@ import {
   isCodingAgent,
   RUNTIMES,
 } from "../../core/runtimes.ts";
+import {
+  herdrCoreLabels,
+  launchHerdrCoreTerminal,
+} from "../../core/terminal/herdr-core-terminal.ts";
 import { writeLaunchPrompt } from "../../core/terminal/launch-prompt.ts";
 import {
   agentCommandLine,
@@ -87,13 +91,35 @@ async function startSupervisor(): Promise<void> {
   });
 
   if (flags.herdr === true) {
-    const promptPath = writeLaunchPrompt(
-      runtimePrompt({
-        runtime,
-        systemPrompt: contract,
-        prompt,
-      }),
-    );
+    const launchPrompt = runtimePrompt({
+      runtime,
+      systemPrompt: contract,
+      prompt,
+    });
+    if (repo.terminal_backend === "herdr-core") {
+      const address = await runOp(() =>
+        launchHerdrCoreTerminal({
+          argv: [RUNTIMES[runtime].bin, ...args.slice(0, -1), launchPrompt],
+          cwd: repo.local_path,
+          env: launchEnv,
+          labels: herdrCoreLabels({
+            repo: repo.full_name,
+            role: "supervisor",
+          }),
+          submitPrompt: RUNTIMES[runtime].launchPromptNeedsSubmit,
+        }),
+      );
+      s.terminal.recordHerdrCoreTerminal({
+        repo: repo.full_name,
+        address,
+        origin: "supervisor",
+      });
+      console.error(
+        `Supervisor を herdr-core terminal ${address} で起動しました。Attach: hc attach ${address}`,
+      );
+      return;
+    }
+    const promptPath = writeLaunchPrompt(launchPrompt);
     const command = agentCommandLine({
       env: launchEnv,
       bin: RUNTIMES[runtime].bin,

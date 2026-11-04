@@ -277,6 +277,12 @@ run 開始直後の状態。3 つの agent には同じ値が入る（§5.3「�
 （`repos.terminal_backend`）を写したものである。run の方式はこの値で固定され、run 開始後に
 リポジトリ設定を変えても走行中の run には影響しない。この key が無い manifest は `herdr` として読む。
 
+`herdr-core` の run では、parent と step を `terminal.run` で起動する（`hc connect` 経由。`hc run` は env を渡せない）。
+最初のプロンプトは起動 argv で渡し、`loophub.repo` / `loophub.pr` / `loophub.run` / `loophub.role` / `loophub.seq`
+ラベルを付ける。親子関係と自動通知は使わず、`herdr.*` ラベルも付けない。記録したターミナルの address（`t7`）が
+pane id の代わりに配送先（`terminal.send`）と停止先（`terminal.kill`）になる。parent は `herdr_panes`
+（`session_name` が `herdr-core`）、step は `agent_execution_targets`（`provider` が `herdr-core`）に記録する。
+
 人間が編集して agent ごとに変えた例。Execute だけ effort を上げ、Verify に別 model を指定している。
 `runtime` は v1 では 3 つとも同値である必要がある（§10-2）。
 
@@ -314,7 +320,7 @@ key は英語で固定する。`contract_language` は生成されるプロン�
 | `agents.<kind>.model` | `--model` に渡す値。非空 | 次の launch から反映 |
 | `agents.<kind>.effort` | reasoning effort。空文字可。argv に効くのは claude-code（`--effort`）と codex（`-c model_reasoning_effort=`）だけで、grok / cursor / opencode は `buildRuntimeFlags()` が無視する | 次の launch から反映 |
 | `prompts.<step>` | step prompt の sidecar ファイル名 | 参照先の `.md` を編集すれば次の launch から反映 |
-| `terminal` | run のターミナル実行基盤（`herdr` / `herdr-core`）。key が無ければ `herdr` | 記録と表示だけで、launch はまだこの値を読まない。不正な値は可視エラー |
+| `terminal` | run のターミナル実行基盤（`herdr` / `herdr-core`）。key が無ければ `herdr` | parent と step の launch、relaunch がこの値で起動先を選ぶ。不正な値は可視エラー |
 
 この schema には run 固有の値が 1 つも無い。したがって manifest は **run 非依存の設定ファイル**であり、
 ある run の manifest をそのまま別 run の run ディレクトリへコピーしても意味を持つ（§10-5）。

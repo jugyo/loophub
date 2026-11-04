@@ -1368,3 +1368,110 @@ test("relaunching a PR with no running run fails visibly", () => {
     rmSync(input.repoPath, { recursive: true, force: true });
   }
 });
+
+// A fake `hc` answering every API call with one herdr-core refusal, written to `calls` so a test
+// can see how many deliveries were attempted.
+function refusingHc(kind: string) {
+  const bin = mkdtempSync(join(tmpdir(), "lh-instruction-hc-"));
+  const log = join(bin, "calls.log");
+  writeFileSync(
+    join(bin, "hc"),
+    [
+      "#!/bin/sh",
+      `cat >> '${log}'`,
+      `printf '{"id":1,"error":{"code":-32000,"message":"refused","data":{"kind":"${kind}"}}}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "hc"), 0o755);
+  return { bin, log };
+}
+
+test("a blocked herdr-core parent holds nothing: the event is delivered once it can be", async () => {
+  const input = fixture("hc-blocked");
+  registerParent(input, "t7");
+  const hc = refusingHc("blocked");
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${hc.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toEqual({ status: "idle" });
+    expect(readFileSync(hc.log, "utf8")).toContain("terminal.send");
+    expect(
+      S.pendingWorkflowEventEffectWithPrefix(
+        input.run.id,
+        "workflow.instruction:",
+      ),
+    ).toBeNull();
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).not.toBe(
+      input.event.id,
+    );
+
+    // The person answers the dialog: the same event goes through.
+    writeFileSync(
+      join(hc.bin, "hc"),
+      `#!/bin/sh\ncat > /dev/null\nprintf '{"id":1,"result":{"turn":1}}'\n`,
+    );
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({ status: "delivered", pane_id: "t7" });
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(input.event.id);
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(hc.bin, { recursive: true, force: true });
+  }
+});
+
+test.each([
+  "finished",
+  "not_found",
+])("a %s herdr-core parent fails visibly once, and a relaunch's readiness clears the way", async (kind) => {
+  const input = fixture(`hc-gone-${kind.replace("_", "-")}`);
+  registerParent(input, "t7");
+  const hc = refusingHc(kind);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${hc.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).rejects.toMatchObject({ data: { kind } });
+    // The instruction was never typed, so only the launch-failure receipt stands: dispatch skips
+    // the run from here on, and a relaunched parent's readiness retracts it.
+    expect(
+      S.pendingWorkflowEventEffectWithPrefix(
+        input.run.id,
+        "workflow.instruction:",
+      )?.effect,
+    ).toBe("workflow.instruction:parent-pane-missing");
+
+    S.relaunchWorkflowRunParent(
+      input.run.id,
+      input.run.parent_session_id as string,
+    );
+    writeFileSync(
+      join(hc.bin, "hc"),
+      `#!/bin/sh\ncat > /dev/null\nprintf '{"id":1,"result":{"turn":1}}'\n`,
+    );
+    const ready = await svc.workflowInstructions.parentReady(
+      input.repo.full_name,
+      { run: input.run.id },
+    );
+    expect(ready.instruction).toMatchObject({
+      status: "delivered",
+      pane_id: "t7",
+    });
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(input.event.id);
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(hc.bin, { recursive: true, force: true });
+  }
+});

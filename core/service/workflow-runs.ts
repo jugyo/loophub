@@ -17,12 +17,13 @@ import {
   pidAlive,
   removeDevLock,
 } from "../dev-lock.ts";
-import { ServiceError } from "../errors.ts";
+import { isServiceError, ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
 import { localBranchRef, revParse } from "../git.ts";
 import { type MergeableState, resolveMergeable } from "../mergeable.ts";
 import { pullShaStatus } from "../pull-status-cache.ts";
-import { runtimePrompt } from "../runtime-args.ts";
+import { runtimeLaunchEnv, runtimePrompt } from "../runtime-args.ts";
+import { RUNTIMES } from "../runtimes.ts";
 import {
   effectiveRepoAgentConfigFor,
   type WorkflowOutOfBandReviewWire,
@@ -41,12 +42,23 @@ import { workflowRunConfigJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import { killPaneForegroundProcess } from "../terminal/herdr-cleanup.ts";
 import {
+  HERDR_CORE_PROVIDER,
+  type HerdrCoreLaunch,
+  herdrCoreLabels,
+  isHerdrCoreAddress,
+} from "../terminal/herdr-core-terminal.ts";
+import {
   buildWorkflowStepHerdrLaunchPlan,
   HERDR_ID,
   type HerdrLaunchPlan,
   herdrSessionName,
+  workflowStepRuntimeFlags,
 } from "../terminal/terminal-launch.ts";
-import { normalizeTerminalBackend } from "../terminal-backend.ts";
+import {
+  DEFAULT_TERMINAL_BACKEND,
+  normalizeTerminalBackend,
+  type TerminalBackend,
+} from "../terminal-backend.ts";
 import {
   WORKFLOW_COMMENT_TARGETS,
   type WorkflowCommentTarget,
@@ -177,6 +189,7 @@ export type WorkflowRunStartResult = {
   base_ref: string;
   head_ref: string;
   lock_path: string;
+  terminal: TerminalBackend;
   parent: {
     system_prompt_path: string;
     user_prompt: string;
@@ -192,6 +205,7 @@ export type WorkflowRunRelaunchResult = WorkflowRunUpdateResult & {
   worktree: string;
   // The Herdr pane of the parent this relaunch replaced, so the caller can relabel it.
   replaced_pane_id: string | null;
+  terminal: TerminalBackend;
   parent: {
     runtime: CodingAgent;
     model: string;
@@ -291,6 +305,8 @@ export type WorkflowLaunchStepResult = {
     renameArgv: string[];
     argv: string[];
   };
+  // The launch to run instead of `herdr` when the run's manifest chose herdr-core.
+  herdr_core: HerdrCoreLaunch | null;
 };
 
 // Effective budget of a run whose row predates persisted cost columns: fall back to the configured
@@ -526,6 +542,16 @@ async function discardVerifyChild(
   sessionId: string,
 ): Promise<"discarded" | "already_gone" | "failed"> {
   const target = S.getAgentExecutionTarget(sessionId);
+  if (target?.provider === HERDR_CORE_PROVIDER) {
+    try {
+      await killPaneForegroundProcess(repo, target.target_id);
+      return "discarded";
+    } catch (error) {
+      return isServiceError(error) && error.status === 404
+        ? "already_gone"
+        : "failed";
+    }
+  }
   if (target?.provider !== "herdr") return "failed";
   if (!HERDR_ID.test(target.target_id)) return "failed";
   try {
@@ -676,6 +702,7 @@ function runEffort(run: S.WorkflowRunRow): string | null {
 
 type WorkflowLaunchConfig = {
   contractLanguage: WorkflowContractLanguage;
+  terminal: TerminalBackend;
   agents: {
     parent: WorkflowManifestAgent;
     execute: WorkflowManifestAgent;
@@ -696,6 +723,7 @@ function resolveLaunchConfig(
     const effort = runEffort(run) ?? agentEffort(runtime);
     return {
       contractLanguage: runContractLanguage(run),
+      terminal: DEFAULT_TERMINAL_BACKEND,
       agents: {
         parent: { runtime, model, effort },
         execute: { runtime, model, effort },
@@ -710,6 +738,7 @@ function resolveLaunchConfig(
     const manifest = parseWorkflowManifest(readWorkflowManifest(run.id));
     return {
       contractLanguage: manifest.contract_language,
+      terminal: manifest.terminal,
       agents: manifest.agents,
       stepPrompt: (step) =>
         readStepPromptSidecar(run.id, manifest.prompts[step]),
@@ -790,6 +819,7 @@ function relaunchTarget(
   run: S.WorkflowRunRow;
   workflow: S.WorkflowRow;
   agent: WorkflowManifestAgent;
+  terminal: TerminalBackend;
 } {
   const running = S.runningWorkflowRunsForPull(repo.id, pr);
   if (running.length === 0) {
@@ -807,10 +837,12 @@ function relaunchTarget(
   const run = running[0];
   const workflow = run.workflow_id ? S.getWorkflowById(run.workflow_id) : null;
   if (!workflow) throw new ServiceError(404, "Workflow not found");
+  const launchConfig = resolveLaunchConfig(run, workflow);
   return {
     run,
     workflow,
-    agent: launchAgent(resolveLaunchConfig(run, workflow), "parent"),
+    agent: launchAgent(launchConfig, "parent"),
+    terminal: launchConfig.terminal,
   };
 }
 
@@ -2296,6 +2328,7 @@ export const workflowRuns = {
         base_ref: pull.base_ref,
         head_ref: pull.head_ref,
         lock_path: lockPath,
+        terminal: manifest.terminal,
         parent: {
           system_prompt_path: parent.systemPromptPath,
           user_prompt: parent.userPrompt,
@@ -2525,13 +2558,18 @@ export const workflowRuns = {
       targetRole === "orchestrator"
         ? (() => {
             const paneId = workflowRunParentPaneId(run);
-            return paneId
+            if (!paneId) return null;
+            return isHerdrCoreAddress(paneId)
               ? {
-                  provider: "herdr" as const,
+                  provider: HERDR_CORE_PROVIDER,
+                  targetId: paneId,
+                  context: null,
+                }
+              : {
+                  provider: "herdr",
                   targetId: paneId,
                   context: herdrSessionName(repo),
-                }
-              : null;
+                };
           })()
         : S.getAgentExecutionTarget(targetSessionId);
     if (!session || !target) {
@@ -2976,15 +3014,16 @@ export const workflowRuns = {
     // The positional prompt goes to a file the launch's command line reads back, resolved for this
     // runtime first: Codex and Grok have no --append-system-prompt-file, so their file carries the
     // contract folded in.
+    const launchPrompt = runtimePrompt({
+      runtime,
+      systemPrompt: composed.systemPrompt,
+      prompt: composed.userPrompt,
+    });
     const userPromptPath = writeStepLaunchPrompt(
       run.id,
       childSessionId,
       step,
-      runtimePrompt({
-        runtime,
-        systemPrompt: composed.systemPrompt,
-        prompt: composed.userPrompt,
-      }),
+      launchPrompt,
     );
     const sequence = S.reserveWorkflowStepLaunch(run.id, {
       step,
@@ -3059,6 +3098,32 @@ export const workflowRuns = {
       base_sha: baseSha,
       anchor_pane_id: anchorPaneId,
       herdr,
+      herdr_core:
+        launchConfig.terminal === "herdr-core"
+          ? {
+              argv: [
+                RUNTIMES[runtime].bin,
+                ...workflowStepRuntimeFlags({
+                  runtime,
+                  sessionId: childSessionId,
+                  systemPromptPath,
+                  model,
+                  effort: stepAgent.effort,
+                }),
+                launchPrompt,
+              ],
+              cwd: worktree,
+              env: runtimeLaunchEnv({ runtime, model }),
+              labels: herdrCoreLabels({
+                repo: r.full_name,
+                pr: run.pr_number,
+                run: run.id,
+                role: step === "execute" ? "executor" : "verifier",
+                seq: sequence,
+              }),
+              submitPrompt: RUNTIMES[runtime].launchPromptNeedsSubmit,
+            }
+          : null,
     };
   },
 
@@ -3132,8 +3197,9 @@ export const workflowRuns = {
   relaunchParentAgent(
     name: string,
     input: { pr: number },
-  ): WorkflowManifestAgent {
-    return relaunchTarget(repoOr404(name), input.pr).agent;
+  ): WorkflowManifestAgent & { terminal: TerminalBackend } {
+    const { agent, terminal } = relaunchTarget(repoOr404(name), input.pr);
+    return { ...agent, terminal };
   },
 
   // Replace a run whose agents were all lost with a fresh parent. A human decides that they are
@@ -3152,7 +3218,7 @@ export const workflowRuns = {
   ): WorkflowRunRelaunchResult {
     const r = repoOr404(name);
     ensureWritable(r);
-    const { run, workflow, agent } = relaunchTarget(r, input.pr);
+    const { run, workflow, agent, terminal } = relaunchTarget(r, input.pr);
     assertRunUpdateActor(run, actorSessionId);
     const issue = issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
@@ -3222,6 +3288,7 @@ export const workflowRuns = {
       session_id: parentSessionId,
       worktree: wtPath,
       replaced_pane_id: replacedPaneId,
+      terminal,
       parent: {
         runtime: parent.agent.runtime,
         model: parent.agent.model,

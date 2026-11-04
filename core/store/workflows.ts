@@ -666,6 +666,19 @@ export function deleteWorkflowEventEffects(
     .all(runId, ...effects).length;
 }
 
+// Give back a claim whose effect is known not to have happened, leaving the event dispatchable.
+export function releaseWorkflowEventEffect(
+  runId: number,
+  eventId: number,
+  effect: string,
+): void {
+  db.run(
+    `DELETE FROM workflow_event_effects
+     WHERE run_id = ? AND event_id = ? AND effect = ? AND status = 'pending'`,
+    [runId, eventId, effect],
+  );
+}
+
 export function completeWorkflowEventEffect(
   runId: number,
   eventId: number,

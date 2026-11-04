@@ -15,6 +15,8 @@ const KIND_STATUS: Record<string, number> = {
   not_found: 404,
   usage: 422,
   unavailable: 503,
+  blocked: 409,
+  finished: 409,
 };
 
 // The env a spawned `hc` sees. HC_TERMINAL_ID marks "started from that terminal": when LoopHub
@@ -25,15 +27,15 @@ export function herdrCoreEnv(env: HerdrCoreEnv = process.env): HerdrCoreEnv {
   return rest;
 }
 
-export async function runHerdrCore(
+function spawnHerdrCore(
   args: string[],
-  opts: { env?: HerdrCoreEnv } = {},
-): Promise<unknown> {
-  let child: ReturnType<typeof spawnProcess>;
+  env: HerdrCoreEnv | undefined,
+  stdin: "ignore" | Buffer,
+): ReturnType<typeof spawnProcess> {
   try {
-    child = spawnProcess(["hc", ...args], {
-      env: herdrCoreEnv(opts.env),
-      stdio: ["ignore", "pipe", "pipe"],
+    return spawnProcess(["hc", ...args], {
+      env: herdrCoreEnv(env),
+      stdio: [stdin, "pipe", "pipe"],
     });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -44,6 +46,13 @@ export async function runHerdrCore(
         })
       : new ServiceError(500, `failed to launch hc (${code ?? "spawn error"})`);
   }
+}
+
+export async function runHerdrCore(
+  args: string[],
+  opts: { env?: HerdrCoreEnv } = {},
+): Promise<unknown> {
+  const child = spawnHerdrCore(args, opts.env, "ignore");
   const [stdout, stderr, status] = await Promise.all([
     readProcessStream(child.stdout),
     readProcessStream(child.stderr),
@@ -70,16 +79,71 @@ function herdrCoreError(stderr: string, status: number | null): ServiceError {
       `hc exited with status ${status}${output ? `: ${output}` : ""}`,
     );
   }
-  const kind =
-    typeof parsed.error?.kind === "string" ? parsed.error.kind : "unknown";
-  const message =
-    typeof parsed.error?.message === "string"
-      ? parsed.error.message
-      : `hc exited with status ${status}`;
-  const hint =
-    typeof parsed.error?.hint === "string" ? parsed.error.hint : undefined;
+  return herdrCoreServiceError(
+    parsed.error?.kind,
+    parsed.error?.message,
+    parsed.error?.hint,
+    `hc exited with status ${status}`,
+  );
+}
+
+function herdrCoreServiceError(
+  rawKind: unknown,
+  rawMessage: unknown,
+  rawHint: unknown,
+  fallbackMessage: string,
+): ServiceError {
+  const kind = typeof rawKind === "string" ? rawKind : "unknown";
+  const message = typeof rawMessage === "string" ? rawMessage : fallbackMessage;
+  const hint = typeof rawHint === "string" ? rawHint : undefined;
   return new ServiceError(KIND_STATUS[kind] ?? 500, `herdr-core: ${message}`, {
     kind,
     hint,
   });
+}
+
+const HERDR_CORE_RPC_TIMEOUT_MS = 30_000;
+
+// One JSON-RPC call over `hc connect`. Launches need this rather than `hc run`: only the API takes
+// `env`, the CLI gives a new terminal the core's environment and nothing of its own.
+export async function callHerdrCore(
+  method: string,
+  params: Record<string, unknown>,
+  opts: { env?: HerdrCoreEnv; timeoutMs?: number } = {},
+): Promise<unknown> {
+  const request = `${JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })}\n`;
+  const child = spawnHerdrCore(["connect"], opts.env, Buffer.from(request));
+  const timer = setTimeout(
+    () => child.kill("SIGKILL"),
+    opts.timeoutMs ?? HERDR_CORE_RPC_TIMEOUT_MS,
+  );
+  const [stdout, stderr, status] = await Promise.all([
+    readProcessStream(child.stdout),
+    readProcessStream(child.stderr),
+    child.exited,
+  ]).finally(() => clearTimeout(timer));
+  if (child.signalCode != null)
+    throw new ServiceError(500, `hc ${method} did not finish in time`);
+  if (status !== 0) throw herdrCoreError(stderr.text, status);
+  let response: {
+    result?: unknown;
+    error?: {
+      message?: unknown;
+      data?: { kind?: unknown; hint?: unknown };
+    };
+  };
+  try {
+    response = JSON.parse(stdout.text);
+  } catch {
+    throw new ServiceError(500, `hc ${method} printed invalid JSON`);
+  }
+  if (response.error) {
+    throw herdrCoreServiceError(
+      response.error.data?.kind,
+      response.error.message,
+      response.error.data?.hint,
+      `hc ${method} failed`,
+    );
+  }
+  return response.result;
 }

@@ -5,6 +5,12 @@ import type { HerdrSessionsWire } from "../serialize.ts";
 import { runHerdr, runHerdrCapture } from "../service/herdr-runner.ts";
 import { repoOr404 } from "../service/shared.ts";
 import * as S from "../store.ts";
+import { normalizeTerminalBackend } from "../terminal-backend.ts";
+import {
+  isHerdrCoreAddress,
+  killHerdrCoreTerminal,
+  listHerdrCoreTerminals,
+} from "./herdr-core-terminal.ts";
 import { carryOverFailedRepoSessions } from "./herdr-snapshot-carryover.ts";
 import { herdrSnapshotSignature } from "./herdr-snapshot-signature.ts";
 import {
@@ -168,6 +174,11 @@ export async function killPaneForegroundProcess(
   sessionName = herdrSessionName(repo),
   stillEligible?: () => boolean,
 ): Promise<boolean> {
+  if (isHerdrCoreAddress(paneId)) {
+    if (stillEligible && !stillEligible()) return false;
+    await killHerdrCoreTerminal(paneId, repo.full_name);
+    return true;
+  }
   let infoOut: string;
   try {
     infoOut = await runHerdr(
@@ -225,12 +236,15 @@ export async function closeManagedHerdrPaneIfUnclaimed(
     if (!killed) return "skipped";
     pane = S.getHerdrPaneCloseCandidate(paneId);
     if (!pane?.pane_id) return "skipped";
-    await runHerdr(
-      "herdr",
-      ["--session", sessionName, "pane", "close", pane.pane_id],
-      repo.local_path,
-      { timeoutMs: 10_000 },
-    );
+    // A herdr-core terminal has no pane left to close once its program has ended.
+    if (!isHerdrCoreAddress(pane.pane_id)) {
+      await runHerdr(
+        "herdr",
+        ["--session", sessionName, "pane", "close", pane.pane_id],
+        repo.local_path,
+        { timeoutMs: 10_000 },
+      );
+    }
     S.markHerdrPaneClosed(pane.id);
     return "closed";
   } catch {
@@ -312,11 +326,75 @@ async function closeExpiredPullPane(
   }
 }
 
-export async function cleanupClosedPullDevAgentsImpl(): Promise<{
+type ClosedPullCleanupCounts = {
   killed: number;
   skipped: number;
   failed: number;
-}> {
+};
+
+export async function cleanupClosedPullDevAgentsImpl(): Promise<ClosedPullCleanupCounts> {
+  const herdr = await cleanupClosedPullHerdrPanes();
+  const core = await cleanupClosedPullHerdrCoreTerminals();
+  return {
+    killed: herdr.killed + core.killed,
+    skipped: herdr.skipped + core.skipped,
+    failed: herdr.failed + core.failed,
+  };
+}
+
+// The herdr-core half of the sweep: every live terminal labelled with a closed PR, whichever step
+// or run started it. Only runs once a repo has chosen herdr-core, because any `hc` call starts a
+// core on a machine that has none running. A failed listing rejects into the worker's sweep log.
+async function cleanupClosedPullHerdrCoreTerminals(): Promise<ClosedPullCleanupCounts> {
+  const counts = { killed: 0, skipped: 0, failed: 0 };
+  const repos = S.listRepos("active");
+  if (
+    !repos.some(
+      (repo) =>
+        normalizeTerminalBackend(repo.terminal_backend) === "herdr-core",
+    )
+  )
+    return counts;
+  const nowMs = Date.now();
+  for (const candidate of await listHerdrCoreTerminals()) {
+    const repo = repos.find(
+      (row) => row.full_name === candidate.labels?.["loophub.repo"],
+    );
+    const pullNumber = Number(candidate.labels?.["loophub.pr"]);
+    if (!repo || !Number.isInteger(pullNumber)) continue;
+    const prRow = S.getIssue(repo.id, pullNumber);
+    const pull = prRow?.kind === "pull" ? S.getPull(prRow.id) : null;
+    const eligibleAt =
+      prRow && pull
+        ? timestampPlus(
+            closedPullAgentEligibleAt(prRow, pull),
+            CLOSED_PULL_AGENT_GRACE_MS,
+          )
+        : null;
+    const sessionId = prRow ? S.primaryDevSessionForPull(prRow.id) : null;
+    if (eligibleAt === null || nowMs < eligibleAt || sessionId === null) {
+      counts.skipped++;
+      continue;
+    }
+    try {
+      await killHerdrCoreTerminal(candidate.address, repo.full_name);
+    } catch {
+      counts.failed++;
+      continue;
+    }
+    S.emitEvent(repo.id, CLOSED_PULL_AGENT_KILLED_EVENT, "lh-worker", {
+      number: pullNumber,
+      pr: pullNumber,
+      session_id: sessionId,
+      pane_id: candidate.address,
+      reason: CLOSED_PULL_AGENT_KILL_REASON,
+    });
+    counts.killed++;
+  }
+  return counts;
+}
+
+async function cleanupClosedPullHerdrPanes(): Promise<ClosedPullCleanupCounts> {
   let listOut: string;
   try {
     listOut = await runHerdrCapture(["session", "list", "--json"]);

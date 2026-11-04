@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { db } from "../db.ts";
-import { ServiceError } from "../errors.ts";
+import { isServiceError, ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
+import {
+  isHerdrCoreAddress,
+  sendToHerdrCoreTerminal,
+} from "../terminal/herdr-core-terminal.ts";
 import { herdrSessionName } from "../terminal/terminal-launch.ts";
 import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
 import {
@@ -171,6 +175,7 @@ function sendInstruction(
   paneId: string,
   text: string,
 ): Promise<void> {
+  if (isHerdrCoreAddress(paneId)) return sendToHerdrCoreTerminal(paneId, text);
   return sendHerdrPrompt({
     sessionName: herdrSessionName(repo),
     paneId,
@@ -481,7 +486,32 @@ export const workflowInstructions = {
       );
     }
 
-    await sendInstruction(repo, registeredPane, instructionText(instruction));
+    try {
+      await sendInstruction(repo, registeredPane, instructionText(instruction));
+    } catch (error) {
+      // A pending receipt exists because a failed pane write may have typed something. herdr-core
+      // refusing the send means it typed nothing, so these cases must not hold the run on it.
+      const refusal = isServiceError(error) ? error.data?.kind : undefined;
+      if (refusal === "blocked") {
+        // Waiting on a person's answer: the next dispatch tries again.
+        S.releaseWorkflowEventEffect(run.id, event.id, effect);
+        return { status: "idle" };
+      }
+      if (refusal === "finished" || refusal === "not_found") {
+        // The parent is gone. Same receipt as one that never came up: visible once, and a relaunched
+        // parent's readiness retracts it so this event is delivered then.
+        db.transaction(() => {
+          S.releaseWorkflowEventEffect(run.id, event.id, effect);
+          S.beginWorkflowEventEffect(
+            run.id,
+            event.id,
+            MISSING_PARENT_EFFECT,
+            "subject",
+          );
+        });
+      }
+      throw error;
+    }
     // The pane operation is done and cannot be undone, so this is a second short DB region: the
     // receipt completion and the cursor advance still commit together.
     db.transaction(() => {

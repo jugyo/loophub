@@ -1,8 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
+import { existsSync } from "node:fs";
+import {
+  type CodingAgent,
+  codingAgent,
+  configDir,
+  worktreeRoot,
+} from "../config.ts";
 import { db } from "../db.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
 import { spawnProcess } from "../process.ts";
+import { buildRuntimeFlags } from "../runtime-args.ts";
+import { RUNTIMES } from "../runtimes.ts";
 import { selfCliCommand } from "../self-exec.ts";
 import type {
   HerdrRepoSessionsWire,
@@ -19,6 +27,14 @@ import {
   killPaneForegroundProcess,
   snapshotHerdrSessionsImpl,
 } from "../terminal/herdr-cleanup.ts";
+import {
+  assertHerdrCoreTerminalOwner,
+  HERDR_CORE_SESSION_NAME,
+  herdrCoreLabels,
+  isHerdrCoreAddress,
+  launchHerdrCoreTerminal,
+  sendToHerdrCoreTerminal,
+} from "../terminal/herdr-core-terminal.ts";
 import {
   herdrPullWorkspacesFromAgentList,
   NO_PANE_ID_PREFIX,
@@ -49,10 +65,12 @@ import {
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
   herdrWorkspaceListArgv,
+  issueNewArgv,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
   type TerminalLaunchRepo,
 } from "../terminal/terminal-launch.ts";
+import { normalizeTerminalBackend } from "../terminal-backend.ts";
 import { workerCompatibility } from "../worker-protocol.ts";
 import type { WorkflowManifestAgent } from "../workflow/manifest.ts";
 import {
@@ -304,6 +322,8 @@ async function launchWorkflowRunHerdr(
       });
     throw e;
   }
+  if (normalizeTerminalBackend(r.terminal_backend) === "herdr-core")
+    return { backend: "herdr-core" as const };
   const sessionName = herdrSessionName(repo);
   // `herdr session attach <repoSession>` is the repo's canonical herdr entry point for launched
   // agents. The web client discards these fields today (only
@@ -518,6 +538,131 @@ function acquireHerdrWorktreeWorkspace(
   );
 }
 
+// #2383: open this PR's GitHub export record, so the PR detail can render "Create PR on GitHub"
+// as in-progress until the export lands instead of snapping back to a button that looks
+// unpressed. Recorded only after the launch succeeded — a failed launch throws before this and leaves
+// the button clickable. The row is the same one the GitHub PR is eventually recorded into, so
+// completion needs no separate release; unlinking (#2384) deletes it. A dead agent leaves the
+// row 'creating' forever, which is bounded for display only
+// (core/github-pr-export-pending.ts) rather than by a cleanup nobody can run correctly.
+function recordGithubPrExportStarted(
+  r: S.Repo,
+  input: TerminalLaunchInput,
+): void {
+  const exportedPr =
+    input.workflow === "github-pr-export" && input.prNumber != null
+      ? S.getIssue(r.id, input.prNumber)
+      : null;
+  if (exportedPr?.kind !== "pull") return;
+  db.transaction(() => {
+    S.beginGithubPrExport({ issueId: exportedPr.id, createdBy: "loophub" });
+    S.emitEvent(r.id, "pull_request.github_pr_export_started", "loophub", {
+      number: exportedPr.number,
+    });
+  });
+}
+
+function registerIssueCreatePane(
+  r: S.Repo,
+  launchId: string,
+  paneId: string,
+  sessionName: string,
+  reportError: (message: string) => void,
+): void {
+  const registeredPane = db.transaction(() =>
+    S.upsertIssueHerdrPane({
+      launchId,
+      repoId: r.id,
+      paneId,
+      sessionName,
+    }),
+  );
+  // The launch RPC must not wait for cleanup subprocesses. This only handles the rare
+  // issue-created-and-closed-before-registration ordering; failures stay visible in the
+  // server log and are not retried.
+  closeManagedHerdrPaneIfUnclaimed(r, registeredPane.id).then(
+    (cleanup) => {
+      if (cleanup === "failed") {
+        reportError(
+          `New Issue pane cleanup failed after late registration for ${r.full_name}`,
+        );
+      }
+    },
+    (error) => {
+      reportError(
+        `New Issue pane cleanup error after late registration for ${r.full_name}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      );
+    },
+  );
+}
+
+// New Issue and the GitHub PR export on a herdr-core repo. A terminal needs no workspace, tab or
+// focus, so none of the herdr placement in terminal.launch applies.
+async function launchHerdrCore(
+  r: S.Repo,
+  input: TerminalLaunchInput,
+  reportError: (message: string) => void,
+): Promise<TerminalLaunchResultWire> {
+  const isNewIssue = input.workflow === "issue-create";
+  const launchId = randomUUID();
+  if (
+    !isNewIssue &&
+    !(input.workflow === "github-pr-export" && input.prNumber && input.prompt)
+  )
+    throw new ServiceError(422, "command is required");
+  const worktree = await resolveHerdrWorktreeTarget(r, input);
+  const cwd = worktree && existsSync(worktree) ? worktree : r.local_path;
+  const agent = codingAgent();
+  const address = await launchHerdrCoreTerminal({
+    argv: isNewIssue
+      ? issueNewArgv({
+          repo: r.full_name,
+          codingAgent: input.agent,
+          model: input.model,
+          effort: input.effort,
+          targetBranch: input.targetBranch,
+          parentIssue: input.parentIssue,
+          prompt: input.prompt,
+        })
+      : [
+          RUNTIMES[agent].bin,
+          ...buildRuntimeFlags({ runtime: agent }),
+          input.prompt as string,
+        ],
+    cwd,
+    env: isNewIssue ? { [ENV_ISSUE_CREATE_HERDR_LAUNCH]: launchId } : undefined,
+    labels: herdrCoreLabels({
+      repo: r.full_name,
+      role: isNewIssue ? "issue-create" : "github-pr-export",
+      pr: input.prNumber,
+    }),
+    submitPrompt: herdrLaunchNeedsPromptSubmit(
+      isNewIssue ? input.agent : undefined,
+    ),
+  });
+  recordGithubPrExportStarted(r, input);
+  if (isNewIssue) {
+    registerIssueCreatePane(
+      r,
+      launchId,
+      address,
+      HERDR_CORE_SESSION_NAME,
+      reportError,
+    );
+  } else {
+    terminal.recordHerdrCoreTerminal({
+      repo: r.full_name,
+      address,
+      origin: "github-pr-export",
+    });
+  }
+  return {
+    backend: "herdr-core" as const,
+    cwd,
+    attach: `hc attach ${address}`,
+  };
+}
+
 // ===== terminal launch =====
 export const terminal = {
   async launch(
@@ -566,6 +711,9 @@ export const terminal = {
         reportError,
       );
     }
+
+    if (normalizeTerminalBackend(r.terminal_backend) === "herdr-core")
+      return launchHerdrCore(r, input, reportError);
 
     const issueCreateLaunchId =
       input.workflow === "issue-create" ? randomUUID() : null;
@@ -808,50 +956,14 @@ export const terminal = {
         session: plan.sessionName,
       });
     }
-    // #2383: open this PR's GitHub export record, so the PR detail can render "Create PR on GitHub"
-    // as in-progress until the export lands instead of snapping back to a button that looks
-    // unpressed. Recorded only after the launch succeeded — a failed launch throws above and leaves
-    // the button clickable. The row is the same one the GitHub PR is eventually recorded into, so
-    // completion needs no separate release; unlinking (#2384) deletes it. A dead agent leaves the
-    // row 'creating' forever, which is bounded for display only
-    // (core/github-pr-export-pending.ts) rather than by a cleanup nobody can run correctly.
-    const exportedPr =
-      input.workflow === "github-pr-export" && input.prNumber != null
-        ? S.getIssue(r.id, input.prNumber)
-        : null;
-    if (exportedPr?.kind === "pull") {
-      db.transaction(() => {
-        S.beginGithubPrExport({ issueId: exportedPr.id, createdBy: "loophub" });
-        S.emitEvent(r.id, "pull_request.github_pr_export_started", "loophub", {
-          number: exportedPr.number,
-        });
-      });
-    }
+    recordGithubPrExportStarted(r, input);
     if (issueCreateLaunchId != null && outcome.paneId) {
-      const registeredPane = db.transaction(() =>
-        S.upsertIssueHerdrPane({
-          launchId: issueCreateLaunchId,
-          repoId: r.id,
-          paneId: outcome.paneId,
-          sessionName: plan.sessionName,
-        }),
-      );
-      // The launch RPC must not wait for cleanup subprocesses. This only handles the rare
-      // issue-created-and-closed-before-registration ordering; failures stay visible in the
-      // server log and are not retried.
-      closeManagedHerdrPaneIfUnclaimed(r, registeredPane.id).then(
-        (cleanup) => {
-          if (cleanup === "failed") {
-            reportError(
-              `New Issue pane cleanup failed after late registration for ${r.full_name}`,
-            );
-          }
-        },
-        (error) => {
-          reportError(
-            `New Issue pane cleanup error after late registration for ${r.full_name}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-          );
-        },
+      registerIssueCreatePane(
+        r,
+        issueCreateLaunchId,
+        outcome.paneId,
+        plan.sessionName,
+        reportError,
       );
     }
     // A newly created workspace is seeded with an empty tab that cannot carry the launch's `--env`;
@@ -881,6 +993,21 @@ export const terminal = {
       cwd: plan.cwd,
       attach: `herdr session attach ${plan.sessionName}`,
     };
+  },
+
+  // The record of a herdr-core terminal no resource claims, so its address stays findable.
+  recordHerdrCoreTerminal(input: {
+    repo: string;
+    address: string;
+    origin: string;
+  }): S.HerdrPaneRow {
+    return S.registerHerdrPane({
+      repoId: repoOr404(input.repo).id,
+      launchId: randomUUID(),
+      paneId: input.address,
+      sessionName: HERDR_CORE_SESSION_NAME,
+      origin: input.origin,
+    });
   },
 
   // Running herdr sessions grouped by repo, for terminal-aware UI surfaces (#495). As of #1665 this
@@ -1014,6 +1141,7 @@ export const terminal = {
       throw new ServiceError(422, "paneId is not a valid herdr pane id");
     const r = repoOr404(input.repo);
     await killPaneForegroundProcess(r, input.paneId);
+    if (isHerdrCoreAddress(input.paneId)) return { ok: true };
     // Best-effort tidy-up: the process is already dead either way, so a `confirmation_required`
     // refusal here (or any other herdr failure) must not undo the kill the caller already got —
     // this only saves the now-empty pane from lingering in clients. Keep the fire-and-forget
@@ -1038,6 +1166,11 @@ export const terminal = {
     // id before it reaches an argv, same guard as killAgent's paneId.
     if (!HERDR_ID.test(input.paneId))
       throw new ServiceError(422, "paneId is not a valid herdr pane id");
+    if (isHerdrCoreAddress(input.paneId))
+      throw new ServiceError(
+        422,
+        `A herdr-core terminal has no focus to switch; attach with: hc attach ${input.paneId}`,
+      );
     const r = repoOr404(input.repo);
     const argv = herdrAgentFocusArgv(r, input.paneId);
     await runHerdr(argv[0], argv.slice(1), r.local_path, {
@@ -1072,6 +1205,15 @@ export const terminal = {
     const pullIssue = S.getIssue(r.id, pullNumber);
     if (pullIssue?.kind !== "pull")
       throw new ServiceError(404, `PR #${pullNumber} not found`);
+
+    if (isHerdrCoreAddress(input.paneId)) {
+      await assertHerdrCoreTerminalOwner(input.paneId, {
+        repo: r.full_name,
+        pr: pullNumber,
+      });
+      await sendToHerdrCoreTerminal(input.paneId, input.text);
+      return { ok: true };
+    }
 
     let agentsOut: string;
     try {

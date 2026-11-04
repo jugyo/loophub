@@ -486,6 +486,10 @@ fresh な Execute が起動するまで queue され、queue 自体が Execute �
 この場合、新しい親の `parent-ready` と以降の配送は pending receipt を理由に可視エラーで止まる。自動再実行は
 二重入力になり得るため、この receipt の扱いは引き続き operator の判断に委ねる。
 
+herdr-core の親が `terminal.send` を拒否した場合は、何も入力されていないことが確定しているので receipt を残さない。
+`blocked` は未配送のまま次回の dispatch で再試行する。`finished` / `not_found` は親が起動しなかった場合と同じ receipt に
+置き換えて可視エラーを 1 度出し、relaunch した親の `parent-ready` で解消して配送を再開する。
+
 running run を持たない PR を指定した場合は可視エラーで non-zero exit する。
 
 ### `lh workflow start` の herdr セッション

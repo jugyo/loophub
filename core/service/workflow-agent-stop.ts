@@ -1,6 +1,7 @@
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
 import { killPaneForegroundProcess } from "../terminal/herdr-cleanup.ts";
+import { HERDR_CORE_PROVIDER } from "../terminal/herdr-core-terminal.ts";
 import { repoOr404 } from "./shared.ts";
 import { workflowRunParentPaneId } from "./workflow-panes.ts";
 
@@ -27,7 +28,10 @@ export const workflowAgentStop = {
     if (parentPaneId) paneIds.add(parentPaneId);
     if (run.active_session_id) {
       const activeTarget = S.getAgentExecutionTarget(run.active_session_id);
-      if (activeTarget?.provider === "herdr")
+      if (
+        activeTarget?.provider === "herdr" ||
+        activeTarget?.provider === HERDR_CORE_PROVIDER
+      )
         paneIds.add(activeTarget.target_id);
     }
     for (const paneId of paneIds) {
