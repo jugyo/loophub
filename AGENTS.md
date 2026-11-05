@@ -116,7 +116,7 @@ come from live git or worktree state (`pullJSON`, `issueListItemJSON`, `issueDet
 
 ## Runtime requirements
 
-- **Bun >= 1.2.** Bun runs the TypeScript directly, so there is still no build step and no
+- **Bun >= 1.3.5** (`Bun.spawn({ terminal })`). Bun runs the TypeScript directly, so there is still no build step and no
   `tsx`; a new entry point is a plain `#!/usr/bin/env bun` script.
 - Persistence uses **`bun:sqlite`** (`Database`). No runtime flag is required, so no npm script,
   shebang, or spawn site carries one — keep it that way.

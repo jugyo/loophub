@@ -16,6 +16,7 @@ import { selfCliCommand } from "../self-exec.ts";
 import type {
   HerdrRepoSessionsWire,
   HerdrSessionsWire,
+  PullTerminalWire,
   TerminalLaunchResultWire,
 } from "../serialize.ts";
 import { ENV_ISSUE_CREATE_HERDR_LAUNCH } from "../session-runtime.ts";
@@ -31,6 +32,7 @@ import {
 import {
   followHerdrCoreRepo,
   herdrCoreFollowedRepos,
+  listPullTerminals,
   withHerdrCoreSessions,
 } from "../terminal/herdr-core-status.ts";
 import {
@@ -671,6 +673,36 @@ async function launchHerdrCore(
 
 // ===== terminal launch =====
 export const terminal = {
+  // The terminal dock of a PR (#2574): empty unless the repo runs on herdr-core.
+  pullTerminals(input: { repo: string; pull: number }): {
+    terminals: PullTerminalWire[];
+  } {
+    const r = repoOr404(input.repo);
+    return {
+      terminals:
+        normalizeTerminalBackend(r.terminal_backend) === "herdr-core"
+          ? listPullTerminals(r, input.pull)
+          : [],
+    };
+  },
+
+  // Rejects an address the client gave unless LoopHub started it for this repo and PR.
+  async assertPullTerminalAttachable(input: {
+    repo: string;
+    pull: number;
+    address: string;
+  }): Promise<void> {
+    const r = repoOr404(input.repo);
+    if (normalizeTerminalBackend(r.terminal_backend) !== "herdr-core")
+      throw new ServiceError(409, `${r.full_name} does not run on herdr-core`);
+    if (!isHerdrCoreAddress(input.address))
+      throw new ServiceError(422, `Invalid terminal: ${input.address}`);
+    await assertHerdrCoreTerminalOwner(input.address, {
+      repo: r.full_name,
+      pr: input.pull,
+    });
+  },
+
   async launch(
     input: TerminalLaunchInput,
     reportError: (message: string) => void = console.error,

@@ -16,7 +16,7 @@ import { isServiceError } from "../../core/errors.ts";
 import { webDistDir } from "../../core/self-exec.ts";
 import { stringifyJsonWithinLimit } from "./bounded-json.ts";
 import { log } from "./logger.ts";
-import { isAllowedOrigin, isLoopbackHost } from "./net.ts";
+import { isAllowedOrigin, isCrossSiteFetch, isLoopbackHost } from "./net.ts";
 import {
   dispatchRaw,
   type RpcCallOutcome,
@@ -24,6 +24,11 @@ import {
   requestTooLarge,
   responseTooLarge,
 } from "./rpc.ts";
+import {
+  handleTerminalUpgrade,
+  TERMINAL_RELAY_PATH,
+  terminalRelayWebSocket,
+} from "./terminal-relay.ts";
 
 // Built SPA assets: web/dist in this checkout, or the directory shipped beside the binary.
 const DIST_DIR = webDistDir();
@@ -117,13 +122,6 @@ function isJsonRequest(req: Request): boolean {
       .trim()
       .toLowerCase() === "application/json"
   );
-}
-
-// A form can't set content-type: application/json without a CORS preflight, so the JSON check
-// above already defeats classic non-preflighted CSRF. This catches the modern-browser case on top:
-// a page's cross-site fetch() carries Sec-Fetch-Site: cross-site regardless of content-type.
-function isCrossSiteFetch(req: Request): boolean {
-  return req.headers.get("sec-fetch-site") === "cross-site";
 }
 
 // Sec-Fetch-Site alone doesn't stop DNS rebinding: an attacker's page (origin evil.com) can wait
@@ -400,6 +398,10 @@ export function createLhWebServer(
   return Bun.serve({
     port: options.port ?? 0,
     hostname: options.hostname ?? "127.0.0.1",
-    fetch: (req) => handleRequest(req, serveStatic, rpcLogger),
+    websocket: terminalRelayWebSocket,
+    fetch: (req, server) =>
+      new URL(req.url).pathname === TERMINAL_RELAY_PATH
+        ? handleTerminalUpgrade(req, server)
+        : handleRequest(req, serveStatic, rpcLogger),
   });
 }

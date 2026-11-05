@@ -11,12 +11,15 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let setInstanceSetting: typeof import("../../core/store/instance-settings.ts").setInstanceSetting;
 let isAllowedOrigin: typeof import("./net.ts").isAllowedOrigin;
 let isLoopbackHost: typeof import("./net.ts").isLoopbackHost;
+let isLoopbackRequest: typeof import("./net.ts").isLoopbackRequest;
 
 beforeAll(async () => {
   ({ setInstanceSetting } = await import(
     "../../core/store/instance-settings.ts"
   ));
-  ({ isAllowedOrigin, isLoopbackHost } = await import("./net.ts"));
+  ({ isAllowedOrigin, isLoopbackHost, isLoopbackRequest } = await import(
+    "./net.ts"
+  ));
 });
 
 afterAll(() => {
@@ -54,4 +57,43 @@ test("isAllowedOrigin allows only the configured public origin", () => {
   expect(isAllowedOrigin("https://loop.example.com")).toBe(true);
   expect(isAllowedOrigin("https://other.example.com")).toBe(false);
   setInstanceSetting("public_origin", "");
+});
+
+test("isLoopbackRequest needs the peer, Host and Origin on loopback and no proxy in between", () => {
+  const request = (headers: Record<string, string>) =>
+    new Request("http://localhost:8730/", {
+      headers: { host: "localhost:8730", ...headers },
+    });
+  const local = { origin: "http://localhost:8730" };
+
+  expect(isLoopbackRequest(request(local), "127.0.0.1")).toBe(true);
+  expect(isLoopbackRequest(request(local), "::ffff:127.0.0.1")).toBe(true);
+  expect(isLoopbackRequest(request({}), "::1")).toBe(true);
+
+  expect(isLoopbackRequest(request(local), "192.168.1.5")).toBe(false);
+  expect(isLoopbackRequest(request(local), undefined)).toBe(false);
+  expect(
+    isLoopbackRequest(
+      request({ origin: "https://lh.example.com" }),
+      "127.0.0.1",
+    ),
+  ).toBe(false);
+  expect(
+    isLoopbackRequest(request({ host: "lh.example.com" }), "127.0.0.1"),
+  ).toBe(false);
+  expect(
+    isLoopbackRequest(
+      request({ ...local, "x-forwarded-for": "203.0.113.1" }),
+      "127.0.0.1",
+    ),
+  ).toBe(false);
+  expect(
+    isLoopbackRequest(
+      request({ origin: "http://localhost:3000" }),
+      "127.0.0.1",
+    ),
+  ).toBe(false);
+  expect(isLoopbackRequest(request({ origin: "nope" }), "127.0.0.1")).toBe(
+    false,
+  );
 });

@@ -1,4 +1,5 @@
 import { bootstrap } from "./bootstrap";
+import "@xterm/xterm/css/xterm.css";
 import "./index.css";
 import "./typeset.css";
 

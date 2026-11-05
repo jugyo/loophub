@@ -971,6 +971,14 @@ export interface HerdrSessionsWire {
   captured_at?: string | null;
 }
 
+// One tab of a PR's terminal dock: a live agent terminal of a Workflow run on that PR.
+export interface PullTerminalWire {
+  address: string;
+  label: string;
+  // What its program last reported (idle | working | done | blocked | error), null when it never said.
+  status: string | null;
+}
+
 export type TerminalLaunchBackendWire = "builtin" | "herdr" | "herdr-core";
 
 // Result of `terminal/launch`: which backend handled it plus the herdr coordinates the client

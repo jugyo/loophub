@@ -7,6 +7,7 @@ import {
   type HerdrRepoSessionsWire,
   type HerdrSessionsWire,
   herdrPaneSessionJSON,
+  type PullTerminalWire,
 } from "../serialize.ts";
 import * as S from "../store.ts";
 import { normalizeTerminalBackend } from "../terminal-backend.ts";
@@ -175,6 +176,47 @@ export function herdrCoreFollowedRepos(): S.Repo[] {
       normalizeTerminalBackend(repo.terminal_backend) === "herdr-core" ||
       S.listHerdrCoreTerminalRows(repo.id).some((row) => row.state === "live"),
   );
+}
+
+// The dock's tabs for one PR, in the order the agents ran. Finished rows are read too and only left
+// out at the end, so `executor #2` keeps its number after `executor #1` has exited.
+export function listPullTerminals(
+  repo: Repo,
+  pull: number,
+): PullTerminalWire[] {
+  const rows = S.listHerdrCoreTerminalRows(repo.id)
+    .filter(
+      (row) =>
+        row.pr_number === pull &&
+        row.run_id !== null &&
+        (row.role === "orchestrator" ||
+          row.role === "executor" ||
+          row.role === "verifier"),
+    )
+    .sort(
+      (a, b) =>
+        (a.run_id as number) - (b.run_id as number) ||
+        (a.seq ?? 0) - (b.seq ?? 0),
+    );
+  const severalRuns = new Set(rows.map((row) => row.run_id)).size > 1;
+  const counts = new Map<string, number>();
+  return rows.flatMap((row) => {
+    let name = row.role as string;
+    if (row.role !== "orchestrator") {
+      const key = `${row.run_id}:${row.role}`;
+      const count = (counts.get(key) ?? 0) + 1;
+      counts.set(key, count);
+      name = `${row.role} #${count}`;
+    }
+    if (row.state !== "live") return [];
+    return [
+      {
+        address: row.address,
+        label: severalRuns ? `run ${row.run_id} · ${name}` : name,
+        status: row.status,
+      },
+    ];
+  });
 }
 
 function sessionIdFor(repo: Repo, address: string): string | null {

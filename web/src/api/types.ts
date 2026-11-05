@@ -40,6 +40,7 @@ import type {
   PullFileWire,
   PullGithubActivityWire,
   PullSummaryWire,
+  PullTerminalWire,
   PullTimelineItemWire,
   PullUsageWire,
   PullWire,
@@ -203,6 +204,7 @@ export type HerdrIssueWorkspace = HerdrIssueWorkspaceWire;
 export type HerdrRepoSessions = HerdrRepoSessionsWire;
 
 export type HerdrSessions = HerdrSessionsWire;
+export type PullTerminal = PullTerminalWire;
 
 /**
  * Recent terminal output for one herdr agent (`terminal/agentRead`, #500), for the

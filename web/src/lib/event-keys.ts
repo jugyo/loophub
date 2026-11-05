@@ -38,6 +38,8 @@ export const queryKeys = {
   workspaces: (full: string) => ["workspaces", full] as const,
   pulls: (full: string) => ["pulls", full] as const,
   pull: (full: string, number: number) => ["pull", full, number] as const,
+  pullTerminals: (full: string, number: number) =>
+    ["pull-terminals", full, number] as const,
   // Top-level rather than a child of pull(full, n): the PR detail is serialized from live git,
   // while these totals come from the DB alone — so the high-frequency usage tick refreshes the
   // numbers without dragging the git-backed payload along (#2263).
@@ -390,6 +392,9 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // terminal/sessions query so every terminal-aware surface refetches the new snapshot — this
     // replaces the old per-tab 3s poll.
     keys.push([...queryKeys.terminalSessions()]);
+    // herdr-core agent state (#2573) reaches a PR's terminal dock through its own query.
+    if (repo && typeof payload?.pr === "number")
+      keys.push([...queryKeys.pullTerminals(repo, payload.pr)]);
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
     // Some agent_session events target a specific PR or issue (for example linked/usage_updated);

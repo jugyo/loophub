@@ -46,7 +46,7 @@ In particular, **without herdr you cannot start a workflow** — the core featur
 
 | Tool | Role | How to get it |
 |---|---|---|
-| **Bun >= 1.2** | Run LoopHub (CLI / Web / worker) | `brew install oven-sh/bun/bun` — [bun.sh](https://bun.sh) |
+| **Bun >= 1.3.5** | Run LoopHub (CLI / Web / worker) | `brew install oven-sh/bun/bun` — [bun.sh](https://bun.sh) |
 | **git** | Repo registration, worktrees, branches, diffs, merges | Your OS package manager or installer |
 | **herdr** | Terminal multiplexer that launches and places agents. `lh workflow start` calls it directly | `brew install herdr` — [herdr.dev](https://herdr.dev) |
 | **A coding-agent CLI (at least one)** | The process that writes code | e.g. `claude`, `codex`, `grok`, `opencode` |

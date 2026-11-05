@@ -607,6 +607,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: () => svc.terminal.sessions(),
   },
+  "terminal/pullTerminals": {
+    description:
+      "Live herdr-core agent terminals of a PR's Workflow runs, in run order with their last reported status, for the PR screen's terminal dock (#2574). Empty unless the repo runs on herdr-core.",
+    params: params({ repo, pull: positiveInt }, ["repo", "pull"]),
+    result: anyObject,
+    handler: (p) => svc.terminal.pullTerminals({ repo: p.repo, pull: p.pull }),
+  },
   "terminal/agentRead": {
     description:
       "Recent terminal output for one herdr agent, for the sidebar hover preview (#500). target is a herdr `agent read` target — a pane_id, or an agent display name (e.g. \"dev #486\") only when it's unique within the session (herdr will not resolve an ambiguous name). output is null when herdr isn't running, the session is gone, or the agent is no longer present.",

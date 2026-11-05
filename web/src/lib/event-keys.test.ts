@@ -82,6 +82,17 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["terminal", "sessions"]);
   });
 
+  it("maps a herdr-core agent state change to the PR's terminal dock (#2574)", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "terminal.agent_state_changed",
+        repo: "me/proj",
+        payload: { pr: 7 },
+      }),
+    );
+    expect(keys).toContainEqual(["pull-terminals", "me/proj", 7]);
+  });
+
   it("maps workspace events to the repo workspace list", () => {
     const keys = queryKeysForEvent(
       ev({ type: "workspace.archived", repo: "me/proj" }),

@@ -394,3 +394,64 @@ describe.skipIf(!HAS_HC)("against an isolated core", () => {
     await expect(follow.done).resolves.toBeUndefined();
   });
 });
+
+describe("terminal/pullTerminals", () => {
+  function row(
+    address: string,
+    overrides: Partial<import("../store.ts").HerdrCoreTerminalState>,
+  ) {
+    S.upsertHerdrCoreTerminal({
+      address,
+      repo_id: dockRepo.id,
+      role: "executor",
+      pr_number: 7,
+      run_id: 1,
+      seq: 1,
+      state: "live",
+      status: null,
+      turn: 0,
+      exit_code: null,
+      reason: null,
+      ...overrides,
+    });
+  }
+  let dockRepo: import("../store.ts").Repo;
+
+  beforeAll(() => {
+    dockRepo = S.createRepo("me/dock", join(DIR, "dock"));
+    S.setRepoTerminalBackend(dockRepo.id, "herdr-core");
+    row("t1", { role: "orchestrator", seq: null, status: "working" });
+    row("t2", { seq: 1, state: "finished" });
+    row("t3", { role: "verifier", seq: 2, status: "done" });
+    row("t4", { seq: 3, status: "blocked" });
+    // Neither on this PR, nor a Workflow agent, nor in a run.
+    row("t5", { pr_number: 8 });
+    row("t6", { role: "github-pr-export", run_id: null, seq: null });
+  });
+
+  test("lists live agents in run order, numbering each role across finished ones", () => {
+    expect(svc.terminal.pullTerminals({ repo: "me/dock", pull: 7 })).toEqual({
+      terminals: [
+        { address: "t1", label: "orchestrator", status: "working" },
+        { address: "t3", label: "verifier #1", status: "done" },
+        { address: "t4", label: "executor #2", status: "blocked" },
+      ],
+    });
+  });
+
+  test("names the run once a PR has several", () => {
+    row("t7", { role: "orchestrator", pr_number: 9, seq: null });
+    row("t8", { role: "orchestrator", pr_number: 9, run_id: 2, seq: null });
+    expect(
+      svc.terminal
+        .pullTerminals({ repo: "me/dock", pull: 9 })
+        .terminals.map((terminal) => terminal.label),
+    ).toEqual(["run 1 · orchestrator", "run 2 · orchestrator"]);
+  });
+
+  test("is empty unless the repo runs on herdr-core", () => {
+    expect(
+      svc.terminal.pullTerminals({ repo: repo.full_name, pull: 7 }).terminals,
+    ).toEqual([]);
+  });
+});

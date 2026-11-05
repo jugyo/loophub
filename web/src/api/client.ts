@@ -38,6 +38,7 @@ import type {
   PullLineComment,
   PullRequest,
   PullReview,
+  PullTerminal,
   PullUsage,
   Repo,
   RepoAgentConfig,
@@ -611,6 +612,14 @@ export function launchTerminalWorkflow(input: {
 /** Running herdr sessions grouped by repo, for terminal-aware UI surfaces (#495). */
 export function getHerdrSessions() {
   return rpc<HerdrSessions>("terminal/sessions");
+}
+
+/** Live herdr-core agent terminals of a PR, for its terminal dock (#2574). */
+export function getPullTerminals(repo: string, pull: number) {
+  return rpc<{ terminals: PullTerminal[] }>("terminal/pullTerminals", {
+    repo,
+    pull,
+  });
 }
 
 /** Recent terminal output for one herdr agent, for terminal previews (#500). */
