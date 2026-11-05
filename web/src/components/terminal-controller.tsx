@@ -19,6 +19,7 @@ import {
   type HerdrLaunchError,
   HerdrLaunchErrorDialog,
 } from "@/components/herdr-launch-error-dialog";
+import { isLoopbackPage } from "@/components/terminal-dock";
 import { useToast } from "@/components/toast";
 import { useLaunchTerminalWorkflow } from "@/queries/terminal";
 
@@ -64,6 +65,12 @@ interface TerminalControllerValue {
   herdrLaunchError: HerdrLaunchError | null;
   showHerdrLaunchError: (error: HerdrLaunchError) => void;
   dismissHerdrLaunchError: () => void;
+  // The New issue terminal a dock should open and attach to. The launch happens in the page's button
+  // and the dock lives at the bottom of the page, so this is what connects the two.
+  requestedIssueTerminal: { repo: string; address: string } | null;
+  requestIssueTerminal: (
+    request: { repo: string; address: string } | null,
+  ) => void;
 }
 
 const TerminalControllerContext = createContext<TerminalControllerValue | null>(
@@ -85,13 +92,23 @@ export function TerminalControllerProvider({
     setHerdrLaunchError(error);
   }, []);
 
+  const [requestedIssueTerminal, requestIssueTerminal] =
+    useState<TerminalControllerValue["requestedIssueTerminal"]>(null);
+
   const value = useMemo<TerminalControllerValue>(
     () => ({
       herdrLaunchError,
       showHerdrLaunchError,
       dismissHerdrLaunchError,
+      requestedIssueTerminal,
+      requestIssueTerminal,
     }),
-    [herdrLaunchError, showHerdrLaunchError, dismissHerdrLaunchError],
+    [
+      herdrLaunchError,
+      showHerdrLaunchError,
+      dismissHerdrLaunchError,
+      requestedIssueTerminal,
+    ],
   );
   return (
     <TerminalControllerContext.Provider value={value}>
@@ -114,7 +131,7 @@ export function useTerminalLauncher(): {
 } {
   const ctx = useContext(TerminalControllerContext);
   const launch = useLaunchTerminalWorkflow();
-  const { showError } = useToast();
+  const { showError, showInfo } = useToast();
   const launchTerminal = useCallback<OpenTerminal>(
     (opts) => {
       // The global "workflow-create" (New workflow) launch has no repo (#1889); every other
@@ -144,6 +161,22 @@ export function useTerminalLauncher(): {
           workflowAgents: opts.workflowAgents,
         },
         {
+          onSuccess: (result) => {
+            if (
+              opts.workflow !== "issue-create" ||
+              !opts.repo ||
+              !result.address
+            )
+              return;
+            if (!isLoopbackPage()) {
+              showInfo(`Terminal started. Attach with: ${result.attach}`);
+              return;
+            }
+            ctx?.requestIssueTerminal({
+              repo: opts.repo,
+              address: result.address,
+            });
+          },
           onError: (e) =>
             ctx?.showHerdrLaunchError({
               reason: e instanceof Error ? e.message : "Herdr launch failed.",
@@ -153,9 +186,26 @@ export function useTerminalLauncher(): {
         },
       );
     },
-    [ctx, launch, showError],
+    [ctx, launch, showError, showInfo],
   );
   return { launchTerminal, launchFailed: launch.isError };
+}
+
+// What a repo's issue-screen dock is asked to open, and how it says it has done so.
+export function useRequestedIssueTerminal(repo: string): {
+  address: string | null;
+  handled: () => void;
+} {
+  const ctx = useContext(TerminalControllerContext);
+  const request = ctx?.requestedIssueTerminal;
+  const requestIssueTerminal = ctx?.requestIssueTerminal;
+  return {
+    address: request?.repo === repo ? request.address : null,
+    handled: useCallback(
+      () => requestIssueTerminal?.(null),
+      [requestIssueTerminal],
+    ),
+  };
 }
 
 // Overlay dialog shown for a failed Herdr launch (#483), in place of the generic toast.

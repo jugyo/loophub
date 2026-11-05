@@ -455,3 +455,84 @@ describe("terminal/pullTerminals", () => {
     ).toEqual([]);
   });
 });
+
+describe("terminal/issueTerminals", () => {
+  let issueRepo: import("../store.ts").Repo;
+
+  function row(
+    address: string,
+    overrides: Partial<import("../store.ts").HerdrCoreTerminalState> = {},
+  ) {
+    S.upsertHerdrCoreTerminal({
+      address,
+      repo_id: issueRepo.id,
+      role: "issue-create",
+      pr_number: null,
+      run_id: null,
+      seq: null,
+      state: "live",
+      status: null,
+      turn: 0,
+      exit_code: null,
+      reason: null,
+      ...overrides,
+    });
+  }
+
+  beforeAll(() => {
+    issueRepo = S.createRepo("me/issue-dock", join(DIR, "issue-dock"));
+    S.setRepoTerminalBackend(issueRepo.id, "herdr-core");
+  });
+
+  test("lists this repo's live New issue terminals, numbering across finished ones", () => {
+    row("t21", { status: "working" });
+    row("t22", { state: "finished" });
+    row("t23");
+    row("t24", { role: "github-pr-export" });
+    row("t25", { role: "executor", pr_number: 7, run_id: 1, seq: 1 });
+    expect(svc.terminal.issueTerminals({ repo: "me/issue-dock" })).toEqual({
+      terminals: [
+        { address: "t21", label: "New issue 1", status: "working" },
+        { address: "t23", label: "New issue 3", status: null },
+      ],
+    });
+  });
+
+  test("is empty unless the repo runs on herdr-core", () => {
+    const other = S.createRepo("me/issue-herdr", join(DIR, "issue-herdr"));
+    S.upsertHerdrCoreTerminal({
+      address: "t26",
+      repo_id: other.id,
+      role: "issue-create",
+      pr_number: null,
+      run_id: null,
+      seq: null,
+      state: "live",
+      status: null,
+      turn: 0,
+      exit_code: null,
+      reason: null,
+    });
+    expect(svc.terminal.issueTerminals({ repo: "me/issue-herdr" })).toEqual({
+      terminals: [],
+    });
+  });
+
+  test("the launcher's record lists a terminal at once, and never overwrites the worker's", () => {
+    H.recordIssueTerminalStarted(issueRepo, "t27");
+    expect(S.getHerdrCoreTerminal("t27")).toMatchObject({
+      role: "issue-create",
+      state: "live",
+    });
+    expect(
+      S.listEvents(0, issueRepo.id, 500)
+        .filter((event) => event.type === H.TERMINAL_AGENT_STATE_CHANGED_EVENT)
+        .map((event) => JSON.parse(event.payload as unknown as string))
+        .at(-1),
+    ).toMatchObject({ address: "t27", role: "issue-create" });
+
+    row("t28", { state: "finished" });
+    H.recordIssueTerminalStarted(issueRepo, "t28");
+    expect(S.getHerdrCoreTerminal("t28")?.state).toBe("finished");
+  });
+});

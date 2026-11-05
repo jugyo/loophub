@@ -971,7 +971,7 @@ export interface HerdrSessionsWire {
   captured_at?: string | null;
 }
 
-// One tab of a PR's terminal dock: a live agent terminal of a Workflow run on that PR.
+// One tab of a terminal dock: a live agent terminal of a Workflow run on a PR, or of New issue on a repo.
 export interface PullTerminalWire {
   address: string;
   label: string;
@@ -989,6 +989,8 @@ export interface TerminalLaunchResultWire {
   command?: string;
   cwd?: string;
   attach?: string;
+  // The herdr-core terminal this launch started.
+  address?: string;
 }
 
 export function herdrPaneSessionJSON(

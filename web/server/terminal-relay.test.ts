@@ -27,6 +27,9 @@ if [ "$1" = connect ]; then
     *'"t1"'*) labels='{"loophub.repo":"me/relay","loophub.pr":"7"}' ;;
     *'"t2"'*) labels='{"loophub.repo":"me/relay","loophub.pr":"8"}' ;;
     *'"t3"'*) labels='{"loophub.repo":"me/other","loophub.pr":"7"}' ;;
+    *'"t4"'*) labels='{"loophub.repo":"me/relay","loophub.role":"issue-create"}' ;;
+    *'"t5"'*) labels='{"loophub.repo":"me/other","loophub.role":"issue-create"}' ;;
+    *'"t6"'*) labels='{"loophub.repo":"me/relay","loophub.role":"github-pr-export"}' ;;
     *) labels='{}' ;;
   esac
   echo "{\\"jsonrpc\\":\\"2.0\\",\\"id\\":1,\\"result\\":{\\"labels\\":$labels}}"
@@ -167,6 +170,64 @@ test("refuses a terminal this repo and PR did not start", async () => {
   expect(await upgradeStatus({}, { terminal: "--help" })).toBe(422);
   expect(await upgradeStatus({}, { repo: "me/herdr" })).toBe(409);
   expect(await upgradeStatus({}, { repo: "me/none" })).toBe(404);
+});
+
+function issueRelayPath(params: Record<string, string>): string {
+  const query = new URLSearchParams({
+    repo: "me/relay",
+    cols: "100",
+    rows: "30",
+    ...params,
+  });
+  return `/ws/terminal?${query}`;
+}
+
+async function issueUpgradeStatus(
+  params: Record<string, string>,
+  headers: Record<string, string> = {},
+): Promise<number> {
+  const res = await fetch(`http://${base}${issueRelayPath(params)}`, {
+    headers: {
+      connection: "upgrade",
+      upgrade: "websocket",
+      "sec-websocket-version": "13",
+      "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+      ...headers,
+    },
+  });
+  await res.body?.cancel();
+  return res.status;
+}
+
+test("without a PR, attaches a New issue terminal of this repo", async () => {
+  const ws = new WebSocket(`ws://${base}${issueRelayPath({ terminal: "t4" })}`);
+  ws.binaryType = "arraybuffer";
+  let output = "";
+  ws.onmessage = (event) => {
+    output += new TextDecoder().decode(event.data);
+  };
+  await until(() => output.includes("attached t4"), "attached");
+  ws.close();
+});
+
+test("without a PR, refuses anything but a New issue terminal of this repo", async () => {
+  // Another repo's, a PR's agent, another role's, and one LoopHub did not start.
+  expect(await issueUpgradeStatus({ terminal: "t5" })).toBe(409);
+  expect(await issueUpgradeStatus({ terminal: "t1" })).toBe(409);
+  expect(await issueUpgradeStatus({ terminal: "t6" })).toBe(409);
+  expect(await issueUpgradeStatus({ terminal: "t9" })).toBe(409);
+  expect(await issueUpgradeStatus({ terminal: "--help" })).toBe(422);
+  expect(await issueUpgradeStatus({ terminal: "t4", repo: "me/herdr" })).toBe(
+    409,
+  );
+  // A New issue terminal has no PR to be reached through either.
+  expect(await upgradeStatus({}, { terminal: "t4" })).toBe(409);
+  expect(
+    await issueUpgradeStatus(
+      { terminal: "t4" },
+      { origin: "https://lh.example.com" },
+    ),
+  ).toBe(403);
 });
 
 test("a plain GET gets no socket", async () => {

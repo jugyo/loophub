@@ -32,7 +32,9 @@ import {
 import {
   followHerdrCoreRepo,
   herdrCoreFollowedRepos,
+  listIssueTerminals,
   listPullTerminals,
+  recordIssueTerminalStarted,
   withHerdrCoreSessions,
 } from "../terminal/herdr-core-status.ts";
 import {
@@ -650,6 +652,7 @@ async function launchHerdrCore(
   });
   recordGithubPrExportStarted(r, input);
   if (isNewIssue) {
+    recordIssueTerminalStarted(r, address);
     registerIssueCreatePane(
       r,
       launchId,
@@ -668,7 +671,24 @@ async function launchHerdrCore(
     backend: "herdr-core" as const,
     cwd,
     attach: `hc attach ${address}`,
+    address,
   };
+}
+
+// Rejects an address the client gave unless LoopHub started it for this owner.
+async function assertTerminalAttachable(
+  input: { repo: string; address: string },
+  owner: { pr: number } | { role: "issue-create" },
+): Promise<void> {
+  const r = repoOr404(input.repo);
+  if (normalizeTerminalBackend(r.terminal_backend) !== "herdr-core")
+    throw new ServiceError(409, `${r.full_name} does not run on herdr-core`);
+  if (!isHerdrCoreAddress(input.address))
+    throw new ServiceError(422, `Invalid terminal: ${input.address}`);
+  await assertHerdrCoreTerminalOwner(input.address, {
+    repo: r.full_name,
+    ...owner,
+  });
 }
 
 // ===== terminal launch =====
@@ -686,21 +706,32 @@ export const terminal = {
     };
   },
 
-  // Rejects an address the client gave unless LoopHub started it for this repo and PR.
-  async assertPullTerminalAttachable(input: {
+  // The terminal dock of the issue screens: empty unless the repo runs on herdr-core.
+  issueTerminals(input: { repo: string }): {
+    terminals: PullTerminalWire[];
+  } {
+    const r = repoOr404(input.repo);
+    return {
+      terminals:
+        normalizeTerminalBackend(r.terminal_backend) === "herdr-core"
+          ? listIssueTerminals(r)
+          : [],
+    };
+  },
+
+  assertPullTerminalAttachable(input: {
     repo: string;
     pull: number;
     address: string;
   }): Promise<void> {
-    const r = repoOr404(input.repo);
-    if (normalizeTerminalBackend(r.terminal_backend) !== "herdr-core")
-      throw new ServiceError(409, `${r.full_name} does not run on herdr-core`);
-    if (!isHerdrCoreAddress(input.address))
-      throw new ServiceError(422, `Invalid terminal: ${input.address}`);
-    await assertHerdrCoreTerminalOwner(input.address, {
-      repo: r.full_name,
-      pr: input.pull,
-    });
+    return assertTerminalAttachable(input, { pr: input.pull });
+  },
+
+  assertIssueTerminalAttachable(input: {
+    repo: string;
+    address: string;
+  }): Promise<void> {
+    return assertTerminalAttachable(input, { role: "issue-create" });
   },
 
   async launch(

@@ -622,6 +622,13 @@ export function getPullTerminals(repo: string, pull: number) {
   });
 }
 
+/** Live herdr-core New issue terminals of a repo, for the issue screens' terminal dock. */
+export function getIssueTerminals(repo: string) {
+  return rpc<{ terminals: PullTerminal[] }>("terminal/issueTerminals", {
+    repo,
+  });
+}
+
 /** Recent terminal output for one herdr agent, for terminal previews (#500). */
 export function getHerdrAgentRead(input: {
   repo: string;

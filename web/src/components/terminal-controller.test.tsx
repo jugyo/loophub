@@ -24,6 +24,7 @@ const launchMutation = vi.hoisted(() => ({
         onSuccess?: (result: {
           session_name?: string;
           attach?: string;
+          address?: string;
         }) => void;
         onError?: (e: unknown) => void;
       },
@@ -115,6 +116,54 @@ describe("TerminalController", () => {
       expect.objectContaining({ onError: expect.any(Function) }),
     );
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it.each([
+    ["a remote page", "https://lh.example.com/", "issue-create", "t9", true],
+    ["a loopback page", "http://localhost:8730/", "issue-create", "t9", false],
+    [
+      "another launch",
+      "https://x.example.com/",
+      "github-pr-export",
+      "t9",
+      false,
+    ],
+    [
+      "a herdr launch",
+      "https://x.example.com/",
+      "issue-create",
+      undefined,
+      false,
+    ],
+  ] as const)("shows the attach command only for New issue on a remote page: %s", async (_name, pageUrl, workflow, address, shown) => {
+    const happy = (
+      window as unknown as { happyDOM: { setURL(url: string): void } }
+    ).happyDOM;
+    happy.setURL(pageUrl);
+    launchMutation.mutate.mockImplementationOnce((_input, opts) => {
+      opts?.onSuccess?.({ attach: "hc attach t9", address });
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => (
+        <TerminalControllerProvider>
+          <ToastProvider>
+            <ToastViewport />
+            <LaunchButton workflow={workflow} />
+          </ToastProvider>
+        </TerminalControllerProvider>
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(<RouterProvider router={router} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Launch" }));
+    expect(screen.queryByText(/hc attach t9/) !== null).toBe(shown);
+    happy.setURL("about:blank");
   });
 
   it("does not show a toast after a non-Build launch succeeds", async () => {

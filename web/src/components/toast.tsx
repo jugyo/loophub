@@ -11,7 +11,7 @@
 // mirroring detail-title.tsx.
 
 import { useRouterState } from "@tanstack/react-router";
-import { X, XCircle } from "lucide-react";
+import { TerminalSquare, X, XCircle } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -27,14 +27,17 @@ import { cn } from "@/lib/utils";
 interface ToastItem {
   id: number;
   message: string;
+  tone: ToastTone;
 }
+
+type ToastTone = "error" | "info";
 
 // How long an error toast stays before it auto-dismisses, carried over from ErrorBanner (#323).
 const AUTO_DISMISS_MS = 8000;
 
 interface ToastContextValue {
   toasts: ToastItem[];
-  showToast: (message: string) => void;
+  showToast: (message: string, tone?: ToastTone) => void;
   dismiss: (id: number) => void;
   dismissAll: () => void;
 }
@@ -78,9 +81,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string) => {
+    (message: string, tone: ToastTone = "error") => {
       const id = nextId.current++;
-      setToasts((prev) => [...prev, { id, message }]);
+      setToasts((prev) => [...prev, { id, message, tone }]);
       timers.current.set(
         id,
         setTimeout(() => dismiss(id), AUTO_DISMISS_MS),
@@ -109,7 +112,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Show an error toast from any component. Prefer this over the raw context function. */
+/** Show a toast from any component. Prefer this over the raw context function. */
 export function useToast() {
   const { showToast } = useContext(ToastContext);
   return {
@@ -117,12 +120,19 @@ export function useToast() {
       (message: string) => showToast(message),
       [showToast],
     ),
+    showInfo: useCallback(
+      (message: string) => showToast(message, "info"),
+      [showToast],
+    ),
   };
 }
 
 // Opaque `bg-background` (not a low-opacity tint) — this floats over arbitrary page content now,
 // so a translucent fill would let that content show through and read as visual noise.
-const TOAST_CLASSES = "border-destructive/50 bg-background text-destructive";
+const TOAST_CLASSES: Record<ToastTone, string> = {
+  error: "border-destructive/50 bg-background text-destructive",
+  info: "bg-background text-foreground",
+};
 
 // The floating viewport, rendered once at the app-shell level. Fixed to the top-right corner of
 // the viewport (macOS Notification Center style) — narrow, and stacked vertically as more toasts
@@ -143,14 +153,18 @@ export function ToastViewport() {
             role="alert"
             className={cn(
               "pointer-events-auto flex items-start gap-2 rounded-md border p-3 text-sm shadow-lg",
-              TOAST_CLASSES,
+              TOAST_CLASSES[toast.tone],
             )}
           >
-            <XCircle className="mt-0.5 size-4 shrink-0" />
+            {toast.tone === "error" ? (
+              <XCircle className="mt-0.5 size-4 shrink-0" />
+            ) : (
+              <TerminalSquare className="mt-0.5 size-4 shrink-0" />
+            )}
             <span className="min-w-0 flex-1 break-words">{toast.message}</span>
             <button
               type="button"
-              aria-label="Dismiss error"
+              aria-label={toast.tone === "error" ? "Dismiss error" : "Dismiss"}
               onClick={() => dismiss(toast.id)}
               className="shrink-0 rounded p-0.5 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
             >
