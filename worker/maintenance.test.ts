@@ -739,3 +739,104 @@ describe("worker maintenance", () => {
     }
   });
 });
+
+describe("startHerdrCoreEventFollow", () => {
+  function fakeDeps() {
+    const repo = {
+      id: 1,
+      full_name: "me/app",
+    } as import("../core/store.ts").Repo;
+    const follows: {
+      stop: () => void;
+      stopped: boolean;
+      end: (error?: Error) => void;
+    }[] = [];
+    return {
+      repo,
+      follows,
+      wanted: [repo],
+      followHerdrCoreRepo() {
+        let resolve!: () => void;
+        let reject!: (error: Error) => void;
+        const done = new Promise<void>((res, rej) => {
+          resolve = res;
+          reject = rej;
+        });
+        const follow = {
+          stopped: false,
+          stop() {
+            follow.stopped = true;
+            resolve();
+          },
+          end: (error?: Error) => (error ? reject(error) : resolve()),
+          done,
+        };
+        follows.push(follow);
+        return follow;
+      },
+    };
+  }
+
+  test("subscribes at once, again after a stream ends or fails, and stops what is no longer wanted", async () => {
+    const fake = fakeDeps();
+    const stop = M.startHerdrCoreEventFollow(10, {
+      herdrCoreFollowedRepos: () => fake.wanted,
+      followHerdrCoreRepo: fake.followHerdrCoreRepo,
+    });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 40));
+    try {
+      expect(fake.follows).toHaveLength(1);
+      await settle();
+      expect(fake.follows).toHaveLength(1);
+
+      fake.follows[0].end();
+      await settle();
+      expect(fake.follows).toHaveLength(2);
+
+      fake.follows[1].end(new Error("hc failed"));
+      await settle();
+      expect(fake.follows).toHaveLength(3);
+
+      fake.wanted = [];
+      await settle();
+      expect(fake.follows[2].stopped).toBe(true);
+      expect(fake.follows).toHaveLength(3);
+
+      fake.wanted = [fake.repo];
+      await settle();
+      expect(fake.follows).toHaveLength(4);
+    } finally {
+      stop();
+    }
+    expect(fake.follows[3].stopped).toBe(true);
+  });
+
+  test("does not touch hc while no repo needs it", async () => {
+    let follows = 0;
+    const stop = M.startHerdrCoreEventFollow(10, {
+      herdrCoreFollowedRepos: () => [],
+      followHerdrCoreRepo: () => {
+        follows += 1;
+        throw new Error("unexpected");
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    stop();
+    expect(follows).toBe(0);
+  });
+
+  test("a failed spawn is logged by the tick, and the next tick tries again", async () => {
+    const fake = fakeDeps();
+    let attempts = 0;
+    const stop = M.startHerdrCoreEventFollow(10, {
+      herdrCoreFollowedRepos: () => fake.wanted,
+      followHerdrCoreRepo: () => {
+        attempts += 1;
+        throw new Error("hc command not found on PATH");
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    stop();
+    expect(attempts).toBeGreaterThan(1);
+  });
+});

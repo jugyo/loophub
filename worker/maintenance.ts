@@ -50,6 +50,9 @@ export const DEFAULT_CONFLICT_SWEEP_MS = 15000;
 // read of the snapshot this sweep persists. 3s matches the old per-tab poll's freshness, and the
 // whole herdr load is now ~1 capture/tick regardless of how many tabs are open.
 export const DEFAULT_HERDR_SWEEP_MS = 3000;
+// How soon a herdr-core subscription starts for a repo that needs one, or restarts after its stream
+// ended. The state itself is pushed; this only bounds that gap.
+export const DEFAULT_HERDR_CORE_FOLLOW_SYNC_MS = 5000;
 // #1837: worktrees of finished work are only removed a full day after the merge/close, so checking
 // twice an hour is already far finer than the grace period. A tick that finds nothing due costs one
 // `git worktree list` per repo.
@@ -207,6 +210,7 @@ export function startMaintenanceLoops(
     normalized.herdrSweepMs > 0
       ? startHerdrSnapshotSweep(normalized.herdrSweepMs)
       : () => {},
+    normalized.herdrSweepMs > 0 ? startHerdrCoreEventFollow() : () => {},
     normalized.worktreePruneSweepMs > 0
       ? startWorktreePruneSweep(normalized.worktreePruneSweepMs)
       : () => {},
@@ -580,6 +584,65 @@ export function startHerdrSnapshotSweep(
   return () => {
     stopped = true;
     clearInterval(timer);
+  };
+}
+
+// #2573: agent state for herdr-core repos arrives pushed over `hc events`, one subscription per repo
+// because a label filter needs an exact value. Each tick starts the subscriptions that should be
+// running, which is also the whole recovery story: a stream ends when the core restarts, and the
+// next tick subscribes again and takes the fresh snapshot. No tick calls `hc` until a repo has
+// chosen herdr-core, because any `hc` call starts a core on a machine that has none running.
+export function startHerdrCoreEventFollow(
+  intervalMs = DEFAULT_HERDR_CORE_FOLLOW_SYNC_MS,
+  deps: Pick<
+    typeof terminal,
+    "herdrCoreFollowedRepos" | "followHerdrCoreRepo"
+  > = terminal,
+): () => void {
+  const following = new Map<string, { stop: () => void }>();
+
+  const start = (
+    repo: ReturnType<typeof deps.herdrCoreFollowedRepos>[number],
+  ) => {
+    const name = repo.full_name;
+    const startedAt = logLoopStarted(`herdr-core events ${name}`);
+    const follow = deps.followHerdrCoreRepo(repo);
+    following.set(name, follow);
+    follow.done
+      .then(() => logLoopCompleted(`herdr-core events ${name}`, startedAt, {}))
+      .catch((err) =>
+        logLoopFailed(`herdr-core events ${name}`, startedAt, err),
+      )
+      .finally(() => {
+        if (following.get(name) === follow) following.delete(name);
+      });
+  };
+
+  const tick = () => {
+    const startedAt = Date.now();
+    try {
+      const wanted = deps.herdrCoreFollowedRepos();
+      const names = new Set(wanted.map((repo) => repo.full_name));
+      for (const [name, follow] of following) {
+        if (names.has(name)) continue;
+        following.delete(name);
+        follow.stop();
+      }
+      for (const repo of wanted) {
+        if (!following.has(repo.full_name)) start(repo);
+      }
+    } catch (err) {
+      logLoopFailed("herdr-core events sync", startedAt, err);
+    }
+  };
+
+  tick();
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    clearInterval(timer);
+    for (const follow of following.values()) follow.stop();
+    following.clear();
   };
 }
 

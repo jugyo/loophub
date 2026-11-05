@@ -8,6 +8,7 @@ import {
 } from "../config.ts";
 import { db } from "../db.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
+import type { HerdrCoreEventFollow } from "../herdr-core.ts";
 import { spawnProcess } from "../process.ts";
 import { buildRuntimeFlags } from "../runtime-args.ts";
 import { RUNTIMES } from "../runtimes.ts";
@@ -27,6 +28,11 @@ import {
   killPaneForegroundProcess,
   snapshotHerdrSessionsImpl,
 } from "../terminal/herdr-cleanup.ts";
+import {
+  followHerdrCoreRepo,
+  herdrCoreFollowedRepos,
+  withHerdrCoreSessions,
+} from "../terminal/herdr-core-status.ts";
 import {
   assertHerdrCoreTerminalOwner,
   HERDR_CORE_SESSION_NAME,
@@ -1019,8 +1025,19 @@ export const terminal = {
   // fallback that would hide a stopped worker or failed capture.
   sessions(): HerdrSessionsResult {
     const snapshot = S.getHerdrSessionSnapshot();
-    if (!snapshot) return { repos: [], captured_at: null };
-    return { ...snapshot.snapshot, captured_at: snapshot.captured_at };
+    return withHerdrCoreSessions({
+      ...(snapshot?.snapshot ?? { repos: [] }),
+      captured_at: snapshot?.captured_at ?? null,
+    });
+  },
+
+  // lh-worker: the repos whose herdr-core terminals to follow, and the subscription for one of them.
+  herdrCoreFollowedRepos(): S.Repo[] {
+    return herdrCoreFollowedRepos();
+  },
+
+  followHerdrCoreRepo(repo: S.Repo): HerdrCoreEventFollow {
+    return followHerdrCoreRepo(repo);
   },
 
   // lh-worker tick (#1665): capture the live herdr snapshot into the DB and emit

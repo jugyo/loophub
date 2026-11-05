@@ -102,6 +102,64 @@ function herdrCoreServiceError(
   });
 }
 
+export interface HerdrCoreEventFollow {
+  stop: () => void;
+  // Settles when the stream ends. It ends cleanly when the core stops or restarts, and rejects when
+  // `hc` fails or `onMessage` throws.
+  done: Promise<void>;
+}
+
+// Follows `hc events --json`: the first line is the snapshot of matching terminals, then one
+// JSON-RPC notification per line. Every parsed line goes to `onMessage`.
+export function followHerdrCoreEvents(
+  labels: Record<string, string>,
+  onMessage: (message: unknown) => void,
+  opts: { env?: HerdrCoreEnv } = {},
+): HerdrCoreEventFollow {
+  const child = spawnHerdrCore(
+    [
+      "events",
+      "--json",
+      ...Object.entries(labels).flatMap(([key, value]) => [
+        "--label",
+        `${key}=${value}`,
+      ]),
+    ],
+    opts.env,
+    "ignore",
+  );
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    child.kill();
+  };
+  const readLines = async () => {
+    const decoder = new TextDecoder();
+    let pending = "";
+    for await (const chunk of child.stdout) {
+      pending += decoder.decode(chunk, { stream: true });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim() !== "") onMessage(JSON.parse(line));
+      }
+    }
+  };
+  const done = (async () => {
+    const stderr = readProcessStream(child.stderr);
+    try {
+      await readLines();
+    } catch (error) {
+      child.kill();
+      throw error;
+    }
+    const [status, errorOutput] = await Promise.all([child.exited, stderr]);
+    if (status !== 0 && !stopped)
+      throw herdrCoreError(errorOutput.text, status);
+  })();
+  return { stop, done };
+}
+
 const HERDR_CORE_RPC_TIMEOUT_MS = 30_000;
 
 // One JSON-RPC call over `hc connect`. Launches need this rather than `hc run`: only the API takes

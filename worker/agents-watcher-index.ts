@@ -5,6 +5,7 @@ import { workerLog } from "./logger.ts";
 import {
   DEFAULT_HERDR_SWEEP_MS,
   DEFAULT_USAGE_SWEEP_MS,
+  startHerdrCoreEventFollow,
   startHerdrSnapshotSweep,
   startUsageSweep,
 } from "./maintenance.ts";
@@ -23,6 +24,7 @@ for (let i = 0; i < argv.length; i++) {
 
 const stops = [
   herdrSweepMs > 0 ? startHerdrSnapshotSweep(herdrSweepMs) : () => {},
+  herdrSweepMs > 0 ? startHerdrCoreEventFollow() : () => {},
   usageSweepMs > 0 ? startUsageSweep(usageSweepMs) : () => {},
 ];
 const keepAlive = setInterval(() => {}, 60_000);

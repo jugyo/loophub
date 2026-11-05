@@ -44,3 +44,17 @@ export function getAgentExecutionTarget(
     .query("SELECT * FROM agent_execution_targets WHERE session_id = ?")
     .get(sessionId) as AgentExecutionTargetRow | null;
 }
+
+export function agentSessionForExecutionTarget(
+  provider: string,
+  targetId: string,
+): string | null {
+  const row = db
+    .query(
+      `SELECT session_id FROM agent_execution_targets
+       WHERE provider = ? AND target_id = ?
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(provider, targetId) as { session_id: string } | null;
+  return row?.session_id ?? null;
+}

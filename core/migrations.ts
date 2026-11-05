@@ -1697,6 +1697,33 @@ export const MIGRATIONS: Migration[] = [
     "terminal_backend",
     "TEXT",
   ),
+  {
+    id: "20261104005449-herdr-core-terminals",
+    run: (db) => {
+      // One row per herdr-core terminal LoopHub started, written from `hc events`. role / pr_number
+      // / run_id / seq come from the terminal's loophub.* labels. state is the terminal's own
+      // live | finished; status is what its program last reported (idle | working | done | blocked
+      // | error), null when it never said or has exited.
+      db.exec(`
+    CREATE TABLE IF NOT EXISTS herdr_core_terminals (
+      address     TEXT PRIMARY KEY,
+      repo_id     INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+      role        TEXT,
+      pr_number   INTEGER,
+      run_id      INTEGER,
+      seq         INTEGER,
+      state       TEXT NOT NULL,
+      status      TEXT,
+      turn        INTEGER NOT NULL,
+      exit_code   INTEGER,
+      reason      TEXT,
+      updated_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_herdr_core_terminals_repo
+      ON herdr_core_terminals(repo_id);
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

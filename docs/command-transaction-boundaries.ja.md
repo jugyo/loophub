@@ -243,6 +243,7 @@ DB を変更する service procedure と、その transaction owner。`store hel
 | `sweepMergeReadyNotifications` | procedure（PR ごと） | 観測した state、notification、`notification.created` | mergeable state の git / GitHub read |
 | `syncGithubMergeStatus` | procedure（link ごと） | `github_merged` flag、`pull_request.github_merged` | GitHub fetch |
 | `terminal.snapshotHerdrSessions`（`snapshotHerdrSessionsImpl`） | procedure | snapshot row、`terminal.sessions_updated` | herdr snapshot の capture |
+| `applyHerdrCoreSnapshot` / `applyHerdrCoreEvent` | procedure | `herdr_core_terminals` の行、`terminal.agent_state_changed` | `hc events` の読み取り |
 | `githubFeedbackSync` | procedure | 取得した feedback observation、source event | GitHub fetch |
 
 DB を変更しない `pulls.files` / `diff` / `commitFiles` / `fileAtRef`、`worktrees.*`、`resume.*`、

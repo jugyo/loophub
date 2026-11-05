@@ -492,6 +492,20 @@ herdr-core の親が `terminal.send` を拒否した場合は、何も入力さ�
 
 running run を持たない PR を指定した場合は可視エラーで non-zero exit する。
 
+### herdr-core のエージェント状態
+
+herdr-core 有効のリポジトリでは、worker が `hc events --json --label loophub.repo=<repo>` をリポジトリごとに購読し、
+スナップショットとイベントを `herdr_core_terminals` に書く。ターミナルの `live` / `finished`（`state`）と、プログラムが
+報告した `idle` / `working` / `done` / `blocked` / `error`（`status`）は別の列で持つ。変化は 1 件ごとに
+`terminal.agent_state_changed` として通知し、`terminal/sessions` はこの行を herdr のスナップショットと同じ形で返す。
+Web は hc を直接購読しない。
+
+core の再起動などで stream が終わると、数秒以内に購読し直し、スナップショットで状態を取り直す。設定を herdr に戻した
+リポジトリも、`live` のターミナルが残る間は購読を続ける。
+
+購読中は `hc server stop` で止めても再購読で core が起動し直すので、core を止めるときは先に worker を止める。購読は起動時の
+リポジトリ名のラベルで絞るため、`live` のターミナルがあるリポジトリを rename すると、そのターミナルは追えなくなる。
+
 ### `lh workflow start` の herdr セッション
 
 `lh workflow start`（Web の **Start workflow** が spawn する経路を含む）で parent を

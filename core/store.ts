@@ -5,6 +5,7 @@ export * from "./store/diff-feedback.ts";
 export * from "./store/events.ts";
 export * from "./store/github-links.ts";
 export * from "./store/handoffs.ts";
+export * from "./store/herdr-core-terminals.ts";
 export * from "./store/herdr-panes.ts";
 export * from "./store/herdr-snapshots.ts";
 export * from "./store/instance-settings.ts";
