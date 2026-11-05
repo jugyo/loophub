@@ -21,9 +21,13 @@ const MIN_HEIGHT_PX = 120;
 const DEFAULT_HEIGHT_PX = 320;
 const KEYBOARD_RESIZE_STEP_PX = 24;
 
+// `done` means the agent finished a turn and waits for input; an exited terminal leaves the tabs.
+function statusLabel(status: string | null): string {
+  return !status || status === "done" ? "idle" : status;
+}
+
 const STATUS_TONE: Record<string, BadgeProps["tone"]> = {
   working: "working",
-  done: "review-passed",
   blocked: "review-rereview",
   error: "conflict",
 };
@@ -168,7 +172,7 @@ export function TerminalDock({
               >
                 {t.label}
                 <Badge tone={STATUS_TONE[t.status ?? ""] ?? "unknown"}>
-                  {t.status ?? "idle"}
+                  {statusLabel(t.status)}
                 </Badge>
               </button>
             ))}

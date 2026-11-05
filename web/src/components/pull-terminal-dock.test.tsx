@@ -112,7 +112,7 @@ it("starts closed without attaching, and opening lists every agent and attaches 
   const tabs = await screen.findAllByRole("tab");
   expect(tabs.map((tab) => tab.textContent)).toEqual([
     "orchestratorworking",
-    "executor #1done",
+    "executor #1idle",
     "verifier #1blocked",
     "executor #2error",
   ]);
@@ -123,6 +123,22 @@ it("starts closed without attaching, and opening lists every agent and attaches 
   expect(url.searchParams.get("repo")).toBe("me/proj");
   expect(url.searchParams.get("pull")).toBe("7");
   expect(url.searchParams.get("terminal")).toBe("t1");
+});
+
+it("renders a done tab's badge exactly like a tab without a status", async () => {
+  stubWebSocket();
+  stubResizeObserver();
+  renderDock("herdr-core", [
+    { address: "t1", label: "done", status: "done" },
+    { address: "t2", label: "none", status: null },
+  ]);
+  await openDock();
+  const [done, none] = (await screen.findAllByRole("tab")).map(
+    (tab) => tab.querySelector("span") as HTMLElement,
+  );
+  expect(done.textContent).toBe("idle");
+  expect(none.textContent).toBe("idle");
+  expect(done.className).toBe(none.className);
 });
 
 it("selects the leftmost tab once tabs appear in an open dock", async () => {
@@ -177,7 +193,7 @@ it("keeps the user's tab when the list updates", async () => {
     ],
   });
   await screen.findByRole("tab", { name: /verifier #2/ });
-  expect(selectedTab()?.textContent).toBe("executor #1done");
+  expect(selectedTab()?.textContent).toBe("executor #1idle");
   expect(urls.length).toBe(attaches);
 });
 
@@ -192,7 +208,7 @@ it("moves on to the next tab when the leftmost tab shown by default finishes", a
     terminals: TERMINALS.filter((terminal) => terminal.address !== "t1"),
   });
   await waitFor(() => expect(urls.map(attachedTerminal).at(-1)).toBe("t2"));
-  expect(selectedTab()?.textContent).toBe("executor #1done");
+  expect(selectedTab()?.textContent).toBe("executor #1idle");
 });
 
 it("stays on the current tab when a finished terminal is listed again", async () => {
