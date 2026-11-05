@@ -219,6 +219,45 @@ export function listPullTerminals(
   });
 }
 
+// The dock's tabs for New issue on one repo, in the order they started. As above, finished rows keep
+// the later tabs' numbers.
+export function listIssueTerminals(repo: Repo): PullTerminalWire[] {
+  return S.listHerdrCoreTerminalRows(repo.id)
+    .filter((row) => row.role === "issue-create")
+    .flatMap((row, index) =>
+      row.state === "live"
+        ? [
+            {
+              address: row.address,
+              label: `New issue ${index + 1}`,
+              status: row.status,
+            },
+          ]
+        : [],
+    );
+}
+
+// The launcher's own record of a New issue terminal, so the dock can attach to it at once rather than
+// after the worker's next look at `hc events`. Whatever the worker already recorded is newer.
+export function recordIssueTerminalStarted(repo: Repo, address: string): void {
+  db.transaction(() => {
+    if (S.getHerdrCoreTerminal(address)) return;
+    record(repo, {
+      address,
+      repo_id: repo.id,
+      role: "issue-create",
+      pr_number: null,
+      run_id: null,
+      seq: null,
+      state: "live",
+      status: null,
+      turn: 0,
+      exit_code: null,
+      reason: null,
+    });
+  });
+}
+
 function sessionIdFor(repo: Repo, address: string): string | null {
   return (
     S.agentSessionForExecutionTarget(HERDR_CORE_PROVIDER, address) ??

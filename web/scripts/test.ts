@@ -1,5 +1,8 @@
 const files = [] as string[];
 const splitWithinFile = new Set([
+  // Also gives a file its own process. This one needs the real terminal launcher, which the files
+  // sorted before it mock, and `--isolate` does not keep mocks apart on every supported Bun.
+  "src/components/issue-terminal-dock.test.tsx",
   "src/components/pull-detail.test.tsx",
   "src/components/pull-diff-dialog.test.tsx",
 ]);

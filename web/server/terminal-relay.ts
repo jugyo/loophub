@@ -35,12 +35,17 @@ export async function handleTerminalUpgrade(
     return new Response("Forbidden\n", { status: 403 });
   const url = new URL(req.url);
   const address = url.searchParams.get("terminal") ?? "";
+  const repo = url.searchParams.get("repo") ?? "";
+  // No PR means a New issue terminal: it runs before its issue exists, so it has no PR.
+  const pull = url.searchParams.get("pull");
   try {
-    await terminal.assertPullTerminalAttachable({
-      repo: url.searchParams.get("repo") ?? "",
-      pull: Number(url.searchParams.get("pull")),
-      address,
-    });
+    await (pull === null
+      ? terminal.assertIssueTerminalAttachable({ repo, address })
+      : terminal.assertPullTerminalAttachable({
+          repo,
+          pull: Number(pull),
+          address,
+        }));
   } catch (error) {
     return isServiceError(error)
       ? new Response(`${error.message}\n`, { status: error.status })

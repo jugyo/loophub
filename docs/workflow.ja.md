@@ -492,7 +492,7 @@ herdr-core の親が `terminal.send` を拒否した場合は、何も入力さ�
 
 running run を持たない PR を指定した場合は可視エラーで non-zero exit する。
 
-### PR 画面のターミナル
+### 画面下部のターミナル
 
 herdr-core 有効のリポジトリの PR 画面下部には、その PR の Workflow run のエージェントをタブで並べるドックがある。
 タブは `herdr_core_terminals` の live な行で、選択すると lh-web が WebSocket の裏で `hc attach` を PTY 上に起動して中継する。
@@ -501,6 +501,11 @@ WebSocket を閉じても終わるのは attach だけで、ターミナル本�
 中継は loopback からのアクセスだけで許可する。Origin は RPC と同じ規則で検証したうえで、接続元と Host が loopback で、Origin が
 その Host と一致し、プロキシ経由の印がないことを要求するので、`public_origin` 経由ではタブを出さず upgrade も拒否する。
 attach の前にターミナルの `loophub.repo` / `loophub.pr` ラベルを照合する。
+
+issue 一覧画面と issue 詳細画面には、そのリポジトリの live な New issue ターミナルを並べる同じドックがある。
+New issue の起動に成功すると、ドックが開いて起動したターミナルに attach する。行は起動時に lh-web が記録するので、
+worker の `hc events` を待たない。中継は PR を指定しない接続を New issue のターミナルとして扱い、`loophub.repo` と
+`loophub.role=issue-create` を照合する。`public_origin` 経由ではドックを出さず、`hc attach <address>` をトーストで表示する。
 
 ### herdr-core のエージェント状態
 

@@ -286,7 +286,11 @@ describe.skipIf(!HAS_HC)("a herdr-core repo", () => {
       model: "opus",
     });
     expect(result.backend).toBe("herdr-core");
-    const address = result.attach?.split(" ").at(-1) as string;
+    const address = result.address as string;
+    expect(result.attach).toBe(`hc attach ${address}`);
+    expect(
+      svc.terminal.issueTerminals({ repo: REPO }).terminals,
+    ).toContainEqual(expect.objectContaining({ address }));
     expect(await agentArgv(address)).toEqual([
       "issue",
       "new",

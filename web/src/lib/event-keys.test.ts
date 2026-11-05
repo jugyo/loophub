@@ -93,6 +93,17 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["pull-terminals", "me/proj", 7]);
   });
 
+  it("maps a New issue terminal's state change to the repo's issue terminals", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "terminal.agent_state_changed",
+        repo: "me/proj",
+        payload: { pr: null, role: "issue-create" },
+      }),
+    );
+    expect(keys).toContainEqual(["issue-terminals", "me/proj"]);
+  });
+
   it("maps workspace events to the repo workspace list", () => {
     const keys = queryKeysForEvent(
       ev({ type: "workspace.archived", repo: "me/proj" }),

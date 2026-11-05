@@ -33,7 +33,9 @@ export function listHerdrCoreTerminalRows(
   repoId: number,
 ): HerdrCoreTerminalRow[] {
   return db
-    .query("SELECT * FROM herdr_core_terminals WHERE repo_id = ?")
+    .query(
+      "SELECT * FROM herdr_core_terminals WHERE repo_id = ? ORDER BY rowid",
+    )
     .all(repoId) as HerdrCoreTerminalRow[];
 }
 

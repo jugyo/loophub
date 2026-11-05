@@ -109,10 +109,10 @@ export async function sendToHerdrCoreTerminal(
 }
 
 // Labels are the check on an address that came from outside: a crafted or stale one must not reach
-// a terminal this repo (or PR) did not start.
+// a terminal this repo (or PR, or role) did not start.
 export async function assertHerdrCoreTerminalOwner(
   address: string,
-  owner: { repo: string; pr?: number },
+  owner: { repo: string; pr?: number; role?: HerdrCoreRole },
 ): Promise<void> {
   const terminal = (await callHerdrCore("terminal.get", {
     terminal: address,
@@ -120,11 +120,13 @@ export async function assertHerdrCoreTerminalOwner(
   if (
     terminal.labels?.["loophub.repo"] !== owner.repo ||
     (owner.pr !== undefined &&
-      terminal.labels?.["loophub.pr"] !== String(owner.pr))
+      terminal.labels?.["loophub.pr"] !== String(owner.pr)) ||
+    (owner.role !== undefined &&
+      terminal.labels?.["loophub.role"] !== owner.role)
   ) {
     throw new ServiceError(
       409,
-      `Terminal ${address} does not belong to ${owner.repo}${owner.pr === undefined ? "" : ` PR #${owner.pr}`}`,
+      `Terminal ${address} does not belong to ${owner.repo}${owner.pr === undefined ? "" : ` PR #${owner.pr}`}${owner.role === undefined ? "" : ` as ${owner.role}`}`,
     );
   }
 }
