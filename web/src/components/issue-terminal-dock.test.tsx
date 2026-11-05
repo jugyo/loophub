@@ -117,6 +117,7 @@ it("lists live terminals without attaching after a reload, and drops a finished 
   fireEvent.click(await screen.findByRole("button", { name: /Terminals/ }));
   await screen.findByRole("tab", { name: /New issue 1/ });
   expect(urls).toEqual([]);
+  expect(screen.getByText("Select a terminal to attach.")).toBeTruthy();
 
   client.setQueryData(queryKeys.issueTerminals("me/proj"), { terminals: [] });
   await waitFor(() =>

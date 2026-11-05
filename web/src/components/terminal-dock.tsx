@@ -44,6 +44,7 @@ export function TerminalDock({
   isError,
   requestedAddress = null,
   onRequestHandled,
+  selectFirstTab = false,
 }: {
   repo: string;
   // Absent on the issue screens, whose New issue terminals belong to the repo alone.
@@ -53,6 +54,8 @@ export function TerminalDock({
   // The terminal to open the dock on, and the callback to call once the dock has done so.
   requestedAddress?: string | null;
   onRequestHandled?: () => void;
+  // Show the leftmost tab whenever no listed tab is selected.
+  selectFirstTab?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [height, setHeight] = useState(DEFAULT_HEIGHT_PX);
@@ -60,7 +63,12 @@ export function TerminalDock({
   // A finished terminal drops out of the list, which also ends its view and attach.
   const active = terminals.some((t) => t.address === selected)
     ? selected
-    : null;
+    : selectFirstTab
+      ? (terminals[0]?.address ?? null)
+      : null;
+  // Forget a finished terminal, so it can't take the view back if it is listed again.
+  if (selectFirstTab && selected !== null && active !== selected)
+    setSelected(null);
   const drag = useRef<{ y: number; height: number } | null>(null);
   const section = useRef<HTMLElement>(null);
 
@@ -175,6 +183,9 @@ export function TerminalDock({
               repo={repo}
               pull={pull}
               address={active}
+              // Only a person's choice takes the keyboard: a list update must not send what they
+              // are typing elsewhere on the page to a running agent.
+              focusOnAttach={active === selected}
             />
           ) : (
             <p className="p-3 text-sm text-muted-foreground">
@@ -195,12 +206,16 @@ function TerminalView({
   repo,
   pull,
   address,
+  focusOnAttach,
 }: {
   repo: string;
   pull?: number;
   address: string;
+  focusOnAttach: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  // As mounted: this tab's later selection must not re-run the attach effect.
+  const focusOnMount = useRef(focusOnAttach);
   const [closed, setClosed] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
@@ -243,7 +258,7 @@ function TerminalView({
         });
         const observer = new ResizeObserver(() => fit.fit());
         observer.observe(host.current);
-        term.focus();
+        if (focusOnMount.current || attempt > 0) term.focus();
 
         cleanup = () => {
           observer.disconnect();

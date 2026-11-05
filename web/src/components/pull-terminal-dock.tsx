@@ -35,6 +35,7 @@ function Dock({
       pull={number}
       terminals={query.data?.terminals ?? []}
       isError={query.isError}
+      selectFirstTab
     />
   );
 }

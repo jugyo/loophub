@@ -76,8 +76,29 @@ async function openDock() {
   return screen.findByRole("tablist");
 }
 
-it("starts closed, and opening lists every agent with its status without attaching", async () => {
+function stubResizeObserver() {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+}
+
+function selectedTab() {
+  return screen
+    .getAllByRole("tab")
+    .find((tab) => tab.getAttribute("aria-selected") === "true");
+}
+
+function attachedTerminal(url: string) {
+  return new URL(url).searchParams.get("terminal");
+}
+
+it("starts closed without attaching, and opening lists every agent and attaches the leftmost", async () => {
   const urls = stubWebSocket();
+  stubResizeObserver();
   renderDock();
   expect(
     (await screen.findByRole("button", { name: /Terminals/ })).getAttribute(
@@ -85,6 +106,7 @@ it("starts closed, and opening lists every agent with its status without attachi
     ),
   ).toBe("false");
   expect(screen.queryByRole("tab")).toBeNull();
+  expect(urls).toEqual([]);
 
   await openDock();
   const tabs = await screen.findAllByRole("tab");
@@ -94,34 +116,34 @@ it("starts closed, and opening lists every agent with its status without attachi
     "verifier #1blocked",
     "executor #2error",
   ]);
-  expect(urls).toEqual([]);
-  expect(screen.getByText("Select a terminal to attach.")).toBeTruthy();
-});
-
-it("attaches the selected tab through the relay", async () => {
-  const urls = stubWebSocket();
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      disconnect() {}
-    },
-  );
-  renderDock();
-  const tablist = await openDock();
-  fireEvent.click(
-    await within(tablist).findByRole("tab", { name: /executor #1/ }),
-  );
+  expect(selectedTab()).toBe(tabs[0]);
   await waitFor(() => expect(urls.length).toBe(1));
   const url = new URL(urls[0]);
   expect(url.pathname).toBe("/ws/terminal");
   expect(url.searchParams.get("repo")).toBe("me/proj");
   expect(url.searchParams.get("pull")).toBe("7");
-  expect(url.searchParams.get("terminal")).toBe("t2");
+  expect(url.searchParams.get("terminal")).toBe("t1");
 });
 
-it("drops a finished terminal's tab and view", async () => {
-  stubWebSocket();
+it("selects the leftmost tab once tabs appear in an open dock", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
+  const client = renderDock("herdr-core", []);
+  await openDock();
+  expect(await screen.findByText("No live agent terminals.")).toBeTruthy();
+  expect(urls).toEqual([]);
+
+  client.setQueryData(queryKeys.pullTerminals("me/proj", 7), {
+    terminals: TERMINALS,
+  });
+  await screen.findAllByRole("tab");
+  expect(selectedTab()?.textContent).toBe("orchestratorworking");
+  await waitFor(() => expect(urls.map(attachedTerminal)).toEqual(["t1"]));
+});
+
+it("selects the leftmost remaining tab when the selected terminal finishes", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
   const client = renderDock();
   const tablist = await openDock();
   fireEvent.click(
@@ -133,7 +155,116 @@ it("drops a finished terminal's tab and view", async () => {
   await waitFor(() =>
     expect(screen.queryByRole("tab", { name: /executor #1/ })).toBeNull(),
   );
-  expect(screen.getByText("Select a terminal to attach.")).toBeTruthy();
+  expect(selectedTab()?.textContent).toBe("orchestratorworking");
+  await waitFor(() => expect(urls.map(attachedTerminal).at(-1)).toBe("t1"));
+});
+
+it("keeps the user's tab when the list updates", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
+  const client = renderDock();
+  const tablist = await openDock();
+  fireEvent.click(
+    await within(tablist).findByRole("tab", { name: /executor #1/ }),
+  );
+  await waitFor(() => expect(urls.map(attachedTerminal).at(-1)).toBe("t2"));
+  const attaches = urls.length;
+
+  client.setQueryData(queryKeys.pullTerminals("me/proj", 7), {
+    terminals: [
+      ...TERMINALS.filter((terminal) => terminal.address !== "t1"),
+      { address: "t5", label: "verifier #2", status: "working" },
+    ],
+  });
+  await screen.findByRole("tab", { name: /verifier #2/ });
+  expect(selectedTab()?.textContent).toBe("executor #1done");
+  expect(urls.length).toBe(attaches);
+});
+
+it("moves on to the next tab when the leftmost tab shown by default finishes", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
+  const client = renderDock();
+  await openDock();
+  await waitFor(() => expect(urls.map(attachedTerminal)).toEqual(["t1"]));
+
+  client.setQueryData(queryKeys.pullTerminals("me/proj", 7), {
+    terminals: TERMINALS.filter((terminal) => terminal.address !== "t1"),
+  });
+  await waitFor(() => expect(urls.map(attachedTerminal).at(-1)).toBe("t2"));
+  expect(selectedTab()?.textContent).toBe("executor #1done");
+});
+
+it("stays on the current tab when a finished terminal is listed again", async () => {
+  stubWebSocket();
+  stubResizeObserver();
+  const client = renderDock();
+  const tablist = await openDock();
+  fireEvent.click(
+    await within(tablist).findByRole("tab", { name: /executor #1/ }),
+  );
+  client.setQueryData(queryKeys.pullTerminals("me/proj", 7), {
+    terminals: TERMINALS.filter((terminal) => terminal.address !== "t2"),
+  });
+  await waitFor(() =>
+    expect(selectedTab()?.textContent).toBe("orchestratorworking"),
+  );
+
+  client.setQueryData(queryKeys.pullTerminals("me/proj", 7), {
+    terminals: TERMINALS,
+  });
+  await screen.findByRole("tab", { name: /executor #1/ });
+  expect(selectedTab()?.textContent).toBe("orchestratorworking");
+});
+
+function focusPageInput() {
+  const input = document.createElement("textarea");
+  document.body.append(input);
+  input.focus();
+  return input;
+}
+
+function terminalHasFocus() {
+  return document.activeElement?.classList.contains("xterm-helper-textarea");
+}
+
+it("takes the keyboard when a tab is clicked", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
+  renderDock();
+  const tablist = await openDock();
+  await waitFor(() => expect(urls.map(attachedTerminal)).toEqual(["t1"]));
+  fireEvent.click(
+    await within(tablist).findByRole("tab", { name: /executor #1/ }),
+  );
+  await waitFor(() => expect(urls.map(attachedTerminal).at(-1)).toBe("t2"));
+  await waitFor(() => expect(terminalHasFocus()).toBe(true));
+});
+
+it("leaves the keyboard alone when opening or a list update attaches a tab", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
+  const client = renderDock("herdr-core", []);
+  const input = focusPageInput();
+  await openDock();
+  expect(await screen.findByText("No live agent terminals.")).toBeTruthy();
+
+  // A tab appears in the open dock.
+  client.setQueryData(queryKeys.pullTerminals("me/proj", 7), {
+    terminals: TERMINALS,
+  });
+  await waitFor(() => expect(document.querySelector(".xterm")).toBeTruthy());
+  await waitFor(() => expect(urls.map(attachedTerminal)).toEqual(["t1"]));
+  expect(document.activeElement).toBe(input);
+
+  // The shown terminal finishes, and the dock moves on to the next one.
+  client.setQueryData(queryKeys.pullTerminals("me/proj", 7), {
+    terminals: TERMINALS.filter((terminal) => terminal.address !== "t1"),
+  });
+  await waitFor(() => expect(urls.map(attachedTerminal).at(-1)).toBe("t2"));
+  await waitFor(() => expect(document.querySelector(".xterm")).toBeTruthy());
+  expect(document.activeElement).toBe(input);
+  input.remove();
 });
 
 it("renders nothing on a herdr repo", async () => {
