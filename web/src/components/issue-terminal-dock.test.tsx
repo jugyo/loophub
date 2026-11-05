@@ -97,8 +97,8 @@ function renderPage(backend = "herdr-core") {
 
 it("opens on the terminal New issue started and attaches without a PR", async () => {
   renderPage();
-  await screen.findByRole("button", { name: /Terminals/ });
-  expect(screen.queryByRole("tab")).toBeNull();
+  await screen.findByRole("tab", { name: /New issue 1/ });
+  expect(urls).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
 
@@ -114,7 +114,9 @@ it("opens on the terminal New issue started and attaches without a PR", async ()
 
 it("lists live terminals without attaching after a reload, and drops a finished one", async () => {
   const { client } = renderPage();
-  fireEvent.click(await screen.findByRole("button", { name: /Terminals/ }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Toggle terminal dock" }),
+  );
   await screen.findByRole("tab", { name: /New issue 1/ });
   expect(urls).toEqual([]);
   expect(screen.getByText("Select a terminal to attach.")).toBeTruthy();
@@ -126,15 +128,32 @@ it("lists live terminals without attaching after a reload, and drops a finished 
   expect(screen.getByText("No live agent terminals.")).toBeTruthy();
 });
 
+it("opens on the clicked tab of a closed dock", async () => {
+  renderPage();
+  const tab = await screen.findByRole("tab", { name: /New issue 1/ });
+  expect(tab.getAttribute("aria-selected")).toBe("false");
+
+  fireEvent.click(tab);
+
+  await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
+  expect(
+    screen
+      .getByRole("button", { name: "Toggle terminal dock" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  await waitFor(() => expect(urls.length).toBe(1));
+  expect(new URL(urls[0]).searchParams.get("terminal")).toBe("t3");
+});
+
 it("renders nothing on a herdr repo", async () => {
   const { fetchMock } = renderPage("herdr");
   await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));
-  expect(screen.queryByRole("button", { name: /Terminals/ })).toBeNull();
+  expect(screen.queryByRole("tablist")).toBeNull();
 });
 
 it("renders nothing on a remote page", async () => {
   setPageUrl("https://lh.example.com/");
   const { fetchMock } = renderPage();
   await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));
-  expect(screen.queryByRole("button", { name: /Terminals/ })).toBeNull();
+  expect(screen.queryByRole("tablist")).toBeNull();
 });

@@ -3,7 +3,7 @@
 // happens only for the selected tab, and leaving it closes the socket, which ends the attach but
 // never the terminal.
 
-import { ChevronDown, ChevronUp, TerminalSquare } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   type KeyboardEvent,
   type PointerEvent,
@@ -133,51 +133,54 @@ export function TerminalDock({
           onKeyDown={onResizeKey}
         />
       ) : null}
-      <div className="flex h-9 items-center gap-1 overflow-x-auto px-2">
+      <div className="flex h-9 items-center gap-1 px-2">
+        <div
+          role="tablist"
+          aria-label="Agent terminals"
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+        >
+          {terminals.map((t) => (
+            <button
+              key={t.address}
+              type="button"
+              role="tab"
+              // A minimized dock shows no terminal, so none of its tabs is selected.
+              aria-selected={open && t.address === active}
+              className={cn(
+                "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-xs hover:bg-accent",
+                open && t.address === active && "bg-accent font-medium",
+              )}
+              onClick={() => {
+                setOpen(true);
+                setSelected(t.address);
+              }}
+            >
+              {t.label}
+              <Badge tone={STATUS_TONE[t.status ?? ""] ?? "unknown"}>
+                {statusLabel(t.status)}
+              </Badge>
+            </button>
+          ))}
+        </div>
         <Button
           type="button"
           variant="ghost"
-          size="sm"
+          size="icon"
+          className="size-7 shrink-0"
+          aria-label="Toggle terminal dock"
           aria-expanded={open}
+          title="Toggle terminal dock"
           onClick={() => {
             setOpen(!open);
             setSelected(null);
           }}
         >
-          <TerminalSquare className="size-4" aria-hidden="true" />
-          Terminals
           {open ? (
             <ChevronDown className="size-4" aria-hidden="true" />
           ) : (
             <ChevronUp className="size-4" aria-hidden="true" />
           )}
         </Button>
-        {open ? (
-          <div
-            role="tablist"
-            aria-label="Agent terminals"
-            className="flex items-center gap-1"
-          >
-            {terminals.map((t) => (
-              <button
-                key={t.address}
-                type="button"
-                role="tab"
-                aria-selected={t.address === active}
-                className={cn(
-                  "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-xs hover:bg-accent",
-                  t.address === active && "bg-accent font-medium",
-                )}
-                onClick={() => setSelected(t.address)}
-              >
-                {t.label}
-                <Badge tone={STATUS_TONE[t.status ?? ""] ?? "unknown"}>
-                  {statusLabel(t.status)}
-                </Badge>
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
       {open ? (
         <div style={{ height }} className="border-t">

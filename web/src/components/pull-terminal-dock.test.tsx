@@ -71,8 +71,12 @@ function stubWebSocket(): string[] {
   return urls;
 }
 
+function findToggle() {
+  return screen.findByRole("button", { name: "Toggle terminal dock" });
+}
+
 async function openDock() {
-  fireEvent.click(await screen.findByRole("button", { name: /Terminals/ }));
+  fireEvent.click(await findToggle());
   return screen.findByRole("tablist");
 }
 
@@ -96,19 +100,11 @@ function attachedTerminal(url: string) {
   return new URL(url).searchParams.get("terminal");
 }
 
-it("starts closed without attaching, and opening lists every agent and attaches the leftmost", async () => {
+it("starts closed listing every agent without attaching, and opening attaches the leftmost", async () => {
   const urls = stubWebSocket();
   stubResizeObserver();
   renderDock();
-  expect(
-    (await screen.findByRole("button", { name: /Terminals/ })).getAttribute(
-      "aria-expanded",
-    ),
-  ).toBe("false");
-  expect(screen.queryByRole("tab")).toBeNull();
-  expect(urls).toEqual([]);
-
-  await openDock();
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("false");
   const tabs = await screen.findAllByRole("tab");
   expect(tabs.map((tab) => tab.textContent)).toEqual([
     "orchestratorworking",
@@ -116,6 +112,12 @@ it("starts closed without attaching, and opening lists every agent and attaches 
     "verifier #1blocked",
     "executor #2error",
   ]);
+  expect(selectedTab()).toBeUndefined();
+  expect(screen.queryByText("Terminals")).toBeNull();
+  expect(urls).toEqual([]);
+
+  await openDock();
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("true");
   expect(selectedTab()).toBe(tabs[0]);
   await waitFor(() => expect(urls.length).toBe(1));
   const url = new URL(urls[0]);
@@ -123,6 +125,32 @@ it("starts closed without attaching, and opening lists every agent and attaches 
   expect(url.searchParams.get("repo")).toBe("me/proj");
   expect(url.searchParams.get("pull")).toBe("7");
   expect(url.searchParams.get("terminal")).toBe("t1");
+});
+
+it("opens on the clicked tab of a closed dock and takes the keyboard", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
+  renderDock();
+  fireEvent.click(await screen.findByRole("tab", { name: /executor #1/ }));
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("true");
+  expect(selectedTab()?.textContent).toBe("executor #1idle");
+  await waitFor(() => expect(urls.map(attachedTerminal)).toEqual(["t2"]));
+  await waitFor(() => expect(terminalHasFocus()).toBe(true));
+});
+
+it("keeps the tabs when the toggle closes the dock", async () => {
+  stubWebSocket();
+  stubResizeObserver();
+  renderDock();
+  await openDock();
+  await screen.findAllByRole("tab");
+  expect(selectedTab()).toBeTruthy();
+
+  fireEvent.click(await findToggle());
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getAllByRole("tab").length).toBe(TERMINALS.length);
+  expect(selectedTab()).toBeUndefined();
+  expect(document.querySelector(".xterm")).toBeNull();
 });
 
 it("renders a done tab's badge exactly like a tab without a status", async () => {
@@ -286,12 +314,12 @@ it("leaves the keyboard alone when opening or a list update attaches a tab", asy
 it("renders nothing on a herdr repo", async () => {
   renderDock("herdr");
   await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));
-  expect(screen.queryByRole("button", { name: /Terminals/ })).toBeNull();
+  expect(screen.queryByRole("tablist")).toBeNull();
 });
 
 it("renders nothing on a remote page", async () => {
   setPageUrl("https://lh.example.com/");
   renderDock();
   await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));
-  expect(screen.queryByRole("button", { name: /Terminals/ })).toBeNull();
+  expect(screen.queryByRole("tablist")).toBeNull();
 });
