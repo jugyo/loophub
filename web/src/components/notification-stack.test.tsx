@@ -392,6 +392,13 @@ describe("NotificationStack", () => {
     expect(stack.className).toContain("z-[60]");
     // Only the cards take clicks, so the modal underneath the stack stays operable.
     expect(stack.className).toContain("pointer-events-none");
+    // Clear of the terminal dock, whose height is unset (so 0) on screens without one.
+    expect(stack.className).toContain(
+      "bottom-[calc(3rem+var(--pull-terminal-dock-height,0px))]",
+    );
+    expect(stack.className).toContain(
+      "max-h-[calc(100vh-4rem-var(--pull-terminal-dock-height,0px))]",
+    );
     const card = screen
       .getByRole("link", { name: /Notification 1/ })
       .closest("article");

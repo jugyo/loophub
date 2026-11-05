@@ -79,7 +79,7 @@ export function TerminalDock({
     onRequestHandled?.();
   }, [requestedAddress, onRequestHandled]);
 
-  // What the dock covers, for the page's floating scroll button to sit above it.
+  // What the dock covers, for the floating scroll button and notifications to sit above it.
   useLayoutEffect(() => {
     const root = document.documentElement.style;
     root.setProperty(
