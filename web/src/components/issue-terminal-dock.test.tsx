@@ -18,11 +18,13 @@ const STARTED: PullTerminal = {
   address: "t9",
   label: "New issue 2",
   status: null,
+  closable: true,
 };
 const EARLIER: PullTerminal = {
   address: "t3",
   label: "New issue 1",
   status: "working",
+  closable: true,
 };
 
 let urls: string[];
@@ -86,6 +88,7 @@ const RESTORED: PullTerminal = {
   address: "t12",
   label: "New issue 3",
   status: null,
+  closable: true,
 };
 
 function renderPage(

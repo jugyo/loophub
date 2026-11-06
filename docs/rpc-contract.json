@@ -1291,6 +1291,36 @@
       }
     },
     {
+      "name": "terminal/closePullShell",
+      "description": "End a shell opened in the PR screen's terminal dock without confirmation. A terminal that is not one of this PR's shells, such as a Workflow agent, is refused with 409.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pull": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "address": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "pull",
+          "address"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "terminal/issueTerminals",
       "description": "Live herdr-core New issue terminals of a repo with their last reported status, for the issue screens' terminal dock. With issue, only the terminals that issue was filed from. Empty unless the repo runs on herdr-core.",
       "params": {

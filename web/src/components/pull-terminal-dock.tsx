@@ -1,6 +1,7 @@
 // The PR screen's bottom dock (#2574): one tab per live agent terminal of the PR's Workflow runs, plus
 // an inactive tab for each agent of a running run whose terminal is gone, which can resume its session
-// in a new terminal. New terminal opens the person's own shell in the PR's worktree as another tab.
+// in a new terminal. New terminal opens the person's own shell in the PR's worktree as another tab,
+// which the person can close; the agents' tabs have no close button.
 
 import { Plus } from "lucide-react";
 import { useState } from "react";
@@ -10,6 +11,7 @@ import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
 import {
+  useClosePullShell,
   useOpenPullShell,
   usePullTerminals,
   useRestorePullTerminal,
@@ -44,6 +46,7 @@ function Dock({
   // The terminal a restore or New terminal started, for the dock to open on.
   const [restored, setRestored] = useState<string | null>(null);
   const openShell = useOpenPullShell();
+  const closeShell = useClosePullShell();
   const { showError } = useToast();
   const shellBlocker = query.data?.shell_blocker ?? null;
   async function onStarted(address: string) {
@@ -60,6 +63,17 @@ function Dock({
       selectFirstTab
       requestedAddress={restored}
       onRequestHandled={() => setRestored(null)}
+      onClose={(terminal) =>
+        closeShell.mutate(
+          { repo: `${owner}/${repo}`, pull: number, address: terminal.address },
+          {
+            onError: (error) =>
+              showError(
+                `Failed to close ${terminal.label}: ${errorMessage(error)}`,
+              ),
+          },
+        )
+      }
       inactive={(query.data?.lost ?? []).map((agent) => ({
         key: `lost:${agent.session_id}`,
         label: agent.label,

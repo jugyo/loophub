@@ -630,6 +630,15 @@ export function openPullShell(input: { repo: string; pull: number }) {
   return rpc<TerminalLaunchResult>("terminal/openPullShell", input);
 }
 
+/** End a shell opened in a PR's dock. */
+export function closePullShell(input: {
+  repo: string;
+  pull: number;
+  address: string;
+}) {
+  return rpc<{ ok: true }>("terminal/closePullShell", input);
+}
+
 /** Resume a lost Workflow agent of a PR in a new terminal of the dock. */
 export function restorePullTerminal(input: {
   repo: string;

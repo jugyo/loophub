@@ -433,9 +433,24 @@ describe("terminal/pullTerminals", () => {
   test("lists live agents in run order, numbering each role across finished ones", () => {
     expect(svc.terminal.pullTerminals({ repo: "me/dock", pull: 7 })).toEqual({
       terminals: [
-        { address: "t1", label: "orchestrator", status: "working" },
-        { address: "t3", label: "verifier #1", status: "done" },
-        { address: "t4", label: "executor #2", status: "blocked" },
+        {
+          address: "t1",
+          label: "orchestrator",
+          status: "working",
+          closable: false,
+        },
+        {
+          address: "t3",
+          label: "verifier #1",
+          status: "done",
+          closable: false,
+        },
+        {
+          address: "t4",
+          label: "executor #2",
+          status: "blocked",
+          closable: false,
+        },
       ],
       lost: [],
       shell_blocker: "This pull request has no worktree",
@@ -450,8 +465,13 @@ describe("terminal/pullTerminals", () => {
     expect(
       svc.terminal
         .pullTerminals({ repo: "me/dock", pull: 7 })
-        .terminals.map((terminal) => terminal.label),
-    ).toEqual(["orchestrator", "verifier #1", "executor #2", "shell 2"]);
+        .terminals.map(({ label, closable }) => [label, closable]),
+    ).toEqual([
+      ["orchestrator", false],
+      ["verifier #1", false],
+      ["executor #2", false],
+      ["shell 2", true],
+    ]);
     for (const address of ["s1", "s2", "s3"])
       S.deleteHerdrCoreTerminal(address);
   });
@@ -496,6 +516,7 @@ describe("terminal/pullTerminals", () => {
       address: "t9",
       label: "executor #1",
       status: "working",
+      closable: false,
     });
     S.deleteHerdrCoreTerminal("t9");
   });
@@ -554,8 +575,18 @@ describe("terminal/issueTerminals", () => {
     row("t25", { role: "executor", pr_number: 7, run_id: 1, seq: 1 });
     expect(svc.terminal.issueTerminals({ repo: "me/issue-dock" })).toEqual({
       terminals: [
-        { address: "t21", label: "New issue 1", status: "working" },
-        { address: "t23", label: "New issue 3", status: null },
+        {
+          address: "t21",
+          label: "New issue 1",
+          status: "working",
+          closable: true,
+        },
+        {
+          address: "t23",
+          label: "New issue 3",
+          status: null,
+          closable: true,
+        },
       ],
     });
   });

@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   closeIssueTerminal,
+  closePullShell,
   getIssueTerminalHistory,
   getIssueTerminals,
   getPullTerminals,
@@ -54,4 +55,8 @@ export function useRestorePullTerminal() {
 
 export function useOpenPullShell() {
   return useMutation({ mutationFn: openPullShell });
+}
+
+export function useClosePullShell() {
+  return useMutation({ mutationFn: closePullShell });
 }

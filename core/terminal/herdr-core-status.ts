@@ -249,7 +249,12 @@ export function listPullTerminals(
         restore_blocker: tab.restore_blocker,
       });
     else if (tab.state === "live")
-      terminals.push({ address: tab.address, label, status: tab.status });
+      terminals.push({
+        address: tab.address,
+        label,
+        status: tab.status,
+        closable: false,
+      });
   }
   // A person's shells follow the agents, numbered like New issue across finished ones.
   S.listHerdrCoreTerminalRows(repo.id)
@@ -260,6 +265,7 @@ export function listPullTerminals(
           address: row.address,
           label: `shell ${index + 1}`,
           status: row.status,
+          closable: true,
         });
     });
   return { terminals, lost: lostTabs };
@@ -292,6 +298,7 @@ export function listIssueTerminals(
               address: row.address,
               label: `New issue ${index + 1}`,
               status: row.status,
+              closable: true,
             },
           ]
         : [],

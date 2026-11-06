@@ -14,10 +14,10 @@ import { queryKeys } from "@/queries/keys";
 import { PullTerminalDock } from "./pull-terminal-dock";
 
 const TERMINALS: PullTerminal[] = [
-  { address: "t1", label: "orchestrator", status: "working" },
-  { address: "t2", label: "executor #1", status: "done" },
-  { address: "t3", label: "verifier #1", status: "blocked" },
-  { address: "t4", label: "executor #2", status: "error" },
+  { address: "t1", label: "orchestrator", status: "working", closable: false },
+  { address: "t2", label: "executor #1", status: "done", closable: false },
+  { address: "t3", label: "verifier #1", status: "blocked", closable: false },
+  { address: "t4", label: "executor #2", status: "error", closable: false },
 ];
 
 let fetchMock: ReturnType<typeof mockRpcFetch>;
@@ -182,8 +182,8 @@ it("renders a done tab's badge exactly like a tab without a status", async () =>
   stubWebSocket();
   stubResizeObserver();
   renderDock("herdr-core", [
-    { address: "t1", label: "done", status: "done" },
-    { address: "t2", label: "none", status: null },
+    { address: "t1", label: "done", status: "done", closable: false },
+    { address: "t2", label: "none", status: null, closable: false },
   ]);
   await openDock();
   const [done, none] = (await screen.findAllByRole("tab")).map(
@@ -242,7 +242,12 @@ it("keeps the user's tab when the list updates", async () => {
   client.setQueryData(queryKeys.pullTerminals("me/proj", 7), {
     terminals: [
       ...TERMINALS.filter((terminal) => terminal.address !== "t1"),
-      { address: "t5", label: "verifier #2", status: "working" },
+      {
+        address: "t5",
+        label: "verifier #2",
+        status: "working",
+        closable: false,
+      },
     ],
   });
   await screen.findByRole("tab", { name: /verifier #2/ });
@@ -367,7 +372,12 @@ function renderLostDock(restore: () => unknown) {
       state = {
         terminals: [
           ...state.terminals,
-          { address: "t9", label: "executor #3", status: null },
+          {
+            address: "t9",
+            label: "executor #3",
+            status: null,
+            closable: false,
+          },
         ],
         lost: LOST.slice(1),
       };
@@ -443,7 +453,7 @@ it("opens a new shell terminal as a selected tab", async () => {
     "terminal/openPullShell": () => {
       terminals = [
         ...terminals,
-        { address: "t8", label: "shell 1", status: null },
+        { address: "t8", label: "shell 1", status: null, closable: true },
       ];
       return { backend: "herdr-core", address: "t8" };
     },
@@ -474,4 +484,36 @@ it("can't open a shell without a worktree and says why", async () => {
     ),
   );
   expect(button.hasAttribute("disabled")).toBe(true);
+});
+
+it("closes a shell with one click, while the agents' tabs have no close button", async () => {
+  stubWebSocket();
+  stubResizeObserver();
+  let terminals: PullTerminal[] = [
+    ...TERMINALS.slice(0, 1),
+    { address: "t8", label: "shell 1", status: null, closable: true },
+  ];
+  renderDock("herdr-core", [], {
+    "terminal/pullTerminals": () => ({
+      terminals,
+      lost: [],
+      shell_blocker: null,
+    }),
+    "terminal/closePullShell": (params: { address: string }) => {
+      terminals = terminals.filter((t) => t.address !== params.address);
+      return { ok: true };
+    },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Close shell 1" }));
+  expect(
+    screen.queryByRole("button", { name: "Close orchestrator" }),
+  ).toBeNull();
+  const call = await waitFor(() => {
+    const found = fetchMock.mock.calls
+      .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
+      .find((body) => body.method === "terminal/closePullShell");
+    expect(found).toBeTruthy();
+    return found;
+  });
+  expect(call.params).toEqual({ repo: "me/proj", pull: 7, address: "t8" });
 });

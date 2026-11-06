@@ -977,6 +977,8 @@ export interface PullTerminalWire {
   label: string;
   // What its program last reported (idle | working | done | blocked | error), null when it never said.
   status: string | null;
+  // Whether the dock offers to end it: a person's own terminals, not a Workflow run's agents.
+  closable: boolean;
 }
 
 // A Workflow agent the PR screen's dock lists without a live terminal: deliveries still target it,

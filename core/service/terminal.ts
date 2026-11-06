@@ -809,7 +809,7 @@ function herdrCoreRepoOr409(repo: string): S.Repo {
 // Rejects an address the client gave unless LoopHub started it for this owner.
 async function assertTerminalAttachable(
   input: { repo: string; address: string },
-  owner: { pr: number } | { role: "issue-create" },
+  owner: { pr: number; role?: "shell" } | { role: "issue-create" },
 ): Promise<void> {
   const r = herdrCoreRepoOr409(input.repo);
   if (!isHerdrCoreAddress(input.address))
@@ -867,6 +867,17 @@ export const terminal = {
       attach: `hc attach ${address}`,
       address,
     };
+  },
+
+  // Ends a shell the person opened in the PR's dock. Like closeIssueTerminal, the tab leaves once
+  // the worker sees the terminal exit; a Workflow run's agents can't be closed this way.
+  async closePullShell(input: {
+    repo: string;
+    pull: number;
+    address: string;
+  }): Promise<void> {
+    await assertTerminalAttachable(input, { pr: input.pull, role: "shell" });
+    await killHerdrCoreTerminal(input.address);
   },
 
   // Resumes a lost Workflow agent of the PR in a new terminal, which deliveries reach from then on.

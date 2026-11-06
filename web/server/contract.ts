@@ -637,6 +637,24 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.terminal.openPullShell({ repo: p.repo, pull: p.pull }),
   },
+  "terminal/closePullShell": {
+    description:
+      "End a shell opened in the PR screen's terminal dock without confirmation. A terminal that is not one of this PR's shells, such as a Workflow agent, is refused with 409.",
+    params: params({ repo, pull: positiveInt, address: strNonEmpty }, [
+      "repo",
+      "pull",
+      "address",
+    ]),
+    result: anyObject,
+    handler: async (p) => {
+      await svc.terminal.closePullShell({
+        repo: p.repo,
+        pull: p.pull,
+        address: p.address,
+      });
+      return { ok: true };
+    },
+  },
   "terminal/issueTerminals": {
     description:
       "Live herdr-core New issue terminals of a repo with their last reported status, for the issue screens' terminal dock. With issue, only the terminals that issue was filed from. Empty unless the repo runs on herdr-core.",

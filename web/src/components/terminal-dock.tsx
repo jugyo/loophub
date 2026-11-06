@@ -78,7 +78,7 @@ export function TerminalDock({
   onRequestHandled?: () => void;
   // Show the leftmost tab whenever no listed tab is selected.
   selectFirstTab?: boolean;
-  // Gives each tab a button that ends its terminal.
+  // Gives each closable tab a button that ends its terminal.
   onClose?: (terminal: PullTerminal) => void;
   // What a History tab at the right end shows in place of a terminal; no tab without it.
   history?: ReactNode;
@@ -204,7 +204,7 @@ export function TerminalDock({
                     {statusLabel(t.status)}
                   </Badge>
                 </button>
-                {onClose ? (
+                {onClose && t.closable ? (
                   <button
                     type="button"
                     aria-label={`Close ${t.label}`}
