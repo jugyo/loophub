@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const MIN_HEIGHT_PX = 120;
-const DEFAULT_HEIGHT_PX = 320;
+const DEFAULT_HEIGHT_PX = 416;
 const KEYBOARD_RESIZE_STEP_PX = 24;
 
 // `done` means the agent finished a turn and waits for input; an exited terminal leaves the tabs.
