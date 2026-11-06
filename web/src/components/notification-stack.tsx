@@ -218,7 +218,7 @@ export function NotificationStack({ pathname }: { pathname: string }) {
       aria-label="Unread notifications"
       aria-live="polite"
       data-debug-component="NotificationStack"
-      className="pointer-events-none fixed right-4 bottom-[calc(3rem+var(--pull-terminal-dock-height,0px))] z-[60] flex max-h-[calc(100vh-4rem-var(--pull-terminal-dock-height,0px))] w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto"
+      className="pointer-events-none fixed right-2.5 bottom-[calc(2.375rem+var(--pull-terminal-dock-height,0px))] z-[60] flex max-h-[calc(100vh-3.375rem-var(--pull-terminal-dock-height,0px))] w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto"
     >
       {pageUnread.length > 0 ? (
         // One button carries both states so toggling keeps it mounted, and a keyboard user who

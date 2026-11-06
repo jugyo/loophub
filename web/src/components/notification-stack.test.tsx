@@ -394,11 +394,13 @@ describe("NotificationStack", () => {
     expect(stack.className).toContain("pointer-events-none");
     // Clear of the terminal dock, whose height is unset (so 0) on screens without one.
     expect(stack.className).toContain(
-      "bottom-[calc(3rem+var(--pull-terminal-dock-height,0px))]",
+      "bottom-[calc(2.375rem+var(--pull-terminal-dock-height,0px))]",
     );
     expect(stack.className).toContain(
-      "max-h-[calc(100vh-4rem-var(--pull-terminal-dock-height,0px))]",
+      "max-h-[calc(100vh-3.375rem-var(--pull-terminal-dock-height,0px))]",
     );
+    // The right margin matches the visible gap above the status bar (2.375rem - 1.75rem).
+    expect(stack.className).toContain("right-2.5");
     const card = screen
       .getByRole("link", { name: /Notification 1/ })
       .closest("article");
