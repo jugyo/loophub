@@ -204,6 +204,45 @@ export function listSessionLinkedTargets(
     .all(sessionId) as SessionLinkedTargetRow[];
 }
 
+export interface IssueCreateSessionRow {
+  id: string;
+  runtime: string | null;
+  created_at: string;
+  updated_at: string;
+  issue_number: number | null;
+  issue_title: string | null;
+}
+
+// The New issue sessions of one repo, most recently active first, with the issue each one filed. A
+// session not yet linked to an issue carries its repo only in the name `lh issue new` gives it.
+export function listIssueCreateSessions(
+  repoId: number,
+  sessionName: string,
+  limit: number,
+): IssueCreateSessionRow[] {
+  return db
+    .query(
+      `SELECT
+         s.id,
+         s.runtime,
+         s.created_at,
+         s.updated_at,
+         i.number AS issue_number,
+         i.title AS issue_title
+       FROM agent_sessions s
+       LEFT JOIN issues i ON i.id = (
+         SELECT l.issue_id FROM session_links l
+         JOIN issues li ON li.id = l.issue_id
+         WHERE l.session_id = s.id AND li.repo_id = ? AND li.kind = 'issue'
+         ORDER BY l.created_at LIMIT 1
+       )
+       WHERE s.kind = 'issue-create' AND s.name = ?
+       ORDER BY s.updated_at DESC
+       LIMIT ?`,
+    )
+    .all(repoId, sessionName, limit) as IssueCreateSessionRow[];
+}
+
 // Attribute a dev session to a PR row by recording it in the generalized session_links bridge
 // (kind='dev'). Usage attribution and retro resolve the PR's implementation session from there.
 // The PR's related-sessions list accumulates every dev session that worked it; the *primary* anchor

@@ -7,8 +7,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "#loophub-test";
-import { mockRpcFetch } from "@/api/rpc-mock";
-import type { PullTerminal } from "@/api/types";
+import { mockRpcFetch, RpcFault } from "@/api/rpc-mock";
+import type { IssueTerminalHistory, PullTerminal } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { queryKeys } from "@/queries/keys";
 import { IssueTerminalDock } from "./issue-terminal-dock";
@@ -64,12 +64,47 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderPage(backend = "herdr-core") {
+const HISTORY: IssueTerminalHistory[] = [
+  {
+    session_id: "s-filed",
+    runtime: "claude-code",
+    issue: { number: 12, title: "Filed earlier" },
+    started_at: "2026-11-05T10:00:00Z",
+    updated_at: "2026-11-05T11:00:00Z",
+    restore_blocker: null,
+  },
+  {
+    session_id: "s-codex",
+    runtime: "codex",
+    issue: null,
+    started_at: "2026-11-04T10:00:00Z",
+    updated_at: "2026-11-04T11:00:00Z",
+    restore_blocker: "Restore is available for Claude Code only",
+  },
+];
+const RESTORED: PullTerminal = {
+  address: "t12",
+  label: "New issue 3",
+  status: null,
+};
+
+function renderPage(backend = "herdr-core", restoreFails = false) {
   let terminals = [EARLIER];
   const fetchMock = mockRpcFetch({
     "repos/get": () => ({ terminal_backend: backend }),
     "settings/get": () => ({}),
     "terminal/issueTerminals": () => ({ terminals }),
+    "terminal/issueTerminalHistory": () => ({ sessions: HISTORY }),
+    "terminal/closeIssueTerminal": () => {
+      terminals = [];
+      return { ok: true };
+    },
+    "terminal/restoreIssueTerminal": () => {
+      if (restoreFails)
+        throw new RpcFault(500, "No conversation found with session ID");
+      terminals = [EARLIER, RESTORED];
+      return { backend: "herdr-core", address: "t12" };
+    },
     "terminal/launch": () => {
       // The launch records its terminal before it answers.
       terminals = [EARLIER, STARTED];
@@ -100,7 +135,7 @@ it("opens on the terminal New issue started and attaches without a PR", async ()
   await screen.findByRole("tab", { name: /New issue 1/ });
   expect(urls).toEqual([]);
 
-  fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
+  fireEvent.click(screen.getByRole("button", { name: "New issue" }));
 
   const tab = await screen.findByRole("tab", { name: /New issue 2/ });
   await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
@@ -156,4 +191,61 @@ it("renders nothing on a remote page", async () => {
   const { fetchMock } = renderPage();
   await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));
   expect(screen.queryByRole("tablist")).toBeNull();
+});
+
+function rpcCalls(fetchMock: ReturnType<typeof mockRpcFetch>, method: string) {
+  return fetchMock.mock.calls
+    .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
+    .filter((body) => body.method === method);
+}
+
+it("closes a tab's terminal with one click", async () => {
+  const { fetchMock } = renderPage();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Close New issue 1" }),
+  );
+  await waitFor(() =>
+    expect(rpcCalls(fetchMock, "terminal/closeIssueTerminal")).toHaveLength(1),
+  );
+  expect(rpcCalls(fetchMock, "terminal/closeIssueTerminal")[0].params).toEqual({
+    repo: "me/proj",
+    address: "t3",
+  });
+});
+
+it("lists past New issues in the History tab, with why one can't be restored", async () => {
+  renderPage();
+  fireEvent.click(await screen.findByRole("button", { name: "History" }));
+  expect(await screen.findByText("#12 Filed earlier")).toBeTruthy();
+  expect(screen.getByText(/^Not filed — started/)).toBeTruthy();
+  expect(screen.getAllByRole("button", { name: "Restore" })).toHaveLength(1);
+  expect(
+    screen.getByText("Restore is available for Claude Code only"),
+  ).toBeTruthy();
+});
+
+it("restores a session and opens the dock on its terminal", async () => {
+  const { fetchMock } = renderPage();
+  fireEvent.click(await screen.findByRole("button", { name: "History" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+
+  const tab = await screen.findByRole("tab", { name: /New issue 3/ });
+  await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
+  expect(
+    rpcCalls(fetchMock, "terminal/restoreIssueTerminal")[0].params,
+  ).toEqual({ repo: "me/proj", sessionId: "s-filed" });
+  await waitFor(() =>
+    expect(new URL(urls.at(-1) as string).searchParams.get("terminal")).toBe(
+      "t12",
+    ),
+  );
+});
+
+it("shows why a restore failed", async () => {
+  renderPage("herdr-core", true);
+  fireEvent.click(await screen.findByRole("button", { name: "History" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "No conversation found with session ID",
+  );
 });

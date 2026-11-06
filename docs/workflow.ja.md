@@ -468,7 +468,7 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
 
 親と子（Execute / Verify）のエージェントがすべて失われた run は、run と PR が `running` のまま止まる。
 `lh workflow run relaunch --pr <n>` は、その PR の running run に fresh な親を起動して run を引き継がせる。
-失われたかどうかの判定はしない。人間が判断して実行する。coding-agent セッションの resume は行わない。
+失われたかどうかの判定はしない。人間が判断して実行する。Workflow のエージェントの coding-agent セッションは resume しない。
 
 relaunch は run の parent session を新しい session に差し替え、parent readiness を未宣言に戻し、active
 child と起動予約を外し、失われた親の pane を配送先から外す。置き換えた親の session は run の参加者に
@@ -508,6 +508,16 @@ issue 一覧画面と issue 詳細画面には、そのリポジトリの live �
 New issue の起動に成功すると、ドックが開いて起動したターミナルに attach する。行は起動時に lh-web が記録するので、
 worker の `hc events` を待たない。中継は PR を指定しない接続を New issue のターミナルとして扱い、`loophub.repo` と
 `loophub.role=issue-create` を照合する。`public_origin` 経由ではドックを出さず、`hc attach <address>` をトーストで表示する。
+
+New issue のタブは `✕` を押すと確認なしでターミナルを終了する。誤操作は確認ではなく復元で救う。New issue の起動時に lh-web が
+セッション ID を決めて `lh issue new` に渡し、ターミナルの `loophub.session` ラベルと `herdr_core_terminals.session_id` に残す。
+ドック右端の History タブは、そのリポジトリの New issue セッションのうち live なターミナルが動かしていないものを、
+最近更新された順に一覧する。セッションがどのリポジトリのものかは、起票済みならリンクした issue のリポジトリで、未起票なら
+`lh issue new` が付けるセッション名 `New issue (<owner>/<repo>)` で判定する。Restore は Claude Code のセッションだけを、
+リポジトリのルートで `claude --resume <session>` として新しいターミナルに起動し、New issue のタブとして開く。
+他のランタイムはセッション ID で会話を再開できず、Claude Code でも transcript（`~/.claude/projects/*/<session>.jsonl`）が
+保持期間で消えたり、一度も作られなかったりしたセッションは再開できない。どちらも一覧には出すが復元はできず、
+その理由を行に表示する。RPC も起動前に同じ判定で拒否する。復元に失敗したらエラーを History タブに表示する。coding-agent のセッションを resume するのはこの New issue の復元だけである。
 
 ### herdr-core のエージェント状態
 

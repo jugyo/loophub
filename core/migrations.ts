@@ -1724,6 +1724,14 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    id: "20261106002824-herdr-core-terminal-session",
+    run: (db) => {
+      // The agent session a terminal runs, from its loophub.session label: what lets the issue
+      // screens tell a live New issue terminal from a past one, and restore the latter.
+      db.exec("ALTER TABLE herdr_core_terminals ADD COLUMN session_id TEXT");
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

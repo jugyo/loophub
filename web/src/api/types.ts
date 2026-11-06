@@ -29,6 +29,7 @@ import type {
   IssueListPageWire,
   IssueListPullSummaryWire,
   IssueRefKindWire,
+  IssueTerminalHistoryWire,
   IssueWire,
   LabelWire,
   LinkedIssueWire,
@@ -205,6 +206,7 @@ export type HerdrRepoSessions = HerdrRepoSessionsWire;
 
 export type HerdrSessions = HerdrSessionsWire;
 export type PullTerminal = PullTerminalWire;
+export type IssueTerminalHistory = IssueTerminalHistoryWire;
 
 /**
  * Recent terminal output for one herdr agent (`terminal/agentRead`, #500), for the

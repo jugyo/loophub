@@ -102,6 +102,7 @@ describe("queryKeysForEvent", () => {
       }),
     );
     expect(keys).toContainEqual(["issue-terminals", "me/proj"]);
+    expect(keys).toContainEqual(["issue-terminal-history", "me/proj"]);
   });
 
   it("maps workspace events to the repo workspace list", () => {
@@ -513,6 +514,7 @@ describe("queryKeysForEvent", () => {
       }),
     );
     expect(issueKeys).toContainEqual(["issue", "me/proj", 4]);
+    expect(issueKeys).toContainEqual(["issue-terminal-history", "me/proj"]);
   });
 
   // #2263: usage ticks are the app's highest-frequency event. The only thing they change on the

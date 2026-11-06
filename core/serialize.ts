@@ -979,6 +979,18 @@ export interface PullTerminalWire {
   status: string | null;
 }
 
+// One row of the issue screens' New issue history: a New issue session with no live terminal.
+export interface IssueTerminalHistoryWire {
+  session_id: string;
+  runtime: string | null;
+  // The issue the session filed, null while it filed none.
+  issue: { number: number; title: string } | null;
+  started_at: string;
+  updated_at: string;
+  // Why Restore is unavailable, null when it is available.
+  restore_blocker: string | null;
+}
+
 export type TerminalLaunchBackendWire = "builtin" | "herdr" | "herdr-core";
 
 // Result of `terminal/launch`: which backend handled it plus the herdr coordinates the client

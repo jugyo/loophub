@@ -10,9 +10,17 @@ export const LEGACY_LH_DEV_SESSION_AGENT = "lh-dev";
 export const LH_ISSUE_CREATE_SESSION_AGENT = "issue-create";
 export const SESSION_KIND_ISSUE_CREATE = "issue-create";
 
+// The name `lh issue new` gives its session, which is also how a session not yet linked to an issue
+// is found for its repo.
+export function issueCreateSessionName(repo: string): string {
+  return `New issue (${repo})`;
+}
+
 // Env var used to correlate an issue-creation agent with the Herdr pane it creates.
 export const ENV_ISSUE_CREATE_HERDR_LAUNCH =
   "LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH";
+// The session id a launcher chose for `lh issue new`, so it can tell its terminal's session.
+export const ENV_ISSUE_CREATE_SESSION_ID = "LOOPHUB_ISSUE_CREATE_SESSION_ID";
 
 export const RUNTIME_CLAUDE_CODE = RUNTIMES["claude-code"].id;
 export const RUNTIME_CODEX = RUNTIMES.codex.id;

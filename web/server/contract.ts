@@ -621,6 +621,37 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.terminal.issueTerminals({ repo: p.repo }),
   },
+  "terminal/issueTerminalHistory": {
+    description:
+      "Past New issue sessions of a repo with no live terminal, most recently active first, for the issue screens' terminal dock History tab. restore_blocker says why a session can't be resumed (not Claude Code, or its transcript is gone), null when it can. Empty unless the repo runs on herdr-core.",
+    params: params({ repo }, ["repo"]),
+    result: anyObject,
+    handler: (p) => svc.terminal.issueTerminalHistory({ repo: p.repo }),
+  },
+  "terminal/closeIssueTerminal": {
+    description:
+      "End a New issue terminal of a herdr-core repo without confirmation. Its session stays in the History tab to restore.",
+    params: params({ repo, address: strNonEmpty }, ["repo", "address"]),
+    result: anyObject,
+    handler: async (p) => {
+      await svc.terminal.closeIssueTerminal({
+        repo: p.repo,
+        address: p.address,
+      });
+      return { ok: true };
+    },
+  },
+  "terminal/restoreIssueTerminal": {
+    description:
+      "Resume a past Claude Code New issue session in a new herdr-core terminal, listed again as a New issue tab. Returns the terminal's address. A session that can't be resumed (another runtime, or a transcript no longer saved) is refused with 422 before any terminal starts.",
+    params: params({ repo, sessionId: strNonEmpty }, ["repo", "sessionId"]),
+    result: anyObject,
+    handler: (p) =>
+      svc.terminal.restoreIssueTerminal(
+        { repo: p.repo, sessionId: p.sessionId },
+        log.error,
+      ),
+  },
   "terminal/agentRead": {
     description:
       "Recent terminal output for one herdr agent, for the sidebar hover preview (#500). target is a herdr `agent read` target — a pane_id, or an agent display name (e.g. \"dev #486\") only when it's unique within the session (herdr will not resolve an ambiguous name). output is null when herdr isn't running, the session is gone, or the agent is no longer present.",

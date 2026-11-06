@@ -7,8 +7,19 @@ import {
   type HerdrRepoSessionsWire,
   type HerdrSessionsWire,
   herdrPaneSessionJSON,
+  type IssueTerminalHistoryWire,
   type PullTerminalWire,
 } from "../serialize.ts";
+import {
+  isClaudeSessionId,
+  issueCreateSessionName,
+  RUNTIME_CLAUDE_CODE,
+} from "../session-runtime.ts";
+import {
+  type ClaudeTranscriptIndex,
+  createClaudeTranscriptIndex,
+  findClaudeTranscript,
+} from "../session-usage.ts";
 import * as S from "../store.ts";
 import { normalizeTerminalBackend } from "../terminal-backend.ts";
 import {
@@ -65,6 +76,7 @@ function terminalState(
     turn: terminal.turn ?? 0,
     exit_code: terminal.exit_code ?? null,
     reason: terminal.reason ?? null,
+    session_id: labels["loophub.session"] ?? null,
   };
 }
 
@@ -237,9 +249,63 @@ export function listIssueTerminals(repo: Repo): PullTerminalWire[] {
     );
 }
 
+const ISSUE_TERMINAL_HISTORY_LIMIT = 50;
+
+// Why a New issue session can't be resumed, null when it can. Claude Code alone resumes a session by
+// its id, and only while its transcript is still saved: an expired or never-started one would open a
+// terminal that exits at once.
+export function issueSessionRestoreBlocker(
+  session: { id: string; runtime: string | null },
+  transcripts: ClaudeTranscriptIndex = createClaudeTranscriptIndex(undefined, [
+    session.id,
+  ]),
+): string | null {
+  if (session.runtime !== RUNTIME_CLAUDE_CODE || !isClaudeSessionId(session.id))
+    return "Restore is available for Claude Code only";
+  return findClaudeTranscript(session.id, transcripts.projectsDir, transcripts)
+    ? null
+    : "The conversation is no longer saved";
+}
+
+// The issue screens' list of New issue sessions to restore: every one of the repo's, recent first,
+// except those a live terminal already runs.
+export function listIssueTerminalHistory(
+  repo: Repo,
+): IssueTerminalHistoryWire[] {
+  const live = new Set(
+    S.listHerdrCoreTerminalRows(repo.id)
+      .filter((row) => row.role === "issue-create" && row.state === "live")
+      .map((row) => row.session_id),
+  );
+  const sessions = S.listIssueCreateSessions(
+    repo.id,
+    issueCreateSessionName(repo.full_name),
+    ISSUE_TERMINAL_HISTORY_LIMIT,
+  ).filter((row) => !live.has(row.id));
+  const transcripts = createClaudeTranscriptIndex(
+    undefined,
+    sessions.map((row) => row.id),
+  );
+  return sessions.map((row) => ({
+    session_id: row.id,
+    runtime: row.runtime,
+    issue:
+      row.issue_number === null
+        ? null
+        : { number: row.issue_number, title: row.issue_title ?? "" },
+    started_at: row.created_at,
+    updated_at: row.updated_at,
+    restore_blocker: issueSessionRestoreBlocker(row, transcripts),
+  }));
+}
+
 // The launcher's own record of a New issue terminal, so the dock can attach to it at once rather than
 // after the worker's next look at `hc events`. Whatever the worker already recorded is newer.
-export function recordIssueTerminalStarted(repo: Repo, address: string): void {
+export function recordIssueTerminalStarted(
+  repo: Repo,
+  address: string,
+  sessionId: string,
+): void {
   db.transaction(() => {
     if (S.getHerdrCoreTerminal(address)) return;
     record(repo, {
@@ -254,6 +320,7 @@ export function recordIssueTerminalStarted(repo: Repo, address: string): void {
       turn: 0,
       exit_code: null,
       reason: null,
+      session_id: sessionId,
     });
   });
 }

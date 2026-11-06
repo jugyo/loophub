@@ -1,7 +1,13 @@
 // The terminal dock's tabs (#2574). terminal.agent_state_changed (lib/event-keys.ts) keeps them fresh.
 
-import { useQuery } from "@tanstack/react-query";
-import { getIssueTerminals, getPullTerminals } from "@/api/client";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  closeIssueTerminal,
+  getIssueTerminalHistory,
+  getIssueTerminals,
+  getPullTerminals,
+  restoreIssueTerminal,
+} from "@/api/client";
 import { queryKeys } from "./keys";
 
 export function usePullTerminals(owner: string, repo: string, number: number) {
@@ -17,4 +23,20 @@ export function useIssueTerminals(full: string) {
     queryKey: queryKeys.issueTerminals(full),
     queryFn: () => getIssueTerminals(full),
   });
+}
+
+// Mounted only while the dock shows its History tab.
+export function useIssueTerminalHistory(full: string) {
+  return useQuery({
+    queryKey: queryKeys.issueTerminalHistory(full),
+    queryFn: () => getIssueTerminalHistory(full),
+  });
+}
+
+export function useCloseIssueTerminal() {
+  return useMutation({ mutationFn: closeIssueTerminal });
+}
+
+export function useRestoreIssueTerminal() {
+  return useMutation({ mutationFn: restoreIssueTerminal });
 }

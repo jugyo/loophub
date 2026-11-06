@@ -41,6 +41,8 @@ export const queryKeys = {
   pullTerminals: (full: string, number: number) =>
     ["pull-terminals", full, number] as const,
   issueTerminals: (full: string) => ["issue-terminals", full] as const,
+  issueTerminalHistory: (full: string) =>
+    ["issue-terminal-history", full] as const,
   // Top-level rather than a child of pull(full, n): the PR detail is serialized from live git,
   // while these totals come from the DB alone — so the high-frequency usage tick refreshes the
   // numbers without dragging the git-backed payload along (#2263).
@@ -396,8 +398,11 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // herdr-core agent state (#2573) reaches a terminal dock through its own query.
     if (repo && typeof payload?.pr === "number")
       keys.push([...queryKeys.pullTerminals(repo, payload.pr)]);
-    if (repo && payload?.role === "issue-create")
+    if (repo && payload?.role === "issue-create") {
       keys.push([...queryKeys.issueTerminals(repo)]);
+      // A New issue terminal that starts or ends moves its session out of or into the history.
+      keys.push([...queryKeys.issueTerminalHistory(repo)]);
+    }
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
     // Some agent_session events target a specific PR or issue (for example linked/usage_updated);
@@ -426,6 +431,9 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       }
       if (typeof issueNumber === "number" && !usageOnly)
         keys.push([...queryKeys.issue(repo, issueNumber)]);
+      // A New issue session that files its issue changes its History row from "Not filed".
+      if (type === "agent_session.linked" && typeof issueNumber === "number")
+        keys.push([...queryKeys.issueTerminalHistory(repo)]);
     }
   }
 

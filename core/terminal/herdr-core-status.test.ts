@@ -412,6 +412,7 @@ describe("terminal/pullTerminals", () => {
       turn: 0,
       exit_code: null,
       reason: null,
+      session_id: null,
       ...overrides,
     });
   }
@@ -475,6 +476,7 @@ describe("terminal/issueTerminals", () => {
       turn: 0,
       exit_code: null,
       reason: null,
+      session_id: null,
       ...overrides,
     });
   }
@@ -512,6 +514,7 @@ describe("terminal/issueTerminals", () => {
       turn: 0,
       exit_code: null,
       reason: null,
+      session_id: null,
     });
     expect(svc.terminal.issueTerminals({ repo: "me/issue-herdr" })).toEqual({
       terminals: [],
@@ -519,10 +522,11 @@ describe("terminal/issueTerminals", () => {
   });
 
   test("the launcher's record lists a terminal at once, and never overwrites the worker's", () => {
-    H.recordIssueTerminalStarted(issueRepo, "t27");
+    H.recordIssueTerminalStarted(issueRepo, "t27", "s27");
     expect(S.getHerdrCoreTerminal("t27")).toMatchObject({
       role: "issue-create",
       state: "live",
+      session_id: "s27",
     });
     expect(
       S.listEvents(0, issueRepo.id, 500)
@@ -532,7 +536,7 @@ describe("terminal/issueTerminals", () => {
     ).toMatchObject({ address: "t27", role: "issue-create" });
 
     row("t28", { state: "finished" });
-    H.recordIssueTerminalStarted(issueRepo, "t28");
+    H.recordIssueTerminalStarted(issueRepo, "t28", "s28");
     expect(S.getHerdrCoreTerminal("t28")?.state).toBe("finished");
   });
 
@@ -547,5 +551,172 @@ describe("terminal/issueTerminals", () => {
     const number = (address: string) =>
       Number(labels.get(address)?.replace("New issue ", ""));
     expect(number("t9")).toBe(number("tz") + 1);
+  });
+});
+
+describe("New issue history", () => {
+  const CLAUDE_SESSION = "11111111-1111-4111-8111-111111111111";
+  const CODEX_SESSION = "22222222-2222-4222-8222-222222222222";
+  const LIVE_SESSION = "33333333-3333-4333-8333-333333333333";
+  // A Claude Code session whose transcript is gone (expired, or never written).
+  const EXPIRED_SESSION = "55555555-5555-4555-8555-555555555555";
+  let historyRepo: import("../store.ts").Repo;
+
+  function session(
+    id: string,
+    runtime: string,
+    name = "New issue (me/history)",
+  ) {
+    S.registerAgentSession(
+      id,
+      "issue-create",
+      id,
+      name,
+      runtime,
+      "issue-create",
+    );
+  }
+
+  beforeAll(() => {
+    historyRepo = S.createRepo("me/history", join(DIR, "history"));
+    S.setRepoTerminalBackend(historyRepo.id, "herdr-core");
+    session(CLAUDE_SESSION, "claude-code");
+    session(CODEX_SESSION, "codex");
+    session(LIVE_SESSION, "claude-code");
+    // Another repo's New issue, and a session of another kind.
+    session(
+      "44444444-4444-4444-8444-444444444444",
+      "claude-code",
+      "New issue (me/other)",
+    );
+    S.registerAgentSession(
+      "dev-1",
+      "lh-dev",
+      "dev-1",
+      "New issue (me/history)",
+      "claude-code",
+      "dev",
+    );
+    const filed = S.createIssue(
+      historyRepo.id,
+      "issue",
+      "Filed by New issue",
+      "",
+      "me",
+    );
+    S.linkSession(CLAUDE_SESSION, filed.id);
+    H.recordIssueTerminalStarted(historyRepo, "t41", LIVE_SESSION);
+    session(EXPIRED_SESSION, "claude-code");
+    process.env.HOME = join(DIR, "home-dir");
+    const project = join(DIR, "home-dir", ".claude", "projects", "-history");
+    mkdirSync(project, { recursive: true });
+    for (const id of [CLAUDE_SESSION, LIVE_SESSION])
+      writeFileSync(join(project, `${id}.jsonl`), "{}\n");
+  });
+
+  test("lists the repo's New issue sessions except those a live terminal runs", () => {
+    const sessions = svc.terminal.issueTerminalHistory({
+      repo: "me/history",
+    }).sessions;
+    expect(
+      sessions
+        .map((row) => ({
+          session_id: row.session_id,
+          issue: row.issue,
+          restore_blocker: row.restore_blocker,
+        }))
+        .sort((a, b) => a.session_id.localeCompare(b.session_id)),
+    ).toEqual([
+      {
+        session_id: CLAUDE_SESSION,
+        issue: { number: 1, title: "Filed by New issue" },
+        restore_blocker: null,
+      },
+      {
+        session_id: CODEX_SESSION,
+        issue: null,
+        restore_blocker: "Restore is available for Claude Code only",
+      },
+      {
+        session_id: EXPIRED_SESSION,
+        issue: null,
+        restore_blocker: "The conversation is no longer saved",
+      },
+    ]);
+  });
+
+  test("a finished terminal's session is listed again", () => {
+    S.upsertHerdrCoreTerminal({
+      ...(S.getHerdrCoreTerminal(
+        "t41",
+      ) as import("../store.ts").HerdrCoreTerminalRow),
+      state: "finished",
+    });
+    expect(
+      svc.terminal
+        .issueTerminalHistory({ repo: "me/history" })
+        .sessions.map((row) => row.session_id),
+    ).toContain(LIVE_SESSION);
+  });
+
+  test("the worker reads a terminal's session from its label", () => {
+    H.applyHerdrCoreEvent(historyRepo, {
+      type: "created",
+      terminal: "t42",
+      data: {
+        address: "t42",
+        state: "live",
+        labels: {
+          "loophub.repo": "me/history",
+          "loophub.role": "issue-create",
+          "loophub.session": CLAUDE_SESSION,
+        },
+      },
+    });
+    expect(S.getHerdrCoreTerminal("t42")?.session_id).toBe(CLAUDE_SESSION);
+  });
+
+  test("restore refuses a runtime other than Claude Code, and another repo's session", async () => {
+    await expect(
+      svc.terminal.restoreIssueTerminal({
+        repo: "me/history",
+        sessionId: CODEX_SESSION,
+      }),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining("Claude Code only"),
+    });
+    await expect(
+      svc.terminal.restoreIssueTerminal({
+        repo: "me/history",
+        sessionId: "44444444-4444-4444-8444-444444444444",
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("restore refuses a session whose transcript is gone, before starting a terminal", async () => {
+    await expect(
+      svc.terminal.restoreIssueTerminal({
+        repo: "me/history",
+        sessionId: EXPIRED_SESSION,
+      }),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: "The conversation is no longer saved",
+    });
+    expect(
+      S.listHerdrCoreTerminalRows(historyRepo.id).some(
+        (row) => row.session_id === EXPIRED_SESSION,
+      ),
+    ).toBe(false);
+  });
+
+  test("restore refuses a session a live terminal already runs", async () => {
+    await expect(
+      svc.terminal.restoreIssueTerminal({
+        repo: "me/history",
+        sessionId: CLAUDE_SESSION,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
   });
 });

@@ -28,6 +28,7 @@ import type {
   IssueDetailPage,
   IssueListPage,
   IssueRefKind,
+  IssueTerminalHistory,
   Label,
   LoopEvent,
   Notification,
@@ -627,6 +628,27 @@ export function getIssueTerminals(repo: string) {
   return rpc<{ terminals: PullTerminal[] }>("terminal/issueTerminals", {
     repo,
   });
+}
+
+/** Past New issue sessions of a repo, for the issue screens' terminal dock History tab. */
+export function getIssueTerminalHistory(repo: string) {
+  return rpc<{ sessions: IssueTerminalHistory[] }>(
+    "terminal/issueTerminalHistory",
+    { repo },
+  );
+}
+
+/** End a New issue terminal; its session stays restorable from the History tab. */
+export function closeIssueTerminal(input: { repo: string; address: string }) {
+  return rpc<{ ok: true }>("terminal/closeIssueTerminal", input);
+}
+
+/** Resume a past Claude Code New issue session in a new terminal of the dock. */
+export function restoreIssueTerminal(input: {
+  repo: string;
+  sessionId: string;
+}) {
+  return rpc<TerminalLaunchResult>("terminal/restoreIssueTerminal", input);
 }
 
 /** Recent terminal output for one herdr agent, for terminal previews (#500). */

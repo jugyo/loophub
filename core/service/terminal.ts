@@ -16,10 +16,16 @@ import { selfCliCommand } from "../self-exec.ts";
 import type {
   HerdrRepoSessionsWire,
   HerdrSessionsWire,
+  IssueTerminalHistoryWire,
   PullTerminalWire,
   TerminalLaunchResultWire,
 } from "../serialize.ts";
-import { ENV_ISSUE_CREATE_HERDR_LAUNCH } from "../session-runtime.ts";
+import {
+  ENV_ISSUE_CREATE_HERDR_LAUNCH,
+  ENV_ISSUE_CREATE_SESSION_ID,
+  issueCreateSessionName,
+  SESSION_KIND_ISSUE_CREATE,
+} from "../session-runtime.ts";
 import * as S from "../store.ts";
 import {
   cleanupClosedIssuePanesImpl,
@@ -32,6 +38,8 @@ import {
 import {
   followHerdrCoreRepo,
   herdrCoreFollowedRepos,
+  issueSessionRestoreBlocker,
+  listIssueTerminalHistory,
   listIssueTerminals,
   listPullTerminals,
   recordIssueTerminalStarted,
@@ -42,6 +50,7 @@ import {
   HERDR_CORE_SESSION_NAME,
   herdrCoreLabels,
   isHerdrCoreAddress,
+  killHerdrCoreTerminal,
   launchHerdrCoreTerminal,
   sendToHerdrCoreTerminal,
 } from "../terminal/herdr-core-terminal.ts";
@@ -623,6 +632,7 @@ async function launchHerdrCore(
   const worktree = await resolveHerdrWorktreeTarget(r, input);
   const cwd = worktree && existsSync(worktree) ? worktree : r.local_path;
   const agent = codingAgent();
+  const sessionId = randomUUID();
   const address = await launchHerdrCoreTerminal({
     argv: isNewIssue
       ? issueNewArgv({
@@ -640,11 +650,17 @@ async function launchHerdrCore(
           input.prompt as string,
         ],
     cwd,
-    env: isNewIssue ? { [ENV_ISSUE_CREATE_HERDR_LAUNCH]: launchId } : undefined,
+    env: isNewIssue
+      ? {
+          [ENV_ISSUE_CREATE_HERDR_LAUNCH]: launchId,
+          [ENV_ISSUE_CREATE_SESSION_ID]: sessionId,
+        }
+      : undefined,
     labels: herdrCoreLabels({
       repo: r.full_name,
       role: isNewIssue ? "issue-create" : "github-pr-export",
       pr: input.prNumber,
+      session: isNewIssue ? sessionId : undefined,
     }),
     submitPrompt: herdrLaunchNeedsPromptSubmit(
       isNewIssue ? input.agent : undefined,
@@ -652,7 +668,7 @@ async function launchHerdrCore(
   });
   recordGithubPrExportStarted(r, input);
   if (isNewIssue) {
-    recordIssueTerminalStarted(r, address);
+    recordIssueTerminalStarted(r, address, sessionId);
     registerIssueCreatePane(
       r,
       launchId,
@@ -675,14 +691,77 @@ async function launchHerdrCore(
   };
 }
 
+// Resumes a past New issue session of the repo in a new terminal, which the dock lists as a New issue
+// tab again. A session issueSessionRestoreBlocker turns down is refused before anything starts.
+async function restoreIssueTerminal(
+  r: S.Repo,
+  sessionId: string,
+  reportError: (message: string) => void,
+): Promise<TerminalLaunchResultWire> {
+  const session = S.getAgentSession(sessionId);
+  if (
+    !session ||
+    session.kind !== SESSION_KIND_ISSUE_CREATE ||
+    session.name !== issueCreateSessionName(r.full_name)
+  )
+    throw new ServiceError(404, `No New issue session ${sessionId}`);
+  const blocker = issueSessionRestoreBlocker(session);
+  if (blocker) throw new ServiceError(422, blocker);
+  if (
+    S.listHerdrCoreTerminalRows(r.id).some(
+      (row) => row.session_id === sessionId && row.state === "live",
+    )
+  )
+    throw new ServiceError(409, "This New issue is already open");
+  const launchId = randomUUID();
+  const address = await launchHerdrCoreTerminal({
+    argv: [
+      RUNTIMES["claude-code"].bin,
+      ...buildRuntimeFlags({
+        runtime: "claude-code",
+        model: session.model ?? undefined,
+        effort: session.effort ?? undefined,
+      }),
+      "--resume",
+      sessionId,
+    ],
+    cwd: r.local_path,
+    env: { [ENV_ISSUE_CREATE_HERDR_LAUNCH]: launchId },
+    labels: herdrCoreLabels({
+      repo: r.full_name,
+      role: "issue-create",
+      session: sessionId,
+    }),
+  });
+  recordIssueTerminalStarted(r, address, sessionId);
+  registerIssueCreatePane(
+    r,
+    launchId,
+    address,
+    HERDR_CORE_SESSION_NAME,
+    reportError,
+  );
+  return {
+    backend: "herdr-core" as const,
+    cwd: r.local_path,
+    attach: `hc attach ${address}`,
+    address,
+  };
+}
+
+function herdrCoreRepoOr409(repo: string): S.Repo {
+  const r = repoOr404(repo);
+  if (normalizeTerminalBackend(r.terminal_backend) !== "herdr-core")
+    throw new ServiceError(409, `${r.full_name} does not run on herdr-core`);
+  return r;
+}
+
 // Rejects an address the client gave unless LoopHub started it for this owner.
 async function assertTerminalAttachable(
   input: { repo: string; address: string },
   owner: { pr: number } | { role: "issue-create" },
 ): Promise<void> {
-  const r = repoOr404(input.repo);
-  if (normalizeTerminalBackend(r.terminal_backend) !== "herdr-core")
-    throw new ServiceError(409, `${r.full_name} does not run on herdr-core`);
+  const r = herdrCoreRepoOr409(input.repo);
   if (!isHerdrCoreAddress(input.address))
     throw new ServiceError(422, `Invalid terminal: ${input.address}`);
   await assertHerdrCoreTerminalOwner(input.address, {
@@ -717,6 +796,40 @@ export const terminal = {
           ? listIssueTerminals(r)
           : [],
     };
+  },
+
+  // The issue screens' list of past New issues to restore: empty unless the repo runs on herdr-core.
+  issueTerminalHistory(input: { repo: string }): {
+    sessions: IssueTerminalHistoryWire[];
+  } {
+    const r = repoOr404(input.repo);
+    return {
+      sessions:
+        normalizeTerminalBackend(r.terminal_backend) === "herdr-core"
+          ? listIssueTerminalHistory(r)
+          : [],
+    };
+  },
+
+  // Ends a New issue terminal; its session stays restorable. The tab leaves once the worker sees
+  // the terminal exit.
+  async closeIssueTerminal(input: {
+    repo: string;
+    address: string;
+  }): Promise<void> {
+    await assertTerminalAttachable(input, { role: "issue-create" });
+    await killHerdrCoreTerminal(input.address);
+  },
+
+  restoreIssueTerminal(
+    input: { repo: string; sessionId: string },
+    reportError: (message: string) => void = console.error,
+  ): Promise<TerminalLaunchResultWire> {
+    return restoreIssueTerminal(
+      herdrCoreRepoOr409(input.repo),
+      input.sessionId,
+      reportError,
+    );
   },
 
   assertPullTerminalAttachable(input: {

@@ -3,10 +3,16 @@
 // happens only for the selected tab, and leaving it closes the socket, which ends the attach but
 // never the terminal.
 
-import { ChevronDown, ChevronUp } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  History as HistoryIcon,
+  X,
+} from "lucide-react";
 import {
   type KeyboardEvent,
   type PointerEvent,
+  type ReactNode,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -49,6 +55,8 @@ export function TerminalDock({
   requestedAddress = null,
   onRequestHandled,
   selectFirstTab = false,
+  onClose,
+  history,
 }: {
   repo: string;
   // Absent on the issue screens, whose New issue terminals belong to the repo alone.
@@ -60,10 +68,16 @@ export function TerminalDock({
   onRequestHandled?: () => void;
   // Show the leftmost tab whenever no listed tab is selected.
   selectFirstTab?: boolean;
+  // Gives each tab a button that ends its terminal.
+  onClose?: (terminal: PullTerminal) => void;
+  // What a History tab at the right end shows in place of a terminal; no tab without it.
+  history?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [height, setHeight] = useState(DEFAULT_HEIGHT_PX);
   const [selected, setSelected] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const historyShown = open && showHistory && history !== undefined;
   // A finished terminal drops out of the list, which also ends its view and attach.
   const active = terminals.some((t) => t.address === selected)
     ? selected
@@ -79,6 +93,7 @@ export function TerminalDock({
   useEffect(() => {
     if (!requestedAddress) return;
     setOpen(true);
+    setShowHistory(false);
     setSelected(requestedAddress);
     onRequestHandled?.();
   }, [requestedAddress, onRequestHandled]);
@@ -139,29 +154,65 @@ export function TerminalDock({
           aria-label="Agent terminals"
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
         >
-          {terminals.map((t) => (
-            <button
-              key={t.address}
-              type="button"
-              role="tab"
-              // A minimized dock shows no terminal, so none of its tabs is selected.
-              aria-selected={open && t.address === active}
-              className={cn(
-                "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-xs hover:bg-accent",
-                open && t.address === active && "bg-accent font-medium",
-              )}
-              onClick={() => {
-                setOpen(true);
-                setSelected(t.address);
-              }}
-            >
-              {t.label}
-              <Badge tone={STATUS_TONE[t.status ?? ""] ?? "unknown"}>
-                {statusLabel(t.status)}
-              </Badge>
-            </button>
-          ))}
+          {terminals.map((t) => {
+            // A minimized dock shows no terminal, so none of its tabs is selected.
+            const isSelected = open && !historyShown && t.address === active;
+            return (
+              <div
+                key={t.address}
+                className={cn(
+                  "flex h-7 shrink-0 items-center rounded-md text-xs hover:bg-accent",
+                  isSelected && "bg-accent font-medium",
+                )}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  className="flex h-full items-center gap-2 px-2"
+                  onClick={() => {
+                    setOpen(true);
+                    setShowHistory(false);
+                    setSelected(t.address);
+                  }}
+                >
+                  {t.label}
+                  <Badge tone={STATUS_TONE[t.status ?? ""] ?? "unknown"}>
+                    {statusLabel(t.status)}
+                  </Badge>
+                </button>
+                {onClose ? (
+                  <button
+                    type="button"
+                    aria-label={`Close ${t.label}`}
+                    title={`Close ${t.label}`}
+                    className="mr-1 grid size-5 place-items-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
+                    onClick={() => onClose(t)}
+                  >
+                    <X className="size-3" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
+        {history !== undefined ? (
+          <button
+            type="button"
+            aria-pressed={historyShown}
+            className={cn(
+              "flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-accent",
+              historyShown && "bg-accent font-medium",
+            )}
+            onClick={() => {
+              setOpen(true);
+              setShowHistory(true);
+            }}
+          >
+            <HistoryIcon className="size-3.5" aria-hidden="true" />
+            History
+          </button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -172,6 +223,7 @@ export function TerminalDock({
           title="Toggle terminal dock"
           onClick={() => {
             setOpen(!open);
+            setShowHistory(false);
             setSelected(null);
           }}
         >
@@ -184,7 +236,9 @@ export function TerminalDock({
       </div>
       {open ? (
         <div style={{ height }} className="border-t">
-          {active ? (
+          {historyShown ? (
+            <div className="h-full overflow-y-auto">{history}</div>
+          ) : active ? (
             <TerminalView
               key={active}
               repo={repo}

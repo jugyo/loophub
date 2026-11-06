@@ -31,6 +31,7 @@ export function herdrCoreLabels(input: {
   pr?: number;
   run?: number;
   seq?: number;
+  session?: string;
 }): Record<string, string> {
   return {
     "loophub.repo": input.repo,
@@ -38,6 +39,9 @@ export function herdrCoreLabels(input: {
     ...(input.pr === undefined ? {} : { "loophub.pr": String(input.pr) }),
     ...(input.run === undefined ? {} : { "loophub.run": String(input.run) }),
     ...(input.seq === undefined ? {} : { "loophub.seq": String(input.seq) }),
+    ...(input.session === undefined
+      ? {}
+      : { "loophub.session": input.session }),
   };
 }
 

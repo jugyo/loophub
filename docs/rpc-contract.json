@@ -1256,6 +1256,76 @@
       }
     },
     {
+      "name": "terminal/issueTerminalHistory",
+      "description": "Past New issue sessions of a repo with no live terminal, most recently active first, for the issue screens' terminal dock History tab. restore_blocker says why a session can't be resumed (not Claude Code, or its transcript is gone), null when it can. Empty unless the repo runs on herdr-core.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "terminal/closeIssueTerminal",
+      "description": "End a New issue terminal of a herdr-core repo without confirmation. Its session stays in the History tab to restore.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "address": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "address"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "terminal/restoreIssueTerminal",
+      "description": "Resume a past Claude Code New issue session in a new herdr-core terminal, listed again as a New issue tab. Returns the terminal's address. A session that can't be resumed (another runtime, or a transcript no longer saved) is refused with 422 before any terminal starts.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "sessionId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "terminal/agentRead",
       "description": "Recent terminal output for one herdr agent, for the sidebar hover preview (#500). target is a herdr `agent read` target — a pane_id, or an agent display name (e.g. \"dev #486\") only when it's unique within the session (herdr will not resolve an ambiguous name). output is null when herdr isn't running, the session is gone, or the agent is no longer present.",
       "params": {

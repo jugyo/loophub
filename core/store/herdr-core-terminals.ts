@@ -15,6 +15,7 @@ export interface HerdrCoreTerminalState {
   turn: number;
   exit_code: number | null;
   reason: string | null;
+  session_id: string | null;
 }
 
 export type HerdrCoreTerminalRow = HerdrCoreTerminalState & {
@@ -42,8 +43,8 @@ export function listHerdrCoreTerminalRows(
 export function upsertHerdrCoreTerminal(row: HerdrCoreTerminalState): void {
   db.query(
     `INSERT INTO herdr_core_terminals
-       (address, repo_id, role, pr_number, run_id, seq, state, status, turn, exit_code, reason, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (address, repo_id, role, pr_number, run_id, seq, state, status, turn, exit_code, reason, session_id, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(address) DO UPDATE SET
        repo_id = excluded.repo_id,
        role = excluded.role,
@@ -55,6 +56,7 @@ export function upsertHerdrCoreTerminal(row: HerdrCoreTerminalState): void {
        turn = excluded.turn,
        exit_code = excluded.exit_code,
        reason = excluded.reason,
+       session_id = excluded.session_id,
        updated_at = excluded.updated_at`,
   ).run(
     row.address,
@@ -68,6 +70,7 @@ export function upsertHerdrCoreTerminal(row: HerdrCoreTerminalState): void {
     row.turn,
     row.exit_code,
     row.reason,
+    row.session_id,
     now(),
   );
 }

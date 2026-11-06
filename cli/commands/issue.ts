@@ -6,6 +6,9 @@ import {
 } from "../../core/list-paging.ts";
 import { spawnSyncProcess } from "../../core/process.ts";
 import {
+  ENV_ISSUE_CREATE_SESSION_ID,
+  isClaudeSessionId,
+  issueCreateSessionName,
   LH_ISSUE_CREATE_SESSION_AGENT,
   SESSION_KIND_ISSUE_CREATE,
 } from "../../core/session-runtime.ts";
@@ -218,7 +221,10 @@ export async function run(): Promise<void> {
     // --grok / --model / --effort still override for this launch only.
     const r = await runOp(() => s.repos.get(repo));
     const agentCfg = await runOp(() => s.repos.agentConfig(repo));
-    const sessionId = randomUUID();
+    const presetSessionId = process.env[ENV_ISSUE_CREATE_SESSION_ID];
+    const sessionId = isClaudeSessionId(presetSessionId)
+      ? presetSessionId
+      : randomUUID();
     const parentIssue =
       flags.parent === undefined ? undefined : Number(flags.parent);
     if (
@@ -270,7 +276,7 @@ export async function run(): Promise<void> {
       runtime,
       sessionId,
       slashCommand,
-      sessionName: `New issue (${r.full_name})`,
+      sessionName: issueCreateSessionName(r.full_name),
       model,
       effort,
     });
@@ -281,7 +287,7 @@ export async function run(): Promise<void> {
         session: sessionId,
         runtime,
         kind: SESSION_KIND_ISSUE_CREATE,
-        name: `New issue (${r.full_name})`,
+        name: issueCreateSessionName(r.full_name),
         model,
       }),
     );
