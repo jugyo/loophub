@@ -1237,13 +1237,17 @@
     },
     {
       "name": "terminal/issueTerminals",
-      "description": "Live herdr-core New issue terminals of a repo with their last reported status, for the issue screens' terminal dock. Empty unless the repo runs on herdr-core.",
+      "description": "Live herdr-core New issue terminals of a repo with their last reported status, for the issue screens' terminal dock. With issue, only the terminals that issue was filed from. Empty unless the repo runs on herdr-core.",
       "params": {
         "type": "object",
         "properties": {
           "repo": {
             "type": "string",
             "minLength": 1
+          },
+          "issue": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [

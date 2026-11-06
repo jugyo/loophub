@@ -232,12 +232,27 @@ export function listPullTerminals(
 }
 
 // The dock's tabs for New issue on one repo, in the order they started. As above, finished rows keep
-// the later tabs' numbers.
-export function listIssueTerminals(repo: Repo): PullTerminalWire[] {
+// the later tabs' numbers. Given an issue, only the terminals it was filed from.
+export function listIssueTerminals(
+  repo: Repo,
+  issue?: S.IssueRow,
+): PullTerminalWire[] {
+  const filedFrom = issue
+    ? new Set(
+        S.listHerdrPanesForResource({
+          repoId: repo.id,
+          resourceKind: "issue",
+          resourceKey: String(issue.id),
+          relationship: S.ISSUE_FILED_FROM_RELATIONSHIP,
+        })
+          .filter((pane) => pane.session_name === HERDR_CORE_SESSION_NAME)
+          .map((pane) => pane.pane_id),
+      )
+    : null;
   return S.listHerdrCoreTerminalRows(repo.id)
     .filter((row) => row.role === "issue-create")
     .flatMap((row, index) =>
-      row.state === "live"
+      row.state === "live" && (!filedFrom || filedFrom.has(row.address))
         ? [
             {
               address: row.address,

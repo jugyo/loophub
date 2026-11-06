@@ -18,10 +18,15 @@ export function usePullTerminals(owner: string, repo: string, number: number) {
   });
 }
 
-export function useIssueTerminals(full: string) {
+export function useIssueTerminals(
+  full: string,
+  issue?: number,
+  enabled = true,
+) {
   return useQuery({
-    queryKey: queryKeys.issueTerminals(full),
-    queryFn: () => getIssueTerminals(full),
+    queryKey: queryKeys.issueTerminals(full, issue),
+    queryFn: () => getIssueTerminals(full, issue),
+    enabled,
   });
 }
 

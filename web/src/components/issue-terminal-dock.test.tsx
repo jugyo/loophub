@@ -88,12 +88,23 @@ const RESTORED: PullTerminal = {
   status: null,
 };
 
-function renderPage(backend = "herdr-core", restoreFails = false) {
+function renderPage(
+  backend = "herdr-core",
+  {
+    restoreFails = false,
+    issue,
+  }: { restoreFails?: boolean; issue?: number } = {},
+) {
   let terminals = [EARLIER];
+  const issueParams: unknown[] = [];
   const fetchMock = mockRpcFetch({
     "repos/get": () => ({ terminal_backend: backend }),
     "settings/get": () => ({}),
-    "terminal/issueTerminals": () => ({ terminals }),
+    "terminal/issueTerminals": (params: { issue?: number }) => {
+      issueParams.push(params.issue);
+      // An issue's own list: the terminal it was filed from, never the one launched since.
+      return { terminals: params.issue ? [EARLIER] : terminals };
+    },
     "terminal/issueTerminalHistory": () => ({ sessions: HISTORY }),
     "terminal/closeIssueTerminal": () => {
       terminals = [];
@@ -123,11 +134,11 @@ function renderPage(backend = "herdr-core", restoreFails = false) {
     <QueryClientProvider client={client}>
       <TerminalControllerProvider>
         <CreateIssueButton repo="me/proj" />
-        <IssueTerminalDock owner="me" repo="proj" />
+        <IssueTerminalDock owner="me" repo="proj" issue={issue} />
       </TerminalControllerProvider>
     </QueryClientProvider>,
   );
-  return { client, fetchMock };
+  return { client, fetchMock, issueParams };
 }
 
 it("opens on the terminal New issue started and attaches without a PR", async () => {
@@ -193,6 +204,20 @@ it("renders nothing on a remote page", async () => {
   expect(screen.queryByRole("tablist")).toBeNull();
 });
 
+it("on an issue's screen, lists that issue's terminals and opens on a New issue launched there", async () => {
+  const { issueParams } = renderPage("herdr-core", { issue: 5 });
+  await screen.findByRole("tab", { name: /New issue 1/ });
+  expect(issueParams).toEqual([5]);
+
+  fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+
+  const tab = await screen.findByRole("tab", { name: /New issue 2/ });
+  await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
+  await waitFor(() => expect(urls.length).toBe(1));
+  expect(new URL(urls[0]).searchParams.get("terminal")).toBe("t9");
+  expect(screen.getByRole("tab", { name: /New issue 1/ })).toBeTruthy();
+});
+
 function rpcCalls(fetchMock: ReturnType<typeof mockRpcFetch>, method: string) {
   return fetchMock.mock.calls
     .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
@@ -242,10 +267,24 @@ it("restores a session and opens the dock on its terminal", async () => {
 });
 
 it("shows why a restore failed", async () => {
-  renderPage("herdr-core", true);
+  renderPage("herdr-core", { restoreFails: true });
   fireEvent.click(await screen.findByRole("button", { name: "History" }));
   fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
     "No conversation found with session ID",
+  );
+});
+
+it("on an issue's screen, opens on a session restored there", async () => {
+  renderPage("herdr-core", { issue: 5 });
+  fireEvent.click(await screen.findByRole("button", { name: "History" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+
+  const tab = await screen.findByRole("tab", { name: /New issue 3/ });
+  await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
+  await waitFor(() =>
+    expect(new URL(urls.at(-1) as string).searchParams.get("terminal")).toBe(
+      "t12",
+    ),
   );
 });

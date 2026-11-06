@@ -623,11 +623,13 @@ export function getPullTerminals(repo: string, pull: number) {
   });
 }
 
-/** Live herdr-core New issue terminals of a repo, for the issue screens' terminal dock. */
-export function getIssueTerminals(repo: string) {
-  return rpc<{ terminals: PullTerminal[] }>("terminal/issueTerminals", {
-    repo,
-  });
+/** Live herdr-core New issue terminals of a repo (or only those an issue was filed from), for the
+ * issue screens' terminal dock. */
+export function getIssueTerminals(repo: string, issue?: number) {
+  return rpc<{ terminals: PullTerminal[] }>(
+    "terminal/issueTerminals",
+    clean({ repo, issue }),
+  );
 }
 
 /** Past New issue sessions of a repo, for the issue screens' terminal dock History tab. */

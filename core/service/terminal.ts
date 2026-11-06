@@ -785,15 +785,18 @@ export const terminal = {
     };
   },
 
-  // The terminal dock of the issue screens: empty unless the repo runs on herdr-core.
-  issueTerminals(input: { repo: string }): {
+  // The terminal dock of the issue screens: empty unless the repo runs on herdr-core. With an issue
+  // number, only the terminals that issue was filed from.
+  issueTerminals(input: { repo: string; issue?: number }): {
     terminals: PullTerminalWire[];
   } {
     const r = repoOr404(input.repo);
+    const issue =
+      input.issue === undefined ? undefined : issueOr404(r, input.issue);
     return {
       terminals:
         normalizeTerminalBackend(r.terminal_backend) === "herdr-core"
-          ? listIssueTerminals(r)
+          ? listIssueTerminals(r, issue)
           : [],
     };
   },

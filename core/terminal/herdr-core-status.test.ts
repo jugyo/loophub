@@ -540,6 +540,49 @@ describe("terminal/issueTerminals", () => {
     expect(S.getHerdrCoreTerminal("t28")?.state).toBe("finished");
   });
 
+  test("with an issue, lists only the live terminals it was filed from", () => {
+    const filed = S.createIssue(issueRepo.id, "issue", "filed", "", "me");
+    const elsewhere = S.createIssue(issueRepo.id, "issue", "other", "", "me");
+    const loose = S.createIssue(issueRepo.id, "issue", "loose", "", "me");
+    function fileFrom(issue: import("../store.ts").IssueRow, address: string) {
+      const launchId = `launch-${address}`;
+      S.registerHerdrPane({
+        repoId: issueRepo.id,
+        launchId,
+        paneId: address,
+        sessionName: "herdr-core",
+        origin: "issue-create",
+      });
+      S.linkIssueFiledFromHerdrPane({
+        repoId: issueRepo.id,
+        launchId,
+        issueId: issue.id,
+      });
+    }
+    row("t31");
+    row("t32");
+    row("t33", { state: "finished" });
+    fileFrom(filed, "t31");
+    fileFrom(elsewhere, "t32");
+    fileFrom(elsewhere, "t33");
+    const issueTerminals = (issue: number) =>
+      svc.terminal.issueTerminals({ repo: "me/issue-dock", issue }).terminals;
+    const all = svc.terminal.issueTerminals({
+      repo: "me/issue-dock",
+    }).terminals;
+
+    expect(issueTerminals(filed.number)).toEqual(
+      all.filter((t) => t.address === "t31"),
+    );
+    expect(issueTerminals(elsewhere.number).map((t) => t.address)).toEqual([
+      "t32",
+    ]);
+    expect(issueTerminals(loose.number)).toEqual([]);
+    expect(all.map((t) => t.address)).toEqual(
+      expect.arrayContaining(["t31", "t32"]),
+    );
+  });
+
   test("numbers tabs in start order, whatever the addresses sort to", () => {
     row("tz");
     row("t9");

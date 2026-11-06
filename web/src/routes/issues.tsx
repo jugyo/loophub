@@ -12,7 +12,7 @@ function IssueDetailPage() {
       <div className="flex-1">
         <IssueDetail owner={owner} repo={repo} number={Number(number)} />
       </div>
-      <IssueTerminalDock owner={owner} repo={repo} />
+      <IssueTerminalDock owner={owner} repo={repo} issue={Number(number)} />
     </div>
   );
 }

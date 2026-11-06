@@ -40,7 +40,11 @@ export const queryKeys = {
   pull: (full: string, number: number) => ["pull", full, number] as const,
   pullTerminals: (full: string, number: number) =>
     ["pull-terminals", full, number] as const,
-  issueTerminals: (full: string) => ["issue-terminals", full] as const,
+  // The issue detail's key extends the repo's, so invalidating the repo's refetches both.
+  issueTerminals: (full: string, issue?: number) =>
+    issue === undefined
+      ? (["issue-terminals", full] as const)
+      : (["issue-terminals", full, issue] as const),
   issueTerminalHistory: (full: string) =>
     ["issue-terminal-history", full] as const,
   // Top-level rather than a child of pull(full, n): the PR detail is serialized from live git,

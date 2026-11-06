@@ -616,10 +616,11 @@ export const methods: Record<string, MethodDef> = {
   },
   "terminal/issueTerminals": {
     description:
-      "Live herdr-core New issue terminals of a repo with their last reported status, for the issue screens' terminal dock. Empty unless the repo runs on herdr-core.",
-    params: params({ repo }, ["repo"]),
+      "Live herdr-core New issue terminals of a repo with their last reported status, for the issue screens' terminal dock. With issue, only the terminals that issue was filed from. Empty unless the repo runs on herdr-core.",
+    params: params({ repo, issue: positiveInt }, ["repo"]),
     result: anyObject,
-    handler: (p) => svc.terminal.issueTerminals({ repo: p.repo }),
+    handler: (p) =>
+      svc.terminal.issueTerminals({ repo: p.repo, issue: p.issue }),
   },
   "terminal/issueTerminalHistory": {
     description:

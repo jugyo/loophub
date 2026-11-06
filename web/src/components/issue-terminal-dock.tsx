@@ -1,6 +1,8 @@
-// The issue screens' bottom dock: one tab per live New issue terminal of the repo. A New issue launch
-// opens it on the terminal it started (useTerminalLauncher). A tab's close button ends its terminal at
-// once, with no confirmation: the History tab lists every past New issue to restore instead.
+// The issue screens' bottom dock: one tab per live New issue terminal of the repo, or on an issue's
+// own screen only the terminal it was filed from (plus any terminal launched or restored from that
+// screen). A New issue launch opens it on the terminal it started (useTerminalLauncher). A tab's close
+// button ends its terminal at once, with no confirmation: the History tab lists every past New issue
+// to restore instead.
 
 import { useState } from "react";
 import type { IssueTerminalHistory } from "@/api/types";
@@ -22,20 +24,40 @@ import { codingAgentLabel } from "../../../core/runtimes.ts";
 export function IssueTerminalDock({
   owner,
   repo,
+  issue,
 }: {
   owner: string;
   repo: string;
+  issue?: number;
 }) {
   const repoQuery = useRepo(owner, repo);
   if (repoQuery.data?.terminal_backend !== "herdr-core" || !isLoopbackPage())
     return null;
   const full = `${owner}/${repo}`;
-  return <Dock key={full} full={full} />;
+  return <Dock key={`${full}#${issue}`} full={full} issue={issue} />;
 }
 
-function Dock({ full }: { full: string }) {
-  const query = useIssueTerminals(full);
+function Dock({ full, issue }: { full: string; issue?: number }) {
+  const query = useIssueTerminals(full, issue);
   const request = useRequestedIssueTerminal(full);
+  // A New issue launched from an issue's screen (a sub-issue), or one restored there, has not filed
+  // this issue, so the filtered list leaves it out; its tab comes from the repo's list while this
+  // screen stays open.
+  const [launched, setLaunched] = useState<string[]>([]);
+  const repoQuery = useIssueTerminals(
+    full,
+    undefined,
+    issue !== undefined && launched.length > 0,
+  );
+  const own = query.data?.terminals ?? [];
+  const terminals = [
+    ...own,
+    ...(repoQuery.data?.terminals ?? []).filter(
+      (t) =>
+        launched.includes(t.address) &&
+        !own.some((o) => o.address === t.address),
+    ),
+  ];
   const close = useCloseIssueTerminal();
   const { showError } = useToast();
   // The terminal a restore started, for the dock to open on like a New issue launch.
@@ -43,14 +65,19 @@ function Dock({ full }: { full: string }) {
   return (
     <TerminalDock
       repo={full}
-      terminals={query.data?.terminals ?? []}
+      terminals={terminals}
       isError={query.isError}
       requestedAddress={request.address ?? restored}
       onRequestHandled={() => {
+        const address = request.address ?? restored;
         request.handled();
         setRestored(null);
+        // A terminal launched or restored from an issue's screen has not filed this issue.
+        if (issue !== undefined && address)
+          setLaunched((list) => [...list, address]);
         // The launch recorded the terminal; don't wait for its event to list it.
         void query.refetch();
+        if (issue !== undefined) void repoQuery.refetch();
       }}
       onClose={(terminal) =>
         close.mutate(
