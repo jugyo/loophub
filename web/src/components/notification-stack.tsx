@@ -213,12 +213,13 @@ export function NotificationStack({ pathname }: { pathname: string }) {
     // wait on a human — merge ready, over budget, rework limit — arrive while a diff is open and
     // must stay reachable without closing it (#2510). Still below the z-[100] debug overlay. The
     // container keeps pointer-events-none so only the cards take clicks and the modal underneath
-    // stays operable. It also sits above the terminal dock, whose height is 0 on screens without one.
+    // stays operable. It also sits above the terminal dock, whose height is 0 on screens without
+    // one, and left of the page scrollbar, whose width is 0 when the page does not scroll.
     <section
       aria-label="Unread notifications"
       aria-live="polite"
       data-debug-component="NotificationStack"
-      className="pointer-events-none fixed right-2.5 bottom-[calc(2.375rem+var(--pull-terminal-dock-height,0px))] z-[60] flex max-h-[calc(100vh-3.375rem-var(--pull-terminal-dock-height,0px))] w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto"
+      className="pointer-events-none fixed right-[calc(0.625rem+var(--main-scrollbar-width,0px))] bottom-[calc(2.375rem+var(--pull-terminal-dock-height,0px))] z-[60] flex max-h-[calc(100vh-3.375rem-var(--pull-terminal-dock-height,0px))] w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto"
     >
       {pageUnread.length > 0 ? (
         // One button carries both states so toggling keeps it mounted, and a keyboard user who

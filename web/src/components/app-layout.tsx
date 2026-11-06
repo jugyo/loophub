@@ -2,7 +2,7 @@
 // Routes render into <Outlet/>. Screen content lands in later UI issues.
 
 import { Outlet, useRouterState } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { AppStatusbar } from "@/components/app-statusbar";
 import { AppTopbar } from "@/components/app-topbar";
 import { ComponentDebugOverlay } from "@/components/component-debug-overlay";
@@ -32,6 +32,27 @@ export function AppLayout() {
     select: (state) => state.location.pathname,
   });
   useScrollToTop(mainRef);
+  // The page scrollbar belongs to <main>, not the window, so fixed overlays anchored to the right
+  // edge (the notification stack) cannot avoid it on their own. Publish its current width; it is
+  // 0 when nothing overflows or the platform uses overlay scrollbars.
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const root = document.documentElement.style;
+    const measure = () =>
+      root.setProperty(
+        "--main-scrollbar-width",
+        `${main.offsetWidth - main.clientWidth}px`,
+      );
+    measure();
+    // Showing or hiding the scrollbar resizes main's content box, which this observes.
+    const observer = new ResizeObserver(measure);
+    observer.observe(main);
+    return () => {
+      observer.disconnect();
+      root.removeProperty("--main-scrollbar-width");
+    };
+  }, []);
   // Announce arriving notifications from the shell: the stack below only renders them.
   useNotificationSound(pathname);
   return (

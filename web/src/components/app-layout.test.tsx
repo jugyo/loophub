@@ -183,6 +183,41 @@ describe("AppLayout", () => {
     );
   });
 
+  // #2617: the notification stack offsets itself by this width so it never covers main's scrollbar.
+  it("publishes main's scrollbar width for right-edge overlays (#2617)", async () => {
+    // happy-dom does no layout, so fake a classic 14px scrollbar on every element.
+    const proto = HTMLElement.prototype;
+    const offsetWidth = Object.getOwnPropertyDescriptor(proto, "offsetWidth");
+    const clientWidth = Object.getOwnPropertyDescriptor(proto, "clientWidth");
+    Object.defineProperty(proto, "offsetWidth", {
+      configurable: true,
+      get: () => 1000,
+    });
+    Object.defineProperty(proto, "clientWidth", {
+      configurable: true,
+      get: () => 986,
+    });
+    try {
+      const { unmount } = renderLayout();
+      await screen.findByText("Dashboard route");
+      expect(
+        document.documentElement.style.getPropertyValue(
+          "--main-scrollbar-width",
+        ),
+      ).toBe("14px");
+
+      unmount();
+      expect(
+        document.documentElement.style.getPropertyValue(
+          "--main-scrollbar-width",
+        ),
+      ).toBe("");
+    } finally {
+      if (offsetWidth) Object.defineProperty(proto, "offsetWidth", offsetWidth);
+      if (clientWidth) Object.defineProperty(proto, "clientWidth", clientWidth);
+    }
+  });
+
   it("keeps the same status bar mounted across routes", async () => {
     const { router } = renderLayout();
     await screen.findByText("Dashboard route");

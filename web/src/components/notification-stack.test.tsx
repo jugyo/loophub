@@ -399,8 +399,11 @@ describe("NotificationStack", () => {
     expect(stack.className).toContain(
       "max-h-[calc(100vh-3.375rem-var(--pull-terminal-dock-height,0px))]",
     );
-    // The right margin matches the visible gap above the status bar (2.375rem - 1.75rem).
-    expect(stack.className).toContain("right-2.5");
+    // The right margin matches the visible gap above the status bar (2.375rem - 1.75rem), measured
+    // from the page scrollbar, whose width is unset (so 0) when the page does not scroll.
+    expect(stack.className).toContain(
+      "right-[calc(0.625rem+var(--main-scrollbar-width,0px))]",
+    );
     const card = screen
       .getByRole("link", { name: /Notification 1/ })
       .closest("article");
