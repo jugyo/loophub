@@ -393,6 +393,24 @@ export function recordIssueTerminalStarted(
   });
 }
 
+// A person closed a New issue terminal: its tab leaves and its session moves to the history at once,
+// before the kill reaches herdr-core. The worker's own record of the exit overwrites this one, and a
+// terminal the kill missed comes back live on the worker's next snapshot. False when the repo has no
+// such terminal.
+export function recordIssueTerminalClosed(
+  repo: Repo,
+  address: string,
+): boolean {
+  return db.transaction(() => {
+    const row = S.getHerdrCoreTerminal(address);
+    if (row?.repo_id !== repo.id || row.role !== "issue-create") return false;
+    const { updated_at: _updatedAt, ...current } = row;
+    if (row.state === "live")
+      record(repo, { ...current, state: "finished", status: null });
+    return true;
+  });
+}
+
 export function recordShellTerminalStarted(
   repo: Repo,
   address: string,

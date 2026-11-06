@@ -388,6 +388,66 @@ describe.skipIf(!HAS_HC)("against an isolated core", () => {
     await follow.done;
   }, 40_000);
 
+  test("closing a New issue terminal drops its tab at once and ends it in the background", async () => {
+    const closeRepo = S.createRepo("me/close", join(DIR, "close"));
+    S.setRepoTerminalBackend(closeRepo.id, "herdr-core");
+    const sessionId = "66666666-6666-4666-8666-666666666666";
+    S.registerAgentSession(
+      sessionId,
+      "issue-create",
+      sessionId,
+      "New issue (me/close)",
+      "claude-code",
+      "issue-create",
+    );
+    const { address } = (await C.callHerdrCore("terminal.run", {
+      argv: ["sh", "-c", "read line"],
+      labels: {
+        "loophub.repo": closeRepo.full_name,
+        "loophub.role": "issue-create",
+        "loophub.session": sessionId,
+      },
+      no_parent: true,
+      no_notify: true,
+    })) as { address: string };
+    H.recordIssueTerminalStarted(closeRepo, address, sessionId);
+    const history = () =>
+      svc.terminal
+        .issueTerminalHistory({ repo: "me/close" })
+        .sessions.map((row) => row.session_id);
+    expect(history()).toEqual([]);
+
+    const errors: string[] = [];
+    svc.terminal.closeIssueTerminal({ repo: "me/close", address }, (message) =>
+      errors.push(message),
+    );
+
+    // What the dock and its History tab read is updated before the kill reaches the core.
+    expect(svc.terminal.issueTerminals({ repo: "me/close" }).terminals).toEqual(
+      [],
+    );
+    expect(history()).toEqual([sessionId]);
+    expect(
+      S.listEvents(0, closeRepo.id, 500)
+        .filter((event) => event.type === H.TERMINAL_AGENT_STATE_CHANGED_EVENT)
+        .map((event) => JSON.parse(event.payload as unknown as string))
+        .at(-1),
+    ).toMatchObject({ address, role: "issue-create", state: "finished" });
+
+    const deadline = Date.now() + 15_000;
+    while (
+      (
+        (await C.callHerdrCore("terminal.get", { terminal: address })) as {
+          state: string;
+        }
+      ).state === "live"
+    ) {
+      if (Date.now() > deadline) throw new Error("terminal still live");
+      await Bun.sleep(50);
+    }
+    expect(errors).toEqual([]);
+  }, 20_000);
+
   test("a stopped subscription ends quietly", async () => {
     const follow = svc.terminal.followHerdrCoreRepo(repo);
     follow.stop();
@@ -672,6 +732,42 @@ describe("terminal/issueTerminals", () => {
     expect(all.map((t) => t.address)).toEqual(
       expect.arrayContaining(["t31", "t32"]),
     );
+  });
+
+  test("close drops the tab without waiting on herdr-core, and reports a kill that fails", async () => {
+    // A terminal herdr-core doesn't know, so the background kill fails.
+    H.recordIssueTerminalStarted(issueRepo, "t991", "s991");
+    const errors: string[] = [];
+    svc.terminal.closeIssueTerminal(
+      { repo: "me/issue-dock", address: "t991" },
+      (message) => errors.push(message),
+    );
+    expect(S.getHerdrCoreTerminal("t991")?.state).toBe("finished");
+    expect(
+      svc.terminal
+        .issueTerminals({ repo: "me/issue-dock" })
+        .terminals.map((t) => t.address),
+    ).not.toContain("t991");
+    const deadline = Date.now() + 10_000;
+    while (errors.length === 0) {
+      if (Date.now() > deadline) throw new Error("no failure reported");
+      await Bun.sleep(20);
+    }
+    expect(errors[0]).toContain(
+      "Closing New issue terminal t991 of me/issue-dock failed",
+    );
+  });
+
+  test("close refuses a terminal that is not one of the repo's New issue terminals", () => {
+    row("t992", { role: "executor", pr_number: 7, run_id: 1, seq: 1 });
+    for (const address of ["t992", "t993", "nope"])
+      expect(() =>
+        svc.terminal.closeIssueTerminal(
+          { repo: "me/issue-dock", address },
+          () => {},
+        ),
+      ).toThrow("is not a New issue terminal of me/issue-dock");
+    expect(S.getHerdrCoreTerminal("t992")?.state).toBe("live");
   });
 
   test("numbers tabs in start order, whatever the addresses sort to", () => {

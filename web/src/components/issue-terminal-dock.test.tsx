@@ -228,7 +228,7 @@ function rpcCalls(fetchMock: ReturnType<typeof mockRpcFetch>, method: string) {
     .filter((body) => body.method === method);
 }
 
-it("closes a tab's terminal with one click", async () => {
+it("closes a tab's terminal with one click, dropping the tab without waiting for an event", async () => {
   const { fetchMock } = renderPage();
   fireEvent.click(
     await screen.findByRole("button", { name: "Close New issue 1" }),
@@ -240,6 +240,9 @@ it("closes a tab's terminal with one click", async () => {
     repo: "me/proj",
     address: "t3",
   });
+  await waitFor(() =>
+    expect(screen.queryByRole("tab", { name: /New issue 1/ })).toBeNull(),
+  );
 });
 
 function terminalHasFocus() {
@@ -292,7 +295,7 @@ it("shows the empty dock when the only tab is closed", async () => {
   const input = await closeShownTab(/New issue 1/, "Close New issue 1");
 
   await waitFor(() => expect(document.querySelector(".xterm")).toBeNull());
-  expect(screen.getByText("Select a terminal to attach.")).toBeTruthy();
+  expect(await screen.findByText("No live agent terminals.")).toBeTruthy();
   expect(urls).toHaveLength(1);
   expect(document.activeElement).toBe(input);
   input.remove();

@@ -45,6 +45,7 @@ import {
   listIssueTerminalHistory,
   listIssueTerminals,
   listPullTerminals,
+  recordIssueTerminalClosed,
   recordIssueTerminalStarted,
   recordShellTerminalStarted,
   sessionRestoreBlocker,
@@ -928,14 +929,27 @@ export const terminal = {
     };
   },
 
-  // Ends a New issue terminal; its session stays restorable. The tab leaves once the worker sees
-  // the terminal exit.
-  async closeIssueTerminal(input: {
-    repo: string;
-    address: string;
-  }): Promise<void> {
-    await assertTerminalAttachable(input, { role: "issue-create" });
-    await killHerdrCoreTerminal(input.address);
+  // Ends a New issue terminal; its session stays restorable. The tab leaves at once, and herdr-core
+  // is not waited on: the kill runs in the background, a failure goes to reportError, and the
+  // worker's next snapshot lists a terminal the kill missed again.
+  closeIssueTerminal(
+    input: { repo: string; address: string },
+    reportError: (message: string) => void = console.error,
+  ): void {
+    const r = herdrCoreRepoOr409(input.repo);
+    if (
+      !isHerdrCoreAddress(input.address) ||
+      !recordIssueTerminalClosed(r, input.address)
+    )
+      throw new ServiceError(
+        409,
+        `Terminal ${input.address} is not a New issue terminal of ${r.full_name}`,
+      );
+    killHerdrCoreTerminal(input.address, r.full_name).catch((error) =>
+      reportError(
+        `Closing New issue terminal ${input.address} of ${r.full_name} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      ),
+    );
   },
 
   restoreIssueTerminal(

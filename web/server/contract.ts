@@ -672,14 +672,14 @@ export const methods: Record<string, MethodDef> = {
   },
   "terminal/closeIssueTerminal": {
     description:
-      "End a New issue terminal of a herdr-core repo without confirmation. Its session stays in the History tab to restore.",
+      "End a New issue terminal of a herdr-core repo without confirmation. It leaves the dock at once and its session moves to the History tab to restore; the terminal itself is killed in the background, and a failure is logged.",
     params: params({ repo, address: strNonEmpty }, ["repo", "address"]),
     result: anyObject,
     handler: async (p) => {
-      await svc.terminal.closeIssueTerminal({
-        repo: p.repo,
-        address: p.address,
-      });
+      svc.terminal.closeIssueTerminal(
+        { repo: p.repo, address: p.address },
+        log.error,
+      );
       return { ok: true };
     },
   },

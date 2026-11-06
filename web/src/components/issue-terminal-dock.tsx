@@ -83,6 +83,11 @@ function Dock({ full, issue }: { full: string; issue?: number }) {
         close.mutate(
           { repo: full, address: terminal.address },
           {
+            // The close recorded the terminal as ended; don't wait for its event to drop the tab.
+            onSuccess: () => {
+              void query.refetch();
+              if (issue !== undefined) void repoQuery.refetch();
+            },
             onError: (error) =>
               showError(
                 `Failed to close ${terminal.label}: ${errorMessage(error)}`,
