@@ -31,6 +31,7 @@ import type {
   IssueTerminalHistory,
   Label,
   LoopEvent,
+  LostPullTerminal,
   Notification,
   PullDetailPage,
   PullDiff,
@@ -617,10 +618,19 @@ export function getHerdrSessions() {
 
 /** Live herdr-core agent terminals of a PR, for its terminal dock (#2574). */
 export function getPullTerminals(repo: string, pull: number) {
-  return rpc<{ terminals: PullTerminal[] }>("terminal/pullTerminals", {
-    repo,
-    pull,
-  });
+  return rpc<{ terminals: PullTerminal[]; lost: LostPullTerminal[] }>(
+    "terminal/pullTerminals",
+    { repo, pull },
+  );
+}
+
+/** Resume a lost Workflow agent of a PR in a new terminal of the dock. */
+export function restorePullTerminal(input: {
+  repo: string;
+  pull: number;
+  sessionId: string;
+}) {
+  return rpc<TerminalLaunchResult>("terminal/restorePullTerminal", input);
 }
 
 /** Live herdr-core New issue terminals of a repo (or only those an issue was filed from), for the

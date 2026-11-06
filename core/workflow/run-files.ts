@@ -7,8 +7,8 @@ import type { WorkflowStep } from "./compose.ts";
 
 // Per-run files under LOOPHUB_HOME that a Workflow launch hands to an agent: the contract it is
 // started with as a system prompt, and the user prompt its command line reads back. Only the
-// writers are exported: every path this module touches is derived from the run id, so no caller can
-// aim a write elsewhere.
+// writers and a few read-only path lookups are exported: every path this module touches is derived
+// from the run id, so no caller can aim a write elsewhere.
 
 function ensureRunDir(runId: number): string {
   return ensureHomeDir("runs", "workflow", String(runId));
@@ -77,6 +77,19 @@ export function readStepPromptSidecar(runId: number, name: string): string {
 
 export function writeParentContract(runId: number, text: string): string {
   return writeRunFile(runId, "parent-contract.md", text);
+}
+
+// The contract a parent or step agent was started with, for a restore to start it with again.
+export function parentContractPath(runId: number): string {
+  return runFilePath(runId, "parent-contract.md");
+}
+
+export function stepLaunchContractPath(
+  runId: number,
+  sessionId: string,
+  step: WorkflowStep,
+): string {
+  return join(ensureStepLaunchDir(runId, sessionId), `${step}-contract.md`);
 }
 
 export function writeStepContract(

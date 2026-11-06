@@ -468,7 +468,8 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
 
 親と子（Execute / Verify）のエージェントがすべて失われた run は、run と PR が `running` のまま止まる。
 `lh workflow run relaunch --pr <n>` は、その PR の running run に fresh な親を起動して run を引き継がせる。
-失われたかどうかの判定はしない。人間が判断して実行する。Workflow のエージェントの coding-agent セッションは resume しない。
+失われたかどうかの判定はしない。人間が判断して実行する。relaunch は失われたエージェントの coding-agent セッションを resume しない。
+herdr-core では、エージェントごとに PR 画面のドックからセッションを resume して復元することもできる（「画面下部のターミナル」）。
 
 relaunch は run の parent session を新しい session に差し替え、parent readiness を未宣言に戻し、active
 child と起動予約を外し、失われた親の pane を配送先から外す。置き換えた親の session は run の参加者に
@@ -500,6 +501,21 @@ herdr-core 有効のリポジトリの PR 画面下部には、その PR の Wor
 一覧の更新で選択が変わっても、ページで入力中の文字がターミナルへ送られることはない。
 WebSocket を閉じても終わるのは attach だけで、ターミナル本体は動き続ける。
 
+running run の配送先のエージェント（親、live な Execute、まだ review を出していない Verify）のうち、配送先のターミナルが
+`live` でないものは、live なタブの後ろに inactive なタブとして並ぶ。番号は live なタブと同じ数え方で、子は起動順の seq ごとに
+数えるため、復元したターミナルは元の番号を引き継ぐ。inactive なタブを選ぶと、ターミナルの代わりに Restore ボタンが出る。
+Restore は Claude Code のセッションだけを、PR の worktree で `claude --resume <session>` として新しいターミナルに起動する。
+起動時の contract も `--append-system-prompt-file` で渡し直す。起動したターミナルは lh-web がすぐ記録するので、ドックは
+そのまま live なタブとして開く。
+
+復元したターミナルはそのエージェントの配送先になる。子は execution target を新しいターミナルに差し替えるので、親の
+`deliver` はそのまま届く。親は run の pane 登録を新しいターミナルへ移し、readiness を未宣言に戻して猶予を復元時刻から数え直す。
+復元した親には `lh workflow parent-ready <run>` の実行を求める prompt を渡す。失われた親への配送で残った receipt はこの
+`parent-ready` で解消し、配送を再開する。
+
+New issue の History と同じく、他のランタイムや transcript が無いセッションは inactive なタブに出すが復元はできず、その理由を
+タブに表示する。RPC も起動前に同じ判定で拒否し、ターミナルがまだ live なエージェントの復元も拒否する。
+
 中継は loopback からのアクセスだけで許可する。Origin は RPC と同じ規則で検証したうえで、接続元と Host が loopback で、Origin が
 その Host と一致し、プロキシ経由の印がないことを要求するので、`public_origin` 経由ではタブを出さず upgrade も拒否する。
 attach の前にターミナルの `loophub.repo` / `loophub.pr` ラベルを照合する。
@@ -517,7 +533,7 @@ New issue のタブは `✕` を押すと確認なしでターミナルを終了
 リポジトリのルートで `claude --resume <session>` として新しいターミナルに起動し、New issue のタブとして開く。
 他のランタイムはセッション ID で会話を再開できず、Claude Code でも transcript（`~/.claude/projects/*/<session>.jsonl`）が
 保持期間で消えたり、一度も作られなかったりしたセッションは再開できない。どちらも一覧には出すが復元はできず、
-その理由を行に表示する。RPC も起動前に同じ判定で拒否する。復元に失敗したらエラーを History タブに表示する。coding-agent のセッションを resume するのはこの New issue の復元だけである。
+その理由を行に表示する。RPC も起動前に同じ判定で拒否する。復元に失敗したらエラーを History タブに表示する。coding-agent のセッションを resume するのは、この New issue の復元と、PR 画面のドックからの Workflow エージェントの復元だけである。
 
 ### herdr-core のエージェント状態
 

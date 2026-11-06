@@ -7,6 +7,7 @@ import {
   getIssueTerminals,
   getPullTerminals,
   restoreIssueTerminal,
+  restorePullTerminal,
 } from "@/api/client";
 import { queryKeys } from "./keys";
 
@@ -44,4 +45,8 @@ export function useCloseIssueTerminal() {
 
 export function useRestoreIssueTerminal() {
   return useMutation({ mutationFn: restoreIssueTerminal });
+}
+
+export function useRestorePullTerminal() {
+  return useMutation({ mutationFn: restorePullTerminal });
 }

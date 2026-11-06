@@ -979,6 +979,15 @@ export interface PullTerminalWire {
   status: string | null;
 }
 
+// A Workflow agent the PR screen's dock lists without a live terminal: deliveries still target it,
+// but its terminal is gone. The dock offers to resume its session in a new terminal.
+export interface LostPullTerminalWire {
+  session_id: string;
+  label: string;
+  // Why Restore is unavailable, null when it is available.
+  restore_blocker: string | null;
+}
+
 // One row of the issue screens' New issue history: a New issue session with no live terminal.
 export interface IssueTerminalHistoryWire {
   session_id: string;

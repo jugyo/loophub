@@ -17,6 +17,7 @@ import type {
   HerdrRepoSessionsWire,
   HerdrSessionsWire,
   IssueTerminalHistoryWire,
+  LostPullTerminalWire,
   PullTerminalWire,
   TerminalLaunchResultWire,
 } from "../serialize.ts";
@@ -26,6 +27,7 @@ import {
   issueCreateSessionName,
   SESSION_KIND_ISSUE_CREATE,
 } from "../session-runtime.ts";
+import { createClaudeTranscriptIndex } from "../session-usage.ts";
 import * as S from "../store.ts";
 import {
   cleanupClosedIssuePanesImpl,
@@ -38,11 +40,12 @@ import {
 import {
   followHerdrCoreRepo,
   herdrCoreFollowedRepos,
-  issueSessionRestoreBlocker,
+  type LostWorkflowAgent,
   listIssueTerminalHistory,
   listIssueTerminals,
   listPullTerminals,
   recordIssueTerminalStarted,
+  sessionRestoreBlocker,
   withHerdrCoreSessions,
 } from "../terminal/herdr-core-status.ts";
 import {
@@ -106,6 +109,7 @@ import {
   startHerdrSession,
 } from "./herdr-runner.ts";
 import { issueOr404, repoOr404 } from "./shared.ts";
+import { workflowAgentTerminals, workflowRuns } from "./workflow-runs.ts";
 
 export interface TerminalLaunchInput {
   // Optional: the global "workflow-create" (New workflow) launch has no repo (#1889). Every other
@@ -692,7 +696,7 @@ async function launchHerdrCore(
 }
 
 // Resumes a past New issue session of the repo in a new terminal, which the dock lists as a New issue
-// tab again. A session issueSessionRestoreBlocker turns down is refused before anything starts.
+// tab again. A session sessionRestoreBlocker turns down is refused before anything starts.
 async function restoreIssueTerminal(
   r: S.Repo,
   sessionId: string,
@@ -705,7 +709,7 @@ async function restoreIssueTerminal(
     session.name !== issueCreateSessionName(r.full_name)
   )
     throw new ServiceError(404, `No New issue session ${sessionId}`);
-  const blocker = issueSessionRestoreBlocker(session);
+  const blocker = sessionRestoreBlocker(session);
   if (blocker) throw new ServiceError(422, blocker);
   if (
     S.listHerdrCoreTerminalRows(r.id).some(
@@ -749,6 +753,31 @@ async function restoreIssueTerminal(
   };
 }
 
+// The PR's Workflow agents whose terminal is gone while deliveries still target them.
+function lostWorkflowAgents(r: S.Repo, pull: number): LostWorkflowAgent[] {
+  const lost = workflowAgentTerminals(r, pull).filter(
+    (agent) => S.getHerdrCoreTerminal(agent.address)?.state !== "live",
+  );
+  if (lost.length === 0) return [];
+  const transcripts = createClaudeTranscriptIndex(
+    undefined,
+    lost.map((agent) => agent.sessionId),
+  );
+  return lost.map((agent) => ({
+    run_id: agent.run.id,
+    role: agent.role,
+    seq: agent.seq,
+    session_id: agent.sessionId,
+    restore_blocker: sessionRestoreBlocker(
+      {
+        id: agent.sessionId,
+        runtime: S.getAgentSession(agent.sessionId)?.runtime ?? null,
+      },
+      transcripts,
+    ),
+  }));
+}
+
 function herdrCoreRepoOr409(repo: string): S.Repo {
   const r = repoOr404(repo);
   if (normalizeTerminalBackend(r.terminal_backend) !== "herdr-core")
@@ -775,13 +804,30 @@ export const terminal = {
   // The terminal dock of a PR (#2574): empty unless the repo runs on herdr-core.
   pullTerminals(input: { repo: string; pull: number }): {
     terminals: PullTerminalWire[];
+    lost: LostPullTerminalWire[];
   } {
     const r = repoOr404(input.repo);
+    return normalizeTerminalBackend(r.terminal_backend) === "herdr-core"
+      ? listPullTerminals(r, input.pull, lostWorkflowAgents(r, input.pull))
+      : { terminals: [], lost: [] };
+  },
+
+  // Resumes a lost Workflow agent of the PR in a new terminal, which deliveries reach from then on.
+  async restorePullTerminal(input: {
+    repo: string;
+    pull: number;
+    sessionId: string;
+  }): Promise<TerminalLaunchResultWire> {
+    const r = herdrCoreRepoOr409(input.repo);
+    const { address, cwd } = await workflowRuns.restoreAgentTerminal(
+      r.full_name,
+      { pr: input.pull, sessionId: input.sessionId },
+    );
     return {
-      terminals:
-        normalizeTerminalBackend(r.terminal_backend) === "herdr-core"
-          ? listPullTerminals(r, input.pull)
-          : [],
+      backend: "herdr-core" as const,
+      cwd,
+      attach: `hc attach ${address}`,
+      address,
     };
   },
 

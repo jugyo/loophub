@@ -683,6 +683,8 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["workflow-run", "pull", "me/proj", 13]);
     expect(keys).toContainEqual(["workflow-run", "history", "me/proj", 9]);
     expect(keys).toContainEqual(["workflow-run", "total-cost", "me/proj", 9]);
+    // The run's delivery targets decide the dock's inactive tabs.
+    expect(keys).toContainEqual(["pull-terminals", "me/proj", 13]);
   });
 
   it("falls back to the whole workflow-run prefix when the event names neither issue nor PR", () => {

@@ -22,7 +22,11 @@ import { formatEvent, type LoopEvent } from "../events.ts";
 import { localBranchRef, revParse } from "../git.ts";
 import { type MergeableState, resolveMergeable } from "../mergeable.ts";
 import { pullShaStatus } from "../pull-status-cache.ts";
-import { runtimeLaunchEnv, runtimePrompt } from "../runtime-args.ts";
+import {
+  buildRuntimeFlags,
+  runtimeLaunchEnv,
+  runtimePrompt,
+} from "../runtime-args.ts";
 import { RUNTIMES } from "../runtimes.ts";
 import {
   effectiveRepoAgentConfigFor,
@@ -42,10 +46,16 @@ import { workflowRunConfigJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import { killPaneForegroundProcess } from "../terminal/herdr-cleanup.ts";
 import {
+  recordWorkflowTerminalStarted,
+  sessionRestoreBlocker,
+} from "../terminal/herdr-core-status.ts";
+import {
   HERDR_CORE_PROVIDER,
+  HERDR_CORE_SESSION_NAME,
   type HerdrCoreLaunch,
   herdrCoreLabels,
   isHerdrCoreAddress,
+  launchHerdrCoreTerminal,
 } from "../terminal/herdr-core-terminal.ts";
 import {
   buildWorkflowStepHerdrLaunchPlan,
@@ -108,8 +118,10 @@ import {
   workflowActionPlan,
 } from "../workflow/reconcile.ts";
 import {
+  parentContractPath,
   readStepPromptSidecar,
   readWorkflowManifest,
+  stepLaunchContractPath,
   workflowManifestPath,
   writeParentContract,
   writeParentPrompt,
@@ -1429,6 +1441,56 @@ function liveExecuteSessionId(
     return undefined;
   }
   return workflowStepSessionIds(run.step_sessions_json, "execute").at(-1);
+}
+
+// One agent a running run still delivers to, with the herdr-core terminal deliveries reach it at.
+export interface WorkflowAgentTerminal {
+  run: S.WorkflowRunRow;
+  role: WorkflowCommentTarget;
+  sessionId: string;
+  // The child's number in its run; null for the parent.
+  seq: number | null;
+  address: string;
+}
+
+// The agents the PR's running runs still deliver to — each run's parent, its live Execute and its
+// unreviewed Verify — whether or not their terminals still run. An agent on another backend, or with
+// no terminal registered yet, is left out.
+export function workflowAgentTerminals(
+  repo: S.Repo,
+  pr: number,
+): WorkflowAgentTerminal[] {
+  const prIssue = S.getIssue(repo.id, pr);
+  if (!prIssue) return [];
+  return S.runningWorkflowRunsForPull(repo.id, pr).flatMap((run) => {
+    const projection = workflowRunEventProjection(run);
+    return WORKFLOW_COMMENT_TARGETS.flatMap((role) => {
+      const sessionId = workflowTargetSessionId(
+        run,
+        role,
+        prIssue.id,
+        projection,
+      );
+      if (!sessionId) return [];
+      const address =
+        role === "orchestrator"
+          ? workflowRunParentPaneId(run)
+          : S.getAgentExecutionTarget(sessionId)?.target_id;
+      if (!address || !isHerdrCoreAddress(address)) return [];
+      const name = parseWorkflowHerdrAgentName(
+        S.getAgentSession(sessionId)?.name,
+      );
+      return [
+        {
+          run,
+          role,
+          sessionId,
+          seq: name?.kind === "step" ? name.sequence : null,
+          address,
+        },
+      ];
+    });
+  });
 }
 
 function outOfBandReviewVerdict(
@@ -3297,6 +3359,114 @@ export const workflowRuns = {
         user_prompt_path: parent.userPromptPath,
       },
     };
+  },
+
+  // Resume a Workflow agent whose terminal is gone in a new herdr-core terminal, and make that terminal
+  // the agent's delivery target again. Only a Claude Code session whose transcript is still saved can
+  // be resumed; anything else is refused before a terminal starts. A restored parent has to declare
+  // readiness again before anything is delivered to it, as a freshly launched one does, and its
+  // restore prompt asks it to.
+  async restoreAgentTerminal(
+    name: string,
+    input: { pr: number; sessionId: string },
+  ): Promise<{ address: string; cwd: string }> {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const agent = workflowAgentTerminals(r, input.pr).find(
+      (candidate) => candidate.sessionId === input.sessionId,
+    );
+    if (!agent) {
+      throw new ServiceError(
+        404,
+        `No Workflow agent ${input.sessionId} on PR #${input.pr}`,
+      );
+    }
+    if (S.getHerdrCoreTerminal(agent.address)?.state === "live") {
+      throw new ServiceError(409, "This agent's terminal is still running");
+    }
+    const session = S.getAgentSession(agent.sessionId);
+    const blocker = sessionRestoreBlocker({
+      id: agent.sessionId,
+      runtime: session?.runtime ?? null,
+    });
+    if (blocker) throw new ServiceError(422, blocker);
+    const { run, role } = agent;
+    const pull = S.getPull(issueOr404(r, run.pr_number, "pull").id);
+    if (!pull) {
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    }
+    const cwd = workflowRunWorktree({
+      repo: r,
+      prNumber: run.pr_number,
+      headRef: pull.head_ref,
+    });
+    const isParent = role === "orchestrator";
+    const runtime = RUNTIMES["claude-code"];
+    const model = session?.model ?? undefined;
+    const address = await launchHerdrCoreTerminal({
+      argv: [
+        runtime.bin,
+        ...buildRuntimeFlags({
+          runtime: runtime.id,
+          model,
+          effort: session?.effort ?? undefined,
+          systemPromptFile: isParent
+            ? parentContractPath(run.id)
+            : stepLaunchContractPath(
+                run.id,
+                agent.sessionId,
+                role === "executor" ? "execute" : "verify",
+              ),
+        }),
+        "--resume",
+        agent.sessionId,
+        ...(isParent
+          ? [
+              workflowMessages(runContractLanguage(run)).parentRestorePrompt(
+                run.id,
+              ),
+            ]
+          : []),
+      ],
+      cwd,
+      env: runtimeLaunchEnv({ runtime: runtime.id, model }),
+      labels: herdrCoreLabels({
+        repo: r.full_name,
+        pr: run.pr_number,
+        run: run.id,
+        role,
+        seq: agent.seq ?? undefined,
+      }),
+      submitPrompt: isParent ? runtime.launchPromptNeedsSubmit : undefined,
+    });
+    db.transaction(() => {
+      recordWorkflowTerminalStarted(r, {
+        address,
+        role,
+        pr_number: run.pr_number,
+        run_id: run.id,
+        seq: agent.seq,
+      });
+      if (isParent) {
+        // The parent's pane row keeps its link to the run, so moving it to the new terminal is all
+        // the registration a delivery needs. The readiness window opens again from now.
+        S.resetWorkflowRunParentReadiness(run.id);
+        S.setAgentSessionCreatedAt(agent.sessionId, new Date().toISOString());
+        S.registerHerdrPane({
+          repoId: r.id,
+          launchId: agent.sessionId,
+          paneId: address,
+          sessionName: HERDR_CORE_SESSION_NAME,
+        });
+      } else {
+        S.registerAgentExecutionTarget({
+          sessionId: agent.sessionId,
+          provider: HERDR_CORE_PROVIDER,
+          targetId: address,
+        });
+      }
+    });
+    return { address, cwd };
   },
 
   // A later Verify supersedes every earlier Verify child in the same run, including one reviewing

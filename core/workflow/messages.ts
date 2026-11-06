@@ -23,6 +23,7 @@ export type WorkflowMessages = {
     prNumber: number;
     baseRef: string;
   }): string[];
+  parentRestorePrompt(runId: number): string;
   reviewSubmissionInstruction: string;
   handoffLaunchIntro(step: WorkflowStep, runId: number): string;
   handoffParentNoteHeading: string;
@@ -133,6 +134,12 @@ const WORKFLOW_MESSAGE_CATALOG = {
       "",
     ],
   },
+  parentRestorePrompt: {
+    en: (runId) =>
+      `This terminal was restored from your saved session after the previous one was lost. Run \`lh workflow parent-ready ${runId}\` first, before anything else: instructions are delivered to this pane only after that signal. Then keep waiting for workflow instructions as described in your contract.`,
+    ja: (runId) =>
+      `前のターミナルが失われたため、保存されたセッションからこのターミナルを復元しました。まず最初に \`lh workflow parent-ready ${runId}\` を実行してください。この signal の後にのみ instruction がこの pane に配送されます。その後は contract に従って workflow instruction を待ってください。`,
+  },
   reviewSubmissionInstruction: {
     en: "do not read the PR",
     ja: "do not read the PR",
@@ -165,6 +172,7 @@ export function workflowMessages(
       WORKFLOW_MESSAGE_CATALOG.workflowAgentNoteHeading[language],
     noneStepPrompt: WORKFLOW_MESSAGE_CATALOG.noneStepPrompt[language],
     parentPrompt: WORKFLOW_MESSAGE_CATALOG.parentPrompt[language],
+    parentRestorePrompt: WORKFLOW_MESSAGE_CATALOG.parentRestorePrompt[language],
     reviewSubmissionInstruction:
       WORKFLOW_MESSAGE_CATALOG.reviewSubmissionInstruction[language],
     handoffLaunchIntro: WORKFLOW_MESSAGE_CATALOG.handoffLaunchIntro[language],

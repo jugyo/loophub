@@ -34,6 +34,7 @@ import type {
   LabelWire,
   LinkedIssueWire,
   LoopEventWire,
+  LostPullTerminalWire,
   NotificationWire,
   PullDetailPageWire,
   PullDiffWire,
@@ -206,6 +207,7 @@ export type HerdrRepoSessions = HerdrRepoSessionsWire;
 
 export type HerdrSessions = HerdrSessionsWire;
 export type PullTerminal = PullTerminalWire;
+export type LostPullTerminal = LostPullTerminalWire;
 export type IssueTerminalHistory = IssueTerminalHistoryWire;
 
 /**

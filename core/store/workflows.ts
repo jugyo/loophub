@@ -423,6 +423,17 @@ export function relaunchWorkflowRunParent(
     .get(parentSessionId, now(), id) as WorkflowRunRow | null;
 }
 
+// Wait for a restored parent to declare readiness again. The confirmed flag stays set, as after a
+// relaunch, so receipts left by the lost terminal don't block the handshake.
+export function resetWorkflowRunParentReadiness(id: number): void {
+  db.run(
+    `UPDATE workflow_runs
+     SET parent_ready_at = NULL, parent_ready_confirmed = 1, updated_at = ?
+     WHERE id = ?`,
+    [now(), id],
+  );
+}
+
 // Move the run event bookmark forward. The guard keeps the cursor monotonic when two consumers race.
 export function advanceWorkflowRunEventCursor(
   id: number,

@@ -307,6 +307,8 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       if (pullNumber !== null) {
         keys.push([...queryKeys.workflowRunForPull(repo, pullNumber)]);
         keys.push([...queryKeys.pullDebug(repo, pullNumber)]);
+        // Which agents the run still delivers to decides the dock's inactive tabs.
+        keys.push([...queryKeys.pullTerminals(repo, pullNumber)]);
       }
       if (workflowRunId !== null) {
         keys.push([...queryKeys.workflowRunHistory(repo, workflowRunId)]);

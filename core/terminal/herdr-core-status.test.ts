@@ -437,7 +437,31 @@ describe("terminal/pullTerminals", () => {
         { address: "t3", label: "verifier #1", status: "done" },
         { address: "t4", label: "executor #2", status: "blocked" },
       ],
+      lost: [],
     });
+  });
+
+  test("lists lost agents under the same numbering, and a restored terminal keeps its number", () => {
+    const lost = (seq: number | null, role: "executor" | "verifier") => ({
+      run_id: 1,
+      role,
+      seq,
+      session_id: `s${seq}`,
+      restore_blocker: null,
+    });
+    // verifier #1 (seq 2) lost with its row gone; a restored executor #1 (seq 1) runs again in t9.
+    expect(
+      H.listPullTerminals(dockRepo, 7, [lost(5, "verifier")]).lost,
+    ).toEqual([
+      { session_id: "s5", label: "verifier #2", restore_blocker: null },
+    ]);
+    row("t9", { seq: 1, status: "working" });
+    expect(H.listPullTerminals(dockRepo, 7).terminals).toContainEqual({
+      address: "t9",
+      label: "executor #1",
+      status: "working",
+    });
+    S.deleteHerdrCoreTerminal("t9");
   });
 
   test("names the run once a PR has several", () => {

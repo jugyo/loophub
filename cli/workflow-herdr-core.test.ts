@@ -276,6 +276,134 @@ describe.skipIf(!HAS_HC)("a herdr-core repo", () => {
     expect((await terminal(executorAddress)).state).toBe("finished");
   });
 
+  test("a lost agent is listed inactive and restored by resuming its session", async () => {
+    const repo = S.getRepo("me", "workflow-herdr-core");
+    if (!repo) throw new Error("repo missing");
+    const executorSession = S.agentSessionForExecutionTarget(
+      "herdr-core",
+      executorAddress,
+    ) as string;
+    // The worker's view: the parent still runs, and killAgent ended the executor.
+    const parentRow = {
+      address: parentAddress,
+      repo_id: repo.id,
+      role: "orchestrator",
+      pr_number: pr,
+      run_id: runId,
+      seq: null,
+      state: "live",
+      status: null,
+      turn: 0,
+      exit_code: null,
+      reason: null,
+      session_id: null,
+    };
+    S.upsertHerdrCoreTerminal(parentRow);
+    S.upsertHerdrCoreTerminal({
+      ...parentRow,
+      address: executorAddress,
+      role: "executor",
+      seq: 1,
+      state: "finished",
+    });
+    const previousHome = process.env.HOME;
+    process.env.HOME = join(DIR, "user-home");
+    try {
+      // No transcript yet: listed, but it can't be resumed.
+      expect(svc.terminal.pullTerminals({ repo: REPO, pull: pr }).lost).toEqual(
+        [
+          {
+            session_id: executorSession,
+            label: "executor #1",
+            restore_blocker: "The conversation is no longer saved",
+          },
+        ],
+      );
+      await expect(
+        svc.terminal.restorePullTerminal({
+          repo: REPO,
+          pull: pr,
+          sessionId: executorSession,
+        }),
+      ).rejects.toMatchObject({ status: 422 });
+
+      const project = join(DIR, "user-home", ".claude", "projects", "-repo");
+      mkdirSync(project, { recursive: true });
+      writeFileSync(join(project, `${executorSession}.jsonl`), "{}\n");
+      const restored = await svc.terminal.restorePullTerminal({
+        repo: REPO,
+        pull: pr,
+        sessionId: executorSession,
+      });
+      const address = restored.address as string;
+      const argv = await agentArgv(address);
+      expect(argv.slice(-2)).toEqual(["--resume", executorSession]);
+      expect(argv).toContain("--append-system-prompt-file");
+      expect((await terminal(address)).labels).toMatchObject({
+        "loophub.role": "executor",
+        "loophub.seq": "1",
+      });
+      // The restored terminal is the delivery target, listed at once under the same number.
+      expect(S.getAgentExecutionTarget(executorSession)?.target_id).toBe(
+        address,
+      );
+      expect(
+        svc.terminal.pullTerminals({ repo: REPO, pull: pr }),
+      ).toMatchObject({
+        terminals: expect.arrayContaining([
+          { address, label: "executor #1", status: null },
+        ]),
+        lost: [],
+      });
+      await svc.workflowRuns.deliver(
+        REPO,
+        { run: runId, target: "executor", text: "after restore" },
+        parentSession,
+      );
+      await eventually(async () => {
+        const read = (await callHerdrCore("terminal.read", {
+          terminal: address,
+        })) as { text: string };
+        expect(read.text).toContain("after restore");
+      });
+      await expect(
+        svc.terminal.restorePullTerminal({
+          repo: REPO,
+          pull: pr,
+          sessionId: executorSession,
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+
+      // A restored parent takes the run's pane over and waits for readiness again.
+      await callHerdrCore("terminal.kill", { terminal: parentAddress });
+      S.upsertHerdrCoreTerminal({ ...parentRow, state: "finished" });
+      writeFileSync(join(project, `${parentSession}.jsonl`), "{}\n");
+      expect(
+        svc.terminal.pullTerminals({ repo: REPO, pull: pr }).lost,
+      ).toMatchObject([{ session_id: parentSession, label: "orchestrator" }]);
+      const parent = await svc.terminal.restorePullTerminal({
+        repo: REPO,
+        pull: pr,
+        sessionId: parentSession,
+      });
+      const parentArgv = await agentArgv(parent.address as string);
+      expect(parentArgv.slice(-3, -1)).toEqual(["--resume", parentSession]);
+      expect(parentArgv.at(-1)).toContain(`lh workflow parent-ready ${runId}`);
+      expect(
+        S.listHerdrPanesForResource({
+          repoId: repo.id,
+          resourceKind: "workflow_run",
+          resourceKey: String(runId),
+        }).map((pane) => pane.pane_id),
+      ).toEqual([parent.address]);
+      expect(S.getWorkflowRun(runId)?.parent_ready_at).toBeNull();
+      parentAddress = parent.address as string;
+      executorAddress = address;
+    } finally {
+      process.env.HOME = previousHome;
+    }
+  });
+
   test("New Issue runs lh in a terminal and registers it for the issue's lifetime", async () => {
     writeFileSync(join(BIN, "lh"), FAKE_CLAUDE, { mode: 0o755 });
     const before = readdirSync(AGENT_LOG);

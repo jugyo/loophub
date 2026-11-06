@@ -8,8 +8,8 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "#loophub-test";
-import { mockRpcFetch } from "@/api/rpc-mock";
-import type { PullTerminal } from "@/api/types";
+import { mockRpcFetch, RpcFault } from "@/api/rpc-mock";
+import type { LostPullTerminal, PullTerminal } from "@/api/types";
 import { queryKeys } from "@/queries/keys";
 import { PullTerminalDock } from "./pull-terminal-dock";
 
@@ -37,10 +37,15 @@ function setPageUrl(url: string) {
   ).happyDOM.setURL(url);
 }
 
-function renderDock(backend = "herdr-core", terminals = TERMINALS) {
+function renderDock(
+  backend = "herdr-core",
+  terminals = TERMINALS,
+  handlers: Parameters<typeof mockRpcFetch>[0] = {},
+) {
   fetchMock = mockRpcFetch({
     "repos/get": () => ({ terminal_backend: backend }),
     "terminal/pullTerminals": () => ({ terminals }),
+    ...handlers,
   });
   vi.stubGlobal("fetch", fetchMock);
   const client = new QueryClient({
@@ -322,4 +327,85 @@ it("renders nothing on a remote page", async () => {
   renderDock();
   await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));
   expect(screen.queryByRole("tablist")).toBeNull();
+});
+
+const LOST: LostPullTerminal[] = [
+  { session_id: "s-exec", label: "executor #3", restore_blocker: null },
+  {
+    session_id: "s-codex",
+    label: "verifier #2",
+    restore_blocker: "Restore is available for Claude Code only",
+  },
+];
+
+function renderLostDock(restore: () => unknown) {
+  let state = { terminals: TERMINALS.slice(0, 1), lost: LOST };
+  renderDock("herdr-core", [], {
+    "terminal/pullTerminals": () => state,
+    "terminal/restorePullTerminal": () => {
+      const result = restore();
+      state = {
+        terminals: [
+          ...state.terminals,
+          { address: "t9", label: "executor #3", status: null },
+        ],
+        lost: LOST.slice(1),
+      };
+      return result;
+    },
+  });
+}
+
+it("lists a lost agent as an inactive tab that restores its session", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
+  renderLostDock(() => ({ backend: "herdr-core", address: "t9" }));
+  const tablist = await openDock();
+  await waitFor(() =>
+    expect(
+      within(tablist)
+        .getAllByRole("tab")
+        .map((tab) => tab.textContent),
+    ).toEqual([
+      "orchestratorworking",
+      "executor #3inactive",
+      "verifier #2inactive",
+    ]),
+  );
+  fireEvent.click(within(tablist).getByRole("tab", { name: /verifier #2/ }));
+  expect(
+    await screen.findByText("Restore is available for Claude Code only"),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
+
+  fireEvent.click(within(tablist).getByRole("tab", { name: /executor #3/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+  await waitFor(() =>
+    expect(selectedTab()?.textContent).toBe("executor #3idle"),
+  );
+  await waitFor(() => expect(urls.map(attachedTerminal).at(-1)).toBe("t9"));
+  const restoreCall = fetchMock.mock.calls
+    .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
+    .find((body) => body.method === "terminal/restorePullTerminal");
+  expect(restoreCall.params).toEqual({
+    repo: "me/proj",
+    pull: 7,
+    sessionId: "s-exec",
+  });
+});
+
+it("shows why a restore failed", async () => {
+  stubWebSocket();
+  stubResizeObserver();
+  renderLostDock(() => {
+    throw new RpcFault(422, "The conversation is no longer saved");
+  });
+  const tablist = await openDock();
+  fireEvent.click(
+    await within(tablist).findByRole("tab", { name: /executor #3/ }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "The conversation is no longer saved",
+  );
 });

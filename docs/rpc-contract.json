@@ -1212,7 +1212,7 @@
     },
     {
       "name": "terminal/pullTerminals",
-      "description": "Live herdr-core agent terminals of a PR's Workflow runs, in run order with their last reported status, for the PR screen's terminal dock (#2574). Empty unless the repo runs on herdr-core.",
+      "description": "Live herdr-core agent terminals of a PR's Workflow runs, in run order with their last reported status, for the PR screen's terminal dock (#2574). lost lists the running runs' agents (parent, live Execute, unreviewed Verify) whose terminal is gone, under the same numbering; restore_blocker says why one can't be resumed (not Claude Code, or its transcript is gone), null when it can. Empty unless the repo runs on herdr-core.",
       "params": {
         "type": "object",
         "properties": {
@@ -1228,6 +1228,36 @@
         "required": [
           "repo",
           "pull"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "terminal/restorePullTerminal",
+      "description": "Resume a lost Workflow agent's Claude Code session (claude --resume) in a new herdr-core terminal, which becomes the agent's delivery target. A restored parent waits for parent-ready again before instructions are delivered. Returns the terminal's address. A session that can't be resumed (another runtime, or a transcript no longer saved) is refused with 422 before any terminal starts; an agent whose terminal still runs, with 409.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pull": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "pull",
+          "sessionId"
         ],
         "additionalProperties": false
       },

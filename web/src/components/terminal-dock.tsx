@@ -43,6 +43,14 @@ export function isLoopbackPage(): boolean {
   return ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
 }
 
+export interface InactiveTerminalTab {
+  key: string;
+  label: string;
+  // The tab's tooltip.
+  title?: string;
+  content: ReactNode;
+}
+
 function clampHeight(height: number): number {
   return Math.min(Math.max(height, MIN_HEIGHT_PX), window.innerHeight * 0.8);
 }
@@ -57,6 +65,7 @@ export function TerminalDock({
   selectFirstTab = false,
   onClose,
   history,
+  inactive = [],
 }: {
   repo: string;
   // Absent on the issue screens, whose New issue terminals belong to the repo alone.
@@ -72,20 +81,31 @@ export function TerminalDock({
   onClose?: (terminal: PullTerminal) => void;
   // What a History tab at the right end shows in place of a terminal; no tab without it.
   history?: ReactNode;
+  // Tabs for agents whose terminal is gone, after the live ones: selecting one shows its content in
+  // place of a terminal.
+  inactive?: InactiveTerminalTab[];
 }) {
   const [open, setOpen] = useState(false);
   const [height, setHeight] = useState(DEFAULT_HEIGHT_PX);
   const [selected, setSelected] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const historyShown = open && showHistory && history !== undefined;
+  const inactiveShown = historyShown
+    ? undefined
+    : inactive.find((tab) => tab.key === selected);
   // A finished terminal drops out of the list, which also ends its view and attach.
   const active = terminals.some((t) => t.address === selected)
     ? selected
-    : selectFirstTab
+    : selectFirstTab && !inactiveShown
       ? (terminals[0]?.address ?? null)
       : null;
   // Forget a finished terminal, so it can't take the view back if it is listed again.
-  if (selectFirstTab && selected !== null && active !== selected)
+  if (
+    selectFirstTab &&
+    selected !== null &&
+    active !== selected &&
+    !inactiveShown
+  )
     setSelected(null);
   const drag = useRef<{ y: number; height: number } | null>(null);
   const section = useRef<HTMLElement>(null);
@@ -195,6 +215,30 @@ export function TerminalDock({
               </div>
             );
           })}
+          {inactive.map((tab) => {
+            const isSelected = open && inactiveShown?.key === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                title={tab.title}
+                className={cn(
+                  "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent",
+                  isSelected && "bg-accent font-medium",
+                )}
+                onClick={() => {
+                  setOpen(true);
+                  setShowHistory(false);
+                  setSelected(tab.key);
+                }}
+              >
+                {tab.label}
+                <Badge tone="unknown">inactive</Badge>
+              </button>
+            );
+          })}
         </div>
         {history !== undefined ? (
           <button
@@ -238,6 +282,10 @@ export function TerminalDock({
         <div style={{ height }} className="border-t">
           {historyShown ? (
             <div className="h-full overflow-y-auto">{history}</div>
+          ) : inactiveShown ? (
+            <div className="h-full overflow-y-auto">
+              {inactiveShown.content}
+            </div>
           ) : active ? (
             <TerminalView
               key={active}
@@ -252,7 +300,7 @@ export function TerminalDock({
             <p className="p-3 text-sm text-muted-foreground">
               {isError
                 ? "Failed to load terminals."
-                : terminals.length === 0
+                : terminals.length === 0 && inactive.length === 0
                   ? "No live agent terminals."
                   : "Select a terminal to attach."}
             </p>

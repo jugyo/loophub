@@ -8,6 +8,7 @@ import {
   type HerdrSessionsWire,
   herdrPaneSessionJSON,
   type IssueTerminalHistoryWire,
+  type LostPullTerminalWire,
   type PullTerminalWire,
 } from "../serialize.ts";
 import {
@@ -190,45 +191,67 @@ export function herdrCoreFollowedRepos(): S.Repo[] {
   );
 }
 
+// A Workflow agent deliveries still target whose terminal is gone, for the dock to list beside the
+// live ones under the same numbering.
+export interface LostWorkflowAgent {
+  run_id: number;
+  role: "orchestrator" | "executor" | "verifier";
+  seq: number | null;
+  session_id: string;
+  restore_blocker: string | null;
+}
+
 // The dock's tabs for one PR, in the order the agents ran. Finished rows are read too and only left
-// out at the end, so `executor #2` keeps its number after `executor #1` has exited.
+// out at the end, so `executor #2` keeps its number after `executor #1` has exited. A child is numbered
+// by its seq, so a restored terminal keeps the number of the one it replaced.
 export function listPullTerminals(
   repo: Repo,
   pull: number,
-): PullTerminalWire[] {
-  const rows = S.listHerdrCoreTerminalRows(repo.id)
-    .filter(
-      (row) =>
-        row.pr_number === pull &&
-        row.run_id !== null &&
-        (row.role === "orchestrator" ||
-          row.role === "executor" ||
-          row.role === "verifier"),
-    )
-    .sort(
-      (a, b) =>
-        (a.run_id as number) - (b.run_id as number) ||
-        (a.seq ?? 0) - (b.seq ?? 0),
-    );
+  lost: LostWorkflowAgent[] = [],
+): { terminals: PullTerminalWire[]; lost: LostPullTerminalWire[] } {
+  const rows = [
+    ...S.listHerdrCoreTerminalRows(repo.id)
+      .filter(
+        (row) =>
+          row.pr_number === pull &&
+          row.run_id !== null &&
+          (row.role === "orchestrator" ||
+            row.role === "executor" ||
+            row.role === "verifier"),
+      )
+      .map((row) => ({
+        run_id: row.run_id as number,
+        role: row.role as string,
+        seq: row.seq,
+        tab: { address: row.address, state: row.state, status: row.status },
+      })),
+    ...lost.map((agent) => ({ ...agent, tab: agent })),
+  ].sort((a, b) => a.run_id - b.run_id || (a.seq ?? 0) - (b.seq ?? 0));
   const severalRuns = new Set(rows.map((row) => row.run_id)).size > 1;
-  const counts = new Map<string, number>();
-  return rows.flatMap((row) => {
-    let name = row.role as string;
+  const seqs = new Map<string, (number | null)[]>();
+  const terminals: PullTerminalWire[] = [];
+  const lostTabs: LostPullTerminalWire[] = [];
+  for (const row of rows) {
+    let name = row.role;
     if (row.role !== "orchestrator") {
       const key = `${row.run_id}:${row.role}`;
-      const count = (counts.get(key) ?? 0) + 1;
-      counts.set(key, count);
-      name = `${row.role} #${count}`;
+      const seen = seqs.get(key) ?? [];
+      if (!seen.includes(row.seq)) seen.push(row.seq);
+      seqs.set(key, seen);
+      name = `${row.role} #${seen.indexOf(row.seq) + 1}`;
     }
-    if (row.state !== "live") return [];
-    return [
-      {
-        address: row.address,
-        label: severalRuns ? `run ${row.run_id} · ${name}` : name,
-        status: row.status,
-      },
-    ];
-  });
+    const label = severalRuns ? `run ${row.run_id} · ${name}` : name;
+    const tab = row.tab;
+    if ("session_id" in tab)
+      lostTabs.push({
+        session_id: tab.session_id,
+        label,
+        restore_blocker: tab.restore_blocker,
+      });
+    else if (tab.state === "live")
+      terminals.push({ address: tab.address, label, status: tab.status });
+  }
+  return { terminals, lost: lostTabs };
 }
 
 // The dock's tabs for New issue on one repo, in the order they started. As above, finished rows keep
@@ -266,10 +289,10 @@ export function listIssueTerminals(
 
 const ISSUE_TERMINAL_HISTORY_LIMIT = 50;
 
-// Why a New issue session can't be resumed, null when it can. Claude Code alone resumes a session by
+// Why an agent session can't be resumed, null when it can. Claude Code alone resumes a session by
 // its id, and only while its transcript is still saved: an expired or never-started one would open a
 // terminal that exits at once.
-export function issueSessionRestoreBlocker(
+export function sessionRestoreBlocker(
   session: { id: string; runtime: string | null },
   transcripts: ClaudeTranscriptIndex = createClaudeTranscriptIndex(undefined, [
     session.id,
@@ -310,34 +333,56 @@ export function listIssueTerminalHistory(
         : { number: row.issue_number, title: row.issue_title ?? "" },
     started_at: row.created_at,
     updated_at: row.updated_at,
-    restore_blocker: issueSessionRestoreBlocker(row, transcripts),
+    restore_blocker: sessionRestoreBlocker(row, transcripts),
   }));
 }
 
-// The launcher's own record of a New issue terminal, so the dock can attach to it at once rather than
+// The launcher's own record of a terminal it started, so the dock can attach to it at once rather than
 // after the worker's next look at `hc events`. Whatever the worker already recorded is newer.
-export function recordIssueTerminalStarted(
+function recordTerminalStarted(
   repo: Repo,
-  address: string,
-  sessionId: string,
+  row: Pick<
+    S.HerdrCoreTerminalState,
+    "address" | "role" | "pr_number" | "run_id" | "seq" | "session_id"
+  >,
 ): void {
   db.transaction(() => {
-    if (S.getHerdrCoreTerminal(address)) return;
+    if (S.getHerdrCoreTerminal(row.address)) return;
     record(repo, {
-      address,
+      ...row,
       repo_id: repo.id,
-      role: "issue-create",
-      pr_number: null,
-      run_id: null,
-      seq: null,
       state: "live",
       status: null,
       turn: 0,
       exit_code: null,
       reason: null,
-      session_id: sessionId,
     });
   });
+}
+
+export function recordIssueTerminalStarted(
+  repo: Repo,
+  address: string,
+  sessionId: string,
+): void {
+  recordTerminalStarted(repo, {
+    address,
+    role: "issue-create",
+    pr_number: null,
+    run_id: null,
+    seq: null,
+    session_id: sessionId,
+  });
+}
+
+export function recordWorkflowTerminalStarted(
+  repo: Repo,
+  row: Pick<
+    S.HerdrCoreTerminalState,
+    "address" | "role" | "pr_number" | "run_id" | "seq"
+  >,
+): void {
+  recordTerminalStarted(repo, { ...row, session_id: null });
 }
 
 function sessionIdFor(repo: Repo, address: string): string | null {
