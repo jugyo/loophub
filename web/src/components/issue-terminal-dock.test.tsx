@@ -93,9 +93,10 @@ function renderPage(
   {
     restoreFails = false,
     issue,
-  }: { restoreFails?: boolean; issue?: number } = {},
+    live = [EARLIER],
+  }: { restoreFails?: boolean; issue?: number; live?: PullTerminal[] } = {},
 ) {
-  let terminals = [EARLIER];
+  let terminals = live;
   const issueParams: unknown[] = [];
   const fetchMock = mockRpcFetch({
     "repos/get": () => ({ terminal_backend: backend }),
@@ -103,11 +104,11 @@ function renderPage(
     "terminal/issueTerminals": (params: { issue?: number }) => {
       issueParams.push(params.issue);
       // An issue's own list: the terminal it was filed from, never the one launched since.
-      return { terminals: params.issue ? [EARLIER] : terminals };
+      return { terminals: params.issue ? live : terminals };
     },
     "terminal/issueTerminalHistory": () => ({ sessions: HISTORY }),
-    "terminal/closeIssueTerminal": () => {
-      terminals = [];
+    "terminal/closeIssueTerminal": (params: { address: string }) => {
+      terminals = terminals.filter((t) => t.address !== params.address);
       return { ok: true };
     },
     "terminal/restoreIssueTerminal": () => {
@@ -236,6 +237,62 @@ it("closes a tab's terminal with one click", async () => {
     repo: "me/proj",
     address: "t3",
   });
+});
+
+function terminalHasFocus() {
+  return document.activeElement?.classList.contains("xterm-helper-textarea");
+}
+
+async function closeShownTab(name: RegExp, closeLabel: string) {
+  fireEvent.click(await screen.findByRole("tab", { name }));
+  await waitFor(() => expect(document.querySelector(".xterm")).toBeTruthy());
+  // The keyboard is elsewhere on the page when the tab is closed.
+  const input = document.createElement("textarea");
+  document.body.append(input);
+  input.focus();
+  fireEvent.click(screen.getByRole("button", { name: closeLabel }));
+  return input;
+}
+
+it("moves to the right neighbour, with the keyboard, when the shown tab is closed", async () => {
+  renderPage("herdr-core", { live: [EARLIER, STARTED, RESTORED] });
+  const input = await closeShownTab(/New issue 2/, "Close New issue 2");
+
+  const next = screen.getByRole("tab", { name: /New issue 3/ });
+  await waitFor(() => expect(next.getAttribute("aria-selected")).toBe("true"));
+  await waitFor(() =>
+    expect(new URL(urls.at(-1) as string).searchParams.get("terminal")).toBe(
+      "t12",
+    ),
+  );
+  await waitFor(() => expect(terminalHasFocus()).toBe(true));
+  input.remove();
+});
+
+it("moves to the left neighbour when the shown tab at the right end is closed", async () => {
+  renderPage("herdr-core", { live: [EARLIER, STARTED, RESTORED] });
+  const input = await closeShownTab(/New issue 3/, "Close New issue 3");
+
+  const next = screen.getByRole("tab", { name: /New issue 2/ });
+  await waitFor(() => expect(next.getAttribute("aria-selected")).toBe("true"));
+  await waitFor(() =>
+    expect(new URL(urls.at(-1) as string).searchParams.get("terminal")).toBe(
+      "t9",
+    ),
+  );
+  await waitFor(() => expect(terminalHasFocus()).toBe(true));
+  input.remove();
+});
+
+it("shows the empty dock when the only tab is closed", async () => {
+  renderPage();
+  const input = await closeShownTab(/New issue 1/, "Close New issue 1");
+
+  await waitFor(() => expect(document.querySelector(".xterm")).toBeNull());
+  expect(screen.getByText("Select a terminal to attach.")).toBeTruthy();
+  expect(urls).toHaveLength(1);
+  expect(document.activeElement).toBe(input);
+  input.remove();
 });
 
 it("lists past New issues in the History tab, with why one can't be restored", async () => {

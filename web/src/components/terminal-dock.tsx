@@ -177,7 +177,7 @@ export function TerminalDock({
           aria-label="Agent terminals"
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
         >
-          {terminals.map((t) => {
+          {terminals.map((t, index) => {
             // A minimized dock shows no terminal, so none of its tabs is selected.
             const isSelected = open && !historyShown && t.address === active;
             return (
@@ -210,7 +210,16 @@ export function TerminalDock({
                     aria-label={`Close ${t.label}`}
                     title={`Close ${t.label}`}
                     className="mr-1 grid size-5 place-items-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
-                    onClick={() => onClose(t)}
+                    onClick={() => {
+                      // Like a browser tab: closing the shown one moves to its right neighbour,
+                      // or its left one at the right end, and takes the keyboard there.
+                      if (isSelected)
+                        setSelected(
+                          (terminals[index + 1] ?? terminals[index - 1])
+                            ?.address ?? null,
+                        );
+                      onClose(t);
+                    }}
                   >
                     <X className="size-3" aria-hidden="true" />
                   </button>
