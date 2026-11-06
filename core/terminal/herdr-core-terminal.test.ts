@@ -1,11 +1,19 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "#loophub-test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "#loophub-test";
 import { configDir } from "../config.ts";
 import { callHerdrCore, runHerdrCore } from "../herdr-core.ts";
 import {
   herdrCoreLabels,
   isHerdrCoreAddress,
+  launcherEnv,
   launchHerdrCoreTerminal,
 } from "./herdr-core-terminal.ts";
 
@@ -20,6 +28,11 @@ Object.assign(process.env, {
 });
 delete process.env.HC_SOCKET;
 delete process.env.HC_TERMINAL_ID;
+
+const LAUNCHER_ENV = { ...process.env };
+afterEach(() => {
+  process.env = { ...LAUNCHER_ENV };
+});
 
 afterAll(async () => {
   if (HAS_HC) await runHerdrCore(["server", "stop"]);
@@ -58,10 +71,90 @@ test("labels carry only what the launch has", () => {
   });
 });
 
+describe("the LoopHub DB a terminal is handed", () => {
+  test("a DB at the home's default location is left to follow the home", () => {
+    process.env.LOOPHUB_HOME = "/launcher/home";
+    delete process.env.LOOPHUB_DB;
+    expect(launcherEnv()).not.toHaveProperty("LOOPHUB_DB");
+    process.env.LOOPHUB_DB = "/launcher/home/loophub.db";
+    expect(launcherEnv()).not.toHaveProperty("LOOPHUB_DB");
+    expect(launcherEnv().LOOPHUB_HOME).toBe("/launcher/home");
+    process.env.LOOPHUB_HOME = "/launcher/home/";
+    expect(launcherEnv()).not.toHaveProperty("LOOPHUB_DB");
+  });
+
+  test("a DB set outside the home is passed on", () => {
+    process.env.LOOPHUB_HOME = "/launcher/home";
+    process.env.LOOPHUB_DB = "/elsewhere/custom.db";
+    expect(launcherEnv().LOOPHUB_DB).toBe("/elsewhere/custom.db");
+  });
+});
+
 describe.skipIf(!HAS_HC)("against an isolated core", () => {
-  // Started here, before any launch, so whatever env a terminal sees came from its own launch.
+  // Started here, before any launch and holding its own LOOPHUB_DB, so a terminal's env shows what
+  // its launch does about the core's.
   beforeAll(async () => {
-    await runHerdrCore(["server", "start"]);
+    await runHerdrCore(["server", "start"], {
+      env: { ...process.env, LOOPHUB_DB: "/core/own.db" },
+    });
+  });
+
+  async function terminalDb(): Promise<string> {
+    const address = await launchHerdrCoreTerminal({
+      argv: [
+        "sh",
+        "-c",
+        'echo "db=$(printenv LOOPHUB_DB || echo unset)."; sleep 30',
+      ],
+      cwd: "/tmp",
+      labels: {},
+    });
+    await untilScreenHas(address, "db=");
+    const text = await screen(address);
+    await callHerdrCore("terminal.kill", { terminal: address });
+    return text;
+  }
+
+  test("a home-derived DB leaves the terminal without the core's LOOPHUB_DB", async () => {
+    process.env.LOOPHUB_HOME = "/launcher/home";
+    process.env.LOOPHUB_DB = "/launcher/home/loophub.db";
+    expect(await terminalDb()).toContain("db=unset.");
+  });
+
+  test("an explicit DB outside the home wins over the core's LOOPHUB_DB", async () => {
+    process.env.LOOPHUB_HOME = "/launcher/home";
+    process.env.LOOPHUB_DB = "/elsewhere/custom.db";
+    expect(await terminalDb()).toContain("db=/elsewhere/custom.db.");
+  });
+
+  test("a program that cannot start fails the launch, whichever DB it has", async () => {
+    const launch = {
+      argv: ["no-such-agent-bin"],
+      cwd: "/tmp",
+      labels: {},
+    };
+    process.env.LOOPHUB_HOME = "/launcher/home";
+    const message = 'herdr-core: cannot start "no-such-agent-bin"';
+    process.env.LOOPHUB_DB = "/elsewhere/custom.db";
+    await expect(launchHerdrCoreTerminal(launch)).rejects.toThrow(message);
+    delete process.env.LOOPHUB_DB;
+    await expect(launchHerdrCoreTerminal(launch)).rejects.toThrow(message);
+  });
+
+  test("a program named relative to the launch's cwd still starts", async () => {
+    const script = join(DIR, "local-program");
+    writeFileSync(script, '#!/bin/sh\necho "started"; sleep 30\n', {
+      mode: 0o755,
+    });
+    process.env.LOOPHUB_HOME = "/launcher/home";
+    delete process.env.LOOPHUB_DB;
+    const address = await launchHerdrCoreTerminal({
+      argv: ["./local-program"],
+      cwd: DIR,
+      labels: {},
+    });
+    await untilScreenHas(address, "started");
+    await callHerdrCore("terminal.kill", { terminal: address });
   });
 
   test("a launch hands the program its argv, cwd and env directly", async () => {

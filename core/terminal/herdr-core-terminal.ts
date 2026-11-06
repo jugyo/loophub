@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { configDir, dbPath } from "../config.ts";
 import { ServiceError } from "../errors.ts";
 import { callHerdrCore } from "../herdr-core.ts";
@@ -52,13 +53,35 @@ export interface HerdrCoreLaunch {
 
 // What a terminal needs from the launcher rather than from the core, whose environment is that of
 // whichever process happened to start it: where to find `lh` and the agent, and which LoopHub home
-// its `lh` calls belong to.
-function launcherEnv(): Record<string, string> {
+// its `lh` calls belong to. A DB that follows from that home is not passed: as an absolute path it
+// would outlive a later change of LOOPHUB_HOME inside the terminal.
+export function launcherEnv(): Record<string, string> {
+  const home = configDir();
+  const database = dbPath();
   return {
     ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-    LOOPHUB_HOME: configDir(),
-    LOOPHUB_DB: dbPath(),
+    LOOPHUB_HOME: home,
+    ...(database === join(home, "loophub.db") ? {} : { LOOPHUB_DB: database }),
   };
+}
+
+// A terminal's env is layered over the core's own and cannot remove a key: without `env -u`, a
+// LOOPHUB_DB the core was started with would win over the launcher's LOOPHUB_HOME. `env` starts
+// whether or not the program exists, so a program missing from PATH has to fail here, with the
+// core's message. Without `hc` the call itself reports that, which is the error to fix first.
+function withoutCoreDb(launch: HerdrCoreLaunch, path?: string): string[] {
+  const [program = ""] = launch.argv;
+  if (
+    Bun.which("hc", { PATH: process.env.PATH }) &&
+    !Bun.which(program, { PATH: path, cwd: launch.cwd })
+  ) {
+    throw new ServiceError(
+      500,
+      `herdr-core: cannot start "${program}": No such file or directory`,
+      { kind: "spawn_failed", hint: "check the program name and cwd" },
+    );
+  }
+  return ["env", "-u", "LOOPHUB_DB", ...launch.argv];
 }
 
 // Same hint and limit as the herdr launch (LAUNCH_PROMPT_READY_PATTERN): the wait only shortens the
@@ -71,10 +94,11 @@ const PROMPT_READY_TIMEOUT_SECONDS = 20;
 export async function launchHerdrCoreTerminal(
   launch: HerdrCoreLaunch,
 ): Promise<string> {
+  const env = { ...launcherEnv(), ...launch.env };
   const started = (await callHerdrCore("terminal.run", {
-    argv: launch.argv,
+    argv: "LOOPHUB_DB" in env ? launch.argv : withoutCoreDb(launch, env.PATH),
     cwd: launch.cwd,
-    env: { ...launcherEnv(), ...launch.env },
+    env,
     labels: launch.labels,
     no_parent: true,
     no_notify: true,

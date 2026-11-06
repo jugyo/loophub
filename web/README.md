@@ -35,11 +35,13 @@ way to point the frontend at a different backend.
 
 ### UI dev / verification in a worktree
 
-Run the worktree's *own* `lh-web`, isolated from your prod instance, on a non-prod port and a separate
-`LOOPHUB_HOME` so it never touches the prod DB or port:
+Run the worktree's *own* `lh-web`, isolated from your prod instance, on a non-prod port with both
+`LOOPHUB_HOME` and `LOOPHUB_DB` pointing at a temporary path so it never touches the prod DB or port.
+An inherited `LOOPHUB_DB` wins over `LOOPHUB_HOME`, so set both:
 
 ```sh
-LOOPHUB_HOME=$(mktemp -d) bun run lh-web -- --port 8731   # inside the worktree
+home=$(mktemp -d)   # inside the worktree
+LOOPHUB_HOME=$home LOOPHUB_DB=$home/loophub.db bun run lh-web -- --port 8731
 ```
 
 Open http://localhost:8731 to develop or capture evidence against that worktree's code, and stop it

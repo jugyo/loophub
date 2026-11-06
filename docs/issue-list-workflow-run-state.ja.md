@@ -70,8 +70,8 @@ issue 詳細と dashboard の行は畳み込みの対象外なので従来どお
 
 ## 再現手順
 
-1. 専用の `LOOPHUB_HOME` に repository を 1 つ登録し、issue / PR / workflow run を 12 組作る
-2. `LOOPHUB_HOME=<dir> npm run lh-web -- --port <port>`
+1. 専用の `LOOPHUB_HOME` と `LOOPHUB_DB` に repository を 1 つ登録し、issue / PR / workflow run を 12 組作る
+2. `LOOPHUB_HOME=<dir> LOOPHUB_DB=<dir>/loophub.db npm run lh-web -- --port <port>`
 3. burst をそれぞれ 5 回実行して median を取る:
    - 初回ロード: `pageData/issueList` 単独 / `pageData/issueList` + PR 件数ぶんの `stateForPull`
    - event 1 個: `stateForPull` 1 本 / `stateForPull` を PR 件数ぶん / `pageData/issueList` 1 本
