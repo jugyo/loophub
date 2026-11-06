@@ -1,13 +1,16 @@
 // The PR screen's bottom dock (#2574): one tab per live agent terminal of the PR's Workflow runs, plus
 // an inactive tab for each agent of a running run whose terminal is gone, which can resume its session
-// in a new terminal.
+// in a new terminal. New terminal opens the person's own shell in the PR's worktree as another tab.
 
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import type { LostPullTerminal } from "@/api/types";
 import { isLoopbackPage, TerminalDock } from "@/components/terminal-dock";
+import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
 import {
+  useOpenPullShell,
   usePullTerminals,
   useRestorePullTerminal,
 } from "@/queries/pull-terminals";
@@ -38,8 +41,16 @@ function Dock({
   number: number;
 }) {
   const query = usePullTerminals(owner, repo, number);
-  // The terminal a restore started, for the dock to open on.
+  // The terminal a restore or New terminal started, for the dock to open on.
   const [restored, setRestored] = useState<string | null>(null);
+  const openShell = useOpenPullShell();
+  const { showError } = useToast();
+  const shellBlocker = query.data?.shell_blocker ?? null;
+  async function onStarted(address: string) {
+    // The launch recorded the terminal; list it before selecting it.
+    await query.refetch();
+    setRestored(address);
+  }
   return (
     <TerminalDock
       repo={`${owner}/${repo}`}
@@ -58,14 +69,40 @@ function Dock({
             repo={`${owner}/${repo}`}
             pull={number}
             agent={agent}
-            onRestored={async (address) => {
-              // The restore recorded the terminal; list it before selecting it.
-              await query.refetch();
-              setRestored(address);
-            }}
+            onRestored={onStarted}
           />
         ),
       }))}
+      actions={
+        // A disabled button gets no hover, so the reason sits on its wrapper.
+        <span title={shellBlocker ?? "Open a shell in this PR's worktree"}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={
+              !query.data || shellBlocker !== null || openShell.isPending
+            }
+            onClick={() =>
+              openShell.mutate(
+                { repo: `${owner}/${repo}`, pull: number },
+                {
+                  onSuccess: (result) =>
+                    result.address && onStarted(result.address),
+                  onError: (error) =>
+                    showError(
+                      `Failed to open a terminal: ${errorMessage(error)}`,
+                    ),
+                },
+              )
+            }
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+            New terminal
+          </Button>
+        </span>
+      }
     />
   );
 }

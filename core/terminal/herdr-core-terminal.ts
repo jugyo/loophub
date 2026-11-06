@@ -23,7 +23,9 @@ export type HerdrCoreRole =
   | "verifier"
   | "issue-create"
   | "github-pr-export"
-  | "supervisor";
+  | "supervisor"
+  // A person's own shell in a PR's worktree, opened from the PR screen's dock.
+  | "shell";
 
 export function herdrCoreLabels(input: {
   repo: string;

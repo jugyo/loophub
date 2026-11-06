@@ -609,7 +609,7 @@ export const methods: Record<string, MethodDef> = {
   },
   "terminal/pullTerminals": {
     description:
-      "Live herdr-core agent terminals of a PR's Workflow runs, in run order with their last reported status, for the PR screen's terminal dock (#2574). lost lists the running runs' agents (parent, live Execute, unreviewed Verify) whose terminal is gone, under the same numbering; restore_blocker says why one can't be resumed (not Claude Code, or its transcript is gone), null when it can. Empty unless the repo runs on herdr-core.",
+      "Live herdr-core agent terminals of a PR's Workflow runs, in run order with their last reported status, for the PR screen's terminal dock (#2574). lost lists the running runs' agents (parent, live Execute, unreviewed Verify) whose terminal is gone, under the same numbering; restore_blocker says why one can't be resumed (not Claude Code, or its transcript is gone), null when it can. The person's shells opened in the PR's worktree follow the agents as `shell N`; shell_blocker says why one can't be opened (no worktree), null when it can. Empty unless the repo runs on herdr-core.",
     params: params({ repo, pull: positiveInt }, ["repo", "pull"]),
     result: anyObject,
     handler: (p) => svc.terminal.pullTerminals({ repo: p.repo, pull: p.pull }),
@@ -629,6 +629,13 @@ export const methods: Record<string, MethodDef> = {
         pull: p.pull,
         sessionId: p.sessionId,
       }),
+  },
+  "terminal/openPullShell": {
+    description:
+      "Start the user's shell ($SHELL) in a new herdr-core terminal whose cwd is the PR's worktree, listed as a shell tab of the PR screen's terminal dock. Returns the terminal's address. A PR with no worktree is refused with 422 before any terminal starts (pullTerminals' shell_blocker says so in advance).",
+    params: params({ repo, pull: positiveInt }, ["repo", "pull"]),
+    result: anyObject,
+    handler: (p) => svc.terminal.openPullShell({ repo: p.repo, pull: p.pull }),
   },
   "terminal/issueTerminals": {
     description:

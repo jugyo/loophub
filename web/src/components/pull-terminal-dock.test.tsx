@@ -409,3 +409,49 @@ it("shows why a restore failed", async () => {
     "The conversation is no longer saved",
   );
 });
+
+it("opens a new shell terminal as a selected tab", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
+  let terminals = TERMINALS.slice(0, 1);
+  renderDock("herdr-core", [], {
+    "terminal/pullTerminals": () => ({
+      terminals,
+      lost: [],
+      shell_blocker: null,
+    }),
+    "terminal/openPullShell": () => {
+      terminals = [
+        ...terminals,
+        { address: "t8", label: "shell 1", status: null },
+      ];
+      return { backend: "herdr-core", address: "t8" };
+    },
+  });
+  const button = await screen.findByRole("button", { name: "New terminal" });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button);
+  await waitFor(() => expect(selectedTab()?.textContent).toBe("shell 1idle"));
+  await waitFor(() => expect(urls.map(attachedTerminal).at(-1)).toBe("t8"));
+  const call = fetchMock.mock.calls
+    .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
+    .find((body) => body.method === "terminal/openPullShell");
+  expect(call.params).toEqual({ repo: "me/proj", pull: 7 });
+});
+
+it("can't open a shell without a worktree and says why", async () => {
+  renderDock("herdr-core", [], {
+    "terminal/pullTerminals": () => ({
+      terminals: [],
+      lost: [],
+      shell_blocker: "This pull request has no worktree",
+    }),
+  });
+  const button = await screen.findByRole("button", { name: "New terminal" });
+  await waitFor(() =>
+    expect(button.parentElement?.getAttribute("title")).toBe(
+      "This pull request has no worktree",
+    ),
+  );
+  expect(button.hasAttribute("disabled")).toBe(true);
+});

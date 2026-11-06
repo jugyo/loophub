@@ -6,6 +6,7 @@ import {
   getIssueTerminalHistory,
   getIssueTerminals,
   getPullTerminals,
+  openPullShell,
   restoreIssueTerminal,
   restorePullTerminal,
 } from "@/api/client";
@@ -49,4 +50,8 @@ export function useRestoreIssueTerminal() {
 
 export function useRestorePullTerminal() {
   return useMutation({ mutationFn: restorePullTerminal });
+}
+
+export function useOpenPullShell() {
+  return useMutation({ mutationFn: openPullShell });
 }

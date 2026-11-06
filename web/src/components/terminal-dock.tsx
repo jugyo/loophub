@@ -66,6 +66,7 @@ export function TerminalDock({
   onClose,
   history,
   inactive = [],
+  actions,
 }: {
   repo: string;
   // Absent on the issue screens, whose New issue terminals belong to the repo alone.
@@ -84,6 +85,8 @@ export function TerminalDock({
   // Tabs for agents whose terminal is gone, after the live ones: selecting one shows its content in
   // place of a terminal.
   inactive?: InactiveTerminalTab[];
+  // Controls after the tabs, such as one that adds a terminal.
+  actions?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [height, setHeight] = useState(DEFAULT_HEIGHT_PX);
@@ -240,6 +243,7 @@ export function TerminalDock({
             );
           })}
         </div>
+        {actions}
         {history !== undefined ? (
           <button
             type="button"

@@ -618,10 +618,16 @@ export function getHerdrSessions() {
 
 /** Live herdr-core agent terminals of a PR, for its terminal dock (#2574). */
 export function getPullTerminals(repo: string, pull: number) {
-  return rpc<{ terminals: PullTerminal[]; lost: LostPullTerminal[] }>(
-    "terminal/pullTerminals",
-    { repo, pull },
-  );
+  return rpc<{
+    terminals: PullTerminal[];
+    lost: LostPullTerminal[];
+    shell_blocker: string | null;
+  }>("terminal/pullTerminals", { repo, pull });
+}
+
+/** Start the user's shell in the PR's worktree as a new terminal of its dock. */
+export function openPullShell(input: { repo: string; pull: number }) {
+  return rpc<TerminalLaunchResult>("terminal/openPullShell", input);
 }
 
 /** Resume a lost Workflow agent of a PR in a new terminal of the dock. */

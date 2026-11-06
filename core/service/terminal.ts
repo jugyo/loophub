@@ -10,6 +10,7 @@ import { db } from "../db.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
 import type { HerdrCoreEventFollow } from "../herdr-core.ts";
 import { spawnProcess } from "../process.ts";
+import { existingPullWorktreePath } from "../pull-worktree.ts";
 import { buildRuntimeFlags } from "../runtime-args.ts";
 import { RUNTIMES } from "../runtimes.ts";
 import { selfCliCommand } from "../self-exec.ts";
@@ -45,6 +46,7 @@ import {
   listIssueTerminals,
   listPullTerminals,
   recordIssueTerminalStarted,
+  recordShellTerminalStarted,
   sessionRestoreBlocker,
   withHerdrCoreSessions,
 } from "../terminal/herdr-core-status.ts";
@@ -778,6 +780,25 @@ function lostWorkflowAgents(r: S.Repo, pull: number): LostWorkflowAgent[] {
   }));
 }
 
+// The PR's worktree a shell opens in, or why the dock can't open one.
+function pullShellWorktree(
+  r: S.Repo,
+  pull: number,
+): { cwd: string; blocker: null } | { cwd: null; blocker: string } {
+  const row = S.getIssue(r.id, pull);
+  const p = row?.kind === "pull" ? S.getPull(row.id) : null;
+  const cwd = p
+    ? existingPullWorktreePath({
+        fullName: r.full_name,
+        headRef: p.head_ref,
+        prNumber: pull,
+      })
+    : null;
+  return cwd
+    ? { cwd, blocker: null }
+    : { cwd: null, blocker: "This pull request has no worktree" };
+}
+
 function herdrCoreRepoOr409(repo: string): S.Repo {
   const r = repoOr404(repo);
   if (normalizeTerminalBackend(r.terminal_backend) !== "herdr-core")
@@ -805,11 +826,47 @@ export const terminal = {
   pullTerminals(input: { repo: string; pull: number }): {
     terminals: PullTerminalWire[];
     lost: LostPullTerminalWire[];
+    // Why the dock can't open a shell in the PR's worktree, null when it can.
+    shell_blocker: string | null;
   } {
     const r = repoOr404(input.repo);
     return normalizeTerminalBackend(r.terminal_backend) === "herdr-core"
-      ? listPullTerminals(r, input.pull, lostWorkflowAgents(r, input.pull))
-      : { terminals: [], lost: [] };
+      ? {
+          ...listPullTerminals(
+            r,
+            input.pull,
+            lostWorkflowAgents(r, input.pull),
+          ),
+          shell_blocker: pullShellWorktree(r, input.pull).blocker,
+        }
+      : { terminals: [], lost: [], shell_blocker: null };
+  },
+
+  // Starts the person's shell in the PR's worktree, listed as a tab of the PR's dock.
+  async openPullShell(input: {
+    repo: string;
+    pull: number;
+  }): Promise<TerminalLaunchResultWire> {
+    const r = herdrCoreRepoOr409(input.repo);
+    issueOr404(r, input.pull, "pull");
+    const { cwd, blocker } = pullShellWorktree(r, input.pull);
+    if (cwd === null) throw new ServiceError(422, blocker);
+    const address = await launchHerdrCoreTerminal({
+      argv: [process.env.SHELL || "/bin/sh"],
+      cwd,
+      labels: herdrCoreLabels({
+        repo: r.full_name,
+        role: "shell",
+        pr: input.pull,
+      }),
+    });
+    recordShellTerminalStarted(r, address, input.pull);
+    return {
+      backend: "herdr-core" as const,
+      cwd,
+      attach: `hc attach ${address}`,
+      address,
+    };
   },
 
   // Resumes a lost Workflow agent of the PR in a new terminal, which deliveries reach from then on.

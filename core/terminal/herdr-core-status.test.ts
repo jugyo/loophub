@@ -438,7 +438,43 @@ describe("terminal/pullTerminals", () => {
         { address: "t4", label: "executor #2", status: "blocked" },
       ],
       lost: [],
+      shell_blocker: "This pull request has no worktree",
     });
+  });
+
+  test("lists the PR's shells after its agents, numbered across finished ones", () => {
+    const shell = { role: "shell", run_id: null, seq: null } as const;
+    row("s1", { ...shell, state: "finished" });
+    row("s2", { ...shell, status: "working" });
+    row("s3", { ...shell, pr_number: 8 });
+    expect(
+      svc.terminal
+        .pullTerminals({ repo: "me/dock", pull: 7 })
+        .terminals.map((terminal) => terminal.label),
+    ).toEqual(["orchestrator", "verifier #1", "executor #2", "shell 2"]);
+    for (const address of ["s1", "s2", "s3"])
+      S.deleteHerdrCoreTerminal(address);
+  });
+
+  test("lets the dock open a shell only once the PR has a worktree", async () => {
+    const { worktreeRoot } = await import("../config.ts");
+    const { worktreePath } = await import("../worktree-path.ts");
+    const pr = S.createIssue(dockRepo.id, "pull", "shell", "", "me");
+    S.createPull(pr.id, `loophub-p${pr.number}`, "main", null);
+    const blocker = () =>
+      svc.terminal.pullTerminals({ repo: "me/dock", pull: pr.number })
+        .shell_blocker;
+    expect(blocker()).toBe("This pull request has no worktree");
+    await expect(
+      svc.terminal.openPullShell({ repo: "me/dock", pull: pr.number }),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: "This pull request has no worktree",
+    });
+    mkdirSync(worktreePath(worktreeRoot(), "me/dock", pr.number), {
+      recursive: true,
+    });
+    expect(blocker()).toBeNull();
   });
 
   test("lists lost agents under the same numbering, and a restored terminal keeps its number", () => {

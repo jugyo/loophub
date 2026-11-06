@@ -251,6 +251,17 @@ export function listPullTerminals(
     else if (tab.state === "live")
       terminals.push({ address: tab.address, label, status: tab.status });
   }
+  // A person's shells follow the agents, numbered like New issue across finished ones.
+  S.listHerdrCoreTerminalRows(repo.id)
+    .filter((row) => row.role === "shell" && row.pr_number === pull)
+    .forEach((row, index) => {
+      if (row.state === "live")
+        terminals.push({
+          address: row.address,
+          label: `shell ${index + 1}`,
+          status: row.status,
+        });
+    });
   return { terminals, lost: lostTabs };
 }
 
@@ -372,6 +383,21 @@ export function recordIssueTerminalStarted(
     run_id: null,
     seq: null,
     session_id: sessionId,
+  });
+}
+
+export function recordShellTerminalStarted(
+  repo: Repo,
+  address: string,
+  pull: number,
+): void {
+  recordTerminalStarted(repo, {
+    address,
+    role: "shell",
+    pr_number: pull,
+    run_id: null,
+    seq: null,
+    session_id: null,
   });
 }
 
