@@ -64,6 +64,19 @@ describe("ImageLightbox", () => {
     );
   });
 
+  it("layers above the notification stack", () => {
+    render(
+      <ImageLightbox
+        src="https://example.com/pic.png"
+        alt="a pic"
+        onClose={vi.fn()}
+      />,
+    );
+
+    // The notification stack sits at z-[60] above the z-50 modals; a lightbox covers it too.
+    expect(screen.getByRole("dialog").className).toContain("z-[70]");
+  });
+
   it("does not close when the image itself is clicked", () => {
     const onClose = vi.fn();
     render(

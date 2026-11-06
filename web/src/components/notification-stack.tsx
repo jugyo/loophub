@@ -209,9 +209,10 @@ export function NotificationStack({ pathname }: { pathname: string }) {
   if (!isError && pageUnread.length === 0) return null;
 
   return (
-    // Above the z-50 modal layer (diff view, settings, lightbox), because the notifications that
+    // Above the z-50 modal layer (diff view, settings, workflow), because the notifications that
     // wait on a human — merge ready, over budget, rework limit — arrive while a diff is open and
-    // must stay reachable without closing it (#2510). Still below the z-[100] debug overlay. The
+    // must stay reachable without closing it (#2510). Still below the z-[70] lightbox, which shows one
+    // image or diagram full-screen for a moment, and the z-[100] debug overlay. The
     // container keeps pointer-events-none so only the cards take clicks and the modal underneath
     // stays operable. It also sits above the terminal dock, whose height is 0 on screens without
     // one, and left of the page scrollbar, whose width is 0 when the page does not scroll.

@@ -13,6 +13,8 @@
 // document-level listener, so it doesn't also trigger an ancestor's own document Escape listener
 // when nested inside another modal that listens on document. The overlay is portaled to the
 // document body so nested Markdown previews cannot constrain it with their overflow or layout.
+// It sits at z-[70], above the z-[60] notification stack: a lightbox is a brief full-screen look at
+// one piece of content, so notifications wait behind it. Other modals stay at z-50, below the stack.
 
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -166,7 +168,7 @@ export function Lightbox({
       aria-modal="true"
       aria-label={ariaLabel}
       tabIndex={-1}
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black/80 p-4 outline-none"
+      className="fixed inset-0 z-[70] flex items-center justify-center overflow-auto bg-black/80 p-4 outline-none"
       {...backdropDismiss}
       onClick={(event) => {
         if (suppressNextClickRef.current) {
