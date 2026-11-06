@@ -132,6 +132,26 @@ it("starts closed listing every agent without attaching, and opening attaches th
   expect(url.searchParams.get("terminal")).toBe("t1");
 });
 
+it("opens no taller than 80% of a short window", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(window, "innerHeight");
+  try {
+    Object.defineProperty(window, "innerHeight", {
+      value: 700,
+      configurable: true,
+    });
+    stubWebSocket();
+    stubResizeObserver();
+    renderDock();
+    await openDock();
+    const separator = screen.getByRole("separator", {
+      name: "Resize terminal dock",
+    });
+    expect(separator.getAttribute("aria-valuenow")).toBe("560");
+  } finally {
+    if (descriptor) Object.defineProperty(window, "innerHeight", descriptor);
+  }
+});
+
 it("opens on the clicked tab of a closed dock and takes the keyboard", async () => {
   const urls = stubWebSocket();
   stubResizeObserver();

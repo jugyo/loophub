@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const MIN_HEIGHT_PX = 120;
-const DEFAULT_HEIGHT_PX = 416;
+const DEFAULT_HEIGHT_PX = 582;
 const KEYBOARD_RESIZE_STEP_PX = 24;
 
 // `done` means the agent finished a turn and waits for input; an exited terminal leaves the tabs.
@@ -89,7 +89,7 @@ export function TerminalDock({
   actions?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [height, setHeight] = useState(DEFAULT_HEIGHT_PX);
+  const [height, setHeight] = useState(() => clampHeight(DEFAULT_HEIGHT_PX));
   const [selected, setSelected] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const historyShown = open && showHistory && history !== undefined;
