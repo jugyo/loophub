@@ -178,7 +178,7 @@ it("keeps the tabs when the toggle closes the dock", async () => {
   expect(document.querySelector(".xterm")).toBeNull();
 });
 
-it("renders a done tab's badge exactly like a tab without a status", async () => {
+it("renders a done tab's status exactly like a tab without a status", async () => {
   stubWebSocket();
   stubResizeObserver();
   renderDock("herdr-core", [
@@ -192,6 +192,28 @@ it("renders a done tab's badge exactly like a tab without a status", async () =>
   expect(done.textContent).toBe("idle");
   expect(none.textContent).toBe("idle");
   expect(done.className).toBe(none.className);
+});
+
+it("shows each status as an icon titled with its name, spinning while working", async () => {
+  stubWebSocket();
+  stubResizeObserver();
+  renderDock("herdr-core", TERMINALS);
+  await openDock();
+  const statuses = (await screen.findAllByRole("tab")).map(
+    (tab) => tab.querySelector("span[title]") as HTMLElement,
+  );
+  expect(statuses.map((s) => s.title)).toEqual([
+    "working",
+    "idle",
+    "blocked",
+    "error",
+  ]);
+  expect(statuses[0].querySelector("svg")?.getAttribute("class")).toContain(
+    "animate-spin",
+  );
+  expect(statuses[1].querySelector("svg")?.getAttribute("class")).not.toContain(
+    "animate-spin",
+  );
 });
 
 it("selects the leftmost tab once tabs appear in an open dock", async () => {

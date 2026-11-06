@@ -6,7 +6,13 @@
 import {
   ChevronDown,
   ChevronUp,
+  Circle,
+  CircleAlert,
+  CircleDashed,
+  CirclePause,
   History as HistoryIcon,
+  Loader2,
+  type LucideIcon,
   X,
 } from "lucide-react";
 import {
@@ -19,7 +25,6 @@ import {
   useState,
 } from "react";
 import type { PullTerminal } from "@/api/types";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -32,11 +37,27 @@ function statusLabel(status: string | null): string {
   return !status || status === "done" ? "idle" : status;
 }
 
-const STATUS_TONE: Record<string, BadgeProps["tone"]> = {
-  working: "working",
-  blocked: "review-rereview",
-  error: "conflict",
+const STATUS_ICON: Record<string, { icon: LucideIcon; className: string }> = {
+  working: { icon: Loader2, className: "animate-spin text-link" },
+  idle: { icon: Circle, className: "text-muted-foreground" },
+  blocked: {
+    icon: CirclePause,
+    className: "text-amber-600 dark:text-amber-400",
+  },
+  error: { icon: CircleAlert, className: "text-destructive" },
+  inactive: { icon: CircleDashed, className: "text-muted-foreground" },
 };
+
+// The status shows as an icon; its name stays the tooltip and the tab's accessible text.
+function StatusIcon({ label }: { label: string }) {
+  const { icon: Icon, className } = STATUS_ICON[label] ?? STATUS_ICON.idle;
+  return (
+    <span title={label} className="grid place-items-center">
+      <Icon className={cn("size-3.5", className)} aria-hidden="true" />
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
 
 // The relay refuses anything but loopback, so a remote page shows no terminals at all.
 export function isLoopbackPage(): boolean {
@@ -200,9 +221,7 @@ export function TerminalDock({
                   }}
                 >
                   {t.label}
-                  <Badge tone={STATUS_TONE[t.status ?? ""] ?? "unknown"}>
-                    {statusLabel(t.status)}
-                  </Badge>
+                  <StatusIcon label={statusLabel(t.status)} />
                 </button>
                 {onClose && t.closable ? (
                   <button
@@ -247,7 +266,7 @@ export function TerminalDock({
                 }}
               >
                 {tab.label}
-                <Badge tone="unknown">inactive</Badge>
+                <StatusIcon label="inactive" />
               </button>
             );
           })}
