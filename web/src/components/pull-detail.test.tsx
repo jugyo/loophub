@@ -908,6 +908,11 @@ describe("PullDetail", () => {
     const button = await screen.findByRole("button", {
       name: "ページ下部へ移動",
     });
+    // Clear of the status bar and the terminal dock above it, whose height is unset (so 0) when
+    // the screen has no dock.
+    expect(button.className).toContain(
+      "bottom-[calc(3rem+var(--pull-terminal-dock-height,0px))]",
+    );
     fireEvent.click(button);
     expect(scrollTo).toHaveBeenCalledWith({
       top: 1200,

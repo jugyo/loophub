@@ -382,7 +382,7 @@ export function PullDetail({
             type="button"
             variant="secondary"
             size="icon"
-            className="fixed bottom-[calc(1.5rem+var(--pull-terminal-dock-height,0px))] left-1/2 z-30 rounded-full border shadow-md"
+            className="fixed bottom-[calc(3rem+var(--pull-terminal-dock-height,0px))] left-1/2 z-30 rounded-full border shadow-md"
             style={
               scrollButtonCenter == null
                 ? undefined
