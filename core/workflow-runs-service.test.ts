@@ -2293,9 +2293,8 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
       event: escalated.id,
     }),
   ).toMatchObject({
-    action: "escalate",
-    escalation_reason: "execute_request",
-    reason: "Need product guidance",
+    action: "wait",
+    reason: "Execute asked a human on the PR: Need product guidance",
   });
   const githubFeedback = S.emitEvent(
     repo.id,
@@ -4193,10 +4192,29 @@ test("Execute escalation records a validated event without changing run lifecycl
     {
       run: started.run.id,
       reason: "  See issue comment #12.\nPlease advise.  ",
+      options: ["Keep the current spec", "Adopt the comment"],
     },
     execute,
   );
-  expect(result.run).toBe(started.run.id);
+  expect(result).toMatchObject({
+    run: started.run.id,
+    ok: true,
+    pr: started.pr.number,
+    options: ["Keep the current spec", "Adopt the comment"],
+    effects: { pr_comment: { status: "completed" } },
+  });
+  // Execute's own escalation is the one question on the PR, with its choices answerable there.
+  const prRow = S.getIssue(repo.id, started.pr.number)!;
+  const [question] = S.listComments(prRow.id);
+  expect(question).toMatchObject({ author: "executor", author_type: "agent" });
+  expect(question.body).toBe(
+    `Workflow run ${started.run.id} requires human guidance.\n\nSee issue comment #12.\nPlease advise.`,
+  );
+  expect(S.getWorkflowEscalationByComment(question.id)).toMatchObject({
+    run_id: started.run.id,
+    options: JSON.stringify(["Keep the current spec", "Adopt the comment"]),
+    superseded: 0,
+  });
   expect(S.getWorkflowRun(started.run.id)).toMatchObject({
     status: "running",
     current_step: "execute",
@@ -4398,7 +4416,7 @@ test("parent contract executes worker-delivered action procedures", () => {
     "`lh workflow escalate-human --run {{run}} --reason -`",
   );
   expect(contract).not.toContain("--repo {{repo}}");
-  expect(contract).toContain("500 characters for `escalate`");
+  expect(contract).toContain("500 characters for `await-human`");
   expect(contract).toContain("Do not fetch an instruction yourself");
   expect(contract).not.toContain("lh workflow watch");
   expect(contract).not.toContain("next_command");

@@ -179,8 +179,9 @@ test("Execute requires every follow-up route to receive a LoopHub response", () 
     for (const command of routeCommands) expect(contract).toContain(command);
     expect(contract).toMatch(/Every follow-up must|すべての follow-up/u);
     expect(contract).toMatch(/no source change|source の変更が不要/u);
+    // A question is asked once, as the human escalation comment, not also as a reply.
     expect(contract).toMatch(
-      /escalation does not replace|escalate は.+代わりにはなりません/u,
+      /only place the\s+question is posted|質問を投稿するのはこの comment だけ/u,
     );
     expect(contract).toMatch(
       /only in the session or pane|session または pane に出力しただけ/u,
@@ -201,7 +202,7 @@ test("human PR instructions reconcile conflicts into the Issue before implementa
       /do not choose or implement either version|どちらも選択・実装せず/u,
     );
     expect(execute).toContain(
-      "lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>",
+      "lh workflow escalate --repo {{repo}} --run {{run}} --reason - [--option <text>]...",
     );
     expect(execute).toContain("lh issue update");
     expect(execute).toContain("lh issue ac");

@@ -27,6 +27,17 @@ Markdown 本文や review、comment、handoff などの自由テキストを `lh
 返信を残します。PR comment には `lh pr comment <pr> --body <text>`、diff feedback には
 `lh pr feedback reply <t> --pr <pr> --body <text>`、review には
 `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>` を使います。
+ただし人間への質問は返信ではなく、1 件の human escalation comment で行います。
+
+**人間への escalation** — comment 本文には `Background`、`Missing information`、`Decision points` の
+3 項目を含め、背景、不足情報、判断すべき論点を現時点の見解とともに整理します。人間が選べる選択肢は本文に
+書かず、1 つにつき 1 つの `--option <text>` として渡します。各選択肢は単独で意味が通じる 1 行の文にします。
+本文を stdin に渡して
+`lh workflow escalate --repo {{repo}} --run {{run}} --reason - [--option <text>]...` を実行し、同じ pane で
+回答を待ちます。本文は Markdown のまま PR の human escalation comment として投稿され、選択肢はその下に
+ラジオボタンとして表示されます。質問を投稿するのはこの comment だけなので、発生元の PR comment、
+diff feedback thread、review に同じ質問を重ねて投稿しません。人間の回答は新しい指示として届きます。
+同じ run で新しい escalation を記録すると、それ以前の escalation は回答できなくなります。
 
 - **Rework（`orchestrator: address review <id>`）** — 指定された review と全 review comments を
   `lh pr review view <pr> --review <id> --json` で読み、現在の Issue と enabled な acceptance criteria を
@@ -42,24 +53,21 @@ Markdown 本文や review、comment、handoff などの自由テキストを `lh
 - **PR comment（`orchestrator: address PR comment <c>`）** — `lh pr view <pr> --json` で指定された
   comment を読み、人間の指示を実装する前に、現在の Issue 本文と enabled な acceptance criteria を照合します。
   矛盾しなければ仕様更新を求めず作業を続けます。矛盾する場合はどちらも選択・実装せず、具体的な矛盾点と
-  見解を返信し、`lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>` を実行して同じ pane
-  で回答を待ちます。人間の判断後は `lh issue update` または `lh issue ac` で判断を反映し、Issue を再読してから
+  見解を上記の手順で人間へ escalation します。人間の判断後は `lh issue update` または `lh issue ac` で判断を反映し、Issue を再読してから
   実装します。`lh pr comment <pr> --body <text>` で top-level の返信を残し、source の修正が必要なら編集前に
   着手返信を、turn の完了前に結果を同じ場所へ投稿します。
 - **追加作業** — non-rework の指示が Issue / PR への通常の product / engineering 要求なら、同じ Issue と
   PR に最小限の実装を行います。上記の矛盾解決手順に該当しない限り、Issue body の書き換えは不要です。
   次の Verify や人間に有用なら PR body または comment を更新します。
-- **質問だけ、または人間の判断待ち** — pane に具体的な質問全文を示し、
-  発生元の PR comment、diff feedback thread、または review に質問と現時点の見解を返信し、
-  `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>` を実行して、同じ pane で
-  応答を待ちます。escalate は LoopHub 上の返信の代わりにはなりません。
+- **質問だけ、または人間の判断待ち** — pane に具体的な質問全文を示し、現時点の見解とともに上記の手順で
+  人間へ escalation します。この escalation comment がこの follow-up への LoopHub 上の返信になります。
 - **確認のみ、またはドメイン変更不要** — 必要な PR body / comment / attachment 操作だけを行い、
   実行手順 6 の metadata-only completion として扱います。turn の完了前に、発生元の PR comment、
   diff feedback thread、または review に結果を返信します。source の修正が不要なら編集前の着手返信は
   必須ではありません。
 - **曖昧だが scope 内** — 要求を満たす最小の実装を優先し、人間の選択が本当に必要な場合だけ
-  escalate します。どちらの場合も、turn の完了前に、発生元の PR comment、diff feedback thread、
-  または review に実施内容か質問を返信します。
+  escalate します。turn の完了前に、発生元の PR comment、diff feedback thread、または review に
+  実施内容を返信するか、質問を上記の手順で escalation します。
 
 ## 実行手順
 
@@ -83,5 +91,6 @@ Markdown 本文や review、comment、handoff などの自由テキストを `lh
 - 自分の実装が受け入れられたかを判断しないでください。それは Verify ステップの責務です。
 - slash commands を呼び出さないでください。
 - follow-up への応答を session または pane に出力しただけで turn を完了しないでください。発生元の
-  LoopHub 上の PR comment、diff feedback thread、または review に返信を残してください。
+  LoopHub 上の PR comment、diff feedback thread、または review に返信を残すか、質問は human
+  escalation comment に残してください。
 - step prompt とこの contract が競合する場合、この contract を優先します。

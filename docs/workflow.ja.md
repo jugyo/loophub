@@ -168,8 +168,9 @@ worker 再起動後は処理済み event を再配信せず、未処理 event �
 progression instruction を送らず cursor だけ進める。
 
 run-scoped な `lh workflow` command は `--repo` を省略すると run から repo を解決する。親が repo 名を書き
-写す経路を無くすためで、`--repo` を明示した場合はそちらが優先される。`--reason` は上限（`escalate` /
-`await-human` / `recover-launch` は 500 文字、`escalate-human` は 5000 文字）を超えても 422 で失敗させず
+写す経路を無くすためで、`--repo` を明示した場合はそちらが優先される。`--reason` は上限（
+`await-human` / `recover-launch` は 500 文字、PR の human escalation comment になる `escalate` /
+`escalate-human` は 5000 文字）を超えても 422 で失敗させず
 切り詰める。報告そのものが失敗して run が止まるのを避けるため。
 
 GitHub reference の event は親の変更要否判断を必要とするため、`read_github_reference`
@@ -326,10 +327,14 @@ current HEAD の組で、その時点の実効差分だけをレビューする�
 ## 6. 完了宣言（turn done）
 
 Execute は `lh workflow turn done --run <run>`（payload なし）でターン完了を宣言する。情報不足や人間の判断が必要な
-場合は、質問全文を自分の pane に提示し、`lh workflow escalate --run <run> --reason <short summary>` を宣言して、
-同じ pane で人間の回答・指示を待つ。reason は `await-human` と同じ inline text（必須、最大 500 文字）
-であり、質問内容の短い要約を入れる。engine はこれらをそれぞれ `workflow_run.turn_done`、
-`workflow_run.escalated` event として
+場合は、質問全文を自分の pane に提示し、`lh workflow escalate --run <run> --reason - [--option <text>]...` で
+人間へ直接質問して、同じ pane で人間の回答・指示を待つ。reason は `Background`、`Missing information`、
+`Decision points` の 3 項目を含む Markdown の comment 本文（必須、最大 5000 文字）で、`--option` は人間が
+選べる選択肢である。escalate はこの本文と選択肢でリンク済み PR に human escalation comment を投稿し、PR
+画面で選択肢から回答できる。質問を PR に投稿するのはこの comment だけで、発生元の comment / thread /
+review に同じ質問を重ねない。人間が選んだ選択肢や返信は人間の PR comment として届き、通常の PR comment
+と同様に Execute へ配送される。同じ run で新しい escalation を記録すると、それ以前の escalation は回答
+できなくなる。engine はこれらをそれぞれ `workflow_run.turn_done`、`workflow_run.escalated` event として
 記録するが、escalate 自体は run lifecycle を変更しない。review、PR comment、diff feedback、merge
 conflict、GitHub feedback、close / merge は、通知専用の run-scoped event を持たない。producer は
 `pull_request.review_submitted`、`pull_request.github_feedback`、
@@ -389,7 +394,7 @@ hold を維持する。
 |---|---|---|
 | start | run started | worker instruction に従って Execute を launch |
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
-| Execute | `workflow_run.escalated` を受領 | event の reason で `escalate-human` → 親 agent が担当するリンク済み PR の comment に通知。run state は変えず、人間の指示まで step launch も rework もしない |
+| Execute | `workflow_run.escalated` を受領 | `wait`。質問は Execute の escalation comment として PR に投稿済みのため、親は `escalate-human` で再投稿しない。run state は変えず、人間の指示まで step launch も rework もしない |
 | Execute / Verify | `workflow_run.cost_exceeded` を受領 | `cost_hold` action → `cost-hold` が `await-human` で run を hold（走行中の child には触れず、再送分は `already_completed`）→ loop に戻る |
 | Cost hold | 人間が増額 | 人間が期待上限付き専用操作で `B` 増額 → `resume --step <active_step>` で hold を解除するだけ。その resume の event が wake となり、hold 中に溜まった verdict / turn done / commit を通常の reconcile が判断する |
 | Cost hold | 増額なし | hold を維持し、子起動・注入・自動遷移を行わず次の明示的指示を待つ |
@@ -454,7 +459,7 @@ lh workflow run increase-cost-limit --run <id> --expected-limit <usd>
 lh workflow run relaunch --pr <n> [--attach]    # エージェントを失った PR の running run に新しい親を起動する
 lh workflow deliver --run <id> --text <single-line-instruction> # 最新 Execute を activate して指示を注入
 lh workflow turn done --run <id>          # Execute child がターン完了を宣言（payload なし）
-lh workflow escalate --reason <text> --run <id> # Execute child が人間の判断の必要性を宣言
+lh workflow escalate --reason <text> [--option <text>]... --run <id> # Execute child が人間へ直接質問（PR に human escalation comment を投稿）
 lh workflow escalate-human --reason <text> --run <id> # 親 agent のリンク済み PR への comment を冪等に記録
 lh workflow instruction <run> (--event <id> --requires-changes true|false | --note <text|->) --json # 親の入力（GitHub reference の判断 / 人間の直接指示）に対する instruction を返す
 lh workflow step input <run> <step> [--full] # 合成した contract + input ポインタ + prompt を dry-run

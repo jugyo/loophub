@@ -1158,15 +1158,31 @@ async function escalate(): Promise<void> {
   const result = await runOp(async () =>
     (await svc()).workflowRuns.escalate(
       repo,
-      { run: runId, reason },
+      { run: runId, reason, options: flags.option },
       await writeSession(),
     ),
   );
   if (flags.json) out(result);
-  else
+  else {
     console.log(
       `declared escalation for Workflow run #${result.run} (event #${result.event_id})`,
     );
+    printHumanEscalation(result);
+  }
+  if (!result.ok) fail("escalate did not record the PR comment");
+}
+
+function printHumanEscalation(result: {
+  run: number;
+  pr: number;
+  options: string[];
+  effects: { pr_comment: { status: string; error?: string } };
+}): void {
+  console.log(`Workflow run #${result.run}\tPR #${result.pr}`);
+  for (const option of result.options) console.log(`option\t${option}`);
+  const effect = result.effects.pr_comment;
+  console.log(`pr comment\t${effect.status.replaceAll("_", " ")}`);
+  if (effect.error) console.log(`pr comment error\t${effect.error}`);
 }
 
 async function deliver(): Promise<void> {
@@ -1208,15 +1224,8 @@ async function escalateHuman(): Promise<void> {
       await writeSession(),
     ),
   );
-  if (flags.json) {
-    out(result);
-  } else {
-    console.log(`Workflow run #${result.run}\tPR #${result.pr}`);
-    for (const option of result.options) console.log(`option\t${option}`);
-    const effect = result.effects.pr_comment;
-    console.log(`pr comment\t${effect.status.replaceAll("_", " ")}`);
-    if (effect.error) console.log(`pr comment error\t${effect.error}`);
-  }
+  if (flags.json) out(result);
+  else printHumanEscalation(result);
   if (!result.ok) {
     fail("escalate-human did not record the PR comment");
   }

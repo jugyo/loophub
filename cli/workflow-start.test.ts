@@ -510,6 +510,7 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
   expect(escalated.stdout).toContain(
     `declared escalation for Workflow run #${runResult.run.id}`,
   );
+  expect(escalated.stdout).toContain("pr comment\tcompleted");
 
   const humanEscalation = run(
     [
@@ -551,7 +552,8 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
 
   const prView = run(["pr", "view", pr, "--repo", REPO, "--json"]);
   expect(prView.exitCode, prView.stderr).toBe(0);
-  expect(JSON.parse(prView.stdout).comment_list).toHaveLength(1);
+  // Execute's escalation and the parent's rework-limit escalation each post one comment.
+  expect(JSON.parse(prView.stdout).comment_list).toHaveLength(2);
 
   const { Database } = REQUIRE("bun:sqlite") as typeof import("bun:sqlite");
   const db = new Database(join(HOME, "loophub.db"));
@@ -601,7 +603,7 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
   expect(failedReplay.exitCode).not.toBe(0);
   expect(failedReplay.stdout).toContain("pr comment\tpending");
   const prAfterFailure = run(["pr", "view", pr, "--repo", REPO, "--json"]);
-  expect(JSON.parse(prAfterFailure.stdout).comment_list).toHaveLength(1);
+  expect(JSON.parse(prAfterFailure.stdout).comment_list).toHaveLength(2);
 });
 
 afterAll(() => {

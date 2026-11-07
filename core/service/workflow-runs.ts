@@ -182,6 +182,7 @@ import {
   repoOr404,
   UNKNOWN_ACTOR,
 } from "./shared.ts";
+import { workflowEscalation } from "./workflow-escalation.ts";
 import { workflowRunParentPaneId } from "./workflow-panes.ts";
 
 export type WorkflowRunStartResult = {
@@ -593,7 +594,11 @@ export type WorkflowTurnDoneResult = {
   event_id: number;
 };
 
-export type WorkflowEscalateResult = WorkflowTurnDoneResult;
+export type WorkflowEscalateResult = WorkflowTurnDoneResult &
+  Pick<
+    ReturnType<typeof workflowEscalation.escalateHuman>,
+    "ok" | "pr" | "options" | "effects"
+  >;
 
 export type WorkflowDeliverResult =
   | {
@@ -3711,12 +3716,12 @@ export const workflowRuns = {
     return { run: run.id, event_id: event.id };
   },
 
-  // The Execute child's escalation declaration mirrors turnDone: it records a run-scoped fact for
-  // the worker to deliver to the parent, but does not mutate lifecycle state. The parent reads the
-  // event reason and applies the existing await-human transition.
+  // The Execute child asks the human directly: its reason is the human escalation comment body and
+  // its options the choices, so the PR carries the question once. Like turnDone it also records a
+  // run-scoped fact for the worker to deliver to the parent, without mutating lifecycle state.
   escalate(
     name: string,
-    input: { run: number; reason: string },
+    input: { run: number; reason: string; options?: string[] },
     sessionId?: string | null,
   ): WorkflowEscalateResult {
     const r = repoOr404(name);
@@ -3747,7 +3752,17 @@ export const workflowRuns = {
         reason,
       },
     );
-    return { run: run.id, event_id: event.id };
+    const { ok, pr, options, effects } = workflowEscalation.escalateHuman(
+      name,
+      {
+        run: run.id,
+        reason: input.reason,
+        options: input.options,
+        author: "executor",
+      },
+      sessionId,
+    );
+    return { run: run.id, event_id: event.id, ok, pr, options, effects };
   },
 
   async stepInput(

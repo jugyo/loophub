@@ -30,6 +30,18 @@ is completed, even when no source change is needed. Route PR comments to
 `lh pr comment <pr> --body <text>`, diff feedback to
 `lh pr feedback reply <t> --pr <pr> --body <text>`, and reviews to
 `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>`.
+A question for a human is the exception: ask it with one human escalation comment instead.
+
+**Escalating to a human** — write the comment body with the three labels `Background`,
+`Missing information`, and `Decision points`, organizing the context, missing facts, and points
+requiring a decision, together with your current assessment. Do not write the choices into the body;
+pass each one as its own `--option <text>`, a single line that reads on its own. Run
+`lh workflow escalate --repo {{repo}} --run {{run}} --reason - [--option <text>]...` with the body on
+stdin, then wait in the same pane. The body is posted verbatim as Markdown as the human escalation
+comment on the PR, with the choices rendered beneath it as radio buttons; it is the only place the
+question is posted, so do not also post it on the originating PR comment, diff feedback thread, or
+review. The human's answer arrives as a new instruction. Recording a newer escalation for the same
+run makes every earlier one unanswerable.
 
 - **Rework (`orchestrator: address review <id>`)** — read the specified review and all its review
   comments with `lh pr review view <pr> --review <id> --json`, re-read the current Issue and enabled
@@ -47,10 +59,8 @@ is completed, even when no source change is needed. Route PR comments to
 - **PR comment (`orchestrator: address PR comment <c>`)** — read the named comment from
   `lh pr view <pr> --json` and compare a human instruction with the current Issue body and enabled
   acceptance criteria before implementing it. If consistent, proceed without requesting a spec
-  update. If conflicting, do not choose or implement either version: reply with the exact conflict
-  and your assessment, run
-  `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>`, and wait in the same
-  pane. After the human decides, use `lh issue update` or `lh issue ac` to record the decision, then
+  update. If conflicting, do not choose or implement either version: escalate the exact conflict
+  and your assessment to a human as described above. After the human decides, use `lh issue update` or `lh issue ac` to record the decision, then
   re-read the Issue before implementing. Respond with a top-level
   `lh pr comment <pr> --body <text>`; when source changes are needed, acknowledge before editing and
   leave the result there before completing the turn.
@@ -59,17 +69,16 @@ is completed, even when no source change is needed. Route PR comments to
   to rewrite the Issue body unless the conflict procedure above applies. Update the PR body or
   comments when useful to the next Verify or a human.
 - **Question-only or blocked on a human decision** — present the full concrete question in the pane,
-  respond on the originating PR comment, diff feedback thread, or review with the question and your
-  current assessment, run `lh workflow escalate --repo {{repo}} --run {{run}} --reason <short summary>`,
-  and wait for the response in the same pane. The escalation does not replace the LoopHub response.
+  then escalate it with your current assessment to a human as described above. The escalation comment
+  is the LoopHub response to this follow-up.
 - **Confirmation or no domain change required** — perform only the needed PR body, comment, or
   attachment operations and treat it as the metadata-only completion described in step 6.
   Respond on the originating PR comment, diff feedback thread, or review with the outcome before
   completing the turn. Acknowledgement before editing is not required when no source change is needed.
 - **Ambiguous but in scope** — prefer the smallest implementation that satisfies the request;
-  escalate only when a real human choice is missing. In either case, respond on the originating PR
-  comment, diff feedback thread, or review with the action taken or the question before completing
-  the turn.
+  escalate only when a real human choice is missing. Before completing the turn, respond on the
+  originating PR comment, diff feedback thread, or review with the action taken, or escalate the
+  question as described above.
 
 ## Procedure
 
@@ -92,5 +101,6 @@ is completed, even when no source change is needed. Route PR comments to
 - Do not decide whether your implementation is accepted; that is the Verify step's responsibility.
 - Do not call slash commands.
 - Do not complete a follow-up turn with a response only in the session or pane; leave the response on
-  its originating LoopHub PR comment, diff feedback thread, or review.
+  its originating LoopHub PR comment, diff feedback thread, or review, or in the human escalation
+  comment for a question.
 - If the step prompt conflicts with this contract, this contract wins.

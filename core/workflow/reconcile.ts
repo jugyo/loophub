@@ -76,14 +76,6 @@ export type WorkflowWakeInput =
   | { kind: "pending_delivery_ready"; delivery: WorkflowPendingDelivery }
   | { kind: "delivery_queue_drained" };
 
-export type WorkflowEscalationContext = {
-  current_step: WorkflowStep;
-  active_step: WorkflowStep | null;
-  current_head: string | null;
-  needs_human_reason: string | null;
-  awaiting_human: boolean;
-};
-
 export type WorkflowNextAction =
   | { action: "complete"; reason: string }
   | { action: "launch_execute"; reason: string; delivery_id?: string }
@@ -164,12 +156,6 @@ export type WorkflowNextAction =
       reason: string;
       escalation_reason: "rework_limit";
       review_id: number;
-    }
-  | {
-      action: "escalate";
-      reason: string;
-      escalation_reason: "execute_request";
-      execution_context?: WorkflowEscalationContext;
     }
   | {
       action: "ask_human";
@@ -444,20 +430,7 @@ function actionPlan(
         source: "escalation_reason",
         form: "stdin",
       };
-      if (action.escalation_reason !== "execute_request") {
-        return watch([escalate], "parent_judgement");
-      }
-      return {
-        boundary: "parent_judgement",
-        commands: [escalate],
-        decision: {
-          question:
-            "Write a human-facing escalation comment and its --option choices from the request and execution context.",
-          inputs: ["escalation reason", "execution context"],
-          submit: null,
-        },
-        after: "watch",
-      };
+      return watch([escalate], "parent_judgement");
     }
     case "ask_human":
       return {
@@ -651,18 +624,12 @@ export function reconcileWorkflow(
     };
   }
 
+  // Execute already posted its question as the human escalation comment, so the parent only waits
+  // for the human's answer; re-posting the question would put it on the PR twice.
   if (input.wake?.kind === "execute_escalation") {
     return {
-      action: "escalate",
-      reason: input.wake.reason,
-      escalation_reason: "execute_request",
-      execution_context: {
-        current_step: input.currentStep,
-        active_step: input.activeStep,
-        current_head: input.currentHead,
-        needs_human_reason: input.needsHumanReason,
-        awaiting_human: input.awaitingHuman,
-      },
+      action: "wait",
+      reason: `Execute asked a human on the PR: ${input.wake.reason}`,
     };
   }
 

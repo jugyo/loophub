@@ -28,10 +28,10 @@ const defaultDeps: WorkflowEscalationDeps = {
   createComment: comments.createAgentForPull,
 };
 
-// The comment speaks for the workflow's parent agent. Its session name embeds the issue title,
-// which is noise as a comment author, so the comment is attributed to the role instead; the body
-// names the run.
-const ESCALATION_COMMENT_AUTHOR = "orchestrator";
+// The comment speaks for the workflow agent that asked: the parent, or the Execute child asking the
+// human directly. Their session names embed the issue title, which is noise as a comment author, so
+// the comment is attributed to the role instead; the body names the run.
+type EscalationAuthor = "orchestrator" | "executor";
 
 // The body the parent writes here is the human-facing escalation comment, so it is trimmed to the
 // escalation limit instead of being rejected: an over-long comment is still the notification the
@@ -94,7 +94,12 @@ function runEffect(
 export const workflowEscalation = {
   escalateHuman(
     name: string,
-    input: { run: number; reason: string; options?: string[] },
+    input: {
+      run: number;
+      reason: string;
+      options?: string[];
+      author?: EscalationAuthor;
+    },
     sessionId?: string | null,
     dependencyOverrides: Partial<WorkflowEscalationDeps> = {},
   ) {
@@ -134,7 +139,7 @@ export const workflowEscalation = {
           name,
           run.pr_number,
           body,
-          ESCALATION_COMMENT_AUTHOR,
+          input.author ?? "orchestrator",
           sessionId,
         );
         S.createWorkflowEscalation({

@@ -21,10 +21,9 @@ export function inlineText(value: string): string {
 /**
  * How long a `--reason` a workflow command keeps.
  *
- * `WORKFLOW_REASON_MAX_LENGTH` covers the short summaries recorded as run state (`escalate`,
- * `await-human`, `recover-launch`). `WORKFLOW_ESCALATION_REASON_MAX_LENGTH` covers
- * `escalate-human`, whose reason becomes a human-facing PR comment that the parent contract
- * requires to carry four labelled sections.
+ * `WORKFLOW_REASON_MAX_LENGTH` covers the short summaries recorded as run state (`await-human`,
+ * `recover-launch`, and the `escalate` event). `WORKFLOW_ESCALATION_REASON_MAX_LENGTH` covers
+ * the human escalation comment that `escalate` and `escalate-human` post on the PR.
  */
 export const WORKFLOW_REASON_MAX_LENGTH = 500;
 export const WORKFLOW_ESCALATION_REASON_MAX_LENGTH = 5000;

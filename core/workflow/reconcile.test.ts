@@ -573,16 +573,8 @@ describe("reconcileWorkflow", () => {
     [
       { kind: "execute_escalation", reason: "Need product guidance" },
       {
-        action: "escalate",
-        escalation_reason: "execute_request",
-        reason: "Need product guidance",
-        execution_context: {
-          current_step: "execute",
-          active_step: null,
-          current_head: HEAD,
-          needs_human_reason: null,
-          awaiting_human: false,
-        },
+        action: "wait",
+        reason: "Execute asked a human on the PR: Need product guidance",
       },
     ],
     [
@@ -1153,30 +1145,12 @@ describe("workflowActionPlan", () => {
       plan({
         action: "escalate",
         reason: "limit",
-        escalation_reason: "execute_request",
+        escalation_reason: "rework_limit",
+        review_id: 7,
       }).commands[0],
     ).toMatchObject({
       args: ["workflow", "escalate-human", "--run", "42", "--reason", "-"],
       input: { argument: "--reason", form: "stdin" },
-    });
-    expect(
-      plan({
-        action: "escalate",
-        reason: "request",
-        escalation_reason: "execute_request",
-        execution_context: {
-          current_step: "execute",
-          active_step: "execute",
-          current_head: HEAD,
-          needs_human_reason: null,
-          awaiting_human: false,
-        },
-      }),
-    ).toMatchObject({
-      boundary: "parent_judgement",
-      decision: {
-        inputs: ["escalation reason", "execution context"],
-      },
     });
     expect(plan({ action: "wait", reason: "waiting" })).toMatchObject({
       commands: [],
