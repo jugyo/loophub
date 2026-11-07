@@ -1,16 +1,13 @@
-// Workflow run state section for issue / PR detail (#1008). Shows the display state of the run linked
-// to an issue / PR: workflow name, status, current step (as an Execute → Verify
-// tracker), and rework count / limit. The run row is the display-state source (workflow design:
-// CLI / UI) —
-// this deliberately does not re-derive step-completion truth (that stays with
+// One-line Workflow run summary for PR detail (#1008): the step tracker, total cost, duration and a
+// Detail button that opens the run detail dialog, where the status, workflow name / run number,
+// rework count and Verify state live. The run row is the display-state source (workflow design:
+// CLI / UI) — this deliberately does not re-derive step-completion truth (that stays with
 // `workflow step status` — HEAD vs the pinned Verify review).
 //
-// - needs human (#1307): a running run with `needs_human_reason` set is waiting for an explicit
-//   human instruction; legacy terminal `blocked` rows get the same status. Only the status badge
-//   shows it — the parent's escalation comment carries the details.
-// A running run can be verified for its current HEAD or need re-verification after HEAD advances.
+// The `md` variant sits under the PR's badges and also carries the cost / rework limit controls
+// while they apply; the `sm` variant rides in the compact sticky header.
 //
-// Renders nothing when the issue / PR has no run.
+// Renders nothing when the PR has no run.
 
 import { History } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -20,45 +17,15 @@ import {
   WorkflowBudgetControl,
   WorkflowReworkControl,
 } from "@/components/linked-pull-summary";
-import type { BadgeProps } from "@/components/ui/badge";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WorkflowRunDetailDialog } from "@/components/workflow-run-history-dialog";
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
 import { formatCost } from "@/lib/session-usage";
 import { formatDuration } from "@/lib/time";
-import {
-  workflowDisplayStage,
-  workflowRunDisplayState,
-} from "@/lib/workflow-run";
+import { cn } from "@/lib/utils";
+import { workflowRunDisplayState } from "@/lib/workflow-run";
 import { useHerdrSessions } from "@/queries/terminal";
 import { useWorkflowRunTotalCost } from "@/queries/workflow-runs";
-
-const STATUS_META: Record<
-  string,
-  { label: string; tone: NonNullable<BadgeProps["tone"]> }
-> = {
-  running: { label: "Running", tone: "working" },
-  // Legacy terminal status (#1307): pre-needs-human escalations; shown like a needs-human run.
-  blocked: { label: "Needs human", tone: "cost-stopped" },
-  // Terminal status: the run's linked PR merged (#1808). A passing Verify does not reach it — that
-  // keeps the run `running` + `verification_status: verified` (#1513).
-  completed: { label: "Completed", tone: "review-passed" },
-  // Legacy terminal status (#1525): the run-stop write path was removed — a cost hold now only
-  // holds the run and leaves it `running`. Old rows may still be `stopped`, so keep the
-  // read-only rendering for them.
-  stopped: { label: "Stopped", tone: "closed" },
-};
-
-// Waiting for an explicit human instruction (#1307): a running run holding a needs-human reason,
-// or a legacy terminal `blocked` row.
-function needsHuman(state: WorkflowRunState): boolean {
-  state = workflowRunDisplayState(state);
-  return (
-    (state.status === "running" && state.needs_human_reason !== null) ||
-    state.status === "blocked"
-  );
-}
 
 function formatWorkflowRunTotalCost(total: WorkflowRunTotalCost): string {
   if (total.cost_status === "unknown") return "Unknown";
@@ -68,7 +35,13 @@ function formatWorkflowRunTotalCost(total: WorkflowRunTotalCost): string {
   return total.cost_status === "partial" ? `${formatted}+` : formatted;
 }
 
-function WorkflowRunDuration({ state }: { state: WorkflowRunState }) {
+function WorkflowRunDuration({
+  state,
+  label,
+}: {
+  state: WorkflowRunState;
+  label: boolean;
+}) {
   state = workflowRunDisplayState(state);
   const running = state.status === "running";
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -89,26 +62,31 @@ function WorkflowRunDuration({ state }: { state: WorkflowRunState }) {
 
   const duration = formatDuration((endedAtMs - startedAtMs) / 1000);
   return (
-    <p
+    <span
       data-debug-component="WorkflowRunDuration"
-      className="text-sm text-muted-foreground"
+      title={running ? "Elapsed" : "Total"}
+      className="shrink-0 text-muted-foreground"
     >
-      Duration: {duration} {running ? "elapsed" : "total"}
-    </p>
+      {label ? "Duration " : null}
+      <span className="font-medium text-foreground tabular-nums">
+        {duration}
+      </span>
+    </span>
   );
 }
 
-export function WorkflowRunStatusSection({
+export function WorkflowRunSummary({
   owner,
   repo,
   state,
-  showDetail = false,
+  size = "md",
   observeHerdrSessions = false,
 }: {
   owner: string;
   repo: string;
   state: WorkflowRunState | null | undefined;
-  showDetail?: boolean;
+  /** `sm` is the compact header variant: no labels and no run controls. */
+  size?: "sm" | "md";
   observeHerdrSessions?: boolean;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
@@ -120,7 +98,7 @@ export function WorkflowRunStatusSection({
     state?.id ?? 0,
     state !== null && state !== undefined,
   );
-  // PR detail can make this section the only Herdr consumer in the tab. Standalone renderers keep
+  // PR detail can make this summary the only Herdr consumer in the tab. Standalone renderers keep
   // the query disabled so opening the history dialog remains their first network boundary.
   const { data: herdrSessions, isError: herdrSessionsError } = useHerdrSessions(
     { enabled: observeHerdrSessions },
@@ -145,45 +123,20 @@ export function WorkflowRunStatusSection({
   const displayState = budgetResumePending
     ? { ...terminalState, needs_human_reason: null }
     : terminalState;
-  const status = needsHuman(displayState)
-    ? { label: "Needs human", tone: "cost-stopped" as const }
-    : workflowDisplayStage(displayState) === "merged"
-      ? { label: "Merged", tone: "review-passed" as const }
-      : workflowDisplayStage(displayState) === "ready_to_merge"
-        ? { label: "Done", tone: "review-passed" as const }
-        : displayState.status === "running" &&
-            displayState.verification_status === "stale"
-          ? { label: "Reverify required", tone: "review-changes" as const }
-          : (STATUS_META[displayState.status] ?? {
-              label: displayState.status,
-              tone: "unknown" as const,
-            });
-  const completed = displayState.status === "completed";
-  const isStaleVerification =
-    displayState.status === "running" &&
-    displayState.needs_human_reason === null &&
-    displayState.verification_status === "stale";
-  const isVerified =
-    !displayState.pr_merged && displayState.verification_status === "verified";
   const overBudget = displayState.cost_limit_increase_available;
+  const md = size === "md";
 
   return (
-    <section
-      data-debug-component="WorkflowRunStatusSection"
-      className="flex flex-col gap-3"
+    <div
+      data-debug-component="WorkflowRunSummary"
+      className={cn("flex flex-col gap-3", md ? "min-w-0" : "shrink-0")}
     >
-      <h2 className="text-lg font-semibold">Workflow</h2>
-      <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-4">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          {!overBudget ? (
-            <Badge tone={status.tone}>{status.label}</Badge>
-          ) : null}
-          <span className="font-medium">
-            {displayState.workflow_name ?? "workflow"}
-          </span>
-          <span className="text-muted-foreground">run {displayState.id}</span>
-        </div>
-
+      <div
+        className={cn(
+          "flex items-center gap-x-3",
+          md ? "flex-wrap gap-y-2 text-sm" : "text-xs",
+        )}
+      >
         <WorkflowStepTracker
           owner={owner}
           repo={repo}
@@ -191,17 +144,16 @@ export function WorkflowRunStatusSection({
           herdrSessions={herdrSessionsError ? undefined : herdrSessions}
           herdrUnavailable={herdrSessionsError}
           showWorkflowNode
-          size="md"
-          overBudget={overBudget}
+          size={size}
+          overBudget={md && overBudget}
         />
-
-        <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
-          <span className="text-muted-foreground">Total cost</span>
+        <span className="shrink-0 text-muted-foreground">
+          {md ? "Total cost " : null}
           <span
             className={
               totalCost.isError
-                ? "text-right text-destructive"
-                : "font-medium tabular-nums"
+                ? "text-destructive"
+                : "font-medium text-foreground tabular-nums"
             }
           >
             {totalCost.isLoading
@@ -212,67 +164,37 @@ export function WorkflowRunStatusSection({
                   ? formatWorkflowRunTotalCost(totalCost.data)
                   : "n/a"}
           </span>
-        </div>
-
-        {overBudget ? (
-          <WorkflowBudgetControl
-            owner={owner}
-            repo={repo}
-            pull={displayState.pr_number}
-            state={displayState}
-            onIncreased={setAcknowledgedCostHold}
-          />
-        ) : null}
-        {displayState.rework_limit_increase_available ? (
-          <WorkflowReworkControl
-            owner={owner}
-            repo={repo}
-            pull={displayState.pr_number}
-            state={displayState}
-          />
-        ) : null}
-
-        {completed ? (
-          <p className="text-sm text-muted-foreground">
-            The Workflow run is completed.
-          </p>
-        ) : null}
-
-        {isVerified ? (
-          <p className="text-sm text-muted-foreground">
-            Verify passed for the current HEAD.
-          </p>
-        ) : isStaleVerification ? (
-          <p className="text-sm text-muted-foreground">
-            HEAD changed after Verify passed — a fresh Verify is required.
-          </p>
-        ) : null}
-
-        <div
-          data-debug-component="WorkflowRunMetadata"
-          className="flex flex-col gap-1 text-sm text-muted-foreground"
+        </span>
+        <WorkflowRunDuration state={displayState} label={md} />
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className={cn("shrink-0", !md && "h-6 px-2")}
+          onClick={() => setDetailOpen(true)}
         >
-          {displayState.rework_count > 0 ? (
-            <p>
-              Rework: {displayState.rework_count}/{displayState.rework_limit}
-            </p>
-          ) : null}
-          <WorkflowRunDuration state={displayState} />
-        </div>
-
-        {showDetail ? (
-          <div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => setDetailOpen(true)}
-            >
-              <History className="size-3.5" /> Detail
-            </Button>
-          </div>
-        ) : null}
+          <History className="size-3.5" /> Detail
+        </Button>
       </div>
+
+      {md && overBudget ? (
+        <WorkflowBudgetControl
+          owner={owner}
+          repo={repo}
+          pull={displayState.pr_number}
+          state={displayState}
+          onIncreased={setAcknowledgedCostHold}
+        />
+      ) : null}
+      {md && displayState.rework_limit_increase_available ? (
+        <WorkflowReworkControl
+          owner={owner}
+          repo={repo}
+          pull={displayState.pr_number}
+          state={displayState}
+        />
+      ) : null}
+
       {detailOpen ? (
         <WorkflowRunDetailDialog
           owner={owner}
@@ -281,6 +203,6 @@ export function WorkflowRunStatusSection({
           onClose={() => setDetailOpen(false)}
         />
       ) : null}
-    </section>
+    </div>
   );
 }

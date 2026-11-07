@@ -3197,7 +3197,7 @@ describe("PullDetail", () => {
     expect(rpcCall("handoffs/list")).toBeUndefined();
   });
 
-  it("shows Workflow in the sidebar with Detail access", async () => {
+  it("shows the Workflow summary under the PR badges with Detail access", async () => {
     renderDetail({
       "terminal/sessions": () => ({
         repos: [
@@ -3240,20 +3240,27 @@ describe("PullDetail", () => {
       }),
     });
 
-    await screen.findByText("Implementation loop");
-    const workflowHeading = screen.getByRole("heading", { name: "Workflow" });
-    expect(workflowHeading.closest("aside")).toBeTruthy();
+    const summary = await waitFor(() => {
+      const element = document.querySelector<HTMLElement>(
+        '[data-debug-component="WorkflowRunSummary"]',
+      );
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    expect(summary.closest('[data-debug-component="PullHeader"]')).toBeTruthy();
+    expect(summary.closest("aside")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Workflow" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
-    expect(screen.getByText("Implementation loop")).toBeTruthy();
-    expect(screen.getByText("run 12")).toBeTruthy();
-    expect(screen.getByText("Verify")).toBeTruthy();
-    expect(screen.getByText("Rework: 2/8")).toBeTruthy();
-    expect(screen.getByText("Total cost")).toBeTruthy();
+    // Name, run number and rework count moved into the detail dialog.
+    expect(screen.queryByText("Implementation loop")).toBeNull();
+    expect(screen.queryByText("Rework: 2/8")).toBeNull();
+    expect(within(summary).getByText("Verify")).toBeTruthy();
+    expect(within(summary).getByText("Total cost")).toBeTruthy();
     // The total is a second request, started only once the run is known, so it can still be in
     // flight when the run itself renders — wait for it rather than for whatever render happens
     // to land first.
     expect(await screen.findByText("$1.75")).toBeTruthy();
-    expect(screen.getByText("Needs human")).toBeTruthy();
+    expect(within(summary).getByText("needs human")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Detail" })).toBeTruthy();
   });
 
@@ -3313,7 +3320,7 @@ describe("PullDetail", () => {
     expect(screen.queryByText("needs human")).toBeNull();
   });
 
-  it("shows the Needs human badge after increasing the budget", async () => {
+  it("shows the needs human marker after increasing the budget", async () => {
     let increased = false;
     const held = {
       id: 12,
@@ -3361,7 +3368,7 @@ describe("PullDetail", () => {
       fireEvent.click(within(prompt).getByRole("button", { name: "Yes" }));
     });
 
-    expect(await screen.findByText("Needs human")).toBeTruthy();
+    expect(await screen.findByText("needs human")).toBeTruthy();
     expect(screen.queryByText("waiting for a decision")).toBeNull();
   });
 
@@ -3388,7 +3395,7 @@ describe("PullDetail", () => {
       }),
     });
 
-    await screen.findByText("Implementation loop");
+    await screen.findByRole("button", { name: "Detail" });
     expect(screen.queryByText("over budget")).toBeNull();
   });
 
@@ -3415,11 +3422,8 @@ describe("PullDetail", () => {
       }),
     });
 
-    await screen.findByText("Implementation loop");
+    await screen.findByRole("button", { name: "Detail" });
     expect(screen.getAllByText("Done").length).toBeGreaterThan(0);
-    expect(
-      screen.getByText("Verify passed for the current HEAD."),
-    ).toBeTruthy();
     expect(screen.getByText("Verify")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Detail" })).toBeTruthy();
     expect(screen.queryByText(/continuing/i)).toBeNull();
@@ -3429,8 +3433,12 @@ describe("PullDetail", () => {
     renderDetail({ "workflowRuns/stateForPull": () => null });
     await screen.findByText("ui2: PR detail");
     await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "Workflow" })).toBeNull(),
+      expect(rpcCall("workflowRuns/stateForPull")).toBeTruthy(),
     );
+    expect(
+      document.querySelector('[data-debug-component="WorkflowRunSummary"]'),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Detail" })).toBeNull();
   });
 
   it("keeps PR detail visible and reports a Workflow run fetch failure", async () => {

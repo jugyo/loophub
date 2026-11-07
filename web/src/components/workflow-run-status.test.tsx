@@ -48,7 +48,7 @@ vi.mock("@/queries/workflow-runs", () => ({
   }),
 }));
 
-import { WorkflowRunStatusSection } from "./workflow-run-status";
+import { WorkflowRunSummary } from "./workflow-run-status";
 
 afterEach(() => {
   cleanup();
@@ -106,10 +106,10 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
   };
 }
 
-describe("WorkflowRunStatusSection", () => {
+describe("WorkflowRunSummary", () => {
   it("サイドバーに Run configuration を表示しない", async () => {
     renderInRouter(
-      <WorkflowRunStatusSection
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({
@@ -176,7 +176,7 @@ describe("WorkflowRunStatusSection", () => {
       ],
     };
     renderInRouter(
-      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+      <WorkflowRunSummary owner="me" repo="loophub" state={state({})} />,
     );
 
     fireEvent.focus(await screen.findByText("Execute"));
@@ -215,7 +215,7 @@ describe("WorkflowRunStatusSection", () => {
       ],
     };
     renderInRouter(
-      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+      <WorkflowRunSummary owner="me" repo="loophub" state={state({})} />,
     );
 
     const workflow = await screen.findByRole("button", { name: "Workflow" });
@@ -255,7 +255,7 @@ describe("WorkflowRunStatusSection", () => {
       ],
     };
     renderInRouter(
-      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+      <WorkflowRunSummary owner="me" repo="loophub" state={state({})} />,
     );
 
     const workflow = await screen.findByRole("button", { name: "Workflow" });
@@ -266,14 +266,14 @@ describe("WorkflowRunStatusSection", () => {
 
   it("renders nothing when there is no run", () => {
     const { container } = renderInRouter(
-      <WorkflowRunStatusSection owner="me" repo="loophub" state={null} />,
+      <WorkflowRunSummary owner="me" repo="loophub" state={null} />,
     );
     expect(container.textContent).toBe("");
   });
 
-  it("shows workflow name, status, current step, and rework count / limit for a running run", async () => {
+  it("keeps the summary to the tracker, total cost, duration, and Detail on one line", async () => {
     renderInRouter(
-      <WorkflowRunStatusSection
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({
@@ -284,34 +284,43 @@ describe("WorkflowRunStatusSection", () => {
         })}
       />,
     );
-    const heading = await screen.findByRole("heading", { name: "Workflow" });
-    expect(heading.className).toBe("text-lg font-semibold");
-    expect(screen.getByText("Running")).toBeTruthy();
-    expect(screen.getByText("standard")).toBeTruthy();
-    const metadata = document.querySelector(
-      '[data-debug-component="WorkflowRunMetadata"]',
-    );
-    expect(metadata).toBeTruthy();
-    expect(
-      within(metadata as HTMLElement).getByText("Rework: 2/8"),
-    ).toBeTruthy();
-    const tracker = document.querySelector(
-      '[data-debug-component="WorkflowStepTracker"]',
-    );
-    expect(
-      tracker?.compareDocumentPosition(metadata as HTMLElement) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(await screen.findByText("Total cost")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Detail" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Workflow" })).toBeNull();
+    // The status, workflow name / run number and rework count live in the detail dialog.
+    expect(screen.queryByText("Running")).toBeNull();
+    expect(screen.queryByText("standard")).toBeNull();
+    expect(screen.queryByText(/Rework/)).toBeNull();
     // Current step is marked with aria-current="step".
     const current = screen.getByText("Execute");
     expect(current.getAttribute("aria-current")).toBe("step");
+  });
+
+  it("drops the labels and the run controls in the compact header variant", async () => {
+    renderInRouter(
+      <WorkflowRunSummary
+        owner="me"
+        repo="loophub"
+        size="sm"
+        state={state({
+          needs_human_reason: "Cost limit exceeded",
+          cost_limit_increase_available: true,
+          rework_limit_increase_available: true,
+        })}
+      />,
+    );
+    expect(await screen.findByRole("button", { name: "Detail" })).toBeTruthy();
+    expect(screen.queryByText("Total cost")).toBeNull();
+    expect(screen.queryByText("Duration")).toBeNull();
+    expect(screen.getByText("needs human")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Increase/ })).toBeNull();
   });
 
   it("shows the total cost of the Workflow run using the shared cost format", async () => {
     mocks.totalCost = { cost_usd: 0.0092, cost_status: "known" };
 
     renderInRouter(
-      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+      <WorkflowRunSummary owner="me" repo="loophub" state={state({})} />,
     );
 
     expect(await screen.findByText("Total cost")).toBeTruthy();
@@ -326,7 +335,7 @@ describe("WorkflowRunStatusSection", () => {
     mocks.totalCost = totalCost;
 
     renderInRouter(
-      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+      <WorkflowRunSummary owner="me" repo="loophub" state={state({})} />,
     );
 
     expect(await screen.findByText(expected)).toBeTruthy();
@@ -335,7 +344,7 @@ describe("WorkflowRunStatusSection", () => {
 
   it("shows n/a when the run has no recorded agent sessions", async () => {
     renderInRouter(
-      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+      <WorkflowRunSummary owner="me" repo="loophub" state={state({})} />,
     );
 
     expect(await screen.findByText("n/a")).toBeTruthy();
@@ -344,7 +353,7 @@ describe("WorkflowRunStatusSection", () => {
   it("shows a visible error when the total cost request fails", async () => {
     mocks.totalCostError = true;
     renderInRouter(
-      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+      <WorkflowRunSummary owner="me" repo="loophub" state={state({})} />,
     );
 
     const failure = await screen.findByText("Failed to load total cost.");
@@ -357,32 +366,32 @@ describe("WorkflowRunStatusSection", () => {
       .spyOn(Date, "now")
       .mockReturnValue(new Date("2026-07-10T00:01:30Z").getTime());
     renderInRouter(
-      <WorkflowRunStatusSection
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({ created_at: "2026-07-10T00:00:00Z" })}
       />,
     );
 
-    const duration = await screen.findByText("Duration: 1m 30s elapsed");
-    expect(duration.tagName).toBe("P");
-    expect(duration.parentElement?.dataset.debugComponent).toBe(
-      "WorkflowRunMetadata",
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-debug-component="WorkflowRunDuration"]')
+          ?.textContent,
+      ).toBe("Duration 1m 30s"),
     );
     expect(
       document.querySelectorAll('[data-debug-component="WorkflowRunDuration"]'),
     ).toHaveLength(1);
 
     now.mockReturnValue(new Date("2026-07-10T00:02:00Z").getTime());
-    await waitFor(
-      () => expect(screen.getByText("Duration: 2m elapsed")).toBeTruthy(),
-      { timeout: 2000 },
-    );
+    await waitFor(() => expect(screen.getByText("2m")).toBeTruthy(), {
+      timeout: 2000,
+    });
   });
 
   it("shows the fixed start-to-end total for a completed run", async () => {
     renderInRouter(
-      <WorkflowRunStatusSection
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({
@@ -394,44 +403,28 @@ describe("WorkflowRunStatusSection", () => {
       />,
     );
 
-    expect(await screen.findByText("Duration: 1h 1m total")).toBeTruthy();
-    expect(screen.queryByText(/elapsed$/)).toBeNull();
+    const duration = await screen.findByText("1h 1m");
+    expect(duration.parentElement?.getAttribute("title")).toBe("Total");
   });
 
   it("omits the duration when a Workflow timestamp is invalid", async () => {
     renderInRouter(
-      <WorkflowRunStatusSection
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({ created_at: "invalid" })}
       />,
     );
 
-    expect(await screen.findByText("Running")).toBeTruthy();
-    expect(screen.queryByText(/(?:elapsed|total)$/)).toBeNull();
-  });
-
-  // A completed run means its PR merged (#1808), which can happen from any step and without a fresh
-  // pass, so the message never claims Verify passed.
-  it.each([
-    "verify",
-    "execute",
-  ])("shows the completed message for a completed run at %s", async (current_step) => {
-    renderInRouter(
-      <WorkflowRunStatusSection
-        owner="me"
-        repo="loophub"
-        state={state({ status: "completed", current_step })}
-      />,
-    );
-    expect(await screen.findByText("Completed")).toBeTruthy();
-    expect(screen.getByText("The Workflow run is completed.")).toBeTruthy();
-    expect(screen.queryByText(/Verify passed/)).toBeNull();
+    expect(await screen.findByText("Total cost")).toBeTruthy();
+    expect(
+      document.querySelector('[data-debug-component="WorkflowRunDuration"]'),
+    ).toBeNull();
   });
 
   it("prioritizes a merged PR over unreconciled running, stale, and held state", async () => {
     renderInRouter(
-      <WorkflowRunStatusSection
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({
@@ -447,12 +440,10 @@ describe("WorkflowRunStatusSection", () => {
 
     await waitFor(() =>
       expect(
-        document.querySelector(
-          '[data-debug-component="WorkflowRunStatusSection"]',
-        )?.textContent,
+        document.querySelector('[data-debug-component="WorkflowRunSummary"]')
+          ?.textContent,
       ).toContain("Merged"),
     );
-    expect(screen.getByText("The Workflow run is completed.")).toBeTruthy();
     expect(
       document
         .querySelector('[data-debug-component="WorkflowStepTracker"]')
@@ -466,12 +457,16 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.queryByText("needs human")).toBeNull();
     expect(screen.queryByText("over budget")).toBeNull();
     expect(screen.queryByText("Cost limit exceeded")).toBeNull();
-    expect(screen.queryByText(/elapsed$/)).toBeNull();
+    expect(
+      document
+        .querySelector('[data-debug-component="WorkflowRunDuration"]')
+        ?.getAttribute("title"),
+    ).not.toBe("Elapsed");
   });
 
   it("keeps a verified running run free of continuing status text", async () => {
-    const { rerender } = renderInRouter(
-      <WorkflowRunStatusSection
+    renderInRouter(
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({
@@ -483,33 +478,16 @@ describe("WorkflowRunStatusSection", () => {
     );
     await waitFor(() =>
       expect(
-        document.querySelector(
-          '[data-debug-component="WorkflowRunStatusSection"]',
-        )?.textContent,
+        document.querySelector('[data-debug-component="WorkflowRunSummary"]')
+          ?.textContent,
       ).toContain("Done"),
     );
-    expect(
-      screen.getByText("Verify passed for the current HEAD."),
-    ).toBeTruthy();
     expect(screen.queryByText(/continuing/i)).toBeNull();
-
-    rerender(
-      <WorkflowRunStatusSection
-        owner="me"
-        repo="loophub"
-        state={state({
-          current_step: "verify",
-          verification_status: "stale",
-        })}
-      />,
-    );
-    expect(await screen.findByText(/fresh Verify is required/)).toBeTruthy();
-    expect(screen.getByText("Reverify required")).toBeTruthy();
   });
 
   it("does not present merge-ready Done as a workflow Verify pass", async () => {
     renderInRouter(
-      <WorkflowRunStatusSection
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({
@@ -522,9 +500,8 @@ describe("WorkflowRunStatusSection", () => {
 
     await waitFor(() =>
       expect(
-        document.querySelector(
-          '[data-debug-component="WorkflowRunStatusSection"]',
-        )?.textContent,
+        document.querySelector('[data-debug-component="WorkflowRunSummary"]')
+          ?.textContent,
       ).toContain("Done"),
     );
     expect(screen.queryByText("Verified")).toBeNull();
@@ -538,31 +515,26 @@ describe("WorkflowRunStatusSection", () => {
       merge_ready: true,
     });
     renderInRouter(
-      <WorkflowRunStatusSection
-        owner="me"
-        repo="loophub"
-        state={verifiedState}
-      />,
+      <WorkflowRunSummary owner="me" repo="loophub" state={verifiedState} />,
     );
 
     await waitFor(() =>
       expect(
-        document.querySelector(
-          '[data-debug-component="WorkflowRunStatusSection"]',
-        )?.textContent,
+        document.querySelector('[data-debug-component="WorkflowRunSummary"]')
+          ?.textContent,
       ).toContain("Done"),
     );
     const done = document
-      .querySelector('[data-debug-component="WorkflowRunStatusSection"]')
+      .querySelector('[data-debug-component="WorkflowRunSummary"]')
       .querySelector('[data-workflow-stage="done"] span');
     expect(done).toBeTruthy();
     expect(done.className).toContain("text-green");
     expect(done.querySelector("svg")).toBeTruthy();
   });
 
-  it("shows only the Needs human badge while waiting for a human", async () => {
+  it("shows only the needs human marker while waiting for a human", async () => {
     renderInRouter(
-      <WorkflowRunStatusSection
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({
@@ -580,7 +552,7 @@ describe("WorkflowRunStatusSection", () => {
         })}
       />,
     );
-    expect(await screen.findByText("Needs human")).toBeTruthy();
+    expect(await screen.findByText("needs human")).toBeTruthy();
     expect(
       screen.queryByText(
         /waiting for a human instruction to its parent session/,
@@ -594,9 +566,9 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.queryByText("Open Inbox")).toBeNull();
   });
 
-  it("renders a legacy blocked run with only the Needs human badge", async () => {
+  it("renders a legacy blocked run with only the needs human marker", async () => {
     renderInRouter(
-      <WorkflowRunStatusSection
+      <WorkflowRunSummary
         owner="me"
         repo="loophub"
         state={state({
@@ -613,7 +585,7 @@ describe("WorkflowRunStatusSection", () => {
         })}
       />,
     );
-    expect(await screen.findByText("Needs human")).toBeTruthy();
+    expect(await screen.findByText("needs human")).toBeTruthy();
     expect(
       screen.queryByText(/escalated to a human and is no longer running/),
     ).toBeNull();

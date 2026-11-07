@@ -40,7 +40,7 @@ function stubIntersectionObserver() {
 const LONG_TITLE =
   "A very long pull request title that does not fit the header";
 
-function renderStickyHeader() {
+function renderStickyHeader(actions?: React.ReactNode) {
   const titleRef = createRef<HTMLDivElement>();
   const { container, unmount } = render(
     <>
@@ -50,6 +50,7 @@ function renderStickyHeader() {
         number={2034}
         title={LONG_TITLE}
         badges={[{ tone: "conflict", label: "conflict" }]}
+        actions={actions}
         titleRef={titleRef}
       />
     </>,
@@ -80,6 +81,14 @@ describe("DetailStickyHeader", () => {
 
     observer.setIntersecting(false);
     expect(bar()?.textContent).toBe(`PR #2034${LONG_TITLE}conflict`);
+  });
+
+  it("puts the page's extra actions at the right end, after the badges", () => {
+    const observer = stubIntersectionObserver();
+    const { bar } = renderStickyHeader(<button type="button">Detail</button>);
+
+    observer.setIntersecting(false);
+    expect(bar()?.lastElementChild?.textContent).toBe("Detail");
   });
 
   it("truncates the title instead of wrapping the header", () => {

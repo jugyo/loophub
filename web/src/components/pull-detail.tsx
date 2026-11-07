@@ -72,7 +72,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
-import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
+import { WorkflowRunSummary } from "@/components/workflow-run-status";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { errorMessage } from "@/lib/error-message";
 import { usePageTitle } from "@/lib/page-title";
@@ -272,6 +272,14 @@ export function PullDetail({
             number={pull.number}
             title={pull.title}
             badges={pullDetailBadges(pull)}
+            actions={
+              <WorkflowRunSection
+                owner={owner}
+                repo={repo}
+                number={number}
+                size="sm"
+              />
+            }
             titleRef={titleRef}
           />
 
@@ -432,7 +440,6 @@ export function PullDetail({
             sidebarFitsStickyRoom && "lg:sticky lg:top-5",
           )}
         >
-          <WorkflowRunSection owner={owner} repo={repo} number={number} />
           {/* GitHub PR status (#850) and the actions on the link — push (#2516), unlink (#2384).
             Renders nothing for a PR with no linked GitHub PR; fetched on demand, with loading/error
             inside the section. */}
@@ -501,53 +508,48 @@ function stickyScrollport(element: HTMLElement): HTMLElement {
   return document.documentElement;
 }
 
-// Workflow run state for this PR (#1008): renders the linked run's status / step / rework via the
-// shared section, or nothing when the PR has no run.
+// Workflow run summary for this PR (#1008): one line under the badges (`md`) and in the compact
+// sticky header (`sm`), or nothing when the PR has no run. The sticky variant also stays empty
+// while the run loads or fails — the page-top line already reports that.
 function WorkflowRunSection({
   owner,
   repo,
   number,
+  size = "md",
 }: {
   owner: string;
   repo: string;
   number: number;
+  size?: "sm" | "md";
 }) {
   const query = useWorkflowRunForPull(owner, repo, number);
   if (query.isLoading) {
-    return (
-      <section
+    return size === "md" ? (
+      <div
         data-debug-component="WorkflowRunSection"
-        className="flex flex-col gap-3"
+        className="flex items-center gap-2 text-sm text-muted-foreground"
       >
-        <h2 className="text-lg font-semibold">Workflow</h2>
-        <div className="flex items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading Workflow run…
-        </div>
-      </section>
-    );
+        <Loader2 className="size-4 animate-spin" /> Loading Workflow run…
+      </div>
+    ) : null;
   }
   if (query.isError) {
-    return (
-      <section
+    return size === "md" ? (
+      <div
         data-debug-component="WorkflowRunSection"
-        className="flex flex-col gap-3"
+        role="alert"
+        className="text-sm text-destructive"
       >
-        <h2 className="text-lg font-semibold">Workflow</h2>
-        <div
-          role="alert"
-          className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
-        >
-          Failed to load Workflow run.
-        </div>
-      </section>
-    );
+        Failed to load Workflow run.
+      </div>
+    ) : null;
   }
   return (
-    <WorkflowRunStatusSection
+    <WorkflowRunSummary
       owner={owner}
       repo={repo}
       state={query.data}
-      showDetail
+      size={size}
       observeHerdrSessions
     />
   );
@@ -603,6 +605,8 @@ function PullHeader({
           </Badge>
         ))}
       </div>
+
+      <WorkflowRunSection owner={owner} repo={repo} number={pull.number} />
     </div>
   );
 }

@@ -60,6 +60,17 @@ function currentStepLabel(state: WorkflowRunState): string {
   return displayName(state.current_step);
 }
 
+// Whether Verify holds for the current HEAD — the compact PR summary leaves this to the dialog.
+function verifyLabel(state: WorkflowRunState): string {
+  if (state.pr_merged) return "—";
+  if (state.verification_status === "verified")
+    return "Passed for the current HEAD";
+  if (state.verification_status === "stale") {
+    return "Reverify required (HEAD changed after Verify passed)";
+  }
+  return "Not verified";
+}
+
 function timestamp(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
@@ -209,6 +220,7 @@ export function WorkflowRunDetailDialog({
               label="Current step"
               value={currentStepLabel(displayState)}
             />
+            <Metadata label="Verify" value={verifyLabel(displayState)} />
             <Metadata
               label="Rework"
               value={`${state.rework_count}/${state.rework_limit}`}

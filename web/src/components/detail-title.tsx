@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { Badge as BadgeData } from "@/lib/badges";
 
@@ -50,6 +50,7 @@ export function DetailStickyHeader({
   number,
   title,
   badges,
+  actions,
   titleRef,
 }: {
   kind: "Issue" | "PR";
@@ -57,6 +58,8 @@ export function DetailStickyHeader({
   title: string;
   /** Status shown by the page itself (stateBadge / pullDetailBadges), reused verbatim. */
   badges: BadgeData[];
+  /** Extra compact content at the bar's right end, after the badges. */
+  actions?: ReactNode;
   titleRef: RefObject<HTMLDivElement | null>;
 }) {
   const visible = useScrolledPast(titleRef);
@@ -90,6 +93,7 @@ export function DetailStickyHeader({
               {b.label}
             </Badge>
           ))}
+          {actions}
         </div>
       ) : null}
     </div>

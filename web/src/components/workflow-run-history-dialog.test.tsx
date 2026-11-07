@@ -10,7 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { WorkflowRunState } from "@/api/types";
-import { WorkflowRunStatusSection } from "./workflow-run-status";
+import { WorkflowRunSummary } from "./workflow-run-status";
 
 const RUN: WorkflowRunState = {
   id: 7,
@@ -49,12 +49,7 @@ function renderSection(fetchImpl: typeof fetch, state: WorkflowRunState = RUN) {
   });
   return render(
     <QueryClientProvider client={client}>
-      <WorkflowRunStatusSection
-        owner="me"
-        repo="loophub"
-        state={state}
-        showDetail
-      />
+      <WorkflowRunSummary owner="me" repo="loophub" state={state} />
     </QueryClientProvider>,
   );
 }
@@ -149,6 +144,24 @@ describe("Workflow run detail dialog", () => {
     expect(document.activeElement).toBe(manifestTab);
     fireEvent.keyDown(manifestTab, { key: "ArrowRight" });
     expect(document.activeElement).toBe(historyTab);
+  });
+
+  it.each([
+    ["verified", "Passed for the current HEAD"],
+    ["stale", "Reverify required (HEAD changed after Verify passed)"],
+    ["unverified", "Not verified"],
+  ] as const)("shows the %s Verify state in the metadata", async (verification_status, expected) => {
+    renderSection(
+      mockRpcFetch({
+        "workflowRuns/agentCosts": () => [],
+        "workflowRuns/history": () => [],
+      }),
+      { ...RUN, current_step: "verify", verification_status },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(expected)).toBeTruthy();
   });
 
   it("shows an explicit empty state for a legacy run without a manifest", async () => {
