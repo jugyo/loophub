@@ -112,9 +112,11 @@ test("search excludes archived pull requests while retaining their index", () =>
   expect(svc.search.query("me/search-archive", "searchable")).toEqual([]);
   expect(
     D.db
-      .query("SELECT 1 FROM issue_search_grams WHERE issue_id = ? LIMIT 1")
-      .get(pull.id),
-  ).toBeTruthy();
+      .query(
+        `SELECT rowid FROM issue_search WHERE issue_search MATCH '"searchable"'`,
+      )
+      .all(),
+  ).toContainEqual({ rowid: pull.id });
 });
 
 test("search ranks whole-word and boundary matches above buried substrings", () => {
@@ -186,58 +188,50 @@ test("search breaks relevance ties by updated_at, newest first", () => {
   expect(ranked.map((r) => r.number)).toEqual([newer.number, older.number]);
 });
 
-test("search index failures roll back issue creation and updates", () => {
-  const repo = S.createRepo("me/search-atomic", "/tmp/search-atomic");
-  const issue = S.createIssue(
+test("search matches substrings, Japanese text, ASCII case, and quotes on both query paths", () => {
+  const repo = S.createRepo("me/search-text", "/tmp/search-text");
+  const ja = S.createIssue(
     repo.id,
     "issue",
-    "Stable searchable title",
+    "検索インデックスを置き換える",
     "",
     "me",
   );
-  D.db.exec(`
-    CREATE TRIGGER fail_issue_search_insert
-    BEFORE INSERT ON issue_search_grams
-    WHEN new.gram = 'fai'
-    BEGIN
-      SELECT RAISE(ABORT, 'forced search index failure');
-    END;
-  `);
-
-  expect(() =>
-    S.createIssue(repo.id, "issue", "Failure on create", "", "me"),
-  ).toThrow(/forced search index failure/);
-  expect(S.getIssue(repo.id, issue.number + 1)).toBeNull();
-
-  expect(() => S.updateIssue(issue.id, { title: "Failure on update" })).toThrow(
-    /forced search index failure/,
+  const ascii = S.createIssue(
+    repo.id,
+    "issue",
+    "Use FTS5 trigram",
+    'say "hello" here',
+    "me",
   );
-  expect(S.getIssueById(issue.id)?.title).toBe("Stable searchable title");
-  expect(svc.search.query("me/search-atomic", "stable")).toHaveLength(1);
-  expect(svc.search.query("me/search-atomic", "failure")).toEqual([]);
+  S.createIssue(repo.id, "issue", "Unrelated", "nothing", "me");
+  const numbers = (query: string) =>
+    svc.search.query("me/search-text", query).map((r) => r.number);
 
-  D.db.exec("DROP TRIGGER fail_issue_search_insert");
-  const retried = S.createIssue(repo.id, "issue", "Successful retry", "", "me");
-  expect(retried.number).toBe(issue.number + 1);
+  // Three or more characters: narrowed by the FTS5 index.
+  expect(numbers("インデックス")).toEqual([ja.number]);
+  expect(numbers("fts5 TRI")).toEqual([ascii.number]);
+  expect(numbers("rigra")).toEqual([ascii.number]);
+  expect(numbers('"hello"')).toEqual([ascii.number]);
+  expect(numbers('"hello')).toEqual([ascii.number]);
+  expect(numbers("ftsx")).toEqual([]);
+  // Fewer than three characters: scanned, same matching rules.
+  expect(numbers("検索")).toEqual([ja.number]);
+  expect(numbers("Ft")).toEqual([ascii.number]);
+  expect(numbers('"')).toEqual([ascii.number]);
 });
 
-test("search query plan uses the persistent gram index", () => {
+test("search query plan uses the FTS5 index for queries of three or more characters", () => {
   const plan = D.db
     .query(
       `EXPLAIN QUERY PLAN
-       SELECT i.kind, i.number, i.title, i.state
-       FROM issue_search_grams search
-       JOIN issues i ON i.id = search.issue_id
-       WHERE search.gram IN (?) AND i.repo_id = ?
-       GROUP BY i.id`,
+       SELECT i.id FROM issues i
+       WHERE i.repo_id = ?
+         AND i.id IN (SELECT rowid FROM issue_search WHERE issue_search MATCH ?)`,
     )
-    .all("ind", 1) as { detail: string }[];
+    .all(1, '"ind"') as { detail: string }[];
 
   expect(
-    plan.some((row) =>
-      /SEARCH search USING COVERING INDEX idx_issue_search_grams_gram_issue/i.test(
-        row.detail,
-      ),
-    ),
+    plan.some((row) => /issue_search VIRTUAL TABLE INDEX/i.test(row.detail)),
   ).toBe(true);
 });

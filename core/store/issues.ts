@@ -7,7 +7,6 @@ import {
   listHerdrPanesForResource,
   registerHerdrPane,
 } from "./herdr-panes.ts";
-import { indexIssueSearch } from "./search.ts";
 
 export const ISSUE_CREATE_CLAIM_PURPOSE = "issue-create-lifecycle";
 export const ISSUE_FILED_FROM_RELATIONSHIP = "filed-from";
@@ -105,7 +104,7 @@ function insertIssue(
   targetBranch?: string | null,
 ): IssueRow {
   const t = now();
-  const issue = db
+  return db
     .query(
       `INSERT INTO issues (repo_id, number, kind, state, title, body, target_branch, author, created_at, updated_at)
        VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?) RETURNING *`,
@@ -121,8 +120,6 @@ function insertIssue(
       t,
       t,
     ) as IssueRow;
-  indexIssueSearch(issue);
-  return issue;
 }
 
 export function createIssueWithNumber(
@@ -472,17 +469,7 @@ export function updateIssue(
   sets.push("updated_at = ?");
   params.push(now());
   params.push(id);
-  const updatesSearch = fields.title !== undefined || fields.body !== undefined;
-  const apply = () => {
-    db.run(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?`, params);
-    if (updatesSearch) {
-      const issue = getIssueById(id);
-      if (issue) indexIssueSearch(issue);
-    }
-  };
-  // A title/body edit also rewrites the search index, so the row and its index move together.
-  if (updatesSearch) db.transaction(apply);
-  else apply();
+  db.run(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?`, params);
 }
 
 export function getIssueById(id: number): IssueRow | null {

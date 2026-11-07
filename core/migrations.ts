@@ -175,11 +175,9 @@ export const MIGRATIONS: Migration[] = [
   `,
   ),
 
-  // Persistent Issue/PR substring index (#1400). FTS5 is not guaranteed to be present in the
-  // bundled SQLite, so store one-, two-, and three-character grams in a normal indexed table. Search uses the
-  // longest available grams to narrow candidates, then SQLite verifies the exact substring against
-  // issues. The table is created here rather than in the base schema so the backfill below stays
-  // attached to its creation.
+  // Persistent Issue/PR substring index (#1400): one-, two-, and three-character grams in a normal
+  // indexed table, written when FTS5 was not assumed to be available. Superseded by the FTS5 trigram
+  // index in 20261107062715-issue-search-fts5, which drops this table.
   {
     id: "003-create-issue-search-grams",
     run: (db) => {
@@ -1777,6 +1775,35 @@ export const MIGRATIONS: Migration[] = [
     );
     CREATE INDEX IF NOT EXISTS idx_issue_dependencies_blocker
       ON issue_dependencies(blocker_issue_id);
+      `);
+    },
+  },
+  {
+    id: "20261107062715-issue-search-fts5",
+    run: (db) => {
+      // Replace the gram table with an FTS5 trigram index over issues.title/body (external content,
+      // so the text is stored once in issues). `rebuild` indexes every existing row, including ones
+      // the gram table never covered. Triggers keep it in sync with every write path to issues.
+      db.exec(`
+    CREATE VIRTUAL TABLE issue_search USING fts5(
+      title, body,
+      content='issues', content_rowid='id',
+      tokenize='trigram case_sensitive 0'
+    );
+    INSERT INTO issue_search(issue_search) VALUES('rebuild');
+    CREATE TRIGGER issue_search_ai AFTER INSERT ON issues BEGIN
+      INSERT INTO issue_search(rowid, title, body) VALUES (new.id, new.title, new.body);
+    END;
+    CREATE TRIGGER issue_search_ad AFTER DELETE ON issues BEGIN
+      INSERT INTO issue_search(issue_search, rowid, title, body)
+        VALUES ('delete', old.id, old.title, old.body);
+    END;
+    CREATE TRIGGER issue_search_au AFTER UPDATE OF title, body ON issues BEGIN
+      INSERT INTO issue_search(issue_search, rowid, title, body)
+        VALUES ('delete', old.id, old.title, old.body);
+      INSERT INTO issue_search(rowid, title, body) VALUES (new.id, new.title, new.body);
+    END;
+    DROP TABLE IF EXISTS issue_search_grams;
       `);
     },
   },

@@ -85,6 +85,11 @@ beforeAll(async () => {
       created_by TEXT,
       created_at TEXT NOT NULL
     );
+    -- An empty gram table makes 003 skip its backfill, leaving every issue unindexed as on
+    -- installs where the gram index was missing rows.
+    CREATE TABLE issue_search_grams (
+      issue_id INTEGER NOT NULL, gram TEXT NOT NULL, PRIMARY KEY (issue_id, gram)
+    );
     INSERT INTO repos (id, full_name, name, owner, local_path, created_at)
       VALUES (1, 'me/proj', 'proj', 'me', '/tmp/proj', 't0');
     INSERT INTO issues (id, repo_id, number, kind, state, title, author, created_at, updated_at)
@@ -133,7 +138,7 @@ test("migration ID は一意で append-only の宣言順を維持する", () => 
     "002-drop-retired-issue-groups",
     "003-create-issue-search-grams",
   ]);
-  expect(ids.at(-1)).toBe("20261107010712-issue-dependencies");
+  expect(ids.at(-1)).toBe("20261107062715-issue-search-fts5");
   expect(ids).toContain("088-workflow-runs-manifest-version");
 });
 
@@ -548,6 +553,17 @@ function structure(db: import("./db.ts").Db): Record<string, unknown> {
   }
   return out;
 }
+
+test("the FTS5 search migration indexes issues the gram table never covered", async () => {
+  const { searchIssuesAndPulls } = await import("./store/search.ts");
+  expect(searchIssuesAndPulls(1, "rubric").map((r) => r.number)).toEqual([8]);
+  expect(searchIssuesAndPulls(1, "im").map((r) => r.number)).toEqual([7]);
+  expect(
+    D.db
+      .query("SELECT 1 FROM sqlite_master WHERE name = 'issue_search_grams'")
+      .get(),
+  ).toBeNull();
+});
 
 test("a database migrated from an old schema ends up structurally identical to a fresh one", () => {
   const fresh = D.openDb(join(HOME, "fresh.db"));
