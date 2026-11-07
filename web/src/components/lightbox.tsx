@@ -85,10 +85,15 @@ function clampPan(
 export function Lightbox({
   ariaLabel,
   onClose,
+  onPrevious,
+  onNext,
   children,
 }: {
   ariaLabel: string;
   onClose: () => void;
+  /** Left/Right arrow handlers; omitted when there is no previous/next item. */
+  onPrevious?: () => void;
+  onNext?: () => void;
   children: ReactNode;
 }) {
   const [scale, setScale] = useState(1);
@@ -182,6 +187,12 @@ export function Lightbox({
         if (e.key === "Escape") {
           e.stopPropagation();
           onClose();
+        } else if (e.key === "ArrowLeft" && onPrevious) {
+          e.preventDefault();
+          onPrevious();
+        } else if (e.key === "ArrowRight" && onNext) {
+          e.preventDefault();
+          onNext();
         } else if (e.key === "Tab") {
           e.preventDefault();
           closeButtonRef.current?.focus();

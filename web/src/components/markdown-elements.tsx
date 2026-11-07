@@ -364,33 +364,63 @@ function MarkdownAttachmentContent({ content }: { content: string }) {
 
 // Clicking an embedded image opens it full-size in <ImageLightbox> (#471). The opener is handed
 // down through a context so the components that render an image can stay module-level constants.
+// Embedded images also register their <img> element with the nearest provider, so Left/Right in
+// the lightbox step through the images of that one Markdown body in document order.
 const OpenLightboxContext = createContext<
-  ((src: string, alt: string) => void) | null
+  ((src: string, alt: string, image?: HTMLImageElement) => void) | null
 >(null);
+const LightboxImagesContext = createContext<Set<HTMLImageElement> | null>(null);
+
+function documentOrder(a: Node, b: Node) {
+  return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING
+    ? -1
+    : 1;
+}
 
 export function MarkdownLightboxProvider({
   children,
 }: {
   children: ReactNode;
 }) {
-  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
-    null,
-  );
+  const [images] = useState(() => new Set<HTMLImageElement>());
+  const [lightbox, setLightbox] = useState<{
+    src: string;
+    alt: string;
+    image?: HTMLImageElement;
+  } | null>(null);
   const open = useCallback(
-    (src: string, alt: string) => setLightbox({ src, alt }),
+    (src: string, alt: string, image?: HTMLImageElement) =>
+      setLightbox({ src, alt, image }),
     [],
   );
+  const stepTo = (offset: number) => {
+    const current = lightbox?.image;
+    if (!current) return undefined;
+    const ordered = [...images].sort(documentOrder);
+    const target = ordered[ordered.indexOf(current) + offset];
+    if (!target) return undefined;
+    return () =>
+      open(
+        target.getAttribute("src") ?? "",
+        target.getAttribute("alt") ?? "",
+        target,
+      );
+  };
   return (
     <>
-      <OpenLightboxContext.Provider value={open}>
-        {children}
-      </OpenLightboxContext.Provider>
+      <LightboxImagesContext.Provider value={images}>
+        <OpenLightboxContext.Provider value={open}>
+          {children}
+        </OpenLightboxContext.Provider>
+      </LightboxImagesContext.Provider>
       {lightbox && (
         <ImageLightbox
           key={lightbox.src}
           src={lightbox.src}
           alt={lightbox.alt}
           onClose={() => setLightbox(null)}
+          onPrevious={stepTo(-1)}
+          onNext={stepTo(1)}
         />
       )}
     </>
@@ -408,11 +438,23 @@ export function MarkdownImage({
   title?: string;
 }) {
   const openLightbox = useContext(OpenLightboxContext);
+  const images = useContext(LightboxImagesContext);
+  const imageRef = useRef<HTMLImageElement>(null);
   const [loadError, setLoadError] = useState(false);
-  const open = () => openLightbox?.(src, alt ?? "");
+  useEffect(() => {
+    const image = imageRef.current;
+    if (!images || !image) return;
+    images.add(image);
+    return () => {
+      images.delete(image);
+    };
+  }, [images]);
+  const open = () =>
+    openLightbox?.(src, alt ?? "", imageRef.current ?? undefined);
   return (
     <>
       <img
+        ref={imageRef}
         src={src}
         alt={alt ?? ""}
         title={title}

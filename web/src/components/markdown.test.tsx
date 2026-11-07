@@ -623,6 +623,56 @@ describe("Markdown image lightbox", () => {
     expect(screen.queryByRole("dialog")).not.toBeNull();
   });
 
+  it("steps through images of the same Markdown body with Left/Right", () => {
+    const { container } = renderWithClient(
+      <>
+        <Markdown>
+          {
+            "![a](https://example.com/a.png)\n\ntext\n\n![b](https://example.com/b.png) ![c](https://example.com/c.png)"
+          }
+        </Markdown>
+        <Markdown>{"![other](https://example.com/other.png)"}</Markdown>
+      </>,
+    );
+    const previewSrc = () =>
+      screen.getByRole("dialog").querySelector("img")?.getAttribute("src");
+    const press = (key: string) =>
+      fireEvent.keyDown(screen.getByRole("dialog"), { key });
+
+    fireEvent.click(container.querySelector('img[alt="b"]') as Element);
+    expect(previewSrc()).toBe("https://example.com/b.png");
+    press("ArrowRight");
+    expect(previewSrc()).toBe("https://example.com/c.png");
+    // Last image: stays put and does not cross into the other body.
+    press("ArrowRight");
+    expect(previewSrc()).toBe("https://example.com/c.png");
+    press("ArrowLeft");
+    press("ArrowLeft");
+    expect(previewSrc()).toBe("https://example.com/a.png");
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("a");
+    // First image: stays put and keeps the preview open.
+    press("ArrowLeft");
+    expect(previewSrc()).toBe("https://example.com/a.png");
+    press("Escape");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("ignores Left/Right when the body has a single image", () => {
+    const { container } = renderWithClient(
+      <>
+        <Markdown>{"![only](https://example.com/only.png)"}</Markdown>
+        <Markdown>{"![other](https://example.com/other.png)"}</Markdown>
+      </>,
+    );
+    fireEvent.click(container.querySelector('img[alt="only"]') as Element);
+    for (const key of ["ArrowLeft", "ArrowRight"]) {
+      fireEvent.keyDown(screen.getByRole("dialog"), { key });
+      expect(
+        screen.getByRole("dialog").querySelector("img")?.getAttribute("src"),
+      ).toBe("https://example.com/only.png");
+    }
+  });
+
   it("preserves the title attribute on embedded images", () => {
     const { container } = renderWithClient(
       <Markdown>

@@ -8,15 +8,24 @@ export function ImageLightbox({
   src,
   alt,
   onClose,
+  onPrevious,
+  onNext,
 }: {
   src: string;
   alt: string;
   onClose: () => void;
+  onPrevious?: () => void;
+  onNext?: () => void;
 }) {
   const [error, setError] = useState(false);
 
   return (
-    <Lightbox ariaLabel={alt || "Image preview"} onClose={onClose}>
+    <Lightbox
+      ariaLabel={alt || "Image preview"}
+      onClose={onClose}
+      onPrevious={onPrevious}
+      onNext={onNext}
+    >
       {error ? (
         <div className="flex max-w-[90vw] flex-col items-center gap-4 rounded bg-background p-6 text-center shadow-2xl">
           <p role="alert" className="text-destructive">
