@@ -70,7 +70,9 @@ export const terminalRelayWebSocket: Bun.WebSocketHandler<TerminalRelayData> = {
   open(ws) {
     try {
       const attach = Bun.spawn(["hc", "attach", ws.data.address], {
-        env: herdrCoreEnv(),
+        // The browser runs xterm.js; lh-web's own TERM (or none) would describe the wrong terminal,
+        // and `terminal.name` does not override an inherited TERM.
+        env: { ...herdrCoreEnv(), TERM: "xterm-256color" },
         terminal: {
           name: "xterm-256color",
           cols: ws.data.cols,
