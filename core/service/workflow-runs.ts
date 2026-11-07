@@ -21,6 +21,7 @@ import { isServiceError, ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
 import { localBranchRef, revParse } from "../git.ts";
 import { type MergeableState, resolveMergeable } from "../mergeable.ts";
+import { cachedGithubMergeable } from "../pull-conflict-events.ts";
 import { pullShaStatus } from "../pull-status-cache.ts";
 import {
   buildRuntimeFlags,
@@ -1627,11 +1628,15 @@ async function workflowRunProgress(
       latestWorkflowRunReview(prIssue.id, run.id, projection),
     ),
   });
+  // Local conflicts come from the live merge preview above. The swept conflict state is not read
+  // here: it lags a base merge by up to one sweep tick, and a turn done arriving inside that window
+  // was answered with the merge conflict already delivered, so the run never moved on (#2668).
+  // Only GitHub's verdict is information local git cannot see.
   return {
     ...progress,
     mergeConflict:
       progress.mergeConflict ||
-      S.getPullConflictState(repo.id, run.pr_number) === "conflict",
+      cachedGithubMergeable(prIssue.id) === "conflicting",
   };
 }
 

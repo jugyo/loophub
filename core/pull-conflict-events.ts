@@ -49,7 +49,7 @@ export interface ConflictSweepResult {
   emitted: number;
 }
 
-function cachedGithubMergeable(
+export function cachedGithubMergeable(
   issueId: number,
 ): "mergeable" | "conflicting" | "unknown" | null {
   const cached = S.getGithubPullStatus(issueId);

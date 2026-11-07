@@ -4122,6 +4122,113 @@ test("a turn done after the active Verify reviewed launches a fresh Verify", asy
   ).toMatchObject({ action: "launch_verify" });
 }, 30_000);
 
+// Verify passed, then the base moved into a conflict. Execute merges the base, resolves it, and
+// declares turn done within one conflict sweep tick, while the swept state still reads `conflict`.
+// That turn done must launch a fresh Verify, not repeat the merge conflict already delivered (#2668).
+test("a turn done after resolving a base conflict launches a fresh Verify", async () => {
+  const { repo, path } = freshRepo("me/workflow-base-conflict-resolved");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Base conflict",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "base-conflict-resolved-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "e7e7e7e7-e7e7-4e7e-8e7e-e7e7e7e7e7e7";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+  const headA = commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  const verify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verify.session_id,
+      agentName: verify.agent_name,
+      pointers: verify.pointers,
+      headSha: verify.head_sha,
+    },
+    parent,
+  );
+  await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    { event: "PASS", headSha: headA, body: "All criteria pass." },
+    verify.session_id,
+  );
+
+  commit(path, "impl.txt", "base\n");
+  await conflicts.sweepPullConflicts({ repoId: repo.id });
+  expect(S.getPullConflictState(repo.id, started.pr.number)).toBe("conflict");
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "deliver", delivery_reason: "merge_conflict" });
+
+  // Execute merges the base and resolves the conflict before the next sweep tick.
+  spawnSync("git", ["-C", started.worktree, "merge", "-q", "main"]);
+  writeFileSync(join(started.worktree, "impl.txt"), "v1\nbase\n");
+  gitAt(started.worktree, ["add", "impl.txt"]);
+  gitAt(started.worktree, ["commit", "-q", "--no-edit"]);
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  expect(S.getPullConflictState(repo.id, started.pr.number)).toBe("conflict");
+
+  const status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status).toMatchObject({
+    current_step: "verify",
+    merge_conflict: false,
+    turn_done_for_active_execute: true,
+  });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "launch_verify" });
+}, 30_000);
+
 test("turn done is rejected for a non-Execute session", async () => {
   const { repo } = freshRepo("me/workflow-turn");
   const issue = S.createIssue(repo.id, "issue", "Turn", "body", "me");
