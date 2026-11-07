@@ -1,6 +1,7 @@
 import { maybeNotifyAgentComment } from "../agent-comment-notifications.ts";
 import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
+import { pullCommentPermalink } from "../links.ts";
 import { commentJSON } from "../serialize.ts";
 import * as S from "../store.ts";
 import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
@@ -15,12 +16,25 @@ import {
 // ===== comments =====
 export const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
 
-function commentWire(row: S.CommentRow, actor?: string) {
+// PR conversation comments carry a permalink; issue comments do not.
+function permalinkFor(repo: S.Repo, parent: S.IssueRow, commentId: number) {
+  return parent.kind === "pull"
+    ? pullCommentPermalink(repo, parent.number, commentId)
+    : undefined;
+}
+
+function commentWire(
+  repo: S.Repo,
+  parent: S.IssueRow,
+  row: S.CommentRow,
+  actor?: string,
+) {
   return commentJSON(
     row,
     S.listCommentReactions(row.id),
     actor,
     S.getWorkflowEscalationByComment(row.id),
+    permalinkFor(repo, parent, row.id),
   );
 }
 
@@ -36,6 +50,7 @@ export const comments = {
         reactions.get(comment.id) ?? [],
         actor,
         escalations.get(comment.id),
+        permalinkFor(r, row, comment.id),
       ),
     );
   },
@@ -83,7 +98,7 @@ export const comments = {
     if (!comment || comment.issue_id !== row.id) {
       throw new ServiceError(404, "issue comment not found");
     }
-    return commentWire(S.setCommentArchived(comment.id, archived));
+    return commentWire(r, row, S.setCommentArchived(comment.id, archived));
   },
 
   createForPull(
@@ -141,7 +156,7 @@ export const comments = {
     if (!comment || comment.issue_id !== row.id) {
       throw new ServiceError(404, "PR comment not found");
     }
-    return commentWire(S.setCommentArchived(comment.id, archived));
+    return commentWire(r, row, S.setCommentArchived(comment.id, archived));
   },
 
   reactForPull(
@@ -170,7 +185,7 @@ export const comments = {
         number: row.number,
         comment_id: comment.id,
       });
-      return commentWire(comment, actor);
+      return commentWire(r, row, comment, actor);
     });
   },
 
@@ -196,7 +211,7 @@ export const comments = {
         number: row.number,
         comment_id: comment.id,
       });
-      return commentWire(comment, "me");
+      return commentWire(r, row, comment, "me");
     });
   },
 };
@@ -215,7 +230,7 @@ function createIssueComment(
       number: row.number,
       ...(sessionId ? { session_id: sessionId } : {}),
     });
-    return commentWire(m);
+    return commentWire(repo, row, m);
   });
 }
 
@@ -249,6 +264,6 @@ function createPullComment(
       body,
       source: "pr",
     });
-    return commentWire(m);
+    return commentWire(repo, row, m);
   });
 }

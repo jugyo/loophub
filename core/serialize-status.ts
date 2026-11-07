@@ -12,7 +12,7 @@ import {
   remoteUrl,
   revParse,
 } from "./git.ts";
-import { linkedRef } from "./links.ts";
+import { linkedRef, pullCommentPermalink } from "./links.ts";
 import type { MergeMode } from "./merge-mode.ts";
 import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
@@ -621,7 +621,13 @@ export async function pullJSON(
     ...(opts.withComments
       ? {
           comment_list: S.listComments(row.id).map((comment) =>
-            commentJSON(comment, commentReactions?.get(comment.id) ?? []),
+            commentJSON(
+              comment,
+              commentReactions?.get(comment.id) ?? [],
+              undefined,
+              undefined,
+              pullCommentPermalink(repo, row.number, comment.id),
+            ),
           ),
         }
       : {}),

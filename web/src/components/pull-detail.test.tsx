@@ -48,7 +48,7 @@ vi.mock("@/components/terminal-controller", () => ({
 const stickyRoomRestorers: (() => void)[] = [];
 
 import { WebConfigProvider } from "@/lib/web-config";
-import { PullDetail } from "./pull-detail";
+import { commentIdFromHash, PullDetail } from "./pull-detail";
 import { ToastProvider, ToastViewport } from "./toast";
 
 afterEach(() => {
@@ -4114,5 +4114,51 @@ describe("PullDetail — linked issue description (#2640)", () => {
     await screen.findByText("Render diff, reviews, comments.");
     expect(screen.queryByText("The issue spec body.")).toBeNull();
     expect(screen.queryByText("PR body")).toBeNull();
+  });
+});
+
+describe("PullDetail — comment permalinks", () => {
+  it("reads the comment id from a permalink fragment", () => {
+    expect(commentIdFromHash("comment-11")).toBe(11);
+    expect(commentIdFromHash("comments")).toBeNull();
+    expect(commentIdFromHash("comment-x")).toBeNull();
+  });
+
+  it("scrolls to and highlights the comment a permalink names", async () => {
+    const scrollIntoView = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    renderDetail({}, ["/#comment-11"]);
+
+    await screen.findByText("Rebased on main.");
+    const target = document.getElementById("comment-11");
+    expect(target?.dataset.highlighted).toBe("true");
+    expect(document.getElementById("comment-9")?.dataset.highlighted).toBe(
+      undefined,
+    );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView.mock.contexts[0]).toBe(target);
+  });
+
+  it("copies a PR comment's permalink from its three dots menu", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    renderDetail({
+      "comments/list": () => [
+        { ...comments[0], html_url: "/r/me/proj/pulls/30#comment-9" },
+      ],
+    });
+
+    fireEvent.pointerDown(
+      await screen.findByLabelText("Actions for PR comment 9"),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy link" }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/r/me/proj/pulls/30#comment-9`,
+      ),
+    );
   });
 });

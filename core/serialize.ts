@@ -1209,6 +1209,8 @@ export interface CommentWire {
   archived_at: string | null;
   /** Present when the comment is a Workflow run's human escalation. */
   escalation?: CommentEscalationWire;
+  /** Permalink to the comment on its PR screen; present on PR conversation comments. */
+  html_url?: string;
 }
 
 export interface CommentEscalationWire {
@@ -1237,6 +1239,7 @@ export function commentJSON(
   reactions: S.CommentReactionRow[] = [],
   actor?: string,
   escalation?: S.WorkflowEscalationRow | null,
+  htmlUrl?: string,
 ): CommentWire {
   const counts = new Map<string, { count: number; reacted: boolean }>();
   for (const reaction of reactions) {
@@ -1258,6 +1261,7 @@ export function commentJSON(
     })),
     archived_at: m.archived_at,
     ...(escalation ? { escalation: commentEscalationJSON(escalation) } : {}),
+    ...(htmlUrl ? { html_url: htmlUrl } : {}),
   };
 }
 

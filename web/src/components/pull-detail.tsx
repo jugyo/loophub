@@ -1444,6 +1444,8 @@ function CommentList({
   useEffect(() => {
     if (hash === "comments") sectionRef.current?.scrollIntoView();
   }, [hash]);
+  // A comment permalink (`#comment-<id>`) lands on that comment, highlighted.
+  const targetCommentId = commentIdFromHash(hash);
   const { formRef, scrollAfterPost } = useScrollToCommentForm(commentCount);
   const reaction = useReactToPullComment(owner, repo, number);
   const archive = useSetPullCommentArchived(owner, repo, number);
@@ -1518,6 +1520,25 @@ function CommentList({
     return grouped;
   }, [items, visibleCount]);
 
+  // The permalink target may sit behind "Load more"; unfold up to it, then scroll it into view once
+  // it is rendered. Scroll once per hash so later refetches do not yank the page back.
+  const scrolledHashRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (targetCommentId == null || !items) return;
+    const index = items.findIndex(
+      (item) => item.kind === "comment" && item.comment.id === targetCommentId,
+    );
+    if (index < 0) return;
+    const needed = items.length - index;
+    if (needed > visibleCount) {
+      setVisibleCount(needed);
+      return;
+    }
+    if (scrolledHashRef.current === hash) return;
+    scrolledHashRef.current = hash;
+    document.getElementById(hash)?.scrollIntoView();
+  }, [hash, targetCommentId, items, visibleCount]);
+
   // Everything the entry renderers need, collected once for the runs below.
   const itemContext = {
     owner,
@@ -1575,6 +1596,7 @@ function CommentList({
               <CommentCard
                 key={timelineItemKey(group[0])}
                 comment={group[0].comment}
+                highlighted={group[0].comment.id === targetCommentId}
                 {...itemContext}
               />
             ) : (
@@ -1648,6 +1670,7 @@ function CommentCard({
   owner,
   repo,
   comment,
+  highlighted = false,
   reaction,
   archive,
   answer,
@@ -1656,6 +1679,7 @@ function CommentCard({
   owner: string;
   repo: string;
   comment: IssueComment;
+  highlighted?: boolean;
   reaction: ReturnType<typeof useReactToPullComment>;
   archive: ReturnType<typeof useSetPullCommentArchived>;
   answer: ReturnType<typeof useAnswerPullEscalation>;
@@ -1666,6 +1690,11 @@ function CommentCard({
     <CommentActionsMenu
       label={`Actions for PR comment ${comment.id}`}
       copyMarkdown={comment.body}
+      copyLink={
+        comment.html_url
+          ? `${window.location.origin}${comment.html_url}`
+          : undefined
+      }
       archived={archived}
       busy={archive.isPending}
       onArchived={(next) =>
@@ -1772,12 +1801,14 @@ function CommentCard({
   const collapsed = archived || superseded;
   return (
     <article
+      id={`comment-${comment.id}`}
       data-debug-component="PullComment"
-      className={
-        collapsed
-          ? "rounded-md border border-dashed px-3 py-2"
-          : "rounded-md border p-3"
-      }
+      data-highlighted={highlighted || undefined}
+      className={cn(
+        "scroll-mt-11 rounded-md border",
+        collapsed ? "border-dashed px-3 py-2" : "p-3",
+        highlighted && "border-primary ring-2 ring-primary/30",
+      )}
     >
       {collapsed ? (
         <ArchivedComment
@@ -1811,6 +1842,12 @@ function CommentCard({
       )}
     </article>
   );
+}
+
+/** The comment id a `comment-<id>` permalink fragment names, or null for any other hash. */
+export function commentIdFromHash(hash: string): number | null {
+  const match = /^comment-(\d+)$/.exec(hash);
+  return match ? Number(match[1]) : null;
 }
 
 // How a review's event reads in the timeline (#145): the same verdict labels the Commits section

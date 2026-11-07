@@ -28,12 +28,15 @@ async function copyText(text: string) {
 export function CommentActionsMenu({
   label,
   copyMarkdown,
+  copyLink,
   archived,
   busy,
   onArchived,
 }: {
   label: string;
   copyMarkdown?: string;
+  /** Adds a "Copy link" item that puts this URL on the clipboard. */
+  copyLink?: string;
   archived?: boolean;
   busy?: boolean;
   onArchived?: (archived: boolean) => void;
@@ -55,6 +58,11 @@ export function CommentActionsMenu({
         {copyMarkdown != null ? (
           <DropdownMenuItem onSelect={() => void copyText(copyMarkdown)}>
             Copy as Markdown
+          </DropdownMenuItem>
+        ) : null}
+        {copyLink != null ? (
+          <DropdownMenuItem onSelect={() => void copyText(copyLink)}>
+            Copy link
           </DropdownMenuItem>
         ) : null}
         {onArchived != null ? (

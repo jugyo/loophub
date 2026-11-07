@@ -522,3 +522,21 @@ test("rejects archiving a comment that belongs to another issue or to a PR", asy
     svc.comments.setArchived(repoName, prNumber, comment.id, true),
   ).toThrow(/Not Found/);
 });
+
+test("PR comments carry a permalink to their anchor on the PR screen", async () => {
+  const created = svc.comments.createHumanForPull(
+    repoName,
+    prNumber,
+    "Link me.",
+  );
+  const expected = `/r/${repoName}/pulls/${prNumber}#comment-${created.id}`;
+  expect(created.html_url).toBe(expected);
+  expect(
+    svc.comments.list(repoName, prNumber).find((c) => c.id === created.id)
+      ?.html_url,
+  ).toBe(expected);
+  const pull = await svc.pulls.get(repoName, prNumber, { withComments: true });
+  expect(pull.comment_list?.find((c) => c.id === created.id)?.html_url).toBe(
+    expected,
+  );
+});
