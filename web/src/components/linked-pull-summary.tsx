@@ -572,11 +572,14 @@ export function LinkedPullSummaryRow({
   dimInactive = false,
   popoverTrigger = "row",
   workflowRunSeeded = false,
+  menu,
 }: {
   owner: string;
   repo: string;
   pull: LinkedPull;
   className?: string;
+  /** Right-edge actions menu; `IssueRow` passes one, the issue detail's linked-PR section does not. */
+  menu?: ReactNode;
   /**
    * The row's Workflow run state already arrived with the page and was seeded into its query key
    * (#112), so the tracker reads it from cache instead of fetching per row. Surfaces that fetch
@@ -687,6 +690,7 @@ export function LinkedPullSummaryRow({
             runtimeMetadata={runtimeMetadata}
             overBudget={costStopped !== null}
           />
+          {menu}
         </div>
       </div>
       {popover.open ? (

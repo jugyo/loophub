@@ -13,10 +13,11 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
-import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
+import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type {
   GlobalSettings,
   HerdrSessions,
@@ -266,8 +267,14 @@ describe("IssueRow", () => {
     const count = await screen.findByLabelText("3 comments");
     expect(count.textContent).toBe("3");
     expect(count.querySelector("svg")).toBeTruthy();
-    // Match the linked-PR comment layout by keeping the count at the row's right edge.
-    expect(count.nextElementSibling).toBeNull();
+    // Match the linked-PR comment layout: the count closes the row's metadata, and only the
+    // actions menu (#2629) sits to its right.
+    expect(
+      count.nextElementSibling?.querySelector(
+        '[aria-label="Actions for issue #1"]',
+      ),
+    ).toBeTruthy();
+    expect(count.nextElementSibling?.nextElementSibling).toBeNull();
   });
 
   // The count is the way in to what was said — same link shape as the linked-PR CommentCount (#2394).
@@ -1312,5 +1319,189 @@ describe("linked PR agent metadata (#842)", () => {
     expect(
       await screen.findByText("OpenCode · opencode/big-pickle"),
     ).toBeTruthy();
+  });
+});
+
+function mergeModeView(effective: "merge" | "github_pr") {
+  return {
+    setting: null,
+    has_github_remote: effective === "github_pr",
+    effective,
+  };
+}
+
+// #2629: the right-edge row menus run the basic state changes without opening the detail page.
+describe("IssueRow actions menu", () => {
+  async function openMenu(name: string) {
+    fireEvent.pointerDown(await screen.findByRole("button", { name }), {
+      button: 0,
+      ctrlKey: false,
+    });
+  }
+
+  it("closes an open issue", async () => {
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />, {
+      "issues/update": () => makeIssue({ state: "closed" }),
+    });
+    await openMenu("Actions for issue #1");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Close" }));
+    await waitFor(() =>
+      expect(rpcCall("issues/update")?.params).toMatchObject({
+        repo: "me/proj",
+        number: 1,
+        state: "closed",
+      }),
+    );
+  });
+
+  it("reopens a closed issue", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ state: "closed" })}
+      />,
+      { "issues/update": () => makeIssue() },
+    );
+    await openMenu("Actions for issue #1");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Reopen" }));
+    await waitFor(() =>
+      expect(rpcCall("issues/update")?.params).toMatchObject({ state: "open" }),
+    );
+  });
+
+  it("closes, archives and merges a linked PR", async () => {
+    const pull = makePull({ number: 10, mergeable_state: "clean" });
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [pull] })}
+      />,
+      {
+        "pulls/update": () => ({}),
+        "pulls/archive": () => ({}),
+        "pulls/merge": () => ({}),
+        "repos/mergeMode": () => mergeModeView("merge"),
+      },
+    );
+    for (const [item, method] of [
+      ["Close", "pulls/update"],
+      ["Archive", "pulls/archive"],
+      ["Merge", "pulls/merge"],
+    ] as const) {
+      await openMenu("Actions for PR #10");
+      // Merge stays disabled until the repo's merge mode has loaded.
+      const menuItem = await screen.findByRole("menuitem", { name: item });
+      await waitFor(() =>
+        expect(menuItem.getAttribute("data-disabled")).toBeNull(),
+      );
+      fireEvent.click(menuItem);
+      await waitFor(() =>
+        expect(rpcCall(method)?.params).toMatchObject({
+          repo: "me/proj",
+          number: 10,
+        }),
+      );
+    }
+    expect(rpcCall("pulls/update")?.params).toMatchObject({ state: "closed" });
+  });
+
+  it("disables Close and Merge on a merged PR", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({
+              merged: true,
+              state: "closed",
+              mergeable_state: "clean",
+            }),
+          ],
+        })}
+      />,
+    );
+    await openMenu("Actions for PR #10");
+    for (const name of ["Close", "Merge"]) {
+      expect(
+        (await screen.findByRole("menuitem", { name })).getAttribute(
+          "data-disabled",
+        ),
+      ).not.toBeNull();
+    }
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Archive" })
+        .getAttribute("data-disabled"),
+    ).toBeNull();
+  });
+
+  it("offers no Merge in a repo whose PRs go through the GitHub export", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ mergeable_state: "clean" })],
+        })}
+      />,
+      { "repos/mergeMode": () => mergeModeView("github_pr") },
+    );
+    await openMenu("Actions for PR #10");
+    await screen.findByRole("menuitem", { name: "Archive" });
+    await waitFor(() =>
+      expect(screen.queryByRole("menuitem", { name: "Merge" })).toBeNull(),
+    );
+  });
+
+  it("disables Merge on an open PR that is not merge-ready", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ mergeable_state: "blocked" })],
+        })}
+      />,
+    );
+    await openMenu("Actions for PR #10");
+    expect(
+      (await screen.findByRole("menuitem", { name: "Merge" })).getAttribute(
+        "data-disabled",
+      ),
+    ).not.toBeNull();
+  });
+
+  it("shows a failed action through the error UI", async () => {
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />, {
+      "issues/update": () => {
+        throw new RpcFault(409, "nope");
+      },
+    });
+    await openMenu("Actions for issue #1");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Close" }));
+    await waitFor(() => expect(showError).toHaveBeenCalled());
+    expect(String(showError.mock.calls[0][0])).toContain("nope");
+  });
+
+  it("does not trigger the row's own click handlers", async () => {
+    const rowClick = vi.fn();
+    renderInRouter(
+      <div onClick={rowClick}>
+        <IssueRow
+          owner="me"
+          repo="proj"
+          issue={makeIssue({ linked_pull_requests: [makePull()] })}
+        />
+      </div>,
+      { "issues/update": () => makeIssue({ state: "closed" }) },
+    );
+    await openMenu("Actions for issue #1");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actions for PR #10" }));
+    await waitFor(() => expect(rpcCall("issues/update")).toBeDefined());
+    expect(rowClick).not.toHaveBeenCalled();
   });
 });

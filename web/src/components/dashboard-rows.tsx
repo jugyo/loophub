@@ -15,6 +15,7 @@ import { OpenIssueHerdrButton } from "@/components/issue-herdr-section";
 import { IssueWorkspaceChip } from "@/components/issue-workspace-chip";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
+import { IssueRowMenu, PullRowMenu } from "@/components/row-action-menu";
 import { StartWorkflowControls } from "@/components/start-workflow-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -393,6 +394,7 @@ export function IssueRow({
           number={issue.number}
           count={issue.comments}
         />
+        <IssueRowMenu owner={owner} repo={repo} issue={issue} />
       </div>
       {pulls.length > 0 ? (
         // Own column so the gap between stacked PRs is a touch wider than the
@@ -408,6 +410,7 @@ export function IssueRow({
               dimInactive
               popoverTrigger="pull-link"
               workflowRunSeeded={workflowRunSeeded}
+              menu={<PullRowMenu owner={owner} repo={repo} pull={pull} />}
             />
           ))}
         </div>
