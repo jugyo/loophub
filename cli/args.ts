@@ -47,6 +47,7 @@ export type Flags = {
   base?: string;
   issue?: string;
   parent?: string;
+  "blocked-by"?: string;
   method?: string;
   params?: string;
   comments?: string;
@@ -176,6 +177,7 @@ const { values, positionals } = parseArgs({
     base: { type: "string" },
     issue: { type: "string" },
     parent: { type: "string" },
+    "blocked-by": { type: "string" },
     method: { type: "string" },
     params: { type: "string" },
     comments: { type: "string" },

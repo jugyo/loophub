@@ -217,6 +217,8 @@ function IssueHeader({
         </div>
       ) : null}
 
+      <IssueBlockedBy owner={owner} repo={repo} issue={issue} />
+
       <div className="overflow-hidden rounded-md border bg-muted/30">
         {issue.body ? (
           <Markdown owner={owner} repo={repo} className="p-4">
@@ -253,6 +255,47 @@ function IssueHeader({
           <StartWorkflowControls owner={owner} repo={repo} issue={issue} />
         ) : null}
       </div>
+    </div>
+  );
+}
+
+// #2644: the issues this one is blocked by. "Blocked" while any of them is still open.
+function IssueBlockedBy({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  const blockers = issue.blocked_by ?? [];
+  if (blockers.length === 0) return null;
+  const blocked = blockers.some((b) => b.state === "open");
+  return (
+    <div
+      data-debug-component="IssueBlockedBy"
+      className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+    >
+      <Badge tone={blocked ? "review-rereview" : "closed"}>
+        {blocked ? "Blocked" : "Unblocked"}
+      </Badge>
+      <span>Blocked by</span>
+      {blockers.map((b) => (
+        <Link
+          key={b.number}
+          to="/r/$owner/$repo/issues/$number"
+          params={{ owner, repo, number: String(b.number) }}
+          className={
+            b.state === "closed"
+              ? "line-through hover:underline"
+              : "hover:underline"
+          }
+          title={`${b.title} (${b.state})`}
+        >
+          #{b.number}
+        </Link>
+      ))}
     </div>
   );
 }

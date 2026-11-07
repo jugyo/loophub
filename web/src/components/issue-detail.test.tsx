@@ -415,6 +415,20 @@ describe("IssueDetail", () => {
     expect(chip.getAttribute("title")).toBe("Target branch: feature/foo-bar");
   });
 
+  it("shows the blocked-by issues and whether one is still open (#2644)", async () => {
+    renderDetail(() => ({
+      ...issue,
+      blocked_by: [
+        { number: 3, title: "first", state: "closed" },
+        { number: 4, title: "second", state: "open" },
+      ],
+    }));
+
+    expect(await screen.findByText("Blocked")).toBeTruthy();
+    expect(screen.getByText("#3").getAttribute("title")).toBe("first (closed)");
+    expect(screen.getByText("#4").getAttribute("title")).toBe("second (open)");
+  });
+
   // #2129: a human post reads as @human whatever actor name it was stored under; agent posts keep
   // their own author.
   it("shows a human comment as @human and leaves an agent comment alone", async () => {

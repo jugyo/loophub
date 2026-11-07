@@ -406,6 +406,14 @@ export interface IssueRefSummaryWire {
   state: "open" | "closed";
 }
 
+export function issueRefSummaryJSON(row: {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+}): IssueRefSummaryWire {
+  return { number: row.number, title: row.title, state: row.state };
+}
+
 export interface IssueWire {
   number: number;
   state: "open" | "closed";
@@ -443,6 +451,8 @@ export interface IssueWire {
   ancestors?: IssueRefSummaryWire[];
   sub_issues?: IssueWire[];
   sub_issues_truncated?: boolean;
+  // Issues this one is blocked by, with their current state (#2644). Detail response only.
+  blocked_by?: IssueRefSummaryWire[];
 }
 
 /** One repository group in the cross-repository home-page dashboard. */

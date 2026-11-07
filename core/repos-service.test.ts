@@ -669,3 +669,76 @@ test("autoStartWorkflow starts only issues opened while on, and notifies on fail
   expect(notification?.kind).toBe("human_attention");
   expect(notification?.body).toMatch(/lh-worker/);
 });
+
+test("blocked-by dependencies gate auto-start until the last open blocker closes (#2644)", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/auto-start-deps" });
+  const name = "me/auto-start-deps";
+  const repo = S.getRepo("me", "auto-start-deps");
+  if (!repo) throw new Error("repo missing");
+  const workflow = svc.workflows.create({ name: "auto-start-deps-flow" });
+  S.setRepoAutoStartWorkflow(repo.id, workflow.id, "2000-01-01T00:00:00Z");
+  const a = svc.issues.create(name, { title: "blocker a" });
+  const b = svc.issues.create(name, { title: "blocker b" });
+  const c = svc.issues.create(name, {
+    title: "blocked",
+    blocked_by: [a.number, b.number],
+  });
+
+  expect(svc.issues.listBlockers(name, c.number).map((x) => x.number)).toEqual([
+    a.number,
+    b.number,
+  ]);
+  expect(() => svc.issues.addBlocker(name, c.number, c.number)).toThrow(
+    /itself/,
+  );
+  expect(() => svc.issues.addBlocker(name, c.number, 9999)).toThrow(
+    /not found/,
+  );
+  expect(() => svc.issues.removeBlocker(name, c.number, 9999)).toThrow(
+    /not found/,
+  );
+  expect(
+    svc.issues.removeBlocker(name, c.number, b.number).map((x) => x.number),
+  ).toEqual([a.number]);
+  expect(
+    svc.issues.addBlocker(name, c.number, b.number).map((x) => x.number),
+  ).toEqual([a.number, b.number]);
+
+  // Opened with open blockers: not started.
+  expect(
+    await svc.terminal.autoStartWorkflow({
+      repoId: repo.id,
+      issueNumber: c.number,
+      openedAt: "2026-07-01T00:00:00Z",
+    }),
+  ).toBe("skipped");
+  const detail = await svc.issues.get(name, c.number);
+  expect(detail.blocked_by).toEqual([
+    { number: a.number, title: "blocker a", state: "open" },
+    { number: b.number, title: "blocker b", state: "open" },
+  ]);
+
+  // Closing one of two blockers keeps it blocked.
+  svc.issues.update(name, a.number, { state: "closed" });
+  expect(
+    await svc.terminal.autoStartUnblockedWorkflows({
+      repoId: repo.id,
+      closedIssueNumber: a.number,
+    }),
+  ).toEqual([{ issueNumber: c.number, outcome: "skipped" }]);
+
+  // Closing the last one starts it. No lh-worker is registered, so the launch fails and is
+  // recorded in the Notification Center, like any other auto-start failure.
+  svc.issues.update(name, b.number, { state: "closed" });
+  expect(
+    await svc.terminal.autoStartUnblockedWorkflows({
+      repoId: repo.id,
+      closedIssueNumber: b.number,
+    }),
+  ).toEqual([{ issueNumber: c.number, outcome: "failed" }]);
+  const notification = (await svc.notifications.list()).find(
+    (n: { title: string }) =>
+      n.title === `Auto-start workflow failed for #${c.number}`,
+  );
+  expect(notification?.kind).toBe("human_attention");
+});

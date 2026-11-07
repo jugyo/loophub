@@ -498,6 +498,8 @@ async function launchWorkflowCreateHerdr(
 export type HerdrRepoSessions = HerdrRepoSessionsWire;
 export type HerdrSessionsResult = HerdrSessionsWire;
 
+type AutoStartOutcome = "started" | "skipped" | "failed";
+
 // Resolves the on-disk worktree path herdr's `worktree open` should target for a launch (#551),
 // so herdr's own workspace/worktree metadata is pinned to the PR's real worktree instead of a
 // plain tab the launched command cd's into. Best-effort: returns null when the workflow has no
@@ -978,14 +980,38 @@ export const terminal = {
     return assertTerminalAttachable(input, { role: "issue-create" });
   },
 
+  // #2644: lh-worker calls this for every issue.closed event. Each open issue blocked by the closed
+  // one goes through autoStartWorkflow, which starts it only once none of its blockers is open.
+  async autoStartUnblockedWorkflows(input: {
+    repoId: number;
+    closedIssueNumber: number;
+  }): Promise<{ issueNumber: number; outcome: AutoStartOutcome }[]> {
+    const closed = S.getIssue(input.repoId, input.closedIssueNumber);
+    if (!closed) return [];
+    const results: { issueNumber: number; outcome: AutoStartOutcome }[] = [];
+    for (const dependent of S.listIssueDependents(closed.id)) {
+      if (dependent.state !== "open") continue;
+      results.push({
+        issueNumber: dependent.number,
+        outcome: await this.autoStartWorkflow({
+          repoId: input.repoId,
+          issueNumber: dependent.number,
+          openedAt: dependent.created_at,
+        }),
+      });
+    }
+    return results;
+  },
+
   // #2626: lh-worker calls this for every issue.opened event. While the repo's auto-start is on and
   // the issue was opened at or after it was turned on, start the saved workflow exactly like Start
   // workflow does. A failure is not retried; it becomes a Notification Center entry on the issue.
+  // #2644: an issue with an open blocker, or one already being worked on, is skipped.
   async autoStartWorkflow(input: {
     repoId: number;
     issueNumber: number;
     openedAt: string;
-  }): Promise<"started" | "skipped" | "failed"> {
+  }): Promise<AutoStartOutcome> {
     const r = S.getRepoById(input.repoId);
     const workflowId = r?.auto_start_workflow_id ?? null;
     const since = r?.auto_start_workflow_since ?? null;
@@ -993,6 +1019,9 @@ export const terminal = {
       return "skipped";
     const issue = S.getIssue(r.id, input.issueNumber);
     if (issue?.state !== "open") return "skipped";
+    if (S.listIssueBlockers(issue.id).some((b) => b.state === "open"))
+      return "skipped";
+    if (S.openPullLinkedToIssue(issue.id)) return "skipped";
     try {
       await this.launch({
         repo: r.full_name,

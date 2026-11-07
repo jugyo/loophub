@@ -39,6 +39,7 @@ import {
   githubPullJSON,
   herdrPaneJSON,
   issueJSON,
+  issueRefSummaryJSON,
   labelJSON,
   linkedIssueSummary,
   pullWorkDuration,
@@ -512,6 +513,7 @@ export async function issueDetailJSON(
       child.depth = (out.depth ?? 1) + 1;
     }
     out.sub_issues_truncated = children.length > S.MAX_ISSUE_DETAIL_SUB_ISSUES;
+    out.blocked_by = S.listIssueBlockers(row.id).map(issueRefSummaryJSON);
   }
   return out;
 }

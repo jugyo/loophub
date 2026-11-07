@@ -198,6 +198,18 @@ async function dispatchEventOperation(
     }
   }
 
+  if (row.type === "issue.closed" && number !== undefined) {
+    const results = await terminal.autoStartUnblockedWorkflows({
+      repoId: repo.id,
+      closedIssueNumber: number,
+    });
+    for (const result of results)
+      if (result.outcome === "failed")
+        workerLog.error(
+          `lh-worker: workflow auto-start failed for ${repo.full_name}#${result.issueNumber} (event ${row.id})`,
+        );
+  }
+
   if (row.type === "issue.opened" && number !== undefined) {
     const outcome = await terminal.autoStartWorkflow({
       repoId: repo.id,

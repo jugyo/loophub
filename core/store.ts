@@ -9,6 +9,7 @@ export * from "./store/herdr-core-terminals.ts";
 export * from "./store/herdr-panes.ts";
 export * from "./store/herdr-snapshots.ts";
 export * from "./store/instance-settings.ts";
+export * from "./store/issue-dependencies.ts";
 export * from "./store/issues.ts";
 export * from "./store/labels.ts";
 export * from "./store/notifications.ts";

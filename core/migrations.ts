@@ -1763,6 +1763,23 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    id: "20261107010712-issue-dependencies",
+    run: (db) => {
+      // #2644: "issue_id is blocked by blocker_issue_id", both issues in the same repo. Independent
+      // of the sub-issue hierarchy. Cascades so deleting either issue drops the edge.
+      db.exec(`
+    CREATE TABLE IF NOT EXISTS issue_dependencies (
+      issue_id         INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      blocker_issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      created_at       TEXT NOT NULL,
+      PRIMARY KEY (issue_id, blocker_issue_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_issue_dependencies_blocker
+      ON issue_dependencies(blocker_issue_id);
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

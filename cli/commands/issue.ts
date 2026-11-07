@@ -146,6 +146,9 @@ export async function run(): Promise<void> {
         const pr = i.linked_pull_request;
         line += `\nlinked PR #${pr.number} (${pr.merged ? "merged" : pr.state})`;
       }
+      if (i.blocked_by?.length) {
+        line += `\nBlocked by: ${i.blocked_by.map((b: any) => `#${b.number} [${b.state}]`).join(", ")}`;
+      }
       if (hierarchy.parents.length > 0) {
         line += `\nParent: ${hierarchy.parents.map((parent) => `#${parent.number}`).join(" › ")}`;
       }
@@ -207,6 +210,31 @@ export async function run(): Promise<void> {
       fail(
         "usage: lh issue sub list <parent> | add <parent> <child> | remove <child> | reorder <parent> --order <child,...>",
       );
+    }
+  } else if (sub === "dep") {
+    // #2644: "blocked by" dependencies between issues of this repo, independent of sub-issues.
+    const action = rest[0];
+    const number = Number(rest[1]);
+    const blocker = Number(rest[2]);
+    let blockers: any[];
+    if (action === "list" && rest[1]) {
+      blockers = await runOp(() => s.issues.listBlockers(repo, number));
+    } else if ((action === "add" || action === "remove") && rest[2]) {
+      blockers = await runOp(async () =>
+        action === "add"
+          ? s.issues.addBlocker(repo, number, blocker, await writeSession())
+          : s.issues.removeBlocker(repo, number, blocker, await writeSession()),
+      );
+    } else {
+      fail(
+        "usage: lh issue dep list <issue> | add <issue> <blocker> | remove <issue> <blocker>",
+      );
+    }
+    out(blockers);
+    if (!flags.json) {
+      blockers.forEach((b) => {
+        console.log(`#${b.number}\t${b.state}\t${b.title}`);
+      });
     }
   } else if (sub === "new") {
     // `lh issue new` files an issue *with an AI session* (#299): it launches the configured
@@ -350,6 +378,13 @@ export async function run(): Promise<void> {
     if (parent !== undefined && (!Number.isInteger(parent) || parent < 1)) {
       fail("--parent requires a positive issue number");
     }
+    const blockedBy = (flags["blocked-by"] ?? "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .map(Number);
+    if (blockedBy.some((n) => !Number.isInteger(n) || n < 1))
+      fail("--blocked-by requires positive issue numbers");
     const i = await runOp(async () =>
       s.issues.create(
         repo,
@@ -359,6 +394,7 @@ export async function run(): Promise<void> {
           labels,
           acceptance_criteria: acceptanceCriteria,
           parent,
+          blocked_by: blockedBy,
           workspace: flags.workspace,
           target_branch:
             flags.workspace === undefined ? flags["target-branch"] : undefined,

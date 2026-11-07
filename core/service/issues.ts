@@ -19,8 +19,10 @@ import {
   githubIssueJSON,
   herdrPaneJSON,
   type IssueRefKindWire,
+  type IssueRefSummaryWire,
   issueJSON,
   issueRefKindJSON,
+  issueRefSummaryJSON,
   labelJSON,
   relatedSessionsJSON,
 } from "../serialize.ts";
@@ -41,6 +43,20 @@ import {
 } from "./shared.ts";
 
 const ISSUE_LIST_LOOKAHEAD_MAX = MAX_LIST_PER_PAGE + 1;
+
+// #2644: a blocker must be another issue (not a pull) in the same repo.
+function blockerOr422(
+  repo: S.Repo,
+  issue: S.IssueRow,
+  blocker: number,
+): S.IssueRow {
+  const row = S.getIssue(repo.id, blocker);
+  if (row?.kind !== "issue")
+    throw new ServiceError(422, `blocked-by issue #${blocker} not found`);
+  if (row.id === issue.id)
+    throw new ServiceError(422, "an issue cannot be blocked by itself");
+  return row;
+}
 
 export interface CurrentHerdrPaneContext {
   sessionName: string;
@@ -416,6 +432,7 @@ export const issues = {
       target_branch?: string | null;
       acceptance_criteria?: string[];
       parent?: number;
+      blocked_by?: number[];
     },
     sessionId?: string | null,
     currentPane?: CurrentHerdrPaneContext | null,
@@ -479,6 +496,8 @@ export const issues = {
         S.setIssueParent(issue.id, parent.id, S.nextSubIssueOrdinal(parent.id));
       }
       if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
+      for (const blocker of input.blocked_by ?? [])
+        S.addIssueDependency(issue.id, blockerOr422(r, issue, blocker).id);
       // Structured acceptance criteria (#1894): appended in given order, blanks dropped. Each gets a
       // stable id at insert; the markdown `## Acceptance criteria` section is never parsed.
       for (const text of input.acceptance_criteria ?? []) {
@@ -680,6 +699,47 @@ export const issues = {
         );
       }
       return issueJSON(S.getIssue(r.id, row.number)!, r);
+    });
+  },
+
+  // #2644: "blocked by" dependencies. The list is the issue's blockers with their current state.
+  listBlockers(name: string, number: number): IssueRefSummaryWire[] {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "issue");
+    return S.listIssueBlockers(row.id).map(issueRefSummaryJSON);
+  },
+
+  addBlocker(
+    name: string,
+    number: number,
+    blocker: number,
+    sessionId?: string | null,
+  ): IssueRefSummaryWire[] {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "issue");
+    const actor = actorFor(sessionId);
+    return db.transaction(() => {
+      S.addIssueDependency(row.id, blockerOr422(r, row, blocker).id);
+      S.emitEvent(r.id, "issue.updated", actor, { number: row.number });
+      return S.listIssueBlockers(row.id).map(issueRefSummaryJSON);
+    });
+  },
+
+  removeBlocker(
+    name: string,
+    number: number,
+    blocker: number,
+    sessionId?: string | null,
+  ): IssueRefSummaryWire[] {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "issue");
+    const actor = actorFor(sessionId);
+    return db.transaction(() => {
+      S.removeIssueDependency(row.id, blockerOr422(r, row, blocker).id);
+      S.emitEvent(r.id, "issue.updated", actor, { number: row.number });
+      return S.listIssueBlockers(row.id).map(issueRefSummaryJSON);
     });
   },
 
