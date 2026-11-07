@@ -16,7 +16,7 @@
 // It sits at z-[70], above the z-[60] notification stack: a lightbox is a brief full-screen look at
 // one piece of content, so notifications wait behind it. Other modals stay at z-50, below the stack.
 
-import { X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
@@ -91,7 +91,7 @@ export function Lightbox({
 }: {
   ariaLabel: string;
   onClose: () => void;
-  /** Left/Right arrow handlers; omitted when there is no previous/next item. */
+  /** Left/Right arrow and prev/next button handlers; omitted when there is no previous/next item. */
   onPrevious?: () => void;
   onNext?: () => void;
   children: ReactNode;
@@ -105,10 +105,6 @@ export function Lightbox({
   const dialogRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const suppressNextClickRef = useRef(false);
-  // The close button is the dialog's only focusable descendant, so Tab/Shift+Tab both trap
-  // focus on it — without this, Tab moves focus past the (non-portaled) overlay into the
-  // underlying page, after which this dialog's own Escape handler stops receiving keydowns.
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const backdropDismiss = useBackdropDismiss(onClose);
 
   useEffect(() => {
@@ -194,13 +190,22 @@ export function Lightbox({
           e.preventDefault();
           onNext();
         } else if (e.key === "Tab") {
+          // Cycle Tab/Shift+Tab through the dialog's buttons — without this, Tab moves focus
+          // out of the overlay into the underlying page, after which this dialog's own Escape
+          // handler stops receiving keydowns.
           e.preventDefault();
-          closeButtonRef.current?.focus();
+          const buttons = Array.from(
+            dialogRef.current?.querySelectorAll("button") ?? [],
+          );
+          const index = buttons.indexOf(
+            document.activeElement as HTMLButtonElement,
+          );
+          const step = e.shiftKey ? buttons.length - 1 : 1;
+          buttons[index === -1 ? 0 : (index + step) % buttons.length]?.focus();
         }
       }}
     >
       <Button
-        ref={closeButtonRef}
         variant="ghost"
         size="icon"
         aria-label="Close preview"
@@ -212,6 +217,34 @@ export function Lightbox({
       >
         <X className="size-5" />
       </Button>
+      {onPrevious && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Previous image"
+          className="fixed top-1/2 left-4 -translate-y-1/2 text-white hover:bg-white/10 hover:text-white"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPrevious();
+          }}
+        >
+          <ChevronLeft className="size-6" />
+        </Button>
+      )}
+      {onNext && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Next image"
+          className="fixed top-1/2 right-4 -translate-y-1/2 text-white hover:bg-white/10 hover:text-white"
+          onClick={(e) => {
+            e.stopPropagation();
+            onNext();
+          }}
+        >
+          <ChevronRight className="size-6" />
+        </Button>
+      )}
       <div
         ref={contentRef}
         className={

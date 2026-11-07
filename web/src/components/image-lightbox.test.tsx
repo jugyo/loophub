@@ -159,6 +159,75 @@ describe("ImageLightbox", () => {
     expect(document.activeElement).toBe(closeButton);
   });
 
+  it("shows previous/next buttons only for the handlers provided", () => {
+    const { rerender } = render(
+      <ImageLightbox
+        src="https://example.com/pic.png"
+        alt="a pic"
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Previous image" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next image" })).toBeNull();
+
+    rerender(
+      <ImageLightbox
+        src="https://example.com/pic.png"
+        alt="a pic"
+        onClose={vi.fn()}
+        onNext={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Previous image" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Next image" })).not.toBeNull();
+  });
+
+  it("steps with the previous/next buttons without closing", () => {
+    const onClose = vi.fn();
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    render(
+      <ImageLightbox
+        src="https://example.com/pic.png"
+        alt="a pic"
+        onClose={onClose}
+        onPrevious={onPrevious}
+        onNext={onNext}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Previous image" }));
+    expect(onPrevious).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Next image" }));
+    expect(onNext).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("cycles Tab focus through the close and previous/next buttons", () => {
+    render(
+      <ImageLightbox
+        src="https://example.com/pic.png"
+        alt="a pic"
+        onClose={vi.fn()}
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole("dialog");
+    const close = screen.getByRole("button", { name: "Close preview" });
+    const previous = screen.getByRole("button", { name: "Previous image" });
+    const next = screen.getByRole("button", { name: "Next image" });
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(close);
+    fireEvent.keyDown(close, { key: "Tab" });
+    expect(document.activeElement).toBe(previous);
+    fireEvent.keyDown(previous, { key: "Tab" });
+    expect(document.activeElement).toBe(next);
+    fireEvent.keyDown(next, { key: "Tab" });
+    expect(document.activeElement).toBe(close);
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(next);
+  });
+
   it("scales the image up on scroll-up and down on scroll-down", () => {
     render(
       <ImageLightbox

@@ -657,6 +657,29 @@ describe("Markdown image lightbox", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("steps through images of the same Markdown body with the previous/next buttons", () => {
+    const { container } = renderWithClient(
+      <>
+        <Markdown>
+          {"![a](https://example.com/a.png) ![b](https://example.com/b.png)"}
+        </Markdown>
+        <Markdown>{"![other](https://example.com/other.png)"}</Markdown>
+      </>,
+    );
+    const previewSrc = () =>
+      screen.getByRole("dialog").querySelector("img")?.getAttribute("src");
+
+    fireEvent.click(container.querySelector('img[alt="a"]') as Element);
+    // First image: only "next" is offered.
+    expect(screen.queryByRole("button", { name: "Previous image" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Next image" }));
+    expect(previewSrc()).toBe("https://example.com/b.png");
+    // Last image of this body: only "previous" is offered.
+    expect(screen.queryByRole("button", { name: "Next image" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Previous image" }));
+    expect(previewSrc()).toBe("https://example.com/a.png");
+  });
+
   it("ignores Left/Right when the body has a single image", () => {
     const { container } = renderWithClient(
       <>
