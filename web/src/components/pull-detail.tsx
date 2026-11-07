@@ -1,5 +1,5 @@
 // PR detail view (/r/:owner/:repo/pulls/:number). v1 parity: title, body,
-// state + review badges, head→base, the linked issue (bidirectional with the
+// state + review badges, base←head, the linked issue (bidirectional with the
 // issue's linked PR), the commit/review timeline, the file diff with its diff
 // feedback threads for review line comments,
 // issue comments, plus the write operations — merge (when PASSED) and close/reopen
@@ -20,14 +20,7 @@ import {
   SmilePlus,
   X,
 } from "lucide-react";
-import {
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import type {
   IssueComment,
   PullFile,
@@ -439,9 +432,6 @@ export function PullDetail({
             sidebarFitsStickyRoom && "lg:sticky lg:top-5",
           )}
         >
-          {/* #2406: where and on which branch this PR is being worked on is the first thing to
-              know when opening it, so the basics lead the sidebar. */}
-          <PullInfoSection owner={owner} repo={repo} pull={pull} />
           <WorkflowRunSection owner={owner} repo={repo} number={number} />
           {/* GitHub PR status (#850) and the actions on the link — push (#2516), unlink (#2384).
             Renders nothing for a PR with no linked GitHub PR; fetched on demand, with loading/error
@@ -566,8 +556,8 @@ function WorkflowRunSection({
 // Which PR this is and where it stands: the title and the status badges, nothing else. It sits
 // above the section tabs (#59) — the tabs navigate what is being said about the PR, not the
 // identity of the PR itself — and is what the Overview tab returns to, so the anchor sits here
-// rather than on the description below the bar. Authorship, the head→base pair and the linked
-// issue used to repeat here; they now live once, in the sidebar's PR details.
+// rather than on the description below the bar. The worktree and the branch pair live once, in the
+// block under the body card.
 function PullHeader({
   owner,
   repo,
@@ -893,6 +883,7 @@ function PullBody({
         pull={pull}
         reviews={reviews}
       />
+      <PullInfoSection pull={pull} />
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         {/* #2538: a partial PASS opens the merge gate like a full one, so the person about to
@@ -985,126 +976,69 @@ function PullBody({
   );
 }
 
-// One labeled row of the PR details section: the label above its value, so a long value (a worktree
-// path, a branch name) gets the sidebar's full width instead of sharing a line with its label.
-function PullInfoRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 min-w-0">{children}</dd>
-    </div>
-  );
+// The common home-directory prefixes, shortened to `~` for display. The browser does not know the
+// server's home directory, so this matches the common macOS/Linux home layouts by shape. Exposing
+// the server home on the wire would be needed to cover others.
+const HOME_PREFIX = /^(?:\/Users\/[^/]+|\/home\/[^/]+|\/root)(?=\/|$)/;
+
+function abbreviateHome(path: string): string {
+  return path.replace(HOME_PREFIX, "~");
 }
 
-// The PR's basics at the top of the sidebar (#2406, slimmed by #2435): worktree path, the
-// head→base branch pair, the linked issue, and who opened it when (#59 — the header above the
-// section tabs is down to the title and its status, so this is now the one place these live).
-// Every value comes from the PR itself, so the section never loads or fails on its own.
-function PullInfoSection({
-  owner,
-  repo,
-  pull,
-}: {
-  owner: string;
-  repo: string;
-  pull: PullRequest;
-}) {
-  const linked = pull.linked_issue;
-  const isWorkflowAuthor = /^Workflow #\d+\b/.test(pull.user.login);
+// Where and on which branch this PR is worked on (#2406), as one band directly under the body card:
+// the worktree (home shortened to `~`, full path in the tooltip and the copy) and the base ← head
+// branch pair. Every value comes from the PR itself, so the block never loads or fails on its own.
+function PullInfoSection({ pull }: { pull: PullRequest }) {
   return (
-    <section
+    <dl
       data-debug-component="PullInfoSection"
-      className="flex flex-col gap-3"
+      className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border bg-muted/50 px-3 py-2 text-sm"
     >
-      <h2 className="text-lg font-semibold">PR details</h2>
-      <dl className="flex flex-col gap-3 rounded-md border p-3 text-sm">
-        <PullInfoRow label="Worktree">
+      <div className="flex min-w-0 max-w-full items-center gap-1.5">
+        <dt className="shrink-0 text-xs text-muted-foreground">Worktree</dt>
+        <dd className="flex min-w-0 items-center gap-1">
           {pull.worktree_path ? (
-            <div className="flex items-start gap-1">
-              <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
-                {pull.worktree_path}
+            <>
+              <code
+                className="min-w-0 break-all rounded bg-background px-1.5 py-0.5 text-xs"
+                title={pull.worktree_path}
+              >
+                {abbreviateHome(pull.worktree_path)}
               </code>
               <CopyButton
                 value={pull.worktree_path}
                 label="Copy worktree path"
                 className="size-6"
               />
-            </div>
+            </>
           ) : (
             <span className="text-muted-foreground">Unavailable</span>
           )}
-        </PullInfoRow>
-        <PullInfoRow label="Branch">
-          <div className="flex min-w-0 flex-wrap items-start gap-x-1 gap-y-1">
-            <div className="flex min-w-0 max-w-full items-start gap-1">
-              <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
-                {pull.head.ref}
-              </code>
-              <CopyButton
-                value={pull.head.ref}
-                label="Copy head branch"
-                className="size-6"
-              />
-            </div>
-            <span className="shrink-0 self-center text-muted-foreground">
-              →
-            </span>
-            {/* The base is copyable too (#1908), symmetrically with the head — the header pair
-                that used to carry both copy actions is gone. */}
-            <div className="flex min-w-0 max-w-full items-start gap-1">
-              <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
-                {pull.base.ref}
-              </code>
-              <CopyButton
-                value={pull.base.ref}
-                label="Copy base branch"
-                className="size-6"
-              />
-            </div>
-          </div>
-        </PullInfoRow>
-        {linked ? (
-          <PullInfoRow label="Linked issue">
-            {/* A long issue title must not widen the sidebar, so it truncates on one line and keeps
-                its full text in the tooltip. */}
-            <div className="flex min-w-0 items-baseline gap-1.5">
-              <Link
-                to="/r/$owner/$repo/issues/$number"
-                params={{ owner, repo, number: String(linked.number) }}
-                className="shrink-0 font-medium hover:underline"
-              >
-                #{linked.number}
-              </Link>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                ({linked.state})
-              </span>
-              <span className="min-w-0 flex-1 truncate" title={linked.title}>
-                {linked.title}
-              </span>
-            </div>
-          </PullInfoRow>
-        ) : null}
-        <PullInfoRow label="Opened">
-          {/* A Workflow-generated author is the workflow itself, not a person to credit, so it is
-              left out the way the header used to leave it out. */}
-          <span className="text-muted-foreground">
-            {isWorkflowAuthor ? null : (
-              <>
-                <span className="text-foreground">@{pull.user.login}</span>
-                {" · "}
-              </>
-            )}
-            {relativeTime(pull.created_at)}
-          </span>
-        </PullInfoRow>
-      </dl>
-    </section>
+        </dd>
+      </div>
+      <div className="flex min-w-0 max-w-full items-center gap-1.5">
+        <dt className="shrink-0 text-xs text-muted-foreground">Branch</dt>
+        <dd className="flex min-w-0 flex-wrap items-center gap-1">
+          <code className="min-w-0 break-all rounded bg-background px-1.5 py-0.5 text-xs">
+            {pull.base.ref}
+          </code>
+          <CopyButton
+            value={pull.base.ref}
+            label="Copy base branch"
+            className="size-6"
+          />
+          <span className="shrink-0 text-muted-foreground">←</span>
+          <code className="min-w-0 break-all rounded bg-background px-1.5 py-0.5 text-xs">
+            {pull.head.ref}
+          </code>
+          <CopyButton
+            value={pull.head.ref}
+            label="Copy head branch"
+            className="size-6"
+          />
+        </dd>
+      </div>
+    </dl>
   );
 }
 
