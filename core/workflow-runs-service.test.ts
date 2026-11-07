@@ -1069,11 +1069,6 @@ test("start creates the initial PR title and body in the configured language", a
     expect(japanesePr.title).toBe(`Issue #${englishIssue.number} を実装する`);
     expect(japanesePr.body).toBe(
       [
-        "## Implementation plan",
-        "",
-        "<!-- Execute ステップはソース編集前にここを短い実装プランで更新してください。",
-        "含める内容: 変更予定ファイル/領域、再利用する既存 API/component/module、スコープ境界、更新・実行するテスト。 -->",
-        "",
         "## Evidence",
         "",
         "- **Visual evidence gate**: TODO - `UI / visual candidate: yes|no` を記録する。`yes` の場合はスクリーンショット、または具体的な `N/A` の理由を記載する。",
@@ -1107,11 +1102,6 @@ test("start creates the initial PR title and body in the configured language", a
     expect(englishPr.title).toBe(`Implement issue #${japaneseIssue.number}`);
     expect(englishPr.body).toBe(
       [
-        "## Implementation plan",
-        "",
-        "<!-- Before editing source, briefly update this section with the implementation plan.",
-        "Include: files/areas to change, existing APIs/components/modules to reuse, scope boundaries, and tests to update or run. -->",
-        "",
         "## Evidence",
         "",
         "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",

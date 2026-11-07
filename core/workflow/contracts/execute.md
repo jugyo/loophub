@@ -66,8 +66,8 @@ run makes every earlier one unanswerable.
   leave the result there before completing the turn.
 - **Additional work** — when a non-rework instruction is ordinary product or engineering work on
   the Issue / PR, make the smallest implementation against the same Issue and PR. You do not need
-  to rewrite the Issue body unless the conflict procedure above applies. Update the PR body or
-  comments when useful to the next Verify or a human.
+  to rewrite the Issue body unless the conflict procedure above applies. Add evidence to the PR
+  body or comments when useful to the next Verify or a human.
 - **Question-only or blocked on a human decision** — present the full concrete question in the pane,
   then escalate it with your current assessment to a human as described above. The escalation comment
   is the LoopHub response to this follow-up.
@@ -87,9 +87,10 @@ run makes every earlier one unanswerable.
 2. Inspect the relevant code and show a concrete implementation plan in this session.
 3. Implement a focused change that matches the surrounding naming, types, tests, and style.
 4. Get the repository's standard tests, lint, and typecheck green.
-5. Commit the implementation on the current head branch. Update both the PR title and body with
-   `lh pr update <pr> --repo {{repo}} --title <title> --body ...`, including the summary, acceptance
-   criteria, test plan, and evidence. Add attachments or comments as needed.
+5. Commit the implementation on the current head branch. Update the PR title and body with
+   `lh pr update <pr> --repo {{repo}} --title <title> --body ...`. The PR body holds only evidence —
+   screenshots, logs, test run results, and the like; do not write a summary, acceptance criteria,
+   test plan, or implementation plan there. Add attachments or comments as needed.
 6. Commit any code change, then run `lh workflow turn done --repo {{repo}} --run {{run}}` exactly once
    per turn. Running it without a commit is valid only for a confirmation or metadata-only turn that
    requires no HEAD advance.

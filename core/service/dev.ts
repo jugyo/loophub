@@ -33,32 +33,14 @@ function defaultPrBody(
   issue: number,
   language: WorkflowContractLanguage,
 ): string {
-  const [planIntro, planDetails, visualEvidence] =
+  const visualEvidence =
     language === "en"
-      ? [
-          "<!-- Before editing source, briefly update this section with the implementation plan.",
-          "Include: files/areas to change, existing APIs/components/modules to reuse, scope boundaries, and tests to update or run. -->",
-          "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",
-        ]
-      : [
-          "<!-- Execute ステップはソース編集前にここを短い実装プランで更新してください。",
-          "含める内容: 変更予定ファイル/領域、再利用する既存 API/component/module、スコープ境界、更新・実行するテスト。 -->",
-          "- **Visual evidence gate**: TODO - `UI / visual candidate: yes|no` を記録する。`yes` の場合はスクリーンショット、または具体的な `N/A` の理由を記載する。",
-        ];
+      ? "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason."
+      : "- **Visual evidence gate**: TODO - `UI / visual candidate: yes|no` を記録する。`yes` の場合はスクリーンショット、または具体的な `N/A` の理由を記載する。";
 
-  return [
-    "## Implementation plan",
-    "",
-    planIntro,
-    planDetails,
-    "",
-    "## Evidence",
-    "",
-    visualEvidence,
-    "",
-    `Closes #${issue}`,
-    "",
-  ].join("\n");
+  return ["## Evidence", "", visualEvidence, "", `Closes #${issue}`, ""].join(
+    "\n",
+  );
 }
 
 // Bring a local branch up to `origin/<branch>` before a new PR records it as its base (#601), so a
