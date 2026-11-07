@@ -1183,12 +1183,17 @@ describe("PullDetail", () => {
       "over budget",
       { cost_stopped: true, review_state: null, mergeable_state: "unknown" },
     ],
-  ] as const)("keeps %s status labels out of the page title", async (_case, override) => {
-    renderDetailWithPull(override);
+  ] as const)(
+    "keeps %s status labels out of the page title",
+    async (_case, override) => {
+      renderDetailWithPull(override);
 
-    await screen.findByText("ui2: PR detail");
-    expect(document.title).toBe("PR #30 · ui2: PR detail · me/proj · LoopHub");
-  });
+      await screen.findByText("ui2: PR detail");
+      expect(document.title).toBe(
+        "PR #30 · ui2: PR detail · me/proj · LoopHub",
+      );
+    },
+  );
 
   // #59: the header's own "Comments (n)" link is gone — the Comments tab is the same in-page
   // anchor, and the section heading below it still carries the count.
@@ -2042,6 +2047,35 @@ describe("PullDetail", () => {
         expect.objectContaining({ comment_id: 9, archived: false }),
       ),
     );
+  });
+
+  it("keeps the answered option checked right after answering an escalation", async () => {
+    let answer: string | null = null;
+    const escalation = () => ({
+      options: ["A", "B"],
+      answer,
+      answered_at: answer ? "2026-06-18T12:00:00Z" : null,
+      superseded: false,
+    });
+    renderDetail({
+      "comments/list": () => [{ ...comments[1], escalation: escalation() }],
+      "pullComments/answerEscalation": (params: { option: string }) => {
+        answer = params.option;
+        return escalation();
+      },
+    });
+
+    fireEvent.click(await screen.findByRole("radio", { name: "B" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit answer" }));
+
+    await screen.findByText("Answered");
+    const chosen = screen.getByRole("radio", { name: "B" }) as HTMLInputElement;
+    expect(chosen.checked).toBe(true);
+    // A disabled radio is greyed until its checked dot is barely visible, so the answer stays enabled.
+    expect(chosen.disabled).toBe(false);
+    expect(
+      (screen.getByRole("radio", { name: "A" }) as HTMLInputElement).checked,
+    ).toBe(false);
   });
 
   it("collapses a superseded escalation and keeps the newest one open", async () => {
@@ -3756,84 +3790,91 @@ describe("PullDetail — GitHub export action (#406)", () => {
   it.each([
     ["another PR in the same repo", { repo: "proj", number: 31 }],
     ["the same PR number in another repo", { repo: "other", number: 30 }],
-  ] as const)("does not carry the loading state onto %s", async (_case, other) => {
-    const started = { repo: "proj", number: 30 };
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "pulls/get": (params: any) => ({
-          ...pull,
-          number: params.number,
-          title: `${params.repo} PR ${params.number}`,
-          merge_mode: "github_pr",
-          github_pull: null,
-          github_pr_export_started_at: null,
+  ] as const)(
+    "does not carry the loading state onto %s",
+    async (_case, other) => {
+      const started = { repo: "proj", number: 30 };
+      vi.stubGlobal(
+        "fetch",
+        mockRpcFetch({
+          "pulls/get": (params: any) => ({
+            ...pull,
+            number: params.number,
+            title: `${params.repo} PR ${params.number}`,
+            merge_mode: "github_pr",
+            github_pull: null,
+            github_pr_export_started_at: null,
+          }),
+          "pulls/files": () => files,
+          "reviews/list": () => reviews,
+          "reviews/listComments": () => lineComments,
+          "comments/list": () => comments,
         }),
-        "pulls/files": () => files,
-        "reviews/list": () => reviews,
-        "reviews/listComments": () => lineComments,
-        "comments/list": () => comments,
-      }),
-    );
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    function SwitchingDetail() {
-      const [showOther, setShowOther] = useState(true);
-      const shown = showOther ? other : started;
-      return (
-        <>
-          <button type="button" onClick={() => setShowOther((v) => !v)}>
-            open the other PR
-          </button>
-          <PullDetail owner="me" repo={shown.repo} number={shown.number} />
-        </>
       );
-    }
-    const rootRoute = createRootRoute({ component: Outlet });
-    const indexRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/",
-      component: () => <SwitchingDetail />,
-    });
-    const issuesRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/r/$owner/$repo/issues/$number",
-      component: () => null,
-    });
-    const router = createRouter({
-      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
-      history: createMemoryHistory({ initialEntries: ["/"] }),
-    });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
-    );
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      function SwitchingDetail() {
+        const [showOther, setShowOther] = useState(true);
+        const shown = showOther ? other : started;
+        return (
+          <>
+            <button type="button" onClick={() => setShowOther((v) => !v)}>
+              open the other PR
+            </button>
+            <PullDetail owner="me" repo={shown.repo} number={shown.number} />
+          </>
+        );
+      }
+      const rootRoute = createRootRoute({ component: Outlet });
+      const indexRoute = createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/",
+        component: () => <SwitchingDetail />,
+      });
+      const issuesRoute = createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/r/$owner/$repo/issues/$number",
+        component: () => null,
+      });
+      const router = createRouter({
+        routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+        history: createMemoryHistory({ initialEntries: ["/"] }),
+      });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>,
+      );
 
-    // `pulls/get` is called with the full "owner/name", which is what the stub echoes into the title.
-    const heading = (pr: { repo: string; number: number }) =>
-      `me/${pr.repo} PR ${pr.number}`;
+      // `pulls/get` is called with the full "owner/name", which is what the stub echoes into the title.
+      const heading = (pr: { repo: string; number: number }) =>
+        `me/${pr.repo} PR ${pr.number}`;
 
-    // Visit the other PR first so its detail is cached: coming back to it renders straight from the
-    // cache with no loading gap, which is exactly when the route is reused rather than remounted.
-    await screen.findByRole("heading", { name: heading(other), level: 1 });
-    fireEvent.click(screen.getByRole("button", { name: /open the other PR/i }));
-    await screen.findByRole("heading", { name: heading(started), level: 1 });
+      // Visit the other PR first so its detail is cached: coming back to it renders straight from the
+      // cache with no loading gap, which is exactly when the route is reused rather than remounted.
+      await screen.findByRole("heading", { name: heading(other), level: 1 });
+      fireEvent.click(
+        screen.getByRole("button", { name: /open the other PR/i }),
+      );
+      await screen.findByRole("heading", { name: heading(started), level: 1 });
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Create PR on GitHub/i }),
-    );
-    await screen.findByRole("button", { name: /Creating…/i });
+      fireEvent.click(
+        await screen.findByRole("button", { name: /Create PR on GitHub/i }),
+      );
+      await screen.findByRole("button", { name: /Creating…/i });
 
-    fireEvent.click(screen.getByRole("button", { name: /open the other PR/i }));
+      fireEvent.click(
+        screen.getByRole("button", { name: /open the other PR/i }),
+      );
 
-    await screen.findByRole("heading", { name: heading(other), level: 1 });
-    const button = (await screen.findByRole("button", {
-      name: /Create PR on GitHub/i,
-    })) as HTMLButtonElement;
-    expect(button.disabled).toBe(false);
-  });
+      await screen.findByRole("heading", { name: heading(other), level: 1 });
+      const button = (await screen.findByRole("button", {
+        name: /Create PR on GitHub/i,
+      })) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+    },
+  );
 
   // A launch the server refused started no agent, so there is nothing to wait for: the operator must
   // be able to retry right away rather than sit out the TTL.
@@ -3863,40 +3904,40 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(screen.queryByRole("button", { name: /Creating…/i })).toBeNull();
   });
 
-  it.each([
-    "github_pr",
-    "merge",
-  ] as const)("offers Mark as merged after GitHub merge detection in %s mode and invokes the dedicated action", async (mergeMode) => {
-    renderDetailWithPull(
-      {
-        merge_mode: mergeMode,
-        github_pull: {
-          ...linkedGithubPull(null),
-          github_merged: true,
-          github_merged_at: "2026-07-15T00:00:00Z",
+  it.each(["github_pr", "merge"] as const)(
+    "offers Mark as merged after GitHub merge detection in %s mode and invokes the dedicated action",
+    async (mergeMode) => {
+      renderDetailWithPull(
+        {
+          merge_mode: mergeMode,
+          github_pull: {
+            ...linkedGithubPull(null),
+            github_merged: true,
+            github_merged_at: "2026-07-15T00:00:00Z",
+          },
         },
-      },
-      {
-        "pulls/markGithubMerged": () => ({
-          merged: true,
-          merged_at: "2026-07-15T00:00:00Z",
-        }),
-      },
-    );
+        {
+          "pulls/markGithubMerged": () => ({
+            merged: true,
+            merged_at: "2026-07-15T00:00:00Z",
+          }),
+        },
+      );
 
-    expect(
-      await screen.findByRole("button", { name: /^Close$/i }),
-    ).toBeTruthy();
-    const button = screen.getByRole("button", { name: /Mark as merged/i });
-    fireEvent.click(button);
-    await waitFor(() => {
-      expect(rpcCall("pulls/markGithubMerged")?.params).toMatchObject({
-        repo: "me/proj",
-        number: 30,
+      expect(
+        await screen.findByRole("button", { name: /^Close$/i }),
+      ).toBeTruthy();
+      const button = screen.getByRole("button", { name: /Mark as merged/i });
+      fireEvent.click(button);
+      await waitFor(() => {
+        expect(rpcCall("pulls/markGithubMerged")?.params).toMatchObject({
+          repo: "me/proj",
+          number: 30,
+        });
       });
-    });
-    expect(rpcCall("pulls/merge")).toBeUndefined();
-  });
+      expect(rpcCall("pulls/merge")).toBeUndefined();
+    },
+  );
 
   it.each([
     ["merge not detected", { github_pull: linkedGithubPull(null) }],

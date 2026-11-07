@@ -1,6 +1,8 @@
 // The answer form under a Workflow run's human escalation comment: its options as radio buttons
-// and a submit. An answered escalation keeps the chosen option checked; a superseded one (its run
-// escalated again since) is shown disabled. Either way it can no longer be submitted.
+// and a submit. An answered escalation keeps the chosen option checked and read-only — not disabled,
+// since a browser greys a disabled radio until its checked dot is barely visible, even once a newer
+// escalation supersedes it; an unanswered one superseded by a newer escalation (its run escalated
+// again since) is shown disabled. Either way it can no longer be submitted.
 
 import { useState } from "react";
 import type { CommentEscalation } from "@/api/types";
@@ -22,6 +24,7 @@ export function EscalationAnswer({
   const answered = escalation.answer !== null;
   const closed = answered || escalation.superseded;
   const checked = answered ? escalation.answer : selected;
+  const locked = closed || submitting;
   const name = `escalation-${commentId}`;
   return (
     <section
@@ -45,7 +48,11 @@ export function EscalationAnswer({
             if (selected && !closed) onSubmit(selected);
           }}
         >
-          <div role="radiogroup" aria-label="Escalation options">
+          <div
+            role="radiogroup"
+            aria-label="Escalation options"
+            aria-readonly={locked}
+          >
             {escalation.options.map((option, index) => (
               <div key={option} className="flex items-start gap-2 py-1">
                 <input
@@ -54,13 +61,15 @@ export function EscalationAnswer({
                   name={name}
                   value={option}
                   checked={checked === option}
-                  disabled={closed || submitting}
+                  disabled={closed && !answered}
                   className="mt-0.5 size-4 shrink-0 accent-primary"
-                  onChange={() => setSelected(option)}
+                  onChange={() => {
+                    if (!locked) setSelected(option);
+                  }}
                 />
                 <label
                   htmlFor={`${name}-${index}`}
-                  className={`text-sm ${closed ? "text-muted-foreground" : ""}`}
+                  className={`text-sm ${closed && checked !== option ? "text-muted-foreground" : ""}`}
                 >
                   {option}
                 </label>

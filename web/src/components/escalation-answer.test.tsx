@@ -47,9 +47,33 @@ describe("EscalationAnswer", () => {
 
     const chosen = screen.getByRole("radio", { name: "Keep the spec" });
     expect((chosen as HTMLInputElement).checked).toBe(true);
-    expect((chosen as HTMLInputElement).disabled).toBe(true);
+    // Not disabled: a browser greys a disabled radio until its checked dot is barely visible.
+    expect((chosen as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("radio", { name: "Change the spec" }));
+    expect((chosen as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText("Answered")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Submit answer" })).toBeNull();
+  });
+
+  it("keeps an answered escalation's option checked and enabled once superseded", () => {
+    render(
+      <EscalationAnswer
+        commentId={7}
+        escalation={{
+          ...OPEN,
+          answer: "Keep the spec",
+          answered_at: "2026-11-06T00:00:00Z",
+          superseded: true,
+        }}
+        submitting={false}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const chosen = screen.getByRole("radio", { name: "Keep the spec" });
+    expect((chosen as HTMLInputElement).checked).toBe(true);
+    expect((chosen as HTMLInputElement).disabled).toBe(false);
+    expect(screen.getByText("Answered")).toBeTruthy();
   });
 
   it("disables a superseded escalation", () => {
