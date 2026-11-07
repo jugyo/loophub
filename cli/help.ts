@@ -205,6 +205,26 @@ Options:
   --json                Print the pull request, comments, commits, and linked issue as JSON.
   --help                Show this help without reading the database.`;
 
+const PR_CREATE_DETAILS = `
+
+Usage:
+  lh pr create --head <branch> --title <text> [options]
+
+Options:
+  --head <branch>       Head branch.
+  --base <branch>       Base branch (defaults to the issue's target branch, then the default branch).
+  --title <text>        Pull request title.
+  --issue <number>      Issue to link the pull request to.
+  --evidence <text>     Markdown Evidence (screenshots, logs, test results); @file reads a file and
+                        - reads stdin.
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --session-id <uuid>   Attribute the pull request to a registered agent session.
+  --json                Print the created pull request as JSON.
+  --help                Show this help without changing the database.
+
+Constraints:
+  The pull request is linked to an issue only through --issue.`;
+
 const PR_UPDATE_DETAILS = `
 
 Usage:
@@ -212,14 +232,14 @@ Usage:
 
 Options:
   --title <text>        New pull request title.
-  --body <text>         New Markdown body; @file reads a file and - reads stdin.
+  --evidence <text>     New Markdown Evidence; @file reads a file and - reads stdin.
   --repo <owner/name>   Repository (defaults to the repository at the current path).
   --session-id <uuid>   Attribute the update to a registered agent session.
   --json                Print the updated pull request as JSON.
   --help                Show this help without changing the database.
 
 Constraints:
-  At least one of --title and --body is required.`;
+  At least one of --title and --evidence is required.`;
 
 const PR_COMMENT_DETAILS = `
 
@@ -543,7 +563,11 @@ Constraints:
     details: PR_VIEW_DETAILS,
   },
   { path: ["pr", "diff"], description: "Show a pull request diff." },
-  { path: ["pr", "create"], description: "Create a pull request." },
+  {
+    path: ["pr", "create"],
+    description: "Create a pull request.",
+    details: PR_CREATE_DETAILS,
+  },
   {
     path: ["pr", "update"],
     description: "Update a pull request.",

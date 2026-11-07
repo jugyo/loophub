@@ -323,7 +323,7 @@ test("workflow turn done requires run and resolves explicit and cwd repo context
     "main",
     "--title",
     "Workflow turn-done target",
-    "--body",
+    "--evidence",
     "body",
     "--issue",
     issue,

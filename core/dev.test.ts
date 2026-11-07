@@ -78,7 +78,7 @@ describe("dev.openPr", () => {
     expect(pull.head.ref).toBe(`proj-p${first.number}`);
     expect(pull.base.ref).toBe("main");
     expect(pull.linked_issue?.number).toBe(issue.number);
-    expect(pull.body).toContain(`Closes #${issue.number}`);
+    expect(pull.body).not.toContain("Closes #");
     expect(pull.body).not.toContain("## Implementation plan");
     expect(pull.body).not.toContain("ソース編集前");
     expect(pull.body).toContain("## Evidence");

@@ -1073,8 +1073,6 @@ test("start creates the initial PR title and body in the configured language", a
         "",
         "- **Visual evidence gate**: TODO - `UI / visual candidate: yes|no` を記録する。`yes` の場合はスクリーンショット、または具体的な `N/A` の理由を記載する。",
         "",
-        `Closes #${englishIssue.number}`,
-        "",
       ].join("\n"),
     );
 
@@ -1105,8 +1103,6 @@ test("start creates the initial PR title and body in the configured language", a
         "## Evidence",
         "",
         "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",
-        "",
-        `Closes #${japaneseIssue.number}`,
         "",
       ].join("\n"),
     );
@@ -2721,7 +2717,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   ).rejects.toMatchObject({ status: 409 });
 
   // A passing review verifies the current HEAD without terminating the run. Uploading an
-  // attachment and embedding it in the PR body are non-code edits: neither moves HEAD, so the same
+  // attachment and embedding it in the PR's Evidence are non-code edits: neither moves HEAD, so the same
   // pass remains fresh and the parent can keep observing this run.
   const attachment = await A.saveAttachment({
     data: Buffer.from("workflow evidence"),
@@ -4417,7 +4413,7 @@ test("parent contract executes worker-delivered action procedures", () => {
   expect(contract).toContain("## Instruction loop");
   expect(contract).toContain("## Structured instructions");
   expect(contract).not.toContain("## Gap table");
-  expect(contract).toMatch(/never use pane output|PR body marker/i);
+  expect(contract).toMatch(/never use pane output|Evidence marker/i);
   expect(contract).toContain("Do not use child-session");
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   expect(contract).toContain("`pass`");

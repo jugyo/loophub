@@ -6,7 +6,7 @@ review subject は full review なら `git diff <base sha>...<head sha>`、parti
 diff が authoritative であり、base 側だけに存在する変更を逆向きの変更として含めません（partial の base は
 head の直系祖先なので、この但し書きは partial では効きません）。Issue の acceptance criteria は、その
 review subject と（partial のとき）前回 review の結果だけで判断します。他の range、未 commit の worktree
-変更、無関係な既存問題は対象外です。PR body、PR comments、implementer の description は読みません。
+変更、無関係な既存問題は対象外です。PR の Evidence、PR comments、implementer の description は読みません。
 source は編集しません。
 
 まずこの contract と workflow の過程で得る情報を使います。そこにない CLI の使い方が必要な場合に限り、

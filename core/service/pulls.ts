@@ -41,7 +41,6 @@ import {
 } from "../github.ts";
 import { notifyGithubPullLinked } from "../github-pull-notifications.ts";
 import { latestChangedLines } from "../latest-diff-lines.ts";
-import { parseClosingIssueNumber } from "../links.ts";
 import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
 import {
   resolvePullBaseSha,
@@ -115,12 +114,8 @@ interface PullCreateDeps {
 const realPullCreateDeps: PullCreateDeps = { revParse };
 
 // ===== pulls =====
-function resolveLinkedIssueId(
-  r: S.Repo,
-  body: string,
-  explicit?: number,
-): number | null {
-  const linkedNumber = explicit ?? parseClosingIssueNumber(body);
+// A PR is linked to an issue only when the caller names one; its Evidence is never parsed for it.
+function resolveLinkedIssueId(r: S.Repo, linkedNumber?: number): number | null {
   if (linkedNumber == null) return null;
   const row = S.getIssue(r.id, linkedNumber);
   if (!row) throw new ServiceError(422, `issue #${linkedNumber} not found`);
@@ -463,8 +458,7 @@ export const pulls = {
     const actor = actorFor(sessionId);
     // Refuse a second open PR for an issue that already has one. This is the double-start guard for
     // every issue-targeted creation path; historical rows may still contain multiple linked PRs.
-    const linkedIssueId = resolveLinkedIssueId(r, body, issue);
-    const linkedNumber = issue ?? parseClosingIssueNumber(body);
+    const linkedIssueId = resolveLinkedIssueId(r, issue);
     const linkedIssue =
       linkedIssueId != null ? S.getIssueById(linkedIssueId) : null;
     const base = input.base ?? linkedIssue?.target_branch ?? r.default_branch;
@@ -515,7 +509,7 @@ export const pulls = {
       );
       S.emitEvent(r.id, "pull_request.opened", actor, {
         number: created.number,
-        linked_issue: linkedNumber ?? undefined,
+        linked_issue: issue,
       });
       return created;
     });

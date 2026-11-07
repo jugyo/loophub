@@ -944,6 +944,19 @@ export function useSetPullState(owner: string, repo: string, number: number) {
   });
 }
 
+/** Replace the PR's Evidence (its free-form Markdown body), then invalidate. */
+export function useUpdatePullEvidence(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) => patchPull(owner, repo, number, { body }),
+    onSuccess: () => invalidatePull(qc, owner, repo, number),
+  });
+}
+
 export function useArchivePull(owner: string, repo: string, number: number) {
   const qc = useQueryClient();
   return useMutation({

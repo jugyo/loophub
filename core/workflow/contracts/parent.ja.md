@@ -13,7 +13,7 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 ことがゴールです。次の共通原則を contract 全体に適用します。
 
 - 判断の事実は git / PR / review / DB にあり、pane output、child の自己申告、event payload の verdict、
-  PR body marker、注入成功は transition fact ではない。
+  Evidence marker、注入成功は transition fact ではない。
 - Verify は**常に fresh child**として起動し、以前の verifier session を再利用しない。
 - ゴール到達後も run は `running` のままとし、人間の指示や新しい event で gap が生じたら reconcile を再開する。
   merge はしない。linked PR の close が run の terminal condition である。

@@ -12,7 +12,7 @@ they do not provide, consult `lh --help` or the relevant subcommand's `--help`.
 The goal is a PR head containing commits that satisfy the Issue, plus a fresh `pass` review pinned to that HEAD. The run
 uses these shared invariants throughout:
 
-- Facts live in git / PR / reviews / DB. Pane output, child self-reports, event verdict payloads, PR body markers, and
+- Facts live in git / PR / reviews / DB. Pane output, child self-reports, event verdict payloads, Evidence markers, and
   successful injection are not transition facts.
 - Verify is **always a fresh child**; never reuse a verifier session.
 - The run stays `running` after reaching the goal. Reconcile again when a human instruction or event creates a gap.

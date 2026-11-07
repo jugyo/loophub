@@ -45,7 +45,7 @@ function createPull(title: string, body: string): number {
     "main",
     "--title",
     title,
-    "--body",
+    "--evidence",
     body,
   ]);
   const m = stdout.match(/created PR #(\d+)/);
@@ -116,7 +116,7 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("lh pr update edits both title and body", () => {
+test("lh pr update edits both title and Evidence", () => {
   const n = createPull("old title", "old body");
   const { stdout, exitCode } = lh([
     "pr",
@@ -126,7 +126,7 @@ test("lh pr update edits both title and body", () => {
     REPO,
     "--title",
     "new title",
-    "--body",
+    "--evidence",
     "new body",
   ]);
   expect(exitCode).toBe(0);
@@ -247,7 +247,7 @@ test("lh pr view --json reports the gate from the latest review and the current 
   });
 });
 
-test("lh pr update --title leaves body untouched", () => {
+test("lh pr update --title leaves Evidence untouched", () => {
   const n = createPull("title only", "keep this body");
   expect(
     lh(["pr", "update", String(n), "--repo", REPO, "--title", "retitled"])
@@ -258,10 +258,10 @@ test("lh pr update --title leaves body untouched", () => {
   expect(p.body).toBe("keep this body");
 });
 
-test("lh pr update --body leaves title untouched", () => {
+test("lh pr update --evidence leaves title untouched", () => {
   const n = createPull("keep this title", "body only");
   expect(
-    lh(["pr", "update", String(n), "--repo", REPO, "--body", "rebodied"])
+    lh(["pr", "update", String(n), "--repo", REPO, "--evidence", "rebodied"])
       .exitCode,
   ).toBe(0);
   const p = viewJSON(n);
@@ -269,11 +269,27 @@ test("lh pr update --body leaves title untouched", () => {
   expect(p.body).toBe("rebodied");
 });
 
-test("lh pr update without --title/--body errors", () => {
+test("lh pr update --body points at --evidence and changes nothing", () => {
+  const n = createPull("renamed flag", "unchanged body");
+  const { stderr, exitCode } = lh([
+    "pr",
+    "update",
+    String(n),
+    "--repo",
+    REPO,
+    "--body",
+    "rebodied",
+  ]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("--body was renamed to --evidence");
+  expect(viewJSON(n).body).toBe("unchanged body");
+});
+
+test("lh pr update without --title/--evidence errors", () => {
   const n = createPull("unchanged title", "unchanged body");
   const { stderr, exitCode } = lh(["pr", "update", String(n), "--repo", REPO]);
   expect(exitCode).not.toBe(0);
-  expect(stderr).toContain("--title and/or --body is required");
+  expect(stderr).toContain("--title and/or --evidence is required");
   const p = viewJSON(n);
   expect(p.title).toBe("unchanged title");
   expect(p.body).toBe("unchanged body");

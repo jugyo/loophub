@@ -39,6 +39,7 @@ export type Flags = {
   label?: string;
   title?: string;
   body?: string;
+  evidence?: string;
   id?: string;
   agent?: string;
   session?: string;
@@ -169,6 +170,7 @@ const { values, positionals } = parseArgs({
     label: { type: "string" },
     title: { type: "string" },
     body: { type: "string" },
+    evidence: { type: "string" },
     id: { type: "string" },
     agent: { type: "string" },
     session: { type: "string" },

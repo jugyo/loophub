@@ -66,12 +66,12 @@ run makes every earlier one unanswerable.
   leave the result there before completing the turn.
 - **Additional work** — when a non-rework instruction is ordinary product or engineering work on
   the Issue / PR, make the smallest implementation against the same Issue and PR. You do not need
-  to rewrite the Issue body unless the conflict procedure above applies. Add evidence to the PR
-  body or comments when useful to the next Verify or a human.
+  to rewrite the Issue body unless the conflict procedure above applies. Add evidence to the PR's
+  Evidence or comments when useful to the next Verify or a human.
 - **Question-only or blocked on a human decision** — present the full concrete question in the pane,
   then escalate it with your current assessment to a human as described above. The escalation comment
   is the LoopHub response to this follow-up.
-- **Confirmation or no domain change required** — perform only the needed PR body, comment, or
+- **Confirmation or no domain change required** — perform only the needed Evidence, comment, or
   attachment operations and treat it as the metadata-only completion described in step 6.
   Respond on the originating PR comment, diff feedback thread, or review with the outcome before
   completing the turn. Acknowledgement before editing is not required when no source change is needed.
@@ -87,8 +87,8 @@ run makes every earlier one unanswerable.
 2. Inspect the relevant code and show a concrete implementation plan in this session.
 3. Implement a focused change that matches the surrounding naming, types, tests, and style.
 4. Get the repository's standard tests, lint, and typecheck green.
-5. Commit the implementation on the current head branch. Update the PR title and body with
-   `lh pr update <pr> --repo {{repo}} --title <title> --body ...`. The PR body holds only evidence —
+5. Commit the implementation on the current head branch. Update the PR title and Evidence with
+   `lh pr update <pr> --repo {{repo}} --title <title> --evidence ...`. The Evidence holds only proof —
    screenshots, logs, test run results, and the like; do not write a summary, acceptance criteria,
    test plan, or implementation plan there. Add attachments or comments as needed.
 6. Commit any code change, then run `lh workflow turn done --repo {{repo}} --run {{run}}` exactly once

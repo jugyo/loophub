@@ -39,7 +39,7 @@ function createPull(title: string, body: string): number {
     "main",
     "--title",
     title,
-    "--body",
+    "--evidence",
     body,
   ]);
   const m = stdout.match(/created PR #(\d+)/);

@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Github,
   Loader2,
+  Pencil,
   SmilePlus,
   X,
 } from "lucide-react";
@@ -110,6 +111,7 @@ import {
   useReactToPullComment,
   useSetPullCommentArchived,
   useSetPullState,
+  useUpdatePullEvidence,
 } from "@/queries/pulls";
 import { useRepoGithubPrExportExtraPrompt } from "@/queries/repos";
 import { useSettings } from "@/queries/settings";
@@ -616,9 +618,9 @@ function PullHeader({
 }
 
 // What the PR is for (#2640): the linked issue's body and how its acceptance criteria stand, since
-// the spec lives in the issue and the PR body only carries evidence. The PR body stays reachable,
-// collapsed, below the criteria. A PR with no linked issue, or whose issue has no structured
-// criteria, keeps showing its own body as before.
+// the spec lives in the issue and the PR itself only carries Evidence. The Evidence stays
+// reachable, collapsed, below the criteria. A PR with no linked issue, or whose issue has no
+// structured criteria, shows its Evidence open in place of the issue.
 function PullDescription({
   owner,
   repo,
@@ -632,13 +634,6 @@ function PullDescription({
 }) {
   const linked = pull.linked_issue;
   const issueQuery = useIssue(owner, repo, linked?.number ?? 0, !!linked);
-  const body = pull.body ? (
-    <Markdown owner={owner} repo={repo} className="p-4">
-      {pull.body}
-    </Markdown>
-  ) : (
-    <p className="p-4 text-sm text-muted-foreground">No description.</p>
-  );
   if (linked && issueQuery.isLoading) {
     return (
       <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
@@ -649,7 +644,7 @@ function PullDescription({
   const issue = issueQuery.data;
   const criteria = issue?.acceptance_criteria ?? [];
   if (!linked || !issue || criteria.length === 0) {
-    return <div className="rounded-md border bg-muted/30">{body}</div>;
+    return <PullEvidence owner={owner} repo={repo} pull={pull} defaultOpen />;
   }
   // The latest review that graded criteria speaks for all of them, whatever head it read: a
   // criterion once met tends to stay met. Reviews arrive submitted_at ascending.
@@ -732,14 +727,114 @@ function PullDescription({
           })}
         </ul>
       </section>
-      <details className="group overflow-hidden rounded-md border bg-muted/30">
-        <summary className="flex cursor-pointer list-none items-center gap-1 px-4 py-2 text-sm font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
-          PR body
-        </summary>
-        <div className="border-t">{body}</div>
-      </details>
+      <PullEvidence owner={owner} repo={repo} pull={pull} />
     </div>
+  );
+}
+
+// The PR's Evidence: the free-form Markdown it carries — screenshots, logs, test runs — shown and
+// edited in place.
+function PullEvidence({
+  owner,
+  repo,
+  pull,
+  defaultOpen = false,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+  defaultOpen?: boolean;
+}) {
+  // null while reading; the text being edited otherwise.
+  const [draft, setDraft] = useState<string | null>(null);
+  const textareaRef = useAutosizeTextarea(draft ?? "");
+  const update = useUpdatePullEvidence(owner, repo, pull.number);
+  const { showError } = useToast();
+
+  function save() {
+    if (draft == null || update.isPending) return;
+    update.mutate(draft, {
+      onSuccess: () => setDraft(null),
+      onError: (e) => showError(errorMessage(e, "Failed to save Evidence")),
+    });
+  }
+
+  return (
+    <details
+      data-debug-component="PullEvidence"
+      open={defaultOpen || undefined}
+      className="group overflow-hidden rounded-md border bg-muted/30"
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-1 px-4 py-2 text-sm font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
+        Evidence
+      </summary>
+      <div className="border-t">
+        {draft != null ? (
+          <div className="flex flex-col gap-2 p-4">
+            <textarea
+              ref={textareaRef}
+              aria-label="Evidence"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && event.metaKey) {
+                  event.preventDefault();
+                  save();
+                }
+              }}
+              rows={6}
+              className="min-h-32 w-full resize-none overflow-hidden rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={update.isPending}
+                onClick={() => setDraft(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={update.isPending}
+                onClick={save}
+              >
+                {update.isPending ? (
+                  <Loader2 className="mr-1 size-3.5 animate-spin" />
+                ) : null}
+                Save
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="relative">
+            {pull.body ? (
+              <Markdown owner={owner} repo={repo} className="p-4 pr-12">
+                {pull.body}
+              </Markdown>
+            ) : (
+              <p className="p-4 pr-12 text-sm text-muted-foreground">
+                No evidence.
+              </p>
+            )}
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="Edit Evidence"
+              title="Edit Evidence"
+              className="absolute top-2 right-2 size-7"
+              onClick={() => setDraft(pull.body ?? "")}
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 

@@ -636,7 +636,7 @@ lh workflow manifest path <run> [--repo <owner/name>]
 | 1b | 対象（pointer / workspace）も manifest に入れず、launch の別入力にする | 編集できない設定を作らない。workspace は PR 番号から導出される規約であり保存値ですらない。中身と DB の突き合わせ検証が丸ごと不要になる（§4.2） |
 | 2 | 置き場所は `$LOOPHUB_HOME/runs/workflow/<runId>/`。どの run のものかは path が表す | 既存 run file と同じ領域。repository worktree の外なので git に混入し得ない。symlink 硬化済み helper を再利用できる。path が同定を担うので中身に run id を持たせない |
 | 3 | step prompt は sidecar `.md`、manifest からは相対ファイル名で参照 | 人間が markdown を markdown のまま編集できる。path は run id から導出され caller が選べない、という run-files.ts の姿勢を維持 |
-| 4 | contract 本文は manifest に入れない | 「ユーザーが設定できるのは step prompt だけ」という workflow 設計 §1 の前提。Verify の独立性（PR body 非参照・固定 pointer）を人間が緩められないようにする |
+| 4 | contract 本文は manifest に入れない | 「ユーザーが設定できるのは step prompt だけ」という workflow 設計 §1 の前提。Verify の独立性（Evidence 非参照・固定 pointer）を人間が緩められないようにする |
 | 5 | 不正な manifest は launch を可視エラーで止め、DB へ silent fallback しない | 「自動復旧より可視なエラーを優先する」「人間が回復できる失敗に自動機構を足さない」設計原則。既存の非 0 exit → RPC error → UI 経路に乗る |
 | 6 | 未知 key はエラー（`normalizeWorkflow` の寛容さを踏襲しない） | 影響範囲が 1 run の launch に閉じるため、typo を黙って無視するコストのほうが高い |
 | 7 | manifest の変更は次の launch から効く。走行中の子には遡及しない | 起動済み process の argv / 起動プロンプトは変えられない。live agent への指示は既存の `lh workflow deliver` 注入経路が担う |
@@ -660,8 +660,8 @@ lh workflow manifest path <run> [--repo <owner/name>]
   HEAD / review 観測だけで決まる。manifest は遷移に一切関与しない。
 - **注入経路は変わらない。** rework は `lh workflow deliver` の `orchestrator: address review <id>` のまま。
   manifest は注入内容に関与しない。
-- **Verify の独立性は保たれる。** manifest に PR body も実装者の説明も入らない。人間が verify prompt を
-  編集しても、Verify contract（固定 diff のみを見る・PR body を読まない）は manifest の管理外なので
+- **Verify の独立性は保たれる。** manifest に Evidence も実装者の説明も入らない。人間が verify prompt を
+  編集しても、Verify contract（固定 diff のみを見る・Evidence を読まない）は manifest の管理外なので
   緩められない（判断 #4）。
 - **cost hold / escalation / rework 上限は不変。** これらは lifecycle state と effect receipt の領域であり、
   §3 の分割で DB 側に残る。

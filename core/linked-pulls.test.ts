@@ -407,3 +407,31 @@ test("closing an issue directly closes every open linked PR and is idempotent", 
     ),
   ).toEqual([]);
 });
+
+test("a PR links to an issue only when one is named, never from Closes #n in its Evidence", async () => {
+  const repo = await makeRepo("me/explicit-link");
+  const issue = svc.issues.create("me/explicit-link", { title: "the issue" });
+  branch(repo.path, "unnamed");
+  branch(repo.path, "named");
+
+  const unnamed = await svc.pulls.create("me/explicit-link", {
+    title: "unnamed",
+    body: `Closes #${issue.number}`,
+    head: "unnamed",
+    base: "main",
+  });
+  expect(unnamed.linked_issue).toBeNull();
+  const updated = await svc.pulls.update("me/explicit-link", unnamed.number, {
+    body: `Fixes #${issue.number}`,
+  });
+  expect(updated.linked_issue).toBeNull();
+
+  const named = await svc.pulls.create("me/explicit-link", {
+    title: "named",
+    body: "",
+    head: "named",
+    base: "main",
+    issue: issue.number,
+  });
+  expect(named.linked_issue?.number).toBe(issue.number);
+});

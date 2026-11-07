@@ -226,7 +226,7 @@ export function projectHerdrRepoSessions(
   );
   // PR→issue for the pulls a workspace resolves to, so herdrIssueWorkspacesFromAgentList can
   // key the same panes by issue number (#821). The link is the PR's linked_issue_id, recorded
-  // when the run opened the PR (`Closes #<n>`); a PR with no linked issue is simply absent
+  // when the run opened the PR for its issue; a PR with no linked issue is simply absent
   // from the map and skipped there, matching the parser's degrade-to-empty tolerance.
   const pullToIssue = new Map<number, number>();
   for (const w of pullWorkspaces) {

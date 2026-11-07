@@ -39,7 +39,7 @@ function createPull(): number {
     "main",
     "--title",
     "comment target",
-    "--body",
+    "--evidence",
     "body",
   ]);
   const m = stdout.match(/created PR #(\d+)/);

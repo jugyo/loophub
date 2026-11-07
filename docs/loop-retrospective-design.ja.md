@@ -33,8 +33,8 @@ PRD §4 の各観点を**どう観測するか**。各観点に「LoopHub デー
 | R2 | C | issue の曖昧さ | 実装中の issue.updated 回数、追加質問コメント | AC の後付け・解釈ブレ箇所 |
 | R3 | Q | レビュー往復 | `reviews` の REQUEST_CHANGES 件数 / ready-for-review サイクル数 | 指摘の本質度(瑣末 vs 重大) |
 | R4 | Q | レビュー過剰/過少 | diff 行数・ファイル数 × レビュー往復数 | 軽微 PR に過剰往復/重大 PR に素通り |
-| R5 | Q | 飛ばしたステップ | PR body に Evidence/Test plan 有無、テスト実行痕跡 | skill 手順のスキップ箇所 |
-| R6 | I | エージェントの虚偽 | 「テスト green」主張 vs PR body のテスト実行痕跡・再実行結果、Closes 対象と diff の不一致(注: LoopHub に CI/status checks は無い) | コーディングagの誇張をレビューが見抜けたか |
+| R5 | Q | 飛ばしたステップ | Evidence の有無、テスト実行痕跡 | skill 手順のスキップ箇所 |
+| R6 | I | エージェントの虚偽 | 「テスト green」主張 vs Evidence のテスト実行痕跡・再実行結果、linked issue と diff の不一致(注: LoopHub に CI/status checks は無い) | コーディングagの誇張をレビューが見抜けたか |
 | R7 | Q | スコープ逸脱 | diff のファイル群 vs issue scope 記述 | 「ついで修正」の混入 |
 | R8 | C | 所要時間/手戻り | pull_request.opened → pull_request.merged の経過、merge_conflict 発生有無 | 手戻りの原因 |
 

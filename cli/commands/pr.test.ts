@@ -99,7 +99,7 @@ test("lh pr create and comment return the created resource", () => {
   expect(comment.id).toBeGreaterThan(0);
 });
 
-test("lh pr update --body accepts stdin without shell expansion", () => {
+test("lh pr update --evidence accepts stdin without shell expansion", () => {
   const number = createPull("feature-body-input");
   const body = "review `id`\nsecond line\n";
   const updated = lh(
@@ -109,7 +109,7 @@ test("lh pr update --body accepts stdin without shell expansion", () => {
       String(number),
       "--repo",
       "me/proj",
-      "--body",
+      "--evidence",
       "-",
       "--json",
     ],

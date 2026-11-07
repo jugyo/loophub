@@ -149,6 +149,16 @@ describe("--help", () => {
       options: ["--repo <owner/name>", "--json", "--help"],
     },
     {
+      args: ["pr", "create", "--help"],
+      usage: "lh pr create --head <branch> --title <text> [options]",
+      options: ["--issue <number>", "--evidence <text>", "--json", "--help"],
+    },
+    {
+      args: ["pr", "update", "--help"],
+      usage: "lh pr update <number> [options]",
+      options: ["--title <text>", "--evidence <text>", "--json", "--help"],
+    },
+    {
       args: ["pr", "review", "submit", "--help"],
       usage: "lh pr review submit <number> [options]",
       options: [

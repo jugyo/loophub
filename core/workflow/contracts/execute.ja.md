@@ -58,10 +58,10 @@ diff feedback thread、review に同じ質問を重ねて投稿しません。�
   着手返信を、turn の完了前に結果を同じ場所へ投稿します。
 - **追加作業** — non-rework の指示が Issue / PR への通常の product / engineering 要求なら、同じ Issue と
   PR に最小限の実装を行います。上記の矛盾解決手順に該当しない限り、Issue body の書き換えは不要です。
-  次の Verify や人間に有用なら PR body または comment に証跡を追加します。
+  次の Verify や人間に有用なら PR の Evidence または comment に証跡を追加します。
 - **質問だけ、または人間の判断待ち** — pane に具体的な質問全文を示し、現時点の見解とともに上記の手順で
   人間へ escalation します。この escalation comment がこの follow-up への LoopHub 上の返信になります。
-- **確認のみ、またはドメイン変更不要** — 必要な PR body / comment / attachment 操作だけを行い、
+- **確認のみ、またはドメイン変更不要** — 必要な Evidence / comment / attachment 操作だけを行い、
   実行手順 6 の metadata-only completion として扱います。turn の完了前に、発生元の PR comment、
   diff feedback thread、または review に結果を返信します。source の修正が不要なら編集前の着手返信は
   必須ではありません。
@@ -77,8 +77,8 @@ diff feedback thread、review に同じ質問を重ねて投稿しません。�
 4. repository の標準 tests / lint / typecheck を green にします。
 5. 実装を現在の head branch に commit します。コミットは追記的に行い、push 済みの履歴は
    書き換えません（amend / rebase / force-push を避ける）。公開済み履歴の書き換えは既存の
-   PR・レビュー・コミットリンクを壊すためです。続いて、PR の title と body を
-   `lh pr update <pr> --repo {{repo}} --title <title> --body ...` で更新します。PR body には証跡
+   PR・レビュー・コミットリンクを壊すためです。続いて、PR の title と Evidence を
+   `lh pr update <pr> --repo {{repo}} --title <title> --evidence ...` で更新します。Evidence には証跡
    （スクリーンショット、ログ、テストの実行結果など）だけを残し、summary、acceptance criteria、
    test plan、実装プランは書きません。必要に応じて attachment / comment を追加します。
 6. code change は commit してから、turn ごとに

@@ -185,12 +185,16 @@ export async function run(): Promise<void> {
         );
       });
   } else if (sub === "create") {
+    if (flags.body !== undefined) fail("--body was renamed to --evidence");
     const p = await runOp(async () =>
       s.pulls.create(
         repo,
         {
           title: flags.title ?? "",
-          body: flags.body === undefined ? "" : await readTextInput(flags.body),
+          body:
+            flags.evidence === undefined
+              ? ""
+              : await readTextInput(flags.evidence),
           head: flags.head ?? "",
           ...(flags.base ? { base: flags.base } : {}),
           ...(flags.issue ? { issue: Number(flags.issue) } : {}),
@@ -201,11 +205,13 @@ export async function run(): Promise<void> {
     out(p);
     if (!flags.json) console.log(`created PR #${p.number}`);
   } else if (sub === "update") {
+    if (flags.body !== undefined) fail("--body was renamed to --evidence");
     const patch: { title?: string; body?: string } = {};
     if (flags.title !== undefined) patch.title = flags.title;
-    if (flags.body !== undefined) patch.body = await readTextInput(flags.body);
+    if (flags.evidence !== undefined)
+      patch.body = await readTextInput(flags.evidence);
     if (Object.keys(patch).length === 0)
-      fail("--title and/or --body is required");
+      fail("--title and/or --evidence is required");
     const p = await runOp(async () =>
       s.pulls.update(repo, Number(rest[0]), patch, await writeSession()),
     );

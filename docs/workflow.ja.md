@@ -34,7 +34,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 - Execute agent はドメインを知る pull 型開発者である。issue・PR・review を lh CLI で自分で読み、実装
   計画も自分の session 内で立てる。人間は実行中の pane へ介入して計画を確認・変更できる。
 - Verify agent は Execute とは別の fresh session で、(issue 参照, base SHA, head SHA) のポインタが
-  指す固定 diff を独立検証する。PR body・実装者の説明は読まない。直前の Verify review が現在の HEAD の
+  指す固定 diff を独立検証する。Evidence・実装者の説明は読まない。直前の Verify review が現在の HEAD の
   直系祖先であるときだけ `previous review` ポインタも渡り、差分だけを読む partial review にするかは
   Verify agent が判断する。
 - workflow agent（親）は残す。親はコードを書かず、子の起動、HEAD / review 観測に基づく遷移、rework、
@@ -45,7 +45,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 | 経路 | 情報 | 媒体 |
 |------|------|------|
 | 親 → Execute | input: issue / PR の参照。rework 時は対応すべき review の id | 起動プロンプト、または生きている pane への注入（instruction） |
-| Execute → 世界 | commits、PR body・attachment・comment | git / domain（lh CLI で自分で読み書き） |
+| Execute → 世界 | commits、Evidence・attachment・comment | git / domain（lh CLI で自分で読み書き） |
 | Execute → 親 | ターン完了の宣言（payload なし） | `lh workflow turn done --run <run>` が event を記録（fact）。worker が state と合わせて instruction にする |
 | 親 → Verify | input: (issue 参照, base SHA, head SHA) のポインタ。直前 review が HEAD の直系祖先なら `previous review` も | 起動プロンプト。合成ファイルなし |
 | Verify → 世界 | pass / request_changes ＋ findings | head SHA に pin された PR review（fact） |
@@ -62,7 +62,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
     │
     ├─ Execute child を起動（input: repo / issue / pr のポインタ）
     │    責務: 計画 → 実装 → テスト/evidence → 振り返り
-    │    出力: commits + 通常の PR body / attachment / comment 操作
+    │    出力: commits + 通常の Evidence / attachment / comment 操作
     │    宣言: `lh workflow turn done --run <run>`（payload なし）
     │
     ├─ turn done ＋ HEAD 前進を観測 → Verify child を fresh 起動
@@ -232,7 +232,7 @@ contract を検証する。
    `lh pr review view <pr> --review <id> --json` で対象 review と全 review comments を読む。
 2. 関連コードを見て最小の実装計画を session 内に持つ（独立 artifact として提出しない）。
 3. 実装し、repo 標準の test / lint / typecheck を green にする。
-4. 結果を **ドメイン状態** に書く: commits、`lh pr update` による PR body、`lh attachment add`、
+4. 結果を **ドメイン状態** に書く: commits、`lh pr update --evidence` による Evidence、`lh attachment add`、
    `lh pr comment`。
 5. ターン完了を `lh workflow turn done --run <run>`（payload なし）で宣言する。**commit 前に宣言しても run は
    進まない**（親が HEAD 前進を観測しないため）。
@@ -249,9 +249,9 @@ follow-up では、編集前の着手返信を必須としない。
 `orchestrator:` 注入や launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
 continuing instruction など）は、自然に Issue / PR への追加要望と読めるならそのように扱い、同じ
 issue・PR に対して実装する。完了後は通常の Execute と同じく **commit（ドメイン変更がある場合）→
-必要なら PR body / comment / attachment の更新 → `lh workflow turn done --run <run>`** に戻る。rework
+必要なら Evidence / comment / attachment の更新 → `lh workflow turn done --run <run>`** に戻る。rework
 （`address review <id>`）は review 対応であり追加要望とは別だが、どちらも完了後の経路は同じ。
-質問のみ・判断待ちは escalate して同 pane で待機し、確認のみや HEAD を進めない更新（PR body 等）は
+質問のみ・判断待ちは escalate して同 pane で待機し、確認のみや HEAD を進めない更新（Evidence 等）は
 commit せず turn done してよい（親は HEAD 不変なら既存 pass を維持し、HEAD 前進時だけ fresh Verify
 する）。ただし、人間の PR comment による指示は、実装前に現在の issue 本文と enabled な acceptance
 criteria の全件に照らす。矛盾がなければ更新確認を求めず作業を続ける。矛盾があれば具体的な対立点を示して
@@ -267,7 +267,7 @@ acceptance criteria を再読し、各 finding を現行仕様と照合する。
 launch 時に (issue 参照, base SHA, head SHA) を受け取り、`git diff <base>..<head>` を自分で計算して
 その固定 diff だけをレビューする。直前の Verify review が現在の HEAD の直系祖先のときは `previous review`
 も渡され、その review の head から head までの差分だけを読む partial review にするかを Verify agent が
-決める（`lh workflow launch-step --full` はこのポインタを渡さず、全域の review を要求する）。レビュー範囲をその diff から拡張せず、PR body・実装者の説明は
+決める（`lh workflow launch-step --full` はこのポインタを渡さず、全域の review を要求する）。レビュー範囲をその diff から拡張せず、Evidence・実装者の説明は
 読まない（PR 番号は review の提出先としてのみ与えられる）。source は編集せず、必要なテストは実行できる。
 出力は `lh pr review submit --commit <head sha>` による、head SHA に pin された PR review
 （pass / request_changes）のみ。毎回 fresh session で起動される。
@@ -304,7 +304,7 @@ run の current step は `execute | verify` のみで、新しい run は `curre
 
 | step | 出力 | 完了の観測 |
 |---|---|---|
-| Execute | commits + 通常の PR body / attachment / comment 操作 | HEAD が base より先行し、base から HEAD までの実効差分を持ち、存在する場合は最新 review が指す SHA より前進している |
+| Execute | commits + 通常の Evidence / attachment / comment 操作 | HEAD が base より先行し、base から HEAD までの実効差分を持ち、存在する場合は最新 review が指す SHA より前進している |
 | Verify | head SHA に pin された PR review | 最新 review が current HEAD に pin されている（fresh） |
 
 `lh workflow step status <run> --json` は観測結果を返す: current HEAD、HEAD が base より先行しているか、
@@ -315,7 +315,7 @@ run の current step は `execute | verify` のみで、新しい run は `curre
 
 freshness は review の pin された head_sha と current HEAD の比較だけで導出する。current HEAD に対する
 pass 後、新しい commit で HEAD が進んだ場合は既存 review が stale となり fresh Verify が必要になる。
-一方、PR body・comment・attachment だけの更新は HEAD を変えないため、既存 pass は fresh のままである。
+一方、Evidence・comment・attachment だけの更新は HEAD を変えないため、既存 pass は fresh のままである。
 Workflow 専用の freshness / dirty / checkpoint 状態は追加しない。
 
 過去の workflow review がない初回の Execute は、review の SHA ではなく base branch を比較基準にする。
@@ -411,7 +411,7 @@ fresh pass は現在の HEAD を検証するが、run を完了・凍結しな�
 保存済みの Execute target へ parent が `lh workflow deliver` で `orchestrator: <instruction>` を注入する。
 deliver が失敗した場合、生きている Execute child がある run への `launch-step --step execute` は拒否される
 ため、error を見える状態のまま人間の判断へ渡す。
-その後の turn done で HEAD が進んでいれば fresh Verify を起動し、PR body・comment・attachment だけが
+その後の turn done で HEAD が進んでいれば fresh Verify を起動し、Evidence・comment・attachment だけが
 変わって HEAD が不変なら既存 pass を fresh のまま維持する。run を恒久終了する command は無く、
 終了させるのは人間である。
 
@@ -564,7 +564,7 @@ workflow を開始せず明示的なエラーで終了する（失敗を黙っ�
 
 ## 9. 廃止と移行
 
-- `execution-report` / `verdict` の型・validation・placement・placement claim・retry、および PR body /
+- `execution-report` / `verdict` の型・validation・placement・placement claim・retry、および Evidence /
   review への自動配置処理を active path から取り除いた。`lh workflow step output` は廃止。
 - 旧テーブル `workflow_artifacts` / `workflow_placements` / `workflow_step_pins` /
   `workflow_artifact_submitters` は、既存 DB では **履歴としてそのまま残す**（削除・変換しない）。
@@ -613,7 +613,7 @@ workflow を開始せず明示的なエラーで終了する（失敗を黙っ�
 - Verify input が (issue 参照, base SHA, head SHA) のみで、`changes.diff` / `report.md` /
   `prior-verdicts.md` が生成されない。
 - status は HEAD / base / 最新 review の freshness を返し、head advance で pass が stale になる。
-- PR body・comment・attachment だけの更新では pass が fresh のまま維持される。
+- Evidence・comment・attachment だけの更新では pass が fresh のまま維持される。
 - worker は turn done、review submitted、GitHub feedback を含む event を event id 順に処理し、連続する
   event の判断が同じ場合だけ重複入力を抑止する。判断は毎回 observed state から決まり、正しい run の
   登録済み parent pane だけへ届く。

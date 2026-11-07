@@ -29,18 +29,13 @@ function defaultPrTitle(
     : `Implement issue #${issue}`;
 }
 
-function defaultPrBody(
-  issue: number,
-  language: WorkflowContractLanguage,
-): string {
+function defaultPrEvidence(language: WorkflowContractLanguage): string {
   const visualEvidence =
     language === "en"
       ? "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason."
       : "- **Visual evidence gate**: TODO - `UI / visual candidate: yes|no` を記録する。`yes` の場合はスクリーンショット、または具体的な `N/A` の理由を記載する。";
 
-  return ["## Evidence", "", visualEvidence, "", `Closes #${issue}`, ""].join(
-    "\n",
-  );
+  return ["## Evidence", "", visualEvidence, ""].join("\n");
 }
 
 // Bring a local branch up to `origin/<branch>` before a new PR records it as its base (#601), so a
@@ -94,8 +89,8 @@ export const dev = {
   // Open the PR for an issue's worktree branch at the start of a run. Idempotent:
   // if the issue already has an open (unmerged) linked PR, return it untouched. The PR can
   // be opened with 0 commits — LoopHub does not require head to be ahead of base (the diff
-  // is just empty until the agent commits). The body seeds a plan placeholder the agent
-  // overwrites; `Closes #<n>` links it both ways. The run launcher calls this *before* provisioning
+  // is just empty until the agent commits). The body seeds an Evidence placeholder the agent
+  // overwrites; the PR is linked to the issue explicitly. The run launcher calls this *before* provisioning
   // the worktree (#463) so the PR number is known first; head defaults to the PR-id branch
   // convention (worktreeBranch), derived from the PR's own number once assigned — pass an
   // explicit `head` only to override it (e.g. tests simulating a specific branch).
@@ -150,8 +145,7 @@ export const dev = {
     if (input.syncBaseFromOrigin && base === r.default_branch) {
       await fastForwardFromOrigin(r.local_path, base);
     }
-    const body =
-      input.body ?? defaultPrBody(input.issue, input.language ?? "ja");
+    const body = input.body ?? defaultPrEvidence(input.language ?? "ja");
     const pr = await pulls.create(
       name,
       {

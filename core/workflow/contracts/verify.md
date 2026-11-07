@@ -7,7 +7,7 @@ merge-base-to-head diff is authoritative, so changes that exist only on the base
 included as reverse changes (a partial base is a direct ancestor of head, so that caveat is a no-op
 there). Judge the Issue's acceptance criteria only against that review subject plus, in a partial
 review, the previous review's result. Other ranges, uncommitted worktree changes, and unrelated
-pre-existing problems are out of scope. Do not read PR body, PR comments, or the implementer's
+pre-existing problems are out of scope. Do not read the PR's Evidence, PR comments, or the implementer's
 description. Do not edit source.
 
 Use this contract and the information you obtain during the workflow first. Only when you need CLI
