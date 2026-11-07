@@ -217,3 +217,109 @@ test("escalateHuman exposes failure and does not replay a pending effect", () =>
   });
   expect(S.listComments(pr.id)).toHaveLength(0);
 });
+
+test("escalateHuman records the choices as structured escalation data", () => {
+  const { repo, pr, run } = createRun("me/escalation-options");
+
+  const result = svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    {
+      run: run.id,
+      reason: "Background: 前提が未確定。",
+      options: [
+        " 現行仕様を維持する ",
+        "",
+        "仕様を\n変更する",
+        "現行仕様を維持する",
+      ],
+    },
+    run.parent_session_id,
+  );
+
+  expect(result.options).toEqual(["現行仕様を維持する", "仕様を 変更する"]);
+  const [comment] = svc.comments.list(repo.full_name, pr.number);
+  expect(comment.escalation).toEqual({
+    options: ["現行仕様を維持する", "仕様を 変更する"],
+    answer: null,
+    answered_at: null,
+    superseded: false,
+  });
+});
+
+test("answer posts the chosen option as the human's PR comment once", () => {
+  const { repo, pr, run } = createRun("me/escalation-answer");
+  svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    { run: run.id, reason: "Pick one.", options: ["A 案", "B 案"] },
+    run.parent_session_id,
+  );
+  const [escalationComment] = S.listComments(pr.id);
+
+  expect(() =>
+    svc.workflowEscalation.answer(
+      repo.full_name,
+      pr.number,
+      escalationComment.id,
+      "C 案",
+    ),
+  ).toThrowError(/not one of/);
+
+  const answered = svc.workflowEscalation.answer(
+    repo.full_name,
+    pr.number,
+    escalationComment.id,
+    "B 案",
+  );
+
+  expect(answered).toMatchObject({ answer: "B 案", superseded: false });
+  const comments = S.listComments(pr.id);
+  expect(comments).toHaveLength(2);
+  expect(comments[1]).toMatchObject({ author: "me", author_type: "human" });
+  expect(comments[1].body).toContain(`#${escalationComment.id}`);
+  expect(comments[1].body).toContain("B 案");
+  const event = S.listEvents(0, repo.id, 1000).findLast(
+    (row) => row.type === "pull_request.commented",
+  );
+  expect(JSON.parse(event!.payload)).toMatchObject({
+    number: pr.number,
+    comment_id: comments[1].id,
+    author_type: "human",
+  });
+  expect(() =>
+    svc.workflowEscalation.answer(
+      repo.full_name,
+      pr.number,
+      escalationComment.id,
+      "A 案",
+    ),
+  ).toThrowError(/already answered/);
+  expect(S.listComments(pr.id)).toHaveLength(2);
+});
+
+test("a newer escalation for the run supersedes the earlier one", () => {
+  const { repo, pr, run } = createRun("me/escalation-superseded");
+  svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    { run: run.id, reason: "First question.", options: ["A", "B"] },
+    run.parent_session_id,
+  );
+  svc.comments.createHumanForPull(repo.full_name, pr.number, "unrelated");
+  const [first] = svc.comments.list(repo.full_name, pr.number);
+  expect(first.escalation?.superseded).toBe(false);
+
+  svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    { run: run.id, reason: "Second question.", options: ["C", "D"] },
+    run.parent_session_id,
+  );
+
+  const listed = svc.comments.list(repo.full_name, pr.number);
+  expect(listed.map((comment) => comment.escalation?.superseded)).toEqual([
+    true,
+    undefined,
+    false,
+  ]);
+  expect(() =>
+    svc.workflowEscalation.answer(repo.full_name, pr.number, first.id, "A"),
+  ).toThrowError(/superseded/);
+});

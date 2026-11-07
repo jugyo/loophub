@@ -218,6 +218,8 @@ export interface WorkflowEventPayloadMap {
   "workflow_effect.human_escalation": WorkflowRunScoped & {
     issue_number: number;
     reason: string;
+    /** The choices offered to the human; absent on escalations recorded before choices existed. */
+    options?: string[];
   };
 }
 

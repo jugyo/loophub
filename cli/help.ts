@@ -375,12 +375,15 @@ Options:
 const WORKFLOW_ESCALATE_HUMAN_DETAILS = `
 
 Usage:
-  lh workflow escalate-human --run <id> --reason <text|@file|-> [options]
+  lh workflow escalate-human --run <id> --reason <text|@file|-> [--option <text>]... [options]
 
 Options:
   --reason <text|@file|-> The human-facing comment body; @file reads a file, - reads stdin, and a
                         body redirected on stdin is accepted without the flag. Trimmed to 5000
                         characters rather than rejected (required).
+  --option <text>       One choice the human picks from on the PR screen (repeatable). Choosing
+                        one posts it as the human's PR comment. A newer escalation for the same
+                        run disables this one's choices.
   --run <id>            Workflow run (required).
   --repo <owner/name>   Repository (defaults to the run's repository).
   --session-id <uuid>   Attribute the escalation to a registered agent session.

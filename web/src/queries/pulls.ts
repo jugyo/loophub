@@ -10,6 +10,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import {
+  answerPullEscalation,
   archivePull,
   createDiffFeedback,
   getCommitDiff,
@@ -788,6 +789,26 @@ export function useSetPullCommentArchived(
         input.commentId,
         input.archived,
       ),
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: commentsKey }),
+        qc.invalidateQueries({
+          queryKey: [...queryKeys.pull(full(owner, repo), number), "pageData"],
+        }),
+      ]),
+  });
+}
+
+export function useAnswerPullEscalation(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const qc = useQueryClient();
+  const commentsKey = queryKeys.issueComments(full(owner, repo), number);
+  return useMutation({
+    mutationFn: (input: { commentId: number; option: string }) =>
+      answerPullEscalation(owner, repo, number, input.commentId, input.option),
     onSettled: () =>
       Promise.all([
         qc.invalidateQueries({ queryKey: commentsKey }),

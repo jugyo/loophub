@@ -2044,6 +2044,38 @@ describe("PullDetail", () => {
     );
   });
 
+  it("collapses a superseded escalation and keeps the newest one open", async () => {
+    const escalation = {
+      options: ["A", "B"],
+      answer: null,
+      answered_at: null,
+    };
+    renderDetail({
+      "comments/list": () => [
+        { ...comments[0], escalation: { ...escalation, superseded: true } },
+        { ...comments[1], escalation: { ...escalation, superseded: false } },
+      ],
+    });
+
+    const summary = await screen.findByLabelText(
+      "Superseded escalation PR comment 9",
+    );
+    expect(summary.textContent).toContain(
+      "Superseded escalation · me: Thanks!",
+    );
+    expect(
+      screen.queryByLabelText("Escalation options for PR comment 9"),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText("Escalation options for PR comment 11"),
+    ).toBeTruthy();
+
+    fireEvent.click(summary);
+    expect(
+      screen.getByLabelText("Escalation options for PR comment 9"),
+    ).toBeTruthy();
+  });
+
   it("Archive 済み PR comment を Comments 見出しの件数から除外する", async () => {
     const archived = { ...comments[1], archived_at: "2026-06-18T12:00:00Z" };
     renderDetail({ "comments/list": () => [comments[0], archived] });

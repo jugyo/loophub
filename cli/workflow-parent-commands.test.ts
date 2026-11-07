@@ -108,6 +108,37 @@ test("escalate-human takes its reason from stdin, with or without the flag", () 
   ).toContain("Background: 別の判断が要る。\nDecision points: 人間が決める。");
 });
 
+test("escalate-human records each --option as a choice", () => {
+  const { run, pr } = createRun();
+
+  const result = lh(
+    [
+      "workflow",
+      "escalate-human",
+      "--run",
+      String(run),
+      "--reason",
+      "-",
+      "--option",
+      "現行仕様を維持する",
+      "--option",
+      "仕様を変更する",
+      "--json",
+    ],
+    "Background: 前提が未確定。",
+  );
+
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout).options).toEqual([
+    "現行仕様を維持する",
+    "仕様を変更する",
+  ]);
+  const [comment] = S.listComments(S.getIssue(repoId, pr)!.id);
+  expect(
+    JSON.parse(S.getWorkflowEscalationByComment(comment.id)!.options),
+  ).toEqual(["現行仕様を維持する", "仕様を変更する"]);
+});
+
 test("escalate-human still reports a reason it was never given", () => {
   const { run } = createRun();
 

@@ -972,3 +972,77 @@ function parseStepSessions(value: string): Record<string, string[]> {
     return {};
   }
 }
+
+// ---- human escalations ----
+
+export interface WorkflowEscalationRow {
+  id: number;
+  run_id: number;
+  event_id: number;
+  comment_id: number;
+  /** JSON array of the choices the human answers from; empty when the parent offered none. */
+  options: string;
+  answer: string | null;
+  answered_at: string | null;
+  created_at: string;
+  /** Derived: a newer escalation exists for the same run. */
+  superseded: number;
+}
+
+const ESCALATION_SELECT = `SELECT escalation.*,
+  EXISTS (
+    SELECT 1 FROM workflow_escalations newer
+    WHERE newer.run_id = escalation.run_id AND newer.id > escalation.id
+  ) AS superseded
+  FROM workflow_escalations escalation`;
+
+export function createWorkflowEscalation(input: {
+  runId: number;
+  eventId: number;
+  commentId: number;
+  options: string[];
+}): void {
+  db.run(
+    `INSERT INTO workflow_escalations (run_id, event_id, comment_id, options, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      input.runId,
+      input.eventId,
+      input.commentId,
+      JSON.stringify(input.options),
+      now(),
+    ],
+  );
+}
+
+export function getWorkflowEscalationByComment(
+  commentId: number,
+): WorkflowEscalationRow | null {
+  return (
+    (db
+      .query(`${ESCALATION_SELECT} WHERE escalation.comment_id = ?`)
+      .get(commentId) as WorkflowEscalationRow | null) ?? null
+  );
+}
+
+/** Escalations whose comment is on the given issue/PR row, keyed by comment id. */
+export function workflowEscalationsByIssue(
+  issueId: number,
+): Map<number, WorkflowEscalationRow> {
+  const rows = db
+    .query(
+      `${ESCALATION_SELECT}
+       JOIN comments comment ON comment.id = escalation.comment_id
+       WHERE comment.issue_id = ?`,
+    )
+    .all(issueId) as WorkflowEscalationRow[];
+  return new Map(rows.map((row) => [row.comment_id, row]));
+}
+
+export function answerWorkflowEscalation(id: number, answer: string): void {
+  db.run(
+    `UPDATE workflow_escalations SET answer = ?, answered_at = ?
+     WHERE id = ? AND answer IS NULL`,
+    [answer, now(), id],
+  );
+}

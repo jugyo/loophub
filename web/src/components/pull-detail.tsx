@@ -47,6 +47,7 @@ import {
 } from "@/components/detail-title";
 import { DiffCommentCount } from "@/components/diff-comment-count";
 import { DiffStat } from "@/components/diff-stat";
+import { EscalationAnswer } from "@/components/escalation-answer";
 import { FileStatusBadge } from "@/components/file-status-badge";
 import { FileViewedBadge } from "@/components/file-viewed-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
@@ -90,6 +91,7 @@ import { useScrollToCommentForm } from "@/lib/use-scroll-to-comment-form";
 import { cn } from "@/lib/utils";
 import { useIssueComments } from "@/queries/issues";
 import {
+  useAnswerPullEscalation,
   useGithubPrStatus,
   useMarkGithubMerged,
   useMergePull,
@@ -1224,6 +1226,7 @@ function timelineItemContent(
     onOpenDiffFeedback: (path: string, threadId: number) => void;
     reaction: ReturnType<typeof useReactToPullComment>;
     archive: ReturnType<typeof useSetPullCommentArchived>;
+    answer: ReturnType<typeof useAnswerPullEscalation>;
     showError: (message: string) => void;
   },
 ) {
@@ -1244,6 +1247,7 @@ function timelineItemContent(
           comment={item.comment}
           reaction={context.reaction}
           archive={context.archive}
+          answer={context.answer}
           showError={context.showError}
         />
       );
@@ -1306,6 +1310,7 @@ function CommentList({
   const { formRef, scrollAfterPost } = useScrollToCommentForm(commentCount);
   const reaction = useReactToPullComment(owner, repo, number);
   const archive = useSetPullCommentArchived(owner, repo, number);
+  const answer = useAnswerPullEscalation(owner, repo, number);
   const { showError } = useToast();
   const post = usePostPullComment(owner, repo, number, (_error, failedBody) => {
     setBody(failedBody);
@@ -1385,6 +1390,7 @@ function CommentList({
     onOpenDiffFeedback,
     reaction,
     archive,
+    answer,
     showError,
   };
 
@@ -1507,6 +1513,7 @@ function CommentCard({
   comment,
   reaction,
   archive,
+  answer,
   showError,
 }: {
   owner: string;
@@ -1514,6 +1521,7 @@ function CommentCard({
   comment: IssueComment;
   reaction: ReturnType<typeof useReactToPullComment>;
   archive: ReturnType<typeof useSetPullCommentArchived>;
+  answer: ReturnType<typeof useAnswerPullEscalation>;
   showError: (message: string) => void;
 }) {
   const archived = comment.archived_at != null;
@@ -1544,6 +1552,22 @@ function CommentCard({
       <Markdown owner={owner} repo={repo}>
         {comment.body}
       </Markdown>
+      {comment.escalation && (
+        <EscalationAnswer
+          commentId={comment.id}
+          escalation={comment.escalation}
+          submitting={answer.isPending}
+          onSubmit={(option) =>
+            answer.mutate(
+              { commentId: comment.id, option },
+              {
+                onError: (error) =>
+                  showError(errorMessage(error, "Answer failed")),
+              },
+            )
+          }
+        />
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {comment.reactions.map((item) => (
           <button
@@ -1605,19 +1629,23 @@ function CommentCard({
       </div>
     </>
   );
+  // An escalation a newer one from the same run replaced can no longer be answered, so it folds away
+  // like an archived comment and expands to show what was asked.
+  const superseded = comment.escalation?.superseded === true;
+  const collapsed = archived || superseded;
   return (
     <article
       data-debug-component="PullComment"
       className={
-        archived
+        collapsed
           ? "rounded-md border border-dashed px-3 py-2"
           : "rounded-md border p-3"
       }
     >
-      {archived ? (
+      {collapsed ? (
         <ArchivedComment
-          label={`Archived PR comment ${comment.id}`}
-          preview={`${comment.user.login}: ${commentPreview(comment.body)}`}
+          label={`${archived ? "Archived" : "Superseded escalation"} PR comment ${comment.id}`}
+          preview={`${superseded ? "Superseded escalation · " : ""}${comment.user.login}: ${commentPreview(comment.body)}`}
           menu={menu}
         >
           <header className="mb-1">

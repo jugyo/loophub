@@ -130,6 +130,7 @@ export type Flags = {
   "delivery-id"?: string;
   // Repeatable structured acceptance criterion text for `lh issue create` (#1894).
   ac?: string[];
+  option?: string[];
 };
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
@@ -257,6 +258,7 @@ const { values, positionals } = parseArgs({
     target: { type: "string" },
     "delivery-id": { type: "string" },
     ac: { type: "string", multiple: true },
+    option: { type: "string", multiple: true },
   },
 });
 export const flags = values as Flags;

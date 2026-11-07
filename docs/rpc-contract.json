@@ -2448,6 +2448,41 @@
       }
     },
     {
+      "name": "pullComments/answerEscalation",
+      "description": "Answer a Workflow run's human escalation on a pull request by picking one of its options.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "comment_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "option": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "comment_id",
+          "option"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "pullComments/archive",
       "description": "Archive or unarchive a pull request comment, keeping it collapsed on the PR page.",
       "params": {

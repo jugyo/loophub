@@ -16,7 +16,12 @@ import {
 export const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as const;
 
 function commentWire(row: S.CommentRow, actor?: string) {
-  return commentJSON(row, S.listCommentReactions(row.id), actor);
+  return commentJSON(
+    row,
+    S.listCommentReactions(row.id),
+    actor,
+    S.getWorkflowEscalationByComment(row.id),
+  );
 }
 
 export const comments = {
@@ -24,8 +29,14 @@ export const comments = {
     const r = repoOr404(name);
     const row = issueOr404(r, number);
     const reactions = S.commentReactionsByIssue(row.id);
+    const escalations = S.workflowEscalationsByIssue(row.id);
     return S.listComments(row.id).map((comment) =>
-      commentJSON(comment, reactions.get(comment.id) ?? [], actor),
+      commentJSON(
+        comment,
+        reactions.get(comment.id) ?? [],
+        actor,
+        escalations.get(comment.id),
+      ),
     );
   },
 

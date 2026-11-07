@@ -1741,6 +1741,28 @@ export const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "repos", "auto_start_workflow_since", "TEXT");
     },
   },
+  {
+    id: "20261106142723-workflow-escalations",
+    run: (db) => {
+      // One row per escalate-human PR comment: the choices the human answers from and, once
+      // answered, the choice picked. A row is superseded when its run has a newer row; that is
+      // derived on read rather than stored.
+      db.exec(`
+    CREATE TABLE IF NOT EXISTS workflow_escalations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id      INTEGER NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+      event_id    INTEGER NOT NULL UNIQUE,
+      comment_id  INTEGER NOT NULL UNIQUE REFERENCES comments(id) ON DELETE CASCADE,
+      options     TEXT NOT NULL,
+      answer      TEXT,
+      answered_at TEXT,
+      created_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_workflow_escalations_run
+      ON workflow_escalations(run_id);
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

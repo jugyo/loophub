@@ -1197,12 +1197,36 @@ export interface CommentWire {
   reactions: ReactionWire[];
   /** When set, the comment is kept but shown collapsed. */
   archived_at: string | null;
+  /** Present when the comment is a Workflow run's human escalation. */
+  escalation?: CommentEscalationWire;
+}
+
+export interface CommentEscalationWire {
+  /** The choices the human answers from; empty when none were offered. */
+  options: string[];
+  /** The chosen option once answered. */
+  answer: string | null;
+  answered_at: string | null;
+  /** A newer escalation from the same run replaced this one; it can no longer be answered. */
+  superseded: boolean;
+}
+
+export function commentEscalationJSON(
+  row: S.WorkflowEscalationRow,
+): CommentEscalationWire {
+  return {
+    options: JSON.parse(row.options) as string[],
+    answer: row.answer,
+    answered_at: row.answered_at,
+    superseded: !!row.superseded,
+  };
 }
 
 export function commentJSON(
   m: S.CommentRow,
   reactions: S.CommentReactionRow[] = [],
   actor?: string,
+  escalation?: S.WorkflowEscalationRow | null,
 ): CommentWire {
   const counts = new Map<string, { count: number; reacted: boolean }>();
   for (const reaction of reactions) {
@@ -1223,6 +1247,7 @@ export function commentJSON(
       ...reaction,
     })),
     archived_at: m.archived_at,
+    ...(escalation ? { escalation: commentEscalationJSON(escalation) } : {}),
   };
 }
 

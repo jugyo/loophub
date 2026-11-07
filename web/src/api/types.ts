@@ -11,6 +11,7 @@ import type {
   AcceptanceCriterionWire,
   AgentSessionWire,
   CodingAgent as CodingAgentWire,
+  CommentEscalationWire,
   CommentWire,
   DashboardOverviewWire,
   DashboardRepositoryWire,
@@ -129,6 +130,9 @@ export type LinkedIssue = LinkedIssueWire;
 
 /** A comment on an issue (GET .../issues/{number}/comments). */
 export type IssueComment = CommentWire;
+
+/** A Workflow run's human escalation attached to a PR comment. */
+export type CommentEscalation = CommentEscalationWire;
 
 /** A submitted review on a PR (GET .../pulls/{number}/reviews). */
 export type PullReview = ReviewWire;

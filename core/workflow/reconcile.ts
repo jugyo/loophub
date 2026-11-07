@@ -452,7 +452,7 @@ function actionPlan(
         commands: [escalate],
         decision: {
           question:
-            "Write a human-facing escalation comment from the request and execution context.",
+            "Write a human-facing escalation comment and its --option choices from the request and execution context.",
           inputs: ["escalation reason", "execution context"],
           submit: null,
         },

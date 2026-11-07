@@ -1,11 +1,13 @@
+import { db } from "../db.ts";
 import { ServiceError } from "../errors.ts";
+import { commentEscalationJSON } from "../serialize.ts";
 import * as S from "../store.ts";
 import {
   truncateMarkdownReason,
   WORKFLOW_ESCALATION_REASON_MAX_LENGTH,
 } from "../workflow/prompts.ts";
 import { comments } from "./comments.ts";
-import { actorFor, ensureWritable, repoOr404 } from "./shared.ts";
+import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 
 type EffectStatus = {
   status: "completed" | "already_completed" | "pending" | "failed";
@@ -19,7 +21,7 @@ type WorkflowEscalationDeps = {
     body: string,
     actor: string,
     sessionId?: string | null,
-  ): unknown;
+  ): { id: number };
 };
 
 const defaultDeps: WorkflowEscalationDeps = {
@@ -43,6 +45,18 @@ function reasonText(value: string): string {
     throw new ServiceError(422, "escalate-human requires a reason");
   }
   return reason;
+}
+
+// The choices are what the PR screen renders as radio buttons, so each is trimmed, blanks dropped and
+// duplicates collapsed: two identical radio labels could not be told apart in the answer.
+function optionTexts(values: string[] | undefined): string[] {
+  return [
+    ...new Set(
+      (values ?? [])
+        .map((value) => value.replace(/\s+/g, " ").trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 // Claim, effect and completion are deliberately three commit points, not one transaction: the claim
@@ -80,7 +94,7 @@ function runEffect(
 export const workflowEscalation = {
   escalateHuman(
     name: string,
-    input: { run: number; reason: string },
+    input: { run: number; reason: string; options?: string[] },
     sessionId?: string | null,
     dependencyOverrides: Partial<WorkflowEscalationDeps> = {},
   ) {
@@ -93,6 +107,7 @@ export const workflowEscalation = {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
     const reason = reasonText(input.reason);
+    const options = optionTexts(input.options);
     const pr = S.getIssue(repo.id, run.pr_number);
     if (pr?.kind !== "pull") {
       throw new ServiceError(
@@ -107,17 +122,28 @@ export const workflowEscalation = {
         id: run.id,
         issue_number: run.issue_number,
         reason,
+        options,
       },
     );
     const body = `Workflow run ${run.id} requires human guidance.\n\n${reason}`;
+    // The escalation row is written with its comment, so the PR screen never shows an escalation
+    // comment without its choices, nor choices without the comment they answer.
     const prComment = runEffect(run.id, event.id, "escalation.pr-comment", () =>
-      deps.createComment(
-        name,
-        run.pr_number,
-        body,
-        ESCALATION_COMMENT_AUTHOR,
-        sessionId,
-      ),
+      db.transaction(() => {
+        const comment = deps.createComment(
+          name,
+          run.pr_number,
+          body,
+          ESCALATION_COMMENT_AUTHOR,
+          sessionId,
+        );
+        S.createWorkflowEscalation({
+          runId: run.id,
+          eventId: event.id,
+          commentId: comment.id,
+          options,
+        });
+      }),
     );
     const ok =
       prComment.status === "completed" ||
@@ -128,9 +154,50 @@ export const workflowEscalation = {
       event_id: event.id,
       pr: run.pr_number,
       reason,
+      options,
       effects: {
         pr_comment: prComment,
       },
     };
+  },
+
+  /**
+   * The human's answer to an escalation, picked from its choices on the PR screen. It is posted as
+   * the human's own PR comment, so the run's parent receives it the same way as any other human
+   * PR comment. Only the run's newest escalation can be answered, and only once.
+   */
+  answer(name: string, pr: number, commentId: number, option: string) {
+    const repo = repoOr404(name);
+    ensureWritable(repo);
+    const row = issueOr404(repo, pr, "pull");
+    return db.transaction(() => {
+      const escalation = S.getWorkflowEscalationByComment(commentId);
+      const comment = S.getComment(commentId);
+      if (!escalation || comment?.issue_id !== row.id) {
+        throw new ServiceError(404, "escalation not found");
+      }
+      if (escalation.answer !== null) {
+        throw new ServiceError(409, "escalation is already answered");
+      }
+      if (escalation.superseded) {
+        throw new ServiceError(
+          409,
+          "escalation was superseded by a newer escalation",
+        );
+      }
+      const options = JSON.parse(escalation.options) as string[];
+      if (!options.includes(option)) {
+        throw new ServiceError(422, "option is not one of the escalation's");
+      }
+      S.answerWorkflowEscalation(escalation.id, option);
+      comments.createHumanForPull(
+        name,
+        pr,
+        `Answer to escalation comment #${commentId}:\n\n> ${option}`,
+      );
+      return commentEscalationJSON(
+        S.getWorkflowEscalationByComment(commentId)!,
+      );
+    });
   },
 };

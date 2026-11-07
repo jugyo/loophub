@@ -1099,6 +1099,22 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) =>
       svc.comments.reactHumanForPull(p.repo, p.number, p.comment_id, p.emoji),
   },
+  "pullComments/answerEscalation": {
+    description:
+      "Answer a Workflow run's human escalation on a pull request by picking one of its options.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        comment_id: positiveInt,
+        option: strNonEmpty,
+      },
+      ["repo", "number", "comment_id", "option"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.workflowEscalation.answer(p.repo, p.number, p.comment_id, p.option),
+  },
   "pullComments/archive": {
     description:
       "Archive or unarchive a pull request comment, keeping it collapsed on the PR page.",

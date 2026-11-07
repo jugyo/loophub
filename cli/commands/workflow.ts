@@ -1204,7 +1204,7 @@ async function escalateHuman(): Promise<void> {
   const result = await runOp(async () =>
     (await svc()).workflowEscalation.escalateHuman(
       repo,
-      { run: runId, reason },
+      { run: runId, reason, options: flags.option },
       await writeSession(),
     ),
   );
@@ -1212,6 +1212,7 @@ async function escalateHuman(): Promise<void> {
     out(result);
   } else {
     console.log(`Workflow run #${result.run}\tPR #${result.pr}`);
+    for (const option of result.options) console.log(`option\t${option}`);
     const effect = result.effects.pr_comment;
     console.log(`pr comment\t${effect.status.replaceAll("_", " ")}`);
     if (effect.error) console.log(`pr comment error\t${effect.error}`);

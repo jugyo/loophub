@@ -12,6 +12,7 @@ import type {
   AcceptanceCriterionDetail,
   AgentSession,
   CodingAgent,
+  CommentEscalation,
   DashboardOverview,
   DiffFeedbackList,
   DiffFeedbackMessage,
@@ -977,6 +978,21 @@ export function reactToPullComment(
     number,
     comment_id: commentId,
     emoji,
+  });
+}
+
+export function answerPullEscalation(
+  owner: string,
+  repo: string,
+  number: number,
+  commentId: number,
+  option: string,
+) {
+  return rpc<CommentEscalation>("pullComments/answerEscalation", {
+    repo: full(owner, repo),
+    number,
+    comment_id: commentId,
+    option,
   });
 }
 
