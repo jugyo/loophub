@@ -3987,3 +3987,95 @@ describe("PullDetail — #comments landing (#2394)", () => {
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });
+
+// #2640: the linked issue's body and per-criterion status take the PR body's place; the PR body
+// stays collapsed below for its evidence.
+describe("PullDetail — linked issue description (#2640)", () => {
+  const criteria = [1, 2, 3].map((n) => ({
+    id: `153-${n}`,
+    number: n,
+    ordinal: n,
+    text: `Criterion ${n}`,
+  }));
+  const linkedIssue = {
+    number: 153,
+    title: "ui2: PR list + detail + merged",
+    body: "The issue spec body.",
+    acceptance_criteria: criteria,
+  };
+  function gradedReview(
+    id: number,
+    submittedAt: string,
+    verdicts: Record<number, "pass" | "fail">,
+  ): PullReview {
+    return {
+      ...reviews[0],
+      id,
+      head_sha: "old-head",
+      submitted_at: submittedAt,
+      ac_results: Object.entries(verdicts).map(([n, verdict]) => ({
+        criterion_id: `153-${n}`,
+        number: Number(n),
+        text: `Criterion ${n}`,
+        verdict,
+        note: "",
+      })),
+    };
+  }
+  function verdictOf(text: string) {
+    const item = screen.getByText(text).closest("li") as HTMLElement;
+    return item.querySelector("svg")?.getAttribute("aria-label");
+  }
+
+  it("shows the issue body and grades from the latest grading review, whatever head it read", async () => {
+    renderDetail({
+      "issues/get": () => linkedIssue,
+      "reviews/list": () => [
+        gradedReview(10, "2026-06-18T10:00:00Z", { 1: "fail", 2: "fail" }),
+        gradedReview(11, "2026-06-18T10:30:00Z", { 1: "pass", 2: "fail" }),
+        // A later review with no grading does not reset the criteria.
+        { ...reviews[0], id: 12, submitted_at: "2026-06-18T11:00:00Z" },
+      ],
+    });
+
+    await screen.findByText("The issue spec body.");
+    const issueLink = screen
+      .getAllByRole("link", { name: "#153" })
+      .find((link) =>
+        link.closest('[data-debug-component="PullLinkedIssueDescription"]'),
+      );
+    expect(issueLink?.getAttribute("href")).toBe("/r/me/proj/issues/153");
+    expect(verdictOf("Criterion 1")).toBe("Met");
+    expect(verdictOf("Criterion 2")).toBe("Not met");
+    expect(verdictOf("Criterion 3")).toBe("Not graded");
+    expect(screen.getByText(/1\/3 met · 1 not met · 1 not/)).toBeTruthy();
+
+    const details = screen
+      .getByText("PR body")
+      .closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(
+      within(details).getByText("Render diff, reviews, comments."),
+    ).toBeTruthy();
+  });
+
+  it("marks every criterion Not graded when no review graded criteria", async () => {
+    renderDetail({ "issues/get": () => linkedIssue });
+
+    await screen.findByText("The issue spec body.");
+    for (const criterion of criteria) {
+      expect(verdictOf(criterion.text)).toBe("Not graded");
+    }
+    expect(screen.getByText(/0\/3 met · 0 not met · 3 not/)).toBeTruthy();
+  });
+
+  it("keeps showing the PR body when the linked issue has no structured criteria", async () => {
+    renderDetail({
+      "issues/get": () => ({ ...linkedIssue, acceptance_criteria: undefined }),
+    });
+
+    await screen.findByText("Render diff, reviews, comments.");
+    expect(screen.queryByText("The issue spec body.")).toBeNull();
+    expect(screen.queryByText("PR body")).toBeNull();
+  });
+});

@@ -10,10 +10,14 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ArrowDownToLine,
+  Check,
+  ChevronRight,
+  Circle,
   ExternalLink,
   Github,
   Loader2,
   SmilePlus,
+  X,
 } from "lucide-react";
 import {
   type ReactNode,
@@ -31,6 +35,7 @@ import type {
   PullRequest,
   PullReview,
   PullTimelineItem,
+  ReviewAcResult,
 } from "@/api/types";
 import {
   ArchivedComment,
@@ -89,7 +94,7 @@ import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useScrollToCommentForm } from "@/lib/use-scroll-to-comment-form";
 import { cn } from "@/lib/utils";
-import { useIssueComments } from "@/queries/issues";
+import { useIssue, useIssueComments } from "@/queries/issues";
 import {
   useAnswerPullEscalation,
   useGithubPrStatus,
@@ -290,7 +295,12 @@ export function PullDetail({
                 navigate, so they own the top of the scrollport once the page scrolls; each section
                 below carries the id they link to. */}
             <PullSectionTabs titleRef={titleRef} />
-            <PullBody owner={owner} repo={repo} pull={pull} />
+            <PullBody
+              owner={owner}
+              repo={repo}
+              pull={pull}
+              reviews={reviewsQuery.data ?? []}
+            />
 
             <PullCommitsSection
               owner={owner}
@@ -605,6 +615,134 @@ function PullHeader({
   );
 }
 
+// What the PR is for (#2640): the linked issue's body and how its acceptance criteria stand, since
+// the spec lives in the issue and the PR body only carries evidence. The PR body stays reachable,
+// collapsed, below the criteria. A PR with no linked issue, or whose issue has no structured
+// criteria, keeps showing its own body as before.
+function PullDescription({
+  owner,
+  repo,
+  pull,
+  reviews,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+  reviews: PullReview[];
+}) {
+  const linked = pull.linked_issue;
+  const issueQuery = useIssue(owner, repo, linked?.number ?? 0, !!linked);
+  const body = pull.body ? (
+    <Markdown owner={owner} repo={repo} className="p-4">
+      {pull.body}
+    </Markdown>
+  ) : (
+    <p className="p-4 text-sm text-muted-foreground">No description.</p>
+  );
+  if (linked && issueQuery.isLoading) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+  const issue = issueQuery.data;
+  const criteria = issue?.acceptance_criteria ?? [];
+  if (!linked || !issue || criteria.length === 0) {
+    return <div className="rounded-md border bg-muted/30">{body}</div>;
+  }
+  // The latest review that graded criteria speaks for all of them, whatever head it read: a
+  // criterion once met tends to stay met. Reviews arrive submitted_at ascending.
+  const grades = new Map<string, ReviewAcResult>(
+    (
+      reviews.findLast((review) => review.ac_results.length > 0)?.ac_results ??
+      []
+    ).map((grade) => [grade.criterion_id, grade]),
+  );
+  const met = criteria.filter(
+    (criterion) => grades.get(criterion.id)?.verdict === "pass",
+  ).length;
+  const notMet = criteria.filter(
+    (criterion) => grades.get(criterion.id)?.verdict === "fail",
+  ).length;
+  const notGraded = criteria.length - met - notMet;
+  return (
+    <div
+      data-debug-component="PullLinkedIssueDescription"
+      className="flex flex-col gap-3"
+    >
+      <div className="rounded-md border bg-muted/30">
+        <div className="flex min-w-0 items-baseline gap-1.5 border-b px-4 py-2 text-sm">
+          <Link
+            to="/r/$owner/$repo/issues/$number"
+            params={{ owner, repo, number: String(linked.number) }}
+            className="shrink-0 font-medium hover:underline"
+          >
+            #{linked.number}
+          </Link>
+          <span className="min-w-0 flex-1 truncate" title={issue.title}>
+            {issue.title}
+          </span>
+        </div>
+        {issue.body ? (
+          <Markdown owner={owner} repo={repo} className="p-4">
+            {issue.body}
+          </Markdown>
+        ) : (
+          <p className="p-4 text-sm text-muted-foreground">No description.</p>
+        )}
+      </div>
+      <section className="flex flex-col gap-2 rounded-md border p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-sm font-semibold">Acceptance criteria</h3>
+          <span className="text-xs text-muted-foreground">
+            {met}/{criteria.length} met · {notMet} not met · {notGraded} not
+            graded
+          </span>
+        </div>
+        <ul className="flex flex-col gap-1.5 text-sm">
+          {criteria.map((criterion) => {
+            const verdict = grades.get(criterion.id)?.verdict;
+            return (
+              <li key={criterion.id} className="flex items-start gap-2">
+                {verdict === "pass" ? (
+                  <Check
+                    aria-label="Met"
+                    className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-400"
+                  />
+                ) : verdict === "fail" ? (
+                  <X
+                    aria-label="Not met"
+                    className="mt-0.5 size-4 shrink-0 text-destructive"
+                  />
+                ) : (
+                  <Circle
+                    aria-label="Not graded"
+                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                  />
+                )}
+                <span className="min-w-0 break-words">
+                  <span className="mr-2 font-mono text-xs text-muted-foreground">
+                    AC {criterion.number}
+                  </span>
+                  {criterion.text}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      <details className="group overflow-hidden rounded-md border bg-muted/30">
+        <summary className="flex cursor-pointer list-none items-center gap-1 px-4 py-2 text-sm font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
+          PR body
+        </summary>
+        <div className="border-t">{body}</div>
+      </details>
+    </div>
+  );
+}
+
 // The PR's description and the write actions that settle it (close/reopen, merge or the GitHub
 // export). It reads as the first thing under the section tabs, the way the commit list and the
 // diff read under theirs.
@@ -612,10 +750,12 @@ function PullBody({
   owner,
   repo,
   pull,
+  reviews,
 }: {
   owner: string;
   repo: string;
   pull: PullRequest;
+  reviews: PullReview[];
 }) {
   const merge = useMergePull(owner, repo, pull.number);
   const markGithubMerged = useMarkGithubMerged(owner, repo, pull.number);
@@ -652,15 +792,12 @@ function PullBody({
       data-debug-component="PullBody"
       className="flex flex-col gap-3"
     >
-      <div className="rounded-md border bg-muted/30">
-        {pull.body ? (
-          <Markdown owner={owner} repo={repo} className="p-4">
-            {pull.body}
-          </Markdown>
-        ) : (
-          <p className="p-4 text-sm text-muted-foreground">No description.</p>
-        )}
-      </div>
+      <PullDescription
+        owner={owner}
+        repo={repo}
+        pull={pull}
+        reviews={reviews}
+      />
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         {/* #2538: a partial PASS opens the merge gate like a full one, so the person about to
