@@ -2406,11 +2406,7 @@ describe("DiffFileDialog", () => {
         expect.objectContaining({ thread_id: 1, body: "Still relevant" }),
       ),
     );
-    fireEvent.pointerDown(
-      screen.getByRole("button", { name: "Actions for diff thread 1" }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
     await waitFor(() =>
       expect(archive).toHaveBeenCalledWith(
         expect.objectContaining({ thread_id: 1, archived: true }),
@@ -2453,7 +2449,7 @@ describe("DiffFileDialog", () => {
     );
   });
 
-  it("collapses an archived conversation and expands it on demand", async () => {
+  it("collapses a resolved conversation and expands it on demand", async () => {
     const archive = vi.fn(() => ({}));
     renderDialog({
       handlers: {
@@ -2475,20 +2471,14 @@ describe("DiffFileDialog", () => {
 
     const card = await screen.findByLabelText("Diff thread 1");
     expect(
-      within(card).getByLabelText("Archived diff thread 1").textContent,
+      within(card).getByLabelText("Resolved diff thread 1").textContent,
     ).toContain("Please revisit this range.");
     expect(within(card).queryByLabelText("Reply to thread 1")).toBeNull();
 
-    fireEvent.click(within(card).getByLabelText("Archived diff thread 1"));
+    fireEvent.click(within(card).getByLabelText("Resolved diff thread 1"));
     expect(within(card).getByLabelText("Reply to thread 1")).toBeTruthy();
 
-    fireEvent.pointerDown(
-      within(card).getByRole("button", {
-        name: "Actions for diff thread 1",
-      }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Unarchive" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Unresolve" }));
     await waitFor(() =>
       expect(archive).toHaveBeenCalledWith(
         expect.objectContaining({ thread_id: 1, archived: false }),
@@ -2628,13 +2618,7 @@ describe("DiffFileDialog", () => {
         expect.objectContaining({ thread_id: 1, body: "Still relevant" }),
       ),
     );
-    fireEvent.pointerDown(
-      within(card).getByRole("button", {
-        name: "Actions for diff thread 1",
-      }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Resolve" }));
     await waitFor(() =>
       expect(archive).toHaveBeenCalledWith(
         expect.objectContaining({ thread_id: 1, archived: true }),

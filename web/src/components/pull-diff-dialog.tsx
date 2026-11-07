@@ -2519,10 +2519,29 @@ function ThreadCard({
         .map((message) => message.body)
         .filter((body) => body !== "")
         .join("\n\n")}
-      archived={archived}
-      busy={archiveBusy}
-      onArchived={onArchived}
     />
+  );
+  // Resolve reuses the archive state (the thread collapses and drops out of the
+  // pending feedback). The button sits outside the menu so it takes one click.
+  const actions = (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "-my-1 size-7 shrink-0",
+          archived && "text-emerald-600 dark:text-emerald-400",
+        )}
+        aria-label={archived ? "Unresolve" : "Resolve"}
+        title={archived ? "Unresolve" : "Resolve"}
+        disabled={archiveBusy}
+        onClick={() => onArchived(!archived)}
+      >
+        <Check className="size-4" aria-hidden="true" />
+      </Button>
+      {menu}
+    </>
   );
   const conversation = (
     <>
@@ -2630,16 +2649,19 @@ function ThreadCard({
     >
       {archived ? (
         <ArchivedComment
-          label={`Archived diff thread ${thread.id}`}
+          label={`Resolved diff thread ${thread.id}`}
           preview={
             <>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
+                Resolved
+              </span>
               <DiffFeedbackStatus thread={thread} />
               <span>{`${displayedAnchor.path}:${displayedAnchor.start_line} ${commentPreview(
                 thread.messages[0]?.body ?? "",
               )}`}</span>
             </>
           }
-          menu={menu}
+          menu={actions}
         >
           <header className="mb-2 flex justify-end">
             <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
@@ -2652,7 +2674,7 @@ function ThreadCard({
           <header className="mb-2 flex items-center justify-end gap-1">
             <DiffFeedbackStatus thread={thread} />
             <DiffAnchorInfoPopover thread={thread} anchor={displayedAnchor} />
-            {menu}
+            {actions}
           </header>
           {originalDiff}
           {conversation}

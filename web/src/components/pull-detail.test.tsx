@@ -1003,10 +1003,10 @@ describe("PullDetail", () => {
     expect(rpcCall("diffFeedback/list")).toBeFalsy();
   });
 
-  // Archiving has no optimistic update and emits no event, so the page query is what has to
-  // refetch — the previous-threads list it seeds would otherwise sit on the pre-archive value
+  // Resolving has no optimistic update and emits no event, so the page query is what has to
+  // refetch — the previous-threads list it seeds would otherwise sit on the pre-resolve value
   // and the action would look like it did nothing (#123).
-  it("shows a previous thread as archived after archiving it", async () => {
+  it("shows a previous thread as resolved after resolving it", async () => {
     let archivedAt: string | null = null;
     renderDetail({
       "diffFeedback/list": () => ({
@@ -1031,14 +1031,10 @@ describe("PullDetail", () => {
       within(section).getByRole("button", { name: "Previous diff threads" }),
     );
     const card = await within(section).findByLabelText("Diff thread 1");
-    fireEvent.pointerDown(
-      within(card).getByRole("button", { name: "Actions for diff thread 1" }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Resolve" }));
 
     expect(
-      await within(section).findByLabelText("Archived diff thread 1"),
+      await within(section).findByLabelText("Resolved diff thread 1"),
     ).toBeTruthy();
   });
 

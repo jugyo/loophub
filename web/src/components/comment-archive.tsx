@@ -1,7 +1,7 @@
 // Archiving a comment (#2346) keeps it and collapses it: a settled exchange stops crowding the
-// discussion without any history being deleted. Shared by the issue/PR pages' top-level comments and
-// the diff view's conversations so both carry the same affordance and the same collapsed shape. The
-// same top-right menu also carries a "Copy as Markdown" action (#73).
+// discussion without any history being deleted. The issue/PR pages' top-level comments archive from
+// the top-right menu; the diff view's conversations resolve with their own button and reuse only the
+// collapsed shape. The same menu also carries a "Copy as Markdown" action (#73).
 
 import { ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
 import { type ReactNode, useState } from "react";
