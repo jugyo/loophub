@@ -1732,6 +1732,15 @@ export const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE herdr_core_terminals ADD COLUMN session_id TEXT");
     },
   },
+  // #2626: the saved workflow lh-worker starts for every issue opened on this repo while set (NULL
+  // = auto-start off), and when it was turned on so issues that already existed are never started.
+  {
+    id: "20261106141500-repos-auto-start-workflow",
+    run: (db) => {
+      addColumnIfMissing(db, "repos", "auto_start_workflow_id", "INTEGER");
+      addColumnIfMissing(db, "repos", "auto_start_workflow_since", "TEXT");
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

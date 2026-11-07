@@ -30,6 +30,10 @@ export interface Repo {
   github_pr_export_extra_prompt: string | null;
   // #2571: 'herdr' | 'herdr-core' | null (unset → 'herdr', see core/terminal-backend.ts).
   terminal_backend: string | null;
+  // #2626: saved workflow lh-worker starts for newly opened issues (NULL = off), and the time it
+  // was turned on — only issues opened at or after it are started.
+  auto_start_workflow_id: number | null;
+  auto_start_workflow_since: string | null;
 }
 
 // ---- repos ----
@@ -147,6 +151,19 @@ export function setRepoTerminalBackend(
   backend: "herdr" | "herdr-core",
 ) {
   db.run(`UPDATE repos SET terminal_backend = ? WHERE id = ?`, [backend, id]);
+}
+
+// #2626: turn workflow auto-start on (with the workflow to start and the time it was turned on) or
+// off (both null). The caller validates the workflow.
+export function setRepoAutoStartWorkflow(
+  id: number,
+  workflowId: number | null,
+  since: string | null,
+) {
+  db.run(
+    `UPDATE repos SET auto_start_workflow_id = ?, auto_start_workflow_since = ? WHERE id = ?`,
+    [workflowId, since, id],
+  );
 }
 
 export function getRepoById(id: number): Repo | null {

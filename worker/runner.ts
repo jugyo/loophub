@@ -198,6 +198,18 @@ async function dispatchEventOperation(
     }
   }
 
+  if (row.type === "issue.opened" && number !== undefined) {
+    const outcome = await terminal.autoStartWorkflow({
+      repoId: repo.id,
+      issueNumber: number,
+      openedAt: row.created_at,
+    });
+    if (outcome === "failed")
+      workerLog.error(
+        `lh-worker: workflow auto-start failed for ${repo.full_name}#${number} (event ${row.id})`,
+      );
+  }
+
   if (!isSupported(row.type)) return;
 
   const workflow = loadWorkflow(repo.local_path, workerLog.error);

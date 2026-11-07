@@ -607,6 +607,8 @@ describe("pure row -> wire serializers", () => {
       agent_effort: null,
       github_pr_export_extra_prompt: null,
       terminal_backend: null,
+      auto_start_workflow_id: 3,
+      auto_start_workflow_since: "2026-07-03T00:00:00Z",
     };
     expect(serialize.repoJSON(repo)).toEqual({
       id: 1,
@@ -624,6 +626,7 @@ describe("pure row -> wire serializers", () => {
       // Derived from full_name + local_path (terminal-launch.ts), so pin its shape, not the digest.
       herdr_session_name: expect.stringMatching(/^acme-app-[0-9a-f]{8}$/),
       terminal_backend: "herdr",
+      auto_start_workflow_id: 3,
     });
   });
 

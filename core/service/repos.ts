@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
-import { db } from "../db.ts";
+import { db, now } from "../db.ts";
 import { parsePatchWithCoordinates } from "../diff-anchor.ts";
 import { addSyntaxHighlight } from "../diff-syntax.ts";
 import { ServiceError } from "../errors.ts";
@@ -418,6 +418,39 @@ export const repos = {
       S.emitEvent(r.id, "repo.terminal_backend_changed", actor, {
         full_name: r.full_name,
         terminal_backend: backend,
+      });
+      return repoJSON(repoOr404(name));
+    });
+  },
+
+  // #2626: turn workflow auto-start on with a saved workflow applicable to this repo, or off with
+  // null. Turning it on records the time, so lh-worker starts only issues opened from then on.
+  setAutoStartWorkflow(
+    name: string,
+    workflowId: number | null,
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    if (
+      workflowId !== null &&
+      !S.listWorkflows({ applicableToRepoId: r.id }).some(
+        (w) => w.id === workflowId,
+      )
+    )
+      throw new ServiceError(
+        422,
+        `workflow ${workflowId} is not a saved workflow applicable to ${r.full_name}`,
+      );
+    const actor = actorFor(sessionId);
+    return db.transaction(() => {
+      S.setRepoAutoStartWorkflow(
+        r.id,
+        workflowId,
+        workflowId === null ? null : now(),
+      );
+      S.emitEvent(r.id, "repo.auto_start_workflow_changed", actor, {
+        full_name: r.full_name,
+        auto_start_workflow_id: workflowId,
       });
       return repoJSON(repoOr404(name));
     });

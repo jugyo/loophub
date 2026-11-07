@@ -978,6 +978,54 @@ export const terminal = {
     return assertTerminalAttachable(input, { role: "issue-create" });
   },
 
+  // #2626: lh-worker calls this for every issue.opened event. While the repo's auto-start is on and
+  // the issue was opened at or after it was turned on, start the saved workflow exactly like Start
+  // workflow does. A failure is not retried; it becomes a Notification Center entry on the issue.
+  async autoStartWorkflow(input: {
+    repoId: number;
+    issueNumber: number;
+    openedAt: string;
+  }): Promise<"started" | "skipped" | "failed"> {
+    const r = S.getRepoById(input.repoId);
+    const workflowId = r?.auto_start_workflow_id ?? null;
+    const since = r?.auto_start_workflow_since ?? null;
+    if (!r || workflowId === null || since === null || input.openedAt < since)
+      return "skipped";
+    const issue = S.getIssue(r.id, input.issueNumber);
+    if (issue?.state !== "open") return "skipped";
+    try {
+      await this.launch({
+        repo: r.full_name,
+        label: `Issue #${input.issueNumber} - ${issue.title}`,
+        workflow: "workflow-run",
+        issueNumber: input.issueNumber,
+        workflowId,
+      });
+      return "started";
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      db.transaction(() => {
+        const row = S.createNotification({
+          repoId: r.id,
+          kind: "human_attention",
+          severity: "warning",
+          title: `Auto-start workflow failed for #${input.issueNumber}`,
+          body: reason,
+          resourceKind: "issue",
+          resourceNumber: input.issueNumber,
+          sourceKey: `auto-start-workflow:${r.id}:${input.issueNumber}`,
+        });
+        if (row)
+          S.emitEvent(r.id, "notification.created", "lh-worker", {
+            id: row.id,
+            kind: row.kind,
+            number: row.resource_number,
+          });
+      });
+      return "failed";
+    }
+  },
+
   async launch(
     input: TerminalLaunchInput,
     reportError: (message: string) => void = console.error,

@@ -719,3 +719,32 @@ test("log path stays under LOOPHUB_HOME/logs even for a repo name with path sepa
 
   rmSync(repoPath, { recursive: true, force: true });
 });
+
+test("issue.opened on a repo with auto-start on hands the issue to terminal.autoStartWorkflow (#2626)", async () => {
+  const repoPath = mkdtempSync(join(tmpdir(), "lh-repo-"));
+  await git(repoPath, ["init", "-q", "-b", "main"]);
+  const repo = S.createRepo("jugyo/wf-auto-start", repoPath);
+  const workflow = svc.workflows.create({ name: "worker-auto-start" });
+  S.setRepoAutoStartWorkflow(repo.id, workflow.id, "2000-01-01T00:00:00Z");
+  const issue = S.createIssue(repo.id, "issue", "auto", "", "me") as any;
+  const row = S.emitEvent(repo.id, "issue.opened", "me", {
+    number: issue.number,
+  });
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
+  const err = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await R.dispatchEvent(row);
+  } finally {
+    out.mockRestore();
+    err.mockRestore();
+  }
+  // No lh-worker runtime is registered in this DB, so the launch is refused and surfaces as a
+  // Notification Center entry on the issue.
+  const notifications = await svc.notifications.list();
+  expect(
+    notifications.some(
+      (n: { title: string }) =>
+        n.title === `Auto-start workflow failed for #${issue.number}`,
+    ),
+  ).toBe(true);
+});

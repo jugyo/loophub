@@ -98,6 +98,8 @@ export interface RepoWire {
   herdr_session_name: string;
   // #2571: effective terminal backend new workflow runs launch with (NULL setting → 'herdr').
   terminal_backend: TerminalBackend;
+  // #2626: saved workflow lh-worker starts for newly opened issues; null means auto-start is off.
+  auto_start_workflow_id: number | null;
 }
 
 /** Minimal repository identity attached to aggregated dashboard data. */
@@ -190,6 +192,7 @@ export function repoJSON(r: S.Repo): RepoWire {
     merge_mode: (r.merge_mode as MergeMode | null) ?? null,
     herdr_session_name: herdrSessionName(r),
     terminal_backend: normalizeTerminalBackend(r.terminal_backend),
+    auto_start_workflow_id: r.auto_start_workflow_id ?? null,
   };
 }
 

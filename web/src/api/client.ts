@@ -296,6 +296,20 @@ export function setRepoTerminalBackend(
   });
 }
 
+// #2626: turn workflow auto-start on with a saved workflow, or off with null.
+export function setRepoAutoStartWorkflow(
+  owner: string,
+  repo: string,
+  workflowId: number | null,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Repo>("repos/setAutoStartWorkflow", {
+    name: full(owner, repo),
+    workflowId,
+    session_id: sessionId,
+  });
+}
+
 // #71: how the repo's checkout stands against origin, for the repo-top sidebar. Local refs only —
 // this call does not contact origin.
 export function getRepoOriginSync(owner: string, repo: string) {

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Issue, Workspace } from "@/api/types";
+import { AutoStartWorkflowToggle } from "@/components/auto-start-workflow-toggle";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueTree } from "@/components/dashboard-rows";
 import { NewWorkspaceButton } from "@/components/new-workspace-button";
@@ -483,6 +484,12 @@ export function IssueList({
             </Button>
           </>
         )}
+        {/* mr-4 + the row's gap-2 keeps 24px between the switch and New issue (#2626). */}
+        <AutoStartWorkflowToggle
+          owner={owner}
+          repo={repo}
+          className="relative mr-4 inline-flex h-9 items-center"
+        />
         <CreateIssueButton
           repo={`${owner}/${repo}`}
           targetBranch={showWorkspaceFilter ? workspaceParam : undefined}

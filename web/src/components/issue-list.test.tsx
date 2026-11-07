@@ -24,6 +24,7 @@ vi.mock("@/components/terminal-controller", () => ({
   useTerminalLauncher: () => ({ launchTerminal }),
 }));
 
+import { AutoStartWorkflowToggle } from "./auto-start-workflow-toggle";
 import { IssueList } from "./issue-list";
 
 afterEach(() => {
@@ -1315,5 +1316,76 @@ describe("IssueList workflow run state (#112)", () => {
 
     expect((await screen.findAllByLabelText("Workflow")).length).toBe(1);
     expect(rpcCalls("workflowRuns/stateForPull").length).toBe(0);
+  });
+});
+
+function renderToggle() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <AutoStartWorkflowToggle owner="me" repo="proj" />
+    </QueryClientProvider>,
+  );
+}
+
+const WORKFLOWS = [
+  {
+    id: 7,
+    name: "standard",
+    description: "Execute then Verify",
+    scope: { kind: "global" },
+  },
+];
+
+describe("AutoStartWorkflowToggle (#2626)", () => {
+  it("asks for the workflow when turned on and saves it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ auto_start_workflow_id: null }),
+        "workflows/list": () => WORKFLOWS,
+        "repos/setAutoStartWorkflow": () => ({ auto_start_workflow_id: 7 }),
+      }),
+    );
+    renderToggle();
+
+    const toggle = screen.getByRole("switch", { name: "Auto-start workflow" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    fireEvent.click(await screen.findByRole("menuitem", { name: /standard/ }));
+
+    await waitFor(() =>
+      expect(rpcCall("repos/setAutoStartWorkflow")?.params).toMatchObject({
+        name: "me/proj",
+        workflowId: 7,
+      }),
+    );
+  });
+
+  it("turns off without asking", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ auto_start_workflow_id: 7 }),
+        "workflows/list": () => WORKFLOWS,
+        "repos/setAutoStartWorkflow": () => ({ auto_start_workflow_id: null }),
+      }),
+    );
+    renderToggle();
+
+    const toggle = screen.getByRole("switch", { name: "Auto-start workflow" });
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-checked")).toBe("true"),
+    );
+    fireEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(rpcCall("repos/setAutoStartWorkflow")?.params).toMatchObject({
+        workflowId: null,
+      }),
+    );
+    expect(screen.queryByRole("menuitem")).toBeNull();
   });
 });

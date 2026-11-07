@@ -613,3 +613,59 @@ test("fetchFromOrigin refuses without an origin (#71)", async () => {
     /no origin remote is configured/,
   );
 });
+
+// #2626: workflow auto-start is a saved workflow plus the time it was turned on.
+test("setAutoStartWorkflow turns auto-start on with an applicable workflow and off with null (#2626)", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/auto-start" });
+  await svc.repos.create({ path: initGitRepo(), name: "me/auto-start-other" });
+  const workflow = svc.workflows.create({ name: "auto-start-flow" });
+  const otherRepoWorkflow = svc.workflows.create({
+    name: "other-repo-flow",
+    repo: "me/auto-start-other",
+  });
+  expect(svc.repos.get("me/auto-start").auto_start_workflow_id).toBeNull();
+
+  const on = svc.repos.setAutoStartWorkflow("me/auto-start", workflow.id);
+  expect(on.auto_start_workflow_id).toBe(workflow.id);
+  const row = S.getRepo("me", "auto-start");
+  expect(row?.auto_start_workflow_since).not.toBeNull();
+
+  expect(() =>
+    svc.repos.setAutoStartWorkflow("me/auto-start", otherRepoWorkflow.id),
+  ).toThrow(/not a saved workflow applicable/);
+
+  const off = svc.repos.setAutoStartWorkflow("me/auto-start", null);
+  expect(off.auto_start_workflow_id).toBeNull();
+  expect(S.getRepo("me", "auto-start")?.auto_start_workflow_since).toBeNull();
+});
+
+test("autoStartWorkflow starts only issues opened while on, and notifies on failure (#2626)", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/auto-start-run" });
+  const repo = S.getRepo("me", "auto-start-run");
+  if (!repo) throw new Error("repo missing");
+  const workflow = svc.workflows.create({ name: "auto-start-run-flow" });
+  const issue = svc.issues.create("me/auto-start-run", { title: "new issue" });
+  const input = {
+    repoId: repo.id,
+    issueNumber: issue.number,
+    openedAt: "2026-07-01T00:00:00Z",
+  };
+
+  // Off: nothing starts.
+  expect(await svc.terminal.autoStartWorkflow(input)).toBe("skipped");
+
+  // On, but the issue was opened before auto-start was turned on.
+  S.setRepoAutoStartWorkflow(repo.id, workflow.id, "2026-07-02T00:00:00Z");
+  expect(await svc.terminal.autoStartWorkflow(input)).toBe("skipped");
+
+  // Opened after: launched like Start workflow. No lh-worker is registered in this DB, so the
+  // launch is rejected and the failure lands in the Notification Center.
+  const opened = { ...input, openedAt: "2026-07-02T00:00:01Z" };
+  expect(await svc.terminal.autoStartWorkflow(opened)).toBe("failed");
+  const notification = (await svc.notifications.list()).find(
+    (n: { resource?: { number?: number }; title: string }) =>
+      n.title === `Auto-start workflow failed for #${issue.number}`,
+  );
+  expect(notification?.kind).toBe("human_attention");
+  expect(notification?.body).toMatch(/lh-worker/);
+});

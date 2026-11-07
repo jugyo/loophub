@@ -15,6 +15,7 @@ import {
   renameRepo,
   setRepoAgentConfig,
   setRepoArchived,
+  setRepoAutoStartWorkflow,
   setRepoDefaultBranch,
   setRepoFavorite,
   setRepoGithubPrExportExtraPrompt,
@@ -140,6 +141,18 @@ export function useSetRepoTerminalBackend(owner: string, repo: string) {
   return useMutation({
     mutationFn: (backend: TerminalBackend) =>
       setRepoTerminalBackend(owner, repo, backend),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
+    },
+  });
+}
+
+/** Turn workflow auto-start on with a saved workflow, or off with null (#2626). */
+export function useSetRepoAutoStartWorkflow(owner: string, repo: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (workflowId: number | null) =>
+      setRepoAutoStartWorkflow(owner, repo, workflowId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
     },

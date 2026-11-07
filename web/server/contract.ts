@@ -195,6 +195,21 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) =>
       svc.repos.setTerminalBackend(p.name, p.backend, p.session_id),
   },
+  "repos/setAutoStartWorkflow": {
+    description:
+      "Turn workflow auto-start on with a saved workflow applicable to the repo, or off with workflowId null. While on, lh-worker starts that workflow for every issue opened from then on (#2626).",
+    params: params(
+      {
+        name: repo,
+        workflowId: { type: ["integer", "null"], minimum: 1 },
+        session_id: sid,
+      },
+      ["name", "workflowId"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.repos.setAutoStartWorkflow(p.name, p.workflowId, p.session_id),
+  },
   "repos/mergeMode": {
     description:
       "Resolved merge-mode view: raw setting, GitHub-remote presence, and the effective mode (#406).",
