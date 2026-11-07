@@ -1,6 +1,7 @@
 // Shared warning for every repo-scoped route when its deterministic herdr session is confirmed
 // absent. The existing terminal/sessions poll provides the running state; missing or failed state
 // stays silent so old servers and transient herdr failures never produce a false warning.
+// Repos on the herdr-core backend never use a herdr session, so they never warn.
 
 import { TriangleAlert } from "lucide-react";
 import { CopyButton } from "@/components/copy-button";
@@ -21,6 +22,7 @@ export function RepoHerdrWarning() {
   if (
     currentRepo === null ||
     !sessionName ||
+    repo?.terminal_backend !== "herdr" ||
     isError ||
     runningRepos === undefined ||
     runningRepos.includes(currentRepo)

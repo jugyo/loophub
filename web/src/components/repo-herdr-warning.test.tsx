@@ -44,6 +44,7 @@ describe("RepoHerdrWarning", () => {
       {
         full_name: "loophub/loophub",
         herdr_session_name: "loophub-loophub-abcd1234",
+        terminal_backend: "herdr",
       },
     ];
     state.sessions = { repos: [], running_repos: [] };
@@ -89,11 +90,26 @@ describe("RepoHerdrWarning", () => {
       {
         full_name: "loophub/loophub",
         herdr_session_name: "loophub-loophub-abcd1234",
+        terminal_backend: "herdr",
       },
     ];
     state.sessions = sessions;
     state.sessionsError = sessionsError;
     state.currentRepo = currentRepo;
+
+    const { container } = render(<RepoHerdrWarning />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("renders nothing for a herdr-core repo even when its session is not running", () => {
+    state.repos = [
+      {
+        full_name: "loophub/loophub",
+        herdr_session_name: "loophub-loophub-abcd1234",
+        terminal_backend: "herdr-core",
+      },
+    ];
+    state.sessions = { repos: [], running_repos: [] };
 
     const { container } = render(<RepoHerdrWarning />);
     expect(container.firstChild).toBeNull();

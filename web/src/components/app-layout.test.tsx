@@ -21,6 +21,7 @@ vi.mock("@/queries/repos", () => ({
       {
         full_name: "me/proj",
         herdr_session_name: "me-proj-abcd1234",
+        terminal_backend: "herdr",
       },
     ],
   }),
