@@ -1115,7 +1115,7 @@ describe("PullDetail", () => {
 
     expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
     expect(document.title).toBe("PR #30 · ui2: PR detail · me/proj · LoopHub");
-    // Branch names are scoped to the info block under the body card, the one place they appear.
+    // Branch names are scoped to the info band above the Evidence, the one place they appear.
     const details = container.querySelector<HTMLElement>(
       '[data-debug-component="PullInfoSection"]',
     )!;
@@ -2288,8 +2288,8 @@ describe("PullDetail", () => {
   });
 
   // #59: the header above the section tabs is the title and its status only — the worktree and the
-  // branch pair live in the block under the body card, so they read once per page.
-  it("keeps the header to the title and status, with the basics only below the body card", async () => {
+  // branch pair live in the band above the Evidence, so they read once per page.
+  it("keeps the header to the title and status, with the basics only in the band above the Evidence", async () => {
     const { container } = renderDetail();
 
     await screen.findByText("ui2: PR detail");
@@ -2337,9 +2337,9 @@ describe("PullDetail", () => {
     );
   });
 
-  // The worktree and base ← head branch pair sit in their own block directly under the body card,
+  // The worktree and base ← head branch pair sit in their own band directly above the Evidence,
   // with the home directory shortened to `~` and no Opened / Linked issue rows.
-  it("shows the worktree and branch block under the body card with copy actions", async () => {
+  it("shows the worktree and branch band above the Evidence with copy actions", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const worktreePath = "/Users/me/.loophub/worktrees/me/proj/pr-30";
@@ -2347,15 +2347,13 @@ describe("PullDetail", () => {
       "pulls/get": () => ({ ...pull, worktree_path: worktreePath }),
     });
 
-    await screen.findByText("ui2: PR detail");
+    await screen.findByText("Evidence");
     const block = container.querySelector<HTMLElement>(
       '[data-debug-component="PullInfoSection"]',
     )!;
-    const body = container.querySelector<HTMLElement>(
-      '[data-debug-component="PullBody"]',
-    )!;
-    // Directly under the body card: the second child of the body, right after the description.
-    expect(body.children[1]).toBe(block);
+    expect(block.nextElementSibling).toBe(
+      container.querySelector('[data-debug-component="PullEvidence"]'),
+    );
     expect(within(block).getByText("Worktree")).toBeTruthy();
     expect(within(block).getByText("Branch")).toBeTruthy();
     const shown = within(block).getByText("~/.loophub/worktrees/me/proj/pr-30");
@@ -2386,7 +2384,7 @@ describe("PullDetail", () => {
   it("shows an unavailable worktree without an empty copy action, keeping the branch pair", async () => {
     const { container } = renderDetail();
 
-    await screen.findByText("ui2: PR detail");
+    await screen.findByText("Evidence");
     const block = container.querySelector<HTMLElement>(
       '[data-debug-component="PullInfoSection"]',
     )!;
@@ -4181,6 +4179,25 @@ describe("PullDetail — linked issue description (#2640)", () => {
       .getByText("Evidence")
       .closest("details") as HTMLDetailsElement;
     expect(details.open).toBe(true);
+    expect(
+      details.previousElementSibling?.getAttribute("data-debug-component"),
+    ).toBe("PullInfoSection");
+  });
+
+  it("keeps the worktree and branch band between the criteria and the Evidence", async () => {
+    const { container } = renderDetail({ "issues/get": () => linkedIssue });
+
+    await screen.findByText("The issue spec body.");
+    const band = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullInfoSection"]',
+    )!;
+    const details = screen
+      .getByText("Evidence")
+      .closest("details") as HTMLDetailsElement;
+    expect(band.previousElementSibling).toBe(
+      screen.getByText("Acceptance criteria").closest("section"),
+    );
+    expect(band.nextElementSibling).toBe(details);
   });
 
   it("edits the Evidence in place and saves it as the PR body", async () => {

@@ -568,7 +568,7 @@ function WorkflowRunSection({
 // above the section tabs (#59) — the tabs navigate what is being said about the PR, not the
 // identity of the PR itself — and is what the Overview tab returns to, so the anchor sits here
 // rather than on the description below the bar. The worktree and the branch pair live once, in the
-// block under the body card.
+// band directly above the Evidence.
 function PullHeader({
   owner,
   repo,
@@ -643,7 +643,8 @@ function pullTitleSource(owner: string, repo: string, pull: PullRequest) {
 // What the PR is for (#2640): the linked issue's body and how its acceptance criteria stand, since
 // the spec lives in the issue and the PR itself only carries Evidence. The Evidence stays
 // reachable, collapsed, below the criteria. A PR with no linked issue, or whose issue has no
-// structured criteria, shows its Evidence open in place of the issue.
+// structured criteria, shows its Evidence open in place of the issue. Either way the worktree and
+// branch band sits directly above the Evidence, so opening the Evidence never pushes it down.
 function PullDescription({
   owner,
   repo,
@@ -659,15 +660,23 @@ function PullDescription({
   const issueQuery = useIssue(owner, repo, linked?.number ?? 0, !!linked);
   if (linked && issueQuery.isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" /> Loading…
-      </div>
+      <>
+        <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading…
+        </div>
+        <PullInfoSection pull={pull} />
+      </>
     );
   }
   const issue = issueQuery.data;
   const criteria = issue?.acceptance_criteria ?? [];
   if (!linked || !issue || criteria.length === 0) {
-    return <PullEvidence owner={owner} repo={repo} pull={pull} defaultOpen />;
+    return (
+      <>
+        <PullInfoSection pull={pull} />
+        <PullEvidence owner={owner} repo={repo} pull={pull} defaultOpen />
+      </>
+    );
   }
   // The latest review that graded criteria speaks for all of them, whatever head it read: a
   // criterion once met tends to stay met. Reviews arrive submitted_at ascending.
@@ -750,6 +759,7 @@ function PullDescription({
           })}
         </ul>
       </section>
+      <PullInfoSection pull={pull} />
       <PullEvidence owner={owner} repo={repo} pull={pull} />
     </div>
   );
@@ -916,7 +926,6 @@ function PullBody({
         pull={pull}
         reviews={reviews}
       />
-      <PullInfoSection pull={pull} />
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         {/* #2538: a partial PASS opens the merge gate like a full one, so the person about to
@@ -1018,7 +1027,7 @@ function abbreviateHome(path: string): string {
   return path.replace(HOME_PREFIX, "~");
 }
 
-// Where and on which branch this PR is worked on (#2406), as one band directly under the body card:
+// Where and on which branch this PR is worked on (#2406), as one band directly above the Evidence:
 // the worktree (home shortened to `~`, full path in the tooltip and the copy) and the base ← head
 // branch pair. Every value comes from the PR itself, so the block never loads or fails on its own.
 function PullInfoSection({ pull }: { pull: PullRequest }) {
