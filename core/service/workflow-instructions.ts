@@ -497,6 +497,12 @@ export const workflowInstructions = {
         S.releaseWorkflowEventEffect(run.id, event.id, effect);
         return { status: "idle" };
       }
+      if (refusal === "unavailable") {
+        // The parent is still starting, or the core is unreachable: nothing was typed, so the
+        // failure stays visible and a later dispatch or readiness signal retries the same event.
+        S.releaseWorkflowEventEffect(run.id, event.id, effect);
+        throw error;
+      }
       if (refusal === "finished" || refusal === "not_found") {
         // The parent is gone. Same receipt as one that never came up: visible once, and a relaunched
         // parent's readiness retracts it so this event is delivered then.

@@ -1427,6 +1427,53 @@ test("a blocked herdr-core parent holds nothing: the event is delivered once it 
   }
 });
 
+test("an unavailable herdr-core parent fails visibly without a pending receipt, and readiness retries it", async () => {
+  const input = fixture("hc-unavailable");
+  registerParentPane(input, "t7");
+  const hc = refusingHc("unavailable");
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${hc.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
+  try {
+    await expect(
+      svc.workflowInstructions.parentReady(input.repo.full_name, {
+        run: input.run.id,
+      }),
+    ).rejects.toMatchObject({ status: 503, data: { kind: "unavailable" } });
+    expect(readFileSync(hc.log, "utf8")).toContain("terminal.send");
+    expect(
+      S.pendingWorkflowEventEffectWithPrefix(
+        input.run.id,
+        "workflow.instruction:",
+      ),
+    ).toBeNull();
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).not.toBe(
+      input.event.id,
+    );
+
+    // The parent has settled: re-running readiness delivers the same event.
+    writeFileSync(
+      join(hc.bin, "hc"),
+      `#!/bin/sh\ncat > /dev/null\nprintf '{"id":1,"result":{"turn":1}}'\n`,
+    );
+    const ready = await svc.workflowInstructions.parentReady(
+      input.repo.full_name,
+      { run: input.run.id },
+    );
+    expect(ready.instruction).toMatchObject({
+      status: "delivered",
+      pane_id: "t7",
+    });
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(input.event.id);
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(hc.bin, { recursive: true, force: true });
+  }
+});
+
 test.each([
   "finished",
   "not_found",
