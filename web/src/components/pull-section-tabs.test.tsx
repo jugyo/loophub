@@ -326,6 +326,10 @@ describe("spyRootMargin", () => {
     expect(spyRootMargin(24)).toBe("-64px 0px -60% 0px");
   });
 
+  it("insets past the taller sticky header when it has a second row", () => {
+    expect(spyRootMargin(24, 108)).toBe("-84px 0px -60% 0px");
+  });
+
   it("insets by the full bar height when the scrollport has no padding", () => {
     expect(spyRootMargin(0)).toBe("-88px 0px -60% 0px");
   });

@@ -27,6 +27,9 @@ export const PULL_SECTIONS = [
  */
 const STICKY_INSET_PX = 88;
 
+/** The same, when the sticky header carries its second row (h-16 instead of h-11). */
+const TWO_ROW_STICKY_INSET_PX = 108;
+
 /**
  * Only the top band of the scrollport — below the bars, down to 40% of its height — decides which
  * section is being read, so a section counts as current from the moment it reaches the top of the
@@ -43,8 +46,11 @@ const SPY_BAND_BOTTOM = "-60%";
  * `pt-6` further down — 24px that the page-top section, which cannot be scrolled up any further to
  * make up the difference, does not have to give.
  */
-export function spyRootMargin(rootPaddingTop: number): string {
-  const inset = Math.max(STICKY_INSET_PX - rootPaddingTop, 0);
+export function spyRootMargin(
+  rootPaddingTop: number,
+  stickyInsetPx = STICKY_INSET_PX,
+): string {
+  const inset = Math.max(stickyInsetPx - rootPaddingTop, 0);
   return `${inset === 0 ? "" : "-"}${inset}px 0px ${SPY_BAND_BOTTOM} 0px`;
 }
 
@@ -56,17 +62,23 @@ function scrollportPaddingTop(scroller: Element | null): number {
 
 export function PullSectionTabs({
   titleRef,
+  headerHasSecondRow = false,
 }: {
   /** The page-top title, shared with the sticky header so the bars agree on when to stack. */
   titleRef: RefObject<HTMLDivElement | null>;
+  /** Whether the sticky header above this bar is two rows tall. */
+  headerHasSecondRow?: boolean;
 }) {
   const navRef = useRef<HTMLElement>(null);
-  const active = useActiveSection(navRef);
+  const active = useActiveSection(
+    navRef,
+    headerHasSecondRow ? TWO_ROW_STICKY_INSET_PX : STICKY_INSET_PX,
+  );
   // The title sits above this bar, so the sticky header appears just as this bar reaches the top of
   // the scrollport. Dropping the bar by the header's height at that moment hands the top slot over:
   // the two stack instead of the header covering the tabs. -top-6 cancels the scroll area's pt-6,
   // top-5 is that same offset plus the header's h-11 (see the sidebar's lg:top-5 in
-  // pull-detail.tsx).
+  // pull-detail.tsx), and top-10 plus its two-row h-16.
   const belowStickyHeader = useScrolledPast(titleRef);
   return (
     <nav
@@ -75,7 +87,11 @@ export function PullSectionTabs({
       data-debug-component="PullSectionTabs"
       className={cn(
         "sticky z-10 flex h-11 items-end gap-1 border-b bg-background/95 backdrop-blur",
-        belowStickyHeader ? "top-5" : "-top-6",
+        belowStickyHeader
+          ? headerHasSecondRow
+            ? "top-10"
+            : "top-5"
+          : "-top-6",
       )}
     >
       {PULL_SECTIONS.map((section) => (
@@ -125,7 +141,10 @@ export function PullSectionTabs({
  * scroll is the first section and the bottom is the last one, whatever the band says. That is also
  * what keeps the first section from depending on being tall enough to reach into the band.
  */
-function useActiveSection(navRef: RefObject<HTMLElement | null>): string {
+function useActiveSection(
+  navRef: RefObject<HTMLElement | null>,
+  stickyInsetPx: number,
+): string {
   const [active, setActive] = useState<string>(PULL_SECTIONS[0].id);
   useEffect(() => {
     // The page scrolls inside <main>, so every signal comes from that scrollport; the pixel inset
@@ -156,7 +175,10 @@ function useActiveSection(navRef: RefObject<HTMLElement | null>): string {
       },
       {
         root: scroller,
-        rootMargin: spyRootMargin(scrollportPaddingTop(scroller)),
+        rootMargin: spyRootMargin(
+          scrollportPaddingTop(scroller),
+          stickyInsetPx,
+        ),
       },
     );
     for (const section of PULL_SECTIONS) {
@@ -180,6 +202,6 @@ function useActiveSection(navRef: RefObject<HTMLElement | null>): string {
       observer.disconnect();
       scroller?.removeEventListener("scroll", onScroll);
     };
-  }, [navRef]);
+  }, [navRef, stickyInsetPx]);
   return active;
 }

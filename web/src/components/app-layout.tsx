@@ -82,11 +82,12 @@ export function AppLayout() {
               <RepoHerdrWarning />
               {/* scroll-pt-11 reserves the detail pages' sticky header height (#2033) at the top
                   of this scrollport, so anything scrolled to (an anchor jump, scrollIntoView)
-                  lands below the bar instead of underneath it. */}
+                  lands below the bar instead of underneath it. A page whose bar has a second
+                  row marks itself so the padding grows to match (h-16). */}
               <main
                 ref={mainRef}
                 data-debug-component="RouteContent"
-                className="min-h-0 flex-1 scroll-pt-11 overflow-y-auto px-4 pt-6 sm:px-6"
+                className="min-h-0 flex-1 scroll-pt-11 overflow-y-auto px-4 pt-6 has-[[data-two-row-sticky-header]]:scroll-pt-16 sm:px-6"
               >
                 <Outlet />
               </main>

@@ -166,6 +166,10 @@ describe("AppLayout", () => {
     expect(container.querySelector("main")?.className).toContain(
       "scroll-pt-11",
     );
+    // PR detail's bar grows to h-16 with its second row, and marks the page so the padding follows.
+    expect(container.querySelector("main")?.className).toContain(
+      "has-[[data-two-row-sticky-header]]:scroll-pt-16",
+    );
   });
 
   // #2414: without a positioned shell, below-the-fold Tailwind sr-only labels

@@ -40,7 +40,7 @@ function stubIntersectionObserver() {
 const LONG_TITLE =
   "A very long pull request title that does not fit the header";
 
-function renderStickyHeader(actions?: React.ReactNode) {
+function renderStickyHeader(secondRow?: React.ReactNode) {
   const titleRef = createRef<HTMLDivElement>();
   const { container, unmount } = render(
     <>
@@ -50,7 +50,7 @@ function renderStickyHeader(actions?: React.ReactNode) {
         number={2034}
         title={LONG_TITLE}
         badges={[{ tone: "conflict", label: "conflict" }]}
-        actions={actions}
+        secondRow={secondRow}
         titleRef={titleRef}
       />
     </>,
@@ -83,11 +83,27 @@ describe("DetailStickyHeader", () => {
     expect(bar()?.textContent).toBe(`PR #2034${LONG_TITLE}conflict`);
   });
 
-  it("puts the page's extra actions at the right end, after the badges", () => {
+  it("stays a single h-11 row without second-row content", () => {
+    const observer = stubIntersectionObserver();
+    const { bar } = renderStickyHeader(null);
+
+    observer.setIntersecting(false);
+    expect(bar()?.className).toContain("h-11");
+    expect(bar()?.className).toContain("border-b");
+    expect(bar()?.children).toHaveLength(1);
+  });
+
+  it("puts second-row content on its own line and grows to h-16 without a divider", () => {
     const observer = stubIntersectionObserver();
     const { bar } = renderStickyHeader(<button type="button">Detail</button>);
 
     observer.setIntersecting(false);
+    expect(bar()?.className).toContain("h-16");
+    expect(bar()?.className).not.toContain("border-b");
+    expect(bar()?.children).toHaveLength(2);
+    expect(bar()?.firstElementChild?.textContent).toBe(
+      `PR #2034${LONG_TITLE}conflict`,
+    );
     expect(bar()?.lastElementChild?.textContent).toBe("Detail");
   });
 

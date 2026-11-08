@@ -1,6 +1,7 @@
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { Badge as BadgeData } from "@/lib/badges";
+import { cn } from "@/lib/utils";
 
 /**
  * Shared id + title block for issue/PR detail headers. Owning the spacing here
@@ -40,9 +41,10 @@ export function DetailHeaderTitle({
 }
 
 /**
- * Compact one-line header (#2033) shown while the page-top title of
+ * Compact header (#2033) shown while the page-top title of
  * {@link DetailHeaderTitle} is scrolled out of view, so a long issue/PR thread
- * never loses which item it belongs to.
+ * never loses which item it belongs to. One line, plus a second one when the
+ * page passes `secondRow`.
  *
  * The wrapper is a zero-height sticky box so the bar overlays the scrolled
  * content instead of reserving space at the top of the page; it must therefore
@@ -58,7 +60,7 @@ export function DetailStickyHeader({
   title,
   titleSource,
   badges,
-  actions,
+  secondRow,
   titleRef,
 }: {
   kind: "Issue" | "PR";
@@ -68,8 +70,11 @@ export function DetailStickyHeader({
   titleSource?: ReactNode;
   /** Status shown by the page itself (stateBadge / pullDetailBadges), reused verbatim. */
   badges: BadgeData[];
-  /** Extra compact content at the bar's right end, after the badges. */
-  actions?: ReactNode;
+  /**
+   * Compact content for a second line, or null for a one-line bar (h-11). The two-line bar is h-16
+   * and whatever the page stacks under it must account for that.
+   */
+  secondRow?: ReactNode;
   titleRef: RefObject<HTMLDivElement | null>;
 }) {
   const visible = useScrolledPast(titleRef);
@@ -85,26 +90,38 @@ export function DetailStickyHeader({
         // it keeps passing clicks through.
         <div
           data-debug-component="DetailStickyHeader"
-          className="pointer-events-auto flex h-11 items-center gap-2 border-b bg-background/95 backdrop-blur"
+          className={cn(
+            "pointer-events-auto flex flex-col bg-background/95 backdrop-blur",
+            secondRow ? "h-16" : "h-11 border-b",
+          )}
         >
-          <span className="shrink-0 text-sm font-medium text-muted-foreground">
-            {kind} #{number}
-            {titleSource ? <> · {titleSource}</> : null}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-            {title}
-          </span>
-          {badges.map((b, i) => (
-            <Badge
-              key={`${b.tone}-${i}`}
-              tone={b.tone}
-              title={b.title}
-              className="shrink-0"
-            >
-              {b.label}
-            </Badge>
-          ))}
-          {actions}
+          <div
+            className={cn(
+              "flex items-center gap-2",
+              secondRow ? "h-9" : "h-11",
+            )}
+          >
+            <span className="shrink-0 text-sm font-medium text-muted-foreground">
+              {kind} #{number}
+              {titleSource ? <> · {titleSource}</> : null}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+              {title}
+            </span>
+            {badges.map((b, i) => (
+              <Badge
+                key={`${b.tone}-${i}`}
+                tone={b.tone}
+                title={b.title}
+                className="shrink-0"
+              >
+                {b.label}
+              </Badge>
+            ))}
+          </div>
+          {secondRow ? (
+            <div className="flex flex-1 items-center">{secondRow}</div>
+          ) : null}
         </div>
       ) : null}
     </div>

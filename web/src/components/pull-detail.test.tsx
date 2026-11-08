@@ -1190,17 +1190,12 @@ describe("PullDetail", () => {
       "over budget",
       { cost_stopped: true, review_state: null, mergeable_state: "unknown" },
     ],
-  ] as const)(
-    "keeps %s status labels out of the page title",
-    async (_case, override) => {
-      renderDetailWithPull(override);
+  ] as const)("keeps %s status labels out of the page title", async (_case, override) => {
+    renderDetailWithPull(override);
 
-      await screen.findByText("ui2: PR detail");
-      expect(document.title).toBe(
-        "PR #30 · ui2: PR detail · me/proj · LoopHub",
-      );
-    },
-  );
+    await screen.findByText("ui2: PR detail");
+    expect(document.title).toBe("PR #30 · ui2: PR detail · me/proj · LoopHub");
+  });
 
   // #59: the header's own "Comments (n)" link is gone — the Comments tab is the same in-page
   // anchor, and the section heading below it still carries the count.
@@ -3473,6 +3468,122 @@ describe("PullDetail", () => {
       await screen.findByText("Failed to load Workflow run."),
     ).toBeTruthy();
   });
+
+  describe("sticky header second row", () => {
+    // Reports every observed element as out of view, so the title has scrolled past from the start.
+    beforeEach(() => {
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          callback: IntersectionObserverCallback;
+          constructor(callback: IntersectionObserverCallback) {
+            this.callback = callback;
+          }
+          observe(target: Element) {
+            this.callback(
+              [{ target, isIntersecting: false } as IntersectionObserverEntry],
+              this as unknown as IntersectionObserver,
+            );
+          }
+          unobserve() {}
+          disconnect() {}
+          takeRecords() {
+            return [];
+          }
+        },
+      );
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const stickyBar = () =>
+      document.querySelector<HTMLElement>(
+        '[data-debug-component="DetailStickyHeader"]',
+      );
+    const pullDetail = () =>
+      document.querySelector<HTMLElement>(
+        '[data-debug-component="PullDetail"]',
+      );
+    const tabs = () =>
+      document.querySelector<HTMLElement>(
+        '[data-debug-component="PullSectionTabs"]',
+      );
+
+    function expectOneRow() {
+      expect(stickyBar()?.children).toHaveLength(1);
+      expect(
+        stickyBar()?.querySelector(
+          '[data-debug-component="WorkflowRunSummary"]',
+        ),
+      ).toBeNull();
+      expect(pullDetail()?.hasAttribute("data-two-row-sticky-header")).toBe(
+        false,
+      );
+      expect(tabs()?.className.split(/\s+/)).toContain("top-5");
+    }
+
+    it("puts the Workflow progress on its own row and drops the tabs below it", async () => {
+      renderDetail({
+        "workflowRuns/stateForPull": () => ({
+          id: 12,
+          workflow_id: 3,
+          workflow_name: "Implementation loop",
+          status: "running",
+          current_step: "verify",
+          rework_count: 0,
+          rework_limit: 8,
+          needs_human_reason: null,
+          issue_number: 153,
+          pr_number: 30,
+          created_at: "2026-06-18T11:00:00Z",
+          updated_at: "2026-06-18T12:00:00Z",
+          latest_review: null,
+        }),
+      });
+
+      await waitFor(() => expect(stickyBar()?.children).toHaveLength(2));
+      const [identity, progress] = Array.from(stickyBar()?.children ?? []);
+      expect(identity.textContent).toContain("ui2: PR detail");
+      expect(
+        identity.querySelector('[data-debug-component="WorkflowRunSummary"]'),
+      ).toBeNull();
+      expect(
+        progress.querySelector('[data-debug-component="WorkflowRunSummary"]'),
+      ).toBeTruthy();
+      expect(pullDetail()?.hasAttribute("data-two-row-sticky-header")).toBe(
+        true,
+      );
+      expect(tabs()?.className.split(/\s+/)).toContain("top-10");
+    });
+
+    it("stays one row while the run is loading", async () => {
+      renderDetail({
+        "workflowRuns/stateForPull": () => new Promise(() => {}),
+      });
+      await screen.findByText("Loading Workflow run…");
+      expectOneRow();
+    });
+
+    it("stays one row when the PR has no run", async () => {
+      renderDetail({ "workflowRuns/stateForPull": () => null });
+      await screen.findAllByText("ui2: PR detail");
+      await waitFor(() =>
+        expect(rpcCall("workflowRuns/stateForPull")).toBeTruthy(),
+      );
+      expectOneRow();
+    });
+
+    it("stays one row when the run fails to load", async () => {
+      renderDetail({
+        "workflowRuns/stateForPull": () => {
+          throw new RpcFault(500, "workflow state unavailable");
+        },
+      });
+      await screen.findByText("Failed to load Workflow run.");
+      expectOneRow();
+    });
+  });
 });
 
 // #406: the PR-detail write action follows the PR's effective merge_mode. Render with an overridden
@@ -3746,91 +3857,84 @@ describe("PullDetail — GitHub export action (#406)", () => {
   it.each([
     ["another PR in the same repo", { repo: "proj", number: 31 }],
     ["the same PR number in another repo", { repo: "other", number: 30 }],
-  ] as const)(
-    "does not carry the loading state onto %s",
-    async (_case, other) => {
-      const started = { repo: "proj", number: 30 };
-      vi.stubGlobal(
-        "fetch",
-        mockRpcFetch({
-          "pulls/get": (params: any) => ({
-            ...pull,
-            number: params.number,
-            title: `${params.repo} PR ${params.number}`,
-            merge_mode: "github_pr",
-            github_pull: null,
-            github_pr_export_started_at: null,
-          }),
-          "pulls/files": () => files,
-          "reviews/list": () => reviews,
-          "reviews/listComments": () => lineComments,
-          "comments/list": () => comments,
+  ] as const)("does not carry the loading state onto %s", async (_case, other) => {
+    const started = { repo: "proj", number: 30 };
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": (params: any) => ({
+          ...pull,
+          number: params.number,
+          title: `${params.repo} PR ${params.number}`,
+          merge_mode: "github_pr",
+          github_pull: null,
+          github_pr_export_started_at: null,
         }),
+        "pulls/files": () => files,
+        "reviews/list": () => reviews,
+        "reviews/listComments": () => lineComments,
+        "comments/list": () => comments,
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    function SwitchingDetail() {
+      const [showOther, setShowOther] = useState(true);
+      const shown = showOther ? other : started;
+      return (
+        <>
+          <button type="button" onClick={() => setShowOther((v) => !v)}>
+            open the other PR
+          </button>
+          <PullDetail owner="me" repo={shown.repo} number={shown.number} />
+        </>
       );
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false } },
-      });
-      function SwitchingDetail() {
-        const [showOther, setShowOther] = useState(true);
-        const shown = showOther ? other : started;
-        return (
-          <>
-            <button type="button" onClick={() => setShowOther((v) => !v)}>
-              open the other PR
-            </button>
-            <PullDetail owner="me" repo={shown.repo} number={shown.number} />
-          </>
-        );
-      }
-      const rootRoute = createRootRoute({ component: Outlet });
-      const indexRoute = createRoute({
-        getParentRoute: () => rootRoute,
-        path: "/",
-        component: () => <SwitchingDetail />,
-      });
-      const issuesRoute = createRoute({
-        getParentRoute: () => rootRoute,
-        path: "/r/$owner/$repo/issues/$number",
-        component: () => null,
-      });
-      const router = createRouter({
-        routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
-        history: createMemoryHistory({ initialEntries: ["/"] }),
-      });
-      render(
-        <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>,
-      );
+    }
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <SwitchingDetail />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
 
-      // `pulls/get` is called with the full "owner/name", which is what the stub echoes into the title.
-      const heading = (pr: { repo: string; number: number }) =>
-        `me/${pr.repo} PR ${pr.number}`;
+    // `pulls/get` is called with the full "owner/name", which is what the stub echoes into the title.
+    const heading = (pr: { repo: string; number: number }) =>
+      `me/${pr.repo} PR ${pr.number}`;
 
-      // Visit the other PR first so its detail is cached: coming back to it renders straight from the
-      // cache with no loading gap, which is exactly when the route is reused rather than remounted.
-      await screen.findByRole("heading", { name: heading(other), level: 1 });
-      fireEvent.click(
-        screen.getByRole("button", { name: /open the other PR/i }),
-      );
-      await screen.findByRole("heading", { name: heading(started), level: 1 });
+    // Visit the other PR first so its detail is cached: coming back to it renders straight from the
+    // cache with no loading gap, which is exactly when the route is reused rather than remounted.
+    await screen.findByRole("heading", { name: heading(other), level: 1 });
+    fireEvent.click(screen.getByRole("button", { name: /open the other PR/i }));
+    await screen.findByRole("heading", { name: heading(started), level: 1 });
 
-      fireEvent.click(
-        await screen.findByRole("button", { name: /Create PR on GitHub/i }),
-      );
-      await screen.findByRole("button", { name: /Creating…/i });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Create PR on GitHub/i }),
+    );
+    await screen.findByRole("button", { name: /Creating…/i });
 
-      fireEvent.click(
-        screen.getByRole("button", { name: /open the other PR/i }),
-      );
+    fireEvent.click(screen.getByRole("button", { name: /open the other PR/i }));
 
-      await screen.findByRole("heading", { name: heading(other), level: 1 });
-      const button = (await screen.findByRole("button", {
-        name: /Create PR on GitHub/i,
-      })) as HTMLButtonElement;
-      expect(button.disabled).toBe(false);
-    },
-  );
+    await screen.findByRole("heading", { name: heading(other), level: 1 });
+    const button = (await screen.findByRole("button", {
+      name: /Create PR on GitHub/i,
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+  });
 
   // A launch the server refused started no agent, so there is nothing to wait for: the operator must
   // be able to retry right away rather than sit out the TTL.
@@ -3860,40 +3964,40 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(screen.queryByRole("button", { name: /Creating…/i })).toBeNull();
   });
 
-  it.each(["github_pr", "merge"] as const)(
-    "offers Mark as merged after GitHub merge detection in %s mode and invokes the dedicated action",
-    async (mergeMode) => {
-      renderDetailWithPull(
-        {
-          merge_mode: mergeMode,
-          github_pull: {
-            ...linkedGithubPull(null),
-            github_merged: true,
-            github_merged_at: "2026-07-15T00:00:00Z",
-          },
+  it.each([
+    "github_pr",
+    "merge",
+  ] as const)("offers Mark as merged after GitHub merge detection in %s mode and invokes the dedicated action", async (mergeMode) => {
+    renderDetailWithPull(
+      {
+        merge_mode: mergeMode,
+        github_pull: {
+          ...linkedGithubPull(null),
+          github_merged: true,
+          github_merged_at: "2026-07-15T00:00:00Z",
         },
-        {
-          "pulls/markGithubMerged": () => ({
-            merged: true,
-            merged_at: "2026-07-15T00:00:00Z",
-          }),
-        },
-      );
+      },
+      {
+        "pulls/markGithubMerged": () => ({
+          merged: true,
+          merged_at: "2026-07-15T00:00:00Z",
+        }),
+      },
+    );
 
-      expect(
-        await screen.findByRole("button", { name: /^Close$/i }),
-      ).toBeTruthy();
-      const button = screen.getByRole("button", { name: /Mark as merged/i });
-      fireEvent.click(button);
-      await waitFor(() => {
-        expect(rpcCall("pulls/markGithubMerged")?.params).toMatchObject({
-          repo: "me/proj",
-          number: 30,
-        });
+    expect(
+      await screen.findByRole("button", { name: /^Close$/i }),
+    ).toBeTruthy();
+    const button = screen.getByRole("button", { name: /Mark as merged/i });
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(rpcCall("pulls/markGithubMerged")?.params).toMatchObject({
+        repo: "me/proj",
+        number: 30,
       });
-      expect(rpcCall("pulls/merge")).toBeUndefined();
-    },
-  );
+    });
+    expect(rpcCall("pulls/merge")).toBeUndefined();
+  });
 
   it.each([
     ["merge not detected", { github_pull: linkedGithubPull(null) }],

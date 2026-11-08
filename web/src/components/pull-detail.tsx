@@ -131,6 +131,7 @@ export function PullDetail({
   const reviewsQuery = usePullReviews(owner, repo, number, false);
   const lineCommentsQuery = usePullComments(owner, repo, number, false);
   const commentsQuery = useIssueComments(owner, repo, number, false);
+  const workflowRunQuery = useWorkflowRunForPull(owner, repo, number);
   const titleRef = useRef<HTMLDivElement>(null);
   const [measureSidebar, sidebarFitsStickyRoom] =
     useFitsStickyRoom<HTMLElement>(SIDEBAR_STICKY_TOP_PX);
@@ -236,6 +237,9 @@ export function PullDetail({
         (review) => review.head_sha === timelineReview.head_sha,
       )
     : [];
+  // The sticky header's second row exists only for a loaded run — the page-top line already reports
+  // loading and failure — and everything stacked under the bar keys off the same value.
+  const workflowRun = workflowRunQuery.isSuccess ? workflowRunQuery.data : null;
   const timelineReviewCommit = timelineReview
     ? (pull.commits ?? []).find(
         (commit) => commit.sha === timelineReview.head_sha,
@@ -259,6 +263,7 @@ export function PullDetail({
     // with the sibling pages (issue-detail, pull-list).
     <div
       data-debug-component="PullDetail"
+      data-two-row-sticky-header={workflowRun ? "" : undefined}
       className="mx-auto max-w-content lg:max-w-content-wide"
     >
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
@@ -273,13 +278,16 @@ export function PullDetail({
             title={pull.title}
             titleSource={pullTitleSource(owner, repo, pull)}
             badges={pullDetailBadges(pull)}
-            actions={
-              <WorkflowRunSection
-                owner={owner}
-                repo={repo}
-                number={number}
-                size="sm"
-              />
+            secondRow={
+              workflowRun ? (
+                <WorkflowRunSummary
+                  owner={owner}
+                  repo={repo}
+                  state={workflowRun}
+                  size="sm"
+                  observeHerdrSessions
+                />
+              ) : null
             }
             titleRef={titleRef}
           />
@@ -298,7 +306,10 @@ export function PullDetail({
             {/* Section tabs (#59) sit under the PR's title and status and above everything they
                 navigate, so they own the top of the scrollport once the page scrolls; each section
                 below carries the id they link to. */}
-            <PullSectionTabs titleRef={titleRef} />
+            <PullSectionTabs
+              titleRef={titleRef}
+              headerHasSecondRow={workflowRun != null}
+            />
             <PullBody
               owner={owner}
               repo={repo}
@@ -430,8 +441,9 @@ export function PullDetail({
             lands at 2.75rem - 1.5rem. A sticky inset applies from the first paint, so the price of
             clearing the bar is that the sidebar starts those same 20px below the main column's
             first line instead of level with it; top-0 would align them but then park the sidebar
-            under the bar once the page scrolls. And it sticks only while it still fits that room
-            (#2518) — a taller sidebar goes back to the normal flow so its tail scrolls into
+            under the bar once the page scrolls. The bar's second row needs no further inset: the
+            bar spans only the main column (#2089). And it sticks only while it still fits that
+            room (#2518) — a taller sidebar goes back to the normal flow so its tail scrolls into
             view. */}
         <aside
           ref={measureSidebar}
@@ -509,33 +521,30 @@ function stickyScrollport(element: HTMLElement): HTMLElement {
   return document.documentElement;
 }
 
-// Workflow run summary for this PR (#1008): one line under the badges (`md`) and in the compact
-// sticky header (`sm`), or nothing when the PR has no run. The sticky variant also stays empty
-// while the run loads or fails — the page-top line already reports that.
+// Workflow run summary for this PR (#1008): one line under the badges, or nothing when the PR has
+// no run.
 function WorkflowRunSection({
   owner,
   repo,
   number,
-  size = "md",
 }: {
   owner: string;
   repo: string;
   number: number;
-  size?: "sm" | "md";
 }) {
   const query = useWorkflowRunForPull(owner, repo, number);
   if (query.isLoading) {
-    return size === "md" ? (
+    return (
       <div
         data-debug-component="WorkflowRunSection"
         className="flex items-center gap-2 text-sm text-muted-foreground"
       >
         <Loader2 className="size-4 animate-spin" /> Loading Workflow run…
       </div>
-    ) : null;
+    );
   }
   if (query.isError) {
-    return size === "md" ? (
+    return (
       <div
         data-debug-component="WorkflowRunSection"
         role="alert"
@@ -543,14 +552,13 @@ function WorkflowRunSection({
       >
         Failed to load Workflow run.
       </div>
-    ) : null;
+    );
   }
   return (
     <WorkflowRunSummary
       owner={owner}
       repo={repo}
       state={query.data}
-      size={size}
       observeHerdrSessions
     />
   );
