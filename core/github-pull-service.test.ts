@@ -26,7 +26,6 @@ async function openPull(issue?: number): Promise<number> {
   git(["commit", "-qm", "feature work"]);
   git(["checkout", "-q", "main"]);
   const pr = await svc.pulls.create("me/proj", {
-    title: "feat",
     head: "feature",
     base: "main",
     issue,
@@ -721,7 +720,6 @@ test("createGithubPull requires a GitHub origin remote (#411)", async () => {
   g(["checkout", "-q", "main"]);
   await svc.repos.create({ path: dir, name: "me/norem" });
   const pr = await svc.pulls.create("me/norem", {
-    title: "feat",
     head: "feature",
     base: "main",
   });
@@ -947,7 +945,6 @@ test("removeRepo sweeps github_pulls so repo removal does not fail the FK (#406)
 
   await svc.repos.create({ path: dir, name: "me/throwaway" });
   const pr = await svc.pulls.create("me/throwaway", {
-    title: "feat",
     head: "feature",
     base: "main",
   });

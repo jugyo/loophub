@@ -10,6 +10,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
+let db: typeof import("./db.ts").db;
 const repoPaths: string[] = [];
 
 function git(repoPath: string, args: string[]) {
@@ -95,6 +96,7 @@ function registerWorkflowPane(repoId: number, runId: number, paneId: string) {
 
 beforeAll(async () => {
   S = await import("./store.ts");
+  ({ db } = await import("./db.ts"));
   svc = await import("./service.ts");
 });
 
@@ -415,7 +417,6 @@ test("a PR links to an issue only when one is named, never from Closes #n in its
   branch(repo.path, "named");
 
   const unnamed = await svc.pulls.create("me/explicit-link", {
-    title: "unnamed",
     body: `Closes #${issue.number}`,
     head: "unnamed",
     base: "main",
@@ -427,11 +428,41 @@ test("a PR links to an issue only when one is named, never from Closes #n in its
   expect(updated.linked_issue).toBeNull();
 
   const named = await svc.pulls.create("me/explicit-link", {
-    title: "named",
     body: "",
     head: "named",
     base: "main",
     issue: issue.number,
   });
   expect(named.linked_issue?.number).toBe(issue.number);
+});
+
+test("a PR stores no title and reads as its linked issue's title on every read path", async () => {
+  const repo = await makeRepo("me/pull-title");
+  const issue = svc.issues.create("me/pull-title", { title: "issue title" });
+  branch(repo.path, "titled");
+
+  const pull = await svc.pulls.create("me/pull-title", {
+    head: "titled",
+    base: "main",
+    issue: issue.number,
+  });
+  const stored = db
+    .query(`SELECT title FROM issues WHERE id = ?`)
+    .get(S.getIssue(repo.id, pull.number)!.id) as { title: string };
+  expect(stored.title).toBe("");
+  expect(pull.title).toBe("issue title");
+
+  svc.issues.update("me/pull-title", issue.number, { title: "renamed" });
+  expect(S.getIssue(repo.id, pull.number)!.title).toBe("renamed");
+  expect(S.listIssues(repo.id, "pull", "all").map((row) => row.title)).toEqual([
+    "renamed",
+  ]);
+  expect(
+    S.linkedPullsForIssue(S.getIssue(repo.id, issue.number)!.id).map(
+      (row) => row.title,
+    ),
+  ).toEqual(["renamed"]);
+  expect(S.listOpenPullsForRepo(repo.id).map((row) => row.title)).toEqual([
+    "renamed",
+  ]);
 });

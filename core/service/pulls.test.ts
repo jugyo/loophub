@@ -103,7 +103,6 @@ beforeAll(async () => {
     name: "me/commit-files",
   });
   const pull = await svc.pulls.create("me/commit-files", {
-    title: "commit files",
     head: "feature",
     base: "main",
   });
@@ -133,7 +132,6 @@ beforeAll(async () => {
     name: "me/syntax-timing",
   });
   const syntaxPull = await svc.pulls.create("me/syntax-timing", {
-    title: "syntax timing",
     head: "feature",
     base: "main",
   });
@@ -149,7 +147,6 @@ afterAll(() => {
 
 test("pull detail returns the newest 100 base..head commits with wire metadata", async () => {
   const pull = await svc.pulls.create("me/proj", {
-    title: "commit history",
     head: "feature",
     base: "main",
   });
@@ -177,7 +174,6 @@ test("pull detail returns the newest 100 base..head commits with wire metadata",
 
 test("pull detail returns an empty commit list before the head branch exists", async () => {
   const pull = await svc.pulls.create("me/proj", {
-    title: "not provisioned yet",
     head: "future-head",
     base: "main",
   });
@@ -189,7 +185,6 @@ test("pull detail returns an empty commit list before the head branch exists", a
 
 test("archive hides the PR from lists while preserving its data and git branch", async () => {
   const pull = await svc.pulls.create("me/proj", {
-    title: "archive me",
     head: "feature",
     base: "main",
   });
@@ -213,7 +208,6 @@ test("archive hides the PR from lists while preserving its data and git branch",
 
 test("archive preserves an imported GitHub issue link", async () => {
   const pull = await svc.pulls.create("me/proj", {
-    title: "archive imported link",
     head: "feature",
     base: "main",
   });
@@ -235,14 +229,12 @@ test("archive preserves an imported GitHub issue link", async () => {
 test("unarchive refuses a second open pull linked to the same issue", async () => {
   const issue = svc.issues.create("me/proj", { title: "one active pull" });
   const archived = await svc.pulls.create("me/proj", {
-    title: "archived attempt",
     head: "archived-attempt",
     base: "main",
     issue: issue.number,
   });
   svc.pulls.archive("me/proj", archived.number);
   const active = await svc.pulls.create("me/proj", {
-    title: "active attempt",
     head: "active-attempt",
     base: "main",
     issue: issue.number,
@@ -261,7 +253,6 @@ test("unarchive refuses a second open pull linked to the same issue", async () =
 
 test("pull detail surfaces a git log failure", async () => {
   const pull = await svc.pulls.create("me/proj", {
-    title: "broken log",
     head: "feature",
     base: "main",
   });
@@ -357,7 +348,6 @@ test("files flag only the files the head commit changed", async () => {
   g(["checkout", "-q", "main"]);
   await svc.repos.create({ path, name: "me/latest-files" });
   const pull = await svc.pulls.create("me/latest-files", {
-    title: "latest files",
     head: "feature",
     base: "main",
   });
@@ -427,7 +417,6 @@ test("pulls/diff preserves rename metadata when selected by the head path", asyn
   try {
     await svc.repos.create({ path, name: "me/selected-rename" });
     const pull = await svc.pulls.create("me/selected-rename", {
-      title: "selected rename",
       head: "feature",
       base: "main",
     });
@@ -622,7 +611,6 @@ test("diff excludes base-side files after merging an advanced base into head", a
 
   await svc.repos.create({ path, name: "me/diff-merge-base" });
   const pull = await svc.pulls.create("me/diff-merge-base", {
-    title: "merge base into head",
     head: "feature",
     base: "main",
   });
@@ -672,7 +660,6 @@ test("diff excludes base-side files after merging an advanced base into head", a
 
   await svc.repos.create({ path: plainPath, name: "me/diff-plain" });
   const plainPull = await svc.pulls.create("me/diff-plain", {
-    title: "plain pr",
     head: "feature",
     base: "main",
   });
@@ -725,7 +712,6 @@ test("files and diff exclude origin/main-only files when local base lags", async
 
   await svc.repos.create({ path, name: "me/files-origin-base" });
   const pull = await svc.pulls.create("me/files-origin-base", {
-    title: "stale local base",
     head: "feature",
     base: "main",
   });
@@ -770,7 +756,6 @@ test("files and commits exclude base-side work after the base branch is rebased"
 
   await svc.repos.create({ path, name: "me/rebased-base" });
   const pull = await svc.pulls.create("me/rebased-base", {
-    title: "rebased base",
     head: "feature",
     base: "main",
   });
@@ -821,7 +806,6 @@ test("commits and files exclude base-side work after head merges a rewritten bas
 
   await svc.repos.create({ path, name: "me/merged-rewrite" });
   const pull = await svc.pulls.create("me/merged-rewrite", {
-    title: "merged rewritten base",
     head: "feature",
     base: "main",
   });
@@ -873,7 +857,6 @@ test("commits exclude base-side work across repeated base rewrites and merges", 
 
   await svc.repos.create({ path, name: "me/repeated-rewrite" });
   const pull = await svc.pulls.create("me/repeated-rewrite", {
-    title: "repeated rewrites",
     head: "feature",
     base: "main",
   });
@@ -969,7 +952,6 @@ test("repos/commitFiles returns the diff for an initial commit", async () => {
 // slice is served on its own — and the point of the split is that this path never spawns git.
 test("usage returns the PR's agent-cost totals without touching git", async () => {
   const pull = await svc.pulls.create("me/proj", {
-    title: "usage totals",
     head: "feature",
     base: "main",
   });

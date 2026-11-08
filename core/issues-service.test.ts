@@ -79,7 +79,6 @@ test("issues.get reports an open linked pull request", async () => {
   const issue = svc.issues.create("me/proj", { title: "open pull request" });
   git(["branch", "feature/open-pull-request"]);
   await svc.pulls.create("me/proj", {
-    title: "open pull request",
     head: "feature/open-pull-request",
     issue: issue.number,
   });
@@ -94,7 +93,6 @@ test("issues.get separates archived pull requests from active attempts", async (
   const issue = svc.issues.create("me/proj", { title: "archived attempt" });
   git(["branch", "feature/archived-attempt"]);
   const pull = await svc.pulls.create("me/proj", {
-    title: "archived attempt",
     head: "feature/archived-attempt",
     issue: issue.number,
   });
@@ -130,7 +128,6 @@ test("issues.list keeps batched related data associated with each issue", async 
   svc.comments.create("me/proj", second.number, "another comment", "sess-c");
   git(["branch", "feature/batched-first"]);
   const pull = await svc.pulls.create("me/proj", {
-    title: "batched first pull",
     head: "feature/batched-first",
     issue: first.number,
   });
@@ -164,7 +161,6 @@ test("issues.list carries the linked PR's complete workflow rework count (#539)"
   });
   git(["branch", "feature/reworked-pull-request"]);
   const pull = await svc.pulls.create("me/proj", {
-    title: "reworked pull request",
     head: "feature/reworked-pull-request",
     issue: issue.number,
   });
@@ -226,7 +222,6 @@ test("issues.list omits the rework count for a PR with no workflow run (#2147)",
   const issue = svc.issues.create("me/proj", { title: "runless pull request" });
   git(["branch", "feature/runless-pull-request"]);
   await svc.pulls.create("me/proj", {
-    title: "runless pull request",
     head: "feature/runless-pull-request",
     issue: issue.number,
   });
@@ -287,7 +282,6 @@ test("issues.update clears a workspace without changing an existing PR base", as
   }) as any;
   git(["branch", "feature/linked-movable"]);
   const pull = (await svc.pulls.create("me/proj", {
-    title: "linked pull",
     head: "feature/linked-movable",
     issue: issue.number,
   })) as any;
@@ -307,7 +301,6 @@ test("issues.update clears a workspace without changing an existing PR base", as
 test("issues.update rejects target branch changes for pull rows", async () => {
   git(["branch", "feature/pull-update"]);
   const pull = (await svc.pulls.create("me/proj", {
-    title: "plain pull",
     head: "feature/pull-update",
     base: "main",
   })) as any;

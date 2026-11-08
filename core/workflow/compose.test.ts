@@ -258,14 +258,15 @@ test("parent/step contracts do not introduce slash commands", () => {
   expect(allPromptText).not.toMatch(/\/lh-[a-z]/u);
 });
 
-test("execute contracts keep the Evidence to proof while still updating the title", () => {
+test("execute contracts keep the Evidence to proof and leave the title to the linked issue", () => {
   for (const [file, evidenceOnly] of [
     ["execute.md", "The Evidence holds only proof"],
     ["execute.ja.md", "Evidence には証跡"],
   ]) {
     const contract = readFileSync(join(CONTRACT_DIR, file), "utf8");
     expect(contract).toContain(evidenceOnly);
-    expect(contract).toContain("--title <title> --evidence");
+    expect(contract).toContain("lh pr update <pr> --repo {{repo}} --evidence");
+    expect(contract).not.toContain("--title");
     expect(contract).not.toMatch(/PR body/u);
     expect(contract).not.toMatch(/including the summary|body に summary/u);
   }

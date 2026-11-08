@@ -51,7 +51,6 @@ async function openGithubLinkedPull() {
   git(["commit", "-qm", "feature work"]);
   git(["checkout", "-q", "main"]);
   const pr = (await svc.pulls.create("me/proj", {
-    title: "feat",
     head: branch,
     base: "main",
   })) as { number: number };
@@ -317,7 +316,6 @@ test("githubStatus 404s when the PR has no linked GitHub PR (#850)", async () =>
   git(["commit", "-qm", "work"]);
   git(["checkout", "-q", "main"]);
   const pr = (await svc.pulls.create("me/proj", {
-    title: "no link",
     head: branch,
     base: "main",
   })) as { number: number };

@@ -271,6 +271,7 @@ export function PullDetail({
             kind="PR"
             number={pull.number}
             title={pull.title}
+            titleSource={pullTitleSource(owner, repo, pull)}
             badges={pullDetailBadges(pull)}
             actions={
               <WorkflowRunSection
@@ -586,6 +587,7 @@ function PullHeader({
           kind="PR"
           number={pull.number}
           title={pull.title}
+          titleSource={pullTitleSource(owner, repo, pull)}
           titleRef={titleRef}
         />
         <PullDebugMenu
@@ -608,6 +610,25 @@ function PullHeader({
 
       <WorkflowRunSection owner={owner} repo={repo} number={pull.number} />
     </div>
+  );
+}
+
+// A PR has no title of its own: its header shows the linked issue's title, so the id line names that
+// issue next to the PR's own number to keep the two numbers apart.
+function pullTitleSource(owner: string, repo: string, pull: PullRequest) {
+  const linked = pull.linked_issue;
+  if (!linked) return undefined;
+  return (
+    <>
+      title from{" "}
+      <Link
+        to="/r/$owner/$repo/issues/$number"
+        params={{ owner, repo, number: String(linked.number) }}
+        className="hover:underline"
+      >
+        Issue #{linked.number}
+      </Link>
+    </>
   );
 }
 

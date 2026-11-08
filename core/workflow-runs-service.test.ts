@@ -143,15 +143,18 @@ test.each([
     "name",
     (workflow: { id: number; name: string }) => ({ workflow: workflow.name }),
   ],
-])("start rejects an archived workflow selected by %s", async (_label, input) => {
-  const repo = S.createRepo(`me/archived-workflow-${_label}`, REPO_PATH);
-  const workflow = svc.workflows.create({ name: `archived-${_label}` });
-  svc.workflows.archive(workflow.name);
+])(
+  "start rejects an archived workflow selected by %s",
+  async (_label, input) => {
+    const repo = S.createRepo(`me/archived-workflow-${_label}`, REPO_PATH);
+    const workflow = svc.workflows.create({ name: `archived-${_label}` });
+    svc.workflows.archive(workflow.name);
 
-  await expect(
-    svc.workflowRuns.start(repo.full_name, { issue: 1, ...input(workflow) }),
-  ).rejects.toMatchObject({ status: 404, message: "Workflow not found" });
-});
+    await expect(
+      svc.workflowRuns.start(repo.full_name, { issue: 1, ...input(workflow) }),
+    ).rejects.toMatchObject({ status: 404, message: "Workflow not found" });
+  },
+);
 
 test("start rejects a workflow id scoped to another repository", async () => {
   const source = S.createRepo("me/scoped-workflow-source", REPO_PATH);
@@ -1035,7 +1038,7 @@ test("start snapshots the contract language for parent and every later step", as
   ]);
 });
 
-test("start creates the initial PR title and body in the configured language", async () => {
+test("start creates the initial PR body in the configured language and titles the PR after its issue", async () => {
   const workflow = S.createWorkflow({
     name: "localized-pr",
     description: "",
@@ -1066,7 +1069,7 @@ test("start creates the initial PR title and body in the configured language", a
       japaneseRepo.full_name,
       japaneseRun.pr.number,
     );
-    expect(japanesePr.title).toBe(`Issue #${englishIssue.number} を実装する`);
+    expect(japanesePr.title).toBe("Add an English feature");
     expect(japanesePr.body).toBe(
       [
         "## Evidence",
@@ -1097,7 +1100,7 @@ test("start creates the initial PR title and body in the configured language", a
       englishRepo.full_name,
       englishRun.pr.number,
     );
-    expect(englishPr.title).toBe(`Implement issue #${japaneseIssue.number}`);
+    expect(englishPr.title).toBe("日本語の機能を追加する");
     expect(englishPr.body).toBe(
       [
         "## Evidence",

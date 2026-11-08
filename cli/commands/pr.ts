@@ -13,6 +13,9 @@ import {
 import { readTextInput } from "../text-input.ts";
 import { usage } from "../usage.ts";
 
+const PR_TITLE_REMOVED =
+  "--title was removed: a pull request shows its linked issue's title";
+
 // A `--comments` / `--ac-results` argument is inline JSON or a file path (#1895). stdin support was
 // dropped so the two review channels never both need stdin at once: an argument that starts with a
 // JSON opener is used verbatim, anything else is read as a file.
@@ -186,11 +189,11 @@ export async function run(): Promise<void> {
       });
   } else if (sub === "create") {
     if (flags.body !== undefined) fail("--body was renamed to --evidence");
+    if (flags.title !== undefined) fail(PR_TITLE_REMOVED);
     const p = await runOp(async () =>
       s.pulls.create(
         repo,
         {
-          title: flags.title ?? "",
           body:
             flags.evidence === undefined
               ? ""
@@ -206,12 +209,9 @@ export async function run(): Promise<void> {
     if (!flags.json) console.log(`created PR #${p.number}`);
   } else if (sub === "update") {
     if (flags.body !== undefined) fail("--body was renamed to --evidence");
-    const patch: { title?: string; body?: string } = {};
-    if (flags.title !== undefined) patch.title = flags.title;
-    if (flags.evidence !== undefined)
-      patch.body = await readTextInput(flags.evidence);
-    if (Object.keys(patch).length === 0)
-      fail("--title and/or --evidence is required");
+    if (flags.title !== undefined) fail(PR_TITLE_REMOVED);
+    if (flags.evidence === undefined) fail("--evidence is required");
+    const patch = { body: await readTextInput(flags.evidence) };
     const p = await runOp(async () =>
       s.pulls.update(repo, Number(rest[0]), patch, await writeSession()),
     );

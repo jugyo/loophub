@@ -87,8 +87,8 @@ run makes every earlier one unanswerable.
 2. Inspect the relevant code and show a concrete implementation plan in this session.
 3. Implement a focused change that matches the surrounding naming, types, tests, and style.
 4. Get the repository's standard tests, lint, and typecheck green.
-5. Commit the implementation on the current head branch. Update the PR title and Evidence with
-   `lh pr update <pr> --repo {{repo}} --title <title> --evidence ...`. The Evidence holds only proof —
+5. Commit the implementation on the current head branch. Update the PR Evidence with
+   `lh pr update <pr> --repo {{repo}} --evidence ...`. The Evidence holds only proof —
    screenshots, logs, test run results, and the like; do not write a summary, acceptance criteria,
    test plan, or implementation plan there. Add attachments or comments as needed.
 6. Commit any code change, then run `lh workflow turn done --repo {{repo}} --run {{run}}` exactly once

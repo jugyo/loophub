@@ -29,6 +29,18 @@ export interface IssueRow {
   closed_at: string | null;
 }
 
+/**
+ * The title a row reads as. A pull request has no title of its own: it takes its linked issue's
+ * title, and only a PR without a linked issue falls back to the title stored on its row (legacy
+ * rows; new PRs store an empty one). An issue row has no `pulls` row, so it keeps its own title.
+ * Selected after `<alias>.*` as `AS title`, the later column wins.
+ */
+export function rowTitleSql(alias: string): string {
+  return `COALESCE((SELECT linked_title.title FROM pulls linked_pull
+    JOIN issues linked_title ON linked_title.id = linked_pull.linked_issue_id
+    WHERE linked_pull.issue_id = ${alias}.id), ${alias}.title)`;
+}
+
 // Compatibility alias for the existing New Issue flow. Persistence is owned by the generic
 // Herdr pane registry (HerdrPaneRow); this alias keeps the issue-scoped call sites readable.
 export type IssueHerdrPane = HerdrPaneRow;
@@ -227,7 +239,9 @@ export function issueHerdrPanesByIssue(
 
 export function getIssue(repoId: number, number: number): IssueRow | null {
   return db
-    .query(`SELECT * FROM issues WHERE repo_id = ? AND number = ?`)
+    .query(
+      `SELECT issues.*, ${rowTitleSql("issues")} AS title FROM issues WHERE repo_id = ? AND number = ?`,
+    )
     .get(repoId, number) as IssueRow | null;
 }
 
@@ -279,7 +293,7 @@ export function listIssues(
       : "updated_at DESC, number DESC";
   return db
     .query(
-      `SELECT * FROM issues WHERE ${conds.join(" AND ")} ORDER BY ${orderBy}`,
+      `SELECT issues.*, ${rowTitleSql("issues")} AS title FROM issues WHERE ${conds.join(" AND ")} ORDER BY ${orderBy}`,
     )
     .all(...params) as IssueRow[];
 }
@@ -474,7 +488,9 @@ export function updateIssue(
 
 export function getIssueById(id: number): IssueRow | null {
   return db
-    .query(`SELECT * FROM issues WHERE id = ?`)
+    .query(
+      `SELECT issues.*, ${rowTitleSql("issues")} AS title FROM issues WHERE id = ?`,
+    )
     .get(id) as IssueRow | null;
 }
 

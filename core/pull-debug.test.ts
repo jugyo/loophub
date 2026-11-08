@@ -50,7 +50,6 @@ test("pulls.debug aggregates raw rows, git facts, and events for a PR", async ()
   const pr = await svc.pulls.create(
     "me/proj",
     {
-      title: "the PR",
       body: `implements it\n\nCloses #${issue.number}`,
       head: "feature",
       base: "main",

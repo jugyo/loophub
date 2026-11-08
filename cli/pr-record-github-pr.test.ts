@@ -27,7 +27,7 @@ function git(args: string[]) {
   spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
-function createPull(title: string, body: string): number {
+function createPull(body: string): number {
   const { stdout } = lh([
     "pr",
     "create",
@@ -37,8 +37,6 @@ function createPull(title: string, body: string): number {
     "feature",
     "--base",
     "main",
-    "--title",
-    title,
     "--evidence",
     body,
   ]);
@@ -79,7 +77,7 @@ afterAll(() => {
 });
 
 test("lh pr record-github-pr attaches a URL without --number (#487)", () => {
-  const n = createPull("backfill me", "body");
+  const n = createPull("body");
   const { stdout, exitCode } = lh([
     "pr",
     "record-github-pr",
@@ -99,7 +97,7 @@ test("lh pr record-github-pr attaches a URL without --number (#487)", () => {
 });
 
 test("lh pr record-github-pr is idempotent and re-linking overwrites (#487)", () => {
-  const n = createPull("re-link me", "body");
+  const n = createPull("body");
   lh([
     "pr",
     "record-github-pr",
@@ -124,7 +122,7 @@ test("lh pr record-github-pr is idempotent and re-linking overwrites (#487)", ()
 });
 
 test("lh pr record-github-pr without --url errors", () => {
-  const n = createPull("no url", "body");
+  const n = createPull("body");
   const { stderr, exitCode } = lh([
     "pr",
     "record-github-pr",
@@ -139,7 +137,7 @@ test("lh pr record-github-pr without --url errors", () => {
 });
 
 test("lh pr record-github-pr rejects a url with no derivable PR number", () => {
-  const n = createPull("bad url", "body");
+  const n = createPull("body");
   const { stderr, exitCode } = lh([
     "pr",
     "record-github-pr",

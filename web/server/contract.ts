@@ -1213,13 +1213,12 @@ export const methods: Record<string, MethodDef> = {
       svc.pageData.pullDetail(p.repo, p.number, "me", p.session_id),
   },
   "pulls/update": {
-    description: "Edit a pull request's title/body/state.",
+    description: "Edit a pull request's body/state.",
     params: params(
       {
         repo,
         number: positiveInt,
         state: { enum: ["open", "closed"] },
-        title: str,
         body: str,
         session_id: sid,
       },
@@ -1230,7 +1229,7 @@ export const methods: Record<string, MethodDef> = {
       svc.pulls.update(
         p.repo,
         p.number,
-        { state: p.state, title: p.title, body: p.body },
+        { state: p.state, body: p.body },
         p.session_id,
       ),
   },

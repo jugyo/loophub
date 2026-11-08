@@ -20,15 +20,6 @@ import {
   repoOr404,
 } from "./shared.ts";
 
-function defaultPrTitle(
-  issue: number,
-  language: WorkflowContractLanguage,
-): string {
-  return language === "ja"
-    ? `Issue #${issue} を実装する`
-    : `Implement issue #${issue}`;
-}
-
 function defaultPrEvidence(language: WorkflowContractLanguage): string {
   const visualEvidence =
     language === "en"
@@ -149,9 +140,6 @@ export const dev = {
     const pr = await pulls.create(
       name,
       {
-        title: input.language
-          ? defaultPrTitle(input.issue, input.language)
-          : issueRow.title,
         body,
         head: input.head,
         headFromNumber: input.head

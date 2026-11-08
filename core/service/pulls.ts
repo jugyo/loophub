@@ -437,7 +437,7 @@ export const pulls = {
   async create(
     name: string,
     input: {
-      title: string;
+      // No title: a pull request reads as its linked issue's title (see rowTitleSql).
       body?: string;
       // Either a fixed branch name, or a callback deriving one from the PR's own number once
       // assigned (e.g. dev.openPr's PR-id worktree branch convention, #463) — exactly one is
@@ -452,9 +452,9 @@ export const pulls = {
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
-    const { title, body = "", issue } = input;
-    if (!title || (!input.head && !input.headFromNumber))
-      throw new ServiceError(422, "title, head, base are required");
+    const { body = "", issue } = input;
+    if (!input.head && !input.headFromNumber)
+      throw new ServiceError(422, "head, base are required");
     const actor = actorFor(sessionId);
     // Refuse a second open PR for an issue that already has one. This is the double-start guard for
     // every issue-targeted creation path; historical rows may still contain multiple linked PRs.
@@ -462,7 +462,7 @@ export const pulls = {
     const linkedIssue =
       linkedIssueId != null ? S.getIssueById(linkedIssueId) : null;
     const base = input.base ?? linkedIssue?.target_branch ?? r.default_branch;
-    if (!base) throw new ServiceError(422, "title, head, base are required");
+    if (!base) throw new ServiceError(422, "head, base are required");
     assertExistingLocalBranch(
       r.local_path,
       base,
@@ -485,12 +485,12 @@ export const pulls = {
     const row = db.transaction(() => {
       const created =
         reservedNumber == null
-          ? S.createIssue(r.id, "pull", title, body, actor)
+          ? S.createIssue(r.id, "pull", "", body, actor)
           : S.createIssueWithNumber(
               r.id,
               reservedNumber,
               "pull",
-              title,
+              "",
               body,
               actor,
             );
@@ -519,7 +519,7 @@ export const pulls = {
   update(
     name: string,
     number: number,
-    patch: { state?: string; title?: string; body?: string },
+    patch: { state?: string; body?: string },
     sessionId?: string | null,
   ) {
     const r = repoOr404(name);
@@ -542,7 +542,6 @@ export const pulls = {
       ? S.runningWorkflowRunsForPull(r.id, row.number)
       : [];
     const issuePatch: Parameters<typeof S.updateIssue>[1] = {
-      title: patch.title,
       body: patch.body,
       state: patch.state as "open" | "closed" | undefined,
     };

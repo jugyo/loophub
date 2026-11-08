@@ -1,4 +1,5 @@
 import { db } from "../db.ts";
+import { rowTitleSql } from "./issues.ts";
 
 export interface SearchSnippetSegment {
   text: string;
@@ -119,7 +120,7 @@ export function searchIssuesAndPulls(
   const params: string[] = useIndex ? [`"${term.replaceAll('"', '""')}"`] : [];
   const rows = db
     .query(
-      `SELECT i.kind, i.number, i.title, i.body, i.state, i.updated_at
+      `SELECT i.kind, i.number, ${rowTitleSql("i")} AS title, i.body, i.state, i.updated_at
        FROM issues i
        WHERE i.repo_id = ?
          ${useIndex ? "AND i.id IN (SELECT rowid FROM issue_search WHERE issue_search MATCH ?)" : ""}

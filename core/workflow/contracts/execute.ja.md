@@ -77,8 +77,8 @@ diff feedback thread、review に同じ質問を重ねて投稿しません。�
 4. repository の標準 tests / lint / typecheck を green にします。
 5. 実装を現在の head branch に commit します。コミットは追記的に行い、push 済みの履歴は
    書き換えません（amend / rebase / force-push を避ける）。公開済み履歴の書き換えは既存の
-   PR・レビュー・コミットリンクを壊すためです。続いて、PR の title と Evidence を
-   `lh pr update <pr> --repo {{repo}} --title <title> --evidence ...` で更新します。Evidence には証跡
+   PR・レビュー・コミットリンクを壊すためです。続いて、PR の Evidence を
+   `lh pr update <pr> --repo {{repo}} --evidence ...` で更新します。Evidence には証跡
    （スクリーンショット、ログ、テストの実行結果など）だけを残し、summary、acceptance criteria、
    test plan、実装プランは書きません。必要に応じて attachment / comment を追加します。
 6. code change は commit してから、turn ごとに

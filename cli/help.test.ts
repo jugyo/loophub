@@ -150,13 +150,13 @@ describe("--help", () => {
     },
     {
       args: ["pr", "create", "--help"],
-      usage: "lh pr create --head <branch> --title <text> [options]",
+      usage: "lh pr create --head <branch> [options]",
       options: ["--issue <number>", "--evidence <text>", "--json", "--help"],
     },
     {
       args: ["pr", "update", "--help"],
       usage: "lh pr update <number> [options]",
-      options: ["--title <text>", "--evidence <text>", "--json", "--help"],
+      options: ["--evidence <text>", "--json", "--help"],
     },
     {
       args: ["pr", "review", "submit", "--help"],
@@ -201,20 +201,19 @@ describe("--help", () => {
         "--help",
       ],
     },
-  ])("documents usage and options for $usage without touching the DB", ({
-    args,
-    usage,
-    options,
-  }) => {
-    const result = lh([...args]);
+  ])(
+    "documents usage and options for $usage without touching the DB",
+    ({ args, usage, options }) => {
+      const result = lh([...args]);
 
-    expect(result.exitCode, result.stderr).toBe(0);
-    expect(result.stdout).toContain("Usage:");
-    expect(result.stdout).toContain(usage);
-    expect(result.stdout).toContain("Options:");
-    for (const option of options) expect(result.stdout).toContain(option);
-    expect(existsSync(join(home, "loophub.db"))).toBe(false);
-  });
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(result.stdout).toContain("Usage:");
+      expect(result.stdout).toContain(usage);
+      expect(result.stdout).toContain("Options:");
+      for (const option of options) expect(result.stdout).toContain(option);
+      expect(existsSync(join(home, "loophub.db"))).toBe(false);
+    },
+  );
 
   // #2458: the review group writes only through `submit`, so its help points at both verbs rather
   // than documenting a verb-less form that no longer submits anything.

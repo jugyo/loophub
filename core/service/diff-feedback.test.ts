@@ -89,7 +89,6 @@ beforeAll(async () => {
   await svc.repos.create({ path: repoPath, name: REPO });
   repoId = (await svc.repos.get(REPO)).id;
   const pull = await svc.pulls.create(REPO, {
-    title: "feedback target",
     body: "",
     head: "feature",
     base: "main",

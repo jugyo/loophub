@@ -40,7 +40,6 @@ beforeAll(async () => {
   git(["checkout", "-q", "main"]);
   const repo = await svc.repos.create({ path: repoPath, name: "me/views" });
   const pull = await svc.pulls.create("me/views", {
-    title: "impl",
     head: "feature",
     base: "main",
   });

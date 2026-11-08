@@ -1,4 +1,5 @@
 import { db, now } from "../db.ts";
+import { rowTitleSql } from "./issues.ts";
 import { listSessionUsage } from "./session-usage.ts";
 
 export interface AgentSessionRow {
@@ -193,7 +194,7 @@ export function listSessionLinkedTargets(
          r.full_name AS repo,
          i.kind,
          i.number,
-         i.title,
+         ${rowTitleSql("i")} AS title,
          i.state
        FROM session_links l
        JOIN issues i ON i.id = l.issue_id

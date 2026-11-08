@@ -107,7 +107,7 @@ afterAll(() => {
 test("no dev session linked: work_duration falls back to N/A across the board", async () => {
   const created = (await svc.pulls.create(
     "me/proj",
-    { title: "human-authored", head: "main", base: "main" },
+    { head: "main", base: "main" },
     undefined,
   )) as any;
   // pulls.create's own response is not detail-shaped (no related_sessions/work_duration — that's
@@ -231,7 +231,7 @@ test("merged without ever passing through ready_for_review: implementation cover
   // A plain (non-draft) pulls.create never fires pull_request.ready_for_review — it starts ready.
   const pr = (await svc.pulls.create(
     "me/proj",
-    { title: "no ready event", head: headRef, base: "main" },
+    { head: headRef, base: "main" },
     "sess-f",
   )) as any;
   backdateSession("sess-f", 90);
@@ -313,12 +313,7 @@ test("closed without merging: a later title/body edit does not inflate the close
   // not — this is the bug a naive updated_at-based anchor would have re-introduced. Had it, the
   // duration below would jump up to roughly the full 200s session backdate (updated_at ≈ now, not
   // the backdated closed_at), instead of staying at ~100s.
-  await svc.pulls.update(
-    "me/proj",
-    number,
-    { title: "renamed after close" },
-    "sess-e",
-  );
+  await svc.pulls.update("me/proj", number, {}, "sess-e");
   const after = (await svc.pulls.get("me/proj", number)) as any;
   expect(after.work_duration.total.basis).toBe("closed");
   expect(after.work_duration.total.seconds).toBe(

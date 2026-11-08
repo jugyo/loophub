@@ -33,6 +33,7 @@ function gitOutput(args: string[]): string {
   }).stdout.trim();
 }
 
+// The PR has no title of its own; `title` names the linked issue it reads its title from.
 function createPull(title: string, body: string): number {
   const { stdout } = lh([
     "pr",
@@ -43,8 +44,8 @@ function createPull(title: string, body: string): number {
     "feature",
     "--base",
     "main",
-    "--title",
-    title,
+    "--issue",
+    String(createIssue(title, "")),
     "--evidence",
     body,
   ]);
@@ -116,24 +117,58 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("lh pr update edits both title and Evidence", () => {
-  const n = createPull("old title", "old body");
+test("lh pr update edits Evidence", () => {
+  const n = createPull("linked title", "old body");
   const { stdout, exitCode } = lh([
     "pr",
     "update",
     String(n),
     "--repo",
     REPO,
-    "--title",
-    "new title",
     "--evidence",
     "new body",
   ]);
   expect(exitCode).toBe(0);
   expect(stdout).toContain(`updated PR #${n}`);
   const p = viewJSON(n);
-  expect(p.title).toBe("new title");
+  expect(p.title).toBe("linked title");
   expect(p.body).toBe("new body");
+});
+
+test("a PR shows its linked issue's title, following later issue edits", () => {
+  const n = createPull("first issue title", "body");
+  const issue = viewJSON(n).linked_issue.number;
+  expect(
+    lh([
+      "issue",
+      "update",
+      String(issue),
+      "--repo",
+      REPO,
+      "--title",
+      "renamed issue",
+    ]).exitCode,
+  ).toBe(0);
+  const p = viewJSON(n);
+  expect(p.title).toBe("renamed issue");
+  expect(p.linked_issue.title).toBe("renamed issue");
+});
+
+test("lh pr create rejects --title", () => {
+  const { stderr, exitCode } = lh([
+    "pr",
+    "create",
+    "--repo",
+    REPO,
+    "--head",
+    "feature",
+    "--base",
+    "main",
+    "--title",
+    "own title",
+  ]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("--title was removed");
 });
 
 test("lh pr create defaults linked issue PRs to the issue target branch", () => {
@@ -157,8 +192,6 @@ test("lh pr create defaults linked issue PRs to the issue target branch", () => 
     REPO,
     "--head",
     "feature",
-    "--title",
-    "targeted pr",
     "--issue",
     issueMatch[1],
   ]);
@@ -247,14 +280,21 @@ test("lh pr view --json reports the gate from the latest review and the current 
   });
 });
 
-test("lh pr update --title leaves Evidence untouched", () => {
+test("lh pr update rejects --title and changes nothing", () => {
   const n = createPull("title only", "keep this body");
-  expect(
-    lh(["pr", "update", String(n), "--repo", REPO, "--title", "retitled"])
-      .exitCode,
-  ).toBe(0);
+  const { stderr, exitCode } = lh([
+    "pr",
+    "update",
+    String(n),
+    "--repo",
+    REPO,
+    "--title",
+    "retitled",
+  ]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("--title was removed");
   const p = viewJSON(n);
-  expect(p.title).toBe("retitled");
+  expect(p.title).toBe("title only");
   expect(p.body).toBe("keep this body");
 });
 
@@ -285,11 +325,11 @@ test("lh pr update --body points at --evidence and changes nothing", () => {
   expect(viewJSON(n).body).toBe("unchanged body");
 });
 
-test("lh pr update without --title/--evidence errors", () => {
+test("lh pr update without --evidence errors", () => {
   const n = createPull("unchanged title", "unchanged body");
   const { stderr, exitCode } = lh(["pr", "update", String(n), "--repo", REPO]);
   expect(exitCode).not.toBe(0);
-  expect(stderr).toContain("--title and/or --evidence is required");
+  expect(stderr).toContain("--evidence is required");
   const p = viewJSON(n);
   expect(p.title).toBe("unchanged title");
   expect(p.body).toBe("unchanged body");
@@ -303,7 +343,7 @@ test("lh pr update on an issue number errors", () => {
     String(n),
     "--repo",
     REPO,
-    "--title",
+    "--evidence",
     "nope",
   ]);
   expect(exitCode).not.toBe(0);

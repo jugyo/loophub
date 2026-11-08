@@ -1,5 +1,5 @@
 import { db, now } from "../db.ts";
-import type { IssueRow } from "./issues.ts";
+import { type IssueRow, rowTitleSql } from "./issues.ts";
 
 // ---- retros ----
 export interface RetroInput {
@@ -87,7 +87,7 @@ export function mergedPullsWithoutRetro(
 ): (IssueRow & { merged_at: string | null })[] {
   return db
     .query(
-      `SELECT i.*, p.merged_at
+      `SELECT i.*, ${rowTitleSql("i")} AS title, p.merged_at
        FROM issues i
        JOIN pulls p ON p.issue_id = i.id
        WHERE i.repo_id = ? AND i.kind = 'pull' AND p.merged = 1

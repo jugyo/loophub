@@ -57,7 +57,7 @@ test("merge() without a session authors the commit as the repository's git confi
   makeBranch("loophub/human", "human.txt");
   const pr = (await svc.pulls.create(
     "me/proj",
-    { title: "human merge", head: "loophub/human", base: "main" },
+    { head: "loophub/human", base: "main" },
     undefined,
   )) as any;
 
@@ -78,7 +78,7 @@ test("merge() with a session keeps authoring the commit as that session's agent"
   makeBranch("loophub/agent", "agent.txt");
   const pr = (await svc.pulls.create(
     "me/proj",
-    { title: "agent merge", head: "loophub/agent", base: "main" },
+    { head: "loophub/agent", base: "main" },
     undefined,
   )) as any;
 
@@ -117,7 +117,7 @@ test("merge() reports why a rebase could not replay the branch", async () => {
 
   const pr = (await svc.pulls.create(
     "me/proj",
-    { title: "rebase merge", head: "loophub/replay", base: "main" },
+    { head: "loophub/replay", base: "main" },
     undefined,
   )) as any;
 

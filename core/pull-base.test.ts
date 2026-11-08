@@ -54,7 +54,6 @@ afterAll(() => {
 
 test("PR creation records the fork point independently of the live base ref", async () => {
   const created = await svc.pulls.create("me/proj", {
-    title: "record base",
     head: "feature",
     base: "main",
   });
@@ -114,7 +113,6 @@ test("diff base follows the live merge-base after base is merged into head", asy
 
   await svc.repos.create({ path, name: "me/diff-base" });
   const created = await svc.pulls.create("me/diff-base", {
-    title: "diff base",
     head: "feature",
     base: "main",
   });
@@ -186,7 +184,6 @@ test("diff base prefers origin/<base> when local base lags after a remote merge"
 
   await svc.repos.create({ path, name: "me/diff-origin-base" });
   const created = await svc.pulls.create("me/diff-origin-base", {
-    title: "origin base lag",
     head: "feature",
     base: "main",
   });
@@ -234,7 +231,6 @@ test("diff base keeps the fork point after the base branch is rebased", async ()
 
   await svc.repos.create({ path, name: "me/diff-rebased-base" });
   const created = await svc.pulls.create("me/diff-rebased-base", {
-    title: "rebased base",
     head: "feature",
     base: "main",
   });
@@ -290,7 +286,6 @@ test("diff base reports both the fork point and its rewritten twin, tip-based fi
 
   await svc.repos.create({ path, name: "me/diff-merged-rewrite" });
   const created = await svc.pulls.create("me/diff-merged-rewrite", {
-    title: "merged rewritten base",
     head: "feature",
     base: "main",
   });
@@ -354,7 +349,6 @@ test("diff base ignores a fork point the head branch no longer contains", async 
 
   await svc.repos.create({ path, name: "me/diff-rebased-head" });
   const created = await svc.pulls.create("me/diff-rebased-head", {
-    title: "rebased head",
     head: "feature",
     base: "main",
   });
@@ -402,7 +396,6 @@ test("diff base resolves the live base through a shallow boundary when parent ob
 
   await svc.repos.create({ path, name: "me/diff-shallow" });
   const created = await svc.pulls.create("me/diff-shallow", {
-    title: "shallow history",
     head: "feature",
     base: "main",
   });

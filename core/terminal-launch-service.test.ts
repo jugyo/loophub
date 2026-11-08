@@ -283,21 +283,24 @@ describe("terminal.launch workflow-run spawns `lh workflow start`", () => {
         heartbeat_at: "2020-01-01T00:00:00Z",
       },
     ],
-  ])("rejects a %s worker before spawning the launcher", async (_state, runtime) => {
-    db.run("DELETE FROM worker_runtime");
-    if (runtime) S.upsertWorkerRuntime(runtime);
+  ])(
+    "rejects a %s worker before spawning the launcher",
+    async (_state, runtime) => {
+      db.run("DELETE FROM worker_runtime");
+      if (runtime) S.upsertWorkerRuntime(runtime);
 
-    await expect(
-      svc.terminal.launch({
-        repo: "me/proj",
-        workflow: "workflow-run",
-        issueNumber: 1,
-        workflowId: 9,
-      }),
-    ).rejects.toMatchObject({ status: 409 });
-    expect(lhDev.calls).toHaveLength(0);
-    expect(herdr.calls).toHaveLength(0);
-  });
+      await expect(
+        svc.terminal.launch({
+          repo: "me/proj",
+          workflow: "workflow-run",
+          issueNumber: 1,
+          workflowId: 9,
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(lhDev.calls).toHaveLength(0);
+      expect(herdr.calls).toHaveLength(0);
+    },
+  );
 
   test("forwards the saved workflow and reports the canonical herdr session", async () => {
     lhDev.script.push(exitWith(0));
@@ -589,66 +592,73 @@ describe("terminal.launch github-pr-export focus preservation", () => {
     ["fresh workspace", 0, WORKTREE_OPEN_FRESH_JSON, true, true],
     ["reused workspace", 0, WORKTREE_OPEN_REUSED_JSON, true, false],
     ["repo-root fallback tab", 1, undefined, false, false],
-  ] as const)("preserves the existing focus through a %s launch", async (_placement, openStatus, openStdout, scopedTab, closesSeedTab) => {
-    const pullNumber = createPull();
-    const focusBefore = { ...herdr.focus };
-    herdr.script.push(
-      exitWith(openStatus, openStdout), // worktree open
-      exitWith(0, LAUNCH_TAB_JSON), // launch tab
-      exitWith(0), // pane rename
-      exitWith(0), // the launch command, typed into the pane
-    );
-    if (closesSeedTab) herdr.script.push(exitWith(0));
-
-    await expect(
-      svc.terminal.launch({
-        repo: "me/proj",
-        workflow: "github-pr-export",
-        prNumber: pullNumber,
-        label: "Create PR on GitHub",
-        prompt: "Create the pull request.",
-      }),
-    ).resolves.toMatchObject({ backend: "herdr" });
-
-    const worktreeOpen = herdr.calls[0];
-    expect(worktreeOpen).toEqual(
-      expect.arrayContaining(["worktree", "open", "--no-focus"]),
-    );
-    const tabCreate = herdr.calls[1];
-    expect(tabCreate).toEqual(
-      expect.arrayContaining(["tab", "create", "--no-focus"]),
-    );
-    // A tab placed in the worktree's workspace starts in that worktree, so the agent's cwd resolves
-    // back to this PR and the closed-PR sweep can close the pane (#602).
-    const { worktreeRoot } = await import("./config.ts");
-    const { worktreePath } = await import("./worktree-path.ts");
-    const tabCwd = tabCreate[tabCreate.indexOf("--cwd") + 1];
-    if (scopedTab) {
-      expect(tabCreate).toEqual(expect.arrayContaining(["--workspace", "w4"]));
-      expect(tabCwd).toBe(worktreePath(worktreeRoot(), "me/proj", pullNumber));
-    } else {
-      expect(tabCreate).not.toContain("--workspace");
-      expect(tabCwd).toBe(repoPath);
-    }
-    if (closesSeedTab) {
-      await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
-      expect(herdr.calls[4]).toEqual(
-        expect.arrayContaining(["tab", "close", "w4:t1"]),
+  ] as const)(
+    "preserves the existing focus through a %s launch",
+    async (_placement, openStatus, openStdout, scopedTab, closesSeedTab) => {
+      const pullNumber = createPull();
+      const focusBefore = { ...herdr.focus };
+      herdr.script.push(
+        exitWith(openStatus, openStdout), // worktree open
+        exitWith(0, LAUNCH_TAB_JSON), // launch tab
+        exitWith(0), // pane rename
+        exitWith(0), // the launch command, typed into the pane
       );
-    }
-    expect(
-      herdr.calls.some((call) =>
-        call.some(
-          (arg, index) =>
-            arg === "focus" &&
-            ["workspace", "tab", "agent", "pane"].includes(
-              call[index - 1] ?? "",
-            ),
+      if (closesSeedTab) herdr.script.push(exitWith(0));
+
+      await expect(
+        svc.terminal.launch({
+          repo: "me/proj",
+          workflow: "github-pr-export",
+          prNumber: pullNumber,
+          label: "Create PR on GitHub",
+          prompt: "Create the pull request.",
+        }),
+      ).resolves.toMatchObject({ backend: "herdr" });
+
+      const worktreeOpen = herdr.calls[0];
+      expect(worktreeOpen).toEqual(
+        expect.arrayContaining(["worktree", "open", "--no-focus"]),
+      );
+      const tabCreate = herdr.calls[1];
+      expect(tabCreate).toEqual(
+        expect.arrayContaining(["tab", "create", "--no-focus"]),
+      );
+      // A tab placed in the worktree's workspace starts in that worktree, so the agent's cwd resolves
+      // back to this PR and the closed-PR sweep can close the pane (#602).
+      const { worktreeRoot } = await import("./config.ts");
+      const { worktreePath } = await import("./worktree-path.ts");
+      const tabCwd = tabCreate[tabCreate.indexOf("--cwd") + 1];
+      if (scopedTab) {
+        expect(tabCreate).toEqual(
+          expect.arrayContaining(["--workspace", "w4"]),
+        );
+        expect(tabCwd).toBe(
+          worktreePath(worktreeRoot(), "me/proj", pullNumber),
+        );
+      } else {
+        expect(tabCreate).not.toContain("--workspace");
+        expect(tabCwd).toBe(repoPath);
+      }
+      if (closesSeedTab) {
+        await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
+        expect(herdr.calls[4]).toEqual(
+          expect.arrayContaining(["tab", "close", "w4:t1"]),
+        );
+      }
+      expect(
+        herdr.calls.some((call) =>
+          call.some(
+            (arg, index) =>
+              arg === "focus" &&
+              ["workspace", "tab", "agent", "pane"].includes(
+                call[index - 1] ?? "",
+              ),
+          ),
         ),
-      ),
-    ).toBe(false);
-    expect(herdr.focus).toEqual(focusBefore);
-  });
+      ).toBe(false);
+      expect(herdr.focus).toEqual(focusBefore);
+    },
+  );
 
   // #2383: the launch is the only moment anything knows an export started — the agent works
   // asynchronously afterwards — so a successful launch opens the export record the PR detail reads

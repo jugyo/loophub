@@ -32,7 +32,6 @@ async function openGithubLinkedPull(
   git(["commit", "-qm", "feature work"]);
   git(["checkout", "-q", "main"]);
   const pr = await svc.pulls.create("me/proj", {
-    title: "feat",
     head: branch,
     base: "main",
     issue: linkedIssueNumber,
@@ -148,7 +147,7 @@ test("a detected GitHub merge creates one close-required notification without ch
       resource: {
         kind: "pull",
         number,
-        title: "feat",
+        title: "Keep open until the user closes the PR",
         href: `/r/me/proj/pulls/${number}`,
       },
       read_at: null,
@@ -238,7 +237,6 @@ test("a gh failure on one link is skipped without blocking the rest of the sweep
 test("a merged loophub PR (or one without a GitHub link) is not polled (#800)", async () => {
   // No GitHub link at all.
   const plain = await svc.pulls.create("me/proj", {
-    title: "no-link",
     head: "main",
     base: "main",
   });

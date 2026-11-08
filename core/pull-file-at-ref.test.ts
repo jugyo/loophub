@@ -50,7 +50,6 @@ afterAll(() => {
 
 test("pulls.fileAtRef resolves base/head refs and reports missing for an added file", async () => {
   const pr = await svc.pulls.create("me/proj", {
-    title: "the PR",
     body: "adds a readme",
     head: "feature",
     base: "main",
@@ -84,7 +83,6 @@ test("pulls.fileAtRef 404s for a missing PR", async () => {
 
 test("pulls.fileAtRef 404s for a path outside the PR's diff (not a general file-read primitive)", async () => {
   const pr = await svc.pulls.create("me/proj", {
-    title: "another PR",
     body: "adds a readme",
     head: "feature",
     base: "main",
@@ -98,7 +96,6 @@ test("pulls.fileAtRef 404s for a path outside the PR's diff (not a general file-
 
 test("pulls.fileAtRef ignores files added to the base branch after the PR fork", async () => {
   const pr = await svc.pulls.create("me/proj", {
-    title: "base advanced",
     body: "base has an unrelated file",
     head: "feature",
     base: "main",
@@ -114,7 +111,6 @@ test("pulls.fileAtRef ignores files added to the base branch after the PR fork",
 
 test("pulls.fileAtRef resolves both sides of a renamed file", async () => {
   const pr = await svc.pulls.create("me/proj", {
-    title: "rename the readme",
     body: "renames the readme",
     head: "rename-feature",
     base: "main",

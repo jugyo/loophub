@@ -10,11 +10,17 @@ export function DetailHeaderTitle({
   kind,
   number,
   title,
+  titleSource,
   titleRef,
 }: {
   kind: "Issue" | "PR";
   number: number;
   title: string;
+  /**
+   * Shown after the id when the title belongs to another item: a PR has no title of its own and
+   * shows its linked issue's, so this names that issue next to the PR's own number.
+   */
+  titleSource?: ReactNode;
   /** Observed by {@link DetailStickyHeader} to know when the title left the viewport. */
   titleRef?: RefObject<HTMLDivElement | null>;
 }) {
@@ -26,6 +32,7 @@ export function DetailHeaderTitle({
     >
       <span className="text-sm font-medium text-muted-foreground">
         {kind} #{number}
+        {titleSource ? <> · {titleSource}</> : null}
       </span>
       <h1 className="text-2xl font-semibold">{title}</h1>
     </div>
@@ -49,6 +56,7 @@ export function DetailStickyHeader({
   kind,
   number,
   title,
+  titleSource,
   badges,
   actions,
   titleRef,
@@ -56,6 +64,8 @@ export function DetailStickyHeader({
   kind: "Issue" | "PR";
   number: number;
   title: string;
+  /** Same as {@link DetailHeaderTitle}'s. */
+  titleSource?: ReactNode;
   /** Status shown by the page itself (stateBadge / pullDetailBadges), reused verbatim. */
   badges: BadgeData[];
   /** Extra compact content at the bar's right end, after the badges. */
@@ -79,6 +89,7 @@ export function DetailStickyHeader({
         >
           <span className="shrink-0 text-sm font-medium text-muted-foreground">
             {kind} #{number}
+            {titleSource ? <> · {titleSource}</> : null}
           </span>
           <span className="min-w-0 flex-1 truncate text-sm font-semibold">
             {title}

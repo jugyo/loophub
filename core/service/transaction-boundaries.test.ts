@@ -144,7 +144,6 @@ beforeAll(async () => {
 
   prNumber = (
     await svc.pulls.create(REPO, {
-      title: "boundary target",
       body: "",
       head: "feature",
       base: "main",
@@ -210,7 +209,6 @@ test("a failed pull ref observation leaves no pull-shaped issue", async () => {
     svc.pulls.create(
       REPO,
       {
-        title: "failed pull ref observation",
         headFromNumber: (number) => `loophub/pr-${number}`,
         base: "main",
       },
@@ -239,7 +237,6 @@ test("a failed pull insert leaves no pull-shaped issue", async () => {
   await expect(
     whileFailingInsert("pulls", () =>
       svc.pulls.create(REPO, {
-        title: "failed pull insert",
         head: "feature",
         base: "main",
       }),
@@ -255,7 +252,6 @@ test("a failed pull_request.opened event leaves no pull or pull-shaped issue", a
   await expect(
     whileFailingAsync("pull_request.opened", () =>
       svc.pulls.create(REPO, {
-        title: "failed pull opened event",
         head: "feature",
         base: "main",
       }),

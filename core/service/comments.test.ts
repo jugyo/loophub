@@ -49,7 +49,6 @@ beforeAll(async () => {
   repoId = (await svc.repos.get(repoName)).id;
   prNumber = (
     await svc.pulls.create(repoName, {
-      title: "Comment target",
       head: "feature",
       base: "main",
     })

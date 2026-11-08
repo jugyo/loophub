@@ -30,7 +30,6 @@ async function newPull(title: string): Promise<number> {
   git(["commit", "-qm", branch]);
   git(["checkout", "-q", "main"]);
   const pull = await svc.pulls.create("me/reviews", {
-    title,
     head: branch,
     base: "main",
   });
@@ -88,7 +87,6 @@ async function newPullForRubric(
   git(["commit", "-qm", branch]);
   git(["checkout", "-q", "main"]);
   const pull = await svc.pulls.create("me/reviews", {
-    title,
     head: branch,
     base: "main",
     issue: issue.number,

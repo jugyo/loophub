@@ -208,12 +208,11 @@ Options:
 const PR_CREATE_DETAILS = `
 
 Usage:
-  lh pr create --head <branch> --title <text> [options]
+  lh pr create --head <branch> [options]
 
 Options:
   --head <branch>       Head branch.
   --base <branch>       Base branch (defaults to the issue's target branch, then the default branch).
-  --title <text>        Pull request title.
   --issue <number>      Issue to link the pull request to.
   --evidence <text>     Markdown Evidence (screenshots, logs, test results); @file reads a file and
                         - reads stdin.
@@ -223,7 +222,8 @@ Options:
   --help                Show this help without changing the database.
 
 Constraints:
-  The pull request is linked to an issue only through --issue.`;
+  The pull request is linked to an issue only through --issue.
+  A pull request has no title of its own; it shows its linked issue's title.`;
 
 const PR_UPDATE_DETAILS = `
 
@@ -231,7 +231,6 @@ Usage:
   lh pr update <number> [options]
 
 Options:
-  --title <text>        New pull request title.
   --evidence <text>     New Markdown Evidence; @file reads a file and - reads stdin.
   --repo <owner/name>   Repository (defaults to the repository at the current path).
   --session-id <uuid>   Attribute the update to a registered agent session.
@@ -239,7 +238,8 @@ Options:
   --help                Show this help without changing the database.
 
 Constraints:
-  At least one of --title and --evidence is required.`;
+  --evidence is required. A pull request has no title of its own; it shows its linked
+  issue's title.`;
 
 const PR_COMMENT_DETAILS = `
 

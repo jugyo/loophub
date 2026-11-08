@@ -33,7 +33,6 @@ async function workflowGithubPull(githubNumber: number): Promise<{
   git(["commit", "-qm", branch]);
   git(["checkout", "-q", "main"]);
   const pr = await svc.pulls.create("me/proj", {
-    title: branch,
     head: branch,
     base: "main",
   });
@@ -235,7 +234,6 @@ test("skips GitHub feedback when the Workflow run has no parent session", async 
   git(["commit", "-qm", branch]);
   git(["checkout", "-q", "main"]);
   const pr = await svc.pulls.create("me/proj", {
-    title: branch,
     head: branch,
     base: "main",
   });

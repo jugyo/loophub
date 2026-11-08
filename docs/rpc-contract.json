@@ -2692,7 +2692,7 @@
     },
     {
       "name": "pulls/update",
-      "description": "Edit a pull request's title/body/state.",
+      "description": "Edit a pull request's body/state.",
       "params": {
         "type": "object",
         "properties": {
@@ -2709,9 +2709,6 @@
               "open",
               "closed"
             ]
-          },
-          "title": {
-            "type": "string"
           },
           "body": {
             "type": "string"

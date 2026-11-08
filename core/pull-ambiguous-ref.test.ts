@@ -47,7 +47,6 @@ beforeAll(async () => {
   await svc.repos.create({ path: repoPath, name: "me/proj" });
   prNumber = (
     await svc.pulls.create("me/proj", {
-      title: "the PR",
       body: "changes the readme",
       head: "feature",
       base: "opencode",

@@ -268,7 +268,6 @@ describe("dev.openPr", () => {
     const pr = (await svc.pulls.create(
       "me/proj",
       {
-        title: "direct impl",
         head: "main",
         issue: issue.number,
       },
@@ -327,7 +326,6 @@ describe("dev.openPr", () => {
       svc.pulls.create(
         "me/proj",
         {
-          title: "direct impl",
           head: "main",
           issue: issue.number,
         },
@@ -341,7 +339,6 @@ describe("dev.openPr", () => {
       svc.pulls.create(
         "me/proj",
         {
-          title: "bad explicit base",
           head: "main",
           base: "--help",
         },
@@ -353,7 +350,6 @@ describe("dev.openPr", () => {
       svc.pulls.create(
         "me/proj",
         {
-          title: "revision explicit base",
           head: "main",
           base: "main~0",
         },
@@ -365,7 +361,6 @@ describe("dev.openPr", () => {
       svc.pulls.create(
         "me/proj",
         {
-          title: "control explicit base",
           head: "main",
           base: "main\nnext",
         },
@@ -476,7 +471,6 @@ describe("dev.openPr", () => {
       svc.pulls.create(
         "me/proj",
         {
-          title: "rival",
           head: "rival-branch",
           base: "main",
           issue: issue.number,
@@ -547,7 +541,7 @@ describe("pull review state", () => {
   test("stays CHANGES_REQUESTED until a later review verdict", async () => {
     const pr = await svc.pulls.create(
       "me/proj",
-      { title: "review state", head: "main", base: "main" },
+      { head: "main", base: "main" },
       "sess-1",
     );
     await svc.reviews.create(
@@ -585,7 +579,7 @@ describe("pull review state", () => {
   test("reports the submitting agent session's elapsed time as the review duration", async () => {
     const pr = await svc.pulls.create(
       "me/proj",
-      { title: "review duration", head: "main", base: "main" },
+      { head: "main", base: "main" },
       "sess-1",
     );
     svc.sessions.register({
@@ -623,7 +617,7 @@ describe("pull review state", () => {
   test("records no session for a human review, so it reports no duration", async () => {
     const pr = await svc.pulls.create(
       "me/proj",
-      { title: "human review duration", head: "main", base: "main" },
+      { head: "main", base: "main" },
       "sess-1",
     );
     // agent "me" is what marks a session as the human one (service/shared.ts commentActor).

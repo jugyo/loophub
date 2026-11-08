@@ -41,7 +41,7 @@ test("merge() rejects a PR whose head has no commits ahead of base (#691)", asyn
   git(["branch", "loophub/empty", "main"]);
   const pr = (await svc.pulls.create(
     "me/proj",
-    { title: "no commits", head: "loophub/empty", base: "main" },
+    { head: "loophub/empty", base: "main" },
     undefined,
   )) as any;
 
@@ -76,7 +76,7 @@ test("merge() rejects a PR with commits ahead of base but no effective diff (#12
 
   const pr = (await svc.pulls.create(
     "me/proj",
-    { title: "net-empty", head: "loophub/net-empty", base: "main" },
+    { head: "loophub/net-empty", base: "main" },
     undefined,
   )) as any;
 
@@ -98,7 +98,7 @@ test("merge() succeeds once the head branch has a commit ahead of base", async (
 
   const pr = (await svc.pulls.create(
     "me/proj",
-    { title: "has commits", head: "loophub/one-commit", base: "main" },
+    { head: "loophub/one-commit", base: "main" },
     undefined,
   )) as any;
 
@@ -121,7 +121,7 @@ test("merge() rejects a closed PR before publishing another terminal fact", asyn
 
   const pr = (await svc.pulls.create(
     "me/proj",
-    { title: "closed", head: "loophub/closed", base: "main" },
+    { head: "loophub/closed", base: "main" },
     undefined,
   )) as any;
   await svc.pulls.update("me/proj", pr.number, { state: "closed" });

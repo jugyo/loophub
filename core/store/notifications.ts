@@ -1,5 +1,6 @@
 import { db, now } from "../db.ts";
 import type { MergeableState } from "../mergeable.ts";
+import { rowTitleSql } from "./issues.ts";
 
 // Single source of truth for notification kinds. TypeScript, store inserts, and service
 // assertKind all derive from this list — SQLite no longer CHECKs kind so new values only need
@@ -283,7 +284,7 @@ export function listNotificationSignalRows(
   return db
     .query(
       `SELECT * FROM (
-         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
+         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, ${rowTitleSql("i")} AS title,
                 'over_budget' AS kind,
                 'warning' AS severity,
                 'cost_stopped' AS reason,
@@ -324,7 +325,7 @@ export function listNotificationSignalRows(
                  json_extract(workflow_event.payload, '$.limit_usd')
            )
          UNION ALL
-         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
+         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, ${rowTitleSql("i")} AS title,
                 'human_attention' AS kind,
                 'info' AS severity,
                 'github_merged' AS reason,
@@ -348,7 +349,7 @@ export function listNotificationSignalRows(
            AND e.id <= ?
            AND p.merged = 0
          UNION ALL
-         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
+         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, ${rowTitleSql("i")} AS title,
                 'over_budget' AS kind,
                 'warning' AS severity,
                 'workflow_cost_exceeded' AS reason,
@@ -375,7 +376,7 @@ export function listNotificationSignalRows(
            AND e.id <= ?
            AND p.merged = 0
          UNION ALL
-         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
+         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, ${rowTitleSql("i")} AS title,
                 'human_attention' AS kind,
                 'warning' AS severity,
                 'workflow_rework_limit' AS reason,

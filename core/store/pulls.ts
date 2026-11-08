@@ -1,7 +1,7 @@
 import { db, now } from "../db.ts";
 import type { PullMergeMethod } from "../git.ts";
 import type { MergeableState } from "../mergeable.ts";
-import type { IssueRow } from "./issues.ts";
+import { type IssueRow, rowTitleSql } from "./issues.ts";
 import { linkSession, setSessionKind } from "./sessions.ts";
 
 // Keep one large diff from monopolizing the shared SQLite database. A larger diff falls back to
@@ -102,7 +102,7 @@ export function listPulls(
       : "i.number DESC";
   return db
     .query(
-      `SELECT i.* FROM issues i
+      `SELECT i.*, ${rowTitleSql("i")} AS title FROM issues i
        INNER JOIN pulls p ON p.issue_id = i.id
        WHERE ${conds.join(" AND ")}
        ORDER BY ${order}`,
@@ -166,7 +166,7 @@ export function openPullLinkedToIssue(
   // so make the selection stable even after an issue has multiple open proposal PRs.
   return db
     .query(
-      `SELECT i.*, p.merged
+      `SELECT i.*, ${rowTitleSql("i")} AS title, p.merged
          FROM pulls p
          JOIN issues i ON i.id = p.issue_id
          WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND i.state = 'open'
@@ -182,7 +182,7 @@ export function linkedPullForIssue(
 ): LinkedPullIssueRow | null {
   return db
     .query(
-      `SELECT i.*, p.merged, p.merged_at
+      `SELECT i.*, ${rowTitleSql("i")} AS title, p.merged, p.merged_at
          FROM pulls p
          JOIN issues i ON i.id = p.issue_id
          WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND p.archived_at IS NULL
@@ -216,7 +216,7 @@ export function linkedPullsForIssue(
 ): LinkedPullIssueRow[] {
   return db
     .query(
-      `SELECT i.*, p.merged, p.merged_at
+      `SELECT i.*, ${rowTitleSql("i")} AS title, p.merged, p.merged_at
        FROM pulls p
        JOIN issues i ON i.id = p.issue_id
        WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND p.archived_at IS NULL
@@ -235,7 +235,7 @@ export function linkedPullsByIssue(
   const rows = db
     .query(
       `SELECT * FROM (
-         SELECT i.*, p.merged, p.merged_at, p.linked_issue_id,
+         SELECT i.*, ${rowTitleSql("i")} AS title, p.merged, p.merged_at, p.linked_issue_id,
                 ROW_NUMBER() OVER (
                   PARTITION BY p.linked_issue_id
                   ORDER BY CASE WHEN i.state = 'open' AND p.merged = 0 THEN 0 ELSE 1 END,
@@ -269,7 +269,7 @@ export function allLinkedPullsForIssue(
 ): LinkedPullIssueRow[] {
   return db
     .query(
-      `SELECT i.*, p.merged, p.merged_at
+      `SELECT i.*, ${rowTitleSql("i")} AS title, p.merged, p.merged_at
        FROM pulls p
        JOIN issues i ON i.id = p.issue_id
        WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND p.archived_at IS NULL
@@ -286,7 +286,7 @@ export function archivedLinkedPullsForIssue(
 ): LinkedPullIssueRow[] {
   return db
     .query(
-      `SELECT i.*, p.merged, p.merged_at
+      `SELECT i.*, ${rowTitleSql("i")} AS title, p.merged, p.merged_at
        FROM pulls p
        JOIN issues i ON i.id = p.issue_id
        WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND p.archived_at IS NOT NULL
@@ -328,7 +328,7 @@ export function setHeadSha(issueId: number, sha: string | null) {
 export function listOpenPullsForRepo(repoId: number): OpenPullSummaryRow[] {
   return db
     .query(
-      `SELECT p.issue_id, i.number, i.title, p.head_ref, p.base_ref
+      `SELECT p.issue_id, i.number, ${rowTitleSql("i")} AS title, p.head_ref, p.base_ref
        FROM pulls p
        JOIN issues i ON i.id = p.issue_id
        WHERE i.repo_id = ? AND i.kind = 'pull' AND i.state = 'open'

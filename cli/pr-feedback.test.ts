@@ -78,8 +78,6 @@ beforeAll(() => {
       "feature",
       "--base",
       "main",
-      "--title",
-      "feedback target",
       "--json",
     ]),
   );

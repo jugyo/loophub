@@ -124,7 +124,7 @@ Output is prefixed with `[web]` / `[worker]`. If either process under `serve` ex
 lh issue create --title "do the thing"
 lh issue create --title "stacked change" --workspace integration/stack
 lh workflow start 1 --workflow default
-lh pr create --head feature-x --base main --title "impl" --issue 5
+lh pr create --head feature-x --base main --issue 5
 lh pr merge 3 --method squash
 ```
 

@@ -37,8 +37,6 @@ function createPull(): number {
     "feature",
     "--base",
     "main",
-    "--title",
-    "comment target",
     "--evidence",
     "body",
   ]);
