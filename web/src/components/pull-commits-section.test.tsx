@@ -1605,6 +1605,101 @@ describe("PullCommitsSection", () => {
     ).toBeTruthy();
   });
 
+  it("keeps the timeline node neutral whatever the verdict", () => {
+    const review = (id: number, sha: string, state: string): PullReview => ({
+      id,
+      user: { login: "quality-bot" },
+      author_type: "agent",
+      state,
+      body: "",
+      head_sha: sha,
+      base_sha: null,
+      model: null,
+      submitted_at: "2026-06-18T12:30:00Z",
+      duration_seconds: null,
+      ac_results: [],
+    });
+    const shas = ["a", "b", "c"].map((c) => c.repeat(40));
+    renderSection({
+      commits: shas.map((sha) => ({ ...commits![0], sha })),
+      reviews: [
+        review(1, shas[0], "PASS"),
+        review(2, shas[1], "REQUEST_CHANGES"),
+      ],
+    });
+
+    const nodes = screen
+      .getAllByRole("listitem")
+      .map(
+        (row) =>
+          row.querySelector<HTMLElement>(
+            '[data-debug-component="PullCommitTimelineNode"]',
+          )!,
+      );
+    expect(new Set(nodes.map((node) => node.className)).size).toBe(1);
+    expect(nodes.every((node) => node.querySelector("svg") === null)).toBe(
+      true,
+    );
+    // The verdict stays in the row's status line.
+    expect(screen.getByText("passed")).toBeTruthy();
+    expect(screen.getByText("changes requested")).toBeTruthy();
+  });
+
+  it("stacks the subject, the metadata and the status, without truncating the subject", () => {
+    renderSection({ commits: [commits![1]] });
+
+    const row = screen.getByRole("listitem");
+    const subject = within(row).getByText("Earlier change");
+    expect(subject.className).toContain("break-words");
+    expect(subject.className).not.toContain("truncate");
+    expect(subject.nextElementSibling?.textContent).toMatch(
+      /^bbbbbbb · Bob · /,
+    );
+    expect(
+      row.querySelector('[data-debug-component="PullCommitStatus"]')
+        ?.textContent,
+    ).toBe("Not reviewed");
+  });
+
+  it("orders the status items and gives the pending full review its own line", async () => {
+    const running = { id: 7, status: "running", next_verify_full: false };
+    const sha = commits![0].sha;
+    const { unmount } = renderSection({
+      commits: [{ ...commits![0], pushed_to_github: true }],
+      showGithubPushState: true,
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          ...running,
+          active_verify_head_sha: sha,
+        }),
+      },
+    });
+
+    const button = await screen.findByRole("button", {
+      name: "Request full review",
+    });
+    expect(
+      Array.from(button.parentElement!.children).map((el) => el.textContent),
+    ).toEqual(["Reviewing", "Pushed", "Request full review"]);
+    unmount();
+
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          ...running,
+          next_verify_full: true,
+        }),
+      },
+    });
+    expect(
+      (
+        await screen.findByText(
+          "When Verify next runs, it will review the whole PR.",
+        )
+      ).className,
+    ).toContain("basis-full");
+  });
+
   it("renders an empty state when the PR has no commits", () => {
     renderSection({ commits: [] });
 

@@ -120,7 +120,8 @@ export function PullCommitsSection({
         {commits.length === 0 ? (
           <p className="text-sm text-muted-foreground">No commits.</p>
         ) : (
-          <ul className="divide-y overflow-hidden rounded-md border">
+          // The ::before is the rail running through every row; each row's node sits on top of it.
+          <ul className="relative before:absolute before:inset-y-0 before:left-[11px] before:w-0.5 before:bg-border">
             {orderedCommits.map((commit) => {
               const commitReviews = reviews.filter(
                 (review) => review.head_sha === commit.sha,
@@ -129,68 +130,79 @@ export function PullCommitsSection({
                 workflowRun?.active_verify_head_sha === commit.sha;
               const shortSha = commit.sha.slice(0, 7);
               return (
-                <li key={commit.sha} data-debug-component="PullCommitRow">
-                  <div className="flex min-w-0 items-center gap-3 px-3 py-2">
+                <li
+                  key={commit.sha}
+                  data-debug-component="PullCommitRow"
+                  className="flex min-w-0 gap-2 pb-4 last:pb-0"
+                >
+                  <div className="flex w-6 shrink-0 justify-center">
+                    <span
+                      data-debug-component="PullCommitTimelineNode"
+                      aria-hidden
+                      className="relative mt-px size-[18px] rounded-full border-2 border-border bg-background"
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                     <button
                       type="button"
                       aria-label={`View changes in ${shortSha}: ${commit.subject}`}
-                      className="flex min-w-0 flex-1 items-start gap-3 rounded text-left hover:text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      className="block min-w-0 rounded text-left hover:text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       onClick={() => setSelectedCommit(commit)}
                     >
-                      <code className="mt-0.5 shrink-0 rounded bg-muted px-1 py-0.5 text-xs">
-                        {shortSha}
-                      </code>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">
-                          {commit.subject}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {commit.author} ·{" "}
-                          <time dateTime={commit.date} title={commit.date}>
-                            {relativeTime(commit.date)}
-                          </time>
-                        </div>
+                      <div className="break-words text-sm font-medium">
+                        {commit.subject}
+                      </div>
+                      <div className="break-words text-xs text-muted-foreground">
+                        <code>{shortSha}</code> · {commit.author} ·{" "}
+                        <time dateTime={commit.date} title={commit.date}>
+                          {relativeTime(commit.date)}
+                        </time>
                       </div>
                     </button>
-                    {!isReviewsLoading && !isReviewsError ? (
-                      <CommitReviewStatus
-                        reviews={commitReviews}
-                        commentsByReview={commentsByReview}
-                        label={`${shortSha}: ${commit.subject}`}
-                        suppressNotReviewed={isReviewing}
-                        onOpen={() =>
-                          setSelectedReviewGroup({
-                            label: `${shortSha}: ${commit.subject}`,
-                            reviews: commitReviews,
-                          })
-                        }
-                      />
-                    ) : null}
-                    {isReviewing ? (
-                      <ReviewingBadge
-                        startedAt={
-                          workflowRun?.active_verify_started_at ?? null
-                        }
-                      />
-                    ) : null}
-                    {commit.sha === latestSha ? (
-                      <FullReviewRequest
-                        owner={owner}
-                        repo={repo}
-                        number={number}
-                        run={workflowRun}
-                      />
-                    ) : null}
-                    {commit.sha === latestPushedSha ? (
-                      <Badge
-                        tone="pushed"
-                        title="Pushed to GitHub"
-                        className="shrink-0 gap-1"
-                      >
-                        <UploadCloud className="size-3" />
-                        Pushed
-                      </Badge>
-                    ) : null}
+                    <div
+                      data-debug-component="PullCommitStatus"
+                      className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 empty:hidden"
+                    >
+                      {!isReviewsLoading && !isReviewsError ? (
+                        <CommitReviewStatus
+                          reviews={commitReviews}
+                          commentsByReview={commentsByReview}
+                          label={`${shortSha}: ${commit.subject}`}
+                          suppressNotReviewed={isReviewing}
+                          onOpen={() =>
+                            setSelectedReviewGroup({
+                              label: `${shortSha}: ${commit.subject}`,
+                              reviews: commitReviews,
+                            })
+                          }
+                        />
+                      ) : null}
+                      {isReviewing ? (
+                        <ReviewingBadge
+                          startedAt={
+                            workflowRun?.active_verify_started_at ?? null
+                          }
+                        />
+                      ) : null}
+                      {commit.sha === latestPushedSha ? (
+                        <Badge
+                          tone="pushed"
+                          title="Pushed to GitHub"
+                          className="shrink-0 gap-1"
+                        >
+                          <UploadCloud className="size-3" />
+                          Pushed
+                        </Badge>
+                      ) : null}
+                      {commit.sha === latestSha ? (
+                        <FullReviewRequest
+                          owner={owner}
+                          repo={repo}
+                          number={number}
+                          run={workflowRun}
+                        />
+                      ) : null}
+                    </div>
                   </div>
                 </li>
               );
@@ -280,7 +292,7 @@ function CommitReviewStatus({
     <button
       type="button"
       aria-label={`View ${reviews.length} review${reviews.length === 1 ? "" : "s"} for ${label}`}
-      className="flex shrink-0 items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded px-1 py-0.5 text-xs hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={onOpen}
     >
       <span className="font-medium text-link">Reviewed</span>
@@ -673,7 +685,7 @@ function FullReviewRequest({
   if (run?.status !== "running") return null;
   if (run.next_verify_full) {
     return (
-      <span className="shrink-0 text-xs text-muted-foreground">
+      <span className="basis-full text-xs text-muted-foreground">
         When Verify next runs, it will review the whole PR.
       </span>
     );
