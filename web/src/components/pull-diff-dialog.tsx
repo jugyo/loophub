@@ -1,7 +1,6 @@
 // PR-detail diff view, showing one file's diff with its diff feedback threads plus Raw and (for
-// Markdown) Base/Head rendered previews. It renders in one of three displays: the PR page's right
-// pane, that pane expanded to the full screen, or a modal for a single commit's diff. The view owns
-// its own Escape handling, mode switching, per-mode file fetch, and the copy-path resolution for
+// Markdown) Base/Head rendered previews. It renders in the PR page's right pane or as a modal, for
+// a single commit's diff or that pane expanded. The view owns its own Escape handling, mode switching, per-mode file fetch, and the copy-path resolution for
 // renamed / invisible-character filenames. The PR page only picks the open file. Review line
 // comments are not shown here — the Reviews timeline is their only view.
 
@@ -14,7 +13,6 @@ import {
   Info,
   Loader2,
   Maximize2,
-  Minimize2,
   Plus,
   SmilePlus,
   X,
@@ -273,50 +271,43 @@ function matchesGlobList(filename: string, value: string) {
 }
 
 /**
- * Where the diff renders: a modal over the page (one commit's diff), the PR page's right pane, or
- * that pane expanded over the whole screen. A pane and its full-screen form are the same element
- * tree, so moving between them keeps a half-written comment and the view's other state.
+ * Where the diff renders: a modal over the page or the PR page's right pane. The pane and the modal
+ * it expands into are the same element tree, so moving between them keeps a half-written comment
+ * and the view's other state.
  */
-export type DiffDisplay = "dialog" | "pane" | "fullscreen";
+export type DiffDisplay = "dialog" | "pane";
 
 const DIFF_OVERLAY_CLASS: Record<DiffDisplay, string> = {
   dialog:
     "fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4",
   pane: "flex h-full min-h-0",
-  fullscreen: "fixed inset-0 z-50 flex bg-background",
 };
 
 const DIFF_PANEL_CLASS: Record<DiffDisplay, string> = {
   dialog:
     "flex max-h-full w-full flex-col overflow-hidden rounded-md border bg-background shadow-lg",
   pane: "flex w-full min-w-0 flex-col overflow-hidden bg-background",
-  fullscreen: "flex w-full min-w-0 flex-col overflow-hidden bg-background",
 };
 
 // The right pane's title row: the way back to the file list, the file picker (the pane has no file
-// list of its own), the file's stat, and the button moving the view between the pane and the full
-// screen. A modal has none of this.
+// list of its own), the file's stat, and the button expanding the view into a modal. A modal has
+// none of this.
 function DiffPaneHead({
   display,
   files,
   selectedFile,
   onSelectFile,
-  onToggleFullscreen,
+  onExpand,
   onBack,
 }: {
   display: DiffDisplay;
   files?: PullFile[];
   selectedFile?: PullFile | null;
   onSelectFile?: (filename: string) => void;
-  onToggleFullscreen?: () => void;
+  onExpand?: () => void;
   onBack?: () => void;
 }) {
   if (display === "dialog") return null;
-  const fullscreen = display === "fullscreen";
-  const toggleLabel = fullscreen
-    ? "Return diff to right pane"
-    : "Show diff full screen";
-  const ToggleIcon = fullscreen ? Minimize2 : Maximize2;
   return (
     <PullPaneHead
       title="Diff"
@@ -337,7 +328,7 @@ function DiffPaneHead({
       }
     >
       <div className="ml-auto flex min-w-0 items-center gap-2">
-        {!fullscreen && files && selectedFile ? (
+        {files && selectedFile ? (
           <select
             aria-label="Diff file"
             value={selectedFile.filename}
@@ -362,12 +353,12 @@ function DiffPaneHead({
           type="button"
           variant="ghost"
           size="icon"
-          aria-label={toggleLabel}
-          title={toggleLabel}
+          aria-label="Show diff full screen"
+          title="Show diff full screen"
           className="size-7 shrink-0"
-          onClick={onToggleFullscreen}
+          onClick={onExpand}
         >
-          <ToggleIcon className="size-4" />
+          <Maximize2 className="size-4" />
         </Button>
       </div>
     </PullPaneHead>
@@ -380,7 +371,7 @@ export function DiffDialogState({
   dialogSha,
   scopeSelector,
   display = "dialog",
-  onToggleFullscreen,
+  onExpand,
   onBack,
   onClose,
   children,
@@ -390,7 +381,7 @@ export function DiffDialogState({
   dialogSha: string;
   scopeSelector?: ReactNode;
   display?: DiffDisplay;
-  onToggleFullscreen?: () => void;
+  onExpand?: () => void;
   onBack?: () => void;
   onClose: () => void;
   children: ReactNode;
@@ -417,11 +408,7 @@ export function DiffDialogState({
         aria-label={dialogLabel}
         className={DIFF_PANEL_CLASS[display]}
       >
-        <DiffPaneHead
-          display={display}
-          onToggleFullscreen={onToggleFullscreen}
-          onBack={onBack}
-        />
+        <DiffPaneHead display={display} onExpand={onExpand} onBack={onBack} />
         <div className="flex min-h-0 flex-1">
           {display !== "pane" ? (
             <>
@@ -580,7 +567,7 @@ export function PullDiffDialog({
   initialThreadId = null,
   threadRevealKey,
   display = "dialog",
-  onToggleFullscreen,
+  onExpand,
   onBack,
   onSelectFile,
   onClose,
@@ -597,8 +584,8 @@ export function PullDiffDialog({
   /** Changes when the same thread should be revealed again in a view that stayed open. */
   threadRevealKey?: unknown;
   display?: DiffDisplay;
-  onToggleFullscreen?: () => void;
-  /** Leaves the diff for the PR page's file list; the pane and full-screen heads offer it. */
+  onExpand?: () => void;
+  /** Leaves the diff for the PR page's file list; the pane's head offers it. */
   onBack?: () => void;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
@@ -672,7 +659,7 @@ export function PullDiffDialog({
         threadRevealKey={threadRevealKey}
         scopeSelector={scopeSelector}
         display={display}
-        onToggleFullscreen={onToggleFullscreen}
+        onExpand={onExpand}
         onBack={onBack}
         onSelectFile={onSelectFile}
         onClose={onClose}
@@ -690,7 +677,7 @@ export function PullDiffDialog({
         dialogTitle={selectedCommit.subject}
         scopeSelector={scopeSelector}
         display={display}
-        onToggleFullscreen={onToggleFullscreen}
+        onExpand={onExpand}
         onBack={onBack}
         onClose={onClose}
       >
@@ -708,7 +695,7 @@ export function PullDiffDialog({
         dialogTitle={selectedCommit.subject}
         scopeSelector={scopeSelector}
         display={display}
-        onToggleFullscreen={onToggleFullscreen}
+        onExpand={onExpand}
         onBack={onBack}
         onClose={onClose}
       >
@@ -732,7 +719,7 @@ export function PullDiffDialog({
         dialogTitle={selectedCommit.subject}
         scopeSelector={scopeSelector}
         display={display}
-        onToggleFullscreen={onToggleFullscreen}
+        onExpand={onExpand}
         onBack={onBack}
         onClose={onClose}
       >
@@ -766,7 +753,7 @@ export function PullDiffDialog({
       scopeSelector={scopeSelector}
       commentCounts={commitFeedback.data?.comment_counts}
       display={display}
-      onToggleFullscreen={onToggleFullscreen}
+      onExpand={onExpand}
       onBack={onBack}
       onSelectFile={() => {}}
       onClose={onClose}
@@ -789,7 +776,7 @@ export function DiffFileDialog({
   dialogSha,
   scopeSelector,
   display = "dialog",
-  onToggleFullscreen,
+  onExpand,
   onBack,
   onSelectFile,
   onClose,
@@ -809,8 +796,8 @@ export function DiffFileDialog({
   dialogSha?: string;
   scopeSelector?: ReactNode;
   display?: DiffDisplay;
-  onToggleFullscreen?: () => void;
-  /** Leaves the diff for the PR page's file list; the pane and full-screen heads offer it. */
+  onExpand?: () => void;
+  /** Leaves the diff for the PR page's file list; the pane's head offers it. */
   onBack?: () => void;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
@@ -993,7 +980,7 @@ export function DiffFileDialog({
           files={files}
           selectedFile={selectedFile}
           onSelectFile={selectFile}
-          onToggleFullscreen={onToggleFullscreen}
+          onExpand={onExpand}
           onBack={onBack}
         />
         <div className="flex min-h-0 flex-1">
@@ -1329,13 +1316,8 @@ export function DiffFileDialog({
                                 },
                                 {
                                   onSuccess: () => {
-                                    if (!viewed) return;
                                     if (nextUnviewedFile) {
                                       selectFile(nextUnviewedFile.filename);
-                                    } else if (display === "dialog") {
-                                      // Only a modal has a way out of this empty state; the PR page's
-                                      // view stays on the file just ticked.
-                                      setSelectedFilename(null);
                                     }
                                   },
                                   onError: (error) =>

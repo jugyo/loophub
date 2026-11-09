@@ -3025,26 +3025,25 @@ describe("DiffFileDialog", () => {
     expect(screen.getByRole("heading", { name: "core/next.ts" })).toBeTruthy();
   });
 
-  it("clears the open file when no later unviewed file remains", async () => {
+  it("stays on the open file when no later unviewed file remains", async () => {
     const onClose = vi.fn();
+    let setCalls = 0;
     renderDialog({
       file: { ...file, last_changed_sha: "c".repeat(40) },
       onClose,
-      handlers: { "pullFileViews/set": () => [] },
+      handlers: {
+        "pullFileViews/set": () => {
+          setCalls += 1;
+          return [];
+        },
+      },
     });
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("dialog", { name: "Diff files" })).toBeTruthy(),
-    );
+    await waitFor(() => expect(setCalls).toBe(1));
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.queryByRole("heading", { name: "web/src/a.ts" })).toBeNull();
-    expect(
-      screen
-        .getByRole("button", { name: "web/src/a.ts" })
-        .getAttribute("aria-current"),
-    ).toBeNull();
+    expect(screen.getByRole("heading", { name: "web/src/a.ts" })).toBeTruthy();
   });
 
   it("hides viewed files from the tree until they are asked for", async () => {

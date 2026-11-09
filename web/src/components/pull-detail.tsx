@@ -153,7 +153,7 @@ export function PullDetail({
     files: getPullLeftColumnWidth("files"),
     other: getPullLeftColumnWidth("other"),
   }));
-  const [diffFullscreen, setDiffFullscreen] = useState(false);
+  const [diffDialogOpen, setDiffDialogOpen] = useState(false);
   // The diff's file, null until a diff is first opened. Lifted here so the timeline and the file
   // list drive the same view. Kept after going back to the list, so the diff stays mounted.
   const [openFilename, setOpenFilename] = useState<string | null>(null);
@@ -191,7 +191,7 @@ export function PullDetail({
   }
   function showFileList() {
     setDiffOpen(false);
-    setDiffFullscreen(false);
+    setDiffDialogOpen(false);
   }
   useEffect(() => {
     const scrollContainer = leftColumnRef.current;
@@ -540,8 +540,8 @@ export function PullDetail({
               commentCounts={pageQuery.data?.diff_feedback.comment_counts ?? {}}
               initialThreadId={openDiffThread?.id ?? null}
               threadRevealKey={openDiffThread}
-              display={diffFullscreen ? "fullscreen" : "pane"}
-              onToggleFullscreen={() => setDiffFullscreen((value) => !value)}
+              display={diffDialogOpen ? "dialog" : "pane"}
+              onExpand={() => setDiffDialogOpen(true)}
               onBack={showFileList}
               onSelectFile={(filename) => {
                 // Not openDiffFile: this also runs when Viewed settles, after the reader may have
@@ -549,7 +549,7 @@ export function PullDetail({
                 setOpenDiffThread(null);
                 setOpenFilename(filename);
               }}
-              onClose={() => setDiffFullscreen(false)}
+              onClose={() => setDiffDialogOpen(false)}
             />
           ) : null}
         </div>

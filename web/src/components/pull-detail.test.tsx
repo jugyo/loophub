@@ -2358,25 +2358,6 @@ describe("PullDetail", () => {
       expect(screen.queryByRole("region", { name: /Diff for/ })).toBeNull();
     });
 
-    it("returns to the list in the pane from a full-screen diff's back button", async () => {
-      renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
-      await openFileFromList();
-      await screen.findByRole("region", { name: /Diff for/ });
-      fireEvent.click(
-        screen.getByRole("button", { name: "Show diff full screen" }),
-      );
-
-      fireEvent.click(
-        screen.getByRole("button", { name: "Back to file list" }),
-      );
-
-      expect(screen.queryByRole("dialog", { name: /Diff for/ })).toBeNull();
-      expect(
-        screen.getByRole("heading", { name: /Files changed \(/ }),
-      ).toBeTruthy();
-    });
-
     it("shows the list from the Files changed tab while a diff is open", async () => {
       const { container } = renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
@@ -2426,6 +2407,27 @@ describe("PullDetail", () => {
       await screen.findByRole("region", { name: "Diff for web/src/b.ts" });
     });
 
+    it("keeps the file picked in the dialog when returning to the pane", async () => {
+      renderDetail({
+        "pulls/files": () => [
+          files[0],
+          { ...files[0], filename: "web/src/b.ts" },
+        ],
+      });
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      await openFileFromList();
+      await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Show diff full screen" }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "web/src/b.ts" }));
+      await screen.findByRole("dialog", { name: "Diff for web/src/b.ts" });
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      await screen.findByRole("region", { name: "Diff for web/src/b.ts" });
+    });
+
     it("gives the window's extra width to the pane in the Diff view too, and only while open", async () => {
       const { container } = renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
@@ -2469,7 +2471,7 @@ describe("PullDetail", () => {
       expect(railButton("Open right pane")).toBeTruthy();
     });
 
-    it("expands the diff with a file list and returns to the pane on Escape", async () => {
+    it("expands the diff into the dialog and returns to the pane on Escape", async () => {
       renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
       await openFileFromList();
@@ -2484,17 +2486,42 @@ describe("PullDetail", () => {
       expect(
         screen.getByRole("dialog", { name: /Diff for/ }).parentElement
           ?.className,
-      ).toContain("fixed");
+      ).toContain("backdrop-blur-sm");
       expect(
         screen.getByRole("complementary", { name: "Changed files" }),
       ).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Back to file list" })).toBe(
+        null,
+      );
 
       fireEvent.keyDown(document, { key: "Escape" });
       await screen.findByRole("region", { name: /Diff for/ });
       expect(screen.queryByRole("dialog", { name: /Diff for/ })).toBeNull();
     });
 
-    it("keeps a half-written diff comment when moving between pane and full screen", async () => {
+    it("returns to the pane from the dialog's close button and backdrop", async () => {
+      renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      await openFileFromList();
+      await screen.findByRole("region", { name: /Diff for/ });
+      const expand = () =>
+        fireEvent.click(
+          screen.getByRole("button", { name: "Show diff full screen" }),
+        );
+
+      expand();
+      fireEvent.click(screen.getByRole("button", { name: "Close diff" }));
+      await screen.findByRole("region", { name: /Diff for/ });
+
+      expand();
+      const backdrop = screen.getByRole("dialog", { name: /Diff for/ })
+        .parentElement as HTMLElement;
+      fireEvent.click(backdrop);
+      await screen.findByRole("region", { name: /Diff for/ });
+      expect(screen.queryByRole("dialog", { name: /Diff for/ })).toBeNull();
+    });
+
+    it("keeps a half-written diff comment when moving between pane and dialog", async () => {
       renderDetail({
         "pulls/diff": () => ({
           base_sha: "a".repeat(40),
@@ -2544,6 +2571,12 @@ describe("PullDetail", () => {
       const expanded = screen.getByRole("dialog", { name: /Diff for/ });
       expect(
         (within(expanded).getByRole("textbox") as HTMLTextAreaElement).value,
+      ).toBe("draft");
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      const pane = await screen.findByRole("region", { name: /Diff for/ });
+      expect(
+        (within(pane).getByRole("textbox") as HTMLTextAreaElement).value,
       ).toBe("draft");
     });
   });
