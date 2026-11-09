@@ -1072,7 +1072,7 @@ export function patchPull(
   owner: string,
   repo: string,
   number: number,
-  patch: { state?: "open" | "closed"; body?: string },
+  patch: { state?: "open" | "closed" },
   sessionId: string = getSessionId(),
 ) {
   return rpc<PullRequest>(

@@ -21,7 +21,6 @@ import {
   Loader2,
   PanelRightClose,
   PanelRightOpen,
-  Pencil,
   SmilePlus,
   X,
 } from "lucide-react";
@@ -119,7 +118,6 @@ import {
   useReactToPullComment,
   useSetPullCommentArchived,
   useSetPullState,
-  useUpdatePullEvidence,
 } from "@/queries/pulls";
 import { useRepoGithubPrExportExtraPrompt } from "@/queries/repos";
 import { useSettings } from "@/queries/settings";
@@ -948,8 +946,8 @@ function PullDescription({
   );
 }
 
-// The PR's Evidence: the free-form Markdown it carries — screenshots, logs, test runs — shown and
-// edited in the right pane.
+// The PR's Evidence: the free-form Markdown it carries — screenshots, logs, test runs — shown in the
+// right pane.
 function PullEvidence({
   owner,
   repo,
@@ -959,81 +957,14 @@ function PullEvidence({
   repo: string;
   pull: PullRequest;
 }) {
-  // null while reading; the text being edited otherwise.
-  const [draft, setDraft] = useState<string | null>(null);
-  const textareaRef = useAutosizeTextarea(draft ?? "");
-  const update = useUpdatePullEvidence(owner, repo, pull.number);
-  const { showError } = useToast();
-
-  function save() {
-    if (draft == null || update.isPending) return;
-    update.mutate(draft, {
-      onSuccess: () => setDraft(null),
-      onError: (e) => showError(errorMessage(e, "Failed to save Evidence")),
-    });
-  }
-
   return (
     <section
       data-debug-component="PullEvidence"
       className="flex h-full min-h-0 flex-col"
     >
-      <PullPaneHead title="Evidence">
-        {draft == null ? (
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            aria-label="Edit Evidence"
-            title="Edit Evidence"
-            className="ml-auto size-7"
-            onClick={() => setDraft(pull.body ?? "")}
-          >
-            <Pencil className="size-3.5" />
-          </Button>
-        ) : null}
-      </PullPaneHead>
+      <PullPaneHead title="Evidence" />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {draft != null ? (
-          <div className="flex flex-col gap-2 p-4">
-            <textarea
-              ref={textareaRef}
-              aria-label="Evidence"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && event.metaKey) {
-                  event.preventDefault();
-                  save();
-                }
-              }}
-              rows={6}
-              className="min-h-32 w-full resize-none overflow-hidden rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={update.isPending}
-                onClick={() => setDraft(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={update.isPending}
-                onClick={save}
-              >
-                {update.isPending ? (
-                  <Loader2 className="mr-1 size-3.5 animate-spin" />
-                ) : null}
-                Save
-              </Button>
-            </div>
-          </div>
-        ) : pull.body ? (
+        {pull.body ? (
           <Markdown owner={owner} repo={repo} className="p-4">
             {pull.body}
           </Markdown>

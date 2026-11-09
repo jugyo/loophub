@@ -2405,27 +2405,6 @@ describe("PullDetail", () => {
         (within(expanded).getByRole("textbox") as HTMLTextAreaElement).value,
       ).toBe("draft");
     });
-
-    it("keeps an Evidence edit while another view is open", async () => {
-      renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
-      fireEvent.click(railButton("Evidence"));
-      fireEvent.click(screen.getByRole("button", { name: "Edit Evidence" }));
-      fireEvent.change(screen.getByRole("textbox", { name: "Evidence" }), {
-        target: { value: "unsaved" },
-      });
-
-      fireEvent.click(railButton("Commits"));
-      fireEvent.click(railButton("Evidence"));
-
-      expect(
-        (
-          screen.getByRole("textbox", {
-            name: "Evidence",
-          }) as HTMLTextAreaElement
-        ).value,
-      ).toBe("unsaved");
-    });
   });
 
   // #2089: the sticky header is the left column's own first child, so its sticky box — and with it
@@ -4346,32 +4325,30 @@ describe("PullDetail — linked issue description (#2640)", () => {
     );
   });
 
-  it("edits the Evidence in place and saves it as the PR body", async () => {
+  it("shows the Evidence read-only", async () => {
     renderDetail();
 
     const rail = await screen.findByRole("navigation", {
       name: "Right pane views",
     });
     fireEvent.click(within(rail).getByRole("button", { name: "Evidence" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Edit Evidence" }),
-    );
-    const textarea = screen.getByRole("textbox", { name: "Evidence" });
-    expect((textarea as HTMLTextAreaElement).value).toBe(
-      "Render diff, reviews, comments.",
-    );
-    fireEvent.change(textarea, {
-      target: { value: "## Evidence\n\nnew log" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => {
-      const call = rpcCall("pulls/update");
-      expect(call?.params.body).toBe("## Evidence\n\nnew log");
+    expect(
+      within(evidence()).getByText("Render diff, reviews, comments."),
+    ).toBeTruthy();
+    expect(within(evidence()).queryByRole("button")).toBeNull();
+    expect(within(evidence()).queryByRole("textbox")).toBeNull();
+  });
+
+  it("says so when the PR has no Evidence", async () => {
+    renderDetailWithPull({ body: "" });
+
+    const rail = await screen.findByRole("navigation", {
+      name: "Right pane views",
     });
-    await waitFor(() =>
-      expect(screen.queryByRole("textbox", { name: "Evidence" })).toBeNull(),
-    );
+    fireEvent.click(within(rail).getByRole("button", { name: "Evidence" }));
+
+    expect(within(evidence()).getByText("No evidence.")).toBeTruthy();
   });
 });
 
