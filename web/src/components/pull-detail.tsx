@@ -95,6 +95,12 @@ import {
   getPullLeftColumnWidth,
   setPullLeftColumnWidth,
 } from "@/lib/pull-pane-widths";
+import {
+  getPullRailSeen,
+  pullRailFingerprints,
+  pullRailViewChanged,
+  setPullRailSeen,
+} from "@/lib/pull-rail-seen";
 import { formatDuration, relativeTime } from "@/lib/time";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
@@ -561,6 +567,10 @@ export function PullDetail({
       </aside>
 
       <PullPaneRail
+        pullKey={`${owner}/${repo}/${number}`}
+        pull={pull}
+        files={files}
+        reviews={reviewsQuery.data}
         paneOpen={paneOpen}
         paneView={paneView}
         githubStatusLoad={githubStatusLoad}
@@ -595,6 +605,8 @@ const GITHUB_STATUS_DOT: Record<
   loading: { label: "Loading", className: "bg-muted-foreground" },
   failed: { label: "Failed", className: "bg-destructive" },
 };
+
+const RAIL_UPDATED_DOT = { label: "Updated", className: "bg-primary" };
 
 function PullPaneResizeHandle({
   width,
@@ -658,12 +670,20 @@ function PullPaneResizeHandle({
 // The right pane's controls. The rail stays when the pane is closed, so it is also how the pane
 // comes back.
 function PullPaneRail({
+  pullKey,
+  pull,
+  files,
+  reviews,
   paneOpen,
   paneView,
   githubStatusLoad,
   onTogglePane,
   onSelectView,
 }: {
+  pullKey: string;
+  pull: PullRequest;
+  files: PullFile[] | undefined;
+  reviews: PullReview[] | undefined;
   paneOpen: boolean;
   paneView: PullPaneView;
   // Null when the PR has no linked GitHub PR, which also hides the view's icon.
@@ -671,6 +691,23 @@ function PullPaneRail({
   onTogglePane: () => void;
   onSelectView: (view: PullPaneView) => void;
 }) {
+  const fingerprints = useMemo(
+    () => pullRailFingerprints(pull, files, reviews),
+    [pull, files, reviews],
+  );
+  // The view on screen is always read. Any other view with no baseline takes the current content
+  // as one, so what changes between this visit and the next one is flagged.
+  useEffect(() => {
+    for (const { view } of PANE_RAIL_VIEWS) {
+      const current = fingerprints[view];
+      if (current === undefined) continue;
+      if (
+        (paneOpen && paneView === view) ||
+        getPullRailSeen(pullKey, view) === null
+      )
+        setPullRailSeen(pullKey, view, current);
+    }
+  }, [pullKey, fingerprints, paneOpen, paneView]);
   const toggleLabel = paneOpen ? "Close right pane" : "Open right pane";
   // The chevron points where the rail goes: closing brings it left to the body, opening pushes it
   // right. lucide draws PanelRightOpen with a left chevron and PanelRightClose with a right one.
@@ -697,10 +734,19 @@ function PullPaneRail({
       {PANE_RAIL_VIEWS.map(({ view, label, icon: Icon }) => {
         if (view === "github" && !githubStatusLoad) return null;
         const selected = paneOpen && paneView === view;
+        const seen = getPullRailSeen(pullKey, view);
+        const current = fingerprints[view];
+        const updated =
+          !selected &&
+          seen !== null &&
+          current !== undefined &&
+          pullRailViewChanged(view, seen, current);
         const dot =
           view === "github" && githubStatusLoad
             ? GITHUB_STATUS_DOT[githubStatusLoad]
-            : null;
+            : updated
+              ? RAIL_UPDATED_DOT
+              : null;
         return (
           <Button
             key={view}
@@ -708,7 +754,7 @@ function PullPaneRail({
             variant="ghost"
             size="icon"
             aria-pressed={selected}
-            aria-label={label}
+            aria-label={updated ? `${label}: ${RAIL_UPDATED_DOT.label}` : label}
             title={dot ? `${label}: ${dot.label}` : label}
             className={cn(
               "relative size-8",

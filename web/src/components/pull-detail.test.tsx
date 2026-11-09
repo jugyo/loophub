@@ -27,6 +27,7 @@ import type {
   PullRequest,
   PullReview,
 } from "@/api/types";
+import { queryKeys } from "@/lib/event-keys";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 import { GITHUB_PR_EXPORT_PENDING_TTL_MS } from "../../../core/github-pr-export-pending.ts";
 
@@ -53,6 +54,7 @@ import { ToastProvider, ToastViewport } from "./toast";
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -2324,6 +2326,84 @@ describe("PullDetail", () => {
         )?.style.flexBasis,
       ).toBe("668px");
       localStorage.clear();
+    });
+
+    describe("change indicators", () => {
+      const updated = (name: string) =>
+        within(rail()).queryByRole("button", { name: `${name}: Updated` });
+      const visit = async (
+        handlers: Parameters<typeof renderDetail>[0] = {},
+      ) => {
+        const result = renderDetail(handlers);
+        await screen.findByRole("heading", { name: /Commits \(/ });
+        return result;
+      };
+
+      it("shows no dot on the first visit, then flags what changed since", async () => {
+        const first = await visit();
+        expect(updated("Files changed")).toBeNull();
+        expect(updated("Evidence")).toBeNull();
+        first.unmount();
+
+        await visit({
+          "pulls/get": () => ({ ...pull, body: "New evidence" }),
+          "pulls/files": () => [
+            { ...files[0], additions: (files[0]?.additions ?? 0) + 1 },
+            ...files.slice(1),
+          ],
+        });
+        expect(updated("Evidence")?.getAttribute("title")).toBe(
+          "Evidence: Updated",
+        );
+        expect(updated("Files changed")).toBeTruthy();
+      });
+
+      it("clears a dot when its view is opened, also after reloading", async () => {
+        const changed = { "pulls/get": () => ({ ...pull, body: "New" }) };
+        (await visit()).unmount();
+        await visit(changed);
+
+        fireEvent.click(railButton("Evidence: Updated"));
+        fireEvent.click(railButton("Commits"));
+        expect(updated("Evidence")).toBeNull();
+
+        cleanup();
+        await visit(changed);
+        expect(updated("Evidence")).toBeNull();
+      });
+
+      it("flags Commits for a new review, unless it is on screen", async () => {
+        const { queryClient } = await visit();
+        const addReview = (id: number) =>
+          act(() => {
+            queryClient.setQueryData(
+              queryKeys.pullReviews("me/proj", 30),
+              (old: PullReview[]) => [...old, { ...reviews[0], id }],
+            );
+          });
+
+        await addReview(901);
+        expect(updated("Commits")).toBeNull();
+
+        fireEvent.click(railButton("Evidence"));
+        await addReview(902);
+        expect(updated("Commits")).toBeTruthy();
+
+        fireEvent.click(railButton("Commits: Updated"));
+        expect(updated("Commits")).toBeNull();
+      });
+
+      it("flags the view it was closed on while the pane is closed", async () => {
+        const { queryClient } = await visit();
+        fireEvent.click(railButton("Close right pane"));
+        act(() => {
+          queryClient.setQueryData(queryKeys.pull("me/proj", 30), {
+            ...pull,
+            commits: [...(pull.commits ?? []), { sha: "new-commit" }],
+          });
+        });
+        await waitFor(() => expect(updated("Commits")).toBeTruthy());
+      });
     });
 
     it("closes on the selected icon and opens on the icon pressed while closed", async () => {
