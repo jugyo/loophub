@@ -2195,7 +2195,7 @@ describe("PullDetail", () => {
       ).toBeTruthy();
     });
 
-    it("moves the boundary by dragging, remembering the left column for Files and the other views apart", async () => {
+    it("moves the boundary by dragging and keeps the left column for as long as the pane is open", async () => {
       const { container } = renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
       const root = container.querySelector<HTMLElement>(
@@ -2231,18 +2231,12 @@ describe("PullDetail", () => {
       fireEvent.pointerUp(handle);
       expect(leftColumn.style.flexBasis).toBe("1032px");
 
-      await openFileFromList();
-      expect(leftColumn.style.flexBasis).toBe("");
-
-      fireEvent.click(railButton("Evidence"));
-      expect(leftColumn.style.flexBasis).toBe("1032px");
-
       fireEvent.click(railButton("Close right pane"));
       expect(leftColumn.style.flexBasis).toBe("");
       localStorage.clear();
     });
 
-    it("keeps one boundary across the file list and its diffs, also after reloading", async () => {
+    it("keeps one boundary across every view, also after reloading", async () => {
       const { container, unmount } = renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
       const leftColumn = () =>
@@ -2281,18 +2275,27 @@ describe("PullDetail", () => {
       );
       expect(leftColumn().style.flexBasis).toBe("568px");
 
+      fireEvent.click(railButton("Evidence"));
+      expect(leftColumn().style.flexBasis).toBe("568px");
+
       fireEvent.click(railButton("Commits"));
-      expect(leftColumn().style.flexBasis).toBe("");
+      expect(leftColumn().style.flexBasis).toBe("568px");
+
+      // A drag outside the Files view applies to the Files view too.
+      dragBoundaryBy(-100);
+      expect(leftColumn().style.flexBasis).toBe("668px");
+
+      fireEvent.click(railButton("Files changed"));
+      expect(leftColumn().style.flexBasis).toBe("668px");
 
       unmount();
       renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
-      fireEvent.click(railButton("Files changed"));
       expect(
         document.querySelector<HTMLElement>(
           '[data-debug-component="PullLeftColumn"]',
         )?.style.flexBasis,
-      ).toBe("568px");
+      ).toBe("668px");
       localStorage.clear();
     });
 

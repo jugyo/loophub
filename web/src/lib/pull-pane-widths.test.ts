@@ -10,26 +10,20 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe("pull left column widths", () => {
+describe("pull left column width", () => {
   it("has no width until one is stored", () => {
-    expect(getPullLeftColumnWidth("files")).toBeNull();
-    expect(getPullLeftColumnWidth("other")).toBeNull();
+    expect(getPullLeftColumnWidth()).toBeNull();
   });
 
-  it("stores the Files view and the other views independently", () => {
-    setPullLeftColumnWidth("files", 900);
-    expect(getPullLeftColumnWidth("files")).toBe(900);
-    expect(getPullLeftColumnWidth("other")).toBeNull();
-
-    setPullLeftColumnWidth("other", 500);
-    expect(getPullLeftColumnWidth("files")).toBe(900);
-    expect(getPullLeftColumnWidth("other")).toBe(500);
+  it("returns the stored width", () => {
+    setPullLeftColumnWidth(900);
+    expect(getPullLeftColumnWidth()).toBe(900);
   });
 
   it("ignores unrecognized stored values", () => {
     for (const value of ["wide", "-100", "0", "Infinity"]) {
       localStorage.setItem("lh_pull_left_column_width", value);
-      expect(getPullLeftColumnWidth("other")).toBeNull();
+      expect(getPullLeftColumnWidth()).toBeNull();
     }
   });
 
@@ -39,8 +33,8 @@ describe("pull left column widths", () => {
     };
     vi.stubGlobal("localStorage", { getItem: blocked, setItem: blocked });
 
-    expect(() => setPullLeftColumnWidth("files", 900)).not.toThrow();
-    expect(getPullLeftColumnWidth("files")).toBeNull();
+    expect(() => setPullLeftColumnWidth(900)).not.toThrow();
+    expect(getPullLeftColumnWidth()).toBeNull();
   });
 
   it("keeps room for both columns and the rail", () => {

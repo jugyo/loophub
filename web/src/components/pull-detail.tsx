@@ -149,10 +149,10 @@ export function PullDetail({
   const [paneOpen, setPaneOpen] = useState(true);
   // Kept while the pane is closed: reopening returns to the view it was closed on.
   const [paneView, setPaneView] = useState<PullPaneView>("commits");
-  const [leftColumnWidths, setLeftColumnWidths] = useState(() => ({
-    files: getPullLeftColumnWidth("files"),
-    other: getPullLeftColumnWidth("other"),
-  }));
+  // Null until the boundary is dragged; the default width applies until then.
+  const [leftColumnWidth, setLeftColumnWidth] = useState(
+    getPullLeftColumnWidth,
+  );
   const [diffDialogOpen, setDiffDialogOpen] = useState(false);
   // The diff's file, null until a diff is first opened. Lifted here so the timeline and the file
   // list drive the same view. Kept after going back to the list, so the diff stays mounted.
@@ -279,9 +279,6 @@ export function PullDetail({
       ? (findPullFile(files, openFilename) ?? files[0] ?? null)
       : null;
   const diffShowing = paneView === "files" && diffOpen && diffFile != null;
-  const paneWidthGroup = paneView === "files" ? "files" : "other";
-  // Null until this group's width is dragged; the default width applies until then.
-  const leftColumnWidth = leftColumnWidths[paneWidthGroup];
   const timelineReviewGroup = timelineReview
     ? (reviewsQuery.data ?? []).filter(
         (review) => review.head_sha === timelineReview.head_sha,
@@ -486,11 +483,8 @@ export function PullDetail({
           width={leftColumnWidth}
           measureLeftColumn={() => leftColumnRef.current?.offsetWidth ?? 0}
           onResize={(width) => {
-            setPullLeftColumnWidth(paneWidthGroup, width);
-            setLeftColumnWidths((widths) => ({
-              ...widths,
-              [paneWidthGroup]: width,
-            }));
+            setPullLeftColumnWidth(width);
+            setLeftColumnWidth(width);
           }}
         />
         <div hidden={paneView !== "commits"} className="h-full">

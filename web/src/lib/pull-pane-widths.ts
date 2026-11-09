@@ -1,17 +1,10 @@
-// The PR detail left column's dragged widths, stored per browser in localStorage so they survive
+// The PR detail left column's dragged width, stored per browser in localStorage so it survives
 // reloading and opening another PR. The left column is what is stored because the right pane takes
-// whatever the window has left. Storage is a convenience only: a missing, unrecognized, or
-// unreadable value means the view's default width, and a failed write is ignored.
+// whatever the window has left. Every pane view shares the one width, so switching views does not
+// move the boundary. Storage is a convenience only: a missing, unrecognized, or unreadable value
+// means the default width, and a failed write is ignored.
 
-// The Files view is read at a different width from the others, so it remembers its own: one width
-// for its file list and diffs, so opening a file does not move the boundary.
-export type PullPaneWidthGroup = "files" | "other";
-
-const WIDTH_KEYS: Record<PullPaneWidthGroup, string> = {
-  // Named for when only the diff used it; kept so widths already stored survive.
-  files: "lh_pull_left_column_width_diff",
-  other: "lh_pull_left_column_width",
-};
+const WIDTH_KEY = "lh_pull_left_column_width";
 
 const PANE_MIN_WIDTH = 320;
 const LEFT_COLUMN_MIN_WIDTH = 320;
@@ -28,23 +21,18 @@ export function clampPullLeftColumnWidth(
   );
 }
 
-export function getPullLeftColumnWidth(
-  group: PullPaneWidthGroup,
-): number | null {
+export function getPullLeftColumnWidth(): number | null {
   try {
-    const stored = Number(globalThis.localStorage.getItem(WIDTH_KEYS[group]));
+    const stored = Number(globalThis.localStorage.getItem(WIDTH_KEY));
     return Number.isFinite(stored) && stored > 0 ? stored : null;
   } catch {
     return null;
   }
 }
 
-export function setPullLeftColumnWidth(
-  group: PullPaneWidthGroup,
-  width: number,
-): void {
+export function setPullLeftColumnWidth(width: number): void {
   try {
-    globalThis.localStorage.setItem(WIDTH_KEYS[group], String(width));
+    globalThis.localStorage.setItem(WIDTH_KEY, String(width));
   } catch {
     // The dragged width still applies until the page is left.
   }
