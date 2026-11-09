@@ -40,7 +40,8 @@ const HERDR_TIMEOUT_MS = 15_000;
 const PARENT_LAUNCH_GRACE_MS = 600_000;
 
 export type WorkflowInstructionDispatchResult =
-  | { status: "idle" }
+  // `parent_starting`: the event is owed to a parent whose terminal has not settled yet.
+  | { status: "idle"; parent_starting?: true }
   | {
       status: "skipped";
       run: number;
@@ -208,6 +209,12 @@ function sendInstruction(
     cwd: repo.local_path,
     timeoutMs: HERDR_TIMEOUT_MS,
   });
+}
+
+// herdr-core reports this and an unreachable core under the same `unavailable` kind, so only its
+// message tells the transient case apart.
+function isStillStartingRefusal(error: unknown): boolean {
+  return isServiceError(error) && error.message.includes("is still starting");
 }
 
 type WorkflowInstruction = Awaited<ReturnType<typeof workflowRuns.next>>;
@@ -403,7 +410,7 @@ export const workflowInstructions = {
       }
       instruction = await this.dispatchRun(ready.run);
     }
-    if (instruction.status === "idle") {
+    if (instruction.status === "idle" && !instruction.parent_starting) {
       const current = S.getWorkflowRun(ready.run);
       const event = current ? pendingEvent(current) : null;
       if (event) {
@@ -416,7 +423,11 @@ export const workflowInstructions = {
     return {
       ...ready,
       instruction,
-      decision: instruction.status === "delivered" ? null : decision,
+      decision:
+        instruction.status === "delivered" ||
+        (instruction.status === "idle" && instruction.parent_starting)
+          ? null
+          : decision,
     };
   },
 
@@ -623,9 +634,13 @@ export const workflowInstructions = {
         return { status: "idle" };
       }
       if (refusal === "unavailable") {
-        // The parent is still starting, or the core is unreachable: nothing was typed, so the
-        // failure stays visible and a later dispatch or readiness signal retries the same event.
+        // Nothing was typed, so a later dispatch can send the same event.
         S.releaseWorkflowEventEffect(run.id, event.id, effect);
+        // A parent that is still starting settles by itself: the worker's next poll delivers. An
+        // unreachable core needs someone to look at it, and a readiness signal retries it.
+        if (isStillStartingRefusal(error)) {
+          return { status: "idle", parent_starting: true };
+        }
         throw error;
       }
       if (refusal === "finished" || refusal === "not_found") {

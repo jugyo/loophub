@@ -1371,7 +1371,7 @@ test("relaunching a PR with no running run fails visibly", () => {
 
 // A fake `hc` answering every API call with one herdr-core refusal, written to `calls` so a test
 // can see how many deliveries were attempted.
-function refusingHc(kind: string) {
+function refusingHc(kind: string, message = "refused") {
   const bin = mkdtempSync(join(tmpdir(), "lh-instruction-hc-"));
   const log = join(bin, "calls.log");
   writeFileSync(
@@ -1379,7 +1379,7 @@ function refusingHc(kind: string) {
     [
       "#!/bin/sh",
       `cat >> '${log}'`,
-      `printf '{"id":1,"error":{"code":-32000,"message":"refused","data":{"kind":"${kind}"}}}'`,
+      `printf '{"id":1,"error":{"code":-32000,"message":"${message}","data":{"kind":"${kind}"}}}'`,
       "",
     ].join("\n"),
   );
@@ -1512,6 +1512,67 @@ test("an unavailable herdr-core parent fails visibly without a pending receipt, 
       pane_id: "t7",
     });
     expect(S.getWorkflowRun(input.run.id)?.event_cursor).toBe(input.event.id);
+  } finally {
+    next.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(hc.bin, { recursive: true, force: true });
+  }
+});
+
+test("a parent still starting does not fail readiness, and the worker delivers once it settles", async () => {
+  const input = fixture("hc-still-starting");
+  registerParentPane(input, "t7");
+  const hc = refusingHc(
+    "unavailable",
+    "t7 is still starting: its output has not settled",
+  );
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${hc.bin}:${originalPath}`;
+  const next = vi
+    .spyOn(svc.workflowRuns, "next")
+    .mockResolvedValue(instructionResult(input.event.id));
+  try {
+    const ready = await svc.workflowInstructions.parentReady(
+      input.repo.full_name,
+      { run: input.run.id },
+    );
+    expect(ready.instruction).toEqual({
+      status: "idle",
+      parent_starting: true,
+    });
+    expect(ready.decision).toBeNull();
+    expect(readFileSync(hc.log, "utf8")).toContain("terminal.send");
+    expect(
+      S.pendingWorkflowEventEffectWithPrefix(
+        input.run.id,
+        "workflow.instruction:",
+      ),
+    ).toBeNull();
+    expect(S.getWorkflowRun(input.run.id)?.event_cursor).not.toBe(
+      input.event.id,
+    );
+
+    // The worker's poll while the terminal is still settling is not a failure either.
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toEqual({ status: "idle", parent_starting: true });
+
+    writeFileSync(
+      join(hc.bin, "hc"),
+      `#!/bin/sh\ncat > /dev/null\nprintf '{"id":1,"result":{"turn":1}}'\n`,
+    );
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({
+      status: "delivered",
+      event: input.event.id,
+      pane_id: "t7",
+    });
+    const run = S.getWorkflowRun(input.run.id);
+    expect(run?.event_cursor).toBe(input.event.id);
+    expect(run?.parent_ready_confirmed).toBe(1);
+    // launch-step refuses only a run held for a human.
+    expect(run?.needs_human_reason).toBeNull();
   } finally {
     next.mockRestore();
     process.env.PATH = originalPath;

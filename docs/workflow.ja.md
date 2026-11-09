@@ -164,7 +164,8 @@ event id 順に判断する。各 event の判断は action、reason、
 instructions の fingerprint を receipt に記録し、直前の event と同じ instruction だけを入力せずに処理済みにする。
 注入開始前に `workflow.instruction:<fingerprint>` effect receipt を claim し、成功後に complete する。
 登録済み pane の座標不備や送信途中の失敗は、自動再実行すると二重入力になり得るため pending receipt と
-worker error log を残し、operator 判断に委ねる。注入成功または同一判断の抑止後だけ cursor を進めるため、
+worker error log を残し、operator 判断に委ねる。herdr-core が terminal の起動中を理由に送信を拒否した場合は何も
+入力されていないため receipt を解放し、`parent-ready` は成功させ、worker が起動の落ち着いた後に同じ event を配送する。注入成功または同一判断の抑止後だけ cursor を進めるため、
 worker 再起動後は処理済み event を再配信せず、未処理 event は引き続き対象になる。terminal run の event は
 progression instruction を送らず cursor だけ進める。
 
