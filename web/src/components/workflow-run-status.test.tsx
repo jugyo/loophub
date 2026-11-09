@@ -264,6 +264,22 @@ describe("WorkflowRunSummary", () => {
     ).not.toContain("animate-agent-bot-blink");
   });
 
+  it("shows failed comment deliveries on the PR summary, not in the compact header", async () => {
+    const failed = state({ delivery_failure_count: 1 });
+    renderInRouter(
+      <WorkflowRunSummary owner="me" repo="loophub" state={failed} />,
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "A comment could not be delivered to its agent.",
+    );
+    cleanup();
+    renderInRouter(
+      <WorkflowRunSummary owner="me" repo="loophub" state={failed} size="sm" />,
+    );
+    await screen.findByRole("button", { name: /Detail/ });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("renders nothing when there is no run", () => {
     const { container } = renderInRouter(
       <WorkflowRunSummary owner="me" repo="loophub" state={null} />,

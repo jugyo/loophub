@@ -166,6 +166,7 @@ describe("workflowRunHistoryEventJSON significance", () => {
     expect(significanceOf("workflow_run.usage_updated")).toBe("routine");
     expect(significanceOf("workflow_run.delivery_queued")).toBe("routine");
     expect(significanceOf("workflow_run.delivery_completed")).toBe("routine");
+    expect(significanceOf("workflow_run.delivery_failed")).toBe("notable");
     // Step activation and the human-instructed resume are the parent's own bookkeeping.
     expect(
       significanceOf("workflow_run.updated", {

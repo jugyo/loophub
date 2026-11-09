@@ -25,7 +25,8 @@ diff は自分で計算します。dependency、contract、type、invariant、be
 context として読み、test を実行してかまいません。
 
 launch prompt では review 提出先としてのみ PR 番号も渡されます。session 中に `orchestrator:` で始まる
-メッセージは workflow parent からの follow-up instruction です。
+メッセージは workflow parent からの follow-up instruction です。`<loophub from="worker">...</loophub>` の形式の
+メッセージも、worker が直接届ける workflow からの指示です。
 
 ## partial / full の判断
 

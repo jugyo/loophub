@@ -179,23 +179,8 @@ test("delivers human and other-agent PR comments but skips the run's own", async
     event: sources[3].id,
   });
   expect(parentWake.action).not.toBe("deliver");
-  expect(next.instructions.commands[0]?.args).toEqual([
-    "pr",
-    "comment",
-    "react",
-    String(human.id),
-    "--pr",
-    String(prNumber),
-    "--emoji",
-    "👀",
-    "--repo",
-    repoName,
-    "--session-id",
-    parentSession,
-  ]);
-  expect(next.instructions.commands[1]?.args).toContain(
-    `orchestrator: address PR comment ${human.id}`,
-  );
+  // The worker delivers an Execute comment directly, so the parent has no commands to run.
+  expect(next.instructions.commands).toEqual([]);
 
   const detail = await svc.pulls.get(repoName, prNumber);
   expect(detail.comment_list).toEqual([human, agent, own, parent, system]);
@@ -225,11 +210,9 @@ test("routes one PR comment to each distinct mentioned workflow agent", async ()
     delivery_reason: "pr_comment",
     targets: ["verifier", "orchestrator", "executor"],
   });
-  expect(next.instructions.commands.slice(1).map(({ args }) => args)).toEqual(
-    ["verifier", "orchestrator", "executor"].map((target) =>
-      expect.arrayContaining(["--target", target]),
-    ),
-  );
+  expect(next.instructions.commands.slice(1).map(({ args }) => args)).toEqual([
+    expect.arrayContaining(["--target", "orchestrator"]),
+  ]);
 });
 
 test("agent PR comments create a notification; human and system posts do not", () => {

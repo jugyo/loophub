@@ -998,7 +998,7 @@ describe("workflowActionPlan", () => {
       delivery_reason: "diff_feedback",
       thread_id: 73,
       comment_id: 108,
-      targets: ["executor"],
+      targets: ["orchestrator"],
     });
     expect(diffFeedback).toMatchObject({
       boundary: "mechanical",
@@ -1024,6 +1024,41 @@ describe("workflowActionPlan", () => {
     expect(diffFeedback.commands[1]?.args).toContain(
       "orchestrator: address diff feedback thread 73 comment 108",
     );
+  });
+
+  test("gives the parent nothing to do for comments addressed only to child agents", () => {
+    expect(
+      plan({
+        action: "deliver",
+        reason: "new PR comment",
+        delivery_reason: "pr_comment",
+        comment_id: 19,
+        targets: ["executor", "verifier"],
+      }).commands,
+    ).toEqual([]);
+    expect(
+      plan({
+        action: "deliver",
+        reason: "new comment",
+        delivery_reason: "diff_feedback",
+        thread_id: 73,
+        comment_id: 108,
+        targets: ["verifier"],
+      }).commands,
+    ).toEqual([]);
+  });
+
+  test("keeps only the parent's own delivery when a comment also names a child", () => {
+    const comment = plan({
+      action: "deliver",
+      reason: "new PR comment",
+      delivery_reason: "pr_comment",
+      comment_id: 19,
+      targets: ["executor", "orchestrator"],
+    });
+    expect(comment.commands).toHaveLength(2);
+    expect(comment.commands[1]?.args).toContain("orchestrator");
+    expect(comment.commands[1]?.args).not.toContain("executor");
   });
 
   test("delivers GitHub feedback without allowing a GitHub reply instruction", () => {
@@ -1058,7 +1093,7 @@ describe("workflowActionPlan", () => {
       reason: "new PR comment",
       delivery_reason: "pr_comment",
       comment_id: 19,
-      targets: ["executor"],
+      targets: ["orchestrator"],
     });
     expect(comment).toMatchObject({ boundary: "mechanical", after: "watch" });
     expect(comment.commands).toHaveLength(2);

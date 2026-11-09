@@ -569,3 +569,261 @@ test("deliver activates the latest Execute session and sends one sanitized line 
   expect(failedCliResult.exitCode).toBe(1);
   expect(failedCliResult.stderr).toContain("has no execution target");
 }, 20_000);
+
+test("the worker hands comments straight to their agents and leaves failures to a human", async () => {
+  const repoPath = mkdtempSync(join(tmpdir(), "lh-comment-delivery-repo-"));
+  const inRepo = (args: string[], cwd = repoPath) =>
+    spawnSync("git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+    }).stdout.trim();
+  inRepo(["init", "-q", "-b", "main"]);
+  inRepo(["config", "user.email", "t@example.local"]);
+  inRepo(["config", "user.name", "tester"]);
+  writeFileSync(join(repoPath, "a.txt"), "one\n");
+  inRepo(["add", "-A"]);
+  inRepo(["commit", "-qm", "init"]);
+  const repo = S.createRepo("me/comment-delivery", repoPath);
+  const issue = S.createIssue(repo.id, "issue", "Deliver", "body", "me");
+  const workflow = S.createWorkflow({
+    name: "comment-delivery",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "66666666-6666-4666-8666-666666666666";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const runId = started.run.id;
+  const pr = started.pr.number;
+  writeFileSync(join(started.worktree, "a.txt"), "one\ntwo\n");
+  inRepo(["add", "-A"], started.worktree);
+  inRepo(["commit", "-qm", "change"], started.worktree);
+  const headSha = inRepo(["rev-parse", "HEAD"], started.worktree);
+  const baseSha = inRepo(["rev-parse", "main"]);
+  svc.workflowInstructions.registerParentPane(repo.full_name, {
+    run: runId,
+    launch_id: parent,
+    session_name: "test-session",
+    pane_id: "w2:p0",
+    launched_at: new Date().toISOString(),
+  });
+  S.markWorkflowRunParentReady(runId);
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: runId,
+      step: "execute",
+      sessionId: "88888888-8888-4888-8888-888888888888",
+      agentName: `executor #${runId}-1`,
+      executionTarget: {
+        provider: "herdr",
+        targetId: "w2:p1",
+        context: "test-session",
+      },
+      pointers: [],
+    },
+    parent,
+  );
+  const drain = async () => {
+    for (;;) {
+      const result = await svc.workflowInstructions.dispatchRun(runId);
+      if (result.status === "idle") return;
+    }
+  };
+  const herdrLines = () =>
+    readFileSync(HERDR_LOG, "utf8").split("\n").filter(Boolean);
+  await drain();
+  writeFileSync(HERDR_LOG, "");
+
+  const comment = svc.comments.createHumanForPull(
+    repo.full_name,
+    pr,
+    "Please rename it.",
+  );
+  await drain();
+  const commentText = `<loophub from="worker">address PR comment ${comment.id}</loophub>`;
+  expect(herdrLines().filter((line) => line.includes(commentText))).toEqual([
+    expect.stringContaining("w2:p1"),
+  ]);
+  const detail = await svc.pulls.get(repo.full_name, pr);
+  expect(
+    detail.comment_list?.find((row) => row.id === comment.id)?.reactions,
+  ).toEqual([expect.objectContaining({ emoji: "👀", count: 1 })]);
+
+  writeFileSync(HERDR_LOG, "");
+  const thread = await svc.diffFeedback.createHuman(repo.full_name, pr, {
+    baseSha,
+    headSha,
+    path: "a.txt",
+    side: "RIGHT",
+    startLine: 2,
+    endLine: 2,
+    body: "Please look here.",
+  });
+  await drain();
+  const threadText = `<loophub from="worker">address diff feedback thread ${thread.thread.id} comment ${thread.comment.id}</loophub>`;
+  expect(herdrLines().filter((line) => line.includes(threadText))).toEqual([
+    expect.stringContaining("w2:p1"),
+  ]);
+  expect(S.listDiffFeedbackReactions(thread.comment.id)).toEqual([
+    expect.objectContaining({ emoji: "👀" }),
+  ]);
+
+  writeFileSync(HERDR_LOG, "");
+  const reply = await svc.diffFeedback.replyHuman(
+    repo.full_name,
+    pr,
+    thread.thread.id,
+    "One more thing.",
+  );
+  await drain();
+  const replyText = `<loophub from="worker">address diff feedback thread ${thread.thread.id} comment ${reply.reply.id}</loophub>`;
+  expect(herdrLines().filter((line) => line.includes(replyText))).toEqual([
+    expect.stringContaining("w2:p1"),
+  ]);
+  expect(S.listDiffFeedbackReactions(reply.reply.id)).toEqual([
+    expect.objectContaining({ emoji: "👀" }),
+  ]);
+
+  // Queued before any dispatch, so no other event separates them and each must still arrive.
+  writeFileSync(HERDR_LOG, "");
+  const replies = [
+    await svc.diffFeedback.replyHuman(
+      repo.full_name,
+      pr,
+      thread.thread.id,
+      "First follow-up.",
+    ),
+    await svc.diffFeedback.replyHuman(
+      repo.full_name,
+      pr,
+      thread.thread.id,
+      "Second follow-up.",
+    ),
+  ];
+  await drain();
+  for (const { reply: message } of replies) {
+    const text = `<loophub from="worker">address diff feedback thread ${thread.thread.id} comment ${message.id}</loophub>`;
+    expect(herdrLines().filter((line) => line.includes(text))).toHaveLength(1);
+    expect(S.listDiffFeedbackReactions(message.id)).toHaveLength(1);
+  }
+
+  writeFileSync(HERDR_LOG, "");
+  const addressed = svc.comments.createHumanForPull(
+    repo.full_name,
+    pr,
+    "@lh please coordinate.",
+  );
+  await drain();
+  const parentLines = herdrLines().filter((line) =>
+    line.includes("workflow instruction:"),
+  );
+  expect(parentLines).toHaveLength(1);
+  expect(parentLines[0]).toContain("w2:p0");
+  expect(parentLines[0]).toContain(
+    `orchestrator: address PR comment ${addressed.id}`,
+  );
+  expect(parentLines[0]).toContain('"orchestrator"');
+
+  writeFileSync(HERDR_LOG, "");
+  const undelivered = svc.comments.createHumanForPull(
+    repo.full_name,
+    pr,
+    "This one cannot arrive.",
+  );
+  process.env.HERDR_TEST_FAIL_SUBMIT = "1";
+  try {
+    await expect(
+      svc.workflowInstructions.dispatchRun(runId),
+    ).resolves.toMatchObject({ status: "failed", run: runId });
+  } finally {
+    delete process.env.HERDR_TEST_FAIL_SUBMIT;
+  }
+  await drain();
+  const failure = S.eventsForWorkflowRun(repo.id, runId).findLast(
+    (event) => event.type === "workflow_run.delivery_failed",
+  );
+  expect(JSON.parse(failure?.payload ?? "{}")).toMatchObject({
+    target: "executor",
+    text: `<loophub from="worker">address PR comment ${undelivered.id}</loophub>`,
+  });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: runId,
+      event: failure!.id,
+    }),
+  ).toMatchObject({ action: "wait" });
+  expect(readFileSync(HERDR_LOG, "utf8")).not.toContain("launch-step");
+  expect(
+    S.eventsForWorkflowRun(repo.id, runId).filter(
+      (event) =>
+        event.type === "workflow_step.launched" &&
+        JSON.parse(event.payload).step === "execute",
+    ),
+  ).toHaveLength(1);
+
+  // A restarted worker reads the same cursor and receipts: nothing is typed again.
+  writeFileSync(HERDR_LOG, "");
+  await drain();
+  expect(readFileSync(HERDR_LOG, "utf8")).toBe("");
+
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: runId,
+      step: "verify",
+      sessionId: "99999999-9999-4999-8999-999999999999",
+      agentName: `verifier #${runId}-2`,
+      executionTarget: {
+        provider: "herdr",
+        targetId: "w2:p2",
+        context: "test-session",
+      },
+      pointers: [],
+      headSha,
+    },
+    parent,
+  );
+  await drain();
+  writeFileSync(HERDR_LOG, "");
+  const forVerify = svc.comments.createHumanForPull(
+    repo.full_name,
+    pr,
+    "@verifier please check this.",
+  );
+  await drain();
+  const verifyText = `<loophub from="worker">address PR comment ${forVerify.id}</loophub>`;
+  expect(herdrLines().filter((line) => line.includes(verifyText))).toEqual([
+    expect.stringContaining("w2:p2"),
+  ]);
+
+  // Verify delivery records no step activation, so nothing separates these two wakes either.
+  writeFileSync(HERDR_LOG, "");
+  const verifyThread = await svc.diffFeedback.createHuman(repo.full_name, pr, {
+    baseSha,
+    headSha,
+    path: "a.txt",
+    side: "RIGHT",
+    startLine: 2,
+    endLine: 2,
+    body: "@verifier please look here.",
+  });
+  await drain();
+  const verifyReply = await svc.diffFeedback.replyHuman(
+    repo.full_name,
+    pr,
+    verifyThread.thread.id,
+    "@verifier and here.",
+  );
+  await drain();
+  for (const id of [verifyThread.comment.id, verifyReply.reply.id]) {
+    const text = `<loophub from="worker">address diff feedback thread ${verifyThread.thread.id} comment ${id}</loophub>`;
+    expect(herdrLines().filter((line) => line.includes(text))).toEqual([
+      expect.stringContaining("w2:p2"),
+    ]);
+  }
+  rmSync(repoPath, { recursive: true, force: true });
+}, 20_000);

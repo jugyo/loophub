@@ -9,12 +9,18 @@ import {
 import { herdrSessionName } from "../terminal/terminal-launch.ts";
 import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
 import {
+  type WorkflowCommentDeliveryAction,
+  workflowCommentInstruction,
+} from "../workflow/reconcile.ts";
+import {
   classifyWorkflowSubjectEvent,
   type WorkflowSubjectEventRole,
   type WorkflowTwinSourceRef,
   workflowSubscriptionLowerBound,
 } from "../workflow/source-events.ts";
 import { enqueueWorkflowAgentStop } from "../workflow-agent-stop-job.ts";
+import { comments } from "./comments.ts";
+import { diffFeedback } from "./diff-feedback.ts";
 import { sendHerdrPrompt } from "./herdr-prompt.ts";
 import { repoOr404 } from "./shared.ts";
 import { workflowRunParentPaneId } from "./workflow-panes.ts";
@@ -170,6 +176,25 @@ function completeDecision(
   });
 }
 
+// The delivery is done and cannot be undone, so this is a second short DB region: the receipt
+// completion and the cursor advance still commit together.
+function completeDelivery(
+  runId: number,
+  eventId: number,
+  effect: string,
+): void {
+  db.transaction(() => {
+    const completed = S.completeWorkflowEventEffect(runId, eventId, effect);
+    if (!completed) {
+      throw new ServiceError(
+        500,
+        `could not complete Workflow instruction event #${eventId}`,
+      );
+    }
+    S.advanceWorkflowRunEventCursor(runId, eventId);
+  });
+}
+
 function sendInstruction(
   repo: S.Repo,
   paneId: string,
@@ -183,6 +208,85 @@ function sendInstruction(
     cwd: repo.local_path,
     timeoutMs: HERDR_TIMEOUT_MS,
   });
+}
+
+type WorkflowInstruction = Awaited<ReturnType<typeof workflowRuns.next>>;
+
+function isCommentDelivery(
+  instruction: WorkflowInstruction,
+): instruction is WorkflowInstruction & WorkflowCommentDeliveryAction {
+  return (
+    instruction.action === "deliver" &&
+    (instruction.delivery_reason === "diff_feedback" ||
+      instruction.delivery_reason === "pr_comment")
+  );
+}
+
+async function reactToComment(
+  repo: S.Repo,
+  run: S.WorkflowRunRow,
+  action: WorkflowCommentDeliveryAction,
+): Promise<void> {
+  if (action.delivery_reason === "pr_comment") {
+    comments.reactForPull(
+      repo.full_name,
+      run.pr_number,
+      action.comment_id,
+      "👀",
+      run.parent_session_id,
+    );
+    return;
+  }
+  await diffFeedback.react(
+    repo.full_name,
+    run.pr_number,
+    action.comment_id,
+    "👀",
+    run.parent_session_id,
+  );
+}
+
+// Hand a comment to its Execute / Verify targets and report what failed. The worker acts under the
+// parent's session because it does the parent's former job, so attribution and the run-update guard
+// stay as they were. A failure is recorded for a human instead of being retried or restarting the
+// agent: the comment stays on the PR and can be posted again.
+async function deliverCommentToAgents(
+  repo: S.Repo,
+  run: S.WorkflowRunRow,
+  action: WorkflowCommentDeliveryAction,
+): Promise<string[]> {
+  const text = `<loophub from="worker">${workflowCommentInstruction(action)}</loophub>`;
+  const targets = action.targets.filter((target) => target !== "orchestrator");
+  // A reaction toggles, so exactly one side may set it: the parent when it is addressed too.
+  const reacts = targets.length === action.targets.length;
+  const errors: string[] = [];
+  for (const [index, target] of targets.entries()) {
+    try {
+      if (reacts && index === 0) await reactToComment(repo, run, action);
+      await workflowRuns.deliver(
+        repo.full_name,
+        { run: run.id, target, text },
+        run.parent_session_id,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      S.emitWorkflowEvent(
+        repo.id,
+        "workflow_run.delivery_failed",
+        "lh-worker",
+        {
+          id: run.id,
+          issue_number: run.issue_number,
+          pr_number: run.pr_number,
+          target,
+          text,
+          error: message,
+        },
+      );
+      errors.push(`${target}: ${message}`);
+    }
+  }
+  return errors;
 }
 
 export const workflowInstructions = {
@@ -479,6 +583,27 @@ export const workflowInstructions = {
         `Workflow instruction delivery for event #${event.id} has a ${claimed.row.status} receipt`,
       );
     }
+
+    // The receipt is already claimed, so a worker restart cannot deliver this comment twice.
+    const comment = isCommentDelivery(instruction) ? instruction : null;
+    if (comment && !comment.targets.includes("orchestrator")) {
+      const errors = await deliverCommentToAgents(repo, run, comment);
+      completeDelivery(run.id, event.id, effect);
+      return errors.length > 0
+        ? {
+            status: "failed",
+            run: run.id,
+            event: event.id,
+            error: errors.join("; "),
+          }
+        : {
+            status: "skipped",
+            run: run.id,
+            event: event.id,
+            reason: "Comment went directly to its agents",
+          };
+    }
+
     if (registeredPane === null) {
       throw new ServiceError(
         409,
@@ -518,18 +643,10 @@ export const workflowInstructions = {
       }
       throw error;
     }
-    // The pane operation is done and cannot be undone, so this is a second short DB region: the
-    // receipt completion and the cursor advance still commit together.
-    db.transaction(() => {
-      const completed = S.completeWorkflowEventEffect(run.id, event.id, effect);
-      if (!completed) {
-        throw new ServiceError(
-          500,
-          `could not complete Workflow instruction event #${event.id}`,
-        );
-      }
-      S.advanceWorkflowRunEventCursor(run.id, event.id);
-    });
+    // Only after the parent accepted: a refused send releases the receipt and this event runs again,
+    // which would otherwise type the comment into its other agents once per attempt.
+    if (comment) await deliverCommentToAgents(repo, run, comment);
+    completeDelivery(run.id, event.id, effect);
     return {
       status: "delivered",
       run: run.id,

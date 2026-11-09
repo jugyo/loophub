@@ -1427,6 +1427,51 @@ test("a blocked herdr-core parent holds nothing: the event is delivered once it 
   }
 });
 
+test("a comment for the parent and a child reaches the child once, after the parent accepts it", async () => {
+  const input = fixture("hc-mixed-comment");
+  registerParent(input, "t8");
+  const hc = refusingHc("blocked");
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${hc.bin}:${originalPath}`;
+  const next = vi.spyOn(svc.workflowRuns, "next").mockResolvedValue({
+    ...instructionResult(input.event.id),
+    action: "deliver",
+    delivery_reason: "pr_comment",
+    comment_id: 19,
+    targets: ["executor", "orchestrator"],
+  });
+  const deliver = vi
+    .spyOn(svc.workflowRuns, "deliver")
+    .mockResolvedValue({} as never);
+  try {
+    for (const _attempt of [1, 2, 3]) {
+      await expect(
+        svc.workflowInstructions.dispatchRun(input.run.id),
+      ).resolves.toEqual({ status: "idle" });
+    }
+    expect(deliver).not.toHaveBeenCalled();
+
+    writeFileSync(
+      join(hc.bin, "hc"),
+      `#!/bin/sh\ncat > /dev/null\nprintf '{"id":1,"result":{"turn":1}}'\n`,
+    );
+    await expect(
+      svc.workflowInstructions.dispatchRun(input.run.id),
+    ).resolves.toMatchObject({ status: "delivered", pane_id: "t8" });
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect(deliver.mock.calls[0]?.[1]).toEqual({
+      run: input.run.id,
+      target: "executor",
+      text: '<loophub from="worker">address PR comment 19</loophub>',
+    });
+  } finally {
+    next.mockRestore();
+    deliver.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(hc.bin, { recursive: true, force: true });
+  }
+});
+
 test("an unavailable herdr-core parent fails visibly without a pending receipt, and readiness retries it", async () => {
   const input = fixture("hc-unavailable");
   registerParentPane(input, "t7");

@@ -195,6 +195,16 @@ export function WorkflowRunSummary({
         />
       ) : null}
 
+      {md && displayState.delivery_failure_count ? (
+        <p role="alert" className="text-sm text-destructive">
+          {displayState.delivery_failure_count === 1
+            ? "A comment could not be delivered to its agent."
+            : `${displayState.delivery_failure_count} comment deliveries to agents failed.`}{" "}
+          Open Detail for the error, and post the comment again if it still
+          needs an answer.
+        </p>
+      ) : null}
+
       {detailOpen ? (
         <WorkflowRunDetailDialog
           owner={owner}

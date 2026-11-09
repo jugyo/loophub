@@ -27,7 +27,9 @@ Compute the diff yourself. You may read surrounding source as context and run te
 dependencies, contracts, types, invariants, and behavior.
 
 The launch prompt also provides the PR number solely as the review submission target. During the
-session, messages beginning with `orchestrator:` are instructions from the workflow parent.
+session, messages beginning with `orchestrator:` are instructions from the workflow parent, and
+messages wrapped as `<loophub from="worker">...</loophub>` are instructions from the workflow, sent directly by
+its worker.
 
 ## Decide partial or full
 

@@ -173,6 +173,12 @@ export interface WorkflowEventPayloadMap {
       delivery_id: string;
       target: WorkflowCommentTarget;
     };
+  "workflow_run.delivery_failed": WorkflowRunScoped &
+    WorkflowRunSubject & {
+      target: WorkflowCommentTarget;
+      text: string;
+      error: string;
+    };
   /**
    * Run-scoped projections of PR facts. Merge conflict remains an explicit projection for the run
    * timeline; marked source events keep the pair from becoming two instructions. The other shapes

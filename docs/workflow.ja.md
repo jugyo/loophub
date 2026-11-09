@@ -139,7 +139,8 @@ event と現在 state を渡す。生成結果は `workflow instruction: <JSON>`
 `pane send-keys Enter` で投稿する。本文は bracketed paste で囲んで送るため、閉じ marker 以降の
 `Enter` は coding agent の paste 処理に取り込まれない。request を分けること自体は保証にならない
 （[根本原因](herdr-prompt-unsent-root-cause.ja.md)）。
-repository の `.loophub/workflow.yml` はこの経路に関与しない。
+repository の `.loophub/workflow.yml` はこの経路に関与しない。PR comment と diff comment は例外で、親が
+宛先でない限り注入せず worker が宛先へ直接配送する（[6. 完了宣言](#6-完了宣言turn-done)）。
 
 購読の下端は run 自身の `workflow_run.started` event を含む。selector の exclusive bound には
 `max(event_cursor, started_event_id - 1)` を渡すため、run 開始より前に記録された issue / PR の event は
@@ -246,7 +247,7 @@ top-level の `lh pr comment` で対象 `comment <id>`、認識したこと、�
 top-level の `lh pr comment` は使わない。質問、確認、PR metadata の更新のみなど source の修正を伴わない
 follow-up では、編集前の着手返信を必須としない。
 
-`orchestrator:` 注入や launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
+`orchestrator:` や `<loophub from="worker">` の注入、launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
 continuing instruction など）は、自然に Issue / PR への追加要望と読めるならそのように扱い、同じ
 issue・PR に対して実装する。完了後は通常の Execute と同じく **commit（ドメイン変更がある場合）→
 必要なら Evidence / comment / attachment の更新 → `lh workflow turn done --run <run>`** に戻る。rework
@@ -344,10 +345,17 @@ conflict、GitHub feedback、close / merge は、通知専用の run-scoped even
 `source_payload_version: 1` が載る。自分の parent / child が書いた diff reply や PR comment は、
 選択されても instruction にはならない（source の `session_id` で判定する）。別 PR の executor を含む
 他の agent や人間からの PR comment は instruction として配送する。
-親はこの wake で `orchestrator: address diff feedback thread #<t> comment #<c>` を Execute へ配送し、
+PR comment と diff comment は親を介さず、worker がこの wake で対象 comment に 👀 reaction を付け、
+`<loophub from="worker">address PR comment <c></loophub>` / `<loophub from="worker">address diff feedback thread <t> comment <c></loophub>` を
+宛先の pane へ直接配送する。配送文は対象の ID だけを含み、コメント本文は含めない。宛先は mention で決まり、`@executor` と mention なしは Execute、`@verifier` は
+Verify である。`@loophub` / `@lh` を含むコメントだけは親へ instruction を注入し、親が reaction と配送を行う。
+他の宛先と併記された場合、親への注入が成功してから worker が親以外へ届け、reaction は親が付ける。宛先の session がまだ無い場合は
+`workflow_run.delivery_queued` で待ち行列に入り、親が子の起動とともに届ける。
 Execute は `lh pr feedback pending <pr> --run <run>` で未対応の会話と anchor 周辺の diff を読む。
 source の修正が必要なら、対象 thread へ認識と対応意思を返信してから編集する。
-1 コメントにつき event は 1 件、wake は 1 回なので配送も 1 回である。usage sweep が run の累積コスト上限越えを検知すると `workflow_run.cost_exceeded` が記録される。
+worker は配送前に event の receipt を claim するので、1 コメントにつき配送は 1 回で、worker を再起動しても
+再配送しない。配送に失敗しても再試行も Execute の再起動もせず、`workflow_run.delivery_failed` を記録して
+cursor を進める。失敗は PR の Workflow 表示と run の履歴に出るため、必要なら人間がコメントし直す。usage sweep が run の累積コスト上限越えを検知すると `workflow_run.cost_exceeded` が記録される。
 累計 cost が現在の累計上限を超えていて run が human hold されていない間は、同じ run・累計上限に対して
 再送間隔ごとに最大 1 回まで再送され続ける（既定 5 分、env `LOOPHUB_COST_REEMIT_MS` で調整し、0 は毎
 sweep 再送）。生存している親は再送間隔より早く hold を確立するため通常は再送されず、親が wake 後・

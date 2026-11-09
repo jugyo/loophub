@@ -1229,6 +1229,9 @@ function workflowWakeObservation(input: {
     );
   }
   if (role !== "instruction") return null;
+  if (event.type === "workflow_run.delivery_failed") {
+    return { kind: "delivery_failed" };
+  }
   if (event.type === "workflow_run.delivery_queued") {
     const deliveryId = payload.delivery_id;
     const delivery =
@@ -1861,6 +1864,7 @@ async function workflowRunState(
     // complete run history while retaining the row as a fallback for eventless legacy runs.
     reworkCount: Math.max(projection.reworkCount, run.rework_count),
     reworkLimit: run.rework_limit,
+    deliveryFailureCount: projection.deliveryFailureCount,
     // Offered before the hold too (#2555): a run already at its limit with a Verify in flight
     // would otherwise stop on the next request_changes before a human can raise it.
     reworkLimitIncreaseAvailable:

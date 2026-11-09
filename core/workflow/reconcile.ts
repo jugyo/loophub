@@ -74,7 +74,8 @@ export type WorkflowWakeInput =
       target_available: boolean;
     }
   | { kind: "pending_delivery_ready"; delivery: WorkflowPendingDelivery }
-  | { kind: "delivery_queue_drained" };
+  | { kind: "delivery_queue_drained" }
+  | { kind: "delivery_failed" };
 
 export type WorkflowNextAction =
   | { action: "complete"; reason: string }
@@ -103,8 +104,8 @@ export type WorkflowNextAction =
       targets: readonly WorkflowCommentTarget[];
     }
   | {
-      // A diff comment names its own subject, so the delivery text is fixed like rework's: the
-      // parent hands over the ids and Execute reads the comment itself.
+      // A diff comment names its own subject, so the delivery text is fixed like rework's: it
+      // carries the ids and the receiving agent reads the comment itself.
       action: "deliver";
       reason: string;
       delivery_reason: "diff_feedback";
@@ -299,6 +300,15 @@ function actionPlan(
         targets.map((target) =>
           command("deliver", ...scoped, "--target", target, "--text", text),
         );
+      // The worker delivers a comment to Execute and Verify itself, so the parent is only involved
+      // when it is addressed too; it then owns the reaction as well, because a reaction toggles.
+      if (
+        (action.delivery_reason === "diff_feedback" ||
+          action.delivery_reason === "pr_comment") &&
+        !action.targets.includes("orchestrator")
+      ) {
+        return watch([]);
+      }
       if (action.delivery_reason === "diff_feedback") {
         return watch([
           {
@@ -316,10 +326,9 @@ function actionPlan(
               context.repo,
             ],
           },
-          ...deliveries(
-            `orchestrator: address diff feedback thread ${action.thread_id} comment ${action.comment_id}`,
-            action.targets,
-          ),
+          ...deliveries(`orchestrator: ${workflowCommentInstruction(action)}`, [
+            "orchestrator",
+          ]),
         ]);
       }
       if (action.delivery_reason === "pr_comment") {
@@ -339,10 +348,9 @@ function actionPlan(
               context.repo,
             ],
           },
-          ...deliveries(
-            `orchestrator: address PR comment ${action.comment_id}`,
-            action.targets,
-          ),
+          ...deliveries(`orchestrator: ${workflowCommentInstruction(action)}`, [
+            "orchestrator",
+          ]),
         ]);
       }
       if (action.delivery_reason === "github_feedback") {
@@ -453,6 +461,20 @@ function actionPlan(
 }
 
 export const WORKFLOW_REWORK_LIMIT = 8;
+
+export type WorkflowCommentDeliveryAction = Extract<
+  WorkflowNextAction,
+  { action: "deliver"; delivery_reason: "diff_feedback" | "pr_comment" }
+>;
+
+/** The fixed instruction that points an agent at one PR or diff comment: ids only, never its body. */
+export function workflowCommentInstruction(
+  action: WorkflowCommentDeliveryAction,
+): string {
+  return action.delivery_reason === "diff_feedback"
+    ? `address diff feedback thread ${action.thread_id} comment ${action.comment_id}`
+    : `address PR comment ${action.comment_id}`;
+}
 
 /**
  * Advise the Workflow parent about its next action from already-observed state.
@@ -603,6 +625,14 @@ export function reconcileWorkflow(
     };
   }
 
+  // A failed comment delivery is left to the human who sees it; it must not restart anything.
+  if (input.wake?.kind === "delivery_failed") {
+    return {
+      action: "wait",
+      reason: "A comment could not be delivered; a human decides what to do.",
+    };
+  }
+
   if (input.wake?.kind === "rework_limit_increased") {
     const review = input.steps.verify.latest_review;
     if (
@@ -659,7 +689,8 @@ export function reconcileWorkflow(
   if (input.wake?.kind === "diff_feedback") {
     return {
       action: "deliver",
-      reason: `Diff feedback conversation ${input.wake.threadId} has new workflow-agent input.`,
+      // The comment id keeps consecutive comments in one thread from reading as a repeated decision.
+      reason: `Diff feedback conversation ${input.wake.threadId} comment ${input.wake.commentId} has new workflow-agent input.`,
       delivery_reason: "diff_feedback",
       thread_id: input.wake.threadId,
       comment_id: input.wake.commentId,

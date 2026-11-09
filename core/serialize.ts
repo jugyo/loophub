@@ -1776,6 +1776,8 @@ export interface WorkflowRunStateWire {
   rework_count: number;
   rework_limit: number;
   rework_limit_increase_available: boolean;
+  // How many comment deliveries to an agent failed in this run. Each is left to a human.
+  delivery_failure_count: number;
   cost_increment_usd: number;
   cost_limit_usd: number;
   // True only while the run is held on the current limit's cost-exceeded event and still has a
@@ -1891,6 +1893,7 @@ export function workflowRunStateJSON(input: {
   reworkCount: number;
   reworkLimit: number;
   reworkLimitIncreaseAvailable: boolean;
+  deliveryFailureCount: number;
   costIncrementUsd: number;
   costLimitUsd: number;
   costLimitIncreaseAvailable: boolean;
@@ -1919,6 +1922,7 @@ export function workflowRunStateJSON(input: {
     rework_count: input.reworkCount,
     rework_limit: input.reworkLimit,
     rework_limit_increase_available: input.reworkLimitIncreaseAvailable,
+    delivery_failure_count: input.deliveryFailureCount,
     cost_increment_usd: input.costIncrementUsd,
     cost_limit_usd: input.costLimitUsd,
     cost_limit_increase_available: input.costLimitIncreaseAvailable,
@@ -2245,6 +2249,12 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     description: ({ payload }) =>
       `A queued instruction was delivered to the ${payloadString(payload, "target") ?? "target"} agent.`,
     significance: "routine",
+  },
+  "workflow_run.delivery_failed": {
+    label: "Agent instruction delivery failed",
+    description: ({ payload }) =>
+      `A comment could not be delivered to the ${payloadString(payload, "target") ?? "target"} agent: ${payloadString(payload, "error") ?? "No error recorded."}`,
+    significance: "notable",
   },
   "workflow_run.cost_exceeded": {
     label: "Cost limit exceeded",

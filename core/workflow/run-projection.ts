@@ -60,6 +60,7 @@ export interface WorkflowRunProjection {
   events: WorkflowRunEvent[];
   /** Every recorded Verify -> Execute rework transition in this run. */
   reworkCount: number;
+  deliveryFailureCount: number;
   /** Every `workflow_run.turn_done`, oldest first. */
   turnDones: WorkflowRunEvent[];
   /** The run's latest turn-done declaration, or null when Execute never made one. */
@@ -103,6 +104,7 @@ export function projectWorkflowRunEvents(
   let latestExecuteRound: WorkflowRunEvent | null = null;
   let latestRelaunch: WorkflowRunEvent | null = null;
   let reworkCount = 0;
+  let deliveryFailureCount = 0;
 
   for (const row of rows) {
     const event: WorkflowRunEvent = {
@@ -129,6 +131,8 @@ export function projectWorkflowRunEvents(
           text,
         });
       }
+    } else if (event.type === "workflow_run.delivery_failed") {
+      deliveryFailureCount++;
     } else if (event.type === "workflow_run.delivery_completed") {
       if (typeof payload.delivery_id === "string") {
         pendingDeliveries.delete(payload.delivery_id);
@@ -179,6 +183,7 @@ export function projectWorkflowRunEvents(
   return {
     events,
     reworkCount,
+    deliveryFailureCount,
     turnDones,
     latestTurnDone: turnDones.at(-1) ?? null,
     verifyLaunches,

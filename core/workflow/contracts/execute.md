@@ -17,7 +17,8 @@ usage that they do not provide, consult `lh --help` or the relevant subcommand's
 - The worktree — the cwd available for editing and testing.
 
 During the session, messages beginning with `orchestrator:` are instructions from the workflow
-parent; treat an identical launch note the same way.
+parent; treat an identical launch note the same way. Messages wrapped as
+`<loophub from="worker">...</loophub>` are instructions from the workflow as well, sent directly by its worker.
 
 ## Free-text input
 
@@ -51,12 +52,12 @@ run makes every earlier one unanswerable.
   turn record preserve the association. Respond to the review and each applicable review comment with
   `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>`; do not use a
   top-level `lh pr comment`.
-- **Diff feedback (`orchestrator: address diff feedback thread <t> comment <c>`)** — read the
+- **Diff feedback (`<loophub from="worker">address diff feedback thread <t> comment <c></loophub>`)** — read the
   unanswered conversations and their diff context with `lh pr feedback pending <pr> --run {{run}} --json`,
   and reply to each with `lh pr feedback reply <t> --pr <pr> --body <text>`. For any conversation
   requiring source changes, first post a brief reply in its thread before editing. Then make the
   requested changes.
-- **PR comment (`orchestrator: address PR comment <c>`)** — read the named comment from
+- **PR comment (`<loophub from="worker">address PR comment <c></loophub>`)** — read the named comment from
   `lh pr view <pr> --json` and compare a human instruction with the current Issue body and enabled
   acceptance criteria before implementing it. If consistent, proceed without requesting a spec
   update. If conflicting, do not choose or implement either version: escalate the exact conflict
