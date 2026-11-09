@@ -170,13 +170,15 @@ export async function run(): Promise<void> {
       });
   } else if (sub === "view") {
     const p = await runOp(() => s.pulls.get(repo, Number(rest[0])));
-    out(p);
+    // The stored `body` is the Evidence; name it so it cannot be mistaken for a GitHub PR's body.
+    const { body: evidence, ...pull } = p;
+    out({ ...pull, evidence });
     if (!flags.json) {
       const status = prStatusLabel(p);
       let line = `#${p.number} ${p.title} [${status}]\n${p.head.ref} -> ${p.base.ref}  mergeable=${p.mergeable_state}`;
       if (p.linked_issue)
         line += `\nlinked issue #${p.linked_issue.number} (${p.linked_issue.state})`;
-      console.log(`${line}\n\n${p.body}`);
+      console.log(`${line}\n\nEvidence:\n${evidence}`);
     }
   } else if (sub === "diff") {
     const diff = await runOp(() => s.pulls.diff(repo, Number(rest[0])));

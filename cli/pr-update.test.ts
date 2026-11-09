@@ -132,7 +132,14 @@ test("lh pr update edits Evidence", () => {
   expect(stdout).toContain(`updated PR #${n}`);
   const p = viewJSON(n);
   expect(p.title).toBe("linked title");
-  expect(p.body).toBe("new body");
+  expect(p.evidence).toBe("new body");
+  expect(p).not.toHaveProperty("body");
+});
+
+test("lh pr view text output labels the Evidence", () => {
+  const n = createPull("labelled evidence", "proof text");
+  const { stdout } = lh(["pr", "view", String(n), "--repo", REPO]);
+  expect(stdout).toContain("Evidence:\nproof text");
 });
 
 test("a PR shows its linked issue's title, following later issue edits", () => {
@@ -295,7 +302,7 @@ test("lh pr update rejects --title and changes nothing", () => {
   expect(stderr).toContain("--title was removed");
   const p = viewJSON(n);
   expect(p.title).toBe("title only");
-  expect(p.body).toBe("keep this body");
+  expect(p.evidence).toBe("keep this body");
 });
 
 test("lh pr update --evidence leaves title untouched", () => {
@@ -306,7 +313,7 @@ test("lh pr update --evidence leaves title untouched", () => {
   ).toBe(0);
   const p = viewJSON(n);
   expect(p.title).toBe("keep this title");
-  expect(p.body).toBe("rebodied");
+  expect(p.evidence).toBe("rebodied");
 });
 
 test("lh pr update --body points at --evidence and changes nothing", () => {
@@ -322,7 +329,7 @@ test("lh pr update --body points at --evidence and changes nothing", () => {
   ]);
   expect(exitCode).not.toBe(0);
   expect(stderr).toContain("--body was renamed to --evidence");
-  expect(viewJSON(n).body).toBe("unchanged body");
+  expect(viewJSON(n).evidence).toBe("unchanged body");
 });
 
 test("lh pr update without --evidence errors", () => {
@@ -332,7 +339,7 @@ test("lh pr update without --evidence errors", () => {
   expect(stderr).toContain("--evidence is required");
   const p = viewJSON(n);
   expect(p.title).toBe("unchanged title");
-  expect(p.body).toBe("unchanged body");
+  expect(p.evidence).toBe("unchanged body");
 });
 
 test("lh pr update on an issue number errors", () => {

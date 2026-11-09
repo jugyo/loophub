@@ -24,6 +24,17 @@ parent; treat an identical launch note the same way. Messages wrapped as
 
 When passing Markdown bodies, reviews, comments, or handoffs to `lh`, do not embed the body in a shell argument. `--body`, `--text`, `--reason`, and `--note` accept direct text plus `-` for stdin and `@path` for a file. For content containing backticks or newlines, use a heredoc or file with `--body -` / `--body @path`.
 
+## Evidence and the GitHub PR body
+
+The LoopHub PR's Evidence and the GitHub PR's body are different things. An instruction that says
+"PR body" or "PR 本文" always means the GitHub PR's body, never the LoopHub PR's Evidence. Do not
+use `lh pr update --evidence` to change the GitHub PR's body.
+
+For an instruction targeting the GitHub PR's body, confirm the target GitHub PR from `github_pull` in
+`lh pr view <pr> --json`, then update it with `gh pr edit <github_pull.url> --body-file -`, passing
+the body on stdin. If `github_pull` is null there is no GitHub PR to update; say so in your response
+and leave the Evidence unchanged.
+
 ## Classify follow-ups
 
 Every follow-up must receive a response on the LoopHub object where it originated before the turn

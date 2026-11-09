@@ -20,6 +20,7 @@ test("interpolates the repo and PR number into the lh commands", () => {
     });
     expect(prompt).toContain("lh pr view 42 --repo me/proj --json");
     expect(prompt).toContain("lh pr create-github-pr 42 --repo me/proj");
+    expect(prompt).toContain("`title` / `evidence` / `linked_issue`");
   }
 });
 

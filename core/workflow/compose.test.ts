@@ -267,7 +267,33 @@ test("execute contracts keep the Evidence to proof and leave the title to the li
     expect(contract).toContain(evidenceOnly);
     expect(contract).toContain("lh pr update <pr> --repo {{repo}} --evidence");
     expect(contract).not.toContain("--title");
-    expect(contract).not.toMatch(/PR body/u);
     expect(contract).not.toMatch(/including the summary|body に summary/u);
+  }
+});
+
+test("execute contracts separate the Evidence from the GitHub PR body", () => {
+  for (const [file, patterns] of [
+    [
+      "execute.md",
+      [
+        /Evidence and the GitHub PR's body are different things/u,
+        /"PR body" or "PR 本文" always means the GitHub PR's body/u,
+        /Do not\s+use `lh pr update --evidence` to change the GitHub PR's body/u,
+      ],
+    ],
+    [
+      "execute.ja.md",
+      [
+        /Evidence と GitHub PR の本文は別物/u,
+        /「PR 本文」「PR body」という指示は常に GitHub PR の\s+本文を指し/u,
+        /GitHub PR の本文を変える手段として\s+`lh pr update --evidence` を使わない/u,
+      ],
+    ],
+  ] as const) {
+    const contract = readFileSync(join(CONTRACT_DIR, file), "utf8");
+    for (const pattern of patterns) expect(contract).toMatch(pattern);
+    expect(contract).toContain("`github_pull`");
+    expect(contract).toContain("`lh pr view <pr> --json`");
+    expect(contract).toContain("gh pr edit <github_pull.url>");
   }
 });

@@ -22,6 +22,16 @@ launch note と `orchestrator:` で始まる同じ指示は同様に扱います
 
 Markdown 本文や review、comment、handoff などの自由テキストを `lh` に渡すときは、shell 引数へ本文を埋め込まないでください。`--body` / `--text` / `--reason` / `--note` は直接入力に加えて、`-` で stdin、`@path` でファイルを受け取ります。バッククォートや改行を含む本文は、heredoc またはファイルから `--body -` / `--body @path` のように渡してください。
 
+## Evidence と GitHub PR の本文
+
+LoopHub PR の Evidence と GitHub PR の本文は別物です。「PR 本文」「PR body」という指示は常に GitHub PR の
+本文を指し、LoopHub PR の Evidence を指すものとして扱いません。GitHub PR の本文を変える手段として
+`lh pr update --evidence` を使わないでください。
+
+GitHub PR の本文を対象とする指示では、`lh pr view <pr> --json` の `github_pull` で対象の GitHub PR を確認し、
+`gh pr edit <github_pull.url> --body-file -` に本文を stdin で渡して更新します。`github_pull` が null なら
+更新対象の GitHub PR は存在しないので、その旨を返信し、Evidence は変更しません。
+
 ## Follow-up の分類
 
 すべての follow-up は、source の変更が不要な場合でも、turn を完了する前に発生元の LoopHub 上の対象へ
