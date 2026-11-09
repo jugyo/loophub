@@ -33,6 +33,7 @@ import type {
   PullReview,
   PullTimelineItem,
   ReviewAcResult,
+  WorkflowRunState,
 } from "@/api/types";
 import {
   ArchivedComment,
@@ -57,6 +58,7 @@ import { Markdown } from "@/components/markdown";
 import {
   PullCommitsSection,
   ReviewDetailsDialog,
+  ReviewingBadge,
 } from "@/components/pull-commits-section";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import {
@@ -436,6 +438,7 @@ export function PullDetail({
               number={number}
               timeline={pageQuery.data?.timeline}
               comments={commentsQuery.data}
+              workflowRun={workflowRun}
               onOpenCommit={setTimelineCommit}
               onOpenReview={setTimelineReview}
               onOpenDiffFeedback={(path, threadId) =>
@@ -1641,6 +1644,7 @@ function CommentList({
   number,
   timeline,
   comments,
+  workflowRun,
   onOpenCommit,
   onOpenReview,
   onOpenDiffFeedback,
@@ -1652,6 +1656,7 @@ function CommentList({
   number: number;
   timeline: PullTimelineItem[] | undefined;
   comments: IssueComment[] | undefined;
+  workflowRun: WorkflowRunState | null | undefined;
   onOpenCommit: (commit: { sha: string; subject: string }) => void;
   onOpenReview: (review: PullReview) => void;
   onOpenDiffFeedback: (path: string, threadId: number) => void;
@@ -1850,6 +1855,12 @@ function CommentList({
           )}
         </>
       )}
+      {workflowRun?.active_verify_head_sha ? (
+        <TimelineActiveVerifyItem
+          headSha={workflowRun.active_verify_head_sha}
+          startedAt={workflowRun.active_verify_started_at}
+        />
+      ) : null}
       <div
         ref={formRef}
         data-debug-component="PullCommentForm"
@@ -2121,6 +2132,36 @@ function TimelineCommitItem({
         </span>
       </button>
     </article>
+  );
+}
+
+// The Verify review still in flight: not a timeline entry yet, so it sits after the newest one and
+// gives way to the review itself when Verify submits.
+function TimelineActiveVerifyItem({
+  headSha,
+  startedAt,
+}: {
+  headSha: string;
+  startedAt: string | null;
+}) {
+  return (
+    <ol
+      data-debug-component="TimelineActiveVerify"
+      className="relative ml-2 border-l pl-5"
+    >
+      <li className="relative">
+        <span
+          aria-hidden="true"
+          className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-muted-foreground/60 ring-4 ring-background"
+        />
+        <article className="flex items-center gap-2 px-1 py-0.5">
+          <ReviewingBadge startedAt={startedAt} />
+          <code className="shrink-0 rounded bg-muted px-1 py-px text-[10px] leading-4 text-muted-foreground">
+            {headSha.slice(0, 7)}
+          </code>
+        </article>
+      </li>
+    </ol>
   );
 }
 

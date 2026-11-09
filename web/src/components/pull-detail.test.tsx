@@ -1208,6 +1208,113 @@ describe("PullDetail", () => {
     expect(within(section).queryByText("web/src/a.ts:1")).toBeNull();
   });
 
+  describe("active Verify in the timeline", () => {
+    const verifySha = "abcdef1234567890";
+    const runState = (overrides: Record<string, unknown> = {}) => ({
+      id: 12,
+      status: "running",
+      current_step: "verify",
+      rework_count: 0,
+      rework_limit: 8,
+      needs_human_reason: null,
+      issue_number: 153,
+      pr_number: 30,
+      created_at: "2026-06-18T11:00:00Z",
+      updated_at: "2026-06-18T12:00:00Z",
+      latest_review: null,
+      active_verify_head_sha: null,
+      active_verify_started_at: null,
+      ...overrides,
+    });
+    const verifying = runState({
+      active_verify_head_sha: verifySha,
+      active_verify_started_at: "2026-06-18T12:03:12Z",
+    });
+    const activeVerifyItem = () =>
+      document.querySelector<HTMLElement>(
+        '[data-debug-component="TimelineActiveVerify"]',
+      );
+    const isBefore = (first: Node, second: Node) =>
+      Boolean(
+        first.compareDocumentPosition(second) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+
+    it("shows the reviewing state with its short SHA and elapsed time after the newest entry", async () => {
+      vi.spyOn(Date, "now").mockReturnValue(
+        new Date("2026-06-18T12:05:00Z").getTime(),
+      );
+      renderDetail({ "workflowRuns/stateForPull": () => verifying });
+
+      const item = await waitFor(() => {
+        expect(activeVerifyItem()).toBeTruthy();
+        return activeVerifyItem()!;
+      });
+      expect(item.textContent).toContain("Reviewing");
+      expect(item.textContent).toContain("1m 48s");
+      expect(item.textContent).toContain("abcdef1");
+      const section = (
+        await screen.findByRole("heading", { name: "Comments (2)" })
+      ).closest("section")!;
+      expect(isBefore(within(section).getByText("Latest change"), item)).toBe(
+        true,
+      );
+      expect(isBefore(item, screen.getByLabelText("Add a PR comment"))).toBe(
+        true,
+      );
+    });
+
+    it("shows on a PR whose timeline is still empty", async () => {
+      renderDetail({
+        "pulls/get": () => ({ ...pull, commits: [] }),
+        "reviews/list": () => [],
+        "reviews/listComments": () => [],
+        "comments/list": () => [],
+        "workflowRuns/stateForPull": () => verifying,
+      });
+
+      await screen.findByText("No comments.");
+      await waitFor(() => expect(activeVerifyItem()).toBeTruthy());
+    });
+
+    it("stays hidden when no Verify is in flight", async () => {
+      renderDetail({ "workflowRuns/stateForPull": () => runState() });
+
+      await screen.findByRole("heading", { name: "Comments (2)" });
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-debug-component="WorkflowRunSummary"]'),
+        ).toBeTruthy(),
+      );
+      expect(activeVerifyItem()).toBeNull();
+    });
+
+    it("stays hidden on a PR without a Workflow run", async () => {
+      renderDetail({ "workflowRuns/stateForPull": () => null });
+
+      await screen.findByRole("heading", { name: "Comments (2)" });
+      expect(activeVerifyItem()).toBeNull();
+    });
+
+    it("appears and disappears as the run state is refreshed", async () => {
+      let state = runState();
+      const { queryClient } = renderDetail({
+        "workflowRuns/stateForPull": () => state,
+      });
+      await screen.findByRole("heading", { name: "Comments (2)" });
+      expect(activeVerifyItem()).toBeNull();
+
+      const runKey = ["workflow-run", "pull", "me/proj", 30];
+      state = verifying;
+      void queryClient.invalidateQueries({ queryKey: runKey });
+      await waitFor(() => expect(activeVerifyItem()).toBeTruthy());
+
+      state = runState();
+      void queryClient.invalidateQueries({ queryKey: runKey });
+      await waitFor(() => expect(activeVerifyItem() === null).toBe(true));
+    });
+  });
+
   it("diff feedback のタイムライン項目から対象ファイルを開く", async () => {
     renderDetail({
       "diffFeedback/list": () => ({

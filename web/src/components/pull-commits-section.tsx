@@ -312,7 +312,7 @@ function CommitReviewStatus({
 // counting while the row is on screen; the wire's `active_verify_started_at` is the launch event's
 // `created_at`, so a review's age is measured from when Verify started, not from `updated_at`.
 // A missing start time (legacy run state) keeps the plain Reviewing badge without any elapsed text.
-function ReviewingBadge({ startedAt }: { startedAt: string | null }) {
+export function ReviewingBadge({ startedAt }: { startedAt: string | null }) {
   const startedAtMs = startedAt ? new Date(startedAt).getTime() : Number.NaN;
   const running = Number.isFinite(startedAtMs);
   const [nowMs, setNowMs] = useState(() => Date.now());
