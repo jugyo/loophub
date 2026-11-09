@@ -2162,6 +2162,12 @@ describe("PullDetail", () => {
       renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
       expect(railButton("Commits").getAttribute("aria-pressed")).toBe("true");
+      expect(
+        within(rail())
+          .getAllByRole("button")
+          .map((button) => button.getAttribute("aria-label"))
+          .filter((label) => label !== "Close right pane"),
+      ).toEqual(["Files changed", "Commits", "Evidence"]);
 
       fireEvent.click(railButton("Evidence"));
       expect(screen.getByRole("heading", { name: "Evidence" })).toBeTruthy();

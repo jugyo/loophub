@@ -569,8 +569,8 @@ const PANE_RAIL_VIEWS: {
   label: string;
   icon: typeof File;
 }[] = [
-  { view: "commits", label: "Commits", icon: GitCommitHorizontal },
   { view: "files", label: "Files changed", icon: File },
+  { view: "commits", label: "Commits", icon: GitCommitHorizontal },
   { view: "evidence", label: "Evidence", icon: ClipboardCheck },
 ];
 
