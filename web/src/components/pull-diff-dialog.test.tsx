@@ -259,6 +259,7 @@ function scopedDiff(path: string, before: string, after: string) {
 function renderPullDialog(
   handlers: Record<string, (params: any) => unknown> = {},
   onClose = () => {},
+  display: "dialog" | "pane" = "dialog",
 ) {
   vi.stubGlobal(
     "fetch",
@@ -282,6 +283,8 @@ function renderPullDialog(
         file={file}
         initialThreadId={threadId}
         threadRevealKey={threadRevealKey}
+        display={display}
+        onBack={() => {}}
         onSelectFile={() => {}}
         onClose={onClose}
       />
@@ -502,6 +505,139 @@ describe("PullDiffDialog", () => {
 
     await selectDiffScope(/ccccccc.*Latest commit/);
     fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("groups the header controls under Changes, Format and Display", async () => {
+    renderPullDialog({ "pulls/diff": stableDiff });
+    await screen.findByText("const x = 1;");
+
+    const group = (name: string) => screen.getByRole("group", { name });
+    expect(
+      within(group("Changes")).getByRole("button", {
+        name: "Select diff scope",
+      }),
+    ).toBeTruthy();
+    expect(
+      within(group("Format")).getByRole("button", { name: "Raw" }),
+    ).toBeTruthy();
+    for (const markdownOnly of ["Rendered diff", "Base", "Head"]) {
+      expect(screen.queryByRole("button", { name: markdownOnly })).toBeNull();
+    }
+    for (const name of ["Ignore whitespace", "Unified", "Split"]) {
+      expect(
+        within(group("Display")).getByRole("button", { name }),
+      ).toBeTruthy();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    expect(screen.queryByRole("group", { name: "Display" })).toBeNull();
+  });
+
+  it("keeps only the display options that apply to a Markdown file's format", () => {
+    renderDialog({
+      file: {
+        filename: "README.md",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "@@ -1 +1 @@\n-# old\n+# new",
+      },
+      handlers: {
+        "pulls/fileAtRef": () => ({ status: "ok", content: "# text\n" }),
+      },
+    });
+    const format = within(screen.getByRole("group", { name: "Format" }));
+
+    fireEvent.click(format.getByRole("button", { name: "Rendered diff" }));
+    const display = within(screen.getByRole("group", { name: "Display" }));
+    expect(
+      display.queryByRole("button", { name: "Ignore whitespace" }),
+    ).toBeNull();
+    expect(display.getByRole("button", { name: "Unified" })).toBeTruthy();
+
+    fireEvent.click(format.getByRole("button", { name: "Head" }));
+    expect(screen.queryByRole("group", { name: "Display" })).toBeNull();
+  });
+
+  it("keeps the file picker and its stat out of the pane's title row", async () => {
+    renderPullDialog({ "pulls/diff": stableDiff }, () => {}, "pane");
+    await screen.findByText("const x = 1;");
+
+    const titleRow = screen
+      .getByRole("heading", { name: "Diff" })
+      .closest("header") as HTMLElement;
+    expect(titleRow.textContent).toBe("Diff");
+    expect(
+      within(titleRow)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Back to file list", "Show diff full screen"]);
+    expect(within(titleRow).queryByRole("combobox")).toBeNull();
+
+    const fileRow = screen.getByRole("combobox", { name: "Diff file" })
+      .parentElement?.parentElement as HTMLElement;
+    expect(
+      within(fileRow).getByRole("checkbox", { name: "Viewed" }),
+    ).toBeTruthy();
+    expect(fileRow.textContent).toContain("+1");
+  });
+
+  it("shows a commit above the file row and drops Viewed in its scope", async () => {
+    renderPullDialog({
+      "pulls/diff": stableDiff,
+      "repos/commitDiff": () =>
+        scopedDiff("web/src/a.ts", "commit before", "commit after"),
+    });
+    await screen.findByText("const x = 1;");
+    expect(screen.getByRole("checkbox", { name: "Viewed" })).toBeTruthy();
+
+    await selectDiffScope(/ccccccc.*Latest commit/);
+    await screen.findByText("commit after");
+
+    expect(screen.queryByRole("checkbox", { name: "Viewed" })).toBeNull();
+    const subject = within(screen.getByRole("dialog")).getAllByText(
+      "Latest commit",
+    )[0];
+    expect(subject.previousElementSibling?.textContent).toBe("ccccccc");
+    expect(
+      subject.compareDocumentPosition(
+        screen.getByRole("heading", { name: "web/src/a.ts" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ["loading", () => new Promise<never>(() => {})],
+    [
+      "error",
+      () => {
+        throw new RpcFault(500, "commit unavailable");
+      },
+    ],
+    [
+      "empty",
+      () => ({
+        base_sha: "e".repeat(40),
+        head_sha: "f".repeat(40),
+        files: [],
+      }),
+    ],
+  ])("offers the scope and Close while a commit diff is %s", async (_state, handler) => {
+    const onClose = vi.fn();
+    renderPullDialog(
+      { "pulls/diff": stableDiff, "repos/commitDiff": handler },
+      onClose,
+    );
+
+    await selectDiffScope(/ccccccc.*Latest commit/);
+    expect(
+      within(screen.getByRole("group", { name: "Changes" })).getByRole(
+        "button",
+        { name: "Select diff scope" },
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close commit diff" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
@@ -3582,6 +3718,7 @@ describe("DiffFileDialog", () => {
       "README.md",
       "Copy file path: README.md",
       "Show file information: README.md",
+      "Close diff",
       "Diff",
       "Raw",
       "Rendered diff",
@@ -3590,7 +3727,6 @@ describe("DiffFileDialog", () => {
       "Ignore whitespace",
       "Unified",
       "Split",
-      "Close diff",
     ]);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Head" }));

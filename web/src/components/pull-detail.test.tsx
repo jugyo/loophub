@@ -680,11 +680,12 @@ describe("PullDetail", () => {
     expect(dialog).toBeTruthy();
     await waitFor(() => {
       expect(
-        screen.queryByRole("heading", { name: "web/src/a.ts" }),
-      ).toBeNull();
-      expect(
-        screen.getByRole("heading", { name: "web/src/b.ts" }),
-      ).toBeTruthy();
+        (
+          screen.getByRole("combobox", {
+            name: "Diff file",
+          }) as HTMLSelectElement
+        ).value,
+      ).toBe("web/src/b.ts");
       const summaryRows = Array.from(
         fileSummaryList.querySelectorAll<HTMLElement>(
           '[data-debug-component="FileSummaryRow"]',

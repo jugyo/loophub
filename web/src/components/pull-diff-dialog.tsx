@@ -289,21 +289,50 @@ const DIFF_PANEL_CLASS: Record<DiffDisplay, string> = {
   pane: "flex w-full min-w-0 flex-col overflow-hidden bg-background",
 };
 
-// The right pane's title row: the way back to the file list, the file picker (the pane has no file
-// list of its own), the file's stat, and the button expanding the view into a modal. A modal has
-// none of this.
+// The band of labelled control groups under a diff's file row.
+const DIFF_CONTROL_ROW_CLASS =
+  "flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/20 px-3 py-2";
+
+function DiffControlGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5"
+    >
+      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function DiffCommitLine({ sha, title }: { sha?: string; title: string }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+      {sha ? (
+        <code className="shrink-0 rounded bg-muted px-1 py-0.5">{sha}</code>
+      ) : null}
+      <span className="truncate">{title}</span>
+    </div>
+  );
+}
+
+// The right pane's title row: the way back to the file list and the button expanding the view into
+// a modal. A modal has none of this.
 function DiffPaneHead({
   display,
-  files,
-  selectedFile,
-  onSelectFile,
   onExpand,
   onBack,
 }: {
   display: DiffDisplay;
-  files?: PullFile[];
-  selectedFile?: PullFile | null;
-  onSelectFile?: (filename: string) => void;
   onExpand?: () => void;
   onBack?: () => void;
 }) {
@@ -327,40 +356,17 @@ function DiffPaneHead({
         ) : null
       }
     >
-      <div className="ml-auto flex min-w-0 items-center gap-2">
-        {files && selectedFile ? (
-          <select
-            aria-label="Diff file"
-            value={selectedFile.filename}
-            onChange={(event) => onSelectFile?.(event.target.value)}
-            className="h-7 min-w-0 max-w-80 rounded-md border bg-background px-1 font-mono text-xs"
-          >
-            {files.map((candidate) => (
-              <option key={candidate.filename} value={candidate.filename}>
-                {candidate.filename}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        {selectedFile ? (
-          <DiffStat
-            additions={selectedFile.additions}
-            deletions={selectedFile.deletions}
-            className="shrink-0 text-xs"
-          />
-        ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Show diff full screen"
-          title="Show diff full screen"
-          className="size-7 shrink-0"
-          onClick={onExpand}
-        >
-          <Maximize2 className="size-4" />
-        </Button>
-      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label="Show diff full screen"
+        title="Show diff full screen"
+        className="ml-auto size-7 shrink-0"
+        onClick={onExpand}
+      >
+        <Maximize2 className="size-4" />
+      </Button>
     </PullPaneHead>
   );
 }
@@ -435,17 +441,11 @@ export function DiffDialogState({
             </>
           ) : null}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                  <code className="shrink-0 rounded bg-muted px-1 py-0.5">
-                    {dialogSha}
-                  </code>
-                  <span className="truncate">{dialogTitle}</span>
+            <header className="border-b">
+              <div className="flex items-center justify-between gap-2 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <DiffCommitLine sha={dialogSha} title={dialogTitle} />
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {scopeSelector}
                 {display === "dialog" ? (
                   <Button
                     variant="secondary"
@@ -458,6 +458,13 @@ export function DiffDialogState({
                   </Button>
                 ) : null}
               </div>
+              {scopeSelector ? (
+                <div className={DIFF_CONTROL_ROW_CLASS}>
+                  <DiffControlGroup label="Changes">
+                    {scopeSelector}
+                  </DiffControlGroup>
+                </div>
+              ) : null}
             </header>
             <div className="diff-scrollport min-w-0 flex-1 overflow-auto">
               {children}
@@ -504,7 +511,7 @@ function DiffScopeSelector({
           variant="secondary"
           size="sm"
           aria-label="Select diff scope"
-          className="h-7 max-w-80 gap-1.5"
+          className="h-7 min-w-0 max-w-80 gap-1.5"
         >
           <span className="min-w-0 flex-1 truncate">
             {selectedCommit
@@ -515,7 +522,7 @@ function DiffScopeSelector({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align="end"
+        align="start"
         className="w-96 max-w-[calc(100vw-2rem)]"
       >
         <DropdownMenuItem onSelect={() => onSelect(null)}>
@@ -975,14 +982,7 @@ export function DiffFileDialog({
         }
         className={DIFF_PANEL_CLASS[display]}
       >
-        <DiffPaneHead
-          display={display}
-          files={files}
-          selectedFile={selectedFile}
-          onSelectFile={selectFile}
-          onExpand={onExpand}
-          onBack={onBack}
-        />
+        <DiffPaneHead display={display} onExpand={onExpand} onBack={onBack} />
         <div className="flex min-h-0 flex-1">
           {display !== "pane" ? (
             <>
@@ -1169,22 +1169,35 @@ export function DiffFileDialog({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {selectedFile ? (
               <>
-                <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    {dialogTitle ? (
-                      <div className="mb-1 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                        {dialogSha ? (
-                          <code className="shrink-0 rounded bg-muted px-1 py-0.5">
-                            {dialogSha}
-                          </code>
-                        ) : null}
-                        <span className="truncate">{dialogTitle}</span>
-                      </div>
-                    ) : null}
-                    <div className="flex min-w-0 items-center gap-1">
-                      <h3 className="min-w-0 truncate text-sm font-semibold">
-                        {selectedFile.filename}
-                      </h3>
+                <header className="border-b">
+                  {dialogTitle ? (
+                    <div className="px-3 pt-2">
+                      <DiffCommitLine sha={dialogSha} title={dialogTitle} />
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+                    <div className="flex min-w-0 shrink grow basis-52 items-center gap-1">
+                      {display === "pane" ? (
+                        <select
+                          aria-label="Diff file"
+                          value={selectedFile.filename}
+                          onChange={(event) => selectFile(event.target.value)}
+                          className="h-7 min-w-0 flex-1 rounded-md border bg-background px-1 font-mono text-xs"
+                        >
+                          {files.map((candidate) => (
+                            <option
+                              key={candidate.filename}
+                              value={candidate.filename}
+                            >
+                              {candidate.filename}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <h3 className="min-w-0 truncate text-sm font-semibold">
+                          {selectedFile.filename}
+                        </h3>
+                      )}
                       <CopyButton
                         key={`copy-${selectedCopyPath}`}
                         value={selectedCopyPath}
@@ -1201,7 +1214,7 @@ export function DiffFileDialog({
                         />
                       ) : null}
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                    <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
                       <FileStatusBadge status={selectedFile.status} />
                       <DiffStat
                         additions={selectedFile.additions}
@@ -1211,77 +1224,6 @@ export function DiffFileDialog({
                         <FileViewedBadge state={selectedFileViewState} />
                       ) : null}
                     </div>
-                  </div>
-                  <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-                    {scopeSelector}
-                    <div className="flex overflow-hidden rounded-md border text-xs">
-                      <ModeButton
-                        active={selectedMode === "diff"}
-                        onClick={() => selectMode("diff")}
-                      >
-                        Diff
-                      </ModeButton>
-                      <ModeButton
-                        active={selectedMode === "raw"}
-                        onClick={() => selectMode("raw")}
-                      >
-                        Raw
-                      </ModeButton>
-                      {selectedIsMarkdown ? (
-                        <>
-                          <ModeButton
-                            active={selectedMode === "rendered"}
-                            onClick={() => selectMode("rendered")}
-                          >
-                            Rendered diff
-                          </ModeButton>
-                          <ModeButton
-                            active={selectedMode === "base"}
-                            onClick={() => selectMode("base")}
-                          >
-                            Base
-                          </ModeButton>
-                          <ModeButton
-                            active={selectedMode === "head"}
-                            onClick={() => selectMode("head")}
-                          >
-                            Head
-                          </ModeButton>
-                        </>
-                      ) : null}
-                    </div>
-                    {selectedMode === "diff" ? (
-                      <div
-                        className="flex overflow-hidden rounded-md border text-xs"
-                        aria-label="Diff whitespace"
-                      >
-                        <ModeButton
-                          active={ignoreWhitespace}
-                          onClick={() => setIgnoreWhitespace((value) => !value)}
-                        >
-                          Ignore whitespace
-                        </ModeButton>
-                      </div>
-                    ) : null}
-                    {selectedMode === "diff" || selectedMode === "rendered" ? (
-                      <div
-                        className="flex overflow-hidden rounded-md border text-xs"
-                        aria-label="Diff view"
-                      >
-                        <ModeButton
-                          active={diffViewMode === "unified"}
-                          onClick={() => selectDiffViewMode("unified")}
-                        >
-                          Unified
-                        </ModeButton>
-                        <ModeButton
-                          active={diffViewMode === "split"}
-                          onClick={() => selectDiffViewMode("split")}
-                        >
-                          Split
-                        </ModeButton>
-                      </div>
-                    ) : null}
                     {source.kind === "pull" ? (
                       <>
                         {/* The record is append-only, so a file whose commits moved on comes back unchecked:
@@ -1339,11 +1281,92 @@ export function DiffFileDialog({
                         aria-label={
                           dialogTitle ? "Close commit diff" : "Close diff"
                         }
-                        className="h-7 w-7 shrink-0 p-0"
+                        className="ml-auto h-7 w-7 shrink-0 p-0"
                         onClick={onClose}
                       >
                         <X className="size-4" />
                       </Button>
+                    ) : null}
+                  </div>
+                  <div className={DIFF_CONTROL_ROW_CLASS}>
+                    {scopeSelector ? (
+                      <DiffControlGroup label="Changes">
+                        {scopeSelector}
+                      </DiffControlGroup>
+                    ) : null}
+                    <DiffControlGroup label="Format">
+                      <div className="flex overflow-hidden rounded-md border text-xs">
+                        <ModeButton
+                          active={selectedMode === "diff"}
+                          onClick={() => selectMode("diff")}
+                        >
+                          Diff
+                        </ModeButton>
+                        <ModeButton
+                          active={selectedMode === "raw"}
+                          onClick={() => selectMode("raw")}
+                        >
+                          Raw
+                        </ModeButton>
+                        {selectedIsMarkdown ? (
+                          <>
+                            <ModeButton
+                              active={selectedMode === "rendered"}
+                              onClick={() => selectMode("rendered")}
+                            >
+                              Rendered diff
+                            </ModeButton>
+                            <ModeButton
+                              active={selectedMode === "base"}
+                              onClick={() => selectMode("base")}
+                            >
+                              Base
+                            </ModeButton>
+                            <ModeButton
+                              active={selectedMode === "head"}
+                              onClick={() => selectMode("head")}
+                            >
+                              Head
+                            </ModeButton>
+                          </>
+                        ) : null}
+                      </div>
+                    </DiffControlGroup>
+                    {selectedMode === "diff" || selectedMode === "rendered" ? (
+                      <DiffControlGroup label="Display">
+                        {selectedMode === "diff" ? (
+                          <div
+                            className="flex overflow-hidden rounded-md border text-xs"
+                            aria-label="Diff whitespace"
+                          >
+                            <ModeButton
+                              active={ignoreWhitespace}
+                              onClick={() =>
+                                setIgnoreWhitespace((value) => !value)
+                              }
+                            >
+                              Ignore whitespace
+                            </ModeButton>
+                          </div>
+                        ) : null}
+                        <div
+                          className="flex overflow-hidden rounded-md border text-xs"
+                          aria-label="Diff view"
+                        >
+                          <ModeButton
+                            active={diffViewMode === "unified"}
+                            onClick={() => selectDiffViewMode("unified")}
+                          >
+                            Unified
+                          </ModeButton>
+                          <ModeButton
+                            active={diffViewMode === "split"}
+                            onClick={() => selectDiffViewMode("split")}
+                          >
+                            Split
+                          </ModeButton>
+                        </div>
+                      </DiffControlGroup>
                     ) : null}
                   </div>
                 </header>
