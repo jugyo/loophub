@@ -2195,43 +2195,50 @@ describe("PullDetail", () => {
       ).toBeTruthy();
     });
 
-    it("resizes by dragging its left edge, remembering Diff and the other views apart", async () => {
+    it("moves the boundary by dragging, remembering the left column for Diff and the other views apart", async () => {
       const { container } = renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
       const root = container.querySelector<HTMLElement>(
         '[data-debug-component="PullDetail"]',
       )!;
+      const leftColumn = container.querySelector<HTMLElement>(
+        '[data-debug-component="PullLeftColumn"]',
+      )!;
       Object.defineProperty(root, "clientWidth", { value: 1400 });
-      let measuredWidth = 576;
-      Object.defineProperty(pane(container), "offsetWidth", {
+      let measuredWidth = 768;
+      Object.defineProperty(leftColumn, "offsetWidth", {
         get: () => measuredWidth,
       });
       const handle = screen.getByRole("separator", {
         name: "Resize right pane",
       });
       handle.setPointerCapture = () => {};
-      expect(pane(container).style.width).toBe("");
-      expect(pane(container).className).toContain("w-[36rem]");
+      // The pane takes what the window has left, whatever the left column's width.
+      expect(pane(container).className).toContain("flex-[1_0_20rem]");
+      expect(leftColumn.style.flexBasis).toBe("");
+      expect(leftColumn.className).toContain("flex-[0_1_48rem]");
 
       fireEvent.pointerDown(handle, { button: 0, clientX: 800 });
       fireEvent.pointerMove(handle, { clientX: 700 });
       fireEvent.pointerUp(handle);
-      expect(pane(container).style.width).toBe("676px");
-      expect(localStorage.getItem("lh_pull_pane_width")).toBe("676");
+      expect(leftColumn.style.flexBasis).toBe("668px");
+      expect(localStorage.getItem("lh_pull_left_column_width")).toBe("668");
 
-      measuredWidth = 676;
-      // Past the limit, the left column keeps its share.
+      measuredWidth = 668;
+      // Past the limit, the pane keeps its minimum.
       fireEvent.pointerDown(handle, { button: 0, clientX: 700 });
-      fireEvent.pointerMove(handle, { clientX: -5000 });
+      fireEvent.pointerMove(handle, { clientX: 5000 });
       fireEvent.pointerUp(handle);
-      expect(pane(container).style.width).toBe("1032px");
+      expect(leftColumn.style.flexBasis).toBe("1032px");
 
       await openFileFromList();
-      expect(pane(container).style.width).toBe("");
-      expect(pane(container).className).toContain("flex-1");
+      expect(leftColumn.style.flexBasis).toBe("");
 
       fireEvent.click(railButton("Evidence"));
-      expect(pane(container).style.width).toBe("1032px");
+      expect(leftColumn.style.flexBasis).toBe("1032px");
+
+      fireEvent.click(railButton("Close right pane"));
+      expect(leftColumn.style.flexBasis).toBe("");
       localStorage.clear();
     });
 
@@ -2365,28 +2372,22 @@ describe("PullDetail", () => {
       await screen.findByRole("region", { name: "Diff for web/src/b.ts" });
     });
 
-    it("shares the width equally only while the Diff view is showing", async () => {
+    it("gives the window's extra width to the pane in the Diff view too, and only while open", async () => {
       const { container } = renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
       const leftColumn = container.querySelector<HTMLElement>(
         '[data-debug-component="PullLeftColumn"]',
       )!;
-      const halved = "w-[calc((100%-3rem)/2)]";
-      expect(leftColumn.className).not.toContain(halved);
+      const fixedLeftColumn = "flex-[0_1_48rem]";
+      expect(leftColumn.className).toContain(fixedLeftColumn);
 
       await openFileFromList();
-      expect(leftColumn.className).toContain(halved);
-      expect(pane(container).className).toContain("flex-1");
-
-      fireEvent.click(
-        screen.getByRole("button", { name: "Back to file list" }),
-      );
-      expect(leftColumn.className).not.toContain(halved);
-
-      await openFileFromList();
+      expect(leftColumn.className).toContain(fixedLeftColumn);
+      expect(pane(container).className).toContain("flex-[1_0_20rem]");
 
       fireEvent.click(railButton("Close right pane"));
-      expect(leftColumn.className).not.toContain(halved);
+      expect(leftColumn.className).not.toContain(fixedLeftColumn);
+      expect(leftColumn.className).toContain("flex-1");
     });
 
     it("leaves a pane closed when Viewed settles after it was closed", async () => {

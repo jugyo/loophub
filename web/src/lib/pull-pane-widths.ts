@@ -1,34 +1,34 @@
-// The PR detail right pane's dragged widths, stored per browser in localStorage so they survive
-// reloading and opening another PR. Storage is a convenience only: a missing, unrecognized, or
+// The PR detail left column's dragged widths, stored per browser in localStorage so they survive
+// reloading and opening another PR. The left column is what is stored because the right pane takes
+// whatever the window has left. Storage is a convenience only: a missing, unrecognized, or
 // unreadable value means the view's default width, and a failed write is ignored.
 
 // The Diff view is read at a different width from the others, so it remembers its own.
 export type PullPaneWidthGroup = "diff" | "other";
 
 const WIDTH_KEYS: Record<PullPaneWidthGroup, string> = {
-  diff: "lh_pull_pane_width_diff",
-  other: "lh_pull_pane_width",
+  diff: "lh_pull_left_column_width_diff",
+  other: "lh_pull_left_column_width",
 };
 
 const PANE_MIN_WIDTH = 320;
 const LEFT_COLUMN_MIN_WIDTH = 320;
 const RAIL_WIDTH = 48;
-const RESERVED_WIDTH = LEFT_COLUMN_MIN_WIDTH + RAIL_WIDTH;
+const RESERVED_WIDTH = PANE_MIN_WIDTH + RAIL_WIDTH;
 
-// Also applied as CSS, so a window narrowed after the drag cannot squeeze the left column away.
-export const PULL_PANE_MAX_WIDTH = `calc(100% - ${RESERVED_WIDTH}px)`;
-
-export function clampPullPaneWidth(
+export function clampPullLeftColumnWidth(
   width: number,
   containerWidth: number,
 ): number {
   return Math.max(
-    PANE_MIN_WIDTH,
+    LEFT_COLUMN_MIN_WIDTH,
     Math.min(width, containerWidth - RESERVED_WIDTH),
   );
 }
 
-export function getPullPaneWidth(group: PullPaneWidthGroup): number | null {
+export function getPullLeftColumnWidth(
+  group: PullPaneWidthGroup,
+): number | null {
   try {
     const stored = Number(globalThis.localStorage.getItem(WIDTH_KEYS[group]));
     return Number.isFinite(stored) && stored > 0 ? stored : null;
@@ -37,7 +37,7 @@ export function getPullPaneWidth(group: PullPaneWidthGroup): number | null {
   }
 }
 
-export function setPullPaneWidth(
+export function setPullLeftColumnWidth(
   group: PullPaneWidthGroup,
   width: number,
 ): void {

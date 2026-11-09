@@ -91,10 +91,9 @@ import {
   visiblePullFiles,
 } from "@/lib/pull-file-views";
 import {
-  clampPullPaneWidth,
-  getPullPaneWidth,
-  PULL_PANE_MAX_WIDTH,
-  setPullPaneWidth,
+  clampPullLeftColumnWidth,
+  getPullLeftColumnWidth,
+  setPullLeftColumnWidth,
 } from "@/lib/pull-pane-widths";
 import { formatDuration, relativeTime } from "@/lib/time";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
@@ -150,9 +149,9 @@ export function PullDetail({
   const [paneOpen, setPaneOpen] = useState(true);
   // Kept while the pane is closed: reopening returns to the view it was closed on.
   const [paneView, setPaneView] = useState<PullPaneView>("commits");
-  const [paneWidths, setPaneWidths] = useState(() => ({
-    diff: getPullPaneWidth("diff"),
-    other: getPullPaneWidth("other"),
+  const [leftColumnWidths, setLeftColumnWidths] = useState(() => ({
+    diff: getPullLeftColumnWidth("diff"),
+    other: getPullLeftColumnWidth("other"),
   }));
   const [diffFullscreen, setDiffFullscreen] = useState(false);
   // The diff's file, null until a diff is first opened. Lifted here so the timeline and the file
@@ -281,8 +280,8 @@ export function PullDetail({
       : null;
   const diffShowing = paneView === "files" && diffOpen && diffFile != null;
   const paneWidthGroup = diffShowing ? "diff" : "other";
-  // Null until this group's width is dragged; the view's default width applies until then.
-  const paneWidth = paneWidths[paneWidthGroup];
+  // Null until this group's width is dragged; the default width applies until then.
+  const leftColumnWidth = leftColumnWidths[paneWidthGroup];
   const timelineReviewGroup = timelineReview
     ? (reviewsQuery.data ?? []).filter(
         (review) => review.head_sha === timelineReview.head_sha,
@@ -319,16 +318,20 @@ export function PullDetail({
         ref={leftColumnRef}
         data-debug-component="PullLeftColumn"
         className={cn(
-          "min-w-0 overflow-y-auto px-4 pt-6 sm:px-6",
-          // A sized column rather than flex-1: flex-1 would add this padding to the left's share.
-          // 3rem is the rail, and the pane's flex-1 takes the same half.
-          paneOpen && diffShowing && paneWidth == null
-            ? "w-[calc((100%-3rem)/2)] shrink-0"
-            : "flex-1",
-          // Capped and centered with the rail beside it, so the two stay together on a wide window.
-          !paneOpen && "box-content max-w-content",
+          "overflow-y-auto px-4 pt-6 sm:px-6",
+          // With the pane open, widening the window goes to the pane (its flex-grow); narrowing
+          // takes the pane down to its minimum first and only then shrinks this column.
+          // With it closed, capped and centered with the rail beside it, so the two stay together.
+          paneOpen
+            ? "min-w-[20rem] flex-[0_1_48rem]"
+            : "box-content min-w-0 max-w-content flex-1",
           workflowRun ? "scroll-pt-16" : "scroll-pt-11",
         )}
+        style={
+          paneOpen && leftColumnWidth != null
+            ? { flexBasis: leftColumnWidth }
+            : undefined
+        }
       >
         <div data-debug-component="PullMainContent">
           {/* The sticky header (#2033) sits at the top of the column, outside its gap-6 stack
@@ -477,25 +480,14 @@ export function PullDetail({
         data-debug-component="PullRightPane"
         aria-label="Right pane"
         hidden={!paneOpen}
-        className={cn(
-          "relative min-h-0 min-w-0 border-l",
-          paneWidth != null
-            ? "shrink-0"
-            : diffShowing
-              ? "flex-1"
-              : "w-[36rem] shrink-0",
-        )}
-        style={
-          paneWidth != null
-            ? { width: paneWidth, maxWidth: PULL_PANE_MAX_WIDTH }
-            : undefined
-        }
+        className="relative min-h-0 min-w-[20rem] flex-[1_0_20rem] border-l"
       >
         <PullPaneResizeHandle
-          width={paneWidth}
+          width={leftColumnWidth}
+          measureLeftColumn={() => leftColumnRef.current?.offsetWidth ?? 0}
           onResize={(width) => {
-            setPullPaneWidth(paneWidthGroup, width);
-            setPaneWidths((widths) => ({
+            setPullLeftColumnWidth(paneWidthGroup, width);
+            setLeftColumnWidths((widths) => ({
               ...widths,
               [paneWidthGroup]: width,
             }));
@@ -590,17 +582,22 @@ const PANE_RAIL_VIEWS: {
 
 function PullPaneResizeHandle({
   width,
+  measureLeftColumn,
   onResize,
 }: {
   width: number | null;
+  // Measured, not read from `width`: the column is at its CSS default until the first drag, and
+  // shrinks below `width` on a narrow window.
+  measureLeftColumn: () => number;
   onResize: (width: number) => void;
 }) {
   const drag = useRef<{ x: number; width: number } | null>(null);
-  // Measured, not read from `width`: until the first drag the pane is at its CSS default.
-  const pane = (handle: HTMLElement) => handle.parentElement as HTMLElement;
   const resize = (handle: HTMLElement, next: number) =>
     onResize(
-      clampPullPaneWidth(next, pane(handle).parentElement?.clientWidth ?? next),
+      clampPullLeftColumnWidth(
+        next,
+        handle.parentElement?.parentElement?.clientWidth ?? next,
+      ),
     );
   return (
     <div
@@ -616,14 +613,14 @@ function PullPaneResizeHandle({
         event.currentTarget.setPointerCapture(event.pointerId);
         drag.current = {
           x: event.clientX,
-          width: pane(event.currentTarget).offsetWidth,
+          width: measureLeftColumn(),
         };
       }}
       onPointerMove={(event) => {
         if (drag.current)
           resize(
             event.currentTarget,
-            drag.current.width + drag.current.x - event.clientX,
+            drag.current.width + event.clientX - drag.current.x,
           );
       }}
       onPointerUp={() => {
@@ -631,12 +628,11 @@ function PullPaneResizeHandle({
       }}
       onKeyDown={(event) => {
         const direction =
-          event.key === "ArrowLeft" ? 1 : event.key === "ArrowRight" ? -1 : 0;
+          event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
         if (direction !== 0)
           resize(
             event.currentTarget,
-            pane(event.currentTarget).offsetWidth +
-              direction * PANE_KEYBOARD_RESIZE_STEP_PX,
+            measureLeftColumn() + direction * PANE_KEYBOARD_RESIZE_STEP_PX,
           );
       }}
     />

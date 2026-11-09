@@ -212,8 +212,8 @@ so sticky offsets work as on other detail pages.
 
 | Column | Width | Scrolls |
 |--------|-------|---------|
-| Left column | `flex-1`; `max-w-content`, centered together with the rail, while the pane is closed | Itself |
-| Right pane | `w-[36rem]`; `flex-1` (equal to the left column) while a diff is showing; the dragged width once there is one; hidden when closed | Each view's body |
+| Left column | `48rem`, or the dragged width once there is one; shrinks only after the pane is at its minimum; `flex-1` and `max-w-content`, centered together with the rail, while the pane is closed | Itself |
+| Right pane | The rest of the window, so widening the window widens only the pane; at least `20rem`; hidden when closed | Each view's body |
 | Icon rail | `w-12`, always shown, directly after the left column while the pane is closed | None |
 
 The rail's top button opens and closes the pane and returns to the last view; the
@@ -223,9 +223,9 @@ that same view, and the back button at the top left returns to the list. The dif
 can expand over the whole screen, where a file list replaces the pane's file picker
 and `Esc` returns to the pane.
 
-The pane's left edge drags to resize it, leaving at least `20rem` to the pane and
-to the left column. The width is remembered per browser, separately for a showing
-diff and for everything else.
+The pane's left edge drags to move the boundary, leaving at least `20rem` to the
+pane and to the left column. The left column's width is remembered per browser,
+separately for a showing diff and for everything else.
 
 #### Shell dividers
 
