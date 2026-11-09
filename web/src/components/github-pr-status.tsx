@@ -1,4 +1,4 @@
-// GitHub PR status section for the PR-detail left column (#850). Shown only when the loophub PR has
+// GitHub PR status view for the PR-detail right pane (#850). Shown only when the loophub PR has
 // a linked GitHub PR (github_pull); the GitHub-side status (review / checks / comment counts /
 // merged) is fetched on demand via `pulls/githubStatus` and cached server-side. Compact by design —
 // a badge row plus a few small labeled rows and a freshness footnote. The section body opens
@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { GithubPrStatus, GithubPull, PullRequest } from "@/api/types";
+import { PullPaneHead } from "@/components/pull-pane-head";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -162,91 +163,93 @@ export function GithubPrStatusSection({
   return (
     <section
       data-debug-component="GithubPrStatusSection"
-      className="flex flex-col gap-3"
+      className="flex h-full min-h-0 flex-col"
     >
-      <h2 className="text-lg font-semibold">GitHub PR</h2>
-      {/* The route out to GitHub (#2091). Outside the status branches below because it is the PR
-          detail's only link to the GitHub PR, so it must stay reachable while the status is loading
-          or failed. The text is the URL's own `owner/repo/pull/N` path rather than a bare `#N`: it
-          says which GitHub repo the PR lives in, which a fork or a mirror makes non-obvious. */}
-      <a
-        href={githubPull.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`GitHub PR #${githubPull.number}`}
-        className="inline-flex w-fit items-center gap-1.5 text-sm hover:underline"
-      >
-        <Github className="size-4 shrink-0" />
-        <span className="min-w-0 break-all">
-          {githubPrPath(githubPull.url)}
-        </span>
-        <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
-      </a>
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading GitHub status…
-        </div>
-      ) : /* Prefer the last-loaded status over the error box: React Query keeps `data` on a failed
-            background refetch, so a transient blip (server restart, focus refetch) shouldn't blank a
-            good panel. The error box shows only when there is no status to fall back to. */
-      status ? (
-        <div className="flex flex-col gap-2">
-          {/* Top line: overall GitHub PR state. */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge tone={STATE[status.state].tone}>
-              {STATE[status.state].label}
-            </Badge>
+      <PullPaneHead title="GitHub PR" />
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {/* The route out to GitHub (#2091). Outside the status branches below because it is the PR
+            detail's only link to the GitHub PR, so it must stay reachable while the status is loading
+            or failed. The text is the URL's own `owner/repo/pull/N` path rather than a bare `#N`: it
+            says which GitHub repo the PR lives in, which a fork or a mirror makes non-obvious. */}
+        <a
+          href={githubPull.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`GitHub PR #${githubPull.number}`}
+          className="inline-flex w-fit items-center gap-1.5 text-sm hover:underline"
+        >
+          <Github className="size-4 shrink-0" />
+          <span className="min-w-0 break-all">
+            {githubPrPath(githubPull.url)}
+          </span>
+          <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+        </a>
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading GitHub status…
           </div>
-          <StatusRow
-            label="Review"
-            badge={
-              status.review_decision
-                ? REVIEW[status.review_decision]
-                : { tone: "unknown", label: "None" }
-            }
-          />
-          <StatusRow label="Checks" badge={CHECKS[status.checks]} />
-          <StatusRow label="Mergeable" badge={MERGEABLE[status.mergeable]} />
-          <div className="flex flex-col gap-2 border-t pt-2">
-            <CommitSyncCounts
-              unpushed={status.unpushed_commits}
-              unpulled={status.unpulled_commits}
+        ) : /* Prefer the last-loaded status over the error box: React Query keeps `data` on a failed
+              background refetch, so a transient blip (server restart, focus refetch) shouldn't blank a
+              good panel. The error box shows only when there is no status to fall back to. */
+        status ? (
+          <div className="flex flex-col gap-2">
+            {/* Top line: overall GitHub PR state. */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge tone={STATE[status.state].tone}>
+                {STATE[status.state].label}
+              </Badge>
+            </div>
+            <StatusRow
+              label="Review"
+              badge={
+                status.review_decision
+                  ? REVIEW[status.review_decision]
+                  : { tone: "unknown", label: "None" }
+              }
             />
+            <StatusRow label="Checks" badge={CHECKS[status.checks]} />
+            <StatusRow label="Mergeable" badge={MERGEABLE[status.mergeable]} />
+            <div className="flex flex-col gap-2 border-t pt-2">
+              <CommitSyncCounts
+                unpushed={status.unpushed_commits}
+                unpulled={status.unpulled_commits}
+              />
+            </div>
+            {/* Two distinct counts, labeled so neither is mistaken for the other (#850 AC): conversation
+                comments vs submitted reviews. */}
+            <p className="text-xs text-muted-foreground">
+              {status.comments} comment{status.comments === 1 ? "" : "s"} ·{" "}
+              {status.reviews} review{status.reviews === 1 ? "" : "s"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {status.updated_at
+                ? `Updated ${relativeTime(status.updated_at)} · `
+                : ""}
+              synced {relativeTime(status.synced_at)}
+            </p>
           </div>
-          {/* Two distinct counts, labeled so neither is mistaken for the other (#850 AC): conversation
-              comments vs submitted reviews. */}
-          <p className="text-xs text-muted-foreground">
-            {status.comments} comment{status.comments === 1 ? "" : "s"} ·{" "}
-            {status.reviews} review{status.reviews === 1 ? "" : "s"}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {status.updated_at
-              ? `Updated ${relativeTime(status.updated_at)} · `
-              : ""}
-            synced {relativeTime(status.synced_at)}
-          </p>
-        </div>
-      ) : (
-        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
-          Failed to load GitHub status.
-        </div>
-      )}
-      {/* Outside the status branches, like the link above: whether the local head is ahead of what
-          was pushed is answered by the PR itself, so a slow or failed status must not hide the push
-          (#2516); and unlinking is what you reach for when the link is wrong or its GitHub PR is
-          gone, which is exactly when the status fails to load. */}
-      <PushGithubPrAction
-        owner={owner}
-        repo={repo}
-        pull={pull}
-        githubPull={githubPull}
-      />
-      <UnlinkGithubPrAction
-        owner={owner}
-        repo={repo}
-        number={pull.number}
-        githubPull={githubPull}
-      />
+        ) : (
+          <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+            Failed to load GitHub status.
+          </div>
+        )}
+        {/* Outside the status branches, like the link above: whether the local head is ahead of what
+            was pushed is answered by the PR itself, so a slow or failed status must not hide the push
+            (#2516); and unlinking is what you reach for when the link is wrong or its GitHub PR is
+            gone, which is exactly when the status fails to load. */}
+        <PushGithubPrAction
+          owner={owner}
+          repo={repo}
+          pull={pull}
+          githubPull={githubPull}
+        />
+        <UnlinkGithubPrAction
+          owner={owner}
+          repo={repo}
+          number={pull.number}
+          githubPull={githubPull}
+        />
+      </div>
     </section>
   );
 }

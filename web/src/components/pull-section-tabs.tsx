@@ -8,7 +8,7 @@ import { useScrolledPast } from "@/components/detail-title";
 import { cn } from "@/lib/utils";
 
 /** What the PR page's right pane can show. */
-export type PullPaneView = "commits" | "files" | "evidence";
+export type PullPaneView = "commits" | "files" | "evidence" | "github";
 
 /**
  * The left column's anchored sections, in page order. `id` is the element id the section renders

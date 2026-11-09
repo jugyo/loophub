@@ -273,6 +273,15 @@ export function PullDetail({
   }
 
   const pull = pullQuery.data;
+  // Unlinking leaves nothing for this view to show.
+  if (paneView === "github" && !pull.github_pull) setPaneView("commits");
+  const githubStatusLoad: GithubStatusLoad | null = !pull.github_pull
+    ? null
+    : githubStatusQuery.isLoading
+      ? "loading"
+      : githubStatusQuery.data
+        ? "loaded"
+        : "failed";
   const files = filesQuery.data;
   const diffFile =
     files && openFilename
@@ -381,16 +390,6 @@ export function PullDetail({
               repo={repo}
               pull={pull}
               reviews={reviewsQuery.data ?? []}
-            />
-            {/* GitHub PR status (#850) and the actions on the link — push (#2516), unlink (#2384).
-              Renders nothing for a PR with no linked GitHub PR; fetched on demand, with loading/error
-              inside the section. */}
-            <GithubPrStatusSection
-              owner={owner}
-              repo={repo}
-              pull={pull}
-              status={githubStatusQuery.data}
-              isLoading={githubStatusQuery.isLoading}
             />
 
             {timelineCommit ? (
@@ -550,11 +549,21 @@ export function PullDetail({
         <div hidden={paneView !== "evidence"} className="h-full">
           <PullEvidence owner={owner} repo={repo} pull={pull} />
         </div>
+        <div hidden={paneView !== "github"} className="h-full">
+          <GithubPrStatusSection
+            owner={owner}
+            repo={repo}
+            pull={pull}
+            status={githubStatusQuery.data}
+            isLoading={githubStatusQuery.isLoading}
+          />
+        </div>
       </aside>
 
       <PullPaneRail
         paneOpen={paneOpen}
         paneView={paneView}
+        githubStatusLoad={githubStatusLoad}
         onTogglePane={() => setPaneOpen((open) => !open)}
         onSelectView={selectRailView}
       />
@@ -572,7 +581,20 @@ const PANE_RAIL_VIEWS: {
   { view: "files", label: "Files changed", icon: File },
   { view: "commits", label: "Commits", icon: GitCommitHorizontal },
   { view: "evidence", label: "Evidence", icon: ClipboardCheck },
+  { view: "github", label: "GitHub PR", icon: Github },
 ];
+
+type GithubStatusLoad = "loaded" | "loading" | "failed";
+
+// The rail's summary of a view whose details stay hidden until its icon is pressed.
+const GITHUB_STATUS_DOT: Record<
+  GithubStatusLoad,
+  { label: string; className: string }
+> = {
+  loaded: { label: "Loaded", className: "bg-green-500" },
+  loading: { label: "Loading", className: "bg-muted-foreground" },
+  failed: { label: "Failed", className: "bg-destructive" },
+};
 
 function PullPaneResizeHandle({
   width,
@@ -638,11 +660,14 @@ function PullPaneResizeHandle({
 function PullPaneRail({
   paneOpen,
   paneView,
+  githubStatusLoad,
   onTogglePane,
   onSelectView,
 }: {
   paneOpen: boolean;
   paneView: PullPaneView;
+  // Null when the PR has no linked GitHub PR, which also hides the view's icon.
+  githubStatusLoad: GithubStatusLoad | null;
   onTogglePane: () => void;
   onSelectView: (view: PullPaneView) => void;
 }) {
@@ -670,7 +695,12 @@ function PullPaneRail({
       </Button>
       <hr className="my-1 w-6 border-border" />
       {PANE_RAIL_VIEWS.map(({ view, label, icon: Icon }) => {
+        if (view === "github" && !githubStatusLoad) return null;
         const selected = paneOpen && paneView === view;
+        const dot =
+          view === "github" && githubStatusLoad
+            ? GITHUB_STATUS_DOT[githubStatusLoad]
+            : null;
         return (
           <Button
             key={view}
@@ -679,9 +709,9 @@ function PullPaneRail({
             size="icon"
             aria-pressed={selected}
             aria-label={label}
-            title={label}
+            title={dot ? `${label}: ${dot.label}` : label}
             className={cn(
-              "size-8",
+              "relative size-8",
               selected
                 ? "bg-primary-subtle text-primary hover:bg-primary-subtle hover:text-primary"
                 : "text-muted-foreground",
@@ -689,6 +719,15 @@ function PullPaneRail({
             onClick={() => onSelectView(view)}
           >
             <Icon className="size-[18px]" />
+            {dot ? (
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute right-0.5 top-0.5 size-2 rounded-full border-[1.5px] border-background",
+                  dot.className,
+                )}
+              />
+            ) : null}
           </Button>
         );
       })}

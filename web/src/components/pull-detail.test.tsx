@@ -3949,6 +3949,16 @@ function renderDetailWithPull(
   };
 }
 
+// The GitHub PR view lives in the right pane, behind its rail icon.
+async function openGithubPrView() {
+  const rail = await screen.findByRole("navigation", {
+    name: "Right pane views",
+  });
+  fireEvent.click(
+    await within(rail).findByRole("button", { name: "GitHub PR" }),
+  );
+}
+
 function linkedGithubPull(pushedSha: string | null) {
   return {
     number: 7,
@@ -4015,12 +4025,13 @@ describe("PullDetail — GitHub export action (#406)", () => {
     );
   });
 
-  it("drops the Create action once exported and links to GitHub from the sidebar section (#2035)", async () => {
+  it("drops the Create action once exported and links to GitHub from the GitHub PR view (#2035)", async () => {
     renderDetailWithPull({
       merge_mode: "github_pr",
       github_pull: linkedGithubPull(null),
     });
-    // The only route to the GitHub PR is the link in the sidebar's GitHub PR section body (#2091) —
+    await openGithubPrView();
+    // The only route to the GitHub PR is the link in the GitHub PR view's body (#2091) —
     // the action row has no "View PR on GitHub" button anymore.
     const link = await screen.findByRole("link", { name: "me/proj/pull/7" });
     expect(link.getAttribute("href")).toBe("https://github.com/me/proj/pull/7");
@@ -4075,7 +4086,8 @@ describe("PullDetail — GitHub export action (#406)", () => {
       github_pull: linkedGithubPull(null),
       github_pr_export_started_at: new Date().toISOString(),
     });
-    // github_pull present means the export landed: the sidebar section offers the push (#2516) and
+    await openGithubPrView();
+    // github_pull present means the export landed: the GitHub PR view offers the push (#2516) and
     // the action row has no in-progress Create button left over.
     await screen.findByRole("button", { name: /Push to GitHub/i });
     expect(screen.queryByRole("button", { name: /Creating…/i })).toBeNull();
@@ -4105,6 +4117,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
     await act(async () => {
       await queryClient.invalidateQueries();
     });
+    await openGithubPrView();
     await screen.findByRole("button", { name: /Push to GitHub/i });
 
     // The operator unlinks it to export again. The server reports no outstanding export.
@@ -4266,13 +4279,133 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(screen.queryByRole("button", { name: /Creating…/i })).toBeNull();
   });
 
-  it("shows the GitHub PR status in the left column", async () => {
-    renderDetailWithPull({ github_pull: linkedGithubPull(null) });
+  describe("GitHub PR view", () => {
+    const railButton = (name: string) =>
+      within(
+        screen.getByRole("navigation", { name: "Right pane views" }),
+      ).getByRole("button", { name });
+    const githubIcon = () => railButton("GitHub PR");
+    const statusDot = () =>
+      githubIcon().querySelector<HTMLElement>('[aria-hidden="true"].absolute');
+    const pendingStatus = () => new Promise(() => {});
+    const failedStatus = () => {
+      throw new Error("GitHub is down");
+    };
 
-    const heading = await screen.findByRole("heading", { name: "GitHub PR" });
-    expect(
-      heading.closest('[data-debug-component="PullLeftColumn"]'),
-    ).not.toBeNull();
+    it("moves the section out of the left column into the right pane", async () => {
+      const { container } = renderDetailWithPull({
+        github_pull: linkedGithubPull(null),
+      });
+      await screen.findByText("ui2: PR detail");
+      await screen.findByRole("button", { name: "GitHub PR" });
+      expect(screen.queryByRole("heading", { name: "GitHub PR" })).toBeNull();
+      expect(
+        container
+          .querySelector('[data-debug-component="GithubPrStatusSection"]')
+          ?.closest('[data-debug-component="PullRightPane"]'),
+      ).not.toBeNull();
+
+      await openGithubPrView();
+      await screen.findByRole("heading", { name: "GitHub PR" });
+      expect(githubIcon().getAttribute("aria-pressed")).toBe("true");
+      expect(railButton("Commits").getAttribute("aria-pressed")).toBe("false");
+    });
+
+    it("closes the pane from the selected icon, like the other views", async () => {
+      const { container } = renderDetailWithPull({
+        github_pull: linkedGithubPull(null),
+      });
+      await openGithubPrView();
+      fireEvent.click(githubIcon());
+      expect(
+        container.querySelector<HTMLElement>(
+          '[data-debug-component="PullRightPane"]',
+        )?.hidden,
+      ).toBe(true);
+      expect(githubIcon().getAttribute("aria-pressed")).toBe("false");
+    });
+
+    it("has no icon or view without a linked GitHub PR", async () => {
+      const { container } = renderDetailWithPull({ github_pull: null });
+      await screen.findByText("ui2: PR detail");
+      expect(
+        within(
+          screen.getByRole("navigation", { name: "Right pane views" }),
+        ).queryByRole("button", { name: "GitHub PR" }),
+      ).toBeNull();
+      expect(
+        container.querySelector(
+          '[data-debug-component="GithubPrStatusSection"]',
+        ),
+      ).toBeNull();
+    });
+
+    it("marks a loaded status on the icon", async () => {
+      renderDetailWithPull({ github_pull: linkedGithubPull(null) });
+      await screen.findByRole("button", { name: "GitHub PR" });
+      await waitFor(() => expect(githubIcon().title).toBe("GitHub PR: Loaded"));
+      expect(statusDot()?.className).toContain("bg-green-500");
+    });
+
+    it.each([
+      ["Loading", pendingStatus, "bg-muted-foreground"],
+      ["Failed", failedStatus, "bg-destructive"],
+    ])("marks a %s status on the icon and keeps the view's actions usable", async (label, handler, dotClass) => {
+      renderDetailWithPull(
+        { github_pull: linkedGithubPull("previous-head") },
+        { "pulls/githubStatus": handler },
+      );
+      await screen.findByRole("button", { name: "GitHub PR" });
+      await waitFor(() =>
+        expect(githubIcon().title).toBe(`GitHub PR: ${label}`),
+      );
+      expect(statusDot()?.className).toContain(dotClass);
+
+      await openGithubPrView();
+      expect(
+        screen
+          .getByRole("link", { name: "me/proj/pull/7" })
+          .getAttribute("href"),
+      ).toBe("https://github.com/me/proj/pull/7");
+      expect(
+        screen
+          .getByRole("button", { name: /Push to GitHub/i })
+          .hasAttribute("disabled"),
+      ).toBe(false);
+      expect(
+        screen
+          .getByRole("button", { name: /Unlink GitHub PR/i })
+          .hasAttribute("disabled"),
+      ).toBe(false);
+    });
+
+    it("returns to Commits when the open view's GitHub PR is unlinked", async () => {
+      let override: Partial<PullRequest> = {
+        github_pull: linkedGithubPull(null),
+      };
+      renderDetailWithPull(() => override, {
+        "pulls/unlinkGithubPull": () => {
+          override = { github_pull: null };
+          return { unlinked: true, github_number: 7 };
+        },
+      });
+      await openGithubPrView();
+      fireEvent.click(
+        await screen.findByRole("button", { name: /Unlink GitHub PR/i }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.click(within(dialog).getByRole("button", { name: /^Unlink$/ }));
+
+      await waitFor(() =>
+        expect(railButton("Commits").getAttribute("aria-pressed")).toBe("true"),
+      );
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      expect(
+        within(
+          screen.getByRole("navigation", { name: "Right pane views" }),
+        ).queryByRole("button", { name: "GitHub PR" }),
+      ).toBeNull();
+    });
   });
 
   it.each([
@@ -4341,15 +4474,16 @@ describe("PullDetail — GitHub export action (#406)", () => {
     ).toBeNull();
   });
 
-  // #2516: pushing acts on the linked GitHub PR, so the controls live with that link in the sidebar
-  // section — the action row keeps only the LoopHub-side write actions. The push behaviour itself is
+  // #2516: pushing acts on the linked GitHub PR, so the controls live with that link in the GitHub
+  // PR view — the action row keeps only the LoopHub-side write actions. The push behaviour itself is
   // covered in github-pr-status.test.tsx.
-  it("renders the push controls in the sidebar's GitHub PR section, not the action row (#2516)", async () => {
+  it("renders the push controls in the GitHub PR view, not the action row (#2516)", async () => {
     const { container } = renderDetailWithPull({
       merge_mode: "github_pr",
       github_pull: linkedGithubPull("previous-head"),
     });
 
+    await openGithubPrView();
     const push = await screen.findByRole("button", { name: /Push to GitHub/i });
     expect(
       push.closest('[data-debug-component="GithubPrStatusSection"]'),

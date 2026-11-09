@@ -217,9 +217,10 @@ so sticky offsets work as on other detail pages.
 | Icon rail | `w-12`, always shown, directly after the left column while the pane is closed | None |
 
 The rail's top button opens and closes the pane and returns to the last view; the
-icons below it (Commits, Files changed, Evidence) switch views, and the
-selected icon closes the pane. Choosing a file in Files changed opens its diff in
-that same view, and the back button at the top left returns to the list. The diff
+icons below it (Commits, Files changed, Evidence, and GitHub PR when one is
+linked) switch views, and the selected icon closes the pane. A dot on the GitHub
+PR icon shows whether its status is loaded, loading or failed. Choosing a file
+in Files changed opens its diff in that same view, and the back button at the top left returns to the list. The diff
 can expand over the whole screen, where a file list replaces the pane's file picker
 and `Esc` returns to the pane.
 
