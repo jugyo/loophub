@@ -1463,6 +1463,7 @@ test("a comment for the parent and a child reaches the child once, after the par
       run: input.run.id,
       target: "executor",
       text: '<loophub from="worker">address PR comment 19</loophub>',
+      multiline: true,
     });
   } finally {
     next.mockRestore();

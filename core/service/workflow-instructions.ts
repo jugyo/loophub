@@ -262,7 +262,12 @@ async function deliverCommentToAgents(
   run: S.WorkflowRunRow,
   action: WorkflowCommentDeliveryAction,
 ): Promise<string[]> {
-  const text = `<loophub from="worker">${workflowCommentInstruction(action)}</loophub>`;
+  const instruction = `<loophub from="worker">${workflowCommentInstruction(action)}</loophub>`;
+  const body =
+    action.delivery_reason === "pr_comment"
+      ? S.getComment(action.comment_id)?.body
+      : undefined;
+  const text = body ? `${instruction}\n\n${body}` : instruction;
   const targets = action.targets.filter((target) => target !== "orchestrator");
   // A reaction toggles, so exactly one side may set it: the parent when it is addressed too.
   const reacts = targets.length === action.targets.length;
@@ -272,7 +277,7 @@ async function deliverCommentToAgents(
       if (reacts && index === 0) await reactToComment(repo, run, action);
       await workflowRuns.deliver(
         repo.full_name,
-        { run: run.id, target, text },
+        { run: run.id, target, text, multiline: true },
         run.parent_session_id,
       );
     } catch (error) {

@@ -80,7 +80,7 @@ afterAll(() => {
   rmSync(BIN_PATH, { recursive: true, force: true });
 });
 
-test("deliver activates the latest Execute session and sends one sanitized line to its pane", async () => {
+test("deliver activates the latest Execute session and sends the sanitized text to its pane", async () => {
   const repo = S.createRepo("me/workflow-delivery", REPO_PATH);
   const issue = S.createIssue(repo.id, "issue", "Deliver", "body", "me");
   const workflow = S.createWorkflow({
@@ -130,8 +130,9 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     repo.full_name,
     {
       run: started.run.id,
-      text: "orchestrator: address PR comment 19",
+      text: "orchestrator: address PR comment 19\n\nline two",
       target: "verifier",
+      multiline: true,
     },
     parent,
   );
@@ -139,7 +140,7 @@ test("deliver activates the latest Execute session and sends one sanitized line 
     run: started.run.id,
     queued: true,
     target: "verifier",
-    text: "orchestrator: address PR comment 19",
+    text: "orchestrator: address PR comment 19\n\nline two",
   });
   if (!("queued" in queued)) throw new Error("delivery was not queued");
   const queuedEvent = S.eventsForWorkflowRun(repo.id, started.run.id).findLast(
@@ -148,15 +149,15 @@ test("deliver activates the latest Execute session and sends one sanitized line 
       JSON.parse(event.payload).delivery_id === queued.delivery_id,
   );
   expect(queuedEvent).toBeDefined();
-  expect(
-    await svc.workflowRuns.next(repo.full_name, {
-      run: started.run.id,
-      event: queuedEvent!.id,
-    }),
-  ).toMatchObject({
+  const queuedInstruction = await svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
+    event: queuedEvent!.id,
+  });
+  expect(queuedInstruction).toMatchObject({
     action: "launch_verify",
     delivery_id: queued.delivery_id,
   });
+  expect(JSON.stringify(queuedInstruction)).not.toContain("line two");
   svc.workflowRuns.confirmStepLaunch(
     repo.full_name,
     {
@@ -221,7 +222,6 @@ test("deliver activates the latest Execute session and sends one sanitized line 
       repo.full_name,
       {
         run: started.run.id,
-        text: queued.text,
         target: queued.target,
         deliveryId: queued.delivery_id,
       },
@@ -230,6 +230,7 @@ test("deliver activates the latest Execute session and sends one sanitized line 
   ).resolves.toMatchObject({
     agent_name: `verifier #${started.run.id}-2`,
     session_id: verifySession,
+    text: "orchestrator: address PR comment 19\n\nline two",
   });
   expect(
     S.eventsForWorkflowRun(repo.id, started.run.id).filter(
@@ -359,7 +360,6 @@ test("deliver activates the latest Execute session and sends one sanitized line 
       repo.full_name,
       {
         run: started.run.id,
-        text: queuedAfterReview.text,
         target: queuedAfterReview.target,
         deliveryId: queuedAfterReview.delivery_id,
       },
@@ -641,13 +641,16 @@ test("the worker hands comments straight to their agents and leaves failures to 
   const comment = svc.comments.createHumanForPull(
     repo.full_name,
     pr,
-    "Please rename it.",
+    "Please rename it.\n\n  - keep the indent",
   );
   await drain();
   const commentText = `<loophub from="worker">address PR comment ${comment.id}</loophub>`;
   expect(herdrLines().filter((line) => line.includes(commentText))).toEqual([
     expect.stringContaining("w2:p1"),
   ]);
+  expect(readFileSync(HERDR_LOG, "utf8")).toContain(
+    `${commentText}\n\nPlease rename it.\n\n  - keep the indent`,
+  );
   const detail = await svc.pulls.get(repo.full_name, pr);
   expect(
     detail.comment_list?.find((row) => row.id === comment.id)?.reactions,
@@ -748,14 +751,16 @@ test("the worker hands comments straight to their agents and leaves failures to 
   );
   expect(JSON.parse(failure?.payload ?? "{}")).toMatchObject({
     target: "executor",
-    text: `<loophub from="worker">address PR comment ${undelivered.id}</loophub>`,
+    text: `<loophub from="worker">address PR comment ${undelivered.id}</loophub>\n\nThis one cannot arrive.`,
   });
-  expect(
-    await svc.workflowRuns.next(repo.full_name, {
-      run: runId,
-      event: failure!.id,
-    }),
-  ).toMatchObject({ action: "wait" });
+  const failureInstruction = await svc.workflowRuns.next(repo.full_name, {
+    run: runId,
+    event: failure!.id,
+  });
+  expect(failureInstruction).toMatchObject({ action: "wait" });
+  expect(JSON.stringify(failureInstruction)).not.toContain(
+    "This one cannot arrive.",
+  );
   expect(readFileSync(HERDR_LOG, "utf8")).not.toContain("launch-step");
   expect(
     S.eventsForWorkflowRun(repo.id, runId).filter(

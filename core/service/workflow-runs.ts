@@ -106,6 +106,7 @@ import {
 import { workflowMessages } from "../workflow/messages.ts";
 import {
   inlineText,
+  multilineText,
   parentUserPrompt,
   stepContractForLaunch,
   truncateInlineReason,
@@ -2134,6 +2135,19 @@ function recordWorkflowStepLaunchFailure(
   });
 }
 
+// The result goes to the parent's pane. A delivery's text can carry a whole PR comment, and the
+// parent only needs its id: the text is read back from the projection when it is sent.
+function withoutDeliveryText(event: LoopEvent | null): LoopEvent | null {
+  if (
+    event?.type !== "workflow_run.delivery_queued" &&
+    event?.type !== "workflow_run.delivery_failed"
+  ) {
+    return event;
+  }
+  const { text: _text, ...payload } = event.payload as Record<string, unknown>;
+  return { ...event, payload };
+}
+
 export const workflowRuns = {
   // The repo a run belongs to, so a run-scoped command can default `--repo`. An unknown run returns
   // null rather than raising: the caller still has its own repo resolution, and the command it is
@@ -2571,27 +2585,32 @@ export const workflowRuns = {
     name: string,
     input: {
       run: number;
-      text: string;
+      text?: string;
       target?: string;
       deliveryId?: string;
+      multiline?: boolean;
     },
     sessionId?: string | null,
   ): Promise<WorkflowDeliverResult> {
     const { repo, run } = lifecycleRun(name, input.run, sessionId);
     assertAutomaticProgressAllowed(run);
-    const text = inlineText(input.text);
-    if (!text) {
-      throw new ServiceError(422, "workflow deliver requires non-empty text");
-    }
     const targetRole = workflowCommentTarget(input.target);
     const projection = workflowRunEventProjection(run);
-    if (input.deliveryId) {
-      const pending = projection.pendingDeliveries.find(
-        (delivery) => delivery.id === input.deliveryId,
-      );
-      if (!pending || pending.target !== targetRole || pending.text !== text) {
-        throw new ServiceError(409, "workflow delivery is no longer pending");
-      }
+    const pending = input.deliveryId
+      ? projection.pendingDeliveries.find(
+          (delivery) => delivery.id === input.deliveryId,
+        )
+      : undefined;
+    if (input.deliveryId && (!pending || pending.target !== targetRole)) {
+      throw new ServiceError(409, "workflow delivery is no longer pending");
+    }
+    const inputText = input.text ?? "";
+    // A queued delivery is sent as stored, so its body never travels through the parent's command.
+    const text =
+      pending?.text ??
+      (input.multiline ? multilineText(inputText) : inlineText(inputText));
+    if (!text) {
+      throw new ServiceError(422, "workflow deliver requires non-empty text");
     }
     const prIssue = issueOr404(repo, run.pr_number, "pull");
     const targetSessionId = workflowTargetSessionId(
@@ -4014,7 +4033,7 @@ export const workflowRuns = {
         sessionId: run.parent_session_id ?? undefined,
       }),
       observed,
-      event: wakeEvent,
+      event: withoutDeliveryText(wakeEvent),
     };
   },
 

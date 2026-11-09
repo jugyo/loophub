@@ -1,6 +1,7 @@
 import { expect, test } from "#loophub-test";
 import {
   inlineText,
+  multilineText,
   parentUserPrompt,
   stepContractForLaunch,
   workflowStepPrompt,
@@ -105,6 +106,12 @@ test("inlineText flattens control and bidi characters, then collapses whitespace
   expect(inlineText("  a\n\tb  ")).toBe("a b");
   expect(inlineText("a‮b⁦c‎d")).toBe("a b c d");
   expect(inlineText("\n\n")).toBe("");
+});
+
+test("multilineText keeps line breaks and inner indentation, trims the ends, and replaces controls with spaces", () => {
+  expect(multilineText("  a\r\n\n\t  b\u001b[0m\u202Ec  ")).toBe(
+    "a\n\n\t  b [0m c",
+  );
 });
 
 test("a step contract is handed to the launch as authored", () => {

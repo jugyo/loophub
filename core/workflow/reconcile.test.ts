@@ -656,7 +656,6 @@ describe("reconcileWorkflow", () => {
       reason: "A queued comment instruction can now reach verifier.",
       delivery_id: "delivery-1",
       target: "verifier",
-      text: "orchestrator: address PR comment 19",
     });
   });
 
@@ -975,7 +974,6 @@ describe("workflowActionPlan", () => {
         reason: "ready",
         delivery_id: "delivery-1",
         target: "verifier",
-        text: "orchestrator: address PR comment 19",
       }).commands[0]?.args,
     ).toEqual([
       "workflow",
@@ -986,8 +984,6 @@ describe("workflowActionPlan", () => {
       "delivery-1",
       "--target",
       "verifier",
-      "--text",
-      "orchestrator: address PR comment 19",
     ]);
   });
 

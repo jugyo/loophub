@@ -46,7 +46,7 @@ export function usage(): void {
   lh workflow parent-ready <run> [--repo owner/name] [--json]   # (parent) declare the agent is up and reads its pane; instructions are held until this arrives
   lh workflow turn done --run <id> [--repo owner/name]   # (Execute child) declare the turn done — payload-less; the parent observes HEAD/review state
   lh workflow escalate --reason <text|@file|-> --run <id> [--option <text>]... [--repo owner/name]   # (Execute child) ask the human directly: post the escalation comment with choices on the PR and wait for the answer
-  lh workflow deliver --run <id> --text <single-line-instruction|@file|-> [--target executor|verifier|orchestrator] [--repo owner/name] [--json]
+  lh workflow deliver --run <id> (--text <single-line-instruction|@file|-> | --delivery-id <id>) [--target executor|verifier|orchestrator] [--repo owner/name] [--json]
   lh workflow escalate-human --reason <text|@file|-> --run <id> [--option <text>]... [--repo owner/name]   # record an idempotent PR comment with choices the human answers from
   lh workflow instruction <run> [--repo owner/name] (--event <id> --requires-changes true|false | --note <text|->) [--json]      # submit a parent input — a GitHub-reference verdict or a direct human instruction — and return the instruction it produces, without changing run state
   lh workflow effect begin|complete --repo owner/name --run <id> --event <id> --effect <key> [--json]   # durable idempotency receipt for a non-transactional parent side effect

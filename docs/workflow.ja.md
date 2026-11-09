@@ -348,10 +348,10 @@ conflict、GitHub feedback、close / merge は、通知専用の run-scoped even
 他の agent や人間からの PR comment は instruction として配送する。
 PR comment と diff comment は親を介さず、worker がこの wake で対象 comment に 👀 reaction を付け、
 `<loophub from="worker">address PR comment <c></loophub>` / `<loophub from="worker">address diff feedback thread <t> comment <c></loophub>` を
-宛先の pane へ直接配送する。配送文は対象の ID だけを含み、コメント本文は含めない。宛先は mention で決まり、`@executor` と mention なしは Execute、`@verifier` は
+宛先の pane へ直接配送する。PR comment の配送文は、このタグの後に空行を挟んでコメント本文の全文を改行を保ったまま続ける。diff feedback の配送文は対象の ID だけを含む。宛先は mention で決まり、`@executor` と mention なしは Execute、`@verifier` は
 Verify である。`@loophub` / `@lh` を含むコメントだけは親へ instruction を注入し、親が reaction と配送を行う。
 他の宛先と併記された場合、親への注入が成功してから worker が親以外へ届け、reaction は親が付ける。宛先の session がまだ無い場合は
-`workflow_run.delivery_queued` で待ち行列に入り、親が子の起動とともに届ける。
+`workflow_run.delivery_queued` で待ち行列に入り、親が子の起動とともに届ける。親の instruction には delivery の ID だけを載せ、本文は渡さない。
 Execute は `lh pr feedback pending <pr> --run <run>` で未対応の会話と anchor 周辺の diff を読む。
 source の修正が必要なら、対象 thread へ認識と対応意思を返信してから編集する。
 worker は配送前に event の receipt を claim するので、1 コメントにつき配送は 1 回で、worker を再起動しても

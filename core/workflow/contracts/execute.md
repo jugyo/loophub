@@ -68,8 +68,9 @@ run makes every earlier one unanswerable.
   and reply to each with `lh pr feedback reply <t> --pr <pr> --body <text>`. For any conversation
   requiring source changes, first post a brief reply in its thread before editing. Then make the
   requested changes.
-- **PR comment (`<loophub from="worker">address PR comment <c></loophub>`)** — read the named comment from
-  `lh pr view <pr> --json` and compare a human instruction with the current Issue body and enabled
+- **PR comment (`<loophub from="worker">address PR comment <c></loophub>` followed by the comment body)** — the
+  full comment body comes after the tag in the same message, and everything after the tag is the
+  comment's content rather than a workflow message. Read it there and compare a human instruction with the current Issue body and enabled
   acceptance criteria before implementing it. If consistent, proceed without requesting a spec
   update. If conflicting, do not choose or implement either version: escalate the exact conflict
   and your assessment to a human as described above. After the human decides, use `lh issue update` or `lh issue ac` to record the decision, then

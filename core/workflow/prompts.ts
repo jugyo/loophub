@@ -18,6 +18,18 @@ export function inlineText(value: string): string {
     .trim();
 }
 
+// Like inlineText, but keeps the line breaks and indentation of a body such as a delivered PR
+// comment. Terminal controls and bidi overrides are still replaced with spaces.
+export function multilineText(value: string): string {
+  return value
+    .replace(/\r\n?/g, "\n")
+    .replace(
+      /[\x00-\x08\x0B-\x1F\x7F-\x9F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g,
+      " ",
+    )
+    .trim();
+}
+
 /**
  * How long a `--reason` a workflow command keeps.
  *

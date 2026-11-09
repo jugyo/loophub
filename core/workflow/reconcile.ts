@@ -149,7 +149,6 @@ export type WorkflowNextAction =
       reason: string;
       delivery_id: string;
       target: WorkflowCommentTarget;
-      text: string;
     }
   | { action: "wait"; reason: string }
   | {
@@ -425,8 +424,6 @@ function actionPlan(
           action.delivery_id,
           "--target",
           action.target,
-          "--text",
-          action.text,
         ),
       ]);
     case "wait":
@@ -583,7 +580,6 @@ export function reconcileWorkflow(
       reason: `A queued comment instruction can now reach ${input.wake.delivery.target}.`,
       delivery_id: input.wake.delivery.id,
       target: input.wake.delivery.target,
-      text: input.wake.delivery.text,
     };
   }
 
@@ -594,7 +590,6 @@ export function reconcileWorkflow(
         reason: `A queued comment instruction can now reach ${input.wake.delivery.target}.`,
         delivery_id: input.wake.delivery.id,
         target: input.wake.delivery.target,
-        text: input.wake.delivery.text,
       };
     }
     if (input.wake.delivery.target === "verifier") {

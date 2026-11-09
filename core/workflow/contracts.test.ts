@@ -195,6 +195,7 @@ test("human PR instructions reconcile conflicts into the Issue before implementa
     expect(execute).toMatch(
       /compare a human instruction with the current Issue body and enabled\s+acceptance criteria|人間の指示を実装する前に、現在の Issue 本文と enabled な acceptance criteria を照合/u,
     );
+    expect(execute).not.toContain("lh pr view <pr> --json");
     expect(execute).toMatch(
       /If consistent, proceed without requesting a spec\s+update|矛盾しなければ仕様更新を求めず/u,
     );

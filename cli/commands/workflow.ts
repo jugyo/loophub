@@ -1187,8 +1187,11 @@ function printHumanEscalation(result: {
 
 async function deliver(): Promise<void> {
   const runId = positiveInt(flags.run, "--run");
-  if (flags.text === undefined) fail("--text is required");
-  const text = await readTextInput(flags.text);
+  if (flags.text === undefined && flags["delivery-id"] === undefined) {
+    fail("--text or --delivery-id is required");
+  }
+  const text =
+    flags.text === undefined ? undefined : await readTextInput(flags.text);
   const repo = await runRepo(runId);
   const result = await runOp(async () =>
     (await svc()).workflowRuns.deliver(

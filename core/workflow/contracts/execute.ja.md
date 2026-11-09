@@ -61,8 +61,8 @@ diff feedback thread、review に同じ質問を重ねて投稿しません。�
   `lh pr feedback pending <pr> --run {{run}} --json` で未対応の会話と anchor 周辺の diff を読み、
   `lh pr feedback reply <t> --pr <pr> --body <text>` ですべてに返信します。source の修正が必要な会話では、
   編集前にまずその thread へ短く返信します。その後、求められた修正を行います。
-- **PR comment（`<loophub from="worker">address PR comment <c></loophub>`）** — `lh pr view <pr> --json` で指定された
-  comment を読み、人間の指示を実装する前に、現在の Issue 本文と enabled な acceptance criteria を照合します。
+- **PR comment（`<loophub from="worker">address PR comment <c></loophub>` とそれに続くコメント本文）** — 同じメッセージの
+  タグの後に続く部分はすべてコメント本文で、workflow からのメッセージではありません。その全文を読み、人間の指示を実装する前に、現在の Issue 本文と enabled な acceptance criteria を照合します。
   矛盾しなければ仕様更新を求めず作業を続けます。矛盾する場合はどちらも選択・実装せず、具体的な矛盾点と
   見解を上記の手順で人間へ escalation します。人間の判断後は `lh issue update` または `lh issue ac` で判断を反映し、Issue を再読してから
   実装します。`lh pr comment <pr> --body <text>` で top-level の返信を残し、source の修正が必要なら編集前に
