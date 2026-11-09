@@ -2167,15 +2167,60 @@ describe("PullDetail", () => {
       expect(pane(container).hidden).toBe(true);
       expect(rail()).toBeTruthy();
       expect(
-        container.querySelector('[data-debug-component="PullMainContent"]')
+        container.querySelector('[data-debug-component="PullLeftColumn"]')
           ?.className,
       ).toContain("max-w-content");
+      expect(
+        container.querySelector<HTMLElement>(
+          '[data-debug-component="PullDetail"]',
+        )?.className,
+      ).toContain("justify-center");
 
       fireEvent.click(railButton("Open right pane"));
       expect(pane(container).hidden).toBe(false);
       expect(
         screen.getByRole("heading", { name: /Files changed \(/ }),
       ).toBeTruthy();
+    });
+
+    it("resizes by dragging its left edge, remembering Diff and the other views apart", async () => {
+      const { container } = renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      const root = container.querySelector<HTMLElement>(
+        '[data-debug-component="PullDetail"]',
+      )!;
+      Object.defineProperty(root, "clientWidth", { value: 1400 });
+      let measuredWidth = 576;
+      Object.defineProperty(pane(container), "offsetWidth", {
+        get: () => measuredWidth,
+      });
+      const handle = screen.getByRole("separator", {
+        name: "Resize right pane",
+      });
+      handle.setPointerCapture = () => {};
+      expect(pane(container).style.width).toBe("");
+      expect(pane(container).className).toContain("w-[36rem]");
+
+      fireEvent.pointerDown(handle, { button: 0, clientX: 800 });
+      fireEvent.pointerMove(handle, { clientX: 700 });
+      fireEvent.pointerUp(handle);
+      expect(pane(container).style.width).toBe("676px");
+      expect(localStorage.getItem("lh_pull_pane_width")).toBe("676");
+
+      measuredWidth = 676;
+      // Past the limit, the left column keeps its share.
+      fireEvent.pointerDown(handle, { button: 0, clientX: 700 });
+      fireEvent.pointerMove(handle, { clientX: -5000 });
+      fireEvent.pointerUp(handle);
+      expect(pane(container).style.width).toBe("1032px");
+
+      fireEvent.click(railButton("Diff"));
+      expect(pane(container).style.width).toBe("");
+      expect(pane(container).className).toContain("flex-1");
+
+      fireEvent.click(railButton("Evidence"));
+      expect(pane(container).style.width).toBe("1032px");
+      localStorage.clear();
     });
 
     it("closes on the selected icon and opens on the icon pressed while closed", async () => {

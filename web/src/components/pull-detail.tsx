@@ -92,6 +92,12 @@ import {
   viewedPullFileCount,
   visiblePullFiles,
 } from "@/lib/pull-file-views";
+import {
+  clampPullPaneWidth,
+  getPullPaneWidth,
+  PULL_PANE_MAX_WIDTH,
+  setPullPaneWidth,
+} from "@/lib/pull-pane-widths";
 import { formatDuration, relativeTime } from "@/lib/time";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
@@ -147,6 +153,10 @@ export function PullDetail({
   const [paneOpen, setPaneOpen] = useState(true);
   // Kept while the pane is closed: reopening returns to the view it was closed on.
   const [paneView, setPaneView] = useState<PullPaneView>("commits");
+  const [paneWidths, setPaneWidths] = useState(() => ({
+    diff: getPullPaneWidth("diff"),
+    other: getPullPaneWidth("other"),
+  }));
   const [diffFullscreen, setDiffFullscreen] = useState(false);
   // The Diff view's file, null until a diff is first opened. Lifted here so the timeline, Files
   // changed and the rail all drive the same view.
@@ -266,6 +276,9 @@ export function PullDetail({
 
   const pull = pullQuery.data;
   const files = filesQuery.data;
+  const paneWidthGroup = paneView === "diff" ? "diff" : "other";
+  // Null until this group's width is dragged; the view's default width applies until then.
+  const paneWidth = paneWidths[paneWidthGroup];
   // The Diff view opened before there was a file picks up the first one to arrive.
   const diffFilename =
     openFilename ?? (paneView === "diff" ? files?.[0]?.filename : null);
@@ -301,7 +314,7 @@ export function PullDetail({
     <div
       data-debug-component="PullDetail"
       data-pull-columns=""
-      className="flex h-full min-h-0"
+      className={cn("flex h-full min-h-0", !paneOpen && "justify-center")}
     >
       {/* scroll-pt reserves the sticky header's height (h-11, or h-16 with its second row) so
           anything scrolled to lands below the bar. */}
@@ -312,16 +325,15 @@ export function PullDetail({
           "min-w-0 overflow-y-auto px-4 pt-6 sm:px-6",
           // A sized column rather than flex-1: flex-1 would add this padding to the left's share.
           // 3rem is the rail, and the pane's flex-1 takes the same half.
-          paneOpen && paneView === "diff"
+          paneOpen && paneView === "diff" && paneWidth == null
             ? "w-[calc((100%-3rem)/2)] shrink-0"
             : "flex-1",
+          // Capped and centered with the rail beside it, so the two stay together on a wide window.
+          !paneOpen && "box-content max-w-content",
           workflowRun ? "scroll-pt-16" : "scroll-pt-11",
         )}
       >
-        <div
-          data-debug-component="PullMainContent"
-          className={cn(!paneOpen && "mx-auto max-w-content")}
-        >
+        <div data-debug-component="PullMainContent">
           {/* The sticky header (#2033) sits at the top of the column, outside its gap-6 stack
               (#2089): as a direct child of the column its sticky box covers the whole column, so
               it does not unstick with the header block it belongs to. */}
@@ -466,10 +478,29 @@ export function PullDetail({
         aria-label="Right pane"
         hidden={!paneOpen}
         className={cn(
-          "min-h-0 min-w-0 border-l",
-          paneView === "diff" ? "flex-1" : "w-[36rem] shrink-0",
+          "relative min-h-0 min-w-0 border-l",
+          paneWidth != null
+            ? "shrink-0"
+            : paneView === "diff"
+              ? "flex-1"
+              : "w-[36rem] shrink-0",
         )}
+        style={
+          paneWidth != null
+            ? { width: paneWidth, maxWidth: PULL_PANE_MAX_WIDTH }
+            : undefined
+        }
       >
+        <PullPaneResizeHandle
+          width={paneWidth}
+          onResize={(width) => {
+            setPullPaneWidth(paneWidthGroup, width);
+            setPaneWidths((widths) => ({
+              ...widths,
+              [paneWidthGroup]: width,
+            }));
+          }}
+        />
         <div hidden={paneView !== "commits"} className="h-full">
           <PullCommitsSection
             owner={owner}
@@ -549,6 +580,8 @@ export function PullDetail({
   );
 }
 
+const PANE_KEYBOARD_RESIZE_STEP_PX = 24;
+
 const PANE_RAIL_VIEWS: {
   view: PullPaneView;
   label: string;
@@ -559,6 +592,61 @@ const PANE_RAIL_VIEWS: {
   { view: "diff", label: "Diff", icon: Diff },
   { view: "evidence", label: "Evidence", icon: ClipboardCheck },
 ];
+
+function PullPaneResizeHandle({
+  width,
+  onResize,
+}: {
+  width: number | null;
+  onResize: (width: number) => void;
+}) {
+  const drag = useRef<{ x: number; width: number } | null>(null);
+  // Measured, not read from `width`: until the first drag the pane is at its CSS default.
+  const pane = (handle: HTMLElement) => handle.parentElement as HTMLElement;
+  const resize = (handle: HTMLElement, next: number) =>
+    onResize(
+      clampPullPaneWidth(next, pane(handle).parentElement?.clientWidth ?? next),
+    );
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize right pane"
+      aria-valuenow={width ?? undefined}
+      tabIndex={0}
+      className="absolute inset-y-0 -left-px z-10 w-1.5 cursor-col-resize touch-none hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = {
+          x: event.clientX,
+          width: pane(event.currentTarget).offsetWidth,
+        };
+      }}
+      onPointerMove={(event) => {
+        if (drag.current)
+          resize(
+            event.currentTarget,
+            drag.current.width + drag.current.x - event.clientX,
+          );
+      }}
+      onPointerUp={() => {
+        drag.current = null;
+      }}
+      onKeyDown={(event) => {
+        const direction =
+          event.key === "ArrowLeft" ? 1 : event.key === "ArrowRight" ? -1 : 0;
+        if (direction !== 0)
+          resize(
+            event.currentTarget,
+            pane(event.currentTarget).offsetWidth +
+              direction * PANE_KEYBOARD_RESIZE_STEP_PX,
+          );
+      }}
+    />
+  );
+}
 
 // The right pane's controls. The rail stays when the pane is closed, so it is also how the pane
 // comes back.
@@ -574,7 +662,9 @@ function PullPaneRail({
   onSelectView: (view: PullPaneView) => void;
 }) {
   const toggleLabel = paneOpen ? "Close right pane" : "Open right pane";
-  const ToggleIcon = paneOpen ? PanelRightClose : PanelRightOpen;
+  // The chevron points where the rail goes: closing brings it left to the body, opening pushes it
+  // right. lucide draws PanelRightOpen with a left chevron and PanelRightClose with a right one.
+  const ToggleIcon = paneOpen ? PanelRightOpen : PanelRightClose;
   return (
     <nav
       aria-label="Right pane views"
