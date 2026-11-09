@@ -8,6 +8,7 @@ import {
 } from "../terminal/herdr-core-terminal.ts";
 import { herdrSessionName } from "../terminal/terminal-launch.ts";
 import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
+import { inlineText } from "../workflow/prompts.ts";
 import {
   type WorkflowCommentDeliveryAction,
   workflowCommentInstruction,
@@ -253,6 +254,25 @@ async function reactToComment(
   );
 }
 
+function workerMessage(instruction: string, body?: string): string {
+  const tag = `<loophub from="worker">${instruction}</loophub>`;
+  return body ? `${tag}\n\n${body}` : tag;
+}
+
+// What Execute / Verify receive for a comment, so reading it needs no lookup. The parent is only
+// ever sent workflowCommentInstruction, which has no body.
+function commentDeliveryText(action: WorkflowCommentDeliveryAction): string {
+  const instruction = workflowCommentInstruction(action);
+  if (action.delivery_reason === "pr_comment") {
+    return workerMessage(instruction, S.getComment(action.comment_id)?.body);
+  }
+  const thread = S.getDiffFeedbackThread(action.thread_id);
+  const message = S.getDiffFeedbackMessage(action.comment_id);
+  if (!thread || !message) return workerMessage(instruction);
+  const location = `${inlineText(thread.path)} lines ${thread.start_line}-${thread.end_line} (${thread.side})`;
+  return workerMessage(`${instruction} at ${location}`, message.body);
+}
+
 // Hand a comment to its Execute / Verify targets and report what failed. The worker acts under the
 // parent's session because it does the parent's former job, so attribution and the run-update guard
 // stay as they were. A failure is recorded for a human instead of being retried or restarting the
@@ -262,12 +282,7 @@ async function deliverCommentToAgents(
   run: S.WorkflowRunRow,
   action: WorkflowCommentDeliveryAction,
 ): Promise<string[]> {
-  const instruction = `<loophub from="worker">${workflowCommentInstruction(action)}</loophub>`;
-  const body =
-    action.delivery_reason === "pr_comment"
-      ? S.getComment(action.comment_id)?.body
-      : undefined;
-  const text = body ? `${instruction}\n\n${body}` : instruction;
+  const text = commentDeliveryText(action);
   const targets = action.targets.filter((target) => target !== "orchestrator");
   // A reaction toggles, so exactly one side may set it: the parent when it is addressed too.
   const reacts = targets.length === action.targets.length;

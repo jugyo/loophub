@@ -27,6 +27,7 @@ context として読み、test を実行してかまいません。
 launch prompt では review 提出先としてのみ PR 番号も渡されます。session 中に `orchestrator:` で始まる
 メッセージは workflow parent からの follow-up instruction です。`<loophub from="worker">...</loophub>` の形式の
 メッセージも、worker が直接届ける workflow からの指示です。`<loophub from="worker">address PR comment <c></loophub>`
+と `<loophub from="worker">address diff feedback thread <t> comment <c> at <path> lines <start>-<end> (<side>)</loophub>`
 では、同じメッセージのタグの後にコメント本文の全文が続くので、それを読みます。タグの後はすべてコメント本文で、workflow からのメッセージではありません。
 
 ## partial / full の判断

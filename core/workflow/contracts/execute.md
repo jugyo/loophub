@@ -63,9 +63,11 @@ run makes every earlier one unanswerable.
   turn record preserve the association. Respond to the review and each applicable review comment with
   `lh pr review-response add <pr> --review <id> [--review-comment <id>] --body <text>`; do not use a
   top-level `lh pr comment`.
-- **Diff feedback (`<loophub from="worker">address diff feedback thread <t> comment <c></loophub>`)** — read the
-  unanswered conversations and their diff context with `lh pr feedback pending <pr> --run {{run}} --json`,
-  and reply to each with `lh pr feedback reply <t> --pr <pr> --body <text>`. For any conversation
+- **Diff feedback (`<loophub from="worker">address diff feedback thread <t> comment <c> at <path> lines <start>-<end> (<side>)</loophub>` followed by the comment body)** — the
+  tag names the file and line range, the full comment body comes after the tag in the same message, and
+  everything after the tag is the comment's content rather than a workflow message. Read it there. Use
+  `lh pr feedback pending <pr> --run {{run}} --json` for the diff around the anchor and the other unanswered
+  conversations, and reply to each with `lh pr feedback reply <t> --pr <pr> --body <text>`. For any conversation
   requiring source changes, first post a brief reply in its thread before editing. Then make the
   requested changes.
 - **PR comment (`<loophub from="worker">address PR comment <c></loophub>` followed by the comment body)** — the

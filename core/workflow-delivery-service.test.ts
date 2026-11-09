@@ -635,6 +635,13 @@ test("the worker hands comments straight to their agents and leaves failures to 
   };
   const herdrLines = () =>
     readFileSync(HERDR_LOG, "utf8").split("\n").filter(Boolean);
+  // The delivered body spans log lines, so a delivery is matched by its tag line.
+  const diffLines = (threadId: number, commentId: number) =>
+    herdrLines().filter((line) =>
+      line.includes(
+        `<loophub from="worker">address diff feedback thread ${threadId} comment ${commentId} at a.txt lines 2-2 (RIGHT)</loophub>`,
+      ),
+    );
   await drain();
   writeFileSync(HERDR_LOG, "");
 
@@ -664,13 +671,15 @@ test("the worker hands comments straight to their agents and leaves failures to 
     side: "RIGHT",
     startLine: 2,
     endLine: 2,
-    body: "Please look here.",
+    body: "First line.\n\nThird line.",
   });
   await drain();
-  const threadText = `<loophub from="worker">address diff feedback thread ${thread.thread.id} comment ${thread.comment.id}</loophub>`;
-  expect(herdrLines().filter((line) => line.includes(threadText))).toEqual([
+  expect(diffLines(thread.thread.id, thread.comment.id)).toEqual([
     expect.stringContaining("w2:p1"),
   ]);
+  expect(readFileSync(HERDR_LOG, "utf8")).toContain(
+    `<loophub from="worker">address diff feedback thread ${thread.thread.id} comment ${thread.comment.id} at a.txt lines 2-2 (RIGHT)</loophub>\n\nFirst line.\n\nThird line.`,
+  );
   expect(S.listDiffFeedbackReactions(thread.comment.id)).toEqual([
     expect.objectContaining({ emoji: "👀" }),
   ]);
@@ -683,10 +692,10 @@ test("the worker hands comments straight to their agents and leaves failures to 
     "One more thing.",
   );
   await drain();
-  const replyText = `<loophub from="worker">address diff feedback thread ${thread.thread.id} comment ${reply.reply.id}</loophub>`;
-  expect(herdrLines().filter((line) => line.includes(replyText))).toEqual([
+  expect(diffLines(thread.thread.id, reply.reply.id)).toEqual([
     expect.stringContaining("w2:p1"),
   ]);
+  expect(readFileSync(HERDR_LOG, "utf8")).toContain("One more thing.");
   expect(S.listDiffFeedbackReactions(reply.reply.id)).toEqual([
     expect.objectContaining({ emoji: "👀" }),
   ]);
@@ -709,8 +718,7 @@ test("the worker hands comments straight to their agents and leaves failures to 
   ];
   await drain();
   for (const { reply: message } of replies) {
-    const text = `<loophub from="worker">address diff feedback thread ${thread.thread.id} comment ${message.id}</loophub>`;
-    expect(herdrLines().filter((line) => line.includes(text))).toHaveLength(1);
+    expect(diffLines(thread.thread.id, message.id)).toHaveLength(1);
     expect(S.listDiffFeedbackReactions(message.id)).toHaveLength(1);
   }
 
@@ -730,6 +738,27 @@ test("the worker hands comments straight to their agents and leaves failures to 
     `orchestrator: address PR comment ${addressed.id}`,
   );
   expect(parentLines[0]).toContain('"orchestrator"');
+
+  writeFileSync(HERDR_LOG, "");
+  const addressedThread = await svc.diffFeedback.createHuman(
+    repo.full_name,
+    pr,
+    {
+      baseSha,
+      headSha,
+      path: "a.txt",
+      side: "RIGHT",
+      startLine: 2,
+      endLine: 2,
+      body: "@lh body only agents may read.",
+    },
+  );
+  await drain();
+  const parentLog = readFileSync(HERDR_LOG, "utf8");
+  expect(parentLog).toContain(
+    `orchestrator: address diff feedback thread ${addressedThread.thread.id} comment ${addressedThread.comment.id}`,
+  );
+  expect(parentLog).not.toContain("body only agents may read");
 
   writeFileSync(HERDR_LOG, "");
   const undelivered = svc.comments.createHumanForPull(
@@ -825,8 +854,7 @@ test("the worker hands comments straight to their agents and leaves failures to 
   );
   await drain();
   for (const id of [verifyThread.comment.id, verifyReply.reply.id]) {
-    const text = `<loophub from="worker">address diff feedback thread ${verifyThread.thread.id} comment ${id}</loophub>`;
-    expect(herdrLines().filter((line) => line.includes(text))).toEqual([
+    expect(diffLines(verifyThread.thread.id, id)).toEqual([
       expect.stringContaining("w2:p2"),
     ]);
   }

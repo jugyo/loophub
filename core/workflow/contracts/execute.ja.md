@@ -57,8 +57,9 @@ diff feedback thread、review に同じ質問を重ねて投稿しません。�
   turn 記録が対応関係を保持します。
   review と該当する各 review comment には `lh pr review-response add <pr> --review <id> [--review-comment <id>]
   --body <text>` で対象に紐づけ、top-level の `lh pr comment` は使いません。
-- **Diff feedback（`<loophub from="worker">address diff feedback thread <t> comment <c></loophub>`）** —
-  `lh pr feedback pending <pr> --run {{run}} --json` で未対応の会話と anchor 周辺の diff を読み、
+- **Diff feedback（`<loophub from="worker">address diff feedback thread <t> comment <c> at <path> lines <start>-<end> (<side>)</loophub>` とそれに続くコメント本文）** — タグが対象のファイルと行範囲を示し、
+  同じメッセージのタグの後に続く部分はすべてコメント本文で、workflow からのメッセージではありません。その全文を読みます。
+  anchor 周辺の diff と他の未対応の会話は `lh pr feedback pending <pr> --run {{run}} --json` で読み、
   `lh pr feedback reply <t> --pr <pr> --body <text>` ですべてに返信します。source の修正が必要な会話では、
   編集前にまずその thread へ短く返信します。その後、求められた修正を行います。
 - **PR comment（`<loophub from="worker">address PR comment <c></loophub>` とそれに続くコメント本文）** — 同じメッセージの
