@@ -13,7 +13,6 @@ import {
   Check,
   Circle,
   ClipboardCheck,
-  Diff,
   ExternalLink,
   File,
   GitCommitHorizontal,
@@ -156,9 +155,11 @@ export function PullDetail({
     other: getPullPaneWidth("other"),
   }));
   const [diffFullscreen, setDiffFullscreen] = useState(false);
-  // The Diff view's file, null until a diff is first opened. Lifted here so the timeline, Files
-  // changed and the rail all drive the same view.
+  // The diff's file, null until a diff is first opened. Lifted here so the timeline and the file
+  // list drive the same view. Kept after going back to the list, so the diff stays mounted.
   const [openFilename, setOpenFilename] = useState<string | null>(null);
+  // Whether the Files changed view shows that file's diff rather than the list.
+  const [diffOpen, setDiffOpen] = useState(false);
   // A new object per timeline click, so asking for the same thread again reveals it again.
   const [openDiffThread, setOpenDiffThread] = useState<{ id: number } | null>(
     null,
@@ -173,11 +174,6 @@ export function PullDetail({
     null,
   );
   function openPaneView(view: PullPaneView) {
-    if (view === "diff") {
-      setOpenFilename(
-        (current) => current ?? filesQuery.data?.[0]?.filename ?? null,
-      );
-    }
     setPaneView(view);
     setPaneOpen(true);
   }
@@ -191,7 +187,12 @@ export function PullDetail({
     if (!findPullFile(filesQuery.data ?? [], filename)) return;
     setOpenDiffThread(threadId == null ? null : { id: threadId });
     setOpenFilename(filename);
-    openPaneView("diff");
+    setDiffOpen(true);
+    openPaneView("files");
+  }
+  function showFileList() {
+    setDiffOpen(false);
+    setDiffFullscreen(false);
   }
   useEffect(() => {
     const scrollContainer = leftColumnRef.current;
@@ -274,16 +275,14 @@ export function PullDetail({
 
   const pull = pullQuery.data;
   const files = filesQuery.data;
-  const paneWidthGroup = paneView === "diff" ? "diff" : "other";
+  const diffFile =
+    files && openFilename
+      ? (findPullFile(files, openFilename) ?? files[0] ?? null)
+      : null;
+  const diffShowing = paneView === "files" && diffOpen && diffFile != null;
+  const paneWidthGroup = diffShowing ? "diff" : "other";
   // Null until this group's width is dragged; the view's default width applies until then.
   const paneWidth = paneWidths[paneWidthGroup];
-  // The Diff view opened before there was a file picks up the first one to arrive.
-  const diffFilename =
-    openFilename ?? (paneView === "diff" ? files?.[0]?.filename : null);
-  const diffFile =
-    files && diffFilename
-      ? (findPullFile(files, diffFilename) ?? files[0] ?? null)
-      : null;
   const timelineReviewGroup = timelineReview
     ? (reviewsQuery.data ?? []).filter(
         (review) => review.head_sha === timelineReview.head_sha,
@@ -323,7 +322,7 @@ export function PullDetail({
           "min-w-0 overflow-y-auto px-4 pt-6 sm:px-6",
           // A sized column rather than flex-1: flex-1 would add this padding to the left's share.
           // 3rem is the rail, and the pane's flex-1 takes the same half.
-          paneOpen && paneView === "diff" && paneWidth == null
+          paneOpen && diffShowing && paneWidth == null
             ? "w-[calc((100%-3rem)/2)] shrink-0"
             : "flex-1",
           // Capped and centered with the rail beside it, so the two stay together on a wide window.
@@ -372,7 +371,10 @@ export function PullDetail({
             <PullSectionTabs
               titleRef={titleRef}
               headerHasSecondRow={workflowRun != null}
-              onOpenPaneView={openPaneView}
+              onOpenPaneView={(view) => {
+                if (view === "files") showFileList();
+                openPaneView(view);
+              }}
             />
             <PullBody
               owner={owner}
@@ -479,7 +481,7 @@ export function PullDetail({
           "relative min-h-0 min-w-0 border-l",
           paneWidth != null
             ? "shrink-0"
-            : paneView === "diff"
+            : diffShowing
               ? "flex-1"
               : "w-[36rem] shrink-0",
         )}
@@ -520,7 +522,7 @@ export function PullDetail({
             }
           />
         </div>
-        <div hidden={paneView !== "files"} className="h-full">
+        <div hidden={paneView !== "files" || diffShowing} className="h-full">
           <FilesChanged
             owner={owner}
             repo={repo}
@@ -533,7 +535,7 @@ export function PullDetail({
             isError={false}
           />
         </div>
-        <div hidden={paneView !== "diff"} className="h-full">
+        <div hidden={!diffShowing} className="h-full">
           {files && diffFile ? (
             <PullDiffDialog
               owner={owner}
@@ -548,6 +550,7 @@ export function PullDetail({
               threadRevealKey={openDiffThread}
               display={diffFullscreen ? "fullscreen" : "pane"}
               onToggleFullscreen={() => setDiffFullscreen((value) => !value)}
+              onBack={showFileList}
               onSelectFile={(filename) => {
                 // Not openDiffFile: this also runs when Viewed settles, after the reader may have
                 // moved the pane on.
@@ -556,12 +559,7 @@ export function PullDetail({
               }}
               onClose={() => setDiffFullscreen(false)}
             />
-          ) : (
-            <section className="flex h-full min-h-0 flex-col">
-              <PullPaneHead title="Diff" />
-              <p className="p-3 text-sm text-muted-foreground">No diff.</p>
-            </section>
-          )}
+          ) : null}
         </div>
         <div hidden={paneView !== "evidence"} className="h-full">
           <PullEvidence owner={owner} repo={repo} pull={pull} />
@@ -587,7 +585,6 @@ const PANE_RAIL_VIEWS: {
 }[] = [
   { view: "commits", label: "Commits", icon: GitCommitHorizontal },
   { view: "files", label: "Files changed", icon: File },
-  { view: "diff", label: "Diff", icon: Diff },
   { view: "evidence", label: "Evidence", icon: ClipboardCheck },
 ];
 
@@ -1310,7 +1307,7 @@ function FilesChanged({
   files: PullFile[] | undefined;
   /** Per-file diff feedback counts, from the same page query that produced `files` (#123). */
   commentCounts: Record<string, number>;
-  /** The file open in the Diff view. */
+  /** The file whose diff was last opened. */
   selectedFilename: string | null;
   onOpenFile: (filename: string) => void;
   isLoading: boolean;

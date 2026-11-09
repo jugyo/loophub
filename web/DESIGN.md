@@ -213,17 +213,19 @@ so sticky offsets work as on other detail pages.
 | Column | Width | Scrolls |
 |--------|-------|---------|
 | Left column | `flex-1`; `max-w-content`, centered together with the rail, while the pane is closed | Itself |
-| Right pane | `w-[36rem]`; `flex-1` (equal to the left column) in the Diff view; the dragged width once there is one; hidden when closed | Each view's body |
+| Right pane | `w-[36rem]`; `flex-1` (equal to the left column) while a diff is showing; the dragged width once there is one; hidden when closed | Each view's body |
 | Icon rail | `w-12`, always shown, directly after the left column while the pane is closed | None |
 
 The rail's top button opens and closes the pane and returns to the last view; the
-icons below it (Commits, Files changed, Diff, Evidence) switch views, and the
-selected icon closes the pane. The Diff view can expand over the whole screen,
-where a file list replaces the pane's file picker and `Esc` returns to the pane.
+icons below it (Commits, Files changed, Evidence) switch views, and the
+selected icon closes the pane. Choosing a file in Files changed opens its diff in
+that same view, and the back button at the top left returns to the list. The diff
+can expand over the whole screen, where a file list replaces the pane's file picker
+and `Esc` returns to the pane.
 
 The pane's left edge drags to resize it, leaving at least `20rem` to the pane and
-to the left column. The width is remembered per browser, separately for the Diff
-view and for the other views.
+to the left column. The width is remembered per browser, separately for a showing
+diff and for everything else.
 
 #### Shell dividers
 

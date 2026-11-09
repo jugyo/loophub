@@ -400,6 +400,8 @@ async function findFilesChangedHeading(name: RegExp) {
   });
   const button = within(rail).getByRole("button", { name: "Files changed" });
   if (button.getAttribute("aria-pressed") !== "true") fireEvent.click(button);
+  const back = screen.queryByRole("button", { name: "Back to file list" });
+  if (back) fireEvent.click(back);
   return screen.findByRole("heading", { name });
 }
 
@@ -2145,6 +2147,16 @@ describe("PullDetail", () => {
       container.querySelector<HTMLElement>(
         '[data-debug-component="PullRightPane"]',
       )!;
+    // The file list's row for `filename`; rows live inside the Files changed view.
+    const openFileFromList = async (filename = "web/src/a.ts") => {
+      if (railButton("Files changed").getAttribute("aria-pressed") !== "true")
+        fireEvent.click(railButton("Files changed"));
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: new RegExp(filename.replace(/[.]/g, "\\.")),
+        }),
+      );
+    };
 
     it("starts on Commits and switches views from the rail", async () => {
       renderDetail();
@@ -2214,7 +2226,7 @@ describe("PullDetail", () => {
       fireEvent.pointerUp(handle);
       expect(pane(container).style.width).toBe("1032px");
 
-      fireEvent.click(railButton("Diff"));
+      await openFileFromList();
       expect(pane(container).style.width).toBe("");
       expect(pane(container).className).toContain("flex-1");
 
@@ -2253,7 +2265,89 @@ describe("PullDetail", () => {
       ).toBeTruthy();
     });
 
-    it("opens the first file from the Diff icon and switches files from the heading", async () => {
+    it("offers one rail item for the file list and its diffs", async () => {
+      renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+
+      expect(railButton("Files changed")).toBeTruthy();
+      expect(within(rail()).queryByRole("button", { name: "Diff" })).toBeNull();
+    });
+
+    it("opens a file's diff in the same view and returns to the list from the back button", async () => {
+      renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+
+      await openFileFromList();
+      await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
+      expect(screen.queryByRole("dialog", { name: /Diff for/ })).toBeNull();
+      expect(railButton("Files changed").getAttribute("aria-pressed")).toBe(
+        "true",
+      );
+      expect(
+        screen.queryByRole("heading", { name: /Files changed \(/ }),
+      ).toBeNull();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Back to file list" }),
+      );
+
+      expect(
+        screen.getByRole("heading", { name: /Files changed \(/ }),
+      ).toBeTruthy();
+      expect(screen.queryByRole("region", { name: /Diff for/ })).toBeNull();
+    });
+
+    it("returns to the list in the pane from a full-screen diff's back button", async () => {
+      renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      await openFileFromList();
+      await screen.findByRole("region", { name: /Diff for/ });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Show diff full screen" }),
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Back to file list" }),
+      );
+
+      expect(screen.queryByRole("dialog", { name: /Diff for/ })).toBeNull();
+      expect(
+        screen.getByRole("heading", { name: /Files changed \(/ }),
+      ).toBeTruthy();
+    });
+
+    it("shows the list from the Files changed tab while a diff is open", async () => {
+      const { container } = renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      await openFileFromList();
+      await screen.findByRole("region", { name: /Diff for/ });
+      const tabs = container.querySelector<HTMLElement>(
+        '[data-debug-component="PullSectionTabs"]',
+      )!;
+
+      fireEvent.click(
+        within(tabs).getByRole("button", { name: "Files changed" }),
+      );
+
+      expect(
+        screen.getByRole("heading", { name: /Files changed \(/ }),
+      ).toBeTruthy();
+    });
+
+    it("resumes the open diff when returning from another view", async () => {
+      renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      await openFileFromList();
+      await screen.findByRole("region", { name: /Diff for/ });
+
+      fireEvent.click(railButton("Evidence"));
+      expect(screen.queryByRole("region", { name: /Diff for/ })).toBeNull();
+
+      fireEvent.click(railButton("Files changed"));
+      expect(screen.getByRole("region", { name: /Diff for/ })).toBeTruthy();
+    });
+
+    it("switches files from the diff's heading", async () => {
       renderDetail({
         "pulls/files": () => [
           files[0],
@@ -2262,28 +2356,13 @@ describe("PullDetail", () => {
       });
       await screen.findByRole("heading", { name: /Commits \(/ });
 
-      fireEvent.click(railButton("Diff"));
+      await openFileFromList();
       await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
 
       fireEvent.change(screen.getByRole("combobox", { name: "Diff file" }), {
         target: { value: "web/src/b.ts" },
       });
       await screen.findByRole("region", { name: "Diff for web/src/b.ts" });
-    });
-
-    it("shows the first file once it arrives in a Diff view opened with none", async () => {
-      let currentFiles: (typeof files)[number][] = [];
-      const { queryClient } = renderDetail({
-        "pulls/files": () => currentFiles,
-      });
-      await screen.findByRole("heading", { name: /Commits \(/ });
-      fireEvent.click(railButton("Diff"));
-      await screen.findAllByText("No diff.");
-
-      currentFiles = [files[0]];
-      await act(() => queryClient.invalidateQueries());
-
-      await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
     });
 
     it("shares the width equally only while the Diff view is showing", async () => {
@@ -2295,9 +2374,16 @@ describe("PullDetail", () => {
       const halved = "w-[calc((100%-3rem)/2)]";
       expect(leftColumn.className).not.toContain(halved);
 
-      fireEvent.click(railButton("Diff"));
+      await openFileFromList();
       expect(leftColumn.className).toContain(halved);
       expect(pane(container).className).toContain("flex-1");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Back to file list" }),
+      );
+      expect(leftColumn.className).not.toContain(halved);
+
+      await openFileFromList();
 
       fireEvent.click(railButton("Close right pane"));
       expect(leftColumn.className).not.toContain(halved);
@@ -2316,7 +2402,7 @@ describe("PullDetail", () => {
           }),
       });
       await screen.findByRole("heading", { name: /Commits \(/ });
-      fireEvent.click(railButton("Diff"));
+      await openFileFromList();
       await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
 
       fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
@@ -2331,7 +2417,7 @@ describe("PullDetail", () => {
     it("expands the diff with a file list and returns to the pane on Escape", async () => {
       renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
-      fireEvent.click(railButton("Diff"));
+      await openFileFromList();
       await screen.findByRole("region", { name: /Diff for/ });
       expect(
         screen.queryByRole("complementary", { name: "Changed files" }),
@@ -2385,7 +2471,7 @@ describe("PullDetail", () => {
         }),
       });
       await screen.findByRole("heading", { name: /Commits \(/ });
-      fireEvent.click(railButton("Diff"));
+      await openFileFromList();
       const view = await screen.findByRole("region", { name: /Diff for/ });
       fireEvent.click(
         await within(view).findByRole("button", {

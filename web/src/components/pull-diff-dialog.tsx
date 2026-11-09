@@ -6,6 +6,7 @@
 // comments are not shown here — the Reviews timeline is their only view.
 
 import {
+  ArrowLeft,
   Check,
   ChevronDown,
   ChevronRight,
@@ -292,20 +293,23 @@ const DIFF_PANEL_CLASS: Record<DiffDisplay, string> = {
   fullscreen: "flex w-full min-w-0 flex-col overflow-hidden bg-background",
 };
 
-// The right pane's title row: the file picker (the pane has no file list), the file's stat, and the
-// button moving the view between the pane and the full screen. A modal has none of this.
+// The right pane's title row: the way back to the file list, the file picker (the pane has no file
+// list of its own), the file's stat, and the button moving the view between the pane and the full
+// screen. A modal has none of this.
 function DiffPaneHead({
   display,
   files,
   selectedFile,
   onSelectFile,
   onToggleFullscreen,
+  onBack,
 }: {
   display: DiffDisplay;
   files?: PullFile[];
   selectedFile?: PullFile | null;
   onSelectFile?: (filename: string) => void;
   onToggleFullscreen?: () => void;
+  onBack?: () => void;
 }) {
   if (display === "dialog") return null;
   const fullscreen = display === "fullscreen";
@@ -314,7 +318,24 @@ function DiffPaneHead({
     : "Show diff full screen";
   const ToggleIcon = fullscreen ? Minimize2 : Maximize2;
   return (
-    <PullPaneHead title="Diff">
+    <PullPaneHead
+      title="Diff"
+      leading={
+        onBack ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Back to file list"
+            title="Back to file list"
+            className="size-7 shrink-0"
+            onClick={onBack}
+          >
+            <ArrowLeft className="size-4" />
+          </Button>
+        ) : null
+      }
+    >
       <div className="ml-auto flex min-w-0 items-center gap-2">
         {!fullscreen && files && selectedFile ? (
           <select
@@ -360,6 +381,7 @@ export function DiffDialogState({
   scopeSelector,
   display = "dialog",
   onToggleFullscreen,
+  onBack,
   onClose,
   children,
 }: {
@@ -369,6 +391,7 @@ export function DiffDialogState({
   scopeSelector?: ReactNode;
   display?: DiffDisplay;
   onToggleFullscreen?: () => void;
+  onBack?: () => void;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -397,6 +420,7 @@ export function DiffDialogState({
         <DiffPaneHead
           display={display}
           onToggleFullscreen={onToggleFullscreen}
+          onBack={onBack}
         />
         <div className="flex min-h-0 flex-1">
           {display !== "pane" ? (
@@ -557,6 +581,7 @@ export function PullDiffDialog({
   threadRevealKey,
   display = "dialog",
   onToggleFullscreen,
+  onBack,
   onSelectFile,
   onClose,
 }: {
@@ -573,6 +598,8 @@ export function PullDiffDialog({
   threadRevealKey?: unknown;
   display?: DiffDisplay;
   onToggleFullscreen?: () => void;
+  /** Leaves the diff for the PR page's file list; the pane and full-screen heads offer it. */
+  onBack?: () => void;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
@@ -646,6 +673,7 @@ export function PullDiffDialog({
         scopeSelector={scopeSelector}
         display={display}
         onToggleFullscreen={onToggleFullscreen}
+        onBack={onBack}
         onSelectFile={onSelectFile}
         onClose={onClose}
       />
@@ -663,6 +691,7 @@ export function PullDiffDialog({
         scopeSelector={scopeSelector}
         display={display}
         onToggleFullscreen={onToggleFullscreen}
+        onBack={onBack}
         onClose={onClose}
       >
         <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
@@ -680,6 +709,7 @@ export function PullDiffDialog({
         scopeSelector={scopeSelector}
         display={display}
         onToggleFullscreen={onToggleFullscreen}
+        onBack={onBack}
         onClose={onClose}
       >
         <div className="m-4 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
@@ -703,6 +733,7 @@ export function PullDiffDialog({
         scopeSelector={scopeSelector}
         display={display}
         onToggleFullscreen={onToggleFullscreen}
+        onBack={onBack}
         onClose={onClose}
       >
         <p className="p-4 text-sm text-muted-foreground">
@@ -736,6 +767,7 @@ export function PullDiffDialog({
       commentCounts={commitFeedback.data?.comment_counts}
       display={display}
       onToggleFullscreen={onToggleFullscreen}
+      onBack={onBack}
       onSelectFile={() => {}}
       onClose={onClose}
     />
@@ -758,6 +790,7 @@ export function DiffFileDialog({
   scopeSelector,
   display = "dialog",
   onToggleFullscreen,
+  onBack,
   onSelectFile,
   onClose,
 }: {
@@ -777,6 +810,8 @@ export function DiffFileDialog({
   scopeSelector?: ReactNode;
   display?: DiffDisplay;
   onToggleFullscreen?: () => void;
+  /** Leaves the diff for the PR page's file list; the pane and full-screen heads offer it. */
+  onBack?: () => void;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
@@ -959,6 +994,7 @@ export function DiffFileDialog({
           selectedFile={selectedFile}
           onSelectFile={selectFile}
           onToggleFullscreen={onToggleFullscreen}
+          onBack={onBack}
         />
         <div className="flex min-h-0 flex-1">
           {display !== "pane" ? (
