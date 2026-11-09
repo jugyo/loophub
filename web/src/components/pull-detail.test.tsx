@@ -405,6 +405,14 @@ async function findFilesChangedHeading(name: RegExp) {
   return screen.findByRole("heading", { name });
 }
 
+// The Commits view is behind the right pane's icon rail; the pane starts on Files changed.
+async function openCommitsView() {
+  const rail = await screen.findByRole("navigation", {
+    name: "Right pane views",
+  });
+  fireEvent.click(within(rail).getByRole("button", { name: "Commits" }));
+}
+
 // The tracks of a Tailwind `grid-cols-[...]` class, split on the top-level `_` separators so a
 // track that carries its own underscores (`minmax(0,_max-content)`) still counts as one.
 function gridTemplateColumns(className: string): string[] {
@@ -2158,10 +2166,13 @@ describe("PullDetail", () => {
       );
     };
 
-    it("starts on Commits and switches views from the rail", async () => {
+    it("starts on Files changed and switches views from the rail", async () => {
       renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
-      expect(railButton("Commits").getAttribute("aria-pressed")).toBe("true");
+      await screen.findByRole("heading", { name: /Files changed \(/ });
+      expect(railButton("Files changed").getAttribute("aria-pressed")).toBe(
+        "true",
+      );
+      expect(railButton("Commits").getAttribute("aria-pressed")).toBe("false");
       expect(
         within(rail())
           .getAllByRole("button")
@@ -2171,15 +2182,28 @@ describe("PullDetail", () => {
 
       fireEvent.click(railButton("Evidence"));
       expect(screen.getByRole("heading", { name: "Evidence" })).toBeTruthy();
-      expect(screen.queryByRole("heading", { name: /Commits \(/ })).toBeNull();
-      expect(railButton("Commits").getAttribute("aria-pressed")).toBe("false");
+      expect(
+        screen.queryByRole("heading", { name: /Files changed \(/ }),
+      ).toBeNull();
+      expect(railButton("Files changed").getAttribute("aria-pressed")).toBe(
+        "false",
+      );
       expect(railButton("Evidence").getAttribute("aria-pressed")).toBe("true");
+
+      fireEvent.click(railButton("Commits"));
+      expect(screen.getByRole("heading", { name: /Commits \(/ })).toBeTruthy();
+      expect(railButton("Commits").getAttribute("aria-pressed")).toBe("true");
+
+      fireEvent.click(railButton("Files changed"));
+      expect(
+        screen.getByRole("heading", { name: /Files changed \(/ }),
+      ).toBeTruthy();
     });
 
     it("closes from the toggle and reopens on the same view", async () => {
       const { container } = renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
-      fireEvent.click(railButton("Files changed"));
+      await screen.findByRole("heading", { name: /Files changed \(/ });
+      fireEvent.click(railButton("Commits"));
 
       fireEvent.click(railButton("Close right pane"));
       expect(pane(container).hidden).toBe(true);
@@ -2196,14 +2220,12 @@ describe("PullDetail", () => {
 
       fireEvent.click(railButton("Open right pane"));
       expect(pane(container).hidden).toBe(false);
-      expect(
-        screen.getByRole("heading", { name: /Files changed \(/ }),
-      ).toBeTruthy();
+      expect(screen.getByRole("heading", { name: /Commits \(/ })).toBeTruthy();
     });
 
     it("moves the boundary by dragging and keeps the left column for as long as the pane is open", async () => {
       const { container } = renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       const root = container.querySelector<HTMLElement>(
         '[data-debug-component="PullDetail"]',
       )!;
@@ -2244,7 +2266,7 @@ describe("PullDetail", () => {
 
     it("keeps one boundary across every view, also after reloading", async () => {
       const { container, unmount } = renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       const leftColumn = () =>
         container.querySelector<HTMLElement>(
           '[data-debug-component="PullLeftColumn"]',
@@ -2265,7 +2287,6 @@ describe("PullDetail", () => {
       );
       Object.defineProperty(leftColumn(), "offsetWidth", { value: 768 });
 
-      fireEvent.click(railButton("Files changed"));
       dragBoundaryBy(-100);
       expect(leftColumn().style.flexBasis).toBe("668px");
 
@@ -2296,7 +2317,7 @@ describe("PullDetail", () => {
 
       unmount();
       renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       expect(
         document.querySelector<HTMLElement>(
           '[data-debug-component="PullLeftColumn"]',
@@ -2307,9 +2328,9 @@ describe("PullDetail", () => {
 
     it("closes on the selected icon and opens on the icon pressed while closed", async () => {
       const { container } = renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
 
-      fireEvent.click(railButton("Commits"));
+      fireEvent.click(railButton("Files changed"));
       expect(pane(container).hidden).toBe(true);
 
       fireEvent.click(railButton("Evidence"));
@@ -2319,7 +2340,7 @@ describe("PullDetail", () => {
 
     it("opens the right pane's view from a section tab without toggling it", async () => {
       const { container } = renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       const tabs = container.querySelector<HTMLElement>(
         '[data-debug-component="PullSectionTabs"]',
       )!;
@@ -2337,7 +2358,7 @@ describe("PullDetail", () => {
 
     it("offers one rail item for the file list and its diffs", async () => {
       renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
 
       expect(railButton("Files changed")).toBeTruthy();
       expect(within(rail()).queryByRole("button", { name: "Diff" })).toBeNull();
@@ -2345,7 +2366,7 @@ describe("PullDetail", () => {
 
     it("opens a file's diff in the same view and returns to the list from the back button", async () => {
       renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
 
       await openFileFromList();
       await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
@@ -2369,7 +2390,7 @@ describe("PullDetail", () => {
 
     it("shows the list from the Files changed tab while a diff is open", async () => {
       const { container } = renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       await openFileFromList();
       await screen.findByRole("region", { name: /Diff for/ });
       const tabs = container.querySelector<HTMLElement>(
@@ -2387,7 +2408,7 @@ describe("PullDetail", () => {
 
     it("resumes the open diff when returning from another view", async () => {
       renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       await openFileFromList();
       await screen.findByRole("region", { name: /Diff for/ });
 
@@ -2405,7 +2426,7 @@ describe("PullDetail", () => {
           { ...files[0], filename: "web/src/b.ts" },
         ],
       });
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
 
       await openFileFromList();
       await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
@@ -2423,7 +2444,7 @@ describe("PullDetail", () => {
           { ...files[0], filename: "web/src/b.ts" },
         ],
       });
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       await openFileFromList();
       await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
 
@@ -2439,7 +2460,7 @@ describe("PullDetail", () => {
 
     it("gives the window's extra width to the pane in the Diff view too, and only while open", async () => {
       const { container } = renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       const leftColumn = container.querySelector<HTMLElement>(
         '[data-debug-component="PullLeftColumn"]',
       )!;
@@ -2467,7 +2488,7 @@ describe("PullDetail", () => {
             settleViewed = resolve;
           }),
       });
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       await openFileFromList();
       await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
 
@@ -2482,7 +2503,7 @@ describe("PullDetail", () => {
 
     it("expands the diff into the dialog and returns to the pane on Escape", async () => {
       renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       await openFileFromList();
       await screen.findByRole("region", { name: /Diff for/ });
       expect(
@@ -2510,7 +2531,7 @@ describe("PullDetail", () => {
 
     it("returns to the pane from the dialog's close button and backdrop", async () => {
       renderDetail();
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       await openFileFromList();
       await screen.findByRole("region", { name: /Diff for/ });
       const expand = () =>
@@ -2561,7 +2582,7 @@ describe("PullDetail", () => {
           ],
         }),
       });
-      await screen.findByRole("heading", { name: /Commits \(/ });
+      await screen.findByRole("heading", { name: /Files changed \(/ });
       await openFileFromList();
       const view = await screen.findByRole("region", { name: /Diff for/ });
       fireEvent.click(
@@ -2762,6 +2783,7 @@ describe("PullDetail", () => {
   // only has to show it, with this PR's commits, in the right pane.
   it("shows the PR's commits in the right pane", async () => {
     renderDetail();
+    await openCommitsView();
 
     const commitsHeading = await screen.findByRole("heading", {
       name: "Commits (2)",
@@ -3165,6 +3187,7 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
+    await openCommitsView();
     const currentGroup = (
       await screen.findByRole("button", {
         name: "View changes in aaaaaaa: Latest change",
@@ -3256,6 +3279,7 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
+    await openCommitsView();
     await screen.findByRole("button", {
       name: "View changes in aaaaaaa: Latest change",
     });
@@ -3346,6 +3370,7 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
+    await openCommitsView();
     const summary = (
       await screen.findByRole("button", {
         name: "View changes in aaaaaaa: Latest change",
@@ -3418,6 +3443,7 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
+    await openCommitsView();
     const summary = (
       await screen.findByRole("button", {
         name: "View changes in aaaaaaa: Latest change",

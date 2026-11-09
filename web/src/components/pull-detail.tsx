@@ -148,7 +148,7 @@ export function PullDetail({
   const leftColumnRef = useRef<HTMLDivElement>(null);
   const [paneOpen, setPaneOpen] = useState(true);
   // Kept while the pane is closed: reopening returns to the view it was closed on.
-  const [paneView, setPaneView] = useState<PullPaneView>("commits");
+  const [paneView, setPaneView] = useState<PullPaneView>("files");
   // Null until the boundary is dragged; the default width applies until then.
   const [leftColumnWidth, setLeftColumnWidth] = useState(
     getPullLeftColumnWidth,
