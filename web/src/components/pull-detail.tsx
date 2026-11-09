@@ -11,11 +11,16 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ArrowDownToLine,
   Check,
-  ChevronRight,
   Circle,
+  ClipboardCheck,
+  Diff,
   ExternalLink,
+  File,
+  GitCommitHorizontal,
   Github,
   Loader2,
+  PanelRightClose,
+  PanelRightOpen,
   Pencil,
   SmilePlus,
   X,
@@ -60,7 +65,11 @@ import {
   DiffFeedbackHistory,
   PullDiffDialog,
 } from "@/components/pull-diff-dialog";
-import { PullSectionTabs } from "@/components/pull-section-tabs";
+import { PullPaneHead } from "@/components/pull-pane-head";
+import {
+  type PullPaneView,
+  PullSectionTabs,
+} from "@/components/pull-section-tabs";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
@@ -133,12 +142,19 @@ export function PullDetail({
   const commentsQuery = useIssueComments(owner, repo, number, false);
   const workflowRunQuery = useWorkflowRunForPull(owner, repo, number);
   const titleRef = useRef<HTMLDivElement>(null);
-  const [measureSidebar, sidebarFitsStickyRoom] =
-    useFitsStickyRoom<HTMLElement>(SIDEBAR_STICKY_TOP_PX);
-  // #145: which file's diff dialog is open. Owned here — above Files changed — so a timeline line
-  // comment (in CommentList) can open the same dialog Files changed renders.
+  // The left column is this page's vertical scrollport (see web/DESIGN.md).
+  const leftColumnRef = useRef<HTMLDivElement>(null);
+  const [paneOpen, setPaneOpen] = useState(true);
+  // Kept while the pane is closed: reopening returns to the view it was closed on.
+  const [paneView, setPaneView] = useState<PullPaneView>("commits");
+  const [diffFullscreen, setDiffFullscreen] = useState(false);
+  // The Diff view's file, null until a diff is first opened. Lifted here so the timeline, Files
+  // changed and the rail all drive the same view.
   const [openFilename, setOpenFilename] = useState<string | null>(null);
-  const [openDiffThreadId, setOpenDiffThreadId] = useState<number | null>(null);
+  // A new object per timeline click, so asking for the same thread again reveals it again.
+  const [openDiffThread, setOpenDiffThread] = useState<{ id: number } | null>(
+    null,
+  );
   const [timelineCommit, setTimelineCommit] = useState<{
     sha: string;
     subject: string;
@@ -148,14 +164,29 @@ export function PullDetail({
   const [scrollButtonCenter, setScrollButtonCenter] = useState<number | null>(
     null,
   );
+  function openPaneView(view: PullPaneView) {
+    if (view === "diff") {
+      setOpenFilename(
+        (current) => current ?? filesQuery.data?.[0]?.filename ?? null,
+      );
+    }
+    setPaneView(view);
+    setPaneOpen(true);
+  }
+  function selectRailView(view: PullPaneView) {
+    if (paneOpen && paneView === view) setPaneOpen(false);
+    else openPaneView(view);
+  }
   function openDiffFile(filename: string, threadId: number | null = null) {
-    setOpenDiffThreadId(threadId);
+    // A line comment can name a path the current diff no longer has (a file reverted since the
+    // comment was made): there is nothing to show, so the view stays where it is.
+    if (!findPullFile(filesQuery.data ?? [], filename)) return;
+    setOpenDiffThread(threadId == null ? null : { id: threadId });
     setOpenFilename(filename);
+    openPaneView("diff");
   }
   useEffect(() => {
-    const scrollContainer = document.querySelector<HTMLElement>(
-      'main[data-debug-component="RouteContent"]',
-    );
+    const scrollContainer = leftColumnRef.current;
     if (!scrollContainer) return;
 
     let mutationObserver: MutationObserver | null = null;
@@ -203,9 +234,11 @@ export function PullDetail({
       resizeObserver?.disconnect();
       mutationObserver?.disconnect();
     };
-  }, [pageQuery.isLoading]);
+    // The left column only exists outside the loading and error returns below, and is a new
+    // element each time the page comes back from one of them.
+  }, [pageQuery.isLoading, pageQuery.isError]);
   // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
-  // otherwise, and the sidebar section is hidden anyway when github_pull is absent (#850).
+  // otherwise, and the section is hidden anyway when github_pull is absent (#850).
   const githubStatusQuery = useGithubPrStatus(
     owner,
     repo,
@@ -232,6 +265,14 @@ export function PullDetail({
   }
 
   const pull = pullQuery.data;
+  const files = filesQuery.data;
+  // The Diff view opened before there was a file picks up the first one to arrive.
+  const diffFilename =
+    openFilename ?? (paneView === "diff" ? files?.[0]?.filename : null);
+  const diffFile =
+    files && diffFilename
+      ? (findPullFile(files, diffFilename) ?? files[0] ?? null)
+      : null;
   const timelineReviewGroup = timelineReview
     ? (reviewsQuery.data ?? []).filter(
         (review) => review.head_sha === timelineReview.head_sha,
@@ -254,24 +295,36 @@ export function PullDetail({
     timelineReviewComments.set(comment.pull_request_review_id, comments);
   }
   return (
-    // The whole PR detail is a two-column layout (#346): the main column (header, commit/review
-    // timeline, diff, comments) on the left and the Sessions sidebar on the right, from the top
-    // so ancillary info never interrupts the main vertical flow. Below `lg` the columns stack
-    // (flex-col) so the sidebar wraps under the main content on narrow screens. The page widens to
-    // `max-w-content-wide` only when the sidebar is present AND beside the content (`lg`); without a
-    // sidebar, or while stacked below `lg`, the single column stays at the standard 60rem to line up
-    // with the sibling pages (issue-detail, pull-list).
+    // Three columns across the full width: the left column (header, description, timeline), the
+    // right pane and its icon rail. <main> stops scrolling for this page (data-pull-columns,
+    // app-layout.tsx), so the left column and each pane view scroll independently.
     <div
       data-debug-component="PullDetail"
-      data-two-row-sticky-header={workflowRun ? "" : undefined}
-      className="mx-auto max-w-content lg:max-w-content-wide"
+      data-pull-columns=""
+      className="flex h-full min-h-0"
     >
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <div data-debug-component="PullMainContent" className="min-w-0 flex-1">
-          {/* The sticky header (#2033) sits at the top of the main column, outside its gap-6
-              stack (#2089): as a direct child of the column it spans the main content width
-              instead of the sidebar too, and its sticky box still covers the whole column so it
-              does not unstick with the header block it belongs to. */}
+      {/* scroll-pt reserves the sticky header's height (h-11, or h-16 with its second row) so
+          anything scrolled to lands below the bar. */}
+      <div
+        ref={leftColumnRef}
+        data-debug-component="PullLeftColumn"
+        className={cn(
+          "min-w-0 overflow-y-auto px-4 pt-6 sm:px-6",
+          // A sized column rather than flex-1: flex-1 would add this padding to the left's share.
+          // 3rem is the rail, and the pane's flex-1 takes the same half.
+          paneOpen && paneView === "diff"
+            ? "w-[calc((100%-3rem)/2)] shrink-0"
+            : "flex-1",
+          workflowRun ? "scroll-pt-16" : "scroll-pt-11",
+        )}
+      >
+        <div
+          data-debug-component="PullMainContent"
+          className={cn(!paneOpen && "mx-auto max-w-content")}
+        >
+          {/* The sticky header (#2033) sits at the top of the column, outside its gap-6 stack
+              (#2089): as a direct child of the column its sticky box covers the whole column, so
+              it does not unstick with the header block it belongs to. */}
           <DetailStickyHeader
             kind="PR"
             number={pull.number}
@@ -309,6 +362,7 @@ export function PullDetail({
             <PullSectionTabs
               titleRef={titleRef}
               headerHasSecondRow={workflowRun != null}
+              onOpenPaneView={openPaneView}
             />
             <PullBody
               owner={owner}
@@ -316,26 +370,17 @@ export function PullDetail({
               pull={pull}
               reviews={reviewsQuery.data ?? []}
             />
-
-            <PullCommitsSection
+            {/* GitHub PR status (#850) and the actions on the link — push (#2516), unlink (#2384).
+              Renders nothing for a PR with no linked GitHub PR; fetched on demand, with loading/error
+              inside the section. */}
+            <GithubPrStatusSection
               owner={owner}
               repo={repo}
-              number={number}
-              baseSha={pull.base.sha}
-              headSha={pull.head.sha}
-              commits={pull.commits}
-              reviews={reviewsQuery.data}
-              lineComments={lineCommentsQuery.data}
-              isReviewsLoading={false}
-              isReviewsError={false}
-              showGithubPushState={!!pull.github_pull}
-              partialPass={
-                pull.state === "open" &&
-                !pull.merged &&
-                pull.mergeable_state === "clean" &&
-                pull.review_gate.passed_scope === "partial"
-              }
+              pull={pull}
+              status={githubStatusQuery.data}
+              isLoading={githubStatusQuery.isLoading}
             />
+
             {timelineCommit ? (
               <CommitDiffDialog
                 owner={owner}
@@ -365,25 +410,6 @@ export function PullDetail({
                 onClose={() => setTimelineReview(null)}
               />
             ) : null}
-            <FilesChanged
-              owner={owner}
-              repo={repo}
-              number={number}
-              baseSha={pull.base.sha}
-              headSha={pull.head.sha}
-              files={filesQuery.data}
-              commentCounts={pageQuery.data?.diff_feedback.comment_counts ?? {}}
-              openFilename={openFilename}
-              onOpenFile={openDiffFile}
-              onCloseFile={() => {
-                setOpenDiffThreadId(null);
-                setOpenFilename(null);
-              }}
-              openThreadId={openDiffThreadId}
-              isLoading={false}
-              isError={false}
-            />
-
             {/* #2488: how far the timeline has been unfolded belongs to the PR being read, so a
                 different PR remounts the section and starts from its newest page again. */}
             <CommentList
@@ -403,122 +429,196 @@ export function PullDetail({
             />
           </div>
         </div>
+      </div>
 
-        {showScrollToBottom ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon"
-            className="fixed bottom-[calc(3rem+var(--pull-terminal-dock-height,0px))] left-1/2 z-30 rounded-full border shadow-md"
-            style={
-              scrollButtonCenter == null
-                ? undefined
-                : {
-                    left: `${scrollButtonCenter}px`,
-                    transform: "translateX(-50%)",
-                  }
-            }
-            aria-label="ページ下部へ移動"
-            title="ページ下部へ移動"
-            onClick={() => {
-              const scrollContainer = document.querySelector<HTMLElement>(
-                'main[data-debug-component="RouteContent"]',
-              );
-              scrollContainer?.scrollTo({
-                top: scrollContainer.scrollHeight,
-                behavior: "smooth",
-              });
-            }}
-          >
-            <ArrowDownToLine className="size-4" aria-hidden="true" />
-          </Button>
-        ) : null}
-
-        {/* The sidebar sticks (#2348) only while it sits beside the main column: below `lg` it
-            wraps under the content, where there is nothing left to scroll past it. lg:top-5 parks
-            it right under the sticky header (#2033) — the scroll area's own pt-6 shifts sticky
-            offsets down by 1.5rem (see DetailStickyHeader's -top-6), so the bar's h-11 bottom edge
-            lands at 2.75rem - 1.5rem. A sticky inset applies from the first paint, so the price of
-            clearing the bar is that the sidebar starts those same 20px below the main column's
-            first line instead of level with it; top-0 would align them but then park the sidebar
-            under the bar once the page scrolls. The bar's second row needs no further inset: the
-            bar spans only the main column (#2089). And it sticks only while it still fits that
-            room (#2518) — a taller sidebar goes back to the normal flow so its tail scrolls into
-            view. */}
-        <aside
-          ref={measureSidebar}
-          data-debug-component="PullSidebar"
-          className={cn(
-            "flex w-full shrink-0 flex-col gap-6 lg:w-80",
-            sidebarFitsStickyRoom && "lg:sticky lg:top-5",
-          )}
+      {showScrollToBottom ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          className="fixed bottom-[calc(3rem+var(--pull-terminal-dock-height,0px))] left-1/2 z-30 rounded-full border shadow-md"
+          style={
+            scrollButtonCenter == null
+              ? undefined
+              : {
+                  left: `${scrollButtonCenter}px`,
+                  transform: "translateX(-50%)",
+                }
+          }
+          aria-label="ページ下部へ移動"
+          title="ページ下部へ移動"
+          onClick={() => {
+            const scrollContainer = leftColumnRef.current;
+            scrollContainer?.scrollTo({
+              top: scrollContainer.scrollHeight,
+              behavior: "smooth",
+            });
+          }}
         >
-          {/* GitHub PR status (#850) and the actions on the link — push (#2516), unlink (#2384).
-            Renders nothing for a PR with no linked GitHub PR; fetched on demand, with loading/error
-            inside the section. */}
-          <GithubPrStatusSection
+          <ArrowDownToLine className="size-4" aria-hidden="true" />
+        </Button>
+      ) : null}
+
+      {/* Every view stays mounted once it exists, hidden rather than removed, so switching views
+          or closing the pane cannot throw away a half-written Evidence edit or diff comment. */}
+      <aside
+        data-debug-component="PullRightPane"
+        aria-label="Right pane"
+        hidden={!paneOpen}
+        className={cn(
+          "min-h-0 min-w-0 border-l",
+          paneView === "diff" ? "flex-1" : "w-[36rem] shrink-0",
+        )}
+      >
+        <div hidden={paneView !== "commits"} className="h-full">
+          <PullCommitsSection
             owner={owner}
             repo={repo}
-            pull={pull}
-            status={githubStatusQuery.data}
-            isLoading={githubStatusQuery.isLoading}
+            number={number}
+            baseSha={pull.base.sha}
+            headSha={pull.head.sha}
+            commits={pull.commits}
+            reviews={reviewsQuery.data}
+            lineComments={lineCommentsQuery.data}
+            isReviewsLoading={false}
+            isReviewsError={false}
+            showGithubPushState={!!pull.github_pull}
+            partialPass={
+              pull.state === "open" &&
+              !pull.merged &&
+              pull.mergeable_state === "clean" &&
+              pull.review_gate.passed_scope === "partial"
+            }
           />
-        </aside>
-      </div>
+        </div>
+        <div hidden={paneView !== "files"} className="h-full">
+          <FilesChanged
+            owner={owner}
+            repo={repo}
+            number={number}
+            files={files}
+            commentCounts={pageQuery.data?.diff_feedback.comment_counts ?? {}}
+            selectedFilename={diffFile?.filename ?? null}
+            onOpenFile={openDiffFile}
+            isLoading={false}
+            isError={false}
+          />
+        </div>
+        <div hidden={paneView !== "diff"} className="h-full">
+          {files && diffFile ? (
+            <PullDiffDialog
+              owner={owner}
+              repo={repo}
+              number={number}
+              baseSha={pull.base.sha}
+              headSha={pull.head.sha}
+              files={files}
+              file={diffFile}
+              commentCounts={pageQuery.data?.diff_feedback.comment_counts ?? {}}
+              initialThreadId={openDiffThread?.id ?? null}
+              threadRevealKey={openDiffThread}
+              display={diffFullscreen ? "fullscreen" : "pane"}
+              onToggleFullscreen={() => setDiffFullscreen((value) => !value)}
+              onSelectFile={(filename) => {
+                // Not openDiffFile: this also runs when Viewed settles, after the reader may have
+                // moved the pane on.
+                setOpenDiffThread(null);
+                setOpenFilename(filename);
+              }}
+              onClose={() => setDiffFullscreen(false)}
+            />
+          ) : (
+            <section className="flex h-full min-h-0 flex-col">
+              <PullPaneHead title="Diff" />
+              <p className="p-3 text-sm text-muted-foreground">No diff.</p>
+            </section>
+          )}
+        </div>
+        <div hidden={paneView !== "evidence"} className="h-full">
+          <PullEvidence owner={owner} repo={repo} pull={pull} />
+        </div>
+      </aside>
+
+      <PullPaneRail
+        paneOpen={paneOpen}
+        paneView={paneView}
+        onTogglePane={() => setPaneOpen((open) => !open)}
+        onSelectView={selectRailView}
+      />
     </div>
   );
 }
 
-/** The sidebar's sticky inset, in px — must match its `lg:top-5`. */
-const SIDEBAR_STICKY_TOP_PX = 20;
+const PANE_RAIL_VIEWS: {
+  view: PullPaneView;
+  label: string;
+  icon: typeof File;
+}[] = [
+  { view: "commits", label: "Commits", icon: GitCommitHorizontal },
+  { view: "files", label: "Files changed", icon: File },
+  { view: "diff", label: "Diff", icon: Diff },
+  { view: "evidence", label: "Evidence", icon: ClipboardCheck },
+];
 
-// #2518: a stuck element never scrolls, so one taller than the room it is stuck in keeps the part
-// below the fold off-screen no matter how far the page scrolls. Measures an element against that
-// room — the scrollport it would stick inside, minus the inset it sticks at — and reports whether
-// sticky is still safe, so the caller can fall back to the normal flow when it is not. The answer
-// starts as "fits" because a sticky element that has yet to be measured looks exactly like a static
-// one until the page scrolls.
-function useFitsStickyRoom<T extends HTMLElement>(topPx: number) {
-  // A callback ref, not a ref object: the caller renders its loading state first, so the element
-  // arrives on a later render and a mount-time effect would measure nothing and never look again.
-  const [element, setElement] = useState<T | null>(null);
-  const [fits, setFits] = useState(true);
-
-  useEffect(() => {
-    if (!element) return;
-    const measure = () => {
-      const scrollport = stickyScrollport(element);
-      // Sticky insets start inside the scrollport's padding box, so its own top padding eats into
-      // the room on top of the inset itself (see the sidebar's pt-6 note).
-      const paddingTop =
-        Number.parseFloat(getComputedStyle(scrollport).paddingTop) || 0;
-      setFits(
-        element.offsetHeight <= scrollport.clientHeight - paddingTop - topPx,
-      );
-    };
-
-    measure();
-    // The element's height moves with its own content (sections expanding, async data arriving),
-    // the room with the window — watch both so the verdict follows either one.
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    window.addEventListener("resize", measure);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [element, topPx]);
-
-  return [setElement, fits] as const;
-}
-
-// The scrollport a sticky element is pinned inside: its nearest scrollable ancestor, or the page.
-function stickyScrollport(element: HTMLElement): HTMLElement {
-  for (let node = element.parentElement; node; node = node.parentElement) {
-    const { overflowY } = getComputedStyle(node);
-    if (overflowY === "auto" || overflowY === "scroll") return node;
-  }
-  return document.documentElement;
+// The right pane's controls. The rail stays when the pane is closed, so it is also how the pane
+// comes back.
+function PullPaneRail({
+  paneOpen,
+  paneView,
+  onTogglePane,
+  onSelectView,
+}: {
+  paneOpen: boolean;
+  paneView: PullPaneView;
+  onTogglePane: () => void;
+  onSelectView: (view: PullPaneView) => void;
+}) {
+  const toggleLabel = paneOpen ? "Close right pane" : "Open right pane";
+  const ToggleIcon = paneOpen ? PanelRightClose : PanelRightOpen;
+  return (
+    <nav
+      aria-label="Right pane views"
+      data-debug-component="PullPaneRail"
+      className="flex w-12 shrink-0 flex-col items-center gap-1 border-l pt-2"
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-expanded={paneOpen}
+        aria-label={toggleLabel}
+        title={toggleLabel}
+        className="size-8 text-muted-foreground"
+        onClick={onTogglePane}
+      >
+        <ToggleIcon className="size-[18px]" />
+      </Button>
+      <hr className="my-1 w-6 border-border" />
+      {PANE_RAIL_VIEWS.map(({ view, label, icon: Icon }) => {
+        const selected = paneOpen && paneView === view;
+        return (
+          <Button
+            key={view}
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-pressed={selected}
+            aria-label={label}
+            title={label}
+            className={cn(
+              "size-8",
+              selected
+                ? "bg-primary-subtle text-primary hover:bg-primary-subtle hover:text-primary"
+                : "text-muted-foreground",
+            )}
+            onClick={() => onSelectView(view)}
+          >
+            <Icon className="size-[18px]" />
+          </Button>
+        );
+      })}
+    </nav>
+  );
 }
 
 // Workflow run summary for this PR (#1008): one line under the badges, or nothing when the PR has
@@ -641,10 +741,9 @@ function pullTitleSource(owner: string, repo: string, pull: PullRequest) {
 }
 
 // What the PR is for (#2640): the linked issue's body and how its acceptance criteria stand, since
-// the spec lives in the issue and the PR itself only carries Evidence. The Evidence stays
-// reachable, collapsed, below the criteria. A PR with no linked issue, or whose issue has no
-// structured criteria, shows its Evidence open in place of the issue. Either way the worktree and
-// branch band sits directly above the Evidence, so opening the Evidence never pushes it down.
+// the spec lives in the issue and the PR itself only carries Evidence, which has its own view in
+// the right pane. A PR with no linked issue, or whose issue has no structured criteria, shows only
+// the worktree and branch band here.
 function PullDescription({
   owner,
   repo,
@@ -671,12 +770,7 @@ function PullDescription({
   const issue = issueQuery.data;
   const criteria = issue?.acceptance_criteria ?? [];
   if (!linked || !issue || criteria.length === 0) {
-    return (
-      <>
-        <PullInfoSection pull={pull} />
-        <PullEvidence owner={owner} repo={repo} pull={pull} defaultOpen />
-      </>
-    );
+    return <PullInfoSection pull={pull} />;
   }
   // The latest review that graded criteria speaks for all of them, whatever head it read: a
   // criterion once met tends to stay met. Reviews arrive submitted_at ascending.
@@ -760,23 +854,20 @@ function PullDescription({
         </ul>
       </section>
       <PullInfoSection pull={pull} />
-      <PullEvidence owner={owner} repo={repo} pull={pull} />
     </div>
   );
 }
 
 // The PR's Evidence: the free-form Markdown it carries — screenshots, logs, test runs — shown and
-// edited in place.
+// edited in the right pane.
 function PullEvidence({
   owner,
   repo,
   pull,
-  defaultOpen = false,
 }: {
   owner: string;
   repo: string;
   pull: PullRequest;
-  defaultOpen?: boolean;
 }) {
   // null while reading; the text being edited otherwise.
   const [draft, setDraft] = useState<string | null>(null);
@@ -793,16 +884,26 @@ function PullEvidence({
   }
 
   return (
-    <details
+    <section
       data-debug-component="PullEvidence"
-      open={defaultOpen || undefined}
-      className="group overflow-hidden rounded-md border bg-muted/30"
+      className="flex h-full min-h-0 flex-col"
     >
-      <summary className="flex cursor-pointer list-none items-center gap-1 px-4 py-2 text-sm font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
-        Evidence
-      </summary>
-      <div className="border-t">
+      <PullPaneHead title="Evidence">
+        {draft == null ? (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Edit Evidence"
+            title="Edit Evidence"
+            className="ml-auto size-7"
+            onClick={() => setDraft(pull.body ?? "")}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        ) : null}
+      </PullPaneHead>
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {draft != null ? (
           <div className="flex flex-col gap-2 p-4">
             <textarea
@@ -842,32 +943,15 @@ function PullEvidence({
               </Button>
             </div>
           </div>
+        ) : pull.body ? (
+          <Markdown owner={owner} repo={repo} className="p-4">
+            {pull.body}
+          </Markdown>
         ) : (
-          <div className="relative">
-            {pull.body ? (
-              <Markdown owner={owner} repo={repo} className="p-4 pr-12">
-                {pull.body}
-              </Markdown>
-            ) : (
-              <p className="p-4 pr-12 text-sm text-muted-foreground">
-                No evidence.
-              </p>
-            )}
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label="Edit Evidence"
-              title="Edit Evidence"
-              className="absolute top-2 right-2 size-7"
-              onClick={() => setDraft(pull.body ?? "")}
-            >
-              <Pencil className="size-3.5" />
-            </Button>
-          </div>
+          <p className="p-4 text-sm text-muted-foreground">No evidence.</p>
         )}
       </div>
-    </details>
+    </section>
   );
 }
 
@@ -1102,7 +1186,7 @@ function usePendingUntil(until: number): boolean {
 
 // #406: GitHub-export write action for a PR whose repo is in 'github_pr' mode. Once the PR has been
 // exported (github_pull present) the action row is empty here — this is the double-create guard, so
-// a second export can't be dispatched. Everything about the resulting link lives in the sidebar's
+// a second export can't be dispatched. Everything about the resulting link lives in the
 // GitHub PR section: the route to the GitHub PR (#2091) and pushing to its branch (#2516). Until
 // exported, "Create PR on GitHub" injects the full export instructions into a launched agent (#1892,
 // same prompt-injection approach as New issue), which generates a branch/title/description in the
@@ -1149,7 +1233,7 @@ function GithubPrAction({
       setClickedAt(null);
   }, [launchFailed, pull.github_pull, pull.github_pr_export_started_at]);
 
-  // Exported already: the GitHub-side controls are the sidebar section's (#2516), so this row has
+  // Exported already: the GitHub-side controls are the GitHub PR section's (#2516), so this row has
   // nothing left to offer.
   if (pull.github_pull) return null;
   // A merged or closed loophub PR is past the point of exporting, so offer Create only while open.
@@ -1192,31 +1276,22 @@ function FilesChanged({
   owner,
   repo,
   number,
-  baseSha,
-  headSha,
   files,
   commentCounts,
-  openFilename,
-  openThreadId,
+  selectedFilename,
   onOpenFile,
-  onCloseFile,
   isLoading,
   isError,
 }: {
   owner: string;
   repo: string;
   number: number;
-  baseSha: string | null;
-  headSha: string | null;
   files: PullFile[] | undefined;
   /** Per-file diff feedback counts, from the same page query that produced `files` (#123). */
   commentCounts: Record<string, number>;
-  /** Which file's diff dialog is open. */
-  openFilename: string | null;
-  /** The timeline thread to reveal after the file dialog opens, if any. */
-  openThreadId: number | null;
+  /** The file open in the Diff view. */
+  selectedFilename: string | null;
   onOpenFile: (filename: string) => void;
-  onCloseFile: () => void;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -1235,14 +1310,6 @@ function FilesChanged({
   // record as well as on the diff rather than showing rows that are about to disappear.
   const loading = isLoading || viewsQuery.isPending;
 
-  const openFile =
-    files && openFilename ? (findPullFile(files, openFilename) ?? null) : null;
-  // A line comment can name a path the current diff no longer has (a file reverted since the
-  // comment was made): nothing to show, so the pending open is dropped instead of a dangling dialog.
-  useEffect(() => {
-    if (openFilename && files && !openFile) onCloseFile();
-  }, [files, openFile, openFilename, onCloseFile]);
-
   const totalAdditions =
     files?.reduce((sum, file) => sum + file.additions, 0) ?? 0;
   const totalDeletions =
@@ -1250,19 +1317,23 @@ function FilesChanged({
 
   return (
     <section
-      id="files-changed"
       data-debug-component="FilesChanged"
-      className="flex scroll-mt-11 flex-col gap-3"
+      className="flex h-full min-h-0 flex-col"
     >
-      <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
-        Files changed{files ? ` (${files.length})` : ""}
-        {files && files.length > 0 ? (
-          <DiffStat
-            additions={totalAdditions}
-            deletions={totalDeletions}
-            className="text-sm font-normal"
-          />
-        ) : null}
+      <PullPaneHead
+        title={
+          <>
+            Files changed{files ? ` (${files.length})` : ""}
+            {files && files.length > 0 ? (
+              <DiffStat
+                additions={totalAdditions}
+                deletions={totalDeletions}
+                className="text-xs font-normal"
+              />
+            ) : null}
+          </>
+        }
+      >
         {/* The count is the viewed total rather than what is hidden right now, so it reads the
             same with the toggle on or off (#2502, #2514). */}
         {files && files.length > 0 ? (
@@ -1274,72 +1345,60 @@ function FilesChanged({
             onCheckedChange={setShowViewed}
           />
         ) : null}
-      </h2>
-      {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading diff…
-        </div>
-      ) : isError ? (
-        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
-          Failed to load diff.
-        </div>
-      ) : !files || files.length === 0 ? (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">No diff.</p>
-          <DiffFeedbackHistory
-            owner={owner}
-            repo={repo}
-            number={number}
-            fetchEnabled={false}
-          />
-        </div>
-      ) : (
-        <>
-          <div className="overflow-hidden rounded-md border">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b bg-muted/40 px-2.5 py-1.5 text-[11px] font-medium uppercase text-muted-foreground">
-              <span>File</span>
-              <span>Changes</span>
-            </div>
-            <ul className="divide-y">
-              {visibleFiles.map((file) => (
-                <FileSummaryRow
-                  key={file.filename}
-                  file={file}
-                  viewState={pullFileViewState(file, viewsByPath)}
-                  commentCount={commentCounts[file.filename] ?? 0}
-                  onOpen={() => onOpenFile(file.filename)}
-                />
-              ))}
-              {visibleFiles.length === 0 ? (
-                <li className="px-2.5 py-2 text-sm text-muted-foreground">
-                  Every changed file is marked viewed.
-                </li>
-              ) : null}
-            </ul>
+      </PullPaneHead>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading diff…
           </div>
-          <DiffFeedbackHistory
-            owner={owner}
-            repo={repo}
-            number={number}
-            fetchEnabled={false}
-          />
-          {openFile ? (
-            <PullDiffDialog
+        ) : isError ? (
+          <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+            Failed to load diff.
+          </div>
+        ) : !files || files.length === 0 ? (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">No diff.</p>
+            <DiffFeedbackHistory
               owner={owner}
               repo={repo}
               number={number}
-              baseSha={baseSha}
-              headSha={headSha}
-              files={files}
-              file={openFile}
-              commentCounts={commentCounts}
-              initialThreadId={openThreadId}
-              onSelectFile={onOpenFile}
-              onClose={onCloseFile}
+              fetchEnabled={false}
             />
-          ) : null}
-        </>
-      )}
+          </div>
+        ) : (
+          <>
+            <div className="overflow-hidden rounded-md border">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b bg-muted/40 px-2.5 py-1.5 text-[11px] font-medium uppercase text-muted-foreground">
+                <span>File</span>
+                <span>Changes</span>
+              </div>
+              <ul className="divide-y">
+                {visibleFiles.map((file) => (
+                  <FileSummaryRow
+                    key={file.filename}
+                    file={file}
+                    viewState={pullFileViewState(file, viewsByPath)}
+                    commentCount={commentCounts[file.filename] ?? 0}
+                    selected={file.filename === selectedFilename}
+                    onOpen={() => onOpenFile(file.filename)}
+                  />
+                ))}
+                {visibleFiles.length === 0 ? (
+                  <li className="px-2.5 py-2 text-sm text-muted-foreground">
+                    Every changed file is marked viewed.
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+            <DiffFeedbackHistory
+              owner={owner}
+              repo={repo}
+              number={number}
+              fetchEnabled={false}
+            />
+          </>
+        )}
+      </div>
     </section>
   );
 }
@@ -1348,11 +1407,13 @@ function FileSummaryRow({
   file,
   viewState,
   commentCount,
+  selected,
   onOpen,
 }: {
   file: PullFile;
   viewState: PullFileViewState;
   commentCount: number;
+  selected: boolean;
   onOpen: () => void;
 }) {
   return (
@@ -1360,7 +1421,11 @@ function FileSummaryRow({
       <button
         type="button"
         onClick={onOpen}
-        className="grid w-full grid-cols-[auto_minmax(0,max-content)_auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        aria-current={selected ? "true" : undefined}
+        className={cn(
+          "grid w-full grid-cols-[auto_minmax(0,max-content)_auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          selected && "bg-primary-subtle",
+        )}
       >
         <FileStatusBadge status={file.status} />
         <span className="min-w-0 truncate font-mono text-xs [direction:rtl]">

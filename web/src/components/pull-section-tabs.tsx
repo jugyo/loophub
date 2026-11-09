@@ -1,29 +1,41 @@
-// Section tabs for the PR detail page (#59). The tabs are same-page anchor links, not a view
-// switch: every section stays rendered on one page and a tab only moves the scroll position, so
-// the page keeps reading top to bottom for anyone who prefers scrolling. The selected tab follows
-// the section currently in view (scrollspy), which is what makes the bar useful while scrolled.
+// Section tabs for the PR detail page (#59). Sections in the left column are same-page anchor
+// links: a tab only moves the scroll position, and the selected tab follows the section currently
+// in view (scrollspy), which is what makes the bar useful while scrolled. Sections that live in the
+// right pane open that pane's view instead.
 
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { Fragment, type RefObject, useEffect, useRef, useState } from "react";
 import { useScrolledPast } from "@/components/detail-title";
 import { cn } from "@/lib/utils";
 
+/** What the PR page's right pane can show. */
+export type PullPaneView = "commits" | "files" | "diff" | "evidence";
+
 /**
- * The anchored sections of the PR page, in page order. `id` is the element id the section renders
+ * The left column's anchored sections, in page order. `id` is the element id the section renders
  * and the tab links to; the labels stay English structural labels. `watch` lists the elements that
  * count as being in the section for the scrollspy — Overview needs two of them because the bar
  * itself sits between the PR's header and its description (pull-detail.tsx).
  */
 export const PULL_SECTIONS = [
   { id: "overview", label: "Overview", watch: ["overview", "pull-body"] },
-  { id: "commits", label: "Commits", watch: ["commits"] },
-  { id: "files-changed", label: "Files changed", watch: ["files-changed"] },
   { id: "comments", label: "Comments", watch: ["comments"] },
 ] as const;
+
+/** The right pane's views that sit in the tab bar, between Overview and Comments. */
+const PULL_PANE_SECTIONS: { view: PullPaneView; label: string }[] = [
+  { view: "commits", label: "Commits" },
+  { view: "files", label: "Files changed" },
+];
+
+const TAB_CLASS =
+  "-mb-px inline-flex h-11 items-center justify-center border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+const INACTIVE_TAB_CLASS =
+  "border-transparent text-muted-foreground hover:border-border hover:text-foreground";
 
 /**
  * Height of the two bars a scrolled section passes under: the detail sticky header (h-11,
  * detail-title.tsx) and this bar (h-11). Sections carry the matching `scroll-mt-11` on top of the
- * scrollport's `scroll-pt-11` (app-layout.tsx) so an anchor jump lands below both.
+ * scrollport's `scroll-pt-11` (pull-detail.tsx) so an anchor jump lands below both.
  */
 const STICKY_INSET_PX = 88;
 
@@ -63,11 +75,14 @@ function scrollportPaddingTop(scroller: Element | null): number {
 export function PullSectionTabs({
   titleRef,
   headerHasSecondRow = false,
+  onOpenPaneView,
 }: {
   /** The page-top title, shared with the sticky header so the bars agree on when to stack. */
   titleRef: RefObject<HTMLDivElement | null>;
   /** Whether the sticky header above this bar is two rows tall. */
   headerHasSecondRow?: boolean;
+  /** Opens a section that lives in the right pane. */
+  onOpenPaneView: (view: PullPaneView) => void;
 }) {
   const navRef = useRef<HTMLElement>(null);
   const active = useActiveSection(
@@ -77,8 +92,7 @@ export function PullSectionTabs({
   // The title sits above this bar, so the sticky header appears just as this bar reaches the top of
   // the scrollport. Dropping the bar by the header's height at that moment hands the top slot over:
   // the two stack instead of the header covering the tabs. -top-6 cancels the scroll area's pt-6,
-  // top-5 is that same offset plus the header's h-11 (see the sidebar's lg:top-5 in
-  // pull-detail.tsx), and top-10 plus its two-row h-16.
+  // top-5 is that same offset plus the header's h-11, and top-10 plus its two-row h-16.
   const belowStickyHeader = useScrolledPast(titleRef);
   return (
     <nav
@@ -94,37 +108,50 @@ export function PullSectionTabs({
           : "-top-6",
       )}
     >
-      {PULL_SECTIONS.map((section) => (
-        <a
-          key={section.id}
-          href={`#${section.id}`}
-          onClick={(event) => {
-            if (
-              event.button !== 0 ||
-              event.altKey ||
-              event.ctrlKey ||
-              event.metaKey ||
-              event.shiftKey
-            ) {
-              return;
-            }
-            event.preventDefault();
-            document.getElementById(section.id)?.scrollIntoView({
-              behavior: "smooth",
-              block: "start",
-            });
-          }}
-          // "location" rather than "page": the tabs mark a place within this page, not a route.
-          aria-current={active === section.id ? "location" : undefined}
-          className={cn(
-            "-mb-px inline-flex h-11 items-center justify-center border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            active === section.id
-              ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-          )}
-        >
-          {section.label}
-        </a>
+      {PULL_SECTIONS.map((section, index) => (
+        <Fragment key={section.id}>
+          {index === 1
+            ? PULL_PANE_SECTIONS.map(({ view, label }) => (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => onOpenPaneView(view)}
+                  className={cn(TAB_CLASS, INACTIVE_TAB_CLASS)}
+                >
+                  {label}
+                </button>
+              ))
+            : null}
+          <a
+            href={`#${section.id}`}
+            onClick={(event) => {
+              if (
+                event.button !== 0 ||
+                event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey
+              ) {
+                return;
+              }
+              event.preventDefault();
+              document.getElementById(section.id)?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }}
+            // "location" rather than "page": the tabs mark a place within this page, not a route.
+            aria-current={active === section.id ? "location" : undefined}
+            className={cn(
+              TAB_CLASS,
+              active === section.id
+                ? "border-primary text-foreground"
+                : INACTIVE_TAB_CLASS,
+            )}
+          >
+            {section.label}
+          </a>
+        </Fragment>
       ))}
     </nav>
   );
@@ -147,9 +174,11 @@ function useActiveSection(
 ): string {
   const [active, setActive] = useState<string>(PULL_SECTIONS[0].id);
   useEffect(() => {
-    // The page scrolls inside <main>, so every signal comes from that scrollport; the pixel inset
-    // is meaningless against the viewport, which starts above the app's own top bars.
-    const scroller = navRef.current?.closest("main") ?? null;
+    // The left column is its own scrollport, so every signal comes from it; the pixel inset is
+    // meaningless against the viewport, which starts above the app's own top bars.
+    const scroller =
+      navRef.current?.closest('[data-debug-component="PullLeftColumn"]') ??
+      null;
     const inBand = new Set<string>();
     let atStart = false;
     let atEnd = false;

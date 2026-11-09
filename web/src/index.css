@@ -180,6 +180,10 @@
    the anchoring this turns off. */
 .diff-scrollport {
   overflow-anchor: none;
+  /* Contains the diff's absolutely positioned descendants (the sr-only line copies among them).
+     Without a positioned ancestor here they count towards the app shell's overflow on the PR page,
+     where a thread's scrollIntoView would then scroll the shell itself. */
+  position: relative;
 }
 
 /* Diff line signs stay outside the syntax tokens so add/delete coloring and text lookup keep

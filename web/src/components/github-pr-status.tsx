@@ -1,16 +1,14 @@
-// GitHub PR status section for the PR-detail right sidebar (#850). Shown only when the loophub PR has
+// GitHub PR status section for the PR-detail left column (#850). Shown only when the loophub PR has
 // a linked GitHub PR (github_pull); the GitHub-side status (review / checks / comment counts /
-// merged) is fetched on demand via `pulls/githubStatus` and cached server-side. Compact by design so
-// it sits alongside the other sidebar sections (work duration, sessions, handoff) without crowding
-// them — a badge row plus a few small labeled rows and a freshness footnote. The section body opens
+// merged) is fetched on demand via `pulls/githubStatus` and cached server-side. Compact by design —
+// a badge row plus a few small labeled rows and a freshness footnote. The section body opens
 // with the link out to the GitHub PR (#2091), so the GitHub route lives where the status is read;
 // the heading itself is plain text. The section also owns the link's write actions — pushing the
 // local head to its branch (#848, moved here in #2516) and unlinking it (#2384) — for the same
 // reason: the link is managed where it is shown.
 //
-// Loading / error states mirror the sibling sidebar sections (e.g. WorkDuration): a spinner while
-// fetching and a destructive box on failure. The "not linked" state renders nothing at all, so the
-// sidebar can hand the section every PR and let it decide (like WorkflowRunSection).
+// A spinner while fetching and a destructive box on failure. The "not linked" state renders nothing
+// at all, so the page can hand the section every PR and let it decide (like WorkflowRunSection).
 
 import {
   ArrowDown,

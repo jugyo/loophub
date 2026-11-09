@@ -8,11 +8,20 @@ function PullDetailPage() {
   const { owner, repo, number } = pullDetailRoute.useParams();
   usePageTitle([`${owner}/${repo}`, `PR #${number}`]);
   return (
-    <div className="flex min-h-full flex-col">
-      <div className="flex-1">
-        <PullDetail owner={owner} repo={repo} number={Number(number)} />
+    <div className="flex h-full flex-col">
+      <div className="min-h-0 flex-1">
+        {/* Which pane is open and how far the left column is scrolled belong to the PR being read. */}
+        <PullDetail
+          key={`${owner}/${repo}/${number}`}
+          owner={owner}
+          repo={repo}
+          number={Number(number)}
+        />
       </div>
-      <PullTerminalDock owner={owner} repo={repo} number={Number(number)} />
+      {/* The dock's own margins assume <main>'s padding, which this page turns off. */}
+      <div className="px-4 sm:px-6 [&>*]:mt-0">
+        <PullTerminalDock owner={owner} repo={repo} number={Number(number)} />
+      </div>
     </div>
   );
 }

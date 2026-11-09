@@ -1,8 +1,9 @@
-// PR-detail diff dialog: the full-size modal opened from a file summary row, showing one file's
-// diff with its diff feedback threads plus Raw and (for Markdown) Base/Head rendered previews. The
-// dialog owns its own Escape handling, mode switching, per-mode file fetch, and the copy-path
-// resolution for renamed / invisible-character filenames. The Files changed section only picks the
-// open file. Review line comments are not shown here — the Reviews timeline is their only view.
+// PR-detail diff view, showing one file's diff with its diff feedback threads plus Raw and (for
+// Markdown) Base/Head rendered previews. It renders in one of three displays: the PR page's right
+// pane, that pane expanded to the full screen, or a modal for a single commit's diff. The view owns
+// its own Escape handling, mode switching, per-mode file fetch, and the copy-path resolution for
+// renamed / invisible-character filenames. The PR page only picks the open file. Review line
+// comments are not shown here — the Reviews timeline is their only view.
 
 import {
   Check,
@@ -11,6 +12,8 @@ import {
   Filter,
   Info,
   Loader2,
+  Maximize2,
+  Minimize2,
   Plus,
   SmilePlus,
   X,
@@ -49,6 +52,7 @@ import {
   type MarkdownDiffDocumentModel,
   useMarkdownDiffDocument,
 } from "@/components/markdown-diff-document";
+import { PullPaneHead } from "@/components/pull-pane-head";
 import { useToast } from "@/components/toast";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
@@ -267,11 +271,95 @@ function matchesGlobList(filename: string, value: string) {
   );
 }
 
+/**
+ * Where the diff renders: a modal over the page (one commit's diff), the PR page's right pane, or
+ * that pane expanded over the whole screen. A pane and its full-screen form are the same element
+ * tree, so moving between them keeps a half-written comment and the view's other state.
+ */
+export type DiffDisplay = "dialog" | "pane" | "fullscreen";
+
+const DIFF_OVERLAY_CLASS: Record<DiffDisplay, string> = {
+  dialog:
+    "fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4",
+  pane: "flex h-full min-h-0",
+  fullscreen: "fixed inset-0 z-50 flex bg-background",
+};
+
+const DIFF_PANEL_CLASS: Record<DiffDisplay, string> = {
+  dialog:
+    "flex max-h-full w-full flex-col overflow-hidden rounded-md border bg-background shadow-lg",
+  pane: "flex w-full min-w-0 flex-col overflow-hidden bg-background",
+  fullscreen: "flex w-full min-w-0 flex-col overflow-hidden bg-background",
+};
+
+// The right pane's title row: the file picker (the pane has no file list), the file's stat, and the
+// button moving the view between the pane and the full screen. A modal has none of this.
+function DiffPaneHead({
+  display,
+  files,
+  selectedFile,
+  onSelectFile,
+  onToggleFullscreen,
+}: {
+  display: DiffDisplay;
+  files?: PullFile[];
+  selectedFile?: PullFile | null;
+  onSelectFile?: (filename: string) => void;
+  onToggleFullscreen?: () => void;
+}) {
+  if (display === "dialog") return null;
+  const fullscreen = display === "fullscreen";
+  const toggleLabel = fullscreen
+    ? "Return diff to right pane"
+    : "Show diff full screen";
+  const ToggleIcon = fullscreen ? Minimize2 : Maximize2;
+  return (
+    <PullPaneHead title="Diff">
+      <div className="ml-auto flex min-w-0 items-center gap-2">
+        {!fullscreen && files && selectedFile ? (
+          <select
+            aria-label="Diff file"
+            value={selectedFile.filename}
+            onChange={(event) => onSelectFile?.(event.target.value)}
+            className="h-7 min-w-0 max-w-80 rounded-md border bg-background px-1 font-mono text-xs"
+          >
+            {files.map((candidate) => (
+              <option key={candidate.filename} value={candidate.filename}>
+                {candidate.filename}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {selectedFile ? (
+          <DiffStat
+            additions={selectedFile.additions}
+            deletions={selectedFile.deletions}
+            className="shrink-0 text-xs"
+          />
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={toggleLabel}
+          title={toggleLabel}
+          className="size-7 shrink-0"
+          onClick={onToggleFullscreen}
+        >
+          <ToggleIcon className="size-4" />
+        </Button>
+      </div>
+    </PullPaneHead>
+  );
+}
+
 export function DiffDialogState({
   dialogLabel,
   dialogTitle,
   dialogSha,
   scopeSelector,
+  display = "dialog",
+  onToggleFullscreen,
   onClose,
   children,
 }: {
@@ -279,75 +367,90 @@ export function DiffDialogState({
   dialogTitle: string;
   dialogSha: string;
   scopeSelector?: ReactNode;
+  display?: DiffDisplay;
+  onToggleFullscreen?: () => void;
   onClose: () => void;
   children: ReactNode;
 }) {
   const backdropDismiss = useBackdropDismiss(onClose);
   useEffect(() => {
+    if (display === "pane") return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [display, onClose]);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4"
-      {...backdropDismiss}
+      className={DIFF_OVERLAY_CLASS[display]}
+      {...(display === "dialog" ? backdropDismiss : {})}
     >
       <div
         data-debug-component="DiffFileDialog"
-        role="dialog"
-        aria-modal="true"
+        role={display === "pane" ? "region" : "dialog"}
+        aria-modal={display === "pane" ? undefined : "true"}
         aria-label={dialogLabel}
-        className="flex max-h-full w-full overflow-hidden rounded-md border bg-background shadow-lg"
+        className={DIFF_PANEL_CLASS[display]}
       >
-        <aside
-          aria-label="Changed files"
-          className="shrink-0 overflow-y-auto bg-muted/20"
-          style={{ width: INITIAL_FILE_SIDEBAR_WIDTH }}
-        >
-          <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
-            <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold">
-              <span>Files changed (0)</span>
-            </div>
-          </div>
-        </aside>
-        <div
-          role="separator"
-          aria-label="Resize changed files sidebar"
-          aria-orientation="vertical"
-          aria-valuemin={MIN_FILE_SIDEBAR_WIDTH}
-          aria-valuemax={FALLBACK_MAX_FILE_SIDEBAR_WIDTH}
-          aria-valuenow={INITIAL_FILE_SIDEBAR_WIDTH}
-          className="relative w-1 shrink-0 border-x bg-border/40"
+        <DiffPaneHead
+          display={display}
+          onToggleFullscreen={onToggleFullscreen}
         />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                <code className="shrink-0 rounded bg-muted px-1 py-0.5">
-                  {dialogSha}
-                </code>
-                <span className="truncate">{dialogTitle}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {scopeSelector}
-              <Button
-                variant="secondary"
-                size="sm"
-                aria-label="Close commit diff"
-                className="h-7 w-7 shrink-0 p-0"
-                onClick={onClose}
+        <div className="flex min-h-0 flex-1">
+          {display !== "pane" ? (
+            <>
+              <aside
+                aria-label="Changed files"
+                className="shrink-0 overflow-y-auto bg-muted/20"
+                style={{ width: INITIAL_FILE_SIDEBAR_WIDTH }}
               >
-                <X className="size-4" />
-              </Button>
+                <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold">
+                    <span>Files changed (0)</span>
+                  </div>
+                </div>
+              </aside>
+              <div
+                role="separator"
+                aria-label="Resize changed files sidebar"
+                aria-orientation="vertical"
+                aria-valuemin={MIN_FILE_SIDEBAR_WIDTH}
+                aria-valuemax={FALLBACK_MAX_FILE_SIDEBAR_WIDTH}
+                aria-valuenow={INITIAL_FILE_SIDEBAR_WIDTH}
+                className="relative w-1 shrink-0 border-x bg-border/40"
+              />
+            </>
+          ) : null}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                  <code className="shrink-0 rounded bg-muted px-1 py-0.5">
+                    {dialogSha}
+                  </code>
+                  <span className="truncate">{dialogTitle}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {scopeSelector}
+                {display === "dialog" ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    aria-label="Close commit diff"
+                    className="h-7 w-7 shrink-0 p-0"
+                    onClick={onClose}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                ) : null}
+              </div>
+            </header>
+            <div className="diff-scrollport min-w-0 flex-1 overflow-auto">
+              {children}
             </div>
-          </header>
-          <div className="diff-scrollport min-w-0 flex-1 overflow-auto">
-            {children}
           </div>
         </div>
       </div>
@@ -451,6 +554,9 @@ export function PullDiffDialog({
   file,
   commentCounts = {},
   initialThreadId = null,
+  threadRevealKey,
+  display = "dialog",
+  onToggleFullscreen,
   onSelectFile,
   onClose,
 }: {
@@ -463,6 +569,10 @@ export function PullDiffDialog({
   file: PullFile;
   commentCounts?: Readonly<Record<string, number>>;
   initialThreadId?: number | null;
+  /** Changes when the same thread should be revealed again in a view that stayed open. */
+  threadRevealKey?: unknown;
+  display?: DiffDisplay;
+  onToggleFullscreen?: () => void;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
@@ -483,6 +593,11 @@ export function PullDiffDialog({
       setSelectedSha(null);
     }
   }, [historyQuery.data, selectedSha]);
+  // A timeline thread lives on the whole PR's diff, and the PR page's view outlives each opening,
+  // so asking for one (threadRevealKey: even the same one again) leaves a commit's scope.
+  useEffect(() => {
+    if (initialThreadId != null) setSelectedSha(null);
+  }, [initialThreadId, threadRevealKey]);
   const diffQuery = useCommitDiff(
     owner,
     repo,
@@ -527,7 +642,10 @@ export function PullDiffDialog({
         file={file}
         commentCounts={commentCounts}
         initialThreadId={initialThreadId}
+        threadRevealKey={threadRevealKey}
         scopeSelector={scopeSelector}
+        display={display}
+        onToggleFullscreen={onToggleFullscreen}
         onSelectFile={onSelectFile}
         onClose={onClose}
       />
@@ -543,6 +661,8 @@ export function PullDiffDialog({
         dialogSha={shortSha}
         dialogTitle={selectedCommit.subject}
         scopeSelector={scopeSelector}
+        display={display}
+        onToggleFullscreen={onToggleFullscreen}
         onClose={onClose}
       >
         <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
@@ -558,6 +678,8 @@ export function PullDiffDialog({
         dialogSha={shortSha}
         dialogTitle={selectedCommit.subject}
         scopeSelector={scopeSelector}
+        display={display}
+        onToggleFullscreen={onToggleFullscreen}
         onClose={onClose}
       >
         <div className="m-4 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
@@ -579,6 +701,8 @@ export function PullDiffDialog({
         dialogSha={shortSha}
         dialogTitle={selectedCommit.subject}
         scopeSelector={scopeSelector}
+        display={display}
+        onToggleFullscreen={onToggleFullscreen}
         onClose={onClose}
       >
         <p className="p-4 text-sm text-muted-foreground">
@@ -610,6 +734,8 @@ export function PullDiffDialog({
       dialogSha={shortSha}
       scopeSelector={scopeSelector}
       commentCounts={commitFeedback.data?.comment_counts}
+      display={display}
+      onToggleFullscreen={onToggleFullscreen}
       onSelectFile={() => {}}
       onClose={onClose}
     />
@@ -624,11 +750,14 @@ export function DiffFileDialog({
   file,
   commentCounts = {},
   initialThreadId = null,
+  threadRevealKey,
   source = { kind: "pull", number },
   dialogLabel,
   dialogTitle,
   dialogSha,
   scopeSelector,
+  display = "dialog",
+  onToggleFullscreen,
   onSelectFile,
   onClose,
 }: {
@@ -640,11 +769,14 @@ export function DiffFileDialog({
   commentCounts?: Readonly<Record<string, number>>;
   /** ファイルの feedback 読み込み後に表示位置を合わせるタイムライン thread。 */
   initialThreadId?: number | null;
+  threadRevealKey?: unknown;
   source?: DiffDialogSource;
   dialogLabel?: string;
   dialogTitle?: string;
   dialogSha?: string;
   scopeSelector?: ReactNode;
+  display?: DiffDisplay;
+  onToggleFullscreen?: () => void;
   onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
@@ -767,12 +899,13 @@ export function DiffFileDialog({
     : "unviewed";
 
   useEffect(() => {
+    if (display === "pane") return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [display, onClose]);
 
   useEffect(() => {
     if (!sidebarDrag) return;
@@ -806,403 +939,431 @@ export function DiffFileDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4"
-      {...backdropDismiss}
+      className={DIFF_OVERLAY_CLASS[display]}
+      {...(display === "dialog" ? backdropDismiss : {})}
     >
       <div
         data-debug-component="DiffFileDialog"
         ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
+        role={display === "pane" ? "region" : "dialog"}
+        aria-modal={display === "pane" ? undefined : "true"}
         aria-label={
           dialogLabel ??
           (selectedFile ? `Diff for ${selectedFile.filename}` : "Diff files")
         }
-        className="flex max-h-full w-full overflow-hidden rounded-md border bg-background shadow-lg"
+        className={DIFF_PANEL_CLASS[display]}
       >
-        <aside
-          aria-label="Changed files"
-          className="shrink-0 overflow-y-auto bg-muted/20"
-          style={{ width: fileSidebarWidth }}
-        >
-          <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
-            <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold">
-              <span>
-                Files changed ({listedFiles.length}
-                {listedFiles.length !== files.length
-                  ? ` of ${files.length}`
-                  : ""}
-                )
-              </span>
-              {source.kind === "pull" ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Toggle file filters"
-                  aria-expanded={showFileFilters}
-                  className={cn(
-                    "size-6",
-                    (includePattern || excludePattern) && "text-primary",
-                  )}
-                  onClick={() => setShowFileFilters((visible) => !visible)}
-                >
-                  <Filter className="size-3.5" />
-                </Button>
-              ) : null}
-            </div>
-            {source.kind === "pull" ? (
-              <div className="flex justify-end border-t px-3 py-1.5">
-                <Switch
-                  label="Show viewed"
-                  hint={`(${viewedCount} viewed)`}
-                  checked={showViewed}
-                  onCheckedChange={setShowViewed}
-                />
-              </div>
-            ) : null}
-            {source.kind === "pull" && showFileFilters ? (
-              <div className="grid gap-2 border-t px-3 py-2">
-                <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
-                  Include
-                  <input
-                    type="text"
-                    aria-label="Include files"
-                    placeholder="e.g. web/**, *.md"
-                    value={includePattern}
-                    onChange={(event) => setIncludePattern(event.target.value)}
-                    className="h-7 rounded-md border bg-background px-2 font-mono text-xs font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                </label>
-                <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
-                  Exclude
-                  <input
-                    type="text"
-                    aria-label="Exclude files"
-                    placeholder="e.g. **/*.test.ts"
-                    value={excludePattern}
-                    onChange={(event) => setExcludePattern(event.target.value)}
-                    className="h-7 rounded-md border bg-background px-2 font-mono text-xs font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                </label>
-              </div>
-            ) : null}
-          </div>
-          <ul className="py-1">
-            {sidebarRows.map(({ node, depth }) => {
-              if (node.kind === "directory") {
-                const collapsed = collapsedDirectories.has(node.path);
-                return (
-                  <li key={`dir:${node.path}`}>
-                    <button
-                      type="button"
-                      aria-expanded={!collapsed}
-                      className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 py-1 pr-3 text-left hover:bg-muted"
-                      style={{ paddingLeft: rowIndent(depth) }}
-                      onClick={() => toggleDirectory(node.path)}
-                    >
-                      {collapsed ? (
-                        <ChevronRight className="size-3.5 justify-self-center text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="size-3.5 justify-self-center text-muted-foreground" />
-                      )}
-                      <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-                        {node.name}
-                      </span>
-                    </button>
-                  </li>
-                );
-              }
-              const sidebarFile = node.entry;
-              const selected = sidebarFile.filename === selectedFilename;
-              return (
-                <li key={`file:${sidebarFile.filename}`}>
-                  <button
-                    type="button"
-                    aria-label={sidebarFile.filename}
-                    aria-current={selected ? "true" : undefined}
-                    className={cn(
-                      "grid w-full grid-cols-[1.25rem_minmax(0,max-content)_auto_minmax(0,1fr)_auto] items-center gap-2 py-1.5 pr-3 text-left hover:bg-muted",
-                      selected &&
-                        "bg-accent font-medium text-accent-foreground",
-                    )}
-                    style={{ paddingLeft: rowIndent(depth) }}
-                    onClick={() => selectFile(sidebarFile.filename)}
-                  >
-                    <FileStatusBadge status={sidebarFile.status} />
-                    <span className="min-w-0 truncate font-mono text-xs">
-                      {node.name}
-                    </span>
-                    <DiffStat
-                      additions={sidebarFile.additions}
-                      deletions={sidebarFile.deletions}
-                      className="justify-self-end text-[11px]"
-                    />
-                    <span aria-hidden="true" />
-                    <span className="flex items-center gap-1.5">
-                      {source.kind === "pull" && sidebarFile.latest_commit ? (
-                        <span
-                          title="Changed in the latest commit"
-                          aria-label="Changed in the latest commit"
-                          data-latest-commit="true"
-                          className="size-2 shrink-0 rounded-full bg-sky-500"
-                        />
-                      ) : null}
-                      {source.kind === "pull" ? (
-                        <FileViewedBadge
-                          state={pullFileViewState(sidebarFile, viewsByPath)}
-                        />
-                      ) : null}
-                      <DiffCommentCount
-                        count={commentCounts[sidebarFile.filename] ?? 0}
-                        className="text-[11px]"
-                      />
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
-        <div
-          role="separator"
-          aria-label="Resize changed files sidebar"
-          aria-orientation="vertical"
-          aria-valuemin={MIN_FILE_SIDEBAR_WIDTH}
-          aria-valuemax={Math.max(
-            MIN_FILE_SIDEBAR_WIDTH,
-            (dialogRef.current?.clientWidth ?? 0) / 2 ||
-              FALLBACK_MAX_FILE_SIDEBAR_WIDTH,
-          )}
-          aria-valuenow={fileSidebarWidth}
-          className={cn(
-            "relative w-1 shrink-0 cursor-col-resize touch-none border-x bg-border/40",
-            sidebarDrag && "bg-primary/30",
-          )}
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            setSidebarDrag({
-              startX: event.clientX,
-              startWidth: fileSidebarWidth,
-            });
-          }}
+        <DiffPaneHead
+          display={display}
+          files={files}
+          selectedFile={selectedFile}
+          onSelectFile={selectFile}
+          onToggleFullscreen={onToggleFullscreen}
         />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {selectedFile ? (
+        <div className="flex min-h-0 flex-1">
+          {display !== "pane" ? (
             <>
-              <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
-                <div className="min-w-0 flex-1">
-                  {dialogTitle ? (
-                    <div className="mb-1 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                      {dialogSha ? (
-                        <code className="shrink-0 rounded bg-muted px-1 py-0.5">
-                          {dialogSha}
-                        </code>
-                      ) : null}
-                      <span className="truncate">{dialogTitle}</span>
+              <aside
+                aria-label="Changed files"
+                className="shrink-0 overflow-y-auto bg-muted/20"
+                style={{ width: fileSidebarWidth }}
+              >
+                <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold">
+                    <span>
+                      Files changed ({listedFiles.length}
+                      {listedFiles.length !== files.length
+                        ? ` of ${files.length}`
+                        : ""}
+                      )
+                    </span>
+                    {source.kind === "pull" ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Toggle file filters"
+                        aria-expanded={showFileFilters}
+                        className={cn(
+                          "size-6",
+                          (includePattern || excludePattern) && "text-primary",
+                        )}
+                        onClick={() =>
+                          setShowFileFilters((visible) => !visible)
+                        }
+                      >
+                        <Filter className="size-3.5" />
+                      </Button>
+                    ) : null}
+                  </div>
+                  {source.kind === "pull" ? (
+                    <div className="flex justify-end border-t px-3 py-1.5">
+                      <Switch
+                        label="Show viewed"
+                        hint={`(${viewedCount} viewed)`}
+                        checked={showViewed}
+                        onCheckedChange={setShowViewed}
+                      />
                     </div>
                   ) : null}
-                  <div className="flex min-w-0 items-center gap-1">
-                    <h3 className="min-w-0 truncate text-sm font-semibold">
-                      {selectedFile.filename}
-                    </h3>
-                    <CopyButton
-                      key={`copy-${selectedCopyPath}`}
-                      value={selectedCopyPath}
-                      label={`Copy file path: ${selectedCopyPath}`}
-                      className="size-6"
-                    />
-                    {source.kind === "pull" ? (
-                      <FileInfoPopover
-                        key={`info-${selectedCopyPath}`}
-                        owner={owner}
-                        repo={repo}
-                        number={number}
-                        file={selectedFile}
-                      />
-                    ) : null}
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                    <FileStatusBadge status={selectedFile.status} />
-                    <DiffStat
-                      additions={selectedFile.additions}
-                      deletions={selectedFile.deletions}
-                    />
-                    {source.kind === "pull" ? (
-                      <FileViewedBadge state={selectedFileViewState} />
-                    ) : null}
-                  </div>
+                  {source.kind === "pull" && showFileFilters ? (
+                    <div className="grid gap-2 border-t px-3 py-2">
+                      <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
+                        Include
+                        <input
+                          type="text"
+                          aria-label="Include files"
+                          placeholder="e.g. web/**, *.md"
+                          value={includePattern}
+                          onChange={(event) =>
+                            setIncludePattern(event.target.value)
+                          }
+                          className="h-7 rounded-md border bg-background px-2 font-mono text-xs font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      </label>
+                      <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
+                        Exclude
+                        <input
+                          type="text"
+                          aria-label="Exclude files"
+                          placeholder="e.g. **/*.test.ts"
+                          value={excludePattern}
+                          onChange={(event) =>
+                            setExcludePattern(event.target.value)
+                          }
+                          className="h-7 rounded-md border bg-background px-2 font-mono text-xs font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                 </div>
-                <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-                  {scopeSelector}
-                  <div className="flex overflow-hidden rounded-md border text-xs">
-                    <ModeButton
-                      active={selectedMode === "diff"}
-                      onClick={() => selectMode("diff")}
-                    >
-                      Diff
-                    </ModeButton>
-                    <ModeButton
-                      active={selectedMode === "raw"}
-                      onClick={() => selectMode("raw")}
-                    >
-                      Raw
-                    </ModeButton>
-                    {selectedIsMarkdown ? (
+                <ul className="py-1">
+                  {sidebarRows.map(({ node, depth }) => {
+                    if (node.kind === "directory") {
+                      const collapsed = collapsedDirectories.has(node.path);
+                      return (
+                        <li key={`dir:${node.path}`}>
+                          <button
+                            type="button"
+                            aria-expanded={!collapsed}
+                            className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 py-1 pr-3 text-left hover:bg-muted"
+                            style={{ paddingLeft: rowIndent(depth) }}
+                            onClick={() => toggleDirectory(node.path)}
+                          >
+                            {collapsed ? (
+                              <ChevronRight className="size-3.5 justify-self-center text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="size-3.5 justify-self-center text-muted-foreground" />
+                            )}
+                            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                              {node.name}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    }
+                    const sidebarFile = node.entry;
+                    const selected = sidebarFile.filename === selectedFilename;
+                    return (
+                      <li key={`file:${sidebarFile.filename}`}>
+                        <button
+                          type="button"
+                          aria-label={sidebarFile.filename}
+                          aria-current={selected ? "true" : undefined}
+                          className={cn(
+                            "grid w-full grid-cols-[1.25rem_minmax(0,max-content)_auto_minmax(0,1fr)_auto] items-center gap-2 py-1.5 pr-3 text-left hover:bg-muted",
+                            selected &&
+                              "bg-accent font-medium text-accent-foreground",
+                          )}
+                          style={{ paddingLeft: rowIndent(depth) }}
+                          onClick={() => selectFile(sidebarFile.filename)}
+                        >
+                          <FileStatusBadge status={sidebarFile.status} />
+                          <span className="min-w-0 truncate font-mono text-xs">
+                            {node.name}
+                          </span>
+                          <DiffStat
+                            additions={sidebarFile.additions}
+                            deletions={sidebarFile.deletions}
+                            className="justify-self-end text-[11px]"
+                          />
+                          <span aria-hidden="true" />
+                          <span className="flex items-center gap-1.5">
+                            {source.kind === "pull" &&
+                            sidebarFile.latest_commit ? (
+                              <span
+                                title="Changed in the latest commit"
+                                aria-label="Changed in the latest commit"
+                                data-latest-commit="true"
+                                className="size-2 shrink-0 rounded-full bg-sky-500"
+                              />
+                            ) : null}
+                            {source.kind === "pull" ? (
+                              <FileViewedBadge
+                                state={pullFileViewState(
+                                  sidebarFile,
+                                  viewsByPath,
+                                )}
+                              />
+                            ) : null}
+                            <DiffCommentCount
+                              count={commentCounts[sidebarFile.filename] ?? 0}
+                              className="text-[11px]"
+                            />
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </aside>
+              <div
+                role="separator"
+                aria-label="Resize changed files sidebar"
+                aria-orientation="vertical"
+                aria-valuemin={MIN_FILE_SIDEBAR_WIDTH}
+                aria-valuemax={Math.max(
+                  MIN_FILE_SIDEBAR_WIDTH,
+                  (dialogRef.current?.clientWidth ?? 0) / 2 ||
+                    FALLBACK_MAX_FILE_SIDEBAR_WIDTH,
+                )}
+                aria-valuenow={fileSidebarWidth}
+                className={cn(
+                  "relative w-1 shrink-0 cursor-col-resize touch-none border-x bg-border/40",
+                  sidebarDrag && "bg-primary/30",
+                )}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.preventDefault();
+                  setSidebarDrag({
+                    startX: event.clientX,
+                    startWidth: fileSidebarWidth,
+                  });
+                }}
+              />
+            </>
+          ) : null}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {selectedFile ? (
+              <>
+                <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    {dialogTitle ? (
+                      <div className="mb-1 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                        {dialogSha ? (
+                          <code className="shrink-0 rounded bg-muted px-1 py-0.5">
+                            {dialogSha}
+                          </code>
+                        ) : null}
+                        <span className="truncate">{dialogTitle}</span>
+                      </div>
+                    ) : null}
+                    <div className="flex min-w-0 items-center gap-1">
+                      <h3 className="min-w-0 truncate text-sm font-semibold">
+                        {selectedFile.filename}
+                      </h3>
+                      <CopyButton
+                        key={`copy-${selectedCopyPath}`}
+                        value={selectedCopyPath}
+                        label={`Copy file path: ${selectedCopyPath}`}
+                        className="size-6"
+                      />
+                      {source.kind === "pull" ? (
+                        <FileInfoPopover
+                          key={`info-${selectedCopyPath}`}
+                          owner={owner}
+                          repo={repo}
+                          number={number}
+                          file={selectedFile}
+                        />
+                      ) : null}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                      <FileStatusBadge status={selectedFile.status} />
+                      <DiffStat
+                        additions={selectedFile.additions}
+                        deletions={selectedFile.deletions}
+                      />
+                      {source.kind === "pull" ? (
+                        <FileViewedBadge state={selectedFileViewState} />
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+                    {scopeSelector}
+                    <div className="flex overflow-hidden rounded-md border text-xs">
+                      <ModeButton
+                        active={selectedMode === "diff"}
+                        onClick={() => selectMode("diff")}
+                      >
+                        Diff
+                      </ModeButton>
+                      <ModeButton
+                        active={selectedMode === "raw"}
+                        onClick={() => selectMode("raw")}
+                      >
+                        Raw
+                      </ModeButton>
+                      {selectedIsMarkdown ? (
+                        <>
+                          <ModeButton
+                            active={selectedMode === "rendered"}
+                            onClick={() => selectMode("rendered")}
+                          >
+                            Rendered diff
+                          </ModeButton>
+                          <ModeButton
+                            active={selectedMode === "base"}
+                            onClick={() => selectMode("base")}
+                          >
+                            Base
+                          </ModeButton>
+                          <ModeButton
+                            active={selectedMode === "head"}
+                            onClick={() => selectMode("head")}
+                          >
+                            Head
+                          </ModeButton>
+                        </>
+                      ) : null}
+                    </div>
+                    {selectedMode === "diff" ? (
+                      <div
+                        className="flex overflow-hidden rounded-md border text-xs"
+                        aria-label="Diff whitespace"
+                      >
+                        <ModeButton
+                          active={ignoreWhitespace}
+                          onClick={() => setIgnoreWhitespace((value) => !value)}
+                        >
+                          Ignore whitespace
+                        </ModeButton>
+                      </div>
+                    ) : null}
+                    {selectedMode === "diff" || selectedMode === "rendered" ? (
+                      <div
+                        className="flex overflow-hidden rounded-md border text-xs"
+                        aria-label="Diff view"
+                      >
+                        <ModeButton
+                          active={diffViewMode === "unified"}
+                          onClick={() => selectDiffViewMode("unified")}
+                        >
+                          Unified
+                        </ModeButton>
+                        <ModeButton
+                          active={diffViewMode === "split"}
+                          onClick={() => selectDiffViewMode("split")}
+                        >
+                          Split
+                        </ModeButton>
+                      </div>
+                    ) : null}
+                    {source.kind === "pull" ? (
                       <>
-                        <ModeButton
-                          active={selectedMode === "rendered"}
-                          onClick={() => selectMode("rendered")}
-                        >
-                          Rendered diff
-                        </ModeButton>
-                        <ModeButton
-                          active={selectedMode === "base"}
-                          onClick={() => selectMode("base")}
-                        >
-                          Base
-                        </ModeButton>
-                        <ModeButton
-                          active={selectedMode === "head"}
-                          onClick={() => selectMode("head")}
-                        >
-                          Head
-                        </ModeButton>
+                        {/* The record is append-only, so a file whose commits moved on comes back unchecked:
+                      ticking it again pins the version now on screen (#2502). */}
+                        <label className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={selectedFileViewState === "viewed"}
+                            disabled={setViewed.isPending}
+                            onChange={(event) => {
+                              const viewed = event.target.checked;
+                              const selectedIndex = filteredFiles.findIndex(
+                                (candidate) =>
+                                  candidate.filename === selectedFile.filename,
+                              );
+                              const nextUnviewedFile = viewed
+                                ? filteredFiles
+                                    .slice(selectedIndex + 1)
+                                    .find(
+                                      (candidate) =>
+                                        pullFileViewState(
+                                          candidate,
+                                          viewsByPath,
+                                        ) !== "viewed",
+                                    )
+                                : undefined;
+                              setViewed.mutate(
+                                {
+                                  path: selectedFile.filename,
+                                  sha: selectedFile.last_changed_sha ?? null,
+                                  viewed,
+                                },
+                                {
+                                  onSuccess: () => {
+                                    if (!viewed) return;
+                                    if (nextUnviewedFile) {
+                                      selectFile(nextUnviewedFile.filename);
+                                    } else if (display === "dialog") {
+                                      // Only a modal has a way out of this empty state; the PR page's
+                                      // view stays on the file just ticked.
+                                      setSelectedFilename(null);
+                                    }
+                                  },
+                                  onError: (error) =>
+                                    showError(
+                                      errorMessage(error, "Update failed"),
+                                    ),
+                                },
+                              );
+                            }}
+                          />
+                          Viewed
+                        </label>
                       </>
                     ) : null}
+                    {display === "dialog" ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        aria-label={
+                          dialogTitle ? "Close commit diff" : "Close diff"
+                        }
+                        className="h-7 w-7 shrink-0 p-0"
+                        onClick={onClose}
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    ) : null}
                   </div>
-                  {selectedMode === "diff" ? (
-                    <div
-                      className="flex overflow-hidden rounded-md border text-xs"
-                      aria-label="Diff whitespace"
-                    >
-                      <ModeButton
-                        active={ignoreWhitespace}
-                        onClick={() => setIgnoreWhitespace((value) => !value)}
-                      >
-                        Ignore whitespace
-                      </ModeButton>
-                    </div>
-                  ) : null}
-                  {selectedMode === "diff" || selectedMode === "rendered" ? (
-                    <div
-                      className="flex overflow-hidden rounded-md border text-xs"
-                      aria-label="Diff view"
-                    >
-                      <ModeButton
-                        active={diffViewMode === "unified"}
-                        onClick={() => selectDiffViewMode("unified")}
-                      >
-                        Unified
-                      </ModeButton>
-                      <ModeButton
-                        active={diffViewMode === "split"}
-                        onClick={() => selectDiffViewMode("split")}
-                      >
-                        Split
-                      </ModeButton>
-                    </div>
-                  ) : null}
-                  {source.kind === "pull" ? (
-                    <>
-                      {/* The record is append-only, so a file whose commits moved on comes back unchecked:
-                      ticking it again pins the version now on screen (#2502). */}
-                      <label className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={selectedFileViewState === "viewed"}
-                          disabled={setViewed.isPending}
-                          onChange={(event) => {
-                            const viewed = event.target.checked;
-                            const selectedIndex = filteredFiles.findIndex(
-                              (candidate) =>
-                                candidate.filename === selectedFile.filename,
-                            );
-                            const nextUnviewedFile = viewed
-                              ? filteredFiles
-                                  .slice(selectedIndex + 1)
-                                  .find(
-                                    (candidate) =>
-                                      pullFileViewState(
-                                        candidate,
-                                        viewsByPath,
-                                      ) !== "viewed",
-                                  )
-                              : undefined;
-                            setViewed.mutate(
-                              {
-                                path: selectedFile.filename,
-                                sha: selectedFile.last_changed_sha ?? null,
-                                viewed,
-                              },
-                              {
-                                onSuccess: () => {
-                                  if (!viewed) return;
-                                  if (nextUnviewedFile) {
-                                    selectFile(nextUnviewedFile.filename);
-                                  } else {
-                                    setSelectedFilename(null);
-                                  }
-                                },
-                                onError: (error) =>
-                                  showError(
-                                    errorMessage(error, "Update failed"),
-                                  ),
-                              },
-                            );
-                          }}
-                        />
-                        Viewed
-                      </label>
-                    </>
-                  ) : null}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    aria-label={
-                      dialogTitle ? "Close commit diff" : "Close diff"
-                    }
-                    className="h-7 w-7 shrink-0 p-0"
-                    onClick={onClose}
-                  >
-                    <X className="size-4" />
-                  </Button>
-                </div>
-              </header>
-              {/* Keying the scrolling element on the open file gives every file a fresh scroll box, so
+                </header>
+                {/* Keying the scrolling element on the open file gives every file a fresh scroll box, so
                   a diff opens at its first line instead of inheriting the previous file's offset. */}
-              <div
-                key={selectedPath}
-                className="diff-scrollport min-w-0 flex-1 overflow-auto"
-              >
-                <FileDiffContent
-                  key={`${selectedPath}:${ignoreWhitespace}`}
-                  owner={owner}
-                  repo={repo}
-                  number={number}
-                  file={selectedFile}
-                  mode={selectedMode}
-                  diffViewMode={diffViewMode}
-                  ignoreWhitespace={ignoreWhitespace}
-                  initialThreadId={initialThreadId}
-                  source={source}
-                />
+                <div
+                  key={selectedPath}
+                  className="diff-scrollport min-w-0 flex-1 overflow-auto"
+                >
+                  <FileDiffContent
+                    key={`${selectedPath}:${ignoreWhitespace}`}
+                    owner={owner}
+                    repo={repo}
+                    number={number}
+                    file={selectedFile}
+                    mode={selectedMode}
+                    diffViewMode={diffViewMode}
+                    ignoreWhitespace={ignoreWhitespace}
+                    initialThreadId={initialThreadId}
+                    threadRevealKey={threadRevealKey}
+                    source={source}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-end border-b px-3 py-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label="Close diff"
+                  className="h-7 w-7 shrink-0 p-0"
+                  onClick={onClose}
+                >
+                  <X className="size-4" />
+                </Button>
               </div>
-            </>
-          ) : (
-            <div className="flex justify-end border-b px-3 py-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                aria-label="Close diff"
-                className="h-7 w-7 shrink-0 p-0"
-                onClick={onClose}
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1374,6 +1535,7 @@ type FileDiffContentProps = {
   diffViewMode: DiffViewMode;
   ignoreWhitespace: boolean;
   initialThreadId: number | null;
+  threadRevealKey?: unknown;
   source: DiffDialogSource;
 };
 
@@ -1414,6 +1576,7 @@ function FileDiffContentBody({
   diffViewMode,
   ignoreWhitespace,
   initialThreadId,
+  threadRevealKey,
   source,
   diff,
 }: FileDiffContentProps & { diff: ReturnType<typeof usePullDiff> }) {
@@ -1462,7 +1625,7 @@ function FileDiffContentBody({
     document
       .querySelector<HTMLElement>(`[data-diff-thread-id="${initialThreadId}"]`)
       ?.scrollIntoView({ block: "center" });
-  }, [feedback.data, initialThreadId]);
+  }, [feedback.data, initialThreadId, threadRevealKey]);
   const commentComposer =
     selection && stableFile && diff.data ? (
       <DiffCommentComposer

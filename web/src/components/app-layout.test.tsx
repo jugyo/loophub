@@ -166,9 +166,9 @@ describe("AppLayout", () => {
     expect(container.querySelector("main")?.className).toContain(
       "scroll-pt-11",
     );
-    // PR detail's bar grows to h-16 with its second row, and marks the page so the padding follows.
+    // The PR detail page scrolls its own columns, so it turns this scrollport off.
     expect(container.querySelector("main")?.className).toContain(
-      "has-[[data-two-row-sticky-header]]:scroll-pt-16",
+      "has-[[data-pull-columns]]:overflow-hidden",
     );
   });
 

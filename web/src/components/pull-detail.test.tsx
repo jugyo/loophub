@@ -393,71 +393,14 @@ function renderDetail(
   return { ...result, queryClient };
 }
 
-// happy-dom lays nothing out, so the sidebar's sticky-room check (#2518) sees zero on both sides
-// of its comparison unless they are stubbed: the sidebar's own height and the scrollport it is
-// measured against (documentElement here — the app shell's scroll area is not in this tree). Call
-// before rendering, then replay the two ways those heights move at runtime — the sidebar's
-// ResizeObserver for its own height, a window resize for the scrollport's.
-function stubStickyRoom({
-  scrollportHeight,
-  sidebarHeight,
-}: {
-  scrollportHeight: number;
-  sidebarHeight: number;
-}) {
-  let scrollport = scrollportHeight;
-  let sidebar = sidebarHeight;
-  const callbacks: (() => void)[] = [];
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      constructor(callback: () => void) {
-        callbacks.push(callback);
-      }
-      observe() {}
-      disconnect() {}
-    },
-  );
-  const clientHeight = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "clientHeight",
-  );
-  const offsetHeight = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "offsetHeight",
-  );
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
-    configurable: true,
-    get: () => scrollport,
+// The file list lives in the right pane, behind its icon rail.
+async function findFilesChangedHeading(name: RegExp) {
+  const rail = await screen.findByRole("navigation", {
+    name: "Right pane views",
   });
-  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-    configurable: true,
-    get: () => sidebar,
-  });
-  stickyRoomRestorers.push(() => {
-    if (clientHeight)
-      Object.defineProperty(
-        HTMLElement.prototype,
-        "clientHeight",
-        clientHeight,
-      );
-    if (offsetHeight)
-      Object.defineProperty(
-        HTMLElement.prototype,
-        "offsetHeight",
-        offsetHeight,
-      );
-  });
-  return {
-    resizeSidebar(height: number) {
-      sidebar = height;
-      for (const callback of callbacks) callback();
-    },
-    resizeScrollport(height: number) {
-      scrollport = height;
-      window.dispatchEvent(new Event("resize"));
-    },
-  };
+  const button = within(rail).getByRole("button", { name: "Files changed" });
+  if (button.getAttribute("aria-pressed") !== "true") fireEvent.click(button);
+  return screen.findByRole("heading", { name });
 }
 
 // The tracks of a Tailwind `grid-cols-[...]` class, split on the top-level `_` separators so a
@@ -526,7 +469,7 @@ describe("PullDetail", () => {
       "pulls/diff": getDiff,
     });
 
-    await screen.findByRole("heading", { name: /Files changed \(3\)/ });
+    await findFilesChangedHeading(/Files changed \(3\)/);
     expect(getDiff).not.toHaveBeenCalled();
 
     for (const path of paths) {
@@ -536,6 +479,7 @@ describe("PullDetail", () => {
         patchTokenCompletedAt: 0,
         renderCompletedAt: 0,
       });
+      await findFilesChangedHeading(/Files changed \(3\)/);
       fireEvent.click(
         screen.getByRole("button", {
           name: new RegExp(
@@ -551,7 +495,7 @@ describe("PullDetail", () => {
       pendingResolvers.get(path)?.(representativeDiff(path));
       const sample = representativeDiffs[path];
       await waitFor(() => {
-        const dialog = screen.getByRole("dialog");
+        const dialog = screen.getByRole("region", { name: /^Diff for/ });
         expect(
           dialog.querySelector(`[data-syntax-language="${sample.language}"]`),
         ).toBeTruthy();
@@ -578,8 +522,6 @@ describe("PullDetail", () => {
           timing.renderCompletedAt - timing.patchTokenCompletedAt
         ).toFixed(1)}ms`,
       );
-      fireEvent.click(screen.getByRole("button", { name: "Close diff" }));
-      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     }
   });
 
@@ -590,6 +532,7 @@ describe("PullDetail", () => {
       "repos/commitHistory": commitHistory,
     });
 
+    await findFilesChangedHeading(/Files changed/);
     fireEvent.click(
       await screen.findByRole("button", {
         name: /File status: modified web\/src\/a\.ts/,
@@ -627,7 +570,7 @@ describe("PullDetail", () => {
     });
 
     const section = (
-      await screen.findByRole("heading", { name: /Files changed \(1\)/ })
+      await findFilesChangedHeading(/Files changed \(1\)/)
     ).closest("section")!;
     const commentCount = within(section).getByLabelText("2 comments");
     const changedAt = within(section).getByText("2h ago");
@@ -657,7 +600,7 @@ describe("PullDetail", () => {
     });
 
     const section = (
-      await screen.findByRole("heading", { name: /Files changed \(2\)/ })
+      await findFilesChangedHeading(/Files changed \(2\)/)
     ).closest("section")!;
     expect(
       within(section).queryByRole("button", { name: /web\/src\/a\.ts/ }),
@@ -702,7 +645,7 @@ describe("PullDetail", () => {
     });
 
     const section = (
-      await screen.findByRole("heading", { name: /Files changed \(2\)/ })
+      await findFilesChangedHeading(/Files changed \(2\)/)
     ).closest("section")!;
     const fileSummaryList = section.querySelector<HTMLElement>(
       '[data-debug-component="FileSummaryRow"]',
@@ -714,12 +657,12 @@ describe("PullDetail", () => {
       }),
     );
     expect(
-      await screen.findByRole("dialog", { name: /Diff for/ }),
+      await screen.findByRole("region", { name: /Diff for/ }),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
 
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: "Diff for web/src/b.ts",
     });
     expect(dialog).toBeTruthy();
@@ -753,7 +696,7 @@ describe("PullDetail", () => {
     });
 
     const section = (
-      await screen.findByRole("heading", { name: /Files changed \(1\)/ })
+      await findFilesChangedHeading(/Files changed \(1\)/)
     ).closest("section")!;
     const row = within(section).getByRole("button", {
       name: /web\/src\/a\.ts/,
@@ -779,7 +722,7 @@ describe("PullDetail", () => {
     });
 
     const section = (
-      await screen.findByRole("heading", { name: /Files changed \(1\)/ })
+      await findFilesChangedHeading(/Files changed \(1\)/)
     ).closest("section")!;
     const row = within(section).getByRole("button", {
       name: /web\/src\/a\.ts/,
@@ -801,7 +744,7 @@ describe("PullDetail", () => {
     renderDetail();
 
     const section = (
-      await screen.findByRole("heading", { name: /Files changed \(1\)/ })
+      await findFilesChangedHeading(/Files changed \(1\)/)
     ).closest("section")!;
     const row = within(section).getByRole("button", {
       name: /web\/src\/a\.ts/,
@@ -826,9 +769,9 @@ describe("PullDetail", () => {
       },
     );
     const { container } = renderDetail();
-    await screen.findByRole("heading", { name: /Files changed/ });
+    await findFilesChangedHeading(/Files changed/);
     const scrollContainer = container.querySelector<HTMLElement>(
-      'main[data-debug-component="RouteContent"]',
+      '[data-debug-component="PullLeftColumn"]',
     );
     if (!scrollContainer) throw new Error("Scroll container not found");
     const timeline = container.querySelector<HTMLElement>(
@@ -868,9 +811,9 @@ describe("PullDetail", () => {
       },
     );
     const { container } = renderDetail();
-    await screen.findByRole("heading", { name: /Files changed/ });
+    await findFilesChangedHeading(/Files changed/);
     const scrollContainer = container.querySelector<HTMLElement>(
-      'main[data-debug-component="RouteContent"]',
+      '[data-debug-component="PullLeftColumn"]',
     );
     if (!scrollContainer) throw new Error("Scroll container not found");
     Object.defineProperties(scrollContainer, {
@@ -888,9 +831,9 @@ describe("PullDetail", () => {
 
   it("shows a button away from the bottom and scrolls to the page bottom", async () => {
     const { container } = renderDetail();
-    await screen.findByRole("heading", { name: /Files changed/ });
+    await findFilesChangedHeading(/Files changed/);
     const scrollContainer = container.querySelector<HTMLElement>(
-      'main[data-debug-component="RouteContent"]',
+      '[data-debug-component="PullLeftColumn"]',
     );
     if (!scrollContainer) throw new Error("Scroll container not found");
     Object.defineProperties(scrollContainer, {
@@ -922,9 +865,9 @@ describe("PullDetail", () => {
 
   it("hides the button at the page bottom and updates after scrolling", async () => {
     const { container } = renderDetail();
-    await screen.findByRole("heading", { name: /Files changed/ });
+    await findFilesChangedHeading(/Files changed/);
     const scrollContainer = container.querySelector<HTMLElement>(
-      'main[data-debug-component="RouteContent"]',
+      '[data-debug-component="PullLeftColumn"]',
     );
     if (!scrollContainer) throw new Error("Scroll container not found");
     Object.defineProperties(scrollContainer, {
@@ -958,15 +901,16 @@ describe("PullDetail", () => {
       }),
     });
 
-    const filesChanged = await screen.findByRole("heading", {
-      name: /Files changed \(1\)/,
-    });
+    const filesChanged = await findFilesChangedHeading(/Files changed \(1\)/);
     const section = filesChanged.closest("section");
     if (!section) throw new Error("Files changed section not found");
     expect(await within(section).findByLabelText("2 comments")).toBeTruthy();
 
     fireEvent.click(
       within(section).getByRole("button", { name: /web\/src\/a\.ts/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Show diff full screen" }),
     );
     const sidebar = await screen.findByRole("complementary", {
       name: "Changed files",
@@ -990,9 +934,7 @@ describe("PullDetail", () => {
       }),
     });
 
-    const filesChanged = await screen.findByRole("heading", {
-      name: /Files changed \(1\)/,
-    });
+    const filesChanged = await findFilesChangedHeading(/Files changed \(1\)/);
     const section = filesChanged.closest("section");
     if (!section) throw new Error("Files changed section not found");
     expect(await within(section).findByLabelText("2 comments")).toBeTruthy();
@@ -1022,9 +964,7 @@ describe("PullDetail", () => {
       },
     });
 
-    const filesChanged = await screen.findByRole("heading", {
-      name: /Files changed \(1\)/,
-    });
+    const filesChanged = await findFilesChangedHeading(/Files changed \(1\)/);
     const section = filesChanged.closest("section");
     if (!section) throw new Error("Files changed section not found");
     fireEvent.click(
@@ -1124,11 +1064,9 @@ describe("PullDetail", () => {
     expect(screen.getByText("Render diff, reviews, comments.")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Develop" })).toBeNull();
 
-    // The existing file summary opens its diff in a dialog instead of expanding inline.
+    // The file summary opens its diff in the right pane's Diff view.
     const filesSection = (
-      await screen.findByRole("heading", {
-        name: /Files changed \(1\)/,
-      })
+      await findFilesChangedHeading(/Files changed \(1\)/)
     ).closest("section")!;
     expect(await within(filesSection).findByText("web/src/a.ts")).toBeTruthy();
     expect(screen.queryByText("const x = 1;")).toBeNull();
@@ -1137,7 +1075,7 @@ describe("PullDetail", () => {
         name: /web\/src\/a\.ts/i,
       }),
     );
-    const fileDialog = await screen.findByRole("dialog", {
+    const fileDialog = await screen.findByRole("region", {
       name: /Diff for web\/src\/a\.ts/i,
     });
     expect(within(fileDialog).getByText("const x = 1;")).toBeTruthy();
@@ -1148,6 +1086,11 @@ describe("PullDetail", () => {
     // #2451: review line comments have no place in the diff view — the dialog shows diff feedback
     // threads alone.
     expect(within(fileDialog).queryByText("nice constant")).toBeNull();
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: "Right pane views" }),
+      ).getByRole("button", { name: "Commits" }),
+    );
     const reviewedCommit = screen
       .getByRole("button", {
         name: "View changes in aaaaaaa: Latest change",
@@ -1273,7 +1216,7 @@ describe("PullDetail", () => {
 
     fireEvent.click(entry);
 
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("region", {
       name: "Diff for web/src/a.ts",
     });
     expect(await within(dialog).findByLabelText("Diff thread 1")).toBeTruthy();
@@ -2144,16 +2087,18 @@ describe("PullDetail", () => {
       "FilesChanged",
       "FileSummaryRow",
       "PullCommentList",
-      "PullSidebar",
+      "PullLeftColumn",
+      "PullRightPane",
+      "PullPaneRail",
       "PullInfoSection",
     ]) {
       expect(names.has(name)).toBe(true);
     }
   });
 
-  // #59: the section tabs are in-page anchors, so every section they link to keeps its place on
-  // the one page — following a tab moves the scroll position and nothing else.
-  it("puts the tabs under the PR header, anchored to sections that all stay rendered", async () => {
+  // #59: the left column's sections are in-page anchors, while the sections that moved to the
+  // right pane open their view there.
+  it("puts the tabs under the PR header, anchoring the left column's sections", async () => {
     const { container } = renderDetail();
 
     await screen.findByText("ui2: PR detail");
@@ -2178,14 +2123,10 @@ describe("PullDetail", () => {
       ]),
     ).toEqual([
       ["Overview", "#overview"],
-      ["Commits", "#commits"],
-      ["Files changed", "#files-changed"],
       ["Comments", "#comments"],
     ]);
     for (const [id, component] of [
       ["overview", "PullHeader"],
-      ["commits", "PullCommitsSection"],
-      ["files-changed", "FilesChanged"],
       ["comments", "PullCommentList"],
     ]) {
       const section = container.querySelector<HTMLElement>(`#${id}`);
@@ -2195,8 +2136,255 @@ describe("PullDetail", () => {
     }
   });
 
-  // #2089: the sticky header is the main column's own first child, so its sticky box — and with it
-  // the bar's width — follows the main content instead of spanning the sidebar too.
+  describe("right pane", () => {
+    const rail = () =>
+      screen.getByRole("navigation", { name: "Right pane views" });
+    const railButton = (name: string) =>
+      within(rail()).getByRole("button", { name });
+    const pane = (container: HTMLElement) =>
+      container.querySelector<HTMLElement>(
+        '[data-debug-component="PullRightPane"]',
+      )!;
+
+    it("starts on Commits and switches views from the rail", async () => {
+      renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      expect(railButton("Commits").getAttribute("aria-pressed")).toBe("true");
+
+      fireEvent.click(railButton("Evidence"));
+      expect(screen.getByRole("heading", { name: "Evidence" })).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: /Commits \(/ })).toBeNull();
+      expect(railButton("Commits").getAttribute("aria-pressed")).toBe("false");
+      expect(railButton("Evidence").getAttribute("aria-pressed")).toBe("true");
+    });
+
+    it("closes from the toggle and reopens on the same view", async () => {
+      const { container } = renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      fireEvent.click(railButton("Files changed"));
+
+      fireEvent.click(railButton("Close right pane"));
+      expect(pane(container).hidden).toBe(true);
+      expect(rail()).toBeTruthy();
+      expect(
+        container.querySelector('[data-debug-component="PullMainContent"]')
+          ?.className,
+      ).toContain("max-w-content");
+
+      fireEvent.click(railButton("Open right pane"));
+      expect(pane(container).hidden).toBe(false);
+      expect(
+        screen.getByRole("heading", { name: /Files changed \(/ }),
+      ).toBeTruthy();
+    });
+
+    it("closes on the selected icon and opens on the icon pressed while closed", async () => {
+      const { container } = renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+
+      fireEvent.click(railButton("Commits"));
+      expect(pane(container).hidden).toBe(true);
+
+      fireEvent.click(railButton("Evidence"));
+      expect(pane(container).hidden).toBe(false);
+      expect(screen.getByRole("heading", { name: "Evidence" })).toBeTruthy();
+    });
+
+    it("opens the right pane's view from a section tab without toggling it", async () => {
+      const { container } = renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      const tabs = container.querySelector<HTMLElement>(
+        '[data-debug-component="PullSectionTabs"]',
+      )!;
+
+      fireEvent.click(within(tabs).getByRole("button", { name: "Commits" }));
+      expect(pane(container).hidden).toBe(false);
+
+      fireEvent.click(
+        within(tabs).getByRole("button", { name: "Files changed" }),
+      );
+      expect(
+        screen.getByRole("heading", { name: /Files changed \(/ }),
+      ).toBeTruthy();
+    });
+
+    it("opens the first file from the Diff icon and switches files from the heading", async () => {
+      renderDetail({
+        "pulls/files": () => [
+          files[0],
+          { ...files[0], filename: "web/src/b.ts" },
+        ],
+      });
+      await screen.findByRole("heading", { name: /Commits \(/ });
+
+      fireEvent.click(railButton("Diff"));
+      await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
+
+      fireEvent.change(screen.getByRole("combobox", { name: "Diff file" }), {
+        target: { value: "web/src/b.ts" },
+      });
+      await screen.findByRole("region", { name: "Diff for web/src/b.ts" });
+    });
+
+    it("shows the first file once it arrives in a Diff view opened with none", async () => {
+      let currentFiles: (typeof files)[number][] = [];
+      const { queryClient } = renderDetail({
+        "pulls/files": () => currentFiles,
+      });
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      fireEvent.click(railButton("Diff"));
+      await screen.findAllByText("No diff.");
+
+      currentFiles = [files[0]];
+      await act(() => queryClient.invalidateQueries());
+
+      await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
+    });
+
+    it("shares the width equally only while the Diff view is showing", async () => {
+      const { container } = renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      const leftColumn = container.querySelector<HTMLElement>(
+        '[data-debug-component="PullLeftColumn"]',
+      )!;
+      const halved = "w-[calc((100%-3rem)/2)]";
+      expect(leftColumn.className).not.toContain(halved);
+
+      fireEvent.click(railButton("Diff"));
+      expect(leftColumn.className).toContain(halved);
+      expect(pane(container).className).toContain("flex-1");
+
+      fireEvent.click(railButton("Close right pane"));
+      expect(leftColumn.className).not.toContain(halved);
+    });
+
+    it("leaves a pane closed when Viewed settles after it was closed", async () => {
+      let settleViewed!: (views: unknown[]) => void;
+      const { container } = renderDetail({
+        "pulls/files": () => [
+          files[0],
+          { ...files[0], filename: "web/src/b.ts" },
+        ],
+        "pullFileViews/set": () =>
+          new Promise((resolve) => {
+            settleViewed = resolve;
+          }),
+      });
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      fireEvent.click(railButton("Diff"));
+      await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
+
+      fireEvent.click(screen.getByRole("checkbox", { name: "Viewed" }));
+      await waitFor(() => expect(settleViewed).toBeTruthy());
+      fireEvent.click(railButton("Close right pane"));
+      await act(async () => settleViewed([]));
+
+      expect(pane(container).hidden).toBe(true);
+      expect(railButton("Open right pane")).toBeTruthy();
+    });
+
+    it("expands the diff with a file list and returns to the pane on Escape", async () => {
+      renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      fireEvent.click(railButton("Diff"));
+      await screen.findByRole("region", { name: /Diff for/ });
+      expect(
+        screen.queryByRole("complementary", { name: "Changed files" }),
+      ).toBeNull();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Show diff full screen" }),
+      );
+      expect(
+        screen.getByRole("dialog", { name: /Diff for/ }).parentElement
+          ?.className,
+      ).toContain("fixed");
+      expect(
+        screen.getByRole("complementary", { name: "Changed files" }),
+      ).toBeTruthy();
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      await screen.findByRole("region", { name: /Diff for/ });
+      expect(screen.queryByRole("dialog", { name: /Diff for/ })).toBeNull();
+    });
+
+    it("keeps a half-written diff comment when moving between pane and full screen", async () => {
+      renderDetail({
+        "pulls/diff": () => ({
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          files: [
+            {
+              path: files[0].filename,
+              original_path: null,
+              status: "modified",
+              additions: 1,
+              deletions: 0,
+              patch: "@@ -0,0 +1 @@\n+const x = 1;",
+              lines: [
+                {
+                  kind: "hunk",
+                  text: "@@ -0,0 +1 @@",
+                  left_line: null,
+                  right_line: null,
+                },
+                {
+                  kind: "addition",
+                  text: "+const x = 1;",
+                  left_line: null,
+                  right_line: 1,
+                },
+              ],
+            },
+          ],
+        }),
+      });
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      fireEvent.click(railButton("Diff"));
+      const view = await screen.findByRole("region", { name: /Diff for/ });
+      fireEvent.click(
+        await within(view).findByRole("button", {
+          name: "Comment on new line 1",
+        }),
+      );
+      fireEvent.change(await within(view).findByRole("textbox"), {
+        target: { value: "draft" },
+      });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Show diff full screen" }),
+      );
+
+      const expanded = screen.getByRole("dialog", { name: /Diff for/ });
+      expect(
+        (within(expanded).getByRole("textbox") as HTMLTextAreaElement).value,
+      ).toBe("draft");
+    });
+
+    it("keeps an Evidence edit while another view is open", async () => {
+      renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      fireEvent.click(railButton("Evidence"));
+      fireEvent.click(screen.getByRole("button", { name: "Edit Evidence" }));
+      fireEvent.change(screen.getByRole("textbox", { name: "Evidence" }), {
+        target: { value: "unsaved" },
+      });
+
+      fireEvent.click(railButton("Commits"));
+      fireEvent.click(railButton("Evidence"));
+
+      expect(
+        (
+          screen.getByRole("textbox", {
+            name: "Evidence",
+          }) as HTMLTextAreaElement
+        ).value,
+      ).toBe("unsaved");
+    });
+  });
+
+  // #2089: the sticky header is the left column's own first child, so its sticky box — and with it
+  // the bar's width — follows the left column instead of spanning the pane too.
   it("anchors the sticky header to the main column, not the full page width", async () => {
     const { container } = renderDetail();
 
@@ -2204,87 +2392,12 @@ describe("PullDetail", () => {
     const mainContent = container.querySelector<HTMLElement>(
       '[data-debug-component="PullMainContent"]',
     );
-    const sidebar = container.querySelector<HTMLElement>(
-      '[data-debug-component="PullSidebar"]',
+    const pane = container.querySelector<HTMLElement>(
+      '[data-debug-component="PullRightPane"]',
     );
     expect(mainContent?.firstElementChild?.className).toContain("sticky");
-    expect(sidebar).not.toBeNull();
-    expect(mainContent?.contains(sidebar as Node)).toBe(false);
-  });
-
-  // #2348: the sidebar stays in view while the main column scrolls, but only in the two-column
-  // layout — every sticky class is `lg:`-gated so the stacked layout keeps the normal flow.
-  it("sticks the sidebar below the sticky header only beside the main column", async () => {
-    stubStickyRoom({ scrollportHeight: 800, sidebarHeight: 400 });
-    const { container } = renderDetail();
-
-    await screen.findByText("ui2: PR detail");
-    const sidebar = container.querySelector<HTMLElement>(
-      '[data-debug-component="PullSidebar"]',
-    );
-    const classes = sidebar?.className.split(/\s+/) ?? [];
-    expect(classes).toContain("lg:sticky");
-    expect(classes).toContain("lg:top-5");
-    expect(classes.filter((c) => c.includes("sticky"))).toEqual(["lg:sticky"]);
-    // The row must keep aligning its columns to the start: stretched to the row's height, the
-    // sidebar has no room left to slide within and sticky silently becomes a no-op.
-    expect(sidebar?.parentElement?.className).toContain("lg:items-start");
-  });
-
-  // #2518: stuck at the top of the scrollport, a sidebar taller than that scrollport keeps its
-  // tail below the fold for good — no amount of page scrolling moves it. Such a sidebar goes back
-  // to the normal flow, sticky classes and all, so the page scroll carries the tail into view.
-  it("unsticks the sidebar when it is taller than the room it would stick in", async () => {
-    stubStickyRoom({ scrollportHeight: 800, sidebarHeight: 1200 });
-    const { container } = renderDetail();
-
-    await screen.findByText("ui2: PR detail");
-    const sidebar = container.querySelector<HTMLElement>(
-      '[data-debug-component="PullSidebar"]',
-    );
-    const classes = sidebar?.className.split(/\s+/) ?? [];
-    expect(classes.filter((c) => c.includes("sticky"))).toEqual([]);
-    expect(classes.filter((c) => c.includes("top-"))).toEqual([]);
-    // Only the sticky part goes: the sidebar keeps its column width and stacking.
-    expect(classes).toContain("lg:w-80");
-  });
-
-  // #2518: the verdict follows the current heights, not the ones at mount — sections expand and
-  // collapse and async data lands well after the first measurement.
-  it("re-judges the sidebar's stickiness when its height changes", async () => {
-    const room = stubStickyRoom({ scrollportHeight: 800, sidebarHeight: 400 });
-    const { container } = renderDetail();
-
-    await screen.findByText("ui2: PR detail");
-    const sidebar = container.querySelector<HTMLElement>(
-      '[data-debug-component="PullSidebar"]',
-    );
-    expect(sidebar?.className).toContain("lg:sticky");
-
-    act(() => room.resizeSidebar(1200));
-    expect(sidebar?.className).not.toContain("sticky");
-
-    act(() => room.resizeSidebar(400));
-    expect(sidebar?.className).toContain("lg:sticky");
-  });
-
-  // #2518: the same for the other side of the comparison — a shorter window can leave a sidebar
-  // that fit at mount without room, and a taller one can give it back.
-  it("re-judges the sidebar's stickiness when the window is resized", async () => {
-    const room = stubStickyRoom({ scrollportHeight: 800, sidebarHeight: 700 });
-    const { container } = renderDetail();
-
-    await screen.findByText("ui2: PR detail");
-    const sidebar = container.querySelector<HTMLElement>(
-      '[data-debug-component="PullSidebar"]',
-    );
-    expect(sidebar?.className).toContain("lg:sticky");
-
-    act(() => room.resizeScrollport(500));
-    expect(sidebar?.className).not.toContain("sticky");
-
-    act(() => room.resizeScrollport(800));
-    expect(sidebar?.className).toContain("lg:sticky");
+    expect(pane).not.toBeNull();
+    expect(mainContent?.contains(pane as Node)).toBe(false);
   });
 
   // #59: the header above the section tabs is the title and its status only — the worktree and the
@@ -2337,9 +2450,9 @@ describe("PullDetail", () => {
     );
   });
 
-  // The worktree and base ← head branch pair sit in their own band directly above the Evidence,
-  // with the home directory shortened to `~` and no Opened / Linked issue rows.
-  it("shows the worktree and branch band above the Evidence with copy actions", async () => {
+  // The worktree and base ← head branch pair sit in their own band in the left column, with the
+  // home directory shortened to `~` and no Opened / Linked issue rows.
+  it("shows the worktree and branch band with copy actions", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const worktreePath = "/Users/me/.loophub/worktrees/me/proj/pr-30";
@@ -2351,9 +2464,6 @@ describe("PullDetail", () => {
     const block = container.querySelector<HTMLElement>(
       '[data-debug-component="PullInfoSection"]',
     )!;
-    expect(block.nextElementSibling).toBe(
-      container.querySelector('[data-debug-component="PullEvidence"]'),
-    );
     expect(within(block).getByText("Worktree")).toBeTruthy();
     expect(within(block).getByText("Branch")).toBeTruthy();
     const shown = within(block).getByText("~/.loophub/worktrees/me/proj/pr-30");
@@ -2396,16 +2506,13 @@ describe("PullDetail", () => {
     expect(within(block).getByText("main")).toBeTruthy();
   });
 
-  it("drops the PR details section from the sidebar", async () => {
+  it("has neither a PR details section nor the old sidebar", async () => {
     const { container } = renderDetail();
 
     await screen.findByText("ui2: PR detail");
     expect(screen.queryByRole("heading", { name: "PR details" })).toBeNull();
-    const sidebar = container.querySelector<HTMLElement>(
-      '[data-debug-component="PullSidebar"]',
-    )!;
     expect(
-      sidebar.querySelector('[data-debug-component="PullInfoSection"]'),
+      container.querySelector('[data-debug-component="PullSidebar"]'),
     ).toBeNull();
   });
 
@@ -2419,9 +2526,7 @@ describe("PullDetail", () => {
   it("does not render an independent Reviews section", async () => {
     renderDetail();
 
-    await screen.findByRole("heading", {
-      name: /Files changed \(1\)/,
-    });
+    await findFilesChangedHeading(/Files changed \(1\)/);
     expect(screen.getByLabelText("File status: modified")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Reviews" })).toBeNull();
   });
@@ -2429,7 +2534,7 @@ describe("PullDetail", () => {
   it("shows each changed file as status, trailing filename, and changes on one row", async () => {
     renderDetail();
 
-    await screen.findByRole("heading", { name: /Files changed \(1\)/ });
+    await findFilesChangedHeading(/Files changed \(1\)/);
     const filename = screen.getByText("web/src/a.ts");
     const row = filename.closest("button")!;
     expect(Array.from(row.children).map((child) => child.textContent)).toEqual([
@@ -2447,20 +2552,16 @@ describe("PullDetail", () => {
   });
 
   // The Commits section's own behaviour is covered by pull-commits-section.test.tsx; the PR detail
-  // only has to place it, with this PR's commits, before Files changed.
-  it("places the PR's commits before files changed in the main PR flow", async () => {
+  // only has to show it, with this PR's commits, in the right pane.
+  it("shows the PR's commits in the right pane", async () => {
     renderDetail();
 
     const commitsHeading = await screen.findByRole("heading", {
       name: "Commits (2)",
     });
-    const filesHeading = screen.getByRole("heading", {
-      name: /Files changed \(1\)/,
-    });
 
     expect(
-      commitsHeading.compareDocumentPosition(filesHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      commitsHeading.closest('[data-debug-component="PullRightPane"]'),
     ).toBeTruthy();
   });
 
@@ -3499,9 +3600,9 @@ describe("PullDetail", () => {
       document.querySelector<HTMLElement>(
         '[data-debug-component="DetailStickyHeader"]',
       );
-    const pullDetail = () =>
+    const leftColumn = () =>
       document.querySelector<HTMLElement>(
-        '[data-debug-component="PullDetail"]',
+        '[data-debug-component="PullLeftColumn"]',
       );
     const tabs = () =>
       document.querySelector<HTMLElement>(
@@ -3515,9 +3616,7 @@ describe("PullDetail", () => {
           '[data-debug-component="WorkflowRunSummary"]',
         ),
       ).toBeNull();
-      expect(pullDetail()?.hasAttribute("data-two-row-sticky-header")).toBe(
-        false,
-      );
+      expect(leftColumn()?.className.split(/\s+/)).toContain("scroll-pt-11");
       expect(tabs()?.className.split(/\s+/)).toContain("top-5");
     }
 
@@ -3549,9 +3648,7 @@ describe("PullDetail", () => {
       expect(
         progress.querySelector('[data-debug-component="WorkflowRunSummary"]'),
       ).toBeTruthy();
-      expect(pullDetail()?.hasAttribute("data-two-row-sticky-header")).toBe(
-        true,
-      );
+      expect(leftColumn()?.className.split(/\s+/)).toContain("scroll-pt-16");
       expect(tabs()?.className.split(/\s+/)).toContain("top-10");
     });
 
@@ -3962,6 +4059,15 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(screen.queryByRole("button", { name: /Creating…/i })).toBeNull();
   });
 
+  it("shows the GitHub PR status in the left column", async () => {
+    renderDetailWithPull({ github_pull: linkedGithubPull(null) });
+
+    const heading = await screen.findByRole("heading", { name: "GitHub PR" });
+    expect(
+      heading.closest('[data-debug-component="PullLeftColumn"]'),
+    ).not.toBeNull();
+  });
+
   it.each([
     "github_pr",
     "merge",
@@ -4088,7 +4194,7 @@ describe("PullDetail — #comments landing (#2394)", () => {
 });
 
 // #2640: the linked issue's body and per-criterion status take the PR's own place; its Evidence
-// stays collapsed below.
+// lives in the right pane.
 describe("PullDetail — linked issue description (#2640)", () => {
   const criteria = [1, 2, 3].map((n) => ({
     id: `153-${n}`,
@@ -4125,6 +4231,10 @@ describe("PullDetail — linked issue description (#2640)", () => {
     const item = screen.getByText(text).closest("li") as HTMLElement;
     return item.querySelector("svg")?.getAttribute("aria-label");
   }
+  const evidence = () =>
+    document.querySelector<HTMLElement>(
+      '[data-debug-component="PullEvidence"]',
+    )!;
 
   it("shows the issue body and grades from the latest grading review, whatever head it read", async () => {
     renderDetail({
@@ -4149,12 +4259,8 @@ describe("PullDetail — linked issue description (#2640)", () => {
     expect(verdictOf("Criterion 3")).toBe("Not graded");
     expect(screen.getByText(/1\/3 met · 1 not met · 1 not/)).toBeTruthy();
 
-    const details = screen
-      .getByText("Evidence")
-      .closest("details") as HTMLDetailsElement;
-    expect(details.open).toBe(false);
     expect(
-      within(details).getByText("Render diff, reviews, comments."),
+      within(evidence()).getByText("Render diff, reviews, comments."),
     ).toBeTruthy();
   });
 
@@ -4168,41 +4274,40 @@ describe("PullDetail — linked issue description (#2640)", () => {
     expect(screen.getByText(/0\/3 met · 0 not met · 3 not/)).toBeTruthy();
   });
 
-  it("shows the Evidence open when the linked issue has no structured criteria", async () => {
+  it("keeps the Evidence in the right pane when the linked issue has no structured criteria", async () => {
     renderDetail({
       "issues/get": () => ({ ...linkedIssue, acceptance_criteria: undefined }),
     });
 
     await screen.findByText("Render diff, reviews, comments.");
     expect(screen.queryByText("The issue spec body.")).toBeNull();
-    const details = screen
-      .getByText("Evidence")
-      .closest("details") as HTMLDetailsElement;
-    expect(details.open).toBe(true);
     expect(
-      details.previousElementSibling?.getAttribute("data-debug-component"),
-    ).toBe("PullInfoSection");
+      within(evidence()).getByText("Render diff, reviews, comments."),
+    ).toBeTruthy();
+    expect(
+      evidence().closest('[data-debug-component="PullRightPane"]'),
+    ).toBeTruthy();
   });
 
-  it("keeps the worktree and branch band between the criteria and the Evidence", async () => {
+  it("keeps the worktree and branch band directly below the criteria", async () => {
     const { container } = renderDetail({ "issues/get": () => linkedIssue });
 
     await screen.findByText("The issue spec body.");
     const band = container.querySelector<HTMLElement>(
       '[data-debug-component="PullInfoSection"]',
     )!;
-    const details = screen
-      .getByText("Evidence")
-      .closest("details") as HTMLDetailsElement;
     expect(band.previousElementSibling).toBe(
       screen.getByText("Acceptance criteria").closest("section"),
     );
-    expect(band.nextElementSibling).toBe(details);
   });
 
   it("edits the Evidence in place and saves it as the PR body", async () => {
     renderDetail();
 
+    const rail = await screen.findByRole("navigation", {
+      name: "Right pane views",
+    });
+    fireEvent.click(within(rail).getByRole("button", { name: "Evidence" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Edit Evidence" }),
     );

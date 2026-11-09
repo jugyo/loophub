@@ -7,7 +7,11 @@ import {
 } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
-import { PullSectionTabs, spyRootMargin } from "./pull-section-tabs";
+import {
+  type PullPaneView,
+  PullSectionTabs,
+  spyRootMargin,
+} from "./pull-section-tabs";
 
 // happy-dom ships a no-op IntersectionObserver, so both the scrollspy and the sticky-header
 // handoff are driven by capturing the observer callbacks and firing the intersections we want.
@@ -73,25 +77,25 @@ function stubIntersectionObserver() {
 
 // The sections the tabs anchor to are rendered as the page does: inside the app's scrollport,
 // after the bar, with the ids it links to, plus the page title the sticky-header handoff watches.
-function renderTabs() {
+function renderTabs(onOpenPaneView: (view: PullPaneView) => void = () => {}) {
   const titleRef = createRef<HTMLDivElement>();
   const { container, unmount } = render(
-    // The app shell's scrollport carries pt-6; the band's inset has to account for it because an
-    // element root's rect starts inside that padding (app-layout.tsx).
-    <main style={{ paddingTop: "24px" }}>
+    // The left column's scrollport carries pt-6; the band's inset has to account for it because an
+    // element root's rect starts inside that padding (pull-detail.tsx).
+    <div data-debug-component="PullLeftColumn" style={{ paddingTop: "24px" }}>
       <div id="overview">
         <div id="page-title" ref={titleRef}>
           PR #60
         </div>
       </div>
-      <PullSectionTabs titleRef={titleRef} />
+      <PullSectionTabs titleRef={titleRef} onOpenPaneView={onOpenPaneView} />
       <div id="pull-body">description</div>
-      <div id="commits">commits</div>
-      <div id="files-changed">files changed</div>
       <div id="comments">comments</div>
-    </main>,
+    </div>,
   );
-  const scroller = container.querySelector("main");
+  const scroller = container.querySelector(
+    '[data-debug-component="PullLeftColumn"]',
+  );
   return {
     container,
     unmount,
@@ -130,21 +134,32 @@ describe("PullSectionTabs", () => {
         .map((link) => [link.textContent, link.getAttribute("href")]),
     ).toEqual([
       ["Overview", "#overview"],
-      ["Commits", "#commits"],
-      ["Files changed", "#files-changed"],
       ["Comments", "#comments"],
     ]);
+  });
+
+  it.each([
+    ["Commits", "commits"],
+    ["Files changed", "files"],
+  ])("opens the right pane's view from the %s tab", (label, view) => {
+    stubIntersectionObserver();
+    const onOpenPaneView = vi.fn();
+    renderTabs(onOpenPaneView);
+
+    fireEvent.click(screen.getByRole("button", { name: label }));
+
+    expect(onOpenPaneView).toHaveBeenCalledWith(view);
   });
 
   it("smoothly scrolls to the selected section without changing the anchor", () => {
     stubIntersectionObserver();
     const { container } = renderTabs();
-    const target = container.querySelector("#commits");
-    if (!target) throw new Error("commits section not found");
+    const target = container.querySelector("#comments");
+    if (!target) throw new Error("comments section not found");
     const scrollIntoView = vi.fn();
     target.scrollIntoView = scrollIntoView;
 
-    fireEvent.click(screen.getByRole("link", { name: "Commits" }));
+    fireEvent.click(screen.getByRole("link", { name: "Comments" }));
 
     expect(scrollIntoView).toHaveBeenCalledWith({
       behavior: "smooth",
@@ -161,11 +176,11 @@ describe("PullSectionTabs", () => {
   ])("keeps native anchor behavior for %s-clicks", (_name, options) => {
     stubIntersectionObserver();
     const { container } = renderTabs();
-    const target = container.querySelector("#commits");
-    if (!target) throw new Error("commits section not found");
+    const target = container.querySelector("#comments");
+    if (!target) throw new Error("comments section not found");
     const scrollIntoView = vi.fn();
     target.scrollIntoView = scrollIntoView;
-    const link = screen.getByRole("link", { name: "Commits" });
+    const link = screen.getByRole("link", { name: "Comments" });
     const event = new MouseEvent("click", {
       bubbles: true,
       cancelable: true,
@@ -189,13 +204,7 @@ describe("PullSectionTabs", () => {
     const observer = stubIntersectionObserver();
     const { activeTab } = renderTabs();
 
-    observer.intersect({ overview: false, commits: true });
-    expect(activeTab()).toBe("Commits");
-
-    observer.intersect({ commits: false, "files-changed": true });
-    expect(activeTab()).toBe("Files changed");
-
-    observer.intersect({ "files-changed": false, comments: true });
+    observer.intersect({ overview: false, comments: true });
     expect(activeTab()).toBe("Comments");
   });
 
@@ -203,10 +212,10 @@ describe("PullSectionTabs", () => {
     const observer = stubIntersectionObserver();
     const { activeTab } = renderTabs();
 
-    observer.intersect({ "files-changed": true, comments: true });
-    expect(activeTab()).toBe("Files changed");
+    observer.intersect({ "pull-body": true, comments: true });
+    expect(activeTab()).toBe("Overview");
 
-    observer.intersect({ "files-changed": false });
+    observer.intersect({ "pull-body": false });
     expect(activeTab()).toBe("Comments");
   });
 
@@ -227,10 +236,10 @@ describe("PullSectionTabs", () => {
     const observer = stubIntersectionObserver();
     const { activeTab } = renderTabs();
 
-    observer.intersect({ overview: false, commits: true });
-    expect(activeTab()).toBe("Commits");
+    observer.intersect({ overview: false, comments: true });
+    expect(activeTab()).toBe("Comments");
 
-    observer.intersect({ commits: false, "pull-body": true });
+    observer.intersect({ comments: false, "pull-body": true });
     expect(activeTab()).toBe("Overview");
   });
 
@@ -238,9 +247,9 @@ describe("PullSectionTabs", () => {
     const observer = stubIntersectionObserver();
     const { activeTab } = renderTabs();
 
-    observer.intersect({ commits: true });
-    observer.intersect({ commits: false });
-    expect(activeTab()).toBe("Commits");
+    observer.intersect({ comments: true });
+    observer.intersect({ comments: false });
+    expect(activeTab()).toBe("Comments");
   });
 
   // The page-top section is the one the band cannot be scrolled up to; without the top-of-scroll
@@ -260,17 +269,17 @@ describe("PullSectionTabs", () => {
     const observer = stubIntersectionObserver();
     const { activeTab, scrollTo } = renderTabs();
 
-    observer.intersect({ commits: true });
+    observer.intersect({ comments: true });
     scrollTo(0);
     scrollTo(1200);
-    expect(activeTab()).toBe("Commits");
+    expect(activeTab()).toBe("Comments");
   });
 
   it("selects the last section at the end of the scroll, where the band can no longer reach it", () => {
     const observer = stubIntersectionObserver();
     const { activeTab, scrollTo } = renderTabs();
 
-    observer.intersect({ commits: true });
+    observer.intersect({ "pull-body": true });
     scrollTo(2100);
     expect(activeTab()).toBe("Comments");
   });
@@ -279,10 +288,10 @@ describe("PullSectionTabs", () => {
     const observer = stubIntersectionObserver();
     const { activeTab, scrollTo } = renderTabs();
 
-    observer.intersect({ commits: true });
+    observer.intersect({ "pull-body": true });
     scrollTo(2100);
     scrollTo(1200);
-    expect(activeTab()).toBe("Commits");
+    expect(activeTab()).toBe("Overview");
   });
 
   it("drops below the sticky header once the page title scrolls out of view", () => {
@@ -304,7 +313,7 @@ describe("PullSectionTabs", () => {
     const { unmount } = renderTabs();
 
     const options = observer.sectionObserver()?.options;
-    expect((options?.root as HTMLElement | null)?.tagName).toBe("MAIN");
+    expect((options?.root as HTMLElement | null)?.tagName).toBe("DIV");
     expect(options?.rootMargin).toBe(spyRootMargin(24));
     unmount();
   });

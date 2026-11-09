@@ -184,13 +184,14 @@ bar at the bottom-right. Repository routes also show a repository navigation bar
 | Main content padding | `px-4 pt-6 sm:px-6` | `app-layout.tsx` `<main>` |
 
 The application header, repository navigation, and application status bar are
-`shrink-0`; the main column is `min-w-0 flex-1`, and only `<main>` scrolls
-(`overflow-y-auto`). Routes outside a repository omit the repository
-navigation bar entirely.
+`shrink-0`; the main column is `min-w-0 flex-1`, and `<main>` scrolls
+(`overflow-y-auto`), except on the PR detail page (see below). Routes outside a
+repository omit the repository navigation bar entirely.
 
 #### Single vertical scrollport
 
-Only `<main>` may own the page's vertical scrollbar. The shell is therefore
+Only `<main>` may own the page's vertical scrollbar, with one exception: the PR
+detail page. The shell is therefore
 `relative` as well as `overflow-hidden`: Tailwind's `.sr-only` utility uses
 `position: absolute`, and without a positioned ancestor those labels resolve
 against the initial containing block. When an Issue detail's
@@ -199,6 +200,26 @@ the first viewport, its static position expands `documentElement.scrollHeight`
 and the browser paints a second vertical scrollbar beside `main`. Making the
 shell the containing block keeps absolute descendants inside the fixed-height
 shell so document overflow cannot appear.
+
+#### PR detail columns
+
+The PR detail page always uses the full window width and scrolls its columns
+independently ([`src/components/pull-detail.tsx`](./src/components/pull-detail.tsx)).
+Its root carries `data-pull-columns`, which makes `<main>` `overflow-hidden` and
+drops its padding, so the page never gets a second vertical scrollbar. The left
+column takes over `<main>`'s `px-4 pt-6 sm:px-6` and sticky-header scroll padding,
+so sticky offsets work as on other detail pages.
+
+| Column | Width | Scrolls |
+|--------|-------|---------|
+| Left column | `flex-1`; content is `max-w-content`, centered, while the pane is closed | Itself |
+| Right pane | `w-[36rem]`; `flex-1` (equal to the left column) in the Diff view; hidden when closed | Each view's body |
+| Icon rail | `w-12`, always shown | None |
+
+The rail's top button opens and closes the pane and returns to the last view; the
+icons below it (Commits, Files changed, Diff, Evidence) switch views, and the
+selected icon closes the pane. The Diff view can expand over the whole screen,
+where a file list replaces the pane's file picker and `Esc` returns to the pane.
 
 #### Shell dividers
 

@@ -270,7 +270,7 @@ function renderPullDialog(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const element = (threadId: number | null, threadRevealKey?: unknown) => (
     <QueryClientProvider client={queryClient}>
       <PullDiffDialog
         owner="me"
@@ -280,11 +280,18 @@ function renderPullDialog(
         headSha={"b".repeat(40)}
         files={[file]}
         file={file}
+        initialThreadId={threadId}
+        threadRevealKey={threadRevealKey}
         onSelectFile={() => {}}
         onClose={onClose}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const result = render(element(null));
+  return {
+    ...result,
+    revealThread: (id: number) => result.rerender(element(id, { id })),
+  };
 }
 
 async function selectDiffScope(name: RegExp | string) {
@@ -363,6 +370,37 @@ describe("PullDiffDialog", () => {
     await selectDiffScope("All changes");
     expect(await screen.findByText("const x = 1;")).toBeTruthy();
     expect(screen.queryByText("earlier after")).toBeNull();
+  });
+
+  it("leaves a commit's scope for the whole PR when asked to reveal a thread", async () => {
+    const scrollIntoView = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    const { revealThread } = renderPullDialog({
+      "pulls/diff": stableDiff,
+      "repos/commitDiff": () =>
+        scopedDiff("earlier.ts", "earlier before", "earlier after"),
+      "diffFeedback/list": () => ({
+        threads: [
+          feedbackThread({
+            anchor: { ...feedbackThread().anchor, end_line: 1 },
+          }),
+        ],
+      }),
+    });
+    await screen.findByText("const x = 1;");
+    await selectDiffScope(/ddddddd.*Earlier commit/);
+    await screen.findByText("earlier after");
+
+    revealThread(1);
+
+    const thread = await screen.findByLabelText("Diff thread 1");
+    expect(
+      screen.getByRole("button", { name: "Select diff scope" }).textContent,
+    ).toContain("All changes");
+    await waitFor(() =>
+      expect(scrollIntoView.mock.contexts.at(-1)).toBe(thread),
+    );
   });
 
   it("選択ファイルに変更履歴がない場合は空状態を表示する", async () => {
@@ -2836,8 +2874,7 @@ describe("DiffFileDialog", () => {
       name: "Changed files",
     });
     const dialog = screen.getByRole("dialog");
-    expect(sidebar.parentElement).toBe(dialog);
-    expect(dialog.firstElementChild).toBe(sidebar);
+    expect(dialog.contains(sidebar)).toBe(true);
     expect(within(sidebar).getByText("Files changed (2)")).toBeTruthy();
     expect(
       within(sidebar)
