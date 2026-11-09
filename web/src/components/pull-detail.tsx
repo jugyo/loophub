@@ -150,7 +150,7 @@ export function PullDetail({
   // Kept while the pane is closed: reopening returns to the view it was closed on.
   const [paneView, setPaneView] = useState<PullPaneView>("commits");
   const [leftColumnWidths, setLeftColumnWidths] = useState(() => ({
-    diff: getPullLeftColumnWidth("diff"),
+    files: getPullLeftColumnWidth("files"),
     other: getPullLeftColumnWidth("other"),
   }));
   const [diffFullscreen, setDiffFullscreen] = useState(false);
@@ -279,7 +279,7 @@ export function PullDetail({
       ? (findPullFile(files, openFilename) ?? files[0] ?? null)
       : null;
   const diffShowing = paneView === "files" && diffOpen && diffFile != null;
-  const paneWidthGroup = diffShowing ? "diff" : "other";
+  const paneWidthGroup = paneView === "files" ? "files" : "other";
   // Null until this group's width is dragged; the default width applies until then.
   const leftColumnWidth = leftColumnWidths[paneWidthGroup];
   const timelineReviewGroup = timelineReview

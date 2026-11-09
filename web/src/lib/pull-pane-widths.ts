@@ -3,11 +3,13 @@
 // whatever the window has left. Storage is a convenience only: a missing, unrecognized, or
 // unreadable value means the view's default width, and a failed write is ignored.
 
-// The Diff view is read at a different width from the others, so it remembers its own.
-export type PullPaneWidthGroup = "diff" | "other";
+// The Files view is read at a different width from the others, so it remembers its own: one width
+// for its file list and diffs, so opening a file does not move the boundary.
+export type PullPaneWidthGroup = "files" | "other";
 
 const WIDTH_KEYS: Record<PullPaneWidthGroup, string> = {
-  diff: "lh_pull_left_column_width_diff",
+  // Named for when only the diff used it; kept so widths already stored survive.
+  files: "lh_pull_left_column_width_diff",
   other: "lh_pull_left_column_width",
 };
 

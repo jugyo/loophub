@@ -2195,7 +2195,7 @@ describe("PullDetail", () => {
       ).toBeTruthy();
     });
 
-    it("moves the boundary by dragging, remembering the left column for Diff and the other views apart", async () => {
+    it("moves the boundary by dragging, remembering the left column for Files and the other views apart", async () => {
       const { container } = renderDetail();
       await screen.findByRole("heading", { name: /Commits \(/ });
       const root = container.querySelector<HTMLElement>(
@@ -2239,6 +2239,60 @@ describe("PullDetail", () => {
 
       fireEvent.click(railButton("Close right pane"));
       expect(leftColumn.style.flexBasis).toBe("");
+      localStorage.clear();
+    });
+
+    it("keeps one boundary across the file list and its diffs, also after reloading", async () => {
+      const { container, unmount } = renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      const leftColumn = () =>
+        container.querySelector<HTMLElement>(
+          '[data-debug-component="PullLeftColumn"]',
+        )!;
+      const dragBoundaryBy = (delta: number) => {
+        const handle = screen.getByRole("separator", {
+          name: "Resize right pane",
+        });
+        handle.setPointerCapture = () => {};
+        fireEvent.pointerDown(handle, { button: 0, clientX: 800 });
+        fireEvent.pointerMove(handle, { clientX: 800 + delta });
+        fireEvent.pointerUp(handle);
+      };
+      Object.defineProperty(
+        container.querySelector('[data-debug-component="PullDetail"]'),
+        "clientWidth",
+        { value: 1400 },
+      );
+      Object.defineProperty(leftColumn(), "offsetWidth", { value: 768 });
+
+      fireEvent.click(railButton("Files changed"));
+      dragBoundaryBy(-100);
+      expect(leftColumn().style.flexBasis).toBe("668px");
+
+      await openFileFromList();
+      await screen.findByRole("region", { name: "Diff for web/src/a.ts" });
+      expect(leftColumn().style.flexBasis).toBe("668px");
+
+      dragBoundaryBy(-200);
+      expect(leftColumn().style.flexBasis).toBe("568px");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Back to file list" }),
+      );
+      expect(leftColumn().style.flexBasis).toBe("568px");
+
+      fireEvent.click(railButton("Commits"));
+      expect(leftColumn().style.flexBasis).toBe("");
+
+      unmount();
+      renderDetail();
+      await screen.findByRole("heading", { name: /Commits \(/ });
+      fireEvent.click(railButton("Files changed"));
+      expect(
+        document.querySelector<HTMLElement>(
+          '[data-debug-component="PullLeftColumn"]',
+        )?.style.flexBasis,
+      ).toBe("568px");
       localStorage.clear();
     });
 
