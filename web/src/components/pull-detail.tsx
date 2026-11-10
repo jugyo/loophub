@@ -956,7 +956,7 @@ function PullDescription({
       data-debug-component="PullLinkedIssueDescription"
       className="flex flex-col gap-3"
     >
-      <div className="rounded-md border bg-muted/30">
+      <div className="overflow-hidden rounded-md border bg-muted/30">
         <div className="flex min-w-0 items-baseline gap-1.5 border-b px-4 py-2 text-sm">
           <Link
             to="/r/$owner/$repo/issues/$number"
@@ -976,47 +976,49 @@ function PullDescription({
         ) : (
           <p className="p-4 text-sm text-muted-foreground">No description.</p>
         )}
-      </div>
-      <section className="flex flex-col gap-2 rounded-md border p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-semibold">Acceptance criteria</h3>
-          <span className="text-xs text-muted-foreground">
-            {met}/{criteria.length} met · {notMet} not met · {notGraded} not
-            graded
-          </span>
-        </div>
-        <ul className="flex flex-col gap-1.5 text-sm">
-          {criteria.map((criterion) => {
-            const verdict = grades.get(criterion.id)?.verdict;
-            return (
-              <li key={criterion.id} className="flex items-start gap-2">
-                {verdict === "pass" ? (
-                  <Check
-                    aria-label="Met"
-                    className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-400"
-                  />
-                ) : verdict === "fail" ? (
-                  <X
-                    aria-label="Not met"
-                    className="mt-0.5 size-4 shrink-0 text-destructive"
-                  />
-                ) : (
-                  <Circle
-                    aria-label="Not graded"
-                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                  />
-                )}
-                <span className="min-w-0 break-words">
-                  <span className="mr-2 font-mono text-xs text-muted-foreground">
-                    AC {criterion.number}
+        <section className="flex flex-col gap-3 border-t p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Acceptance criteria
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              {met}/{criteria.length} met · {notMet} not met · {notGraded} not
+              graded
+            </span>
+          </div>
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {criteria.map((criterion) => {
+              const verdict = grades.get(criterion.id)?.verdict;
+              return (
+                <li key={criterion.id} className="flex items-start gap-2">
+                  {verdict === "pass" ? (
+                    <Check
+                      aria-label="Met"
+                      className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-400"
+                    />
+                  ) : verdict === "fail" ? (
+                    <X
+                      aria-label="Not met"
+                      className="mt-0.5 size-4 shrink-0 text-destructive"
+                    />
+                  ) : (
+                    <Circle
+                      aria-label="Not graded"
+                      className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    />
+                  )}
+                  <span className="min-w-0 break-words">
+                    <span className="mr-2 font-mono text-xs text-muted-foreground">
+                      AC {criterion.number}
+                    </span>
+                    {criterion.text}
                   </span>
-                  {criterion.text}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      </div>
       <PullInfoSection pull={pull} />
     </div>
   );

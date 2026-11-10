@@ -4846,6 +4846,20 @@ describe("PullDetail — linked issue description (#2640)", () => {
     ).toBeTruthy();
   });
 
+  it("shows the issue body and criteria in one box, split by a divider", async () => {
+    renderDetail({ "issues/get": () => linkedIssue });
+
+    const body = await screen.findByText("The issue spec body.");
+    const criteriaSection = screen
+      .getByRole("heading", { name: "Acceptance criteria" })
+      .closest("section") as HTMLElement;
+    const box = criteriaSection.parentElement as HTMLElement;
+    expect(box.contains(body)).toBe(true);
+    expect(box.className).toContain("rounded-md border bg-muted/30");
+    expect(criteriaSection.className).toContain("border-t");
+    expect(criteriaSection.className).not.toContain("rounded-md");
+  });
+
   it("marks every criterion Not graded when no review graded criteria", async () => {
     renderDetail({ "issues/get": () => linkedIssue });
 
@@ -4871,7 +4885,7 @@ describe("PullDetail — linked issue description (#2640)", () => {
     ).toBeTruthy();
   });
 
-  it("keeps the worktree and branch band directly below the criteria", async () => {
+  it("keeps the worktree and branch band directly below the issue and criteria box", async () => {
     const { container } = renderDetail({ "issues/get": () => linkedIssue });
 
     await screen.findByText("The issue spec body.");
@@ -4879,7 +4893,7 @@ describe("PullDetail — linked issue description (#2640)", () => {
       '[data-debug-component="PullInfoSection"]',
     )!;
     expect(band.previousElementSibling).toBe(
-      screen.getByText("Acceptance criteria").closest("section"),
+      screen.getByText("Acceptance criteria").closest("section")?.parentElement,
     );
   });
 
