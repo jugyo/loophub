@@ -9,7 +9,6 @@
 
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
-  ArrowDownToLine,
   Check,
   Circle,
   ClipboardCheck,
@@ -177,10 +176,6 @@ export function PullDetail({
     subject: string;
   } | null>(null);
   const [timelineReview, setTimelineReview] = useState<PullReview | null>(null);
-  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const [scrollButtonCenter, setScrollButtonCenter] = useState<number | null>(
-    null,
-  );
   function openPaneView(view: PullPaneView) {
     setPaneView(view);
     setPaneOpen(true);
@@ -202,58 +197,6 @@ export function PullDetail({
     setDiffOpen(false);
     setDiffDialogOpen(false);
   }
-  useEffect(() => {
-    const scrollContainer = leftColumnRef.current;
-    if (!scrollContainer) return;
-
-    let mutationObserver: MutationObserver | null = null;
-    let observedTimeline: HTMLElement | null = null;
-    const updateScrollToBottom = () => {
-      const timeline = document.querySelector<HTMLElement>(
-        '[data-debug-component="PullMainContent"]',
-      );
-      if (timeline) {
-        if (mutationObserver && timeline !== observedTimeline) {
-          observedTimeline = timeline;
-          mutationObserver.observe(timeline, {
-            childList: true,
-            subtree: true,
-          });
-        }
-        const rect = timeline.getBoundingClientRect();
-        setScrollButtonCenter(rect.left + rect.width / 2);
-      }
-      setShowScrollToBottom(
-        scrollContainer.scrollTop + scrollContainer.clientHeight <
-          scrollContainer.scrollHeight - 1,
-      );
-    };
-
-    updateScrollToBottom();
-    scrollContainer.addEventListener("scroll", updateScrollToBottom, {
-      passive: true,
-    });
-    const resizeObserver =
-      typeof ResizeObserver === "function"
-        ? new ResizeObserver(updateScrollToBottom)
-        : null;
-    resizeObserver?.observe(scrollContainer);
-    mutationObserver =
-      typeof MutationObserver === "function"
-        ? new MutationObserver(updateScrollToBottom)
-        : null;
-    mutationObserver?.observe(scrollContainer, {
-      childList: true,
-    });
-    updateScrollToBottom();
-    return () => {
-      scrollContainer.removeEventListener("scroll", updateScrollToBottom);
-      resizeObserver?.disconnect();
-      mutationObserver?.disconnect();
-    };
-    // The left column only exists outside the loading and error returns below, and is a new
-    // element each time the page comes back from one of them.
-  }, [pageQuery.isLoading, pageQuery.isError]);
   // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
   // otherwise, and the section is hidden anyway when github_pull is absent (#850).
   const githubStatusQuery = useGithubPrStatus(
@@ -451,34 +394,6 @@ export function PullDetail({
           </div>
         </div>
       </div>
-
-      {showScrollToBottom ? (
-        <Button
-          type="button"
-          variant="secondary"
-          size="icon"
-          className="fixed bottom-[calc(3rem+var(--pull-terminal-dock-height,0px))] left-1/2 z-30 rounded-full border shadow-md"
-          style={
-            scrollButtonCenter == null
-              ? undefined
-              : {
-                  left: `${scrollButtonCenter}px`,
-                  transform: "translateX(-50%)",
-                }
-          }
-          aria-label="ページ下部へ移動"
-          title="ページ下部へ移動"
-          onClick={() => {
-            const scrollContainer = leftColumnRef.current;
-            scrollContainer?.scrollTo({
-              top: scrollContainer.scrollHeight,
-              behavior: "smooth",
-            });
-          }}
-        >
-          <ArrowDownToLine className="size-4" aria-hidden="true" />
-        </Button>
-      ) : null}
 
       {/* Every view stays mounted once it exists, hidden rather than removed, so switching views
           or closing the pane cannot throw away a half-written Evidence edit or diff comment. */}
