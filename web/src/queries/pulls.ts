@@ -15,6 +15,8 @@ import {
   createDiffFeedback,
   getCommitDiff,
   getCommitFileAtRef,
+  getGithubCheckLog,
+  getGithubConversation,
   getGithubPrStatus,
   getPull,
   getPullDebug,
@@ -22,6 +24,7 @@ import {
   getPullDiff,
   getPullFileAtRef,
   getPullUsage,
+  githubPullAction,
   listCommitFiles,
   listCommitHistory,
   listDiffFeedback,
@@ -834,6 +837,55 @@ export function useGithubPrStatus(
     queryKey: queryKeys.githubPrStatus(full(owner, repo), number),
     queryFn: () => getGithubPrStatus(owner, repo, number),
     enabled,
+  });
+}
+
+export function useGithubConversation(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.githubConversation(full(owner, repo), number),
+    queryFn: () => getGithubConversation(owner, repo, number),
+    enabled,
+  });
+}
+
+/** A failed check's log excerpt, fetched only once someone opens it. */
+export function useGithubCheckLog(
+  owner: string,
+  repo: string,
+  number: number,
+  jobId: number,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.githubCheckLog(full(owner, repo), number, jobId),
+    queryFn: () => getGithubCheckLog(owner, repo, number, jobId),
+    enabled,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/**
+ * A write on the linked GitHub PR. Nothing to invalidate on success: what the pane shows comes from
+ * the worker's sweep, whose event refreshes it.
+ */
+export function useGithubPullAction(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return useMutation({
+    mutationFn: ({
+      method,
+      params,
+    }: {
+      method: Parameters<typeof githubPullAction>[0];
+      params?: Record<string, unknown>;
+    }) => githubPullAction(method, owner, repo, number, params),
   });
 }
 

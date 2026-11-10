@@ -355,6 +355,15 @@ describe("queryKeysForEvent", () => {
       }),
     );
     expect(github).toContainEqual(["github-pr-status", "me/proj", 13]);
+    const updated = queryKeysForEvent(
+      ev({
+        type: "pull_request.github_data_updated",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(updated).toContainEqual(["github-pr-status", "me/proj", 13]);
+    expect(updated).toContainEqual(["github-conversation", "me/proj", 13]);
   });
 
   it("refreshes pull debug for dump-changing events without using the pull prefix", () => {

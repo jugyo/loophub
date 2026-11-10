@@ -32,13 +32,15 @@ import {
   revParse,
 } from "../git.ts";
 import {
-  GITHUB_PR_STATUS_TTL_MS,
+  type GhPrStatus,
   type GithubDeps,
-  type GithubPrStatusDeps,
+  type GithubMergeMethod,
+  type GithubPrActionDeps,
   parseGhPrStatus,
   realGithubDeps,
-  realGithubPrStatusDeps,
+  realGithubPrActionDeps,
 } from "../github.ts";
+import { githubFixRequestBody } from "../github-fix-request.ts";
 import { notifyGithubPullLinked } from "../github-pull-notifications.ts";
 import { latestChangedLines } from "../latest-diff-lines.ts";
 import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
@@ -50,6 +52,8 @@ import {
 import { existingPullWorktreePath } from "../pull-worktree.ts";
 import {
   agentSessionJSON,
+  type GithubConversationThreadWire,
+  githubConversationJSON,
   githubPrStatusJSON,
   githubPullJSON,
   type PullTimelineItemWire,
@@ -61,6 +65,7 @@ import { pullJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import { SOURCE_PAYLOAD_VERSION } from "../workflow/source-events.ts";
 import { enqueueWorkflowAgentStop } from "../workflow-agent-stop-job.ts";
+import { comments } from "./comments.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -78,7 +83,7 @@ import { workflowRunParentPaneId } from "./workflow-panes.ts";
 async function githubCommitSync(
   repoPath: string,
   pull: S.PullRow,
-  status: Awaited<ReturnType<GithubPrStatusDeps["fetchStatus"]>>,
+  status: GhPrStatus,
 ): Promise<{
   unpushedCommits: number | null;
   unpulledCommits: number | null;
@@ -105,13 +110,69 @@ async function githubCommitSync(
   };
 }
 
-// #850: how long a cached GitHub PR status is served before hitting `gh` again. On-demand from the
-// PR-detail sidebar, so a short TTL keeps the panel roughly live without spawning a `gh` per render.
 interface PullCreateDeps {
   revParse: typeof revParse;
 }
 
 const realPullCreateDeps: PullCreateDeps = { revParse };
+
+function writableGithubPull(name: string, number: number) {
+  const r = repoOr404(name);
+  ensureWritable(r);
+  const row = issueOr404(r, number, "pull");
+  if (S.getPull(row.id)!.merged || row.state !== "open")
+    throw new ServiceError(405, "Pull Request is not open");
+  const link = S.getGithubPull(row.id);
+  if (!link) throw new ServiceError(409, "PR has no linked GitHub PR");
+  return { r, row, link };
+}
+
+async function githubAction<T>(
+  description: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    throw new ServiceError(
+      502,
+      `failed to ${description}: ${(e as Error).message}`,
+    );
+  }
+}
+
+function githubThreadOr404(
+  issueId: number,
+  githubNumber: number,
+  threadId: number,
+): GithubConversationThreadWire {
+  const { entries } = githubConversationJSON(
+    githubNumber,
+    S.githubFeedbackObservations(issueId),
+  );
+  const thread = entries
+    .flatMap((entry) =>
+      entry.kind === "thread"
+        ? [entry.thread]
+        : entry.kind === "review"
+          ? entry.threads
+          : [],
+    )
+    .find((candidate) => candidate.id === threadId);
+  if (!thread) throw new ServiceError(404, `thread ${threadId} not found`);
+  return thread;
+}
+
+function githubCheckOr404(issueId: number, jobId: number) {
+  const cached = S.getGithubPullStatus(issueId);
+  const check = cached
+    ? parseGhPrStatus(cached.payload).checkRuns.find(
+        (run) => run.jobId === jobId,
+      )
+    : undefined;
+  if (!check) throw new ServiceError(404, `check ${jobId} not found`);
+  return check;
+}
 
 // ===== pulls =====
 // A PR is linked to an issue only when the caller names one; its Evidence is never parsed for it.
@@ -1133,59 +1194,176 @@ export const pulls = {
     return { merged: true, merged_at: githubPull.github_merged_at };
   },
 
-  // #850: the GitHub-side status (draft / review / checks / comment counts / merged) of a PR's linked
-  // GitHub PR, for the PR-detail right sidebar. Fetched on demand via `gh` and cached in
-  // github_pull_status with a short TTL — a cache hit within the TTL skips `gh`. On a `gh` failure a
-  // still-usable stale cache is returned rather than erroring (the UI surfaces `synced_at`); only a
-  // failure with no cache at all becomes a 502, which drives the sidebar's "fetch failed" state.
-  // `deps` is injectable so this is unit-testable without a GitHub remote. Throws 404 when the PR has
-  // no linked GitHub PR — the UI only calls this once `github_pull` is present.
-  async githubStatus(
+  // #850: the GitHub-side status of a PR's linked GitHub PR, for the PR-detail right pane. Only ever
+  // reads the cache lh-worker's sweep writes, so opening a PR never waits on `gh`. Null until the
+  // first sweep has seen this PR; 404 when it has no linked GitHub PR — the UI only calls this once
+  // `github_pull` is present.
+  async githubStatus(name: string, number: number) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    if (!S.getGithubPull(row.id))
+      throw new ServiceError(404, "PR has no linked GitHub PR");
+    const cached = S.getGithubPullStatus(row.id);
+    if (!cached) return null;
+    const status = parseGhPrStatus(cached.payload);
+    return githubPrStatusJSON(
+      status,
+      cached.synced_at,
+      await githubCommitSync(r.local_path, S.getPull(row.id)!, status),
+    );
+  },
+
+  // The comments, reviews and inline threads the feedback sweep stored for the linked GitHub PR.
+  githubConversation(name: string, number: number) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const link = S.getGithubPull(row.id);
+    if (!link) throw new ServiceError(404, "PR has no linked GitHub PR");
+    return githubConversationJSON(
+      link.number,
+      S.githubFeedbackObservations(row.id),
+    );
+  },
+
+  async commentOnGithubPull(
     name: string,
     number: number,
-    deps: GithubPrStatusDeps = realGithubPrStatusDeps,
+    body: string,
+    deps: GithubPrActionDeps = realGithubPrActionDeps,
+  ) {
+    const { r, link } = writableGithubPull(name, number);
+    await githubAction("post the comment", () =>
+      deps.comment(r.local_path, link.url, body),
+    );
+    return { posted: true as const };
+  },
+
+  async replyToGithubThread(
+    name: string,
+    number: number,
+    threadId: number,
+    body: string,
+    deps: GithubPrActionDeps = realGithubPrActionDeps,
+  ) {
+    const { r, row, link } = writableGithubPull(name, number);
+    const thread = githubThreadOr404(row.id, link.number, threadId);
+    // A thread's first comment can be deleted while its replies live on, so reply to what remains.
+    await githubAction("reply to the thread", () =>
+      deps.reply(r.local_path, link.url, thread.comments[0]!.id, body),
+    );
+    return { posted: true as const };
+  },
+
+  async resolveGithubThread(
+    name: string,
+    number: number,
+    threadId: number,
+    deps: GithubPrActionDeps = realGithubPrActionDeps,
+  ) {
+    const { r, row, link } = writableGithubPull(name, number);
+    const { node_id: nodeId } = githubThreadOr404(
+      row.id,
+      link.number,
+      threadId,
+    );
+    if (!nodeId)
+      throw new ServiceError(409, "the thread has not been synced yet");
+    await githubAction("resolve the thread", () =>
+      deps.resolve(r.local_path, nodeId),
+    );
+    return { resolved: true as const };
+  },
+
+  async markGithubPullReady(
+    name: string,
+    number: number,
+    deps: GithubPrActionDeps = realGithubPrActionDeps,
+  ) {
+    const { r, link } = writableGithubPull(name, number);
+    await githubAction("mark the PR ready", () =>
+      deps.ready(r.local_path, link.url),
+    );
+    return { ready: true as const };
+  },
+
+  async mergeGithubPull(
+    name: string,
+    number: number,
+    method: GithubMergeMethod,
+    deps: GithubPrActionDeps = realGithubPrActionDeps,
+  ) {
+    const { r, row, link } = writableGithubPull(name, number);
+    const cached = S.getGithubPullStatus(row.id);
+    const headSha = cached ? parseGhPrStatus(cached.payload).headSha : null;
+    await githubAction("merge the PR", () =>
+      deps.merge(r.local_path, link.url, method, headSha),
+    );
+    return { merged: true as const };
+  },
+
+  async rerunGithubCheck(
+    name: string,
+    number: number,
+    jobId: number,
+    deps: GithubPrActionDeps = realGithubPrActionDeps,
+  ) {
+    const { r, row, link } = writableGithubPull(name, number);
+    if (githubCheckOr404(row.id, jobId).state !== "failure")
+      throw new ServiceError(409, "only a failed check can be re-run");
+    await githubAction("re-run the check", () =>
+      deps.rerun(r.local_path, link.url, jobId),
+    );
+    return { rerun: true as const };
+  },
+
+  // The one GitHub read that happens on demand: logs are large and rarely opened, so the excerpt is
+  // fetched on first open and kept. Readable on a closed PR too.
+  async githubCheckLog(
+    name: string,
+    number: number,
+    jobId: number,
+    deps: GithubPrActionDeps = realGithubPrActionDeps,
   ) {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
     const link = S.getGithubPull(row.id);
     if (!link) throw new ServiceError(404, "PR has no linked GitHub PR");
-
-    const cached = S.getGithubPullStatus(row.id);
-    if (
-      cached &&
-      Date.now() - Date.parse(cached.synced_at) < GITHUB_PR_STATUS_TTL_MS
-    ) {
-      const status = parseGhPrStatus(cached.payload);
-      return githubPrStatusJSON(
-        status,
-        cached.synced_at,
-        await githubCommitSync(r.local_path, S.getPull(row.id)!, status),
-      );
-    }
-
-    let status: Awaited<ReturnType<GithubPrStatusDeps["fetchStatus"]>>;
-    try {
-      status = await deps.fetchStatus(r.local_path, link.url);
-    } catch (e) {
-      if (cached) {
-        const status = parseGhPrStatus(cached.payload);
-        return githubPrStatusJSON(
-          status,
-          cached.synced_at,
-          await githubCommitSync(r.local_path, S.getPull(row.id)!, status),
-        );
-      }
-      throw new ServiceError(
-        502,
-        `failed to fetch GitHub PR status: ${(e as Error).message}`,
-      );
-    }
-    const saved = S.saveGithubPullStatus(row.id, JSON.stringify(status));
-    return githubPrStatusJSON(
-      status,
-      saved.synced_at,
-      await githubCommitSync(r.local_path, S.getPull(row.id)!, status),
+    const check = githubCheckOr404(row.id, jobId);
+    if (check.state !== "failure")
+      throw new ServiceError(409, "only a failed check has a log excerpt");
+    const cached = S.getGithubCheckLog(row.id, jobId);
+    if (cached) return cached;
+    const excerpt = await githubAction("fetch the check log", () =>
+      deps.failedLog(r.local_path, link.url, jobId),
     );
+    const status = parseGhPrStatus(S.getGithubPullStatus(row.id)!.payload);
+    return S.saveGithubCheckLog(
+      row.id,
+      jobId,
+      excerpt,
+      status.checkRuns.flatMap((run) => (run.jobId ? [run.jobId] : [])),
+    );
+  },
+
+  // Hand selected GitHub feedback to the PR's running agent as one ordinary PR comment. The server
+  // reads the items itself and neutralizes routing mentions, so the GitHub text cannot redirect it.
+  requestGithubFixes(
+    name: string,
+    number: number,
+    input: { thread_ids: number[]; job_ids: number[] },
+  ) {
+    const { r, row, link } = writableGithubPull(name, number);
+    if (!S.hasRunningWorkflowRun(r.id, row.number))
+      throw new ServiceError(409, "no agent is running on this PR");
+    if (input.thread_ids.length + input.job_ids.length === 0)
+      throw new ServiceError(422, "select at least one item");
+    const body = githubFixRequestBody({
+      threads: input.thread_ids.map((id) =>
+        githubThreadOr404(row.id, link.number, id),
+      ),
+      checks: input.job_ids.map((id) => githubCheckOr404(row.id, id)),
+    });
+    return comments.createHumanForPull(name, number, body);
   },
 
   // #2500: the GitHub side of this PR's story as timeline entries — the feedback items the worker's

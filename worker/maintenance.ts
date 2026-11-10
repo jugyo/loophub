@@ -33,7 +33,7 @@ export const DEFAULT_USAGE_SWEEP_MS = 10000;
 // rate limits), unlike the other sweeps here which only touch local git/DB — so this defaults to
 // a much coarser interval than DEFAULT_SWEEP_MS.
 export const DEFAULT_GITHUB_MERGE_SWEEP_MS = 60000;
-// Feedback is a network sweep over three paginated GitHub endpoints per active Workflow PR. A
+// Feedback is a network sweep over four paginated GitHub queries per open linked PR. A
 // minute keeps feedback reasonably fresh without turning the resident worker into a tight API poll.
 export const DEFAULT_GITHUB_FEEDBACK_SWEEP_MS = 60000;
 // #1121: killing dev agents whose PR has been closed (#926) is not time-sensitive the way cost

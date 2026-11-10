@@ -356,18 +356,37 @@ export interface GithubPrFeedback {
   // Submitted verdict of a review, lowercased; null for the two comment kinds and for a verdict
   // GitHub reports outside the known set.
   reviewState: GithubReviewState | null;
+  // Where an inline comment sits. Null for the other two kinds; `line` is also null once the
+  // comment is outdated and GitHub has no original line for it either.
+  path: string | null;
+  line: number | null;
+  // The first comment of the thread this inline comment replies to; null for that first comment.
+  inReplyToId: number | null;
+  // The review an inline comment was submitted with.
+  reviewId: number | null;
+  // The GraphQL thread an inline comment belongs to, and whether that thread is resolved.
+  threadId: string | null;
+  threadResolved: boolean | null;
 }
 
 export type GithubApiRunner = (
   repoPath: string,
   endpoint: string,
+  fields?: string[],
 ) => Promise<string>;
 
 async function runGithubApi(
   repoPath: string,
   endpoint: string,
+  fields: string[] = [],
 ): Promise<string> {
-  const result = await gh(repoPath, ["api", "--paginate", "--slurp", endpoint]);
+  const result = await gh(repoPath, [
+    "api",
+    "--paginate",
+    "--slurp",
+    endpoint,
+    ...fields,
+  ]);
   if (result.code !== 0) {
     throw new Error(
       `gh api failed for ${endpoint}: ${result.stderr.trim() || result.stdout.trim()}`,
@@ -466,13 +485,85 @@ function normalizeFeedback(
               "dismissed",
             ] as const)
           : null,
+      ...inlinePosition(kind, item),
+      threadId: null,
+      threadResolved: null,
     });
   }
   return normalized;
 }
 
-// Fetch the three GitHub feedback surfaces independently, while exposing only normalized feedback
-// to the sync. The body is used solely for hashing and never becomes part of an event payload.
+function positiveInteger(value: unknown): number | null {
+  return Number.isSafeInteger(value) && (value as number) > 0
+    ? (value as number)
+    : null;
+}
+
+function inlinePosition(
+  kind: GithubPrFeedbackKind,
+  item: Record<string, unknown>,
+): Pick<GithubPrFeedback, "path" | "line" | "inReplyToId" | "reviewId"> {
+  if (kind !== "review_comment") {
+    return { path: null, line: null, inReplyToId: null, reviewId: null };
+  }
+  return {
+    path: typeof item.path === "string" ? item.path : null,
+    line: positiveInteger(item.line) ?? positiveInteger(item.original_line),
+    inReplyToId: positiveInteger(item.in_reply_to_id),
+    reviewId: positiveInteger(item.pull_request_review_id),
+  };
+}
+
+const REVIEW_THREADS_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}nodes{id isResolved comments(first:1){nodes{databaseId}}}}}}}`;
+
+function pullGraphqlFields(ref: GithubPullRef, query: string): string[] {
+  return [
+    "-f",
+    `query=${query}`,
+    "-f",
+    `owner=${ref.owner}`,
+    "-f",
+    `repo=${ref.repo}`,
+    "-F",
+    `number=${ref.number}`,
+  ];
+}
+
+// The thread of each first comment. GitHub's REST comments carry no resolution state, and a reply's
+// in_reply_to_id always names the first comment, so this one map covers every comment of a thread.
+function reviewThreadsByRootComment(
+  pages: unknown[],
+): Map<number, { id: string; resolved: boolean }> {
+  const threads = new Map<number, { id: string; resolved: boolean }>();
+  for (const page of pages) {
+    const nodes = (
+      page as {
+        data?: {
+          repository?: {
+            pullRequest?: { reviewThreads?: { nodes?: unknown } };
+          };
+        };
+      }
+    ).data?.repository?.pullRequest?.reviewThreads?.nodes;
+    if (!Array.isArray(nodes)) {
+      throw new Error("gh api returned unexpected JSON for reviewThreads");
+    }
+    for (const node of nodes as Array<{
+      id?: unknown;
+      isResolved?: unknown;
+      comments?: { nodes?: Array<{ databaseId?: unknown }> };
+    }>) {
+      const root = positiveInteger(node.comments?.nodes?.[0]?.databaseId);
+      if (root === null || typeof node.id !== "string") continue;
+      threads.set(root, { id: node.id, resolved: node.isResolved === true });
+    }
+  }
+  return threads;
+}
+
+// Fetch the three GitHub feedback surfaces and the review threads independently, while exposing only
+// normalized feedback to the sync. The body is stored for the GitHub PR view and hashed to detect
+// edits; it never becomes part of an event payload.
 export async function fetchGithubPrFeedback(
   repoPath: string,
   url: string,
@@ -486,19 +577,31 @@ export async function fetchGithubPrFeedback(
     `${root}/pulls/${ref.number}/reviews`,
     `${root}/pulls/${ref.number}/comments`,
   ] as const;
-  const outputs = await Promise.all(
-    endpoints.map((endpoint) => api(repoPath, endpoint)),
+  const [outputs, threadOutput] = await Promise.all([
+    Promise.all(endpoints.map((endpoint) => api(repoPath, endpoint))),
+    api(repoPath, "graphql", pullGraphqlFields(ref, REVIEW_THREADS_QUERY)),
+  ]);
+  const threads = reviewThreadsByRootComment(
+    paginatedItems(threadOutput, "graphql"),
   );
+  const inline = normalizeFeedback(
+    "review_comment",
+    paginatedItems(outputs[2], endpoints[2]),
+  ).map((item) => {
+    const thread = threads.get(item.inReplyToId ?? item.id);
+    return {
+      ...item,
+      threadId: thread?.id ?? null,
+      threadResolved: thread?.resolved ?? null,
+    };
+  });
   return [
     ...normalizeFeedback(
       "issue_comment",
       paginatedItems(outputs[0], endpoints[0]),
     ),
     ...normalizeFeedback("review", paginatedItems(outputs[1], endpoints[1])),
-    ...normalizeFeedback(
-      "review_comment",
-      paginatedItems(outputs[2], endpoints[2]),
-    ),
+    ...inline,
   ];
 }
 
@@ -521,7 +624,32 @@ export const realGithubFeedbackDeps: GithubFeedbackDeps = {
  * instead of every reader restating it at its own `JSON.parse`.
  */
 export function parseGhPrStatus(payload: string): GhPrStatus {
-  return JSON.parse(payload) as GhPrStatus;
+  // A row written before these fields existed stays readable until the next sweep rewrites it.
+  return {
+    isDraft: false,
+    reviewers: [],
+    checkRuns: [],
+    headSha: null,
+    ...(JSON.parse(payload) as Partial<GhPrStatus>),
+  } as GhPrStatus;
+}
+
+export interface GhPrReviewer {
+  login: string;
+  state: GithubReviewState | "pending";
+}
+
+export interface GhCheckRun {
+  // The GitHub Actions job behind this check run: what its log and Re-run are addressed by.
+  jobId: number | null;
+  name: string;
+  workflow: string | null;
+  state: "success" | "failure" | "pending";
+  required: boolean;
+  startedAt: string | null;
+  completedAt: string | null;
+  // Null unless GitHub gave an http(s) URL, so the UI can only ever link to one.
+  url: string | null;
 }
 
 export interface GhPrStatus {
@@ -534,6 +662,10 @@ export interface GhPrStatus {
   reviews: number;
   updatedAt: string | null;
   commitShas: string[];
+  isDraft: boolean;
+  reviewers: GhPrReviewer[];
+  checkRuns: GhCheckRun[];
+  headSha: string | null;
 }
 
 // Classify one statusCheckRollup entry. gh returns two shapes: CheckRun (has `status`+`conclusion`)
@@ -582,6 +714,115 @@ function lowerEnum<T extends string>(
   return allowed.includes(lower) ? lower : null;
 }
 
+function httpUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "https:" || protocol === "http:" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+const CHECK_RUNS_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}nodes{__typename ... on CheckRun{databaseId name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$number) checkSuite{workflowRun{workflow{name}}}}}}}}}}}}}`;
+
+const CHECK_STATE = {
+  pass: "success",
+  fail: "failure",
+  pending: "pending",
+} as const;
+
+function normalizeCheckRuns(pages: unknown[]): GhCheckRun[] {
+  const runs: GhCheckRun[] = [];
+  for (const page of pages) {
+    const commit = (
+      page as {
+        data?: {
+          repository?: {
+            pullRequest?: {
+              commits?: {
+                nodes?: Array<{
+                  commit?: {
+                    statusCheckRollup?: { contexts?: { nodes?: unknown } };
+                  };
+                }>;
+              };
+            };
+          };
+        };
+      }
+    ).data?.repository?.pullRequest?.commits?.nodes?.[0]?.commit;
+    const nodes = commit?.statusCheckRollup?.contexts?.nodes;
+    if (!Array.isArray(nodes)) continue;
+    for (const node of nodes as Array<Record<string, unknown>>) {
+      if (node.__typename !== "CheckRun" || typeof node.name !== "string") {
+        continue;
+      }
+      const suite = node.checkSuite as
+        | { workflowRun?: { workflow?: { name?: unknown } } | null }
+        | null
+        | undefined;
+      runs.push({
+        jobId: positiveInteger(node.databaseId),
+        name: node.name,
+        workflow: stringOrNull(suite?.workflowRun?.workflow?.name),
+        state: CHECK_STATE[classifyCheck(node)],
+        required: node.isRequired === true,
+        startedAt: stringOrNull(node.startedAt),
+        completedAt: stringOrNull(node.completedAt),
+        url: httpUrl(node.detailsUrl),
+      });
+    }
+  }
+  return runs;
+}
+
+// The check runs of the PR's latest head. `gh pr view` has no per-check Required flag, hence GraphQL.
+export async function fetchGithubPrCheckRuns(
+  repoPath: string,
+  url: string,
+  api: GithubApiRunner = runGithubApi,
+): Promise<GhCheckRun[]> {
+  const ref = parseGithubPullUrl(url);
+  if (!ref) throw new Error(`invalid GitHub PR URL: ${url}`);
+  return normalizeCheckRuns(
+    paginatedItems(
+      await api(repoPath, "graphql", pullGraphqlFields(ref, CHECK_RUNS_QUERY)),
+      "graphql",
+    ),
+  );
+}
+
+// Each reviewer's latest verdict, with a re-requested reviewer shown as pending: GitHub keeps their
+// old verdict in latestReviews, but it no longer stands.
+function normalizeReviewers(
+  latestReviews: unknown,
+  reviewRequests: unknown,
+): GhPrReviewer[] {
+  const reviewers = new Map<string, GhPrReviewer["state"]>();
+  for (const review of Array.isArray(latestReviews) ? latestReviews : []) {
+    const login = (review as { author?: { login?: unknown } }).author?.login;
+    const state = lowerEnum((review as { state?: unknown }).state, [
+      "approved",
+      "changes_requested",
+      "commented",
+      "dismissed",
+    ] as const);
+    if (typeof login === "string" && state) reviewers.set(login, state);
+  }
+  for (const request of Array.isArray(reviewRequests) ? reviewRequests : []) {
+    // A team request has `name` and no `login`.
+    const { login, name } = request as { login?: unknown; name?: unknown };
+    const reviewer = stringOrNull(login) ?? stringOrNull(name);
+    if (reviewer) reviewers.set(reviewer, "pending");
+  }
+  return [...reviewers].map(([login, state]) => ({ login, state }));
+}
+
 // Fetch a GitHub PR's status by its URL (owner/repo/number resolve from the URL, so `repoPath`'s own
 // remote need not match — mirrors fetchGithubPrMergeStatus). Throws on any gh failure so the caller
 // can fall back to a cached value or surface the error, rather than reporting a transient failure as
@@ -596,7 +837,7 @@ export async function fetchGithubPrStatus(
     "pr",
     "view",
     "--json",
-    "state,mergeable,reviewDecision,statusCheckRollup,comments,reviews,updatedAt",
+    "state,mergeable,reviewDecision,statusCheckRollup,comments,reviews,updatedAt,isDraft,latestReviews,reviewRequests,headRefOid",
     // Pass the URL after `--` so it can never be mistaken for a flag, matching viewPr — the value is
     // already GitHub-validated at every write path, so this is defense-in-depth against that ever
     // being loosened.
@@ -613,13 +854,20 @@ export async function fetchGithubPrStatus(
     comments?: unknown;
     reviews?: unknown;
     updatedAt?: unknown;
+    isDraft?: unknown;
+    latestReviews?: unknown;
+    reviewRequests?: unknown;
+    headRefOid?: unknown;
   };
   try {
     j = JSON.parse(r.stdout);
   } catch {
     throw new Error(`gh pr view returned unparseable JSON: ${r.stdout.trim()}`);
   }
-  const commitShas = await fetchGithubPrCommitShas(repoPath, url);
+  const [commitShas, checkRuns] = await Promise.all([
+    fetchGithubPrCommitShas(repoPath, url),
+    fetchGithubPrCheckRuns(repoPath, url),
+  ]);
   const state =
     lowerEnum(j.state, ["open", "closed", "merged"] as const) ?? "open";
   return {
@@ -641,6 +889,10 @@ export async function fetchGithubPrStatus(
     reviews: Array.isArray(j.reviews) ? j.reviews.length : 0,
     updatedAt: typeof j.updatedAt === "string" ? j.updatedAt : null,
     commitShas,
+    isDraft: j.isDraft === true,
+    reviewers: normalizeReviewers(j.latestReviews, j.reviewRequests),
+    checkRuns,
+    headSha: stringOrNull(j.headRefOid),
   };
 }
 
@@ -652,5 +904,191 @@ export const realGithubPrStatusDeps: GithubPrStatusDeps = {
   fetchStatus: fetchGithubPrStatus,
 };
 
-// Keep the eager worker refresh and the on-demand RPC on the same cache contract.
-export const GITHUB_PR_STATUS_TTL_MS = 60_000;
+async function runGhAction(
+  repoPath: string,
+  args: string[],
+  label: string,
+): Promise<string> {
+  const r = await gh(repoPath, args);
+  if (r.code !== 0)
+    throw new Error(`${label} failed: ${r.stderr.trim() || r.stdout.trim()}`);
+  return r.stdout;
+}
+
+function pullRefOrThrow(url: string): GithubPullRef {
+  const ref = parseGithubPullUrl(url);
+  if (!ref) throw new Error(`invalid GitHub PR URL: ${url}`);
+  return ref;
+}
+
+// `-f` sends a raw string, so a body starting with `@` is text rather than a file to read.
+async function postGithubPrComment(
+  repoPath: string,
+  url: string,
+  body: string,
+): Promise<void> {
+  const ref = pullRefOrThrow(url);
+  await runGhAction(
+    repoPath,
+    [
+      "api",
+      "--method",
+      "POST",
+      `repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments`,
+      "-f",
+      `body=${body}`,
+    ],
+    "posting the comment",
+  );
+}
+
+async function replyGithubReviewThread(
+  repoPath: string,
+  url: string,
+  commentId: number,
+  body: string,
+): Promise<void> {
+  const ref = pullRefOrThrow(url);
+  await runGhAction(
+    repoPath,
+    [
+      "api",
+      "--method",
+      "POST",
+      `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/comments/${commentId}/replies`,
+      "-f",
+      `body=${body}`,
+    ],
+    "replying to the thread",
+  );
+}
+
+async function resolveGithubReviewThread(
+  repoPath: string,
+  threadId: string,
+): Promise<void> {
+  await runGhAction(
+    repoPath,
+    [
+      "api",
+      "graphql",
+      "-f",
+      "query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id}}}",
+      "-f",
+      `id=${threadId}`,
+    ],
+    "resolving the thread",
+  );
+}
+
+async function markGithubPrReady(repoPath: string, url: string): Promise<void> {
+  await runGhAction(
+    repoPath,
+    ["pr", "ready", "--", url],
+    "marking the PR ready",
+  );
+}
+
+export type GithubMergeMethod = "merge" | "squash" | "rebase";
+
+// `headSha` is the head the status on screen describes: a head pushed since then fails the merge
+// rather than landing commits nobody looked at.
+async function mergeGithubPr(
+  repoPath: string,
+  url: string,
+  method: GithubMergeMethod,
+  headSha: string | null,
+): Promise<void> {
+  await runGhAction(
+    repoPath,
+    [
+      "pr",
+      "merge",
+      `--${method}`,
+      ...(headSha ? ["--match-head-commit", headSha] : []),
+      "--",
+      url,
+    ],
+    "merging the PR",
+  );
+}
+
+async function rerunGithubJob(
+  repoPath: string,
+  url: string,
+  jobId: number,
+): Promise<void> {
+  const ref = pullRefOrThrow(url);
+  await runGhAction(
+    repoPath,
+    [
+      "run",
+      "rerun",
+      "--job",
+      String(jobId),
+      "--repo",
+      `${ref.owner}/${ref.repo}`,
+    ],
+    "re-running the check",
+  );
+}
+
+const CHECK_LOG_MAX_LINES = 300;
+const CHECK_LOG_MAX_CHARS = 64 * 1024;
+
+// The end of a job's failed-step log, where the failure is. `gh run view --log-failed` prefixes every
+// line with the job and step names, which only cost width in a narrow pane.
+export function failedLogExcerpt(raw: string): string {
+  const lines = raw
+    .replace(/\u001b\[[0-9;]*[A-Za-z]/g, "")
+    .split("\n")
+    .map((line) => line.split("\t").slice(2).join("\t") || line);
+  return lines
+    .slice(-CHECK_LOG_MAX_LINES)
+    .join("\n")
+    .slice(-CHECK_LOG_MAX_CHARS)
+    .trim();
+}
+
+async function fetchGithubJobFailedLog(
+  repoPath: string,
+  url: string,
+  jobId: number,
+): Promise<string> {
+  const ref = pullRefOrThrow(url);
+  return failedLogExcerpt(
+    await runGhAction(
+      repoPath,
+      [
+        "run",
+        "view",
+        "--job",
+        String(jobId),
+        "--log-failed",
+        "--repo",
+        `${ref.owner}/${ref.repo}`,
+      ],
+      "fetching the check log",
+    ),
+  );
+}
+
+export interface GithubPrActionDeps {
+  comment: typeof postGithubPrComment;
+  reply: typeof replyGithubReviewThread;
+  resolve: typeof resolveGithubReviewThread;
+  ready: typeof markGithubPrReady;
+  merge: typeof mergeGithubPr;
+  rerun: typeof rerunGithubJob;
+  failedLog: typeof fetchGithubJobFailedLog;
+}
+
+export const realGithubPrActionDeps: GithubPrActionDeps = {
+  comment: postGithubPrComment,
+  reply: replyGithubReviewThread,
+  resolve: resolveGithubReviewThread,
+  ready: markGithubPrReady,
+  merge: mergeGithubPr,
+  rerun: rerunGithubJob,
+  failedLog: fetchGithubJobFailedLog,
+};

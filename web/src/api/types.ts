@@ -19,6 +19,10 @@ import type {
   DiffFeedbackMessageWire,
   DiffFeedbackThreadWire,
   EventSubjectWire,
+  GithubCheckRunWire,
+  GithubConversationEntryWire,
+  GithubConversationThreadWire,
+  GithubConversationWire,
   GithubPrStatusWire,
   GithubPullWire,
   GlobalSettingsWire,
@@ -278,6 +282,13 @@ export type GithubPull = GithubPullWire;
 
 /** GitHub-side status of a PR's linked GitHub PR (#850), fetched on demand via `pulls/githubStatus`. */
 export type GithubPrStatus = GithubPrStatusWire;
+
+export type GithubCheckRun = GithubCheckRunWire;
+
+/** The linked GitHub PR's comments, reviews and threads, as stored by the worker's sweep. */
+export type GithubConversation = GithubConversationWire;
+export type GithubConversationEntry = GithubConversationEntryWire;
+export type GithubConversationThread = GithubConversationThreadWire;
 
 export type Issue = IssueWire;
 

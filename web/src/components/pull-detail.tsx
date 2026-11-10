@@ -231,7 +231,7 @@ export function PullDetail({
     ? null
     : githubStatusQuery.isLoading
       ? "loading"
-      : githubStatusQuery.data
+      : githubStatusQuery.data !== undefined
         ? "loaded"
         : "failed";
   const files = filesQuery.data;
@@ -481,6 +481,7 @@ export function PullDetail({
             pull={pull}
             status={githubStatusQuery.data}
             isLoading={githubStatusQuery.isLoading}
+            agentRunning={workflowRunQuery.data?.status === "running"}
           />
         </div>
       </aside>

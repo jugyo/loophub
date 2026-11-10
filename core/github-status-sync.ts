@@ -1,9 +1,5 @@
 import { fetchRemote } from "./git.ts";
-import {
-  GITHUB_PR_STATUS_TTL_MS,
-  type GithubPrStatusDeps,
-  realGithubPrStatusDeps,
-} from "./github.ts";
+import { type GithubPrStatusDeps, realGithubPrStatusDeps } from "./github.ts";
 import { sweepPullConflicts } from "./pull-conflict-events.ts";
 import * as S from "./store.ts";
 
@@ -22,9 +18,8 @@ const realGithubPrStatusSyncDeps: GithubPrStatusSyncDeps = {
   fetchOrigin: fetchRemote,
 };
 
-// Refresh the cache used by pulls/githubStatus for active pull-detail targets. A failure is kept at
-// the target boundary: the next target still gets a chance, and the old cache remains available to
-// the RPC's stale-cache fallback.
+// Refresh the cache pulls/githubStatus reads, for active pull-detail targets. A failure is kept at
+// the target boundary: the next target still gets a chance, and the old cache stays readable.
 export async function syncGithubPrStatus(
   deps: GithubPrStatusSyncDeps = realGithubPrStatusSyncDeps,
 ): Promise<GithubPrStatusSyncResult> {
@@ -35,13 +30,6 @@ export async function syncGithubPrStatus(
   };
   for (const link of S.githubPrStatusSyncRows()) {
     result.checked++;
-    const cached = S.getGithubPullStatus(link.issue_id);
-    if (
-      cached &&
-      Date.now() - Date.parse(cached.synced_at) < GITHUB_PR_STATUS_TTL_MS
-    ) {
-      continue;
-    }
     try {
       const status = await deps.fetchStatus(link.local_path, link.url);
       // GitHub evaluates the remote PR refs, while the local conflict sweep compares the checkout's

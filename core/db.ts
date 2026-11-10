@@ -741,7 +741,26 @@ CREATE TABLE IF NOT EXISTS github_pull_feedback (
   review_state TEXT,
   created_at   TEXT,
   url          TEXT,
+  body            TEXT,
+  github_number   INTEGER,
+  path            TEXT,
+  line            INTEGER,
+  in_reply_to_id  INTEGER,
+  review_id       INTEGER,
+  thread_id       TEXT,
+  thread_resolved INTEGER,
+  notified_hash   TEXT,
   PRIMARY KEY (issue_id, kind, github_id)
+);
+
+-- The failed-step log excerpt of a GitHub Actions job, fetched the first time someone opens it.
+-- A re-run gets a new job id, so a stored excerpt never goes stale.
+CREATE TABLE IF NOT EXISTS github_pull_check_logs (
+  issue_id   INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  job_id     INTEGER NOT NULL,
+  excerpt    TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  PRIMARY KEY (issue_id, job_id)
 );
 
 -- LoopHub-created Herdr panes are first-class, repo-owned records. launch_id is the durable

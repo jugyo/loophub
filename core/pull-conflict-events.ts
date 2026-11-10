@@ -100,11 +100,20 @@ export async function sweepPullConflicts(
     // conflict -> conflict, and the conflict is never reported.
     if (
       db.transaction(() => {
-        if (deps.githubStatus)
-          S.saveGithubPullStatus(
-            pull.issue_id,
-            JSON.stringify(deps.githubStatus),
-          );
+        if (deps.githubStatus) {
+          const payload = JSON.stringify(deps.githubStatus);
+          const unchanged =
+            S.getGithubPullStatus(pull.issue_id)?.payload === payload;
+          S.saveGithubPullStatus(pull.issue_id, payload);
+          // pulls/githubStatus only reads this cache, so an open screen learns of a change here.
+          if (!unchanged)
+            S.emitEvent(
+              pull.repo_id,
+              "pull_request.github_data_updated",
+              "lh-worker",
+              { number: pull.number },
+            );
+        }
         // Read the GitHub signal only after entering the write transaction. A periodic sweep may
         // have computed local state before another process refreshed GitHub; this fresh read keeps
         // that stale local result from overwriting a newly recorded GitHub conflict.

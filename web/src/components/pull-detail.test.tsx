@@ -346,6 +346,9 @@ function mockFetch(
       unpulled_commits: 0,
       updated_at: null,
       synced_at: "2026-06-18T12:00:00Z",
+      is_draft: false,
+      reviewers: [],
+      check_runs: [],
     }),
     "pulls/merge": () => ({ merged: true, sha: "c" }),
     "pulls/update": (p) => ({ ...pull, state: p.state }),
@@ -4028,6 +4031,9 @@ function renderDetailWithPull(
         unpulled_commits: 0,
         updated_at: null,
         synced_at: "2026-06-18T12:00:00Z",
+        is_draft: false,
+        reviewers: [],
+        check_runs: [],
       }),
       ...extraHandlers,
     }),
@@ -4200,7 +4206,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
     await openGithubPrView();
     // github_pull present means the export landed: the GitHub PR view offers the push (#2516) and
     // the action row has no in-progress Create button left over.
-    await screen.findByRole("button", { name: /Push to GitHub/i });
+    await screen.findByRole("button", { name: /GitHub PR actions/i });
     expect(screen.queryByRole("button", { name: /Creating…/i })).toBeNull();
     expect(
       screen.queryByRole("button", { name: /Create PR on GitHub/i }),
@@ -4229,7 +4235,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
       await queryClient.invalidateQueries();
     });
     await openGithubPrView();
-    await screen.findByRole("button", { name: /Push to GitHub/i });
+    await screen.findByRole("button", { name: /GitHub PR actions/i });
 
     // The operator unlinks it to export again. The server reports no outstanding export.
     override = {
@@ -4480,12 +4486,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
       ).toBe("https://github.com/me/proj/pull/7");
       expect(
         screen
-          .getByRole("button", { name: /Push to GitHub/i })
-          .hasAttribute("disabled"),
-      ).toBe(false);
-      expect(
-        screen
-          .getByRole("button", { name: /Unlink GitHub PR/i })
+          .getByRole("button", { name: /GitHub PR actions/i })
           .hasAttribute("disabled"),
       ).toBe(false);
     });
@@ -4501,8 +4502,12 @@ describe("PullDetail — GitHub export action (#406)", () => {
         },
       });
       await openGithubPrView();
+      fireEvent.pointerDown(
+        await screen.findByRole("button", { name: /GitHub PR actions/i }),
+        { button: 0, ctrlKey: false },
+      );
       fireEvent.click(
-        await screen.findByRole("button", { name: /Unlink GitHub PR/i }),
+        await screen.findByRole("menuitem", { name: /Unlink GitHub PR/i }),
       );
       const dialog = await screen.findByRole("dialog");
       fireEvent.click(within(dialog).getByRole("button", { name: /^Unlink$/ }));
@@ -4595,7 +4600,9 @@ describe("PullDetail — GitHub export action (#406)", () => {
     });
 
     await openGithubPrView();
-    const push = await screen.findByRole("button", { name: /Push to GitHub/i });
+    const push = await screen.findByRole("button", {
+      name: /GitHub PR actions/i,
+    });
     expect(
       push.closest('[data-debug-component="GithubPrStatusSection"]'),
     ).toBeTruthy();
@@ -4604,10 +4611,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
       '[data-debug-component="PullBody"]',
     ) as HTMLElement;
     expect(
-      within(body).queryByRole("button", { name: /Push to GitHub/i }),
-    ).toBeNull();
-    expect(
-      within(body).queryByRole("button", { name: /Push options/i }),
+      within(body).queryByRole("button", { name: /GitHub PR actions/i }),
     ).toBeNull();
   });
 });

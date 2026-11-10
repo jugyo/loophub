@@ -138,7 +138,7 @@ test("migration ID は一意で append-only の宣言順を維持する", () => 
     "002-drop-retired-issue-groups",
     "003-create-issue-search-grams",
   ]);
-  expect(ids.at(-1)).toBe("20261107062715-issue-search-fts5");
+  expect(ids.at(-1)).toBe("20261110095251-github-pr-conversation");
   expect(ids).toContain("088-workflow-runs-manifest-version");
 });
 

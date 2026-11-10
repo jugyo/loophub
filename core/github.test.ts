@@ -1,5 +1,7 @@
 import { expect, test } from "#loophub-test";
 import {
+  failedLogExcerpt,
+  fetchGithubPrCheckRuns,
   fetchGithubPrCommitShas,
   fetchGithubPrFeedback,
   parseGithubIssueUrl,
@@ -97,7 +99,7 @@ test("fetches and normalizes conversation comments, review bodies, and inline co
     "https://github.com/upstream/project/pull/9",
     async (_repoPath, endpoint) => {
       endpoints.push(endpoint);
-      return JSON.stringify(responses[endpoint]);
+      return JSON.stringify(responses[endpoint] ?? []);
     },
   );
 
@@ -105,11 +107,12 @@ test("fetches and normalizes conversation comments, review bodies, and inline co
     "repos/upstream/project/issues/9/comments",
     "repos/upstream/project/pulls/9/reviews",
     "repos/upstream/project/pulls/9/comments",
+    "graphql",
   ]);
   // #2500: alongside the digest inputs, normalization keeps what the PR timeline shows — the author,
   // when the item entered the conversation (distinct from its last edit) and a review's verdict.
   // Each is null when GitHub's payload does not carry it, rather than dropping the item.
-  expect(result).toEqual([
+  expect(result).toMatchObject([
     {
       kind: "issue_comment",
       id: 101,
@@ -187,7 +190,7 @@ test("ignores a pending review until the same review is submitted", async () => 
     "https://github.com/upstream/project/pull/9",
     api,
   );
-  expect(submitted).toEqual([
+  expect(submitted).toMatchObject([
     {
       kind: "review",
       id: 401,
@@ -230,4 +233,171 @@ test("PRコミットSHAを全ページから取得する", async () => {
   expect(result).toHaveLength(101);
   expect(result[0]).toBe("sha-0");
   expect(result.at(-1)).toBe("sha-100");
+});
+
+test("joins review-thread resolution onto every comment of the thread", async () => {
+  const inline = [
+    {
+      id: 1,
+      body: "root",
+      path: "a.ts",
+      line: null,
+      original_line: 12,
+      pull_request_review_id: 50,
+    },
+    { id: 2, body: "reply", path: "a.ts", line: 13, in_reply_to_id: 1 },
+    { id: 3, body: "other", path: "b.ts", line: 1 },
+  ];
+  const threads = [
+    {
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              nodes: [
+                {
+                  id: "T_1",
+                  isResolved: true,
+                  comments: { nodes: [{ databaseId: 1 }] },
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+  ];
+  let fields: string[] = [];
+  const result = await fetchGithubPrFeedback(
+    "/repo",
+    "https://github.com/upstream/project/pull/9",
+    async (_repoPath, endpoint, requestedFields) => {
+      if (endpoint === "graphql") {
+        fields = requestedFields ?? [];
+        return JSON.stringify(threads);
+      }
+      return JSON.stringify(
+        endpoint.endsWith("/pulls/9/comments") ? [inline] : [],
+      );
+    },
+  );
+
+  expect(fields).toContain("number=9");
+  expect(result).toMatchObject([
+    {
+      id: 1,
+      path: "a.ts",
+      line: 12,
+      reviewId: 50,
+      threadId: "T_1",
+      threadResolved: true,
+    },
+    { id: 2, inReplyToId: 1, threadId: "T_1", threadResolved: true },
+    { id: 3, threadId: null, threadResolved: null },
+  ]);
+});
+
+test("a failed review-thread lookup fails the fetch rather than returning partial state", async () => {
+  await expect(
+    fetchGithubPrFeedback(
+      "/repo",
+      "https://github.com/upstream/project/pull/9",
+      async (_repoPath, endpoint) => {
+        if (endpoint === "graphql") throw new Error("gh api failed");
+        return "[]";
+      },
+    ),
+  ).rejects.toThrow("gh api failed");
+});
+
+test("normalizes check runs, keeping only http(s) URLs", async () => {
+  const page = {
+    data: {
+      repository: {
+        pullRequest: {
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  statusCheckRollup: {
+                    contexts: {
+                      nodes: [
+                        {
+                          __typename: "CheckRun",
+                          databaseId: 5,
+                          name: "test",
+                          status: "COMPLETED",
+                          conclusion: "FAILURE",
+                          startedAt: "2026-01-01T00:00:00Z",
+                          completedAt: "2026-01-01T00:01:00Z",
+                          detailsUrl: "javascript:alert(1)",
+                          isRequired: true,
+                          checkSuite: {
+                            workflowRun: { workflow: { name: "CI" } },
+                          },
+                        },
+                        {
+                          __typename: "CheckRun",
+                          databaseId: 6,
+                          name: "lint",
+                          status: "IN_PROGRESS",
+                          conclusion: null,
+                          startedAt: "2026-01-01T00:00:00Z",
+                          completedAt: null,
+                          detailsUrl: "https://github.com/o/r/runs/6",
+                          isRequired: false,
+                          checkSuite: { workflowRun: null },
+                        },
+                        { __typename: "StatusContext", context: "other" },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+  expect(
+    await fetchGithubPrCheckRuns(
+      "/repo",
+      "https://github.com/o/r/pull/9",
+      async () => JSON.stringify([page]),
+    ),
+  ).toEqual([
+    {
+      jobId: 5,
+      name: "test",
+      workflow: "CI",
+      state: "failure",
+      required: true,
+      startedAt: "2026-01-01T00:00:00Z",
+      completedAt: "2026-01-01T00:01:00Z",
+      url: null,
+    },
+    {
+      jobId: 6,
+      name: "lint",
+      workflow: null,
+      state: "pending",
+      required: false,
+      startedAt: "2026-01-01T00:00:00Z",
+      completedAt: null,
+      url: "https://github.com/o/r/runs/6",
+    },
+  ]);
+});
+
+test("a failed log excerpt strips the job/step columns and color codes and keeps the end", () => {
+  const lines = Array.from(
+    { length: 400 },
+    (_, index) => `build\tRun tests\t\u001b[31mline ${index}\u001b[0m`,
+  );
+  const excerpt = failedLogExcerpt(lines.join("\n"));
+  expect(excerpt.split("\n")).toHaveLength(300);
+  expect(excerpt.endsWith("line 399")).toBe(true);
+  expect(excerpt).not.toContain("Run tests");
+  expect(excerpt).not.toContain("\u001b");
 });

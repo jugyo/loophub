@@ -18,6 +18,7 @@ import type {
   DiffFeedbackMessage,
   DiffFeedbackThread,
   FileAtRef,
+  GithubConversation,
   GithubPrStatus,
   GithubPull,
   GlobalSettings,
@@ -1374,12 +1375,54 @@ export function markGithubMerged(
   });
 }
 
-/** GitHub-side status (#850) of a PR's linked GitHub PR. 404s when the PR has no linked GitHub PR. */
+/** Cached GitHub-side status of a PR's linked GitHub PR; null until the worker's first sweep. */
 export function getGithubPrStatus(owner: string, repo: string, number: number) {
-  return rpc<GithubPrStatus>("pulls/githubStatus", {
+  return rpc<GithubPrStatus | null>("pulls/githubStatus", {
     repo: full(owner, repo),
     number,
   });
+}
+
+export function getGithubConversation(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return rpc<GithubConversation>("pulls/githubConversation", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+export function getGithubCheckLog(
+  owner: string,
+  repo: string,
+  number: number,
+  jobId: number,
+) {
+  return rpc<{ excerpt: string; fetched_at: string }>("pulls/githubCheckLog", {
+    repo: full(owner, repo),
+    number,
+    job_id: jobId,
+  });
+}
+
+/** One write on the linked GitHub PR; failures come back as the RPC error the UI shows. */
+export function githubPullAction(
+  method:
+    | "pulls/commentOnGithubPull"
+    | "pulls/replyToGithubThread"
+    | "pulls/resolveGithubThread"
+    | "pulls/markGithubPullReady"
+    | "pulls/mergeGithubPull"
+    | "pulls/rerunGithubCheck"
+    | "pulls/requestGithubFixes",
+  owner: string,
+  repo: string,
+  number: number,
+  params: Record<string, unknown> = {},
+) {
+  return rpc<unknown>(method, { repo: full(owner, repo), number, ...params });
 }
 
 /** Push the PR's head to its linked GitHub PR branch; `force` uses `--force-with-lease` (#1861). */

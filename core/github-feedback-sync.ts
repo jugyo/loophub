@@ -53,9 +53,21 @@ function feedbackPermalink(url: string, feedback: GithubPrFeedback): string {
   return `${pull}#discussion_r${feedback.id}`;
 }
 
-// Poll feedback only for active Workflow PRs. A PR is the failure boundary: auth/network/parse
-// failure is reported for that PR and the next candidate still runs. New/edited items are persisted
-// before one aggregate event is emitted, so subsequent ticks and worker restarts remain quiet.
+function displayChanged(
+  previous: S.GithubFeedbackObservation | null,
+  next: Omit<S.GithubFeedbackObservation, "observed_at" | "notified_hash">,
+): boolean {
+  if (!previous) return true;
+  return (Object.keys(next) as Array<keyof typeof next>).some(
+    (key) => previous[key] !== next[key],
+  );
+}
+
+// Poll every open linked PR. A PR is the failure boundary: auth/network/parse failure is reported
+// for that PR and the next candidate still runs. Items are persisted before the events are emitted,
+// so subsequent ticks and worker restarts remain quiet. `pull_request.github_feedback` wakes the
+// PR's agent, so only an active Workflow run gets it; `pull_request.github_data_updated` only
+// refreshes an open screen and carries no GitHub text.
 export async function syncGithubFeedback(
   deps: GithubFeedbackDeps = realGithubFeedbackDeps,
 ): Promise<GithubFeedbackSyncResult> {
@@ -64,7 +76,7 @@ export async function syncGithubFeedback(
     emitted: [],
     failures: [],
   };
-  for (const link of S.activeWorkflowGithubPullLinks()) {
+  for (const link of S.githubFeedbackSyncRows()) {
     result.checked++;
     let feedback: GithubPrFeedback[];
     try {
@@ -93,6 +105,7 @@ export async function syncGithubFeedback(
           updated_at: string;
           reference: string;
         }> = [];
+        let updated = false;
         for (const item of feedback) {
           const hash = contentHash(item.body);
           const previous = S.getGithubFeedbackObservation(
@@ -100,21 +113,52 @@ export async function syncGithubFeedback(
             item.kind,
             item.id,
           );
-          if (previous?.content_hash === hash) continue;
+          const notify =
+            link.workflow_run_id !== null && previous?.notified_hash !== hash;
+          const display = {
+            issue_id: link.issue_id,
+            kind: item.kind,
+            github_id: item.id,
+            content_hash: hash,
+            updated_at: item.updatedAt,
+            created_at: item.createdAt || null,
+            author_login: item.authorLogin,
+            review_state: item.reviewState,
+            url: feedbackPermalink(link.url, item),
+            body: item.body,
+            github_number: link.github_number,
+            path: item.path,
+            line: item.line,
+            in_reply_to_id: item.inReplyToId,
+            review_id: item.reviewId,
+            thread_id: item.threadId,
+            thread_resolved:
+              item.threadResolved === null ? null : Number(item.threadResolved),
+          };
+          const changedDisplay = displayChanged(previous, display);
+          updated ||= changedDisplay;
+          if (!changedDisplay && !notify) continue;
           S.saveGithubFeedbackObservation({
             issueId: link.issue_id,
             kind: item.kind,
             githubId: item.id,
             contentHash: hash,
             updatedAt: item.updatedAt,
-            // #2500: the same observation is what the PR timeline reads, so record who wrote the
-            // item, when it entered the conversation and where it lives on GitHub. The body stays
-            // out — the timeline links to GitHub for the text.
-            createdAt: item.createdAt || null,
+            createdAt: display.created_at,
             authorLogin: item.authorLogin,
             reviewState: item.reviewState,
-            url: feedbackPermalink(link.url, item),
+            url: display.url,
+            body: item.body,
+            githubNumber: link.github_number,
+            path: item.path,
+            line: item.line,
+            inReplyToId: item.inReplyToId,
+            reviewId: item.reviewId,
+            threadId: item.threadId,
+            threadResolved: item.threadResolved,
+            notifiedHash: notify ? hash : (previous?.notified_hash ?? null),
           });
+          if (!notify) continue;
           changed.push({
             kind: item.kind,
             id: item.id,
@@ -122,8 +166,27 @@ export async function syncGithubFeedback(
             reference: feedbackReference(link.url, item),
           });
         }
-        if (changed.length === 0) return [];
-        return [
+        // Only rows from this GitHub PR: a relinked PR's older rows are not in `feedback` either.
+        const fetched = new Set(feedback.map((i) => `${i.kind}:${i.id}`));
+        for (const row of S.githubFeedbackObservations(link.issue_id)) {
+          if (row.github_number !== link.github_number) continue;
+          if (fetched.has(`${row.kind}:${row.github_id}`)) continue;
+          S.deleteGithubFeedbackObservation(row);
+          updated = true;
+        }
+        const events: S.EventRow[] = [];
+        if (updated) {
+          events.push(
+            S.emitEvent(
+              link.repo_id,
+              "pull_request.github_data_updated",
+              "lh-worker",
+              { number: link.number, github_number: link.github_number },
+            ),
+          );
+        }
+        if (changed.length === 0) return events;
+        events.push(
           S.emitEvent(
             link.repo_id,
             "pull_request.github_feedback",
@@ -138,7 +201,8 @@ export async function syncGithubFeedback(
               source_payload_version: SOURCE_PAYLOAD_VERSION,
             },
           ),
-        ];
+        );
+        return events;
       });
     } catch (error) {
       result.failures.push({
