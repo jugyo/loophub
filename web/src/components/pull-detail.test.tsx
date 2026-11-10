@@ -1180,7 +1180,7 @@ describe("PullDetail", () => {
   });
 
   // #145/#215: the comment list is the backend-assembled timeline — commits, reviews and
-  // conversation comments appear in chronological order (oldest first), while line comments stay
+  // conversation comments appear newest first, while line comments stay
   // available to the Diff view only.
   it("renders commits, reviews and comments in timeline order without diff comments", async () => {
     renderDetail();
@@ -1190,14 +1190,14 @@ describe("PullDetail", () => {
         name: "Comments (2)",
       })
     ).closest("section")!;
-    // The fixture's timestamps order them: commit bbbb (oldest), review, comment 9, comment 11,
-    // commit aaaa (newest). The review entry is its minimal one-liner verdict (#313).
+    // The fixture's timestamps order them: commit aaaa (newest), comment 11, comment 9, review,
+    // commit bbbb (oldest). The review entry is its minimal one-liner verdict (#313).
     const order = [
-      "Earlier change",
-      "passed",
-      "Thanks!",
-      "Rebased on main.",
       "Latest change",
+      "Rebased on main.",
+      "Thanks!",
+      "passed",
+      "Earlier change",
     ];
     const nodes = order.map((text) => within(section).getByText(text));
     for (let index = 0; index < nodes.length - 1; index += 1) {
@@ -1241,7 +1241,7 @@ describe("PullDetail", () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       );
 
-    it("shows the reviewing state with its short SHA and elapsed time after the newest entry", async () => {
+    it("shows the reviewing state with its short SHA and elapsed time between the form and the newest entry", async () => {
       vi.spyOn(Date, "now").mockReturnValue(
         new Date("2026-06-18T12:05:00Z").getTime(),
       );
@@ -1257,10 +1257,10 @@ describe("PullDetail", () => {
       const section = (
         await screen.findByRole("heading", { name: "Comments (2)" })
       ).closest("section")!;
-      expect(isBefore(within(section).getByText("Latest change"), item)).toBe(
+      expect(isBefore(item, within(section).getByText("Latest change"))).toBe(
         true,
       );
-      expect(isBefore(item, screen.getByLabelText("Add a PR comment"))).toBe(
+      expect(isBefore(screen.getByLabelText("Add a PR comment"), item)).toBe(
         true,
       );
     });
@@ -1342,7 +1342,7 @@ describe("PullDetail", () => {
     expect(await within(dialog).findByLabelText("Diff thread 1")).toBeTruthy();
   });
 
-  // #2488: only the newest page of the timeline is on screen; "Load more" — above the entries,
+  // #2488: only the newest page of the timeline is on screen; "Load more" — below the entries,
   // where the older ones belong — unfolds the rest a page at a time.
   it("shows the newest 20 timeline items and unfolds older ones a page at a time", async () => {
     const manyCommits = Array.from({ length: 45 }, (_, index) => ({
@@ -1369,8 +1369,8 @@ describe("PullDetail", () => {
     const loadMore = within(section).getByRole("button", { name: "Load more" });
     expect(
       loadMore.compareDocumentPosition(
-        within(section).getAllByRole("listitem")[0],
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+        within(section).getAllByRole("listitem")[19],
+      ) & Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
 
     fireEvent.click(loadMore);
@@ -1465,12 +1465,12 @@ describe("PullDetail", () => {
 
     // The GitHub entries land between the LoopHub entries they follow and precede.
     const order = [
-      "Thanks!",
-      "Commented on GitHub",
-      "Rebased on main.",
-      "Reviewed on GitHub",
-      "Merged on GitHub",
       "Latest change",
+      "Merged on GitHub",
+      "Reviewed on GitHub",
+      "Rebased on main.",
+      "Commented on GitHub",
+      "Thanks!",
     ];
     const nodes = order.map((text) => within(section).getByText(text));
     for (let index = 0; index < nodes.length - 1; index += 1) {
@@ -1682,6 +1682,13 @@ describe("PullDetail", () => {
         screen.getByRole("heading", { name: "Comments (3)" }),
       ).toBeTruthy();
     });
+    const newest = screen.getByText("One more thing.").closest("article")!;
+    const section = newest.closest("section")!;
+    expect(section.querySelector("article")).toBe(newest);
+    expect(
+      composer.compareDocumentPosition(newest) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("quotes selected comment text into the PR comment form and focuses it", async () => {
@@ -1861,7 +1868,7 @@ describe("PullDetail", () => {
     expect(screen.queryByLabelText("Add a PR comment")).toBeNull();
   });
 
-  it("renders PR comments in response order before the comment form", async () => {
+  it("renders PR comments newest first after the comment form", async () => {
     renderDetail({
       "comments/list": () => [
         comments[0],
@@ -1898,16 +1905,16 @@ describe("PullDetail", () => {
     ).toBe("#10");
 
     expect(
-      firstComment.compareDocumentPosition(secondComment) &
+      secondComment.compareDocumentPosition(firstComment) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      secondComment.compareDocumentPosition(composer) &
+      composer.compareDocumentPosition(secondComment) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
-  it("renders the empty comments state before the comment form", async () => {
+  it("renders the empty comments state after the comment form", async () => {
     // No commits/reviews/line comments either, so the whole timeline is empty and the section has
     // nothing but its "No comments." placeholder and the composer.
     renderDetail({
@@ -1921,7 +1928,7 @@ describe("PullDetail", () => {
     const composer = screen.getByLabelText("Add a PR comment");
 
     expect(
-      emptyState.compareDocumentPosition(composer) &
+      composer.compareDocumentPosition(emptyState) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
@@ -4922,6 +4929,25 @@ describe("PullDetail — comment permalinks", () => {
     expect(document.getElementById("comment-9")?.dataset.highlighted).toBe(
       undefined,
     );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView.mock.contexts[0]).toBe(target);
+  });
+
+  it("unfolds the timeline to a permalink target behind Load more", async () => {
+    const scrollIntoView = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    const many = Array.from({ length: 25 }, (_, index) => ({
+      ...comments[0],
+      id: 100 + index,
+      body: `Comment body ${index}`,
+      created_at: `2026-06-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+    }));
+    renderDetail({ "comments/list": () => many }, ["/#comment-100"]);
+
+    await screen.findByText("Comment body 0");
+    const target = document.getElementById("comment-100");
+    expect(target?.dataset.highlighted).toBe("true");
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
     expect(scrollIntoView.mock.contexts[0]).toBe(target);
   });

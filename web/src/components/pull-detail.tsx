@@ -1560,8 +1560,9 @@ function FileSummaryRow({
   );
 }
 
-// The comment list is the PR's timeline (#145): conversation comments, commits and reviews, in the
-// chronological order the backend assembled (`timeline`). Comment cards still read
+// The comment list is the PR's timeline (#145): conversation comments, commits and reviews, newest
+// first — the reverse of the chronological order the backend assembled (`timeline`). Comment cards
+// still read
 // the live `comments` query — which carries optimistic posts and reactions — so the section keeps
 // its instant feedback while the timeline supplies the order and the other kinds.
 
@@ -1712,7 +1713,8 @@ function CommentList({
   // Reconcile the backend timeline against the live comments query: comment entries pick up the
   // live row (optimistic post/reaction/archive), and comments the server has not echoed into the
   // timeline yet are appended newest-last. The order and presence of everything else is the
-  // backend's — this is comment-card freshness only, not a rebuild of the timeline.
+  // backend's — this is comment-card freshness only, not a rebuild of the timeline. Reversed last,
+  // so everything below works on a newest-first list.
   const items = useMemo(() => {
     if (!timeline) return timeline;
     const live = new Map(
@@ -1739,7 +1741,7 @@ function CommentList({
           created_at: comment.created_at,
           comment,
         })),
-    ];
+    ].reverse();
   }, [comments, timeline]);
 
   // Group the timeline into runs of consecutive non-comment entries so the connector line spans
@@ -1749,7 +1751,7 @@ function CommentList({
     const grouped: PullTimelineItem[][] = [];
     let run: PullTimelineItem[] = [];
     // The newest entries are the ones on screen; everything older waits behind "Load more".
-    for (const item of (items ?? []).slice(-visibleCount)) {
+    for (const item of (items ?? []).slice(0, visibleCount)) {
       if (item.kind === "comment") {
         if (run.length) grouped.push(run);
         run = [];
@@ -1771,9 +1773,8 @@ function CommentList({
       (item) => item.kind === "comment" && item.comment.id === targetCommentId,
     );
     if (index < 0) return;
-    const needed = items.length - index;
-    if (needed > visibleCount) {
-      setVisibleCount(needed);
+    if (index >= visibleCount) {
+      setVisibleCount(index + 1);
       return;
     }
     if (scrolledHashRef.current === hash) return;
@@ -1803,73 +1804,6 @@ function CommentList({
       className="flex scroll-mt-11 flex-col gap-3 pb-6"
     >
       <h2 className="text-lg font-semibold">Comments ({commentCount})</h2>
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading comments…
-        </div>
-      ) : isError ? (
-        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
-          Failed to load comments.
-        </div>
-      ) : !items || items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No comments.</p>
-      ) : (
-        // Activity entries (commits and reviews) are connected by a vertical line with a
-        // dot per entry, the way the workflow run history does (WorkflowRunDetailDialog): the line
-        // is the run's left border and each dot (with its ring) masks the line behind it. A
-        // conversation comment breaks the run and renders as its own full-width card — the line
-        // does not pass through comments (PR comment #300, #307).
-        <>
-          {/* The hidden entries are the older ones, which belong above what is shown, so the
-              control that unfolds them sits at the top of the timeline rather than the bottom. */}
-          {items.length > visibleCount ? (
-            <div className="flex justify-center">
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  setVisibleCount((count) => count + TIMELINE_PAGE_SIZE)
-                }
-              >
-                Load more
-              </Button>
-            </div>
-          ) : null}
-          {runs.map((group) =>
-            group[0].kind === "comment" ? (
-              <CommentCard
-                key={timelineItemKey(group[0])}
-                comment={group[0].comment}
-                highlighted={group[0].comment.id === targetCommentId}
-                {...itemContext}
-              />
-            ) : (
-              <ol
-                key={`run:${timelineItemKey(group[0])}`}
-                className="relative ml-2 border-l pl-5"
-              >
-                {group.map((item) => (
-                  <li
-                    key={timelineItemKey(item)}
-                    className="relative pb-3 last:pb-0"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-muted-foreground/60 ring-4 ring-background"
-                    />
-                    {timelineItemContent(item, itemContext)}
-                  </li>
-                ))}
-              </ol>
-            ),
-          )}
-        </>
-      )}
-      {workflowRun?.active_verify_head_sha ? (
-        <TimelineActiveVerifyItem
-          headSha={workflowRun.active_verify_head_sha}
-          startedAt={workflowRun.active_verify_started_at}
-        />
-      ) : null}
       <div
         ref={formRef}
         data-debug-component="PullCommentForm"
@@ -1909,6 +1843,72 @@ function CommentList({
           </Button>
         </div>
       </div>
+      {workflowRun?.active_verify_head_sha ? (
+        <TimelineActiveVerifyItem
+          headSha={workflowRun.active_verify_head_sha}
+          startedAt={workflowRun.active_verify_started_at}
+        />
+      ) : null}
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading comments…
+        </div>
+      ) : isError ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load comments.
+        </div>
+      ) : !items || items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No comments.</p>
+      ) : (
+        // Activity entries (commits and reviews) are connected by a vertical line with a
+        // dot per entry, the way the workflow run history does (WorkflowRunDetailDialog): the line
+        // is the run's left border and each dot (with its ring) masks the line behind it. A
+        // conversation comment breaks the run and renders as its own full-width card — the line
+        // does not pass through comments (PR comment #300, #307).
+        <>
+          {runs.map((group) =>
+            group[0].kind === "comment" ? (
+              <CommentCard
+                key={timelineItemKey(group[0])}
+                comment={group[0].comment}
+                highlighted={group[0].comment.id === targetCommentId}
+                {...itemContext}
+              />
+            ) : (
+              <ol
+                key={`run:${timelineItemKey(group[0])}`}
+                className="relative ml-2 border-l pl-5"
+              >
+                {group.map((item) => (
+                  <li
+                    key={timelineItemKey(item)}
+                    className="relative pb-3 last:pb-0"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-muted-foreground/60 ring-4 ring-background"
+                    />
+                    {timelineItemContent(item, itemContext)}
+                  </li>
+                ))}
+              </ol>
+            ),
+          )}
+          {/* The hidden entries are the older ones, which belong below what is shown. */}
+          {items.length > visibleCount ? (
+            <div className="flex justify-center">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setVisibleCount((count) => count + TIMELINE_PAGE_SIZE)
+                }
+              >
+                Load more
+              </Button>
+            </div>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }
