@@ -9,10 +9,7 @@ import {
 import { herdrSessionName } from "../terminal/terminal-launch.ts";
 import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
 import { inlineText } from "../workflow/prompts.ts";
-import {
-  type WorkflowCommentDeliveryAction,
-  workflowCommentInstruction,
-} from "../workflow/reconcile.ts";
+import type { WorkflowCommentDeliveryAction } from "../workflow/reconcile.ts";
 import {
   classifyWorkflowSubjectEvent,
   type WorkflowSubjectEventRole,
@@ -254,23 +251,51 @@ async function reactToComment(
   );
 }
 
-function workerMessage(instruction: string, body?: string): string {
-  const tag = `<loophub from="worker">${instruction}</loophub>`;
-  return body ? `${tag}\n\n${body}` : tag;
+function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;");
+}
+
+// The body stays raw so it reads as written. A delivery is always one element, so only the
+// `</loophub>` ending the message closes it, even when the body contains the same text.
+function workerMessage(
+  attributes: Record<string, string | number>,
+  body?: string,
+): string {
+  const rendered = Object.entries({ from: "worker", ...attributes })
+    .map(([name, value]) => `${name}="${escapeAttribute(String(value))}"`)
+    .join(" ");
+  return `<loophub ${rendered}>${body ? `\n${body}\n` : ""}</loophub>`;
 }
 
 // What Execute / Verify receive for a comment, so reading it needs no lookup. The parent is only
 // ever sent workflowCommentInstruction, which has no body.
-function commentDeliveryText(action: WorkflowCommentDeliveryAction): string {
-  const instruction = workflowCommentInstruction(action);
+export function commentDeliveryText(
+  action: WorkflowCommentDeliveryAction,
+): string {
   if (action.delivery_reason === "pr_comment") {
-    return workerMessage(instruction, S.getComment(action.comment_id)?.body);
+    return workerMessage(
+      { type: "pr_comment", comment: action.comment_id },
+      S.getComment(action.comment_id)?.body,
+    );
   }
   const thread = S.getDiffFeedbackThread(action.thread_id);
-  const message = S.getDiffFeedbackMessage(action.comment_id);
-  if (!thread || !message) return workerMessage(instruction);
-  const location = `${inlineText(thread.path)} lines ${thread.start_line}-${thread.end_line} (${thread.side})`;
-  return workerMessage(`${instruction} at ${location}`, message.body);
+  return workerMessage(
+    {
+      type: "diff_feedback",
+      thread: action.thread_id,
+      comment: action.comment_id,
+      ...(thread && {
+        path: inlineText(thread.path),
+        start_line: thread.start_line,
+        end_line: thread.end_line,
+        side: thread.side,
+      }),
+    },
+    S.getDiffFeedbackMessage(action.comment_id)?.body,
+  );
 }
 
 // Hand a comment to its Execute / Verify targets and report what failed. The worker acts under the

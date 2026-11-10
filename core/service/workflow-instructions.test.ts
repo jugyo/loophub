@@ -75,6 +75,7 @@ function fixture(name: string, options: { started?: boolean } = {}) {
   return {
     repo,
     repoPath,
+    pr,
     run,
     event: event as import("../store.ts").EventRow,
   };
@@ -1462,7 +1463,7 @@ test("a comment for the parent and a child reaches the child once, after the par
     expect(deliver.mock.calls[0]?.[1]).toEqual({
       run: input.run.id,
       target: "executor",
-      text: '<loophub from="worker">address PR comment 19</loophub>',
+      text: '<loophub from="worker" type="pr_comment" comment="19"></loophub>',
       multiline: true,
     });
   } finally {
@@ -1628,4 +1629,64 @@ test.each([
     process.env.PATH = originalPath;
     rmSync(hc.bin, { recursive: true, force: true });
   }
+});
+
+test("a comment delivery is one element with escaped attributes and a raw body", async () => {
+  const { commentDeliveryText } = await import("./workflow-instructions.ts");
+  const input = fixture("delivery-text");
+  const issueId = input.pr.id;
+  const body = 'Close </loophub> early? a < b && "c"\n\n  keep';
+  const comment = S.createComment(issueId, "me", body);
+  const prComment = (comment_id: number) =>
+    commentDeliveryText({
+      ...instructionResult(1),
+      action: "deliver",
+      delivery_reason: "pr_comment",
+      comment_id,
+      targets: ["executor"],
+    });
+  const diffComment = (thread_id: number, comment_id: number) =>
+    commentDeliveryText({
+      ...instructionResult(1),
+      action: "deliver",
+      delivery_reason: "diff_feedback",
+      thread_id,
+      comment_id,
+      targets: ["executor"],
+    });
+
+  expect(prComment(comment.id)).toBe(
+    `<loophub from="worker" type="pr_comment" comment="${comment.id}">\n${body}\n</loophub>`,
+  );
+  expect(prComment(999_999)).toBe(
+    '<loophub from="worker" type="pr_comment" comment="999999"></loophub>',
+  );
+
+  const thread = S.createDiffFeedbackThread({
+    issueId,
+    prNumber: input.pr.number,
+    baseSha: "base",
+    headSha: "head",
+    path: 'src/a&b"<c>.ts',
+    originalPath: null,
+    side: "RIGHT",
+    startLine: 3,
+    endLine: 5,
+    actor: "me",
+    authorType: "human",
+  });
+  const message = S.createDiffFeedbackMessage(thread.id, "me", body, "human");
+  const attributes = `type="diff_feedback" thread="${thread.id}" comment="${message.id}"`;
+  const location =
+    'path="src/a&amp;b&quot;&lt;c>.ts" start_line="3" end_line="5" side="RIGHT"';
+
+  expect(diffComment(thread.id, message.id)).toBe(
+    `<loophub from="worker" ${attributes} ${location}>\n${body}\n</loophub>`,
+  );
+  expect(diffComment(thread.id, 999_999)).toBe(
+    `<loophub from="worker" type="diff_feedback" thread="${thread.id}" comment="999999" ${location}></loophub>`,
+  );
+  expect(diffComment(999_999, message.id)).toBe(
+    `<loophub from="worker" type="diff_feedback" thread="999999" comment="${message.id}">\n${body}\n</loophub>`,
+  );
 });

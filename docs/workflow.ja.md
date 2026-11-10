@@ -248,7 +248,7 @@ top-level の `lh pr comment` で対象 `comment <id>`、認識したこと、�
 top-level の `lh pr comment` は使わない。質問、確認、PR metadata の更新のみなど source の修正を伴わない
 follow-up では、編集前の着手返信を必須としない。
 
-`orchestrator:` や `<loophub from="worker">` の注入、launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
+`orchestrator:` や `<loophub from="worker" ...>` の注入、launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
 continuing instruction など）は、自然に Issue / PR への追加要望と読めるならそのように扱い、同じ
 issue・PR に対して実装する。完了後は通常の Execute と同じく **commit（ドメイン変更がある場合）→
 必要なら Evidence / comment / attachment の更新 → `lh workflow turn done --run <run>`** に戻る。rework
@@ -347,8 +347,8 @@ conflict、GitHub feedback、close / merge は、通知専用の run-scoped even
 選択されても instruction にはならない（source の `session_id` で判定する）。別 PR の executor を含む
 他の agent や人間からの PR comment は instruction として配送する。
 PR comment と diff comment は親を介さず、worker がこの wake で対象 comment に 👀 reaction を付け、
-`<loophub from="worker">address PR comment <c></loophub>` / `<loophub from="worker">address diff feedback thread <t> comment <c> at <path> lines <start>-<end> (<side>)</loophub>` を
-宛先の pane へ直接配送する。どちらの配送文も、このタグの後に空行を挟んでコメント本文の全文を改行を保ったまま続ける。宛先は mention で決まり、`@executor` と mention なしは Execute、`@verifier` は
+`<loophub from="worker" type="pr_comment" comment="<c>">コメント本文</loophub>` / `<loophub from="worker" type="diff_feedback" thread="<t>" comment="<c>" path="<path>" start_line="<start>" end_line="<end>" side="<side>">コメント本文</loophub>` を
+宛先の pane へ直接配送する。配送文は常に 1 要素で、中身はコメント本文の全文を改行を保ったまま raw で入れるので、要素を閉じるのはメッセージ末尾の `</loophub>` であり、本文中の同じ文字列は本文として扱う。attribute 値の `&` `"` `<` はエスケープする。thread やコメント本文を取得できない場合は、取得できた attribute だけを持つ要素を届ける。宛先は mention で決まり、`@executor` と mention なしは Execute、`@verifier` は
 Verify である。`@loophub` / `@lh` を含むコメントだけは親へ instruction を注入し、親が reaction と配送を行う。親への instruction は ID だけを含み、親の pane に本文は届かない。
 他の宛先と併記された場合、親への注入が成功してから worker が親以外へ届け、reaction は親が付ける。宛先の session がまだ無い場合は
 `workflow_run.delivery_queued` で待ち行列に入り、親が子の起動とともに届ける。親の instruction には delivery の ID だけを載せ、本文は渡さない。

@@ -639,7 +639,7 @@ test("the worker hands comments straight to their agents and leaves failures to 
   const diffLines = (threadId: number, commentId: number) =>
     herdrLines().filter((line) =>
       line.includes(
-        `<loophub from="worker">address diff feedback thread ${threadId} comment ${commentId} at a.txt lines 2-2 (RIGHT)</loophub>`,
+        `<loophub from="worker" type="diff_feedback" thread="${threadId}" comment="${commentId}" path="a.txt" start_line="2" end_line="2" side="RIGHT">`,
       ),
     );
   await drain();
@@ -651,12 +651,12 @@ test("the worker hands comments straight to their agents and leaves failures to 
     "Please rename it.\n\n  - keep the indent",
   );
   await drain();
-  const commentText = `<loophub from="worker">address PR comment ${comment.id}</loophub>`;
+  const commentText = `<loophub from="worker" type="pr_comment" comment="${comment.id}">`;
   expect(herdrLines().filter((line) => line.includes(commentText))).toEqual([
     expect.stringContaining("w2:p1"),
   ]);
   expect(readFileSync(HERDR_LOG, "utf8")).toContain(
-    `${commentText}\n\nPlease rename it.\n\n  - keep the indent`,
+    `${commentText}\nPlease rename it.\n\n  - keep the indent\n</loophub>`,
   );
   const detail = await svc.pulls.get(repo.full_name, pr);
   expect(
@@ -678,7 +678,7 @@ test("the worker hands comments straight to their agents and leaves failures to 
     expect.stringContaining("w2:p1"),
   ]);
   expect(readFileSync(HERDR_LOG, "utf8")).toContain(
-    `<loophub from="worker">address diff feedback thread ${thread.thread.id} comment ${thread.comment.id} at a.txt lines 2-2 (RIGHT)</loophub>\n\nFirst line.\n\nThird line.`,
+    `<loophub from="worker" type="diff_feedback" thread="${thread.thread.id}" comment="${thread.comment.id}" path="a.txt" start_line="2" end_line="2" side="RIGHT">\nFirst line.\n\nThird line.\n</loophub>`,
   );
   expect(S.listDiffFeedbackReactions(thread.comment.id)).toEqual([
     expect.objectContaining({ emoji: "👀" }),
@@ -780,7 +780,7 @@ test("the worker hands comments straight to their agents and leaves failures to 
   );
   expect(JSON.parse(failure?.payload ?? "{}")).toMatchObject({
     target: "executor",
-    text: `<loophub from="worker">address PR comment ${undelivered.id}</loophub>\n\nThis one cannot arrive.`,
+    text: `<loophub from="worker" type="pr_comment" comment="${undelivered.id}">\nThis one cannot arrive.\n</loophub>`,
   });
   const failureInstruction = await svc.workflowRuns.next(repo.full_name, {
     run: runId,
@@ -829,7 +829,7 @@ test("the worker hands comments straight to their agents and leaves failures to 
     "@verifier please check this.",
   );
   await drain();
-  const verifyText = `<loophub from="worker">address PR comment ${forVerify.id}</loophub>`;
+  const verifyText = `<loophub from="worker" type="pr_comment" comment="${forVerify.id}">`;
   expect(herdrLines().filter((line) => line.includes(verifyText))).toEqual([
     expect.stringContaining("w2:p2"),
   ]);
