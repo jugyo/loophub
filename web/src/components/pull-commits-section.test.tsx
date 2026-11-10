@@ -191,6 +191,23 @@ describe("PullCommitsSection — partial pass and full review (#2538)", () => {
     );
   });
 
+  it("offers the full review on the newest commit's row only", async () => {
+    renderSection({
+      handlers: {
+        "workflowRuns/stateForPull": () => ({
+          id: 7,
+          status: "running",
+          next_verify_full: false,
+        }),
+      },
+    });
+
+    const button = await screen.findByRole("button", {
+      name: "Request full review",
+    });
+    expect(screen.getAllByRole("listitem")[0].contains(button)).toBe(true);
+  });
+
   it("shows the pending request instead of the button", async () => {
     renderSection({
       handlers: {
@@ -1240,7 +1257,7 @@ describe("PullCommitsSection", () => {
     expect(screen.queryByText("No reviews.")).toBeNull();
   });
 
-  it("renders commit metadata oldest first", () => {
+  it("renders commit metadata newest first", () => {
     renderSection();
 
     const section = screen
@@ -1249,17 +1266,17 @@ describe("PullCommitsSection", () => {
     const rows = within(section).getAllByRole("listitem");
 
     expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toContain("bbbbbbb");
-    expect(rows[0].textContent).toContain("Earlier change");
-    expect(rows[0].textContent).toContain("Bob");
-    expect(rows[1].textContent).toContain("aaaaaaa");
-    expect(rows[1].textContent).toContain("Latest change");
-    expect(rows[1].textContent).toContain("Alice");
+    expect(rows[0].textContent).toContain("aaaaaaa");
+    expect(rows[0].textContent).toContain("Latest change");
+    expect(rows[0].textContent).toContain("Alice");
+    expect(rows[1].textContent).toContain("bbbbbbb");
+    expect(rows[1].textContent).toContain("Earlier change");
+    expect(rows[1].textContent).toContain("Bob");
     expect(
       within(rows[0])
         .getByText(/ago|just now/)
         .closest("time")?.dateTime,
-    ).toBe("2026-06-17T12:00:00Z");
+    ).toBe("2026-06-18T12:00:00Z");
   });
 
   it("marks only confirmed pushed commits when push state is shown", () => {
@@ -1272,8 +1289,8 @@ describe("PullCommitsSection", () => {
     });
 
     const rows = screen.getAllByRole("listitem");
-    expect(within(rows[0]).queryByText("Pushed")).toBeNull();
-    expect(within(rows[1]).getByText("Pushed")).toBeTruthy();
+    expect(within(rows[0]).getByText("Pushed")).toBeTruthy();
+    expect(within(rows[1]).queryByText("Pushed")).toBeNull();
   });
 
   // #2442: the badge is filled, not the muted outline the rest of the row uses, so the push
@@ -1292,8 +1309,8 @@ describe("PullCommitsSection", () => {
     expect(badge.className).not.toContain("text-muted-foreground");
   });
 
-  // Commits are oldest first, so only the latest pushed row is labeled: the ones before it are
-  // pushed too, and repeating the badge there says nothing new (#2039).
+  // Only the latest pushed row is labeled: the older ones below it are pushed too, and repeating
+  // the badge there says nothing new (#2039).
   it("marks only the latest pushed commit when several commits are pushed", () => {
     renderSection({
       commits: [
@@ -1312,9 +1329,9 @@ describe("PullCommitsSection", () => {
 
     const rows = screen.getAllByRole("listitem");
     expect(screen.getAllByText("Pushed")).toHaveLength(1);
-    expect(within(rows[0]).queryByText("Pushed")).toBeNull();
-    expect(within(rows[1]).getByText("Pushed")).toBeTruthy();
-    expect(within(rows[2]).queryByText("Pushed")).toBeNull();
+    expect(
+      rows.map((row) => within(row).queryByText("Pushed") !== null),
+    ).toEqual([false, true, false]);
   });
 
   it("shows no push badge when nothing is pushed yet", () => {

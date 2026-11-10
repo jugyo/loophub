@@ -1,4 +1,4 @@
-// PR-detail commit/review timeline: commits are displayed oldest first, and each row owns the reviews made
+// PR-detail commit/review timeline: commits are displayed newest first, and each row owns the reviews made
 // against that exact SHA. Reviews without a listed commit are omitted from the PR page.
 // Commit selection, per-commit diff loading, and the GitHub push badge stay inside this component.
 //
@@ -76,15 +76,13 @@ export function PullCommitsSection({
   const [selectedReviewGroup, setSelectedReviewGroup] =
     useState<SelectedReviewGroup | null>(null);
   const workflowRun = useWorkflowRunForPull(owner, repo, number).data;
-  const orderedCommits = [...commits].reverse();
   // The newest commit is what the next Verify would read, so the full-review request sits on its
   // row (#2538) rather than above the list.
-  const latestSha = orderedCommits.at(-1)?.sha ?? null;
-  // The latest pushed commit marks how far the GitHub branch reaches: everything before it is pushed
+  const latestSha = commits[0]?.sha ?? null;
+  // The latest pushed commit marks how far the GitHub branch reaches: everything older is pushed
   // as well, and repeating the badge on those rows says nothing new (#2039).
   const latestPushedSha = showGithubPushState
-    ? (orderedCommits.findLast((commit) => commit.pushed_to_github)?.sha ??
-      null)
+    ? (commits.find((commit) => commit.pushed_to_github)?.sha ?? null)
     : null;
   const commentsByReview = new Map<number, PullLineComment[]>();
   for (const comment of lineComments) {
@@ -122,7 +120,7 @@ export function PullCommitsSection({
         ) : (
           // The ::before is the rail running through every row; each row's node sits on top of it.
           <ul className="relative before:absolute before:inset-y-0 before:left-[11px] before:w-0.5 before:bg-border">
-            {orderedCommits.map((commit) => {
+            {commits.map((commit) => {
               const commitReviews = reviews.filter(
                 (review) => review.head_sha === commit.sha,
               );
