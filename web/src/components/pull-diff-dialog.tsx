@@ -53,6 +53,7 @@ import {
   useMarkdownDiffDocument,
 } from "@/components/markdown-diff-document";
 import { PullPaneHead } from "@/components/pull-pane-head";
+import { appendQuote, QuotableText } from "@/components/quotable-text";
 import { useToast } from "@/components/toast";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
@@ -2741,6 +2742,11 @@ function ThreadCard({
     setReplyBody("");
   }
 
+  function quote(text: string) {
+    setReplyBody((current) => appendQuote(current, text));
+    replyTextareaRef.current?.focus();
+  }
+
   const menu = (
     <CommentActionsMenu
       label={`Actions for diff thread ${thread.id}`}
@@ -2784,9 +2790,11 @@ function ThreadCard({
               id={message.id}
               className="mb-1"
             />
-            <Markdown owner={owner} repo={repo} className="min-w-0">
-              {message.body}
-            </Markdown>
+            <QuotableText onQuote={quote} className="min-w-0">
+              <Markdown owner={owner} repo={repo} className="min-w-0">
+                {message.body}
+              </Markdown>
+            </QuotableText>
             <div className="mt-2 flex items-center gap-1">
               {(message.reactions ?? []).map((reaction) => (
                 <button

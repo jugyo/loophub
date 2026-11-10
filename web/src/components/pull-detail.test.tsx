@@ -1684,6 +1684,26 @@ describe("PullDetail", () => {
     });
   });
 
+  it("quotes selected comment text into the PR comment form and focuses it", async () => {
+    renderDetail();
+
+    const composer = (await screen.findByLabelText(
+      "Add a PR comment",
+    )) as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "Draft" } });
+    const range = document.createRange();
+    range.selectNodeContents(await screen.findByText("Thanks!"));
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+    act(() => {
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Quote" }));
+
+    await waitFor(() => expect(composer.value).toBe("Draft\n\n> Thanks!\n\n"));
+    expect(document.activeElement).toBe(composer);
+  });
+
   // #2129: a human post reads as @human whatever actor name it was stored under; agent posts keep
   // their own author.
   it("shows a human PR comment as @human and leaves an agent comment alone", async () => {

@@ -1522,6 +1522,39 @@ describe("DiffFileDialog", () => {
     ).toBe("");
   });
 
+  it("quotes selected comment text into that thread's reply form", async () => {
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: { ...feedbackThread().anchor, end_line: 1 },
+            }),
+          ],
+        }),
+      },
+    });
+
+    const textarea = (await screen.findByLabelText(
+      "Reply to thread 1",
+    )) as HTMLTextAreaElement;
+    const range = document.createRange();
+    range.selectNodeContents(
+      await screen.findByText("Please revisit this range."),
+    );
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+    act(() => {
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Quote" }));
+
+    await waitFor(() =>
+      expect(textarea.value).toBe("> Please revisit this range.\n\n"),
+    );
+    expect(document.activeElement).toBe(textarea);
+  });
+
   it("posts a non-empty thread reply once with Cmd+Enter", async () => {
     const initialThread = feedbackThread();
     let thread = feedbackThread({

@@ -70,6 +70,7 @@ import {
   type PullPaneView,
   PullSectionTabs,
 } from "@/components/pull-section-tabs";
+import { appendQuote, QuotableText } from "@/components/quotable-text";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
@@ -1597,6 +1598,7 @@ function timelineItemContent(
     archive: ReturnType<typeof useSetPullCommentArchived>;
     answer: ReturnType<typeof useAnswerPullEscalation>;
     showError: (message: string) => void;
+    onQuote: (text: string) => void;
   },
 ) {
   switch (item.kind) {
@@ -1618,6 +1620,7 @@ function timelineItemContent(
           archive={context.archive}
           answer={context.answer}
           showError={context.showError}
+          onQuote={context.onQuote}
         />
       );
     case "diff_feedback":
@@ -1699,6 +1702,11 @@ function CommentList({
     // form scrolls back into view with the new card already laid out.
     scrollAfterPost();
     post.mutate(trimmed);
+  }
+
+  function quote(text: string) {
+    setBody((current) => appendQuote(current, text));
+    textareaRef.current?.focus();
   }
 
   // Reconcile the backend timeline against the live comments query: comment entries pick up the
@@ -1784,6 +1792,7 @@ function CommentList({
     archive,
     answer,
     showError,
+    onQuote: quote,
   };
 
   return (
@@ -1915,6 +1924,7 @@ function CommentCard({
   archive,
   answer,
   showError,
+  onQuote,
 }: {
   owner: string;
   repo: string;
@@ -1924,6 +1934,7 @@ function CommentCard({
   archive: ReturnType<typeof useSetPullCommentArchived>;
   answer: ReturnType<typeof useAnswerPullEscalation>;
   showError: (message: string) => void;
+  onQuote: (text: string) => void;
 }) {
   const archived = comment.archived_at != null;
   const menu = (
@@ -1955,9 +1966,11 @@ function CommentCard({
   );
   const content = (
     <>
-      <Markdown owner={owner} repo={repo}>
-        {comment.body}
-      </Markdown>
+      <QuotableText onQuote={onQuote}>
+        <Markdown owner={owner} repo={repo}>
+          {comment.body}
+        </Markdown>
+      </QuotableText>
       {comment.escalation && (
         <EscalationAnswer
           commentId={comment.id}
