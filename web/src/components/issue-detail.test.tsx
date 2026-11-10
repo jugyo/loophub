@@ -429,6 +429,17 @@ describe("IssueDetail", () => {
     expect(screen.getByText("#4").getAttribute("title")).toBe("second (open)");
   });
 
+  it("renders a single newline in a comment as a line break", async () => {
+    renderDetail(undefined, {
+      "comments/list": () => [
+        { ...comments[0], body: "first line\nsecond line" },
+      ],
+    });
+
+    const body = await screen.findByText(/first line/);
+    expect(body.querySelector("br")).not.toBeNull();
+  });
+
   // #2129: a human post reads as @human whatever actor name it was stored under; agent posts keep
   // their own author.
   it("shows a human comment as @human and leaves an agent comment alone", async () => {

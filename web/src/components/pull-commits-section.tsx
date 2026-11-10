@@ -771,7 +771,7 @@ function ReviewItem({
         ) : null}
       </header>
       {review.body ? (
-        <Markdown owner={owner} repo={repo}>
+        <Markdown owner={owner} repo={repo} breaks>
           {review.body}
         </Markdown>
       ) : null}
@@ -792,7 +792,7 @@ function ReviewItem({
                   {comment.path}:{comment.line ?? "?"}
                 </span>
               </div>
-              <Markdown owner={owner} repo={repo}>
+              <Markdown owner={owner} repo={repo} breaks>
                 {comment.body}
               </Markdown>
             </li>

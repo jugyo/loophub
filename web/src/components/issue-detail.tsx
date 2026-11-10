@@ -877,7 +877,7 @@ function IssueCommentCard({
     />
   );
   const body = (
-    <Markdown owner={owner} repo={repo}>
+    <Markdown owner={owner} repo={repo} breaks>
       {comment.body}
     </Markdown>
   );

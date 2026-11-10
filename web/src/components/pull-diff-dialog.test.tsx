@@ -910,6 +910,41 @@ describe("DiffFileDialog", () => {
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
   });
 
+  it("renders single newlines in diff comments and replies as line breaks", async () => {
+    const [message] = feedbackThread().messages;
+    renderDialog({
+      handlers: {
+        "diffFeedback/list": () => ({
+          threads: [
+            feedbackThread({
+              anchor: {
+                ...feedbackThread().anchor,
+                start_line: 1,
+                end_line: 1,
+              },
+              messages: [
+                { ...message, body: "comment first\ncomment second" },
+                { ...message, id: 12, body: "reply first\nreply second" },
+              ],
+            }),
+          ],
+        }),
+      },
+    });
+
+    const thread = await screen.findByLabelText("Diff thread 1");
+    expect(
+      within(thread)
+        .getByText(/comment first/)
+        .querySelector("br"),
+    ).not.toBeNull();
+    expect(
+      within(thread)
+        .getByText(/reply first/)
+        .querySelector("br"),
+    ).not.toBeNull();
+  });
+
   it("shows consistent diff feedback metadata without obscuring the comment body", async () => {
     renderDialog({
       handlers: {
@@ -3797,7 +3832,7 @@ describe("DiffFileDialog", () => {
         "pulls/fileAtRef": (p) =>
           p.side === "base"
             ? { status: "ok", content: "# old\n" }
-            : { status: "ok", content: "# new\n" },
+            : { status: "ok", content: "# new\n\nfirst line\nsecond line\n" },
       },
     });
 
@@ -3837,6 +3872,10 @@ describe("DiffFileDialog", () => {
     expect(preview).not.toBeNull();
     expect(preview?.classList.contains("typeset")).toBe(true);
     expect(preview?.classList.contains("markdown-body")).toBe(false);
+    expect(preview?.querySelector("br")).toBeNull();
+    expect(preview?.querySelector("p")?.textContent).toBe(
+      "first line\nsecond line",
+    );
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Base" }));
     expect(await screen.findByRole("heading", { name: "old" })).toBeTruthy();
@@ -3911,7 +3950,7 @@ describe("DiffFileDialog", () => {
         "pulls/fileAtRef": (params) =>
           params.side === "base"
             ? { status: "ok", content: "# Old\n\nold text\n" }
-            : { status: "ok", content: "# New\n\nnew text\n" },
+            : { status: "ok", content: "# New\n\nnew text\nmore text\n" },
       },
     });
 
@@ -3948,6 +3987,11 @@ describe("DiffFileDialog", () => {
         "markdown-diff-block-added",
       );
     });
+    expect(
+      within(headRegion)
+        .getByText(/more text/)
+        .querySelector("br"),
+    ).toBeNull();
     const unifiedTrackRule = postcss
       .parse(typesetCss)
       .nodes.find(

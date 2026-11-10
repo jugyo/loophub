@@ -25,6 +25,7 @@ import {
   MarkdownLink,
 } from "@/components/markdown-elements";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
+import { remarkBreaks } from "@/lib/remark-breaks";
 import {
   type IssueRefKind,
   issueRefKey,
@@ -85,12 +86,15 @@ export function Markdown({
   owner,
   repo,
   typeset = false,
+  breaks = false,
 }: {
   children: string;
   className?: string;
   owner?: string;
   repo?: string;
   typeset?: boolean;
+  /** Render single newlines as line breaks, as GitHub does for comments but not for files. */
+  breaks?: boolean;
 }) {
   const linkRefs = Boolean(owner && repo);
   const targets = useMemo(
@@ -108,10 +112,13 @@ export function Markdown({
       ),
     [refKinds],
   );
-  const remarkPlugins: Options["remarkPlugins"] =
-    owner && repo
-      ? [remarkGfm, [remarkIssueRefs, { owner, repo, kinds }]]
-      : [remarkGfm];
+  const remarkPlugins: Options["remarkPlugins"] = [
+    remarkGfm,
+    ...(breaks ? [remarkBreaks] : []),
+    ...(owner && repo
+      ? ([[remarkIssueRefs, { owner, repo, kinds }]] as const)
+      : []),
+  ];
   return (
     <div className={cn(typeset ? "typeset" : "markdown-body", className)}>
       <MarkdownLightboxProvider>

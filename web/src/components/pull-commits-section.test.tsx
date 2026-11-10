@@ -385,6 +385,61 @@ describe("PullCommitsSection", () => {
     expect(within(row).getByText("Pushed")).toBeTruthy();
   });
 
+  it("renders single newlines in review bodies and line comments as line breaks", async () => {
+    renderSection({
+      reviews: [
+        {
+          id: 1,
+          user: { login: "quality-bot" },
+          author_type: "agent",
+          state: "PASS",
+          body: "review first\nreview second",
+          head_sha: commits![0].sha,
+          base_sha: null,
+          model: null,
+          submitted_at: "2026-06-18T12:30:00Z",
+          duration_seconds: null,
+          ac_results: [],
+        },
+      ],
+      lineComments: [
+        {
+          id: 10,
+          pull_request_review_id: 1,
+          user: { login: "quality-bot" },
+          author_type: "agent",
+          path: "web/src/a.ts",
+          line: 4,
+          side: "RIGHT",
+          body: "comment first\ncomment second",
+          created_at: "2026-06-18T12:31:00Z",
+        },
+      ],
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View 1 review for aaaaaaa: Latest change",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Show details" }),
+    );
+    expect(
+      within(dialog)
+        .getByText(/review first/)
+        .querySelector("br"),
+    ).not.toBeNull();
+    expect(
+      within(dialog)
+        .getByText(/comment first/)
+        .querySelector("br"),
+    ).not.toBeNull();
+  });
+
   it("opens review details from a compact status while keeping unreviewed commits simple", async () => {
     const reviews: PullReview[] = [
       {

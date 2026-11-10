@@ -2791,7 +2791,7 @@ function ThreadCard({
               className="mb-1"
             />
             <QuotableText onQuote={quote} className="min-w-0">
-              <Markdown owner={owner} repo={repo} className="min-w-0">
+              <Markdown owner={owner} repo={repo} className="min-w-0" breaks>
                 {message.body}
               </Markdown>
             </QuotableText>

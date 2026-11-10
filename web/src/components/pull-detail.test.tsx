@@ -1647,6 +1647,17 @@ describe("PullDetail", () => {
     ).toHaveLength(2);
   });
 
+  it("renders a single newline in a comment as a line break", async () => {
+    renderDetail({
+      "comments/list": () => [
+        { ...comments[0], body: "first line\nsecond line" },
+      ],
+    });
+
+    const body = await screen.findByText(/first line/);
+    expect(body.querySelector("br")).not.toBeNull();
+  });
+
   it("shows zero in the Comments heading when there are no comments", async () => {
     renderDetail({ "comments/list": () => [] });
 

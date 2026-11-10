@@ -1969,7 +1969,7 @@ function CommentCard({
   const content = (
     <>
       <QuotableText onQuote={onQuote}>
-        <Markdown owner={owner} repo={repo}>
+        <Markdown owner={owner} repo={repo} breaks>
           {comment.body}
         </Markdown>
       </QuotableText>

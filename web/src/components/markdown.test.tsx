@@ -110,6 +110,80 @@ describe("Markdown", () => {
     expect(a?.getAttribute("href")).toBe("https://example.com");
   });
 
+  it("keeps a single newline as a soft break by default", () => {
+    const { container } = renderWithClient(
+      <Markdown>{"first\nsecond"}</Markdown>,
+    );
+    expect(container.querySelector("br")).toBeNull();
+    expect(container.querySelector("p")?.textContent).toBe("first\nsecond");
+  });
+
+  it("renders every single newline as a line break with breaks", () => {
+    const { container } = renderWithClient(
+      <Markdown breaks>{"first\nsecond\n**third**\nfourth"}</Markdown>,
+    );
+    expect(container.querySelectorAll("p")).toHaveLength(1);
+    expect(container.querySelectorAll("p br")).toHaveLength(3);
+    expect(container.querySelector("strong")?.textContent).toBe("third");
+  });
+
+  it("breaks lines inside lists and quotes, once per explicit hard break", () => {
+    const { container } = renderWithClient(
+      <Markdown breaks>{"- a\n  b\n\n> c\n> d\n\ne  \nf"}</Markdown>,
+    );
+    expect(container.querySelectorAll("li br")).toHaveLength(1);
+    expect(container.querySelectorAll("blockquote br")).toHaveLength(1);
+    expect(container.querySelectorAll(".markdown-body > p br")).toHaveLength(1);
+  });
+
+  it("keeps paragraphs and GFM blocks intact with breaks", () => {
+    const source = [
+      "para one",
+      "",
+      "para `inline\ncode` two",
+      "",
+      "```",
+      "code 1",
+      "code 2",
+      "```",
+      "",
+      "- item 1",
+      "- item 2",
+      "",
+      "> quote",
+      "",
+      "| a |",
+      "| - |",
+      "| b |",
+    ].join("\n");
+    const { container } = renderWithClient(
+      <Markdown breaks>{source}</Markdown>,
+    );
+    expect(container.querySelectorAll("p")).toHaveLength(3);
+    expect(container.querySelector("p code")?.textContent).toBe("inline code");
+    expect(container.querySelector("pre")?.textContent).toBe(
+      "code 1\ncode 2\n",
+    );
+    expect(container.querySelectorAll("li")).toHaveLength(2);
+    expect(container.querySelector("blockquote p")?.textContent).toBe("quote");
+    expect(container.querySelector("td")?.textContent).toBe("b");
+    expect(container.querySelector("br")).toBeNull();
+  });
+
+  it("links references on separate lines with breaks", async () => {
+    refKinds.value = [
+      { repo: "o/r", number: 1, kind: "issue" },
+      { repo: "o/r", number: 2, kind: "pull" },
+    ];
+    const { container } = await renderInRouter(
+      <Markdown owner="o" repo="r" breaks>
+        {"#1\n#2"}
+      </Markdown>,
+    );
+    expect(await screen.findAllByRole("link")).toHaveLength(2);
+    expect(container.querySelectorAll("p br")).toHaveLength(1);
+  });
+
   it("adds an explicit sandboxed preview action to HTML attachment links", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("<h1>Report</h1>", {
