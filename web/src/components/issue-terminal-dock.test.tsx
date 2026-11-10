@@ -195,6 +195,24 @@ it("opens on the clicked tab of a closed dock", async () => {
   expect(new URL(urls[0]).searchParams.get("terminal")).toBe("t3");
 });
 
+it("closes the dock when the shown tab is clicked, keeping its terminal", async () => {
+  const { fetchMock } = renderPage();
+  const tab = await screen.findByRole("tab", { name: /New issue 1/ });
+  fireEvent.click(tab);
+  await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
+
+  fireEvent.click(tab);
+
+  await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("false"));
+  expect(
+    screen
+      .getByRole("button", { name: "Toggle terminal dock" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(screen.getByRole("tab", { name: /New issue 1/ })).toBeTruthy();
+  expect(rpcCalls(fetchMock, "terminal/closeIssueTerminal")).toEqual([]);
+});
+
 it("renders nothing on a herdr repo", async () => {
   const { fetchMock } = renderPage("herdr");
   await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));

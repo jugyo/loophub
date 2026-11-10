@@ -178,6 +178,35 @@ it("keeps the tabs when the toggle closes the dock", async () => {
   expect(document.querySelector(".xterm")).toBeNull();
 });
 
+it("closes the dock when the shown tab is clicked, keeping every tab, and switches on another tab", async () => {
+  const urls = stubWebSocket();
+  stubResizeObserver();
+  renderDock();
+  const tablist = await openDock();
+  const shown = within(tablist).getByRole("tab", { name: /orchestrator/ });
+  await waitFor(() => expect(selectedTab()).toBe(shown));
+
+  fireEvent.click(within(tablist).getByRole("tab", { name: /executor #1/ }));
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("true");
+  expect(selectedTab()?.textContent).toBe("executor #1idle");
+
+  fireEvent.click(within(tablist).getByRole("tab", { name: /executor #1/ }));
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getAllByRole("tab").length).toBe(TERMINALS.length);
+  expect(selectedTab()).toBeUndefined();
+  expect(document.querySelector(".xterm")).toBeNull();
+  expect(
+    fetchMock.mock.calls
+      .map(([, init]) => JSON.parse(String((init as RequestInit).body)).method)
+      .filter((method) => method.startsWith("terminal/close")),
+  ).toEqual([]);
+
+  fireEvent.click(screen.getByRole("tab", { name: /executor #1/ }));
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("true");
+  expect(selectedTab()?.textContent).toBe("executor #1idle");
+  await waitFor(() => expect(urls.map(attachedTerminal).at(-1)).toBe("t2"));
+});
+
 it("renders a done tab's status exactly like a tab without a status", async () => {
   stubWebSocket();
   stubResizeObserver();
@@ -444,6 +473,31 @@ it("lists a lost agent as an inactive tab that restores its session", async () =
     pull: 7,
     sessionId: "s-exec",
   });
+});
+
+it("closes the dock when the shown inactive tab is clicked, and switches between tabs", async () => {
+  stubWebSocket();
+  stubResizeObserver();
+  renderLostDock(() => ({ backend: "herdr-core", address: "t9" }));
+  const tablist = await openDock();
+  const message = "Restore is available for Claude Code only";
+  fireEvent.click(
+    await within(tablist).findByRole("tab", { name: /verifier #2/ }),
+  );
+  expect(await screen.findByText(message)).toBeTruthy();
+
+  fireEvent.click(within(tablist).getByRole("tab", { name: /verifier #2/ }));
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText(message)).toBeNull();
+  expect(selectedTab()).toBeUndefined();
+
+  fireEvent.click(within(tablist).getByRole("tab", { name: /verifier #2/ }));
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("true");
+  expect(await screen.findByText(message)).toBeTruthy();
+
+  fireEvent.click(within(tablist).getByRole("tab", { name: /executor #3/ }));
+  expect((await findToggle()).getAttribute("aria-expanded")).toBe("true");
+  expect(selectedTab()?.textContent).toBe("executor #3inactive");
 });
 
 it("shows why a restore failed", async () => {

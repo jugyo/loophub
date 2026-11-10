@@ -215,7 +215,8 @@ export function TerminalDock({
                   aria-selected={isSelected}
                   className="flex h-full items-center gap-2 px-2"
                   onClick={() => {
-                    setOpen(true);
+                    // Clicking the shown tab minimizes the dock; the terminal keeps running.
+                    setOpen(!isSelected);
                     setShowHistory(false);
                     setSelected(t.address);
                   }}
@@ -260,7 +261,7 @@ export function TerminalDock({
                   isSelected && "bg-accent font-medium",
                 )}
                 onClick={() => {
-                  setOpen(true);
+                  setOpen(!isSelected);
                   setShowHistory(false);
                   setSelected(tab.key);
                 }}
