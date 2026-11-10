@@ -23,6 +23,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -229,6 +230,8 @@ const DIFF_FEEDBACK_REACTIONS = ["👍", "❤️", "🎉", "🚀", "👀"] as co
 // status badge for a file — so the names below them share one left edge.
 const SIDEBAR_ROW_PADDING = 12;
 const SIDEBAR_INDENT_STEP = 14;
+const FILE_INFO_POPOVER_GAP = 4;
+const FILE_INFO_POPOVER_INSET = 12;
 
 function rowIndent(depth: number) {
   return SIDEBAR_ROW_PADDING + depth * SIDEBAR_INDENT_STEP;
@@ -1424,6 +1427,7 @@ function FileInfoPopover({
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const path = copyFilename(file);
   const diff = usePullDiff(owner, repo, number, path);
   const stableFile = Array.isArray(diff.data?.files)
@@ -1443,6 +1447,25 @@ function FileInfoPopover({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
+  // Opens at the icon, shifted left only as far as needed to stay inside the file row.
+  useLayoutEffect(() => {
+    const popover = popoverRef.current;
+    const row = popover?.offsetParent;
+    if (!open || !popover || !row || !containerRef.current) return;
+    const rowRect = row.getBoundingClientRect();
+    const iconRect = containerRef.current.getBoundingClientRect();
+    const maxLeft =
+      rowRect.width -
+      popover.getBoundingClientRect().width -
+      FILE_INFO_POPOVER_INSET;
+    const left = Math.max(
+      FILE_INFO_POPOVER_INSET,
+      Math.min(iconRect.left - rowRect.left, maxLeft),
+    );
+    popover.style.left = `${left}px`;
+    popover.style.top = `${iconRect.bottom - rowRect.top + FILE_INFO_POPOVER_GAP}px`;
+  }, [open]);
+
   return (
     <div ref={containerRef} className="shrink-0">
       <Button
@@ -1456,12 +1479,13 @@ function FileInfoPopover({
       >
         <Info className="size-3.5" />
       </Button>
-      {/* Positioned against the file row, not this button, so it stays inside a narrow right pane. */}
+      {/* The file row is the containing block, so max-width keeps it inside a narrow right pane. */}
       {open ? (
         <div
+          ref={popoverRef}
           role="dialog"
           aria-label={`File information: ${visibleCopyPath(path)}`}
-          className="absolute left-3 top-full z-20 w-[28rem] max-w-[calc(100%-1.5rem)] rounded-md border bg-background p-3 text-foreground shadow-md"
+          className="absolute z-20 w-[28rem] max-w-[calc(100%-1.5rem)] rounded-md border bg-background p-3 text-foreground shadow-md"
           onKeyDown={(event) => {
             if (event.key !== "Escape") return;
             event.stopPropagation();

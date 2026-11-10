@@ -603,6 +603,46 @@ describe("PullDiffDialog", () => {
     expect(popover.className).toContain("max-w-[calc(100%-1.5rem)]");
   });
 
+  it.each([
+    { name: "at its icon", iconLeft: 150, expectedLeft: "50px" },
+    {
+      name: "shifted inside the file row when the icon is near its right edge",
+      iconLeft: 480,
+      expectedLeft: "88px",
+    },
+  ])("opens the file information popover $name", async ({
+    iconLeft,
+    expectedLeft,
+  }) => {
+    renderPullDialog({ "pulls/diff": stableDiff }, () => {}, "pane");
+    await screen.findByText("const x = 1;");
+    const fileRow = screen.getByRole("combobox", { name: "Diff file" })
+      .parentElement?.parentElement as HTMLElement;
+    const button = within(fileRow).getByRole("button", {
+      name: "Show file information: web/src/a.ts",
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockReturnValue(
+      fileRow,
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        if (this === fileRow) return new DOMRect(100, 200, 400, 80);
+        if (this === button.parentElement) {
+          return new DOMRect(iconLeft, 210, 24, 24);
+        }
+        return new DOMRect(0, 0, 300, 120);
+      },
+    );
+
+    fireEvent.click(button);
+
+    const popover = screen.getByRole("dialog", {
+      name: "File information: web/src/a.ts",
+    });
+    expect(popover.style.left).toBe(expectedLeft);
+    expect(popover.style.top).toBe("38px");
+  });
+
   it("shows a commit above the file row and drops Viewed in its scope", async () => {
     renderPullDialog({
       "pulls/diff": stableDiff,
