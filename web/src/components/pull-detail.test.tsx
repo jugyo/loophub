@@ -2341,6 +2341,7 @@ describe("PullDetail", () => {
         handlers: Parameters<typeof renderDetail>[0] = {},
       ) => {
         const result = renderDetail(handlers);
+        await openCommitsView();
         await screen.findByRole("heading", { name: /Commits \(/ });
         return result;
       };
@@ -2351,7 +2352,7 @@ describe("PullDetail", () => {
         expect(updated("Evidence")).toBeNull();
         first.unmount();
 
-        await visit({
+        const { queryClient } = await visit({
           "pulls/get": () => ({ ...pull, body: "New evidence" }),
           "pulls/files": () => [
             { ...files[0], additions: (files[0]?.additions ?? 0) + 1 },
@@ -2361,7 +2362,15 @@ describe("PullDetail", () => {
         expect(updated("Evidence")?.getAttribute("title")).toBe(
           "Evidence: Updated",
         );
-        expect(updated("Files changed")).toBeTruthy();
+        expect(updated("Files changed")).toBeNull();
+        // Files changed is read on arrival; flag changes made after switching away.
+        await act(() => {
+          queryClient.setQueryData(queryKeys.pullFiles("me/proj", 30), [
+            { ...files[0], additions: (files[0]?.additions ?? 0) + 2 },
+            ...files.slice(1),
+          ]);
+        });
+        await waitFor(() => expect(updated("Files changed")).toBeTruthy());
       });
 
       it("clears a dot when its view is opened, also after reloading", async () => {
