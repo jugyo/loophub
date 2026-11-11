@@ -1382,7 +1382,9 @@ function FilesChanged({
           </div>
         ) : (
           <>
-            <div className="overflow-hidden rounded-md border">
+            {/* shrink-0: overflow-hidden drops this flex item's min-height to zero, so without it
+                the list shrinks to the pane and clips its rows instead of scrolling them. */}
+            <div className="shrink-0 overflow-hidden rounded-md border">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b bg-muted/40 px-2.5 py-1.5 text-[11px] font-medium uppercase text-muted-foreground">
                 <span>File</span>
                 <span>Changes</span>
