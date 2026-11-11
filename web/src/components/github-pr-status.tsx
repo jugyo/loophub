@@ -19,7 +19,14 @@ import {
   Unlink,
   UploadCloud,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   GithubCheckRun,
   GithubConversationEntry,
@@ -28,6 +35,7 @@ import type {
   PullRequest,
 } from "@/api/types";
 import { GithubPrConversation } from "@/components/github-pr-conversation";
+import { Markdown } from "@/components/markdown";
 import { PullPaneHead } from "@/components/pull-pane-head";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
@@ -203,6 +211,72 @@ function unresolvedThreadIds(entries: GithubConversationEntry[]): number[] {
     .map((thread) => thread.id);
 }
 
+// The GitHub PR's title and body. A body taller than about ten lines starts clipped to them, with a
+// toggle to read the rest; only a body that actually overflows gets the toggle. Rendered like the
+// conversation bodies: GitHub text keeps only http(s) links and no hub `#N` references.
+function GithubPrDescription({
+  title,
+  body,
+}: {
+  title: string | null;
+  body: string;
+}) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  // Measured while clipped; once expanded the box no longer overflows, so the result is kept. The
+  // pane can mount hidden (zero height), so the box is measured again whenever it resizes.
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el || expanded) return;
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [body, expanded]);
+  const hasBody = body.trim() !== "";
+  if (!title && !hasBody) return null;
+  return (
+    <div
+      data-debug-component="GithubPrDescription"
+      className="flex min-w-0 flex-col gap-1.5"
+    >
+      {title ? (
+        <h3 className="text-base font-semibold break-words">{title}</h3>
+      ) : null}
+      {hasBody ? (
+        <>
+          <div
+            ref={bodyRef}
+            className={`min-w-0 text-sm ${expanded ? "" : "max-h-[10lh] overflow-hidden"}`}
+          >
+            <Markdown
+              breaks
+              httpLinksOnly
+              className="min-w-0 text-sm break-words [&_code]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto"
+            >
+              {body}
+            </Markdown>
+          </div>
+          {overflows ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-fit px-2 text-xs"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((open) => !open)}
+            >
+              {expanded ? "Show less" : "Read more"}
+            </Button>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function PaneBlock({
   title,
   children,
@@ -328,6 +402,7 @@ export function GithubPrStatusSection({
               good panel. The error box shows only when there is no status to fall back to. */
         status ? (
           <>
+            <GithubPrDescription title={status.title} body={status.body} />
             <MergeStatus
               owner={owner}
               repo={repo}

@@ -338,6 +338,8 @@ test("GitHub conflict fires when the previous local state was blocked", async ()
       reviewers: [],
       checkRuns: [],
       headSha: null,
+      title: null,
+      body: "",
     },
   });
 
@@ -392,6 +394,8 @@ test("the first GitHub conflict uses the same tick's local clean baseline", asyn
     reviewers: [],
     checkRuns: [],
     headSha: null,
+    title: null,
+    body: "",
   };
 
   const first = await D.sweepPullConflicts({
@@ -440,6 +444,8 @@ test("the first GitHub conflict is not lost when local state is unknown", async 
     reviewers: [],
     checkRuns: [],
     headSha: null,
+    title: null,
+    body: "",
   };
 
   const first = await D.sweepPullConflicts({
@@ -482,6 +488,8 @@ test("a local state failure does not discard a fresh GitHub conflict", async () 
     reviewers: [],
     checkRuns: [],
     headSha: null,
+    title: null,
+    body: "",
   };
 
   const result = await D.sweepPullConflicts({
@@ -561,6 +569,8 @@ test("a stale local sweep cannot overwrite a concurrent GitHub conflict", async 
     reviewers: [],
     checkRuns: [],
     headSha: null,
+    title: null,
+    body: "",
   };
 
   await D.sweepPullConflicts({

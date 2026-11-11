@@ -79,6 +79,8 @@ const SAMPLE: GhPrStatus = {
   reviewers: [],
   checkRuns: [],
   headSha: null,
+  title: null,
+  body: "",
 };
 
 function depsReturning(

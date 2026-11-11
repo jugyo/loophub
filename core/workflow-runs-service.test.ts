@@ -710,6 +710,8 @@ test("a GitHub-only conflict reaches the workflow reconcile decision", async () 
       reviewers: [],
       checkRuns: [],
       headSha: null,
+      title: null,
+      body: "",
     },
   });
   const source = S.listEvents(0, repo.id, 1000).find(

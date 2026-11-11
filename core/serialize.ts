@@ -792,6 +792,8 @@ export interface GithubPrStatusWire {
   is_draft: boolean;
   reviewers: GhPrReviewer[];
   check_runs: GithubCheckRunWire[];
+  title: string | null;
+  body: string;
 }
 
 export interface GithubCheckRunWire {
@@ -837,6 +839,8 @@ export function githubPrStatusJSON(
       completed_at: run.completedAt,
       url: run.url,
     })),
+    title: gh.title,
+    body: gh.body,
   };
 }
 

@@ -113,6 +113,8 @@ function renderPullRoute() {
         is_draft: false,
         reviewers: [],
         check_runs: [],
+        title: null,
+        body: "",
       }),
     }),
   );

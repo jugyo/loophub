@@ -85,6 +85,8 @@ const BASE: GithubPrStatus = {
   is_draft: false,
   reviewers: [],
   check_runs: [],
+  title: null,
+  body: "",
 };
 
 const FAILED_CHECK: GithubCheckRun = {
@@ -251,6 +253,71 @@ describe("GithubPrStatusSection", () => {
     expect(
       getByRole("link", { name: "gh.example.com/me/proj/pull/42" }),
     ).toBeTruthy();
+  });
+
+  it("shows the GitHub PR's title and its body rendered as Markdown", () => {
+    const { getByRole, container } = renderSection({
+      status: { ...BASE, title: "Add export", body: "Fixes **this**" },
+    });
+    expect(getByRole("heading", { name: "Add export" })).toBeTruthy();
+    expect(container.querySelector("strong")?.textContent).toBe("this");
+  });
+
+  it("clips a body taller than about ten lines and toggles it with Read more / Show less", () => {
+    // No layout here, so fake a body that overflows its clipped box.
+    const proto = HTMLElement.prototype;
+    const sizes = { scrollHeight: 600, clientHeight: 200 };
+    const originals = Object.keys(sizes).map(
+      (key) => [key, Object.getOwnPropertyDescriptor(proto, key)] as const,
+    );
+    for (const [key, value] of Object.entries(sizes))
+      Object.defineProperty(proto, key, {
+        configurable: true,
+        get: () => value,
+      });
+    try {
+      const { getByRole, container } = renderSection({
+        status: { ...BASE, title: "Long", body: "line\n".repeat(30) },
+      });
+      const box = () =>
+        container.querySelector(
+          '[data-debug-component="GithubPrDescription"] > div',
+        ) as HTMLElement;
+      expect(box().className).toContain("max-h-[10lh]");
+
+      fireEvent.click(getByRole("button", { name: "Read more" }));
+      expect(box().className).not.toContain("max-h-[10lh]");
+
+      fireEvent.click(getByRole("button", { name: "Show less" }));
+      expect(box().className).toContain("max-h-[10lh]");
+      expect(getByRole("button", { name: "Read more" })).toBeTruthy();
+    } finally {
+      for (const [key, descriptor] of originals) {
+        if (descriptor) Object.defineProperty(proto, key, descriptor);
+        else delete (proto as unknown as Record<string, unknown>)[key];
+      }
+    }
+  });
+
+  it("offers no Read more for a body that fits", () => {
+    const { queryByRole, getByText } = renderSection({
+      status: { ...BASE, title: "Short", body: "One line" },
+    });
+    expect(getByText("One line")).toBeTruthy();
+    expect(queryByRole("button", { name: "Read more" })).toBeNull();
+  });
+
+  it("shows just the title when the GitHub PR has no body", () => {
+    const { container, getByRole, queryByRole } = renderSection({
+      status: { ...BASE, title: "No body", body: "" },
+    });
+    expect(getByRole("heading", { name: "No body" })).toBeTruthy();
+    expect(
+      container.querySelectorAll(
+        '[data-debug-component="GithubPrDescription"] > *',
+      ),
+    ).toHaveLength(1);
+    expect(queryByRole("button", { name: "Read more" })).toBeNull();
   });
 
   it("keeps the GitHub PR link while the status is still loading (#2091)", () => {

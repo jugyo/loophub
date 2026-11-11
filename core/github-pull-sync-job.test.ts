@@ -57,6 +57,8 @@ const STATUS: GhPrStatus = {
   reviewers: [],
   checkRuns: [],
   headSha: null,
+  title: null,
+  body: "",
 };
 
 const okDeps = {

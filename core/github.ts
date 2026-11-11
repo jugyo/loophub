@@ -630,6 +630,8 @@ export function parseGhPrStatus(payload: string): GhPrStatus {
     reviewers: [],
     checkRuns: [],
     headSha: null,
+    title: null,
+    body: "",
     ...(JSON.parse(payload) as Partial<GhPrStatus>),
   } as GhPrStatus;
 }
@@ -666,6 +668,9 @@ export interface GhPrStatus {
   reviewers: GhPrReviewer[];
   checkRuns: GhCheckRun[];
   headSha: string | null;
+  // The GitHub PR's own title and Markdown body; null/"" for a payload cached before they existed.
+  title: string | null;
+  body: string;
 }
 
 // Classify one statusCheckRollup entry. gh returns two shapes: CheckRun (has `status`+`conclusion`)
@@ -837,7 +842,7 @@ export async function fetchGithubPrStatus(
     "pr",
     "view",
     "--json",
-    "state,mergeable,reviewDecision,statusCheckRollup,comments,reviews,updatedAt,isDraft,latestReviews,reviewRequests,headRefOid",
+    "state,mergeable,reviewDecision,statusCheckRollup,comments,reviews,updatedAt,isDraft,latestReviews,reviewRequests,headRefOid,title,body",
     // Pass the URL after `--` so it can never be mistaken for a flag, matching viewPr — the value is
     // already GitHub-validated at every write path, so this is defense-in-depth against that ever
     // being loosened.
@@ -858,6 +863,8 @@ export async function fetchGithubPrStatus(
     latestReviews?: unknown;
     reviewRequests?: unknown;
     headRefOid?: unknown;
+    title?: unknown;
+    body?: unknown;
   };
   try {
     j = JSON.parse(r.stdout);
@@ -893,6 +900,8 @@ export async function fetchGithubPrStatus(
     reviewers: normalizeReviewers(j.latestReviews, j.reviewRequests),
     checkRuns,
     headSha: stringOrNull(j.headRefOid),
+    title: stringOrNull(j.title),
+    body: typeof j.body === "string" ? j.body : "",
   };
 }
 
