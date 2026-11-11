@@ -456,8 +456,16 @@ export interface IssueWire {
   ancestors?: IssueRefSummaryWire[];
   sub_issues?: IssueWire[];
   sub_issues_truncated?: boolean;
-  // Issues this one is blocked by, with their current state (#2644). Detail response only.
-  blocked_by?: IssueRefSummaryWire[];
+  // Issues this one is blocked by, with their current state (#2644). Each carries its own open
+  // blockers one level deep so a chain (`#102 (← #101)`) can be shown without another fetch.
+  blocked_by?: IssueBlockerWire[];
+  // Issues blocked by this one (the reverse edge of `blocked_by`).
+  blocking?: IssueRefSummaryWire[];
+}
+
+export interface IssueBlockerWire extends IssueRefSummaryWire {
+  /** The blocker's own still-open blockers (one level only). */
+  blocked_by: IssueRefSummaryWire[];
 }
 
 /** One repository group in the cross-repository home-page dashboard. */

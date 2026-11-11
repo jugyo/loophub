@@ -415,18 +415,66 @@ describe("IssueDetail", () => {
     expect(chip.getAttribute("title")).toBe("Target branch: feature/foo-bar");
   });
 
-  it("shows the blocked-by issues and whether one is still open (#2644)", async () => {
+  it("shows depending on / blocking next to the title instead of the Blocked badge (#2771)", async () => {
     renderDetail(() => ({
       ...issue,
       blocked_by: [
-        { number: 3, title: "first", state: "closed" },
-        { number: 4, title: "second", state: "open" },
+        { number: 3, title: "first", state: "closed", blocked_by: [] },
+        {
+          number: 4,
+          title: "second",
+          state: "open",
+          blocked_by: [{ number: 2, title: "zeroth", state: "open" }],
+        },
       ],
+      blocking: [{ number: 5, title: "after", state: "open" }],
     }));
 
-    expect(await screen.findByText("Blocked")).toBeTruthy();
-    expect(screen.getByText("#3").getAttribute("title")).toBe("first (closed)");
-    expect(screen.getByText("#4").getAttribute("title")).toBe("second (open)");
+    const deps = await screen.findByText("depending on");
+    expect(deps.getAttribute("data-blocked")).toBe("true");
+    expect(deps.className).toContain("text-amber-700");
+    expect(screen.getByLabelText("Blocked")).toBeTruthy();
+    expect(screen.getByText("blocking")).toBeTruthy();
+    expect(screen.queryByText("Blocked")).toBeNull();
+    expect(screen.queryByText("Blocked by")).toBeNull();
+    const closed = screen.getByText("#3");
+    expect(closed.className).toContain("line-through");
+    expect(closed.closest("a")?.getAttribute("title")).toBe("first (closed)");
+    expect(closed.closest("a")?.getAttribute("href")).toBe(
+      "/r/me/proj/issues/3",
+    );
+    expect(screen.getByText("#4").closest("a")?.getAttribute("title")).toBe(
+      "second (open)",
+    );
+    expect(screen.getByText("#2").closest("a")?.getAttribute("title")).toBe(
+      "zeroth (open)",
+    );
+    expect(screen.getByText("#5").closest("a")?.getAttribute("title")).toBe(
+      "after (open)",
+    );
+  });
+
+  it("shows depending on muted once every blocker is closed (#2771)", async () => {
+    renderDetail(() => ({
+      ...issue,
+      blocked_by: [
+        { number: 3, title: "first", state: "closed", blocked_by: [] },
+      ],
+      blocking: [],
+    }));
+
+    const deps = await screen.findByText("depending on");
+    expect(deps.getAttribute("data-blocked")).toBe("false");
+    expect(deps.className).not.toContain("text-amber-700");
+    expect(screen.queryByText("blocking")).toBeNull();
+  });
+
+  it("shows no dependency summary when the issue has none (#2771)", async () => {
+    renderDetail(() => ({ ...issue, blocked_by: [], blocking: [] }));
+
+    await screen.findAllByText(issue.title);
+    expect(screen.queryByText("depending on")).toBeNull();
+    expect(screen.queryByText("blocking")).toBeNull();
   });
 
   it("renders a single newline in a comment as a line break", async () => {

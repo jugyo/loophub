@@ -34,6 +34,7 @@ import type {
   IssueListPageWire,
   IssueListPullSummaryWire,
   IssueRefKindWire,
+  IssueRefSummaryWire,
   IssueTerminalHistoryWire,
   IssueWire,
   LabelWire,
@@ -291,6 +292,7 @@ export type GithubConversationEntry = GithubConversationEntryWire;
 export type GithubConversationThread = GithubConversationThreadWire;
 
 export type Issue = IssueWire;
+export type IssueRefSummary = IssueRefSummaryWire;
 
 /** A structured acceptance criterion (#1894) carried on issue detail; the Verify rubric source. */
 export type AcceptanceCriterion = AcceptanceCriterionWire;

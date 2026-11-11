@@ -13,6 +13,7 @@ export function DetailHeaderTitle({
   title,
   titleSource,
   titleRef,
+  titleAside,
 }: {
   kind: "Issue" | "PR";
   number: number;
@@ -24,6 +25,8 @@ export function DetailHeaderTitle({
   titleSource?: ReactNode;
   /** Observed by {@link DetailStickyHeader} to know when the title left the viewport. */
   titleRef?: RefObject<HTMLDivElement | null>;
+  /** Rendered beside the title, e.g. the issue's dependency summary. */
+  titleAside?: ReactNode;
 }) {
   return (
     <div
@@ -35,7 +38,14 @@ export function DetailHeaderTitle({
         {kind} #{number}
         {titleSource ? <> · {titleSource}</> : null}
       </span>
-      <h1 className="text-2xl font-semibold">{title}</h1>
+      {titleAside ? (
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="text-2xl font-semibold">{title}</h1>
+          {titleAside}
+        </div>
+      ) : (
+        <h1 className="text-2xl font-semibold">{title}</h1>
+      )}
     </div>
   );
 }

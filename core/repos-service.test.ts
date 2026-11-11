@@ -714,8 +714,8 @@ test("blocked-by dependencies gate auto-start until the last open blocker closes
   ).toBe("skipped");
   const detail = await svc.issues.get(name, c.number);
   expect(detail.blocked_by).toEqual([
-    { number: a.number, title: "blocker a", state: "open" },
-    { number: b.number, title: "blocker b", state: "open" },
+    { number: a.number, title: "blocker a", state: "open", blocked_by: [] },
+    { number: b.number, title: "blocker b", state: "open", blocked_by: [] },
   ]);
 
   // Closing one of two blockers keeps it blocked.
