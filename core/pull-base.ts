@@ -1,4 +1,5 @@
 import {
+  baseBeforeMerge,
   isAncestor,
   isAncestorIgnoringShallow,
   isShallowRepository,
@@ -78,7 +79,13 @@ export async function resolvePullDiffBaseShas(
   const candidates: string[] = [];
   for (const tip of tips) {
     if (!(await revParse(repoPath, tip))) continue;
-    const mb = await mergeBase(repoPath, tip, head);
+    // Once a merge commit on the tip has taken in head, merge-base(tip, head) is head itself and
+    // the diff goes empty. Use the base from right before that merge instead: the same commit this
+    // resolved to before the merge, so base-side changes merged into head stay out.
+    const beforeMerge = (await isAncestor(repoPath, head, tip))
+      ? await baseBeforeMerge(repoPath, tip, head)
+      : null;
+    const mb = await mergeBase(repoPath, beforeMerge ?? tip, head);
     if (mb && !candidates.includes(mb)) candidates.push(mb);
   }
   // Only while head still contains it: a rebased head, or one reset before the fork point, has

@@ -284,6 +284,25 @@ export async function mergeBase(
   return mergeBaseWithEnv(repoPath, base, head);
 }
 
+// The base as it stood right before `tip` first took in `head`: the first parent of the oldest
+// commit on tip's first-parent line that contains head. Null when head is not in tip, or head is
+// tip itself.
+export async function baseBeforeMerge(
+  repoPath: string,
+  tip: string,
+  head: string,
+): Promise<string | null> {
+  const r = await git(repoPath, [
+    "rev-list",
+    "--first-parent",
+    "--ancestry-path",
+    `${head}..${tip}`,
+  ]);
+  if (r.code !== 0) return null;
+  const merge = r.stdout.trim().split("\n").filter(Boolean).at(-1);
+  return merge ? revParse(repoPath, `${merge}^1`) : null;
+}
+
 // Retry ancestry traversal without honoring the repository's shallow boundary. This never fetches
 // or mutates the repository; it only exposes parent objects that are already present locally.
 export async function mergeBaseIgnoringShallow(
