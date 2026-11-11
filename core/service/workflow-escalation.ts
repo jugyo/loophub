@@ -167,11 +167,12 @@ export const workflowEscalation = {
   },
 
   /**
-   * The human's answer to an escalation, picked from its choices on the PR screen. It is posted as
-   * the human's own PR comment, so the run's parent receives it the same way as any other human
-   * PR comment. Only the run's newest escalation can be answered, and only once.
+   * The human's answer to an escalation, picked from its choices or written freely on the PR screen.
+   * It is posted as the human's own PR comment, so the run's parent receives it the same way as any
+   * other human PR comment. Only the run's newest escalation can be answered, and only once.
    */
   answer(name: string, pr: number, commentId: number, option: string) {
+    const answer = option.trim();
     const repo = repoOr404(name);
     ensureWritable(repo);
     const row = issueOr404(repo, pr, "pull");
@@ -190,15 +191,14 @@ export const workflowEscalation = {
           "escalation was superseded by a newer escalation",
         );
       }
-      const options = JSON.parse(escalation.options) as string[];
-      if (!options.includes(option)) {
-        throw new ServiceError(422, "option is not one of the escalation's");
-      }
-      S.answerWorkflowEscalation(escalation.id, option);
+      if (!answer) throw new ServiceError(422, "answer must not be blank");
+      S.answerWorkflowEscalation(escalation.id, answer);
+      // Every line is quoted: a free answer may span several, and only its first would be otherwise.
+      const quoted = answer.replace(/^/gm, "> ");
       comments.createHumanForPull(
         name,
         pr,
-        `Answer to escalation comment #${commentId}:\n\n> ${option}`,
+        `Answer to escalation comment #${commentId}:\n\n${quoted}`,
       );
       return commentEscalationJSON(
         S.getWorkflowEscalationByComment(commentId)!,

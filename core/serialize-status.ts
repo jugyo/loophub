@@ -17,7 +17,11 @@ import type { MergeMode } from "./merge-mode.ts";
 import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
-import { resolvePullBaseSha, resolvePullDiffBaseShas } from "./pull-base.ts";
+import {
+  baseTipBeforeMerge,
+  resolvePullBaseSha,
+  resolvePullDiffBaseShas,
+} from "./pull-base.ts";
 import { pullShaStatus } from "./pull-status-cache.ts";
 import {
   existingPullWorktreePath,
@@ -245,8 +249,31 @@ export async function issueListItemJSON(
     );
     out.linked_pull_requests = pulls;
     out.linked_pull_request = pulls[0] ?? null;
+    addIssueDependencyFields([out], [row]);
   }
   return out;
+}
+
+// Fills `blocked_by` / `blocking` for a batch of issues with three queries, independent of
+// batch size: the edges of `rows`, plus one level of their blockers' open blockers.
+function addIssueDependencyFields(outs: IssueWire[], rows: S.IssueRow[]) {
+  const ids = rows.map((row) => row.id);
+  const blockers = S.issueBlockersByIssue(ids);
+  const dependents = S.issueDependentsByIssue(ids);
+  const blockerIds = [
+    ...new Set([...blockers.values()].flat().map((b) => b.id)),
+  ];
+  const nested = S.issueBlockersByIssue(blockerIds);
+  rows.forEach((row, index) => {
+    const out = outs[index]!;
+    out.blocked_by = (blockers.get(row.id) ?? []).map((blocker) => ({
+      ...issueRefSummaryJSON(blocker),
+      blocked_by: (nested.get(blocker.id) ?? [])
+        .filter((b) => b.state === "open")
+        .map(issueRefSummaryJSON),
+    }));
+    out.blocking = (dependents.get(row.id) ?? []).map(issueRefSummaryJSON);
+  });
 }
 
 export interface IssueListSelection {
@@ -290,7 +317,7 @@ export async function issueListItemsJSON(
     ),
   );
   const detailByPull = new Map(linkedDetails);
-  return Promise.all(
+  const outs = await Promise.all(
     rows.map(async (row) => {
       const out = addIssueHierarchyFields(
         issueJSON(row, undefined, {
@@ -328,6 +355,11 @@ export async function issueListItemsJSON(
       return out;
     }),
   );
+  addIssueDependencyFields(
+    outs.filter((_, index) => rows[index]!.kind !== "pull"),
+    rows.filter((row) => row.kind !== "pull"),
+  );
+  return outs;
 }
 
 async function linkedPullDetail(
@@ -513,7 +545,7 @@ export async function issueDetailJSON(
       child.depth = (out.depth ?? 1) + 1;
     }
     out.sub_issues_truncated = children.length > S.MAX_ISSUE_DETAIL_SUB_ISSUES;
-    out.blocked_by = S.listIssueBlockers(row.id).map(issueRefSummaryJSON);
+    addIssueDependencyFields([out], [row]);
   }
   return out;
 }
@@ -538,10 +570,18 @@ export async function pullJSON(
   const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
   const mergeFields = await pullMergeFields(repo, row);
-  const githubBaseSha =
+  const githubTipSha =
     opts.withCommits && mergeFields.github_pull
       ? await revParse(repo.local_path, `refs/remotes/origin/${p.base_ref}`)
       : null;
+  // After a merge commit takes head into origin/<base>, the raw tip would exclude every PR commit.
+  const githubBaseSha = githubTipSha
+    ? await baseTipBeforeMerge(
+        repo.local_path,
+        githubTipSha,
+        localBranchRef(p.head_ref),
+      )
+    : null;
   // #2444: list the commits from the same base the Files-changed diff uses, not the base branch
   // tip. `head --not <base tip>` re-lists the commits head forked from once the base branch is
   // rebased, because the rewrite makes them unreachable from that tip again. Resolved here rather

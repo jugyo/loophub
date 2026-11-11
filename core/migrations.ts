@@ -1807,6 +1807,37 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  // What the GitHub PR view renders for an observed feedback item, and the table of failed-check log
+  // excerpts. A row the next sweep rewrites gets its body and position; notified_hash starts equal
+  // to content_hash because everything observed so far was announced to a Workflow run.
+  {
+    id: "20261110095251-github-pr-conversation",
+    run: (db) => {
+      for (const [column, definition] of [
+        ["body", "TEXT"],
+        ["github_number", "INTEGER"],
+        ["path", "TEXT"],
+        ["line", "INTEGER"],
+        ["in_reply_to_id", "INTEGER"],
+        ["review_id", "INTEGER"],
+        ["thread_id", "TEXT"],
+        ["thread_resolved", "INTEGER"],
+        ["notified_hash", "TEXT"],
+      ] as const) {
+        addColumnIfMissing(db, "github_pull_feedback", column, definition);
+      }
+      db.run("UPDATE github_pull_feedback SET notified_hash = content_hash");
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS github_pull_check_logs (
+          issue_id   INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+          job_id     INTEGER NOT NULL,
+          excerpt    TEXT NOT NULL,
+          fetched_at TEXT NOT NULL,
+          PRIMARY KEY (issue_id, job_id)
+        )
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

@@ -132,6 +132,19 @@ npm run lh-job-queue -- --concurrency 16 # job の最大並列度を指定
 `serve` のいずれか一つが終了すると、残りも停止して `serve` 全体が終了する。
 `Ctrl-C` でも6プロセスを停止できる。`serve:debug` も同じ6プロセスを起動し、`lh-web` にだけ `--debug` を渡す。
 `lh-worker` を単独起動した場合は、従来どおり git sweep も実行する。分離プロセスを使う場合は `serve` を利用する。
+`lh-job-queue` は外部副作用を持つ job を扱うため、中断された job を自動で再実行しない。
+
+- **graceful shutdown**（SIGINT / SIGTERM）: 新しい job を claim せず、実行中 job の完了を最大 10 秒
+  （`LOOPHUB_JOB_SHUTDOWN_GRACE_MS`）待つ。猶予内に終わらなかった job は `failed`（error が
+  `interrupted:` で始まる）にし、shell job のプロセスグループ全体に SIGTERM を送ってから終了する。
+- **異常終了**（SIGKILL・クラッシュ）: job は `running` のまま残り heartbeat（5 秒間隔）が止まる。
+  次に起動した `lh-job-queue` が起動時と各 poll で heartbeat が 60 秒以上古い `running` job を `failed`
+  にし、ログに出す。再実行が必要かは operator が判断する。
+- shell job は独立したプロセスグループで起動する。graceful shutdown では、猶予を過ぎた shell job の
+  プロセスグループ全体に SIGTERM を 1 回だけ送る（SIGKILL への escalation はしない）。SIGTERM を
+  無視するプロセス、猶予内に終わった shell が残した子孫、プロセスグループから抜けた子孫（`setsid`
+  など）は停止しない。異常終了時はプロセスグループが残り続けることがあり、自動では停止しない。
+
 イベント処理の同時実行数は既定値 16 で、`LOOPHUB_DISPATCH_CONCURRENCY=4 npm run lh-dispatcher` または
 `npm run lh-dispatcher -- --dispatch-concurrency 4` で変更できる。
 

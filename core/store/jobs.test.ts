@@ -43,3 +43,46 @@ test("enqueue is idempotent and claimed jobs finish visibly", () => {
   jobs.finish(first, { status: "done", result: { exit_code: 0 } });
   expect(jobs.claimNext()).toBeNull();
 });
+
+test("failStale fails only running jobs whose heartbeat stopped, without requeueing them", async () => {
+  const stale = jobs.enqueue({
+    type: "shell",
+    dedupeKey: "stale",
+    params: { command: "true" },
+  });
+  const fresh = jobs.enqueue({
+    type: "shell",
+    dedupeKey: "fresh",
+    params: { command: "true" },
+  });
+  expect(jobs.claimNext()?.id).toBe(stale);
+  expect(jobs.claimNext()?.id).toBe(fresh);
+  const queued = jobs.enqueue({
+    type: "shell",
+    dedupeKey: "queued",
+    params: { command: "true" },
+  });
+  jobs.heartbeat(fresh);
+  const { db } = await import("../db.ts");
+  db.run("UPDATE jobs SET heartbeat_at = ? WHERE id = ?", [
+    "2000-01-01T00:00:00Z",
+    stale,
+  ]);
+
+  // A job the caller is still running is never failed, however old its heartbeat.
+  expect(
+    jobs.failStale("2001-01-01T00:00:00Z", [stale], "stale heartbeat"),
+  ).toEqual([]);
+  const failed = jobs.failStale("2001-01-01T00:00:00Z", [], "stale heartbeat");
+  expect(failed.map((job) => job.id)).toEqual([stale]);
+  const status = (id: number) =>
+    db.query("SELECT status, error FROM jobs WHERE id = ?").get(id);
+  expect(status(stale)).toEqual({ status: "failed", error: "stale heartbeat" });
+  expect(status(fresh)).toMatchObject({ status: "running" });
+  expect(status(queued)).toMatchObject({ status: "queued" });
+
+  // A late finish from a process that was still alive cannot overwrite the failure.
+  jobs.finish(stale, { status: "done" });
+  expect(status(stale)).toMatchObject({ status: "failed" });
+  expect(jobs.claimNext()?.id).toBe(queued);
+});

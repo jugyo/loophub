@@ -957,6 +957,53 @@ test("issues service exposes no acceptance-criterion delete (#1894)", () => {
   expect((svc.issues as any).acRemove).toBeUndefined();
 });
 
+test("issue list and detail carry blocked_by with one nested level, and blocking (#2771)", async () => {
+  const root = svc.issues.create("me/proj", { title: "dep root" });
+  const mid = svc.issues.create("me/proj", {
+    title: "dep mid",
+    blocked_by: [root.number],
+  });
+  const done = svc.issues.create("me/proj", { title: "dep done" });
+  svc.issues.update("me/proj", done.number, { state: "closed" });
+  const leaf = svc.issues.create("me/proj", {
+    title: "dep leaf",
+    blocked_by: [mid.number, done.number],
+  });
+  const plain = svc.issues.create("me/proj", { title: "dep plain" });
+
+  const list = (await svc.issues.list("me/proj", {
+    kind: "issue",
+    state: "all",
+  })) as any[];
+  const item = (n: number) => list.find((i) => i.number === n);
+
+  expect(item(leaf.number).blocked_by).toEqual([
+    {
+      number: mid.number,
+      title: "dep mid",
+      state: "open",
+      blocked_by: [{ number: root.number, title: "dep root", state: "open" }],
+    },
+    { number: done.number, title: "dep done", state: "closed", blocked_by: [] },
+  ]);
+  expect(item(leaf.number).blocking).toEqual([]);
+  expect(item(root.number).blocking).toEqual([
+    { number: mid.number, title: "dep mid", state: "open" },
+  ]);
+  expect(item(mid.number).blocking.map((i: any) => i.number)).toEqual([
+    leaf.number,
+  ]);
+  expect(item(plain.number).blocked_by).toEqual([]);
+  expect(item(plain.number).blocking).toEqual([]);
+
+  // Only open nested blockers are carried.
+  svc.issues.update("me/proj", root.number, { state: "closed" });
+  const detail = await svc.issues.get("me/proj", leaf.number);
+  expect(detail.blocked_by?.[0]?.blocked_by).toEqual([]);
+  const midDetail = await svc.issues.get("me/proj", mid.number);
+  expect(midDetail.blocking?.map((i) => i.number)).toEqual([leaf.number]);
+});
+
 test("repos.remove removes Herdr pane links even when issue_id is not assigned yet", () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");

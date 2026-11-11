@@ -11,7 +11,11 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
-let sync: typeof import("./github-merge-sync.ts");
+let sync: typeof import("./github-sync.ts");
+
+async function syncMerge(deps: import("./github.ts").GithubMergeStatusDeps) {
+  return (await sync.syncGithubPulls(["merge"], deps)).emitted;
+}
 let repoPath: string;
 
 function git(args: string[]) {
@@ -68,7 +72,7 @@ function fakeDeps(
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
-  sync = await import("./github-merge-sync.ts");
+  sync = await import("./github-sync.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-ghmerge-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -94,7 +98,7 @@ test("detects a GitHub merge and records it on github_pulls (#800)", async () =>
     },
   });
 
-  const emitted = await sync.syncGithubMergeStatus(deps);
+  const emitted = await syncMerge(deps);
 
   expect(emitted).toHaveLength(1);
   expect(emitted[0]).toMatchObject({
@@ -129,7 +133,7 @@ test("a detected GitHub merge creates one close-required notification without ch
     },
   });
 
-  await sync.syncGithubMergeStatus(deps);
+  await syncMerge(deps);
 
   await svc.notifications.sweep();
   const firstList = await svc.notifications.list({ limit: 100 });
@@ -155,7 +159,7 @@ test("a detected GitHub merge creates one close-required notification without ch
   ]);
   expect((await svc.notifications.unreadCount()).count).toBe(beforeUnread + 1);
 
-  expect(await sync.syncGithubMergeStatus(deps)).toHaveLength(0);
+  expect(await syncMerge(deps)).toHaveLength(0);
   expect(calls).toHaveLength(1);
   await svc.notifications.sweep();
   const secondList = await svc.notifications.list({ limit: 100 });
@@ -189,7 +193,7 @@ test("leaves an unmerged GitHub PR untouched and keeps polling it (#800)", async
     },
   });
 
-  const emitted = await sync.syncGithubMergeStatus(deps);
+  const emitted = await syncMerge(deps);
   expect(emitted).toHaveLength(0);
   expect(S.getGithubPull(issueId)!.github_merged).toBe(0);
 
@@ -217,8 +221,18 @@ test("a gh failure on one link is skipped without blocking the rest of the sweep
     },
   };
 
-  const emitted = await sync.syncGithubMergeStatus(deps);
+  const result = await sync.syncGithubPulls(["merge"], deps);
+  const emitted = result.emitted;
 
+  // The failure is returned as 201's result.
+  expect(result.failures).toEqual([
+    {
+      number: a.number,
+      github_number: 201,
+      part: "merge",
+      error: "gh pr view failed: boom",
+    },
+  ]);
   // Both links were attempted (the failure on 201 didn't stop 202 from being checked)...
   expect(calls).toEqual(
     expect.arrayContaining([
@@ -253,7 +267,7 @@ test("a merged loophub PR (or one without a GitHub link) is not polled (#800)", 
     },
   });
 
-  const emitted = await sync.syncGithubMergeStatus(deps);
+  const emitted = await syncMerge(deps);
   // The already-merged-on-loophub PR's link is excluded from the sweep entirely (never even
   // reaches `gh`); other still-open unmerged links from earlier tests may still be attempted.
   expect(calls).not.toContain("https://github.com/me/proj/pull/301");

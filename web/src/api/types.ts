@@ -19,8 +19,13 @@ import type {
   DiffFeedbackMessageWire,
   DiffFeedbackThreadWire,
   EventSubjectWire,
+  GithubCheckRunWire,
+  GithubConversationEntryWire,
+  GithubConversationThreadWire,
+  GithubConversationWire,
   GithubPrStatusWire,
   GithubPullWire,
+  GithubSyncJobWire,
   GlobalSettingsWire,
   HandoffWire,
   HerdrRepoSessionsWire,
@@ -30,6 +35,7 @@ import type {
   IssueListPageWire,
   IssueListPullSummaryWire,
   IssueRefKindWire,
+  IssueRefSummaryWire,
   IssueTerminalHistoryWire,
   IssueWire,
   LabelWire,
@@ -279,7 +285,18 @@ export type GithubPull = GithubPullWire;
 /** GitHub-side status of a PR's linked GitHub PR (#850), fetched on demand via `pulls/githubStatus`. */
 export type GithubPrStatus = GithubPrStatusWire;
 
+export type GithubCheckRun = GithubCheckRunWire;
+
+/** The newest on-demand GitHub sync job of a PR (`pulls/githubSyncJob`). */
+export type GithubSyncJob = GithubSyncJobWire;
+
+/** The linked GitHub PR's comments, reviews and threads, as stored by the worker's sweep. */
+export type GithubConversation = GithubConversationWire;
+export type GithubConversationEntry = GithubConversationEntryWire;
+export type GithubConversationThread = GithubConversationThreadWire;
+
 export type Issue = IssueWire;
+export type IssueRefSummary = IssueRefSummaryWire;
 
 /** A structured acceptance criterion (#1894) carried on issue detail; the Verify rubric source. */
 export type AcceptanceCriterion = AcceptanceCriterionWire;

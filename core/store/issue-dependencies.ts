@@ -39,3 +39,40 @@ export function listIssueDependents(blockerIssueId: number): IssueRow[] {
     )
     .all(blockerIssueId) as IssueRow[];
 }
+
+function dependencyRowsByIssue(
+  issueIds: number[],
+  keyColumn: "issue_id" | "blocker_issue_id",
+  otherColumn: "issue_id" | "blocker_issue_id",
+): Map<number, IssueRow[]> {
+  const out = new Map<number, IssueRow[]>();
+  if (issueIds.length === 0) return out;
+  const placeholders = issueIds.map(() => "?").join(", ");
+  const rows = db
+    .query(
+      `SELECT d.${keyColumn} AS dependency_key, i.* FROM issue_dependencies d
+       JOIN issues i ON i.id = d.${otherColumn}
+       WHERE d.${keyColumn} IN (${placeholders}) ORDER BY i.number`,
+    )
+    .all(...issueIds) as (IssueRow & { dependency_key: number })[];
+  for (const { dependency_key, ...row } of rows) {
+    const list = out.get(dependency_key) ?? [];
+    list.push(row);
+    out.set(dependency_key, list);
+  }
+  return out;
+}
+
+/** {@link listIssueBlockers} for many issues at once, keyed by issue id. */
+export function issueBlockersByIssue(
+  issueIds: number[],
+): Map<number, IssueRow[]> {
+  return dependencyRowsByIssue(issueIds, "issue_id", "blocker_issue_id");
+}
+
+/** {@link listIssueDependents} for many issues at once, keyed by blocker issue id. */
+export function issueDependentsByIssue(
+  issueIds: number[],
+): Map<number, IssueRow[]> {
+  return dependencyRowsByIssue(issueIds, "blocker_issue_id", "issue_id");
+}

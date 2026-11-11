@@ -6,13 +6,19 @@
 // module needs neither node:fs nor core/git.ts and is testable without a git repo.
 
 import { resolveEffectiveAgentConfig } from "./config.ts";
-import type { GhPrStatus, GithubReviewState } from "./github.ts";
+import type {
+  GhCheckRun,
+  GhPrReviewer,
+  GhPrStatus,
+  GithubReviewState,
+} from "./github.ts";
 import { linkedRef } from "./links.ts";
 import type { MergeMode } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import type { EffectiveAgentConfig } from "./repo-agent-config.ts";
 import { normalizeRepoAgentRuntime } from "./repo-agent-config.ts";
 import type { CodingAgent } from "./runtimes.ts";
+import type * as J from "./store/jobs.ts";
 import * as S from "./store.ts";
 import type {
   HerdrAgent,
@@ -451,8 +457,16 @@ export interface IssueWire {
   ancestors?: IssueRefSummaryWire[];
   sub_issues?: IssueWire[];
   sub_issues_truncated?: boolean;
-  // Issues this one is blocked by, with their current state (#2644). Detail response only.
-  blocked_by?: IssueRefSummaryWire[];
+  // Issues this one is blocked by, with their current state (#2644). Each carries its own open
+  // blockers one level deep so a chain (`#102 (← #101)`) can be shown without another fetch.
+  blocked_by?: IssueBlockerWire[];
+  // Issues blocked by this one (the reverse edge of `blocked_by`).
+  blocking?: IssueRefSummaryWire[];
+}
+
+export interface IssueBlockerWire extends IssueRefSummaryWire {
+  /** The blocker's own still-open blockers (one level only). */
+  blocked_by: IssueRefSummaryWire[];
 }
 
 /** One repository group in the cross-repository home-page dashboard. */
@@ -759,7 +773,7 @@ export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null {
 }
 
 // #850: the GitHub-side status of a PR's linked GitHub PR, for the PR-detail right sidebar. Sourced
-// on demand from `gh` (core/github.ts GhPrStatus) and cached in github_pull_status; `synced_at` is
+// by the lh-worker sweep from `gh` (core/github.ts GhPrStatus) and cached in github_pull_status; `synced_at` is
 // when it was last fetched so the UI can show freshness. `comments` (conversation comments) and
 // `reviews` (submitted reviews) are separate counts, labeled distinctly in the UI so neither is
 // mistaken for the other.
@@ -775,6 +789,22 @@ export interface GithubPrStatusWire {
   unpulled_commits: number | null;
   updated_at: string | null;
   synced_at: string;
+  is_draft: boolean;
+  reviewers: GhPrReviewer[];
+  check_runs: GithubCheckRunWire[];
+  title: string | null;
+  body: string;
+}
+
+export interface GithubCheckRunWire {
+  job_id: number | null;
+  name: string;
+  workflow: string | null;
+  state: GhCheckRun["state"];
+  required: boolean;
+  started_at: string | null;
+  completed_at: string | null;
+  url: string | null;
 }
 
 export function githubPrStatusJSON(
@@ -797,6 +827,20 @@ export function githubPrStatusJSON(
     unpulled_commits: sync.unpulledCommits,
     updated_at: gh.updatedAt,
     synced_at: syncedAt,
+    is_draft: gh.isDraft,
+    reviewers: gh.reviewers,
+    check_runs: gh.checkRuns.map((run) => ({
+      job_id: run.jobId,
+      name: run.name,
+      workflow: run.workflow,
+      state: run.state,
+      required: run.required,
+      started_at: run.startedAt,
+      completed_at: run.completedAt,
+      url: run.url,
+    })),
+    title: gh.title,
+    body: gh.body,
   };
 }
 
@@ -2825,6 +2869,135 @@ function githubReviewState(value: string | null): GithubReviewState | null {
   return GITHUB_REVIEW_STATES.find((state) => state === value) ?? null;
 }
 
+export interface GithubConversationCommentWire {
+  id: number;
+  author: string | null;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  url: string | null;
+}
+
+export interface GithubConversationThreadWire {
+  /** The thread's first comment id on GitHub, which is how a write action names the thread. */
+  id: number;
+  path: string | null;
+  line: number | null;
+  /** Null until the review-thread lookup has matched this thread. */
+  resolved: boolean | null;
+  node_id: string | null;
+  /** Oldest first, so a thread reads as the exchange it is. */
+  comments: GithubConversationCommentWire[];
+}
+
+export type GithubConversationEntryWire =
+  | ({ kind: "comment" } & GithubConversationCommentWire)
+  | ({
+      kind: "review";
+      state: GithubReviewState | null;
+      threads: GithubConversationThreadWire[];
+    } & GithubConversationCommentWire)
+  | { kind: "thread"; thread: GithubConversationThreadWire };
+
+export interface GithubConversationWire {
+  /** Newest first. */
+  entries: GithubConversationEntryWire[];
+  unresolved_threads: number;
+}
+
+function conversationComment(
+  row: S.GithubFeedbackObservation & { body: string },
+): GithubConversationCommentWire {
+  return {
+    id: row.github_id,
+    author: row.author_login,
+    body: row.body,
+    created_at: row.created_at ?? row.updated_at,
+    updated_at: row.updated_at,
+    url: row.url,
+  };
+}
+
+function threadLatestAt(thread: GithubConversationThreadWire): string {
+  return thread.comments.at(-1)?.created_at ?? "";
+}
+
+function newestFirst(a: string, b: string): number {
+  return a < b ? 1 : a > b ? -1 : 0;
+}
+
+/**
+ * The GitHub PR view's conversation: comments, reviews, and inline threads filed under the review
+ * they were written in. Pure. A thread whose review is not shown (GitHub wraps every inline comment
+ * in an empty `commented` review) stands on its own.
+ */
+export function githubConversationJSON(
+  githubNumber: number,
+  observations: S.GithubFeedbackObservation[],
+): GithubConversationWire {
+  const rows = observations.filter(
+    (row): row is S.GithubFeedbackObservation & { body: string } =>
+      row.github_number === githubNumber && row.body !== null,
+  );
+
+  const byRoot = new Map<
+    number,
+    { thread: GithubConversationThreadWire; reviewId: number | null }
+  >();
+  for (const row of rows) {
+    if (row.kind !== "review_comment") continue;
+    const root = row.in_reply_to_id ?? row.github_id;
+    const group = byRoot.get(root) ?? {
+      thread: {
+        id: root,
+        path: row.path,
+        line: row.line,
+        resolved:
+          row.thread_resolved === null ? null : row.thread_resolved === 1,
+        node_id: row.thread_id,
+        comments: [],
+      },
+      reviewId: row.review_id,
+    };
+    group.thread.comments.push(conversationComment(row));
+    byRoot.set(root, group);
+  }
+
+  const reviews = new Map<number, GithubConversationThreadWire[]>();
+  const entries: GithubConversationEntryWire[] = [];
+  for (const row of rows) {
+    if (row.kind === "issue_comment") {
+      entries.push({ kind: "comment", ...conversationComment(row) });
+    } else if (row.kind === "review") {
+      const state = githubReviewState(row.review_state);
+      if (state === "commented" && row.body.trim() === "") continue;
+      const threads: GithubConversationThreadWire[] = [];
+      reviews.set(row.github_id, threads);
+      entries.push({
+        kind: "review",
+        state,
+        threads,
+        ...conversationComment(row),
+      });
+    }
+  }
+  let unresolved = 0;
+  for (const { thread, reviewId } of byRoot.values()) {
+    if (thread.resolved === false) unresolved++;
+    const review = reviewId === null ? undefined : reviews.get(reviewId);
+    if (review) review.push(thread);
+    else entries.push({ kind: "thread", thread });
+  }
+
+  for (const threads of reviews.values()) {
+    threads.sort((a, b) => newestFirst(threadLatestAt(a), threadLatestAt(b)));
+  }
+  const entryAt = (entry: GithubConversationEntryWire) =>
+    entry.kind === "thread" ? threadLatestAt(entry.thread) : entry.created_at;
+  entries.sort((a, b) => newestFirst(entryAt(a), entryAt(b)));
+  return { entries, unresolved_threads: unresolved };
+}
+
 /**
  * The GitHub-side timeline entries for one PR: every feedback item the worker observed, plus the
  * merge it detected. Pure — the rows are read by the caller, and the entries are ordered by the
@@ -2866,4 +3039,23 @@ export function pullGithubTimelineJSON(
     });
   }
   return entries;
+}
+
+/** The latest on-demand GitHub sync job of one PR (`pulls/githubSyncJob`). */
+export interface GithubSyncJobWire {
+  id: number;
+  status: J.JobStatus;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export function githubSyncJobJSON(job: J.JobRow): GithubSyncJobWire {
+  return {
+    id: job.id,
+    status: job.status,
+    error: job.error,
+    created_at: job.created_at,
+    finished_at: job.finished_at,
+  };
 }

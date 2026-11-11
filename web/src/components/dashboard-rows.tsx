@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { Issue, Label, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
+import { IssueDependencies } from "@/components/issue-dependencies";
 import { OpenIssueHerdrButton } from "@/components/issue-herdr-section";
 import { IssueWorkspaceChip } from "@/components/issue-workspace-chip";
 import { LabelChip } from "@/components/label-chip";
@@ -372,6 +373,7 @@ export function IssueRow({
               <IssuePopover owner={owner} repo={repo} issue={issue} />
             ) : null}
           </div>
+          <IssueDependencies owner={owner} repo={repo} issue={issue} />
           <RowLabels
             labels={issue.labels}
             owner={owner}

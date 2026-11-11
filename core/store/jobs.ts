@@ -90,3 +90,42 @@ export function finish(
     ],
   );
 }
+
+/** The newest job whose dedupe key starts with `keyPrefix`. */
+export function latestByKeyPrefix(keyPrefix: string): JobRow | null {
+  return db
+    .query(
+      `SELECT * FROM jobs WHERE substr(dedupe_key, 1, ?) = ?
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(keyPrefix.length, keyPrefix) as JobRow | null;
+}
+
+export function get(id: number): JobRow | null {
+  return db.query("SELECT * FROM jobs WHERE id = ?").get(id) as JobRow | null;
+}
+
+// A `running` row whose heartbeat stopped belongs to a queue process that died without finishing
+// it. The command may already have produced external side effects, so the row is failed for an
+// operator to inspect instead of being requeued.
+// `liveIds` are jobs the calling process is still running, which a paused clock must not fail.
+export function failStale(
+  heartbeatBefore: string,
+  liveIds: number[],
+  error: string,
+): JobRow[] {
+  return db.transaction(() => {
+    const live = new Set(liveIds);
+    const stale = (
+      db
+        .query(
+          `SELECT * FROM jobs
+           WHERE status = 'running' AND heartbeat_at < ?
+           ORDER BY id`,
+        )
+        .all(heartbeatBefore) as JobRow[]
+    ).filter((job) => !live.has(job.id));
+    for (const job of stale) finish(job.id, { status: "failed", error });
+    return stale;
+  });
+}

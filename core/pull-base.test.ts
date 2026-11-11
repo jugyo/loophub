@@ -432,3 +432,169 @@ test("diff base resolves the live base through a shallow boundary when parent ob
 
   rmSync(path, { recursive: true, force: true });
 });
+
+function mergeCommitRepo(name: string) {
+  const path = mkdtempSync(join(tmpdir(), `lh-pull-diff-${name}-`));
+  const g = (args: string[]): string => {
+    const result = spawnSync("git", ["-C", path, ...args], {
+      encoding: "utf8",
+    });
+    if (result.status !== 0) throw new Error(result.stderr);
+    return result.stdout.trim();
+  };
+  const commit = (file: string, message: string) => {
+    writeFileSync(join(path, file), `${message}\n`);
+    g(["add", "-A"]);
+    g(["commit", "-qm", message]);
+  };
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  commit("base.txt", "base");
+  return { path, g, commit };
+}
+
+async function createPull(path: string, name: string) {
+  await svc.repos.create({ path, name: `me/${name}` });
+  const created = await svc.pulls.create(`me/${name}`, {
+    head: "feature",
+    base: "main",
+  });
+  const repo = S.getRepo("me", name)!;
+  const pull = S.getPull(S.getIssue(repo.id, created.number)!.id)!;
+  return { number: created.number, pull };
+}
+
+async function filesAndCommits(name: string, number: number) {
+  const files = await svc.pulls.files(`me/${name}`, number);
+  const view = await svc.pulls.get(`me/${name}`, number);
+  return {
+    files: files.map((f) => f.filename).sort(),
+    commits: (view.commits ?? []).map((c) => c.subject),
+  };
+}
+
+test("diff base stays at the pre-merge base after head is merged into origin/<base> with a merge commit", async () => {
+  const name = "diff-merged-commit";
+  const { path, g, commit } = mergeCommitRepo(name);
+  const fork = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "-b", "feature"]);
+  commit("feature-only.txt", "feature");
+  g(["checkout", "-q", "main"]);
+  commit("base-only.txt", "advance main");
+  const { number, pull } = await createPull(path, name);
+
+  g(["merge", "-q", "--no-ff", "feature", "-m", "merge feature"]);
+  g(["update-ref", "refs/remotes/origin/main", g(["rev-parse", "main"])]);
+
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(fork);
+  expect(await filesAndCommits(name, number)).toEqual({
+    files: ["feature-only.txt"],
+    commits: ["feature"],
+  });
+
+  rmSync(path, { recursive: true, force: true });
+});
+
+test("diff base after a merge-commit merge excludes base changes head merged mid-PR", async () => {
+  const name = "diff-merged-after-sync";
+  const { path, g, commit } = mergeCommitRepo(name);
+  g(["checkout", "-q", "-b", "feature"]);
+  commit("feature-1.txt", "feature 1");
+  g(["checkout", "-q", "main"]);
+  commit("base-mid.txt", "advance main mid-PR");
+  const midMain = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "feature"]);
+  g(["merge", "-q", "main", "-m", "sync main into feature"]);
+  commit("feature-2.txt", "feature 2");
+  g(["checkout", "-q", "main"]);
+  commit("base-late.txt", "advance main late");
+  const { number, pull } = await createPull(path, name);
+
+  // Only the remote-tracking base has the merge; local main stays behind it.
+  const localMain = g(["rev-parse", "main"]);
+  g(["merge", "-q", "--no-ff", "feature", "-m", "merge feature"]);
+  g(["update-ref", "refs/remotes/origin/main", g(["rev-parse", "main"])]);
+  g(["reset", "-q", "--hard", localMain]);
+
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(midMain);
+  const { files, commits } = await filesAndCommits(name, number);
+  expect(files).toEqual(["feature-1.txt", "feature-2.txt"]);
+  expect(commits).toEqual(expect.arrayContaining(["feature 1", "feature 2"]));
+  expect(commits).not.toContain("advance main mid-PR");
+
+  rmSync(path, { recursive: true, force: true });
+});
+
+test("diff base is unchanged after a squash merge", async () => {
+  const name = "diff-squash-merged";
+  const { path, g, commit } = mergeCommitRepo(name);
+  const fork = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "-b", "feature"]);
+  commit("feature-only.txt", "feature");
+  g(["checkout", "-q", "main"]);
+  const { pull } = await createPull(path, name);
+
+  g(["merge", "-q", "--squash", "feature"]);
+  g(["commit", "-qm", "squash feature"]);
+  g(["update-ref", "refs/remotes/origin/main", g(["rev-parse", "main"])]);
+
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(fork);
+
+  rmSync(path, { recursive: true, force: true });
+});
+
+test("diff base finds the merge that took head in through a descendant", async () => {
+  const name = "diff-merged-indirect";
+  const { path, g, commit } = mergeCommitRepo(name);
+  const fork = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "-b", "feature"]);
+  commit("feature-only.txt", "feature");
+  g(["checkout", "-q", "main"]);
+  commit("base-only.txt", "advance main");
+  const { number, pull } = await createPull(path, name);
+
+  // The branch is updated with main elsewhere and that update is what main merges, so the merge's
+  // second parent is a descendant of the local head rather than head itself.
+  g(["checkout", "-q", "-b", "updated", "feature"]);
+  g(["merge", "-q", "main", "-m", "update branch"]);
+  g(["checkout", "-q", "main"]);
+  g(["merge", "-q", "--no-ff", "updated", "-m", "merge feature"]);
+  g(["update-ref", "refs/remotes/origin/main", g(["rev-parse", "main"])]);
+
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(fork);
+  expect(await filesAndCommits(name, number)).toEqual({
+    files: ["feature-only.txt"],
+    commits: ["feature"],
+  });
+
+  rmSync(path, { recursive: true, force: true });
+});
+
+test("commit list of a GitHub-exported PR survives a merge-commit merge into origin/<base>", async () => {
+  const name = "diff-merged-github";
+  const { path, g, commit } = mergeCommitRepo(name);
+  g(["remote", "add", "origin", `https://github.com/me/${name}.git`]);
+  g(["checkout", "-q", "-b", "feature"]);
+  commit("feature-only.txt", "feature");
+  g(["checkout", "-q", "main"]);
+  commit("base-only.txt", "advance main");
+  const { number } = await createPull(path, name);
+  svc.pulls.recordGithubPull(`me/${name}`, number, {
+    github_number: 1,
+    url: `https://github.com/me/${name}/pull/1`,
+  });
+
+  // Only origin/main has the merge; local main stays behind it.
+  const localMain = g(["rev-parse", "main"]);
+  g(["merge", "-q", "--no-ff", "feature", "-m", "merge feature"]);
+  g(["update-ref", "refs/remotes/origin/main", g(["rev-parse", "main"])]);
+  g(["reset", "-q", "--hard", localMain]);
+
+  expect(await filesAndCommits(name, number)).toEqual({
+    files: ["feature-only.txt"],
+    commits: ["feature"],
+  });
+
+  rmSync(path, { recursive: true, force: true });
+});

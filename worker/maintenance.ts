@@ -1,12 +1,4 @@
-import {
-  type GithubFeedbackSyncResult,
-  syncGithubFeedback,
-} from "../core/github-feedback-sync.ts";
-import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
-import {
-  type GithubPrStatusSyncResult,
-  syncGithubPrStatus,
-} from "../core/github-status-sync.ts";
+import { type GithubSyncResult, syncGithubPulls } from "../core/github-sync.ts";
 import type { SessionUsageSyncResult } from "../core/service/sessions.ts";
 import type { WorktreeAutoPruneResult } from "../core/service/worktrees.ts";
 import {
@@ -33,7 +25,7 @@ export const DEFAULT_USAGE_SWEEP_MS = 10000;
 // rate limits), unlike the other sweeps here which only touch local git/DB — so this defaults to
 // a much coarser interval than DEFAULT_SWEEP_MS.
 export const DEFAULT_GITHUB_MERGE_SWEEP_MS = 60000;
-// Feedback is a network sweep over three paginated GitHub endpoints per active Workflow PR. A
+// Feedback is a network sweep over four paginated GitHub queries per open linked PR. A
 // minute keeps feedback reasonably fresh without turning the resident worker into a tight API poll.
 export const DEFAULT_GITHUB_FEEDBACK_SWEEP_MS = 60000;
 // #1121: killing dev agents whose PR has been closed (#926) is not time-sensitive the way cost
@@ -346,14 +338,23 @@ export function startConflictSweep(
   };
 }
 
+function logGithubSyncFailures(name: string, result: GithubSyncResult): void {
+  for (const failure of result.failures) {
+    workerLog.error(
+      `lh-worker: ${name} PR failed pr=${failure.number} github_pr=${failure.github_number} part=${failure.part} error=${failure.error}`,
+    );
+  }
+}
+
 // #800: poll `gh` for the merge status of loophub PRs exported to GitHub (github_pulls) that
-// aren't yet known-merged, recording a detected merge and firing pull_request.github_merged.
-// Unlike startPullSweep this is a real network call, not a local git/DB check, so callers default
-// it to a much coarser interval (DEFAULT_GITHUB_MERGE_SWEEP_MS).
+// aren't yet known-merged, recording a detected merge and firing pull_request.github_merged, and
+// refresh each PR's GitHub status cache in the same pass. Unlike startPullSweep this is a real
+// network call, not a local git/DB check, so callers default it to a much coarser interval
+// (DEFAULT_GITHUB_MERGE_SWEEP_MS).
 export function startGithubMergeSweep(
   intervalMs = DEFAULT_GITHUB_MERGE_SWEEP_MS,
-  mergeSweep: typeof syncGithubMergeStatus = syncGithubMergeStatus,
-  statusSweep: () => Promise<GithubPrStatusSyncResult> = syncGithubPrStatus,
+  sync: () => Promise<GithubSyncResult> = () =>
+    syncGithubPulls(["merge", "status"]),
 ): () => void {
   let stopped = false;
   let running = false;
@@ -363,23 +364,14 @@ export function startGithubMergeSweep(
     running = true;
     const startedAt = logLoopStarted("github merge sweep");
     try {
-      const emitted = await mergeSweep();
-      let status: GithubPrStatusSyncResult;
-      try {
-        status = await statusSweep();
-      } catch (err) {
-        // Status refresh is an eager cache optimization; it must not turn a successful merge sweep
-        // into a failed tick or prevent the next tick from trying again.
-        workerLog.error(
-          `lh-worker: github PR status sweep failed error=${errorMessage(err)}`,
-        );
-        status = { checked: 0, refreshed: 0, failures: 1 };
-      }
+      const result = await sync();
+      logGithubSyncFailures("github merge sweep", result);
       logLoopCompleted("github merge sweep", startedAt, {
-        emitted_events: emitted.length,
-        status_checked: status.checked,
-        status_refreshed: status.refreshed,
-        status_failures: status.failures,
+        emitted_events: result.emitted.length,
+        status_checked: result.checked,
+        status_refreshed: result.statusRefreshed,
+        status_failures: result.failures.filter((f) => f.part === "status")
+          .length,
       });
     } catch (err) {
       logLoopFailed("github merge sweep", startedAt, err);
@@ -396,13 +388,13 @@ export function startGithubMergeSweep(
   };
 }
 
-// Poll GitHub feedback for open PRs attached to running Workflow runs. The core sweep persists
-// dedupe state and emits source plus Workflow projection events per PR; this worker layer owns
-// cadence and visible operational logging only. Failures are already isolated per PR, so log every
-// one and let the next interval be the sole retry mechanism.
+// Poll GitHub comments and reviews for open linked PRs. The core sync persists dedupe state and
+// emits source plus Workflow projection events per PR; this worker layer owns cadence and visible
+// operational logging only. Failures are already isolated per PR, so log every one and let the
+// next interval be the sole retry mechanism.
 export function startGithubFeedbackSweep(
   intervalMs = DEFAULT_GITHUB_FEEDBACK_SWEEP_MS,
-  sweep: () => Promise<GithubFeedbackSyncResult> = syncGithubFeedback,
+  sync: () => Promise<GithubSyncResult> = () => syncGithubPulls(["feedback"]),
 ): () => void {
   let stopped = false;
   let running = false;
@@ -412,12 +404,8 @@ export function startGithubFeedbackSweep(
     running = true;
     const startedAt = logLoopStarted("github feedback sweep");
     try {
-      const result = await sweep();
-      for (const failure of result.failures) {
-        workerLog.error(
-          `lh-worker: github feedback sweep PR failed pr=${failure.number} github_pr=${failure.github_number} error=${failure.error}`,
-        );
-      }
+      const result = await sync();
+      logGithubSyncFailures("github feedback sweep", result);
       logLoopCompleted("github feedback sweep", startedAt, {
         checked: result.checked,
         emitted_events: result.emitted.length,

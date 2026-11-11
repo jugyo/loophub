@@ -2,7 +2,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "#loophub-test";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
-import type { GithubPrStatus, GithubPull, PullRequest } from "@/api/types";
+import type {
+  GithubCheckRun,
+  GithubConversation,
+  GithubConversationThread,
+  GithubPrStatus,
+  GithubPull,
+  GithubSyncJob,
+  PullRequest,
+} from "@/api/types";
 import { GithubPrStatusSection } from "./github-pr-status";
 
 const PULL: GithubPull = {
@@ -54,6 +62,7 @@ const LOOPHUB_PULL: PullRequest = {
   merge_mode: "github_pr",
   github_pull: PULL,
   github_pr_export_started_at: null,
+  archived_at: null,
 };
 
 /** The fixture PR with its GitHub link overridden — the section reads the link off the PR. */
@@ -73,6 +82,74 @@ const BASE: GithubPrStatus = {
   unpulled_commits: 0,
   updated_at: "2026-07-01T00:00:00Z",
   synced_at: "2026-07-01T00:00:30Z",
+  is_draft: false,
+  reviewers: [],
+  check_runs: [],
+  title: null,
+  body: "",
+};
+
+const FAILED_CHECK: GithubCheckRun = {
+  job_id: 77,
+  name: "test",
+  workflow: "CI",
+  state: "failure",
+  required: true,
+  started_at: "2026-07-01T00:00:00Z",
+  completed_at: "2026-07-01T00:01:30Z",
+  url: "https://github.com/me/proj/actions/runs/1/job/77",
+};
+
+const THREAD: GithubConversationThread = {
+  id: 900,
+  path: "src/a.ts",
+  line: 12,
+  resolved: false,
+  node_id: "T_1",
+  comments: [
+    {
+      id: 900,
+      author: "reviewer",
+      body: "Please fix #123",
+      created_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-01T00:00:00Z",
+      url: "https://github.com/me/proj/pull/42#discussion_r900",
+    },
+  ],
+};
+
+const CONVERSATION: GithubConversation = {
+  unresolved_threads: 1,
+  entries: [
+    {
+      kind: "review",
+      id: 50,
+      author: "lead",
+      body: "",
+      created_at: "2026-07-02T00:00:00Z",
+      updated_at: "2026-07-02T00:00:00Z",
+      url: null,
+      state: "approved",
+      threads: [THREAD],
+    },
+    {
+      kind: "comment",
+      id: 51,
+      author: "octocat",
+      body: "Conversation text",
+      created_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-01T00:00:00Z",
+      url: null,
+    },
+  ],
+};
+
+const SYNC_JOB: GithubSyncJob = {
+  id: 3,
+  status: "queued",
+  error: null,
+  created_at: "2026-07-01T00:01:00Z",
+  finished_at: null,
 };
 
 afterEach(() => {
@@ -93,6 +170,8 @@ function renderSection(
     mockRpcFetch({
       "pulls/unlinkGithubPull": () => ({ unlinked: true, github_number: 42 }),
       "pulls/pushGithubPull": () => ({ ...PULL, pushed_sha: "head-sha" }),
+      "pulls/githubConversation": () => CONVERSATION,
+      "pulls/githubSyncJob": () => null,
       ...handlers,
     }),
   );
@@ -154,7 +233,9 @@ describe("GithubPrStatusSection", () => {
     const { getByRole, getByText } = renderSection();
 
     // The heading is plain text; the link lives in the body.
-    expect(getByRole("heading").textContent).toBe("GitHub PR");
+    expect(getByRole("heading", { name: "GitHub PR" }).textContent).toBe(
+      "GitHub PR",
+    );
     expect(getByText("GitHub PR").closest("a")).toBeNull();
 
     // The text carries the owner/repo as well as the number, not a bare `#42`.
@@ -172,6 +253,71 @@ describe("GithubPrStatusSection", () => {
     expect(
       getByRole("link", { name: "gh.example.com/me/proj/pull/42" }),
     ).toBeTruthy();
+  });
+
+  it("shows the GitHub PR's title and its body rendered as Markdown", () => {
+    const { getByRole, container } = renderSection({
+      status: { ...BASE, title: "Add export", body: "Fixes **this**" },
+    });
+    expect(getByRole("heading", { name: "Add export" })).toBeTruthy();
+    expect(container.querySelector("strong")?.textContent).toBe("this");
+  });
+
+  it("clips a body taller than about ten lines and toggles it with Read more / Show less", () => {
+    // No layout here, so fake a body that overflows its clipped box.
+    const proto = HTMLElement.prototype;
+    const sizes = { scrollHeight: 600, clientHeight: 200 };
+    const originals = Object.keys(sizes).map(
+      (key) => [key, Object.getOwnPropertyDescriptor(proto, key)] as const,
+    );
+    for (const [key, value] of Object.entries(sizes))
+      Object.defineProperty(proto, key, {
+        configurable: true,
+        get: () => value,
+      });
+    try {
+      const { getByRole, container } = renderSection({
+        status: { ...BASE, title: "Long", body: "line\n".repeat(30) },
+      });
+      const box = () =>
+        container.querySelector(
+          '[data-debug-component="GithubPrDescription"] > div',
+        ) as HTMLElement;
+      expect(box().className).toContain("max-h-[10lh]");
+
+      fireEvent.click(getByRole("button", { name: "Read more" }));
+      expect(box().className).not.toContain("max-h-[10lh]");
+
+      fireEvent.click(getByRole("button", { name: "Show less" }));
+      expect(box().className).toContain("max-h-[10lh]");
+      expect(getByRole("button", { name: "Read more" })).toBeTruthy();
+    } finally {
+      for (const [key, descriptor] of originals) {
+        if (descriptor) Object.defineProperty(proto, key, descriptor);
+        else delete (proto as unknown as Record<string, unknown>)[key];
+      }
+    }
+  });
+
+  it("offers no Read more for a body that fits", () => {
+    const { queryByRole, getByText } = renderSection({
+      status: { ...BASE, title: "Short", body: "One line" },
+    });
+    expect(getByText("One line")).toBeTruthy();
+    expect(queryByRole("button", { name: "Read more" })).toBeNull();
+  });
+
+  it("shows just the title when the GitHub PR has no body", () => {
+    const { container, getByRole, queryByRole } = renderSection({
+      status: { ...BASE, title: "No body", body: "" },
+    });
+    expect(getByRole("heading", { name: "No body" })).toBeTruthy();
+    expect(
+      container.querySelectorAll(
+        '[data-debug-component="GithubPrDescription"] > *',
+      ),
+    ).toHaveLength(1);
+    expect(queryByRole("button", { name: "Read more" })).toBeNull();
   });
 
   it("keeps the GitHub PR link while the status is still loading (#2091)", () => {
@@ -224,60 +370,48 @@ describe("GithubPrStatusSection", () => {
     expect(text).not.toContain("Failed to load GitHub status.");
   });
 
-  it("disables Push to GitHub when the current head is already pushed (#2516)", () => {
-    const { getByRole } = renderSection({
+  function openMenu(getByRole: ReturnType<typeof render>["getByRole"]) {
+    fireEvent.pointerDown(getByRole("button", { name: /GitHub PR actions/i }), {
+      button: 0,
+      ctrlKey: false,
+    });
+  }
+
+  it("disables Push to GitHub when the current head is already pushed (#2516)", async () => {
+    const { getByRole, findByRole } = renderSection({
       pull: withGithubPull({ pushed_sha: LOOPHUB_PULL.head.sha }),
     });
 
-    const button = getByRole("button", {
-      name: /Push to GitHub/i,
-    }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(button.title).toBe("No local changes to push to GitHub");
-    expect(
-      (getByRole("button", { name: /Push options/i }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-    fireEvent.click(button);
+    openMenu(getByRole);
+    const item = await findByRole("menuitem", { name: /^Push to GitHub/i });
+    expect(item.hasAttribute("data-disabled")).toBe(true);
+    expect(item.title).toBe("No local changes to push to GitHub");
+    fireEvent.click(item);
     expect(rpcCall("pulls/pushGithubPull")).toBeFalsy();
   });
 
   it.each([
     ["nothing is known to have been pushed", { pushed_sha: null }],
     ["there is no branch to push onto", { branch: "", pushed_sha: "old" }],
-  ])("disables Push to GitHub when %s (#2516)", (_label, overrides) => {
-    const { getByRole } = renderSection({ pull: withGithubPull(overrides) });
-    expect(
-      (getByRole("button", { name: /Push to GitHub/i }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-  });
-
-  it.each([
-    ["closed", { state: "closed" as const }],
-    ["merged", { merged: true }],
-  ])("disables Push to GitHub for a %s PR (#2516)", (_label, overrides) => {
-    const { getByRole } = renderSection({
-      pull: { ...withGithubPull({ pushed_sha: "old-head" }), ...overrides },
+  ])("disables Push to GitHub when %s (#2516)", async (_label, overrides) => {
+    const { getByRole, findByRole } = renderSection({
+      pull: withGithubPull(overrides),
     });
+    openMenu(getByRole);
     expect(
-      (getByRole("button", { name: /Push to GitHub/i }) as HTMLButtonElement)
-        .disabled,
+      (await findByRole("menuitem", { name: /^Push to GitHub/i })).hasAttribute(
+        "data-disabled",
+      ),
     ).toBe(true);
   });
 
-  it("pushes an unpushed head from the section (#2516)", async () => {
-    const { getByRole } = renderSection({
+  it("pushes an unpushed head from the menu (#2516)", async () => {
+    const { getByRole, findByRole } = renderSection({
       pull: withGithubPull({ pushed_sha: "old-head" }),
     });
 
-    const button = getByRole("button", {
-      name: /Push to GitHub/i,
-    }) as HTMLButtonElement;
-    expect(button.disabled).toBe(false);
-    expect(button.title).toContain("feature/x");
-
-    fireEvent.click(button);
+    openMenu(getByRole);
+    fireEvent.click(await findByRole("menuitem", { name: /^Push to GitHub/i }));
     await waitFor(() => {
       expect(rpcCall("pulls/pushGithubPull")?.params).toMatchObject({
         repo: "me/proj",
@@ -287,15 +421,12 @@ describe("GithubPrStatusSection", () => {
     });
   });
 
-  it("force-pushes when Force push is chosen from the push dropdown (#1861)", async () => {
+  it("force-pushes when Force push is chosen from the menu (#1861)", async () => {
     const { getByRole, findByRole } = renderSection({
       pull: withGithubPull({ pushed_sha: "old-head" }),
     });
 
-    fireEvent.pointerDown(getByRole("button", { name: /Push options/i }), {
-      button: 0,
-      ctrlKey: false,
-    });
+    openMenu(getByRole);
     fireEvent.click(
       await findByRole("menuitem", { name: /Force push to GitHub/i }),
     );
@@ -309,72 +440,208 @@ describe("GithubPrStatusSection", () => {
     });
   });
 
-  it("holds Pushing… while the push is in flight, so it can't fire twice (#2516)", async () => {
-    let pushes = 0;
-    let resolvePush: (() => void) | undefined;
-    const { getByRole, findByRole } = renderSection(
-      { pull: withGithubPull({ pushed_sha: "old-head" }) },
-      {
-        "pulls/pushGithubPull": () => {
-          pushes += 1;
-          return new Promise((resolve) => {
-            resolvePush = () => resolve({ ...PULL, pushed_sha: "head-sha" });
-          });
-        },
-      },
-    );
-
-    fireEvent.click(getByRole("button", { name: /Push to GitHub/i }));
-    const pushing = (await findByRole("button", {
-      name: /Pushing…/i,
-    })) as HTMLButtonElement;
-    expect(pushing.disabled).toBe(true);
-    fireEvent.click(pushing);
-    expect(pushes).toBe(1);
-
-    resolvePush?.();
-  });
-
-  it("reports a failed push without blanking the section (#2516)", async () => {
-    const { getByRole, container } = renderSection(
-      { pull: withGithubPull({ pushed_sha: "old-head" }) },
-      {
-        "pulls/pushGithubPull": () => {
-          throw new RpcFault(409, "push rejected");
-        },
-      },
-    );
-
-    fireEvent.click(getByRole("button", { name: /Push to GitHub/i }));
-    // The failure goes to the app-level toast (no provider here, so nothing renders); the section
-    // itself stays on its data branch with the action ready to retry.
-    await waitFor(() => {
-      expect(
-        (getByRole("button", { name: /Push to GitHub/i }) as HTMLButtonElement)
-          .disabled,
-      ).toBe(false);
-    });
-    expect(container.textContent ?? "").toContain("Open");
-  });
-
   it.each([
     ["loading", { status: undefined, isLoading: true }],
     ["failed to load", { status: undefined, isLoading: false }],
-  ])("keeps Push to GitHub reachable while the status is %s (#2516)", (_label, statusProps) => {
+  ])("keeps the menu reachable while the status is %s (#2516)", (_label, statusProps) => {
     const { getByRole } = renderSection({
       pull: withGithubPull({ pushed_sha: "old-head" }),
       ...statusProps,
     });
+    expect(getByRole("button", { name: /GitHub PR actions/i })).toBeTruthy();
+  });
+
+  it("says when the first sync has not happened yet", () => {
+    const { getByText } = renderSection({ status: null });
+    expect(getByText(/No GitHub status has been synced/)).toBeTruthy();
+  });
+
+  it("shows the merge blockers without an approval count", async () => {
+    const { getByText, findByText, container } = renderSection({
+      status: {
+        ...BASE,
+        is_draft: true,
+        reviewers: [
+          { login: "alice", state: "changes_requested" },
+          { login: "bob", state: "pending" },
+        ],
+        check_runs: [FAILED_CHECK],
+      },
+    });
+    expect(getByText("Draft")).toBeTruthy();
+    expect(getByText("alice")).toBeTruthy();
+    expect(getByText("bob")).toBeTruthy();
+    expect(getByText("Required checks")).toBeTruthy();
+    expect(getByText("1 failing")).toBeTruthy();
+    expect(getByText("Conflicts")).toBeTruthy();
+    expect(await findByText("Unresolved threads")).toBeTruthy();
+    expect(container.textContent ?? "").not.toMatch(/approvals?\b/i);
+  });
+
+  it("lists each check with its state, Required and duration, and opens a failed log", async () => {
+    const { getByText, findByText, getByRole } = renderSection(
+      { status: { ...BASE, check_runs: [FAILED_CHECK] } },
+      {
+        "pulls/githubCheckLog": () => ({
+          excerpt: "boom at line 3",
+          fetched_at: "2026-07-01T00:00:00Z",
+        }),
+      },
+    );
+    expect(getByText("CI / test")).toBeTruthy();
+    expect(getByText("Failed")).toBeTruthy();
+    expect(getByText("Required")).toBeTruthy();
+    expect(getByText("1m 30s")).toBeTruthy();
+    expect(rpcCall("pulls/githubCheckLog")).toBeFalsy();
+    fireEvent.click(getByRole("button", { name: "Show log" }));
+    expect(await findByText("boom at line 3")).toBeTruthy();
+  });
+
+  it("re-runs a failed check", async () => {
+    const { getByRole, findByText } = renderSection(
+      { status: { ...BASE, check_runs: [FAILED_CHECK] } },
+      { "pulls/rerunGithubCheck": () => ({ rerun: true }) },
+    );
+    fireEvent.click(getByRole("button", { name: "Re-run" }));
+    expect(await findByText("Re-run requested")).toBeTruthy();
+    expect(rpcCall("pulls/rerunGithubCheck")!.params).toMatchObject({
+      job_id: 77,
+    });
+  });
+
+  it("renders the conversation with threads under their review, and #123 as plain text", async () => {
+    const { findByText, getByText, container } = renderSection();
+    const thread = await findByText("src/a.ts:12");
+    expect(getByText("Unresolved")).toBeTruthy();
+    expect(getByText("Conversation text")).toBeTruthy();
+    // Newest first: the review (with its thread) comes before the older comment.
+    const text = container.textContent ?? "";
+    expect(text.indexOf("src/a.ts:12")).toBeLessThan(
+      text.indexOf("Conversation text"),
+    );
     expect(
-      (getByRole("button", { name: /Push to GitHub/i }) as HTMLButtonElement)
+      thread.closest("[data-debug-component='GithubThread']"),
+    ).toBeTruthy();
+    expect(container.querySelector("a[href*='/123']")).toBeNull();
+    expect(text).toContain("#123");
+  });
+
+  it("posts a comment, replies and resolves on GitHub, reporting nothing broken", async () => {
+    const { findByRole, getByLabelText, getByRole, findByLabelText } =
+      renderSection(
+        {},
+        {
+          "pulls/commentOnGithubPull": () => ({ posted: true }),
+          "pulls/replyToGithubThread": () => ({ posted: true }),
+          "pulls/resolveGithubThread": () => ({ resolved: true }),
+        },
+      );
+    fireEvent.change(await findByLabelText("Comment on GitHub"), {
+      target: { value: "hello" },
+    });
+    fireEvent.click(getByRole("button", { name: "Comment" }));
+    await waitFor(() =>
+      expect(rpcCall("pulls/commentOnGithubPull")?.params).toMatchObject({
+        body: "hello",
+      }),
+    );
+
+    fireEvent.click(await findByRole("button", { name: "Reply" }));
+    fireEvent.change(getByLabelText("Reply on GitHub"), {
+      target: { value: "ok" },
+    });
+    fireEvent.submit(getByLabelText("Reply on GitHub").closest("form")!);
+    await waitFor(() =>
+      expect(rpcCall("pulls/replyToGithubThread")?.params).toMatchObject({
+        thread_id: 900,
+        body: "ok",
+      }),
+    );
+
+    fireEvent.click(getByRole("button", { name: /Resolve/ }));
+    await waitFor(() =>
+      expect(rpcCall("pulls/resolveGithubThread")?.params).toMatchObject({
+        thread_id: 900,
+      }),
+    );
+  });
+
+  it("marks a Draft ready", async () => {
+    const { getByRole } = renderSection(
+      { status: { ...BASE, is_draft: true } },
+      { "pulls/markGithubPullReady": () => ({ ready: true }) },
+    );
+    fireEvent.click(getByRole("button", { name: "Ready for review" }));
+    await waitFor(() =>
+      expect(rpcCall("pulls/markGithubPullReady")).toBeTruthy(),
+    );
+  });
+
+  it("sends the selected thread and check to a running agent", async () => {
+    const { findByLabelText, getByLabelText, getByRole } = renderSection(
+      {
+        agentRunning: true,
+        status: { ...BASE, check_runs: [FAILED_CHECK] },
+      },
+      { "pulls/requestGithubFixes": () => ({ id: 1 }) },
+    );
+    fireEvent.click(await findByLabelText(/Select src\/a.ts:12/));
+    fireEvent.click(getByLabelText(/Select CI \/ test/));
+    fireEvent.click(getByRole("button", { name: /Ask agent to fix \(2\)/ }));
+    await waitFor(() =>
+      expect(rpcCall("pulls/requestGithubFixes")?.params).toMatchObject({
+        thread_ids: [900],
+        job_ids: [77],
+      }),
+    );
+  });
+
+  it("disables asking the agent and says why when none is running", async () => {
+    const { findByLabelText, findByRole, getByText } = renderSection({
+      status: { ...BASE, check_runs: [FAILED_CHECK] },
+    });
+    expect(
+      ((await findByLabelText(/Select src\/a.ts:12/)) as HTMLInputElement)
         .disabled,
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      (
+        (await findByRole("button", {
+          name: /Ask agent to fix/,
+        })) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(getByText(/No agent is running on this PR/)).toBeTruthy();
+  });
+
+  it.each([
+    ["closed", { state: "closed" as const }, "closed"],
+    ["merged", { merged: true }, "merged"],
+  ])("is read-only on a %s PR and says the data is the last sync", async (_label, overrides, word) => {
+    const { queryByRole, queryByLabelText, findByText, getByText } =
+      renderSection({
+        pull: { ...withGithubPull({ pushed_sha: "old-head" }), ...overrides },
+        status: { ...BASE, is_draft: true, check_runs: [FAILED_CHECK] },
+      });
+    await findByText("src/a.ts:12");
+    expect(getByText(new RegExp(`This PR is ${word}`))).toBeTruthy();
+    expect(queryByRole("button", { name: /GitHub PR actions/i })).toBeNull();
+    expect(queryByLabelText("Comment on GitHub")).toBeNull();
+    expect(queryByRole("button", { name: "Reply" })).toBeNull();
+    expect(queryByRole("button", { name: /Resolve/ })).toBeNull();
+    expect(queryByRole("button", { name: "Re-run" })).toBeNull();
+    expect(queryByRole("button", { name: /Ready for review/ })).toBeNull();
+    expect(queryByRole("button", { name: /^Merge/ })).toBeNull();
+    expect(queryByRole("button", { name: /Ask agent/ })).toBeNull();
   });
 
   it("confirms before unlinking, saying the GitHub PR itself is untouched (#2384)", async () => {
     const { getByRole, findByRole } = renderSection();
 
-    fireEvent.click(getByRole("button", { name: /Unlink GitHub PR/i }));
+    openMenu(getByRole);
+    fireEvent.click(
+      await findByRole("menuitem", { name: /Unlink GitHub PR/i }),
+    );
     const dialog = await findByRole("dialog", {
       name: /Unlink GitHub PR #42\?/i,
     });
@@ -393,14 +660,20 @@ describe("GithubPrStatusSection", () => {
     const { getByRole, queryByRole, findByRole } = renderSection();
 
     // Cancel leaves the link alone.
-    fireEvent.click(getByRole("button", { name: /Unlink GitHub PR/i }));
+    openMenu(getByRole);
+    fireEvent.click(
+      await findByRole("menuitem", { name: /Unlink GitHub PR/i }),
+    );
     await findByRole("dialog");
     fireEvent.click(getByRole("button", { name: /Cancel/i }));
     await waitFor(() => expect(queryByRole("dialog")).toBeNull());
     expect(rpcCall("pulls/unlinkGithubPull")).toBeFalsy();
 
     // Confirming sends the unlink for this PR.
-    fireEvent.click(getByRole("button", { name: /Unlink GitHub PR/i }));
+    openMenu(getByRole);
+    fireEvent.click(
+      await findByRole("menuitem", { name: /Unlink GitHub PR/i }),
+    );
     await findByRole("dialog");
     fireEvent.click(getByRole("button", { name: /^Unlink$/ }));
     await waitFor(() => expect(rpcCall("pulls/unlinkGithubPull")).toBeTruthy());
@@ -420,7 +693,10 @@ describe("GithubPrStatusSection", () => {
       },
     );
 
-    fireEvent.click(getByRole("button", { name: /Unlink GitHub PR/i }));
+    openMenu(getByRole);
+    fireEvent.click(
+      await findByRole("menuitem", { name: /Unlink GitHub PR/i }),
+    );
     const dialog = await findByRole("dialog");
     fireEvent.click(getByRole("button", { name: /^Unlink$/ }));
 
@@ -430,5 +706,79 @@ describe("GithubPrStatusSection", () => {
       ),
     );
     expect(getByRole("dialog")).toBeTruthy();
+  });
+  it("queues a GitHub sync from the header and spins until the job finishes", async () => {
+    const { getByRole, findByRole } = renderSection(
+      {},
+      { "pulls/syncGithubPull": () => SYNC_JOB },
+    );
+    fireEvent.click(await findByRole("button", { name: "Sync with GitHub" }));
+    const syncing = await findByRole("button", { name: "Syncing with GitHub" });
+    expect((syncing as HTMLButtonElement).disabled).toBe(true);
+    expect(rpcCall("pulls/syncGithubPull")!.params).toEqual({
+      repo: "me/proj",
+      number: 7,
+    });
+    expect(getByRole("button", { name: "Syncing with GitHub" })).toBeTruthy();
+  });
+
+  it("shows a running sync job as in progress", async () => {
+    const { findByRole } = renderSection(
+      {},
+      { "pulls/githubSyncJob": () => ({ ...SYNC_JOB, status: "running" }) },
+    );
+    expect(
+      await findByRole("button", { name: "Syncing with GitHub" }),
+    ).toBeTruthy();
+  });
+
+  it("shows the error of a failed sync job", async () => {
+    const { findByRole } = renderSection(
+      {},
+      {
+        "pulls/githubSyncJob": () => ({
+          ...SYNC_JOB,
+          status: "failed",
+          error: "status: gh: rate limited",
+        }),
+      },
+    );
+    expect((await findByRole("alert")).textContent).toBe(
+      "Sync failed: status: gh: rate limited",
+    );
+    expect(
+      await findByRole("button", { name: "Sync with GitHub" }),
+    ).toBeTruthy();
+  });
+
+  it("shows a refused sync request as an error", async () => {
+    const { findByRole } = renderSection(
+      {},
+      {
+        "pulls/syncGithubPull": () => {
+          throw new RpcFault(404, "PR has no linked GitHub PR");
+        },
+      },
+    );
+    fireEvent.click(await findByRole("button", { name: "Sync with GitHub" }));
+    expect((await findByRole("alert")).textContent).toContain(
+      "PR has no linked GitHub PR",
+    );
+  });
+
+  it("offers the sync button on a closed or archived PR too", () => {
+    const closed = renderSection({
+      pull: { ...LOOPHUB_PULL, state: "closed" },
+    });
+    expect(
+      closed.getByRole("button", { name: "Sync with GitHub" }),
+    ).toBeTruthy();
+    cleanup();
+    const archived = renderSection({
+      pull: { ...LOOPHUB_PULL, archived_at: "2026-07-01T00:00:00Z" },
+    });
+    expect(
+      archived.getByRole("button", { name: "Sync with GitHub" }),
+    ).toBeTruthy();
   });
 });

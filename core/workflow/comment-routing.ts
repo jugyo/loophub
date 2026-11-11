@@ -28,3 +28,8 @@ export function workflowCommentTargets(
   }
   return targets.size > 0 ? [...targets] : ["executor"];
 }
+
+/** Break every routing mention in untrusted text so it cannot change where a comment is delivered. */
+export function neutralizeWorkflowMentions(text: string): string {
+  return text.replace(WORKFLOW_MENTION, "@\u200b$1");
+}

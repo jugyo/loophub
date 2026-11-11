@@ -1,4 +1,5 @@
 import {
+  baseBeforeMerge,
   isAncestor,
   isAncestorIgnoringShallow,
   isShallowRepository,
@@ -78,7 +79,11 @@ export async function resolvePullDiffBaseShas(
   const candidates: string[] = [];
   for (const tip of tips) {
     if (!(await revParse(repoPath, tip))) continue;
-    const mb = await mergeBase(repoPath, tip, head);
+    const mb = await mergeBase(
+      repoPath,
+      await baseTipBeforeMerge(repoPath, tip, head),
+      head,
+    );
     if (mb && !candidates.includes(mb)) candidates.push(mb);
   }
   // Only while head still contains it: a rebased head, or one reset before the fork point, has
@@ -119,4 +124,17 @@ export async function resolvePullDiffBaseShas(
   }
   if (best === null) return [];
   return [best, ...candidates.filter((sha) => sha !== best)];
+}
+
+// The base tip as head saw it before being merged. Once a merge commit on the tip has taken in
+// head, merge-base(tip, head) is head itself and the diff and commit list go empty; the base from
+// right before that merge resolves to the same commit it did before the merge, so base-side changes
+// merged into head stay out. Unmerged and squash-merged heads are not in the tip: tip is returned.
+export async function baseTipBeforeMerge(
+  repoPath: string,
+  tip: string,
+  head: string,
+): Promise<string> {
+  if (!(await isAncestor(repoPath, head, tip))) return tip;
+  return (await baseBeforeMerge(repoPath, tip, head)) ?? tip;
 }

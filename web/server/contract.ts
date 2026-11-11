@@ -1101,7 +1101,7 @@ export const methods: Record<string, MethodDef> = {
   },
   "pullComments/answerEscalation": {
     description:
-      "Answer a Workflow run's human escalation on a pull request by picking one of its options.",
+      "Answer a Workflow run's human escalation on a pull request with one of its options or free text.",
     params: params(
       {
         repo,
@@ -1577,10 +1577,108 @@ export const methods: Record<string, MethodDef> = {
   },
   "pulls/githubStatus": {
     description:
-      "GitHub-side status (draft / review / checks / comment counts / merged) of a PR's linked GitHub PR (#850). Fetched on demand via `gh` and cached; 404 when the PR has no linked GitHub PR.",
+      "GitHub-side status of a PR's linked GitHub PR, read from the cache lh-worker's sweep writes; null until the first sweep. 404 when the PR has no linked GitHub PR.",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.pulls.githubStatus(p.repo, p.number),
+  },
+  "pulls/syncGithubPull": {
+    description:
+      "Queue an immediate GitHub sync of one PR as an lh-job-queue job and return the job without waiting for GitHub; an already queued or running sync is returned instead. Any linked PR qualifies, including a closed, merged or archived one. 404 without a linked GitHub PR.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.syncGithubPull(p.repo, p.number),
+  },
+  "pulls/githubSyncJob": {
+    description:
+      "The PR's newest on-demand GitHub sync job (status and error), or null when none was requested.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.githubSyncJob(p.repo, p.number),
+  },
+  "pulls/githubConversation": {
+    description:
+      "Comments, reviews and inline threads of a PR's linked GitHub PR, newest first, as stored by lh-worker's sweep. 404 when the PR has no linked GitHub PR.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.githubConversation(p.repo, p.number),
+  },
+  "pulls/githubCheckLog": {
+    description:
+      "The failed-step log excerpt of a failed check on the linked GitHub PR, fetched via `gh` on first open and kept.",
+    params: params({ repo, number: positiveInt, job_id: positiveInt }, [
+      "repo",
+      "number",
+      "job_id",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.pulls.githubCheckLog(p.repo, p.number, p.job_id),
+  },
+  "pulls/commentOnGithubPull": {
+    description: "Post a conversation comment on the linked GitHub PR.",
+    params: params({ repo, number: positiveInt, body: strNonEmpty }, [
+      "repo",
+      "number",
+      "body",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.pulls.commentOnGithubPull(p.repo, p.number, p.body),
+  },
+  "pulls/replyToGithubThread": {
+    description: "Reply to an inline review thread on the linked GitHub PR.",
+    params: params(
+      { repo, number: positiveInt, thread_id: positiveInt, body: strNonEmpty },
+      ["repo", "number", "thread_id", "body"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.pulls.replyToGithubThread(p.repo, p.number, p.thread_id, p.body),
+  },
+  "pulls/resolveGithubThread": {
+    description: "Resolve an inline review thread on the linked GitHub PR.",
+    params: params({ repo, number: positiveInt, thread_id: positiveInt }, [
+      "repo",
+      "number",
+      "thread_id",
+    ]),
+    result: anyObject,
+    handler: (p) =>
+      svc.pulls.resolveGithubThread(p.repo, p.number, p.thread_id),
+  },
+  "pulls/markGithubPullReady": {
+    description: "Change the linked GitHub PR from Draft to Ready.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.markGithubPullReady(p.repo, p.number),
+  },
+  "pulls/rerunGithubCheck": {
+    description: "Re-run a failed check on the linked GitHub PR.",
+    params: params({ repo, number: positiveInt, job_id: positiveInt }, [
+      "repo",
+      "number",
+      "job_id",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.pulls.rerunGithubCheck(p.repo, p.number, p.job_id),
+  },
+  "pulls/requestGithubFixes": {
+    description:
+      "Ask the PR's running agent to fix selected GitHub threads and failed checks, as one PR comment.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        thread_ids: { type: "array", items: positiveInt },
+        job_ids: { type: "array", items: positiveInt },
+      },
+      ["repo", "number", "thread_ids", "job_ids"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.pulls.requestGithubFixes(p.repo, p.number, {
+        thread_ids: p.thread_ids,
+        job_ids: p.job_ids,
+      }),
   },
   "pulls/debug": {
     description:

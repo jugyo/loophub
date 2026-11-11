@@ -80,6 +80,10 @@ const COMPONENTS: Components = {
   },
 };
 
+function httpUrlOnly(url: string): string | null {
+  return /^https?:\/\//i.test(url) ? url : null;
+}
+
 export function Markdown({
   children,
   className,
@@ -87,6 +91,7 @@ export function Markdown({
   repo,
   typeset = false,
   breaks = false,
+  httpLinksOnly = false,
 }: {
   children: string;
   className?: string;
@@ -95,6 +100,8 @@ export function Markdown({
   typeset?: boolean;
   /** Render single newlines as line breaks, as GitHub does for comments but not for files. */
   breaks?: boolean;
+  /** Keep only http(s) URLs, for text from outside this hub. */
+  httpLinksOnly?: boolean;
 }) {
   const linkRefs = Boolean(owner && repo);
   const targets = useMemo(
@@ -122,7 +129,11 @@ export function Markdown({
   return (
     <div className={cn(typeset ? "typeset" : "markdown-body", className)}>
       <MarkdownLightboxProvider>
-        <ReactMarkdown remarkPlugins={remarkPlugins} components={COMPONENTS}>
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          components={COMPONENTS}
+          urlTransform={httpLinksOnly ? httpUrlOnly : undefined}
+        >
           {children}
         </ReactMarkdown>
       </MarkdownLightboxProvider>

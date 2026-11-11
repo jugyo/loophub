@@ -309,6 +309,53 @@ describe("IssueRow", () => {
     expect(screen.queryByRole("link", { name: /comment/ })).toBeNull();
   });
 
+  it("shows depending on / blocking after the title (#2771)", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          blocked_by: [
+            {
+              number: 102,
+              title: "api",
+              state: "open",
+              blocked_by: [{ number: 101, title: "schema", state: "open" }],
+            },
+            { number: 104, title: "done", state: "closed", blocked_by: [] },
+          ],
+          blocking: [{ number: 105, title: "ui", state: "open" }],
+        })}
+      />,
+    );
+
+    const deps = await screen.findByText("depending on");
+    expect(deps.className).toContain("text-amber-700");
+    expect(screen.getByLabelText("Blocked")).toBeTruthy();
+    expect(screen.getByText("#104").className).toContain("line-through");
+    expect(screen.getByText("#101").closest("a")?.getAttribute("href")).toBe(
+      "/r/me/proj/issues/101",
+    );
+    expect(screen.getByText("blocking")).toBeTruthy();
+    expect(screen.getByText("#105").closest("a")?.getAttribute("title")).toBe(
+      "ui (open)",
+    );
+  });
+
+  it("shows no dependency summary for an issue without dependencies (#2771)", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ blocked_by: [], blocking: [] })}
+      />,
+    );
+
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(screen.queryByText("depending on")).toBeNull();
+    expect(screen.queryByText("blocking")).toBeNull();
+  });
+
   it("shows the workspace above the issue title", async () => {
     renderInRouter(
       <IssueRow

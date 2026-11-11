@@ -7,6 +7,7 @@ export const jobs = {
   claimNext: J.claimNext,
   heartbeat: J.heartbeat,
   finish: J.finish,
+  failStale: J.failStale,
   repoName(repoId: number): string {
     const repo = S.getRepoById(repoId);
     if (!repo) throw new ServiceError(404, "Repository not found");
