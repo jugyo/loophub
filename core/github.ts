@@ -989,30 +989,6 @@ async function markGithubPrReady(repoPath: string, url: string): Promise<void> {
   );
 }
 
-export type GithubMergeMethod = "merge" | "squash" | "rebase";
-
-// `headSha` is the head the status on screen describes: a head pushed since then fails the merge
-// rather than landing commits nobody looked at.
-async function mergeGithubPr(
-  repoPath: string,
-  url: string,
-  method: GithubMergeMethod,
-  headSha: string | null,
-): Promise<void> {
-  await runGhAction(
-    repoPath,
-    [
-      "pr",
-      "merge",
-      `--${method}`,
-      ...(headSha ? ["--match-head-commit", headSha] : []),
-      "--",
-      url,
-    ],
-    "merging the PR",
-  );
-}
-
 async function rerunGithubJob(
   repoPath: string,
   url: string,
@@ -1078,7 +1054,6 @@ export interface GithubPrActionDeps {
   reply: typeof replyGithubReviewThread;
   resolve: typeof resolveGithubReviewThread;
   ready: typeof markGithubPrReady;
-  merge: typeof mergeGithubPr;
   rerun: typeof rerunGithubJob;
   failedLog: typeof fetchGithubJobFailedLog;
 }
@@ -1088,7 +1063,6 @@ export const realGithubPrActionDeps: GithubPrActionDeps = {
   reply: replyGithubReviewThread,
   resolve: resolveGithubReviewThread,
   ready: markGithubPrReady,
-  merge: mergeGithubPr,
   rerun: rerunGithubJob,
   failedLog: fetchGithubJobFailedLog,
 };

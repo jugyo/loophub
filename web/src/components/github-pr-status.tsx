@@ -1,6 +1,6 @@
 // The GitHub PR view of the PR-detail right pane (#850). Shown only when the loophub PR has a linked
 // GitHub PR (github_pull). Top to bottom: the link out to GitHub with its Push / Force push / Unlink
-// menu, the merge status with its blockers and Ready / Merge actions, the CI checks of the latest
+// menu, the merge status with its blockers and Ready action, the CI checks of the latest
 // head, and the conversation. Everything displayed comes from what lh-worker's sweeps stored, so
 // opening the view never waits on `gh`; the one exception is a check's log, fetched when it is opened.
 // A write goes to GitHub straight away and shows up here once the next sweep has seen it.
@@ -11,7 +11,6 @@
 import {
   ArrowDown,
   ArrowUp,
-  ChevronDown,
   EllipsisVertical,
   ExternalLink,
   Github,
@@ -170,12 +169,6 @@ const CHECK_STATE: Record<
   failure: { tone: "conflict", label: "Failed" },
   pending: { tone: "working", label: "Running" },
 };
-
-const MERGE_METHODS = [
-  { method: "merge", label: "Create a merge commit" },
-  { method: "squash", label: "Squash and merge" },
-  { method: "rebase", label: "Rebase and merge" },
-] as const;
 
 const AFTER_SYNC = "Sent to GitHub. It shows here after the next sync.";
 
@@ -455,13 +448,9 @@ function MergeStatus({
 }) {
   const { showError, showInfo } = useToast();
   const action = useGithubPullAction(owner, repo, number);
-  const run = (
-    method: "pulls/markGithubPullReady" | "pulls/mergeGithubPull",
-    fallback: string,
-    params?: Record<string, unknown>,
-  ) =>
+  const run = (method: "pulls/markGithubPullReady", fallback: string) =>
     action.mutate(
-      { method, params },
+      { method },
       {
         onSuccess: () => showInfo(AFTER_SYNC),
         onError: (e) => showError(errorMessage(e, fallback)),
@@ -520,35 +509,6 @@ function MergeStatus({
                 Ready for review
               </Button>
             ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  disabled={action.isPending || status.is_draft}
-                  title={
-                    status.is_draft ? "A Draft PR can't be merged" : undefined
-                  }
-                >
-                  {action.isPending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : null}
-                  Merge
-                  <ChevronDown className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {MERGE_METHODS.map(({ method, label }) => (
-                  <DropdownMenuItem
-                    key={method}
-                    onSelect={() =>
-                      run("pulls/mergeGithubPull", "Merge failed", { method })
-                    }
-                  >
-                    {label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         ) : null}
         <div className="flex flex-col gap-2 border-t pt-2">

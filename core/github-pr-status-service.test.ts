@@ -365,7 +365,6 @@ function fakeActions(
     reply: fail,
     resolve: fail,
     ready: fail,
-    merge: fail,
     rerun: fail,
     failedLog: fail,
     ...overrides,
@@ -397,23 +396,6 @@ test("a failed GitHub action surfaces as a 502 with gh's message", async () => {
       }),
     ),
   ).rejects.toThrow("failed to post the comment: HTTP 403");
-});
-
-test("merge passes the head the cached status describes", async () => {
-  const number = await openGithubLinkedPull();
-  seedStatus(number, { ...SAMPLE, headSha: "abc123" });
-  const calls: unknown[] = [];
-  await svc.pulls.mergeGithubPull(
-    "me/proj",
-    number,
-    "squash",
-    fakeActions({
-      merge: async (_path, _url, method, headSha) => {
-        calls.push([method, headSha]);
-      },
-    }),
-  );
-  expect(calls).toEqual([["squash", "abc123"]]);
 });
 
 test("writes are refused on a closed PR", async () => {

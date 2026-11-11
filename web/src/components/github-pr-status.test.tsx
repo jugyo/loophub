@@ -499,30 +499,14 @@ describe("GithubPrStatusSection", () => {
     );
   });
 
-  it("marks a Draft ready and merges with a chosen method", async () => {
-    const { getByRole, findByRole } = renderSection(
+  it("marks a Draft ready", async () => {
+    const { getByRole } = renderSection(
       { status: { ...BASE, is_draft: true } },
       { "pulls/markGithubPullReady": () => ({ ready: true }) },
     );
     fireEvent.click(getByRole("button", { name: "Ready for review" }));
     await waitFor(() =>
       expect(rpcCall("pulls/markGithubPullReady")).toBeTruthy(),
-    );
-    cleanup();
-
-    const merged = renderSection(
-      {},
-      { "pulls/mergeGithubPull": () => ({ merged: true }) },
-    );
-    fireEvent.pointerDown(merged.getByRole("button", { name: /^Merge/ }), {
-      button: 0,
-      ctrlKey: false,
-    });
-    fireEvent.click(await findByRole("menuitem", { name: "Squash and merge" }));
-    await waitFor(() =>
-      expect(rpcCall("pulls/mergeGithubPull")?.params).toMatchObject({
-        method: "squash",
-      }),
     );
   });
 

@@ -34,7 +34,6 @@ import {
 import {
   type GhPrStatus,
   type GithubDeps,
-  type GithubMergeMethod,
   type GithubPrActionDeps,
   parseGhPrStatus,
   realGithubDeps,
@@ -1308,21 +1307,6 @@ export const pulls = {
       deps.ready(r.local_path, link.url),
     );
     return { ready: true as const };
-  },
-
-  async mergeGithubPull(
-    name: string,
-    number: number,
-    method: GithubMergeMethod,
-    deps: GithubPrActionDeps = realGithubPrActionDeps,
-  ) {
-    const { r, row, link } = writableGithubPull(name, number);
-    const cached = S.getGithubPullStatus(row.id);
-    const headSha = cached ? parseGhPrStatus(cached.payload).headSha : null;
-    await githubAction("merge the PR", () =>
-      deps.merge(r.local_path, link.url, method, headSha),
-    );
-    return { merged: true as const };
   },
 
   async rerunGithubCheck(

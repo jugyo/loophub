@@ -3738,39 +3738,6 @@
       }
     },
     {
-      "name": "pulls/mergeGithubPull",
-      "description": "Merge the linked GitHub PR at the head the cached status describes.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "method": {
-            "enum": [
-              "merge",
-              "squash",
-              "rebase"
-            ]
-          }
-        },
-        "required": [
-          "repo",
-          "number",
-          "method"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "pulls/rerunGithubCheck",
       "description": "Re-run a failed check on the linked GitHub PR.",
       "params": {

@@ -1651,20 +1651,6 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pulls.markGithubPullReady(p.repo, p.number),
   },
-  "pulls/mergeGithubPull": {
-    description:
-      "Merge the linked GitHub PR at the head the cached status describes.",
-    params: params(
-      {
-        repo,
-        number: positiveInt,
-        method: { enum: ["merge", "squash", "rebase"] },
-      },
-      ["repo", "number", "method"],
-    ),
-    result: anyObject,
-    handler: (p) => svc.pulls.mergeGithubPull(p.repo, p.number, p.method),
-  },
   "pulls/rerunGithubCheck": {
     description: "Re-run a failed check on the linked GitHub PR.",
     params: params({ repo, number: positiveInt, job_id: positiveInt }, [

@@ -1431,7 +1431,6 @@ export function githubPullAction(
     | "pulls/replyToGithubThread"
     | "pulls/resolveGithubThread"
     | "pulls/markGithubPullReady"
-    | "pulls/mergeGithubPull"
     | "pulls/rerunGithubCheck"
     | "pulls/requestGithubFixes",
   owner: string,
