@@ -17,7 +17,11 @@ import type { MergeMode } from "./merge-mode.ts";
 import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
-import { resolvePullBaseSha, resolvePullDiffBaseShas } from "./pull-base.ts";
+import {
+  baseTipBeforeMerge,
+  resolvePullBaseSha,
+  resolvePullDiffBaseShas,
+} from "./pull-base.ts";
 import { pullShaStatus } from "./pull-status-cache.ts";
 import {
   existingPullWorktreePath,
@@ -566,10 +570,18 @@ export async function pullJSON(
   const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
   const mergeFields = await pullMergeFields(repo, row);
-  const githubBaseSha =
+  const githubTipSha =
     opts.withCommits && mergeFields.github_pull
       ? await revParse(repo.local_path, `refs/remotes/origin/${p.base_ref}`)
       : null;
+  // After a merge commit takes head into origin/<base>, the raw tip would exclude every PR commit.
+  const githubBaseSha = githubTipSha
+    ? await baseTipBeforeMerge(
+        repo.local_path,
+        githubTipSha,
+        localBranchRef(p.head_ref),
+      )
+    : null;
   // #2444: list the commits from the same base the Files-changed diff uses, not the base branch
   // tip. `head --not <base tip>` re-lists the commits head forked from once the base branch is
   // rebased, because the rewrite makes them unreachable from that tip again. Resolved here rather

@@ -285,21 +285,26 @@ export async function mergeBase(
 }
 
 // The base as it stood right before `tip` first took in `head`: the first parent of the oldest
-// commit on tip's first-parent line that contains head. Null when head is not in tip, or head is
-// tip itself.
+// commit on tip's first-parent line that has head as an ancestor. That merge may take head in
+// through a descendant (head updated on the remote, or merged via another branch), so the
+// first-parent line is intersected with every descendant of head rather than walked with
+// `--first-parent --ancestry-path`, which only follows first-parent edges. Null when head is not
+// in tip, or head is tip itself.
 export async function baseBeforeMerge(
   repoPath: string,
   tip: string,
   head: string,
 ): Promise<string | null> {
-  const r = await git(repoPath, [
-    "rev-list",
-    "--first-parent",
-    "--ancestry-path",
-    `${head}..${tip}`,
+  const [line, descendants] = await Promise.all([
+    git(repoPath, ["rev-list", "--first-parent", `${head}..${tip}`]),
+    git(repoPath, ["rev-list", "--ancestry-path", `${head}..${tip}`]),
   ]);
-  if (r.code !== 0) return null;
-  const merge = r.stdout.trim().split("\n").filter(Boolean).at(-1);
+  if (line.code !== 0 || descendants.code !== 0) return null;
+  const containsHead = new Set(descendants.stdout.split("\n").filter(Boolean));
+  const merge = line.stdout
+    .split("\n")
+    .filter((sha) => containsHead.has(sha))
+    .at(-1);
   return merge ? revParse(repoPath, `${merge}^1`) : null;
 }
 

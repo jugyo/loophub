@@ -543,3 +543,58 @@ test("diff base is unchanged after a squash merge", async () => {
 
   rmSync(path, { recursive: true, force: true });
 });
+
+test("diff base finds the merge that took head in through a descendant", async () => {
+  const name = "diff-merged-indirect";
+  const { path, g, commit } = mergeCommitRepo(name);
+  const fork = g(["rev-parse", "main"]);
+  g(["checkout", "-q", "-b", "feature"]);
+  commit("feature-only.txt", "feature");
+  g(["checkout", "-q", "main"]);
+  commit("base-only.txt", "advance main");
+  const { number, pull } = await createPull(path, name);
+
+  // The branch is updated with main elsewhere and that update is what main merges, so the merge's
+  // second parent is a descendant of the local head rather than head itself.
+  g(["checkout", "-q", "-b", "updated", "feature"]);
+  g(["merge", "-q", "main", "-m", "update branch"]);
+  g(["checkout", "-q", "main"]);
+  g(["merge", "-q", "--no-ff", "updated", "-m", "merge feature"]);
+  g(["update-ref", "refs/remotes/origin/main", g(["rev-parse", "main"])]);
+
+  expect(await pullBase.resolvePullDiffBaseSha(path, pull)).toBe(fork);
+  expect(await filesAndCommits(name, number)).toEqual({
+    files: ["feature-only.txt"],
+    commits: ["feature"],
+  });
+
+  rmSync(path, { recursive: true, force: true });
+});
+
+test("commit list of a GitHub-exported PR survives a merge-commit merge into origin/<base>", async () => {
+  const name = "diff-merged-github";
+  const { path, g, commit } = mergeCommitRepo(name);
+  g(["remote", "add", "origin", `https://github.com/me/${name}.git`]);
+  g(["checkout", "-q", "-b", "feature"]);
+  commit("feature-only.txt", "feature");
+  g(["checkout", "-q", "main"]);
+  commit("base-only.txt", "advance main");
+  const { number } = await createPull(path, name);
+  svc.pulls.recordGithubPull(`me/${name}`, number, {
+    github_number: 1,
+    url: `https://github.com/me/${name}/pull/1`,
+  });
+
+  // Only origin/main has the merge; local main stays behind it.
+  const localMain = g(["rev-parse", "main"]);
+  g(["merge", "-q", "--no-ff", "feature", "-m", "merge feature"]);
+  g(["update-ref", "refs/remotes/origin/main", g(["rev-parse", "main"])]);
+  g(["reset", "-q", "--hard", localMain]);
+
+  expect(await filesAndCommits(name, number)).toEqual({
+    files: ["feature-only.txt"],
+    commits: ["feature"],
+  });
+
+  rmSync(path, { recursive: true, force: true });
+});
