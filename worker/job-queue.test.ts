@@ -76,3 +76,32 @@ test("a long-running job does not delay an unrelated queued job", async () => {
   releaseFirst();
   await vi.waitFor(() => expect(queue.runningCount()).toBe(0));
 });
+
+test("stop claims nothing new and drain waits for claimed jobs within the grace period", async () => {
+  const queued = [{ id: 1 }, { id: 2 }];
+  let releaseFirst!: () => void;
+  const queue = createJobQueue({
+    concurrency: 1,
+    claimNext: () => queued.shift() ?? null,
+    run: () =>
+      new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      }),
+    onError: (error) => {
+      throw error;
+    },
+  });
+
+  queue.tick();
+  await vi.waitFor(() => expect(queue.runningIds()).toEqual([1]));
+  queue.stop();
+  expect(await queue.drain(10)).toBe(false);
+  expect(queue.runningIds()).toEqual([1]);
+
+  const drained = queue.drain(1000);
+  releaseFirst();
+  expect(await drained).toBe(true);
+  queue.tick();
+  expect(queued.map((job) => job.id)).toEqual([2]);
+  expect(await queue.drain(0)).toBe(true);
+});

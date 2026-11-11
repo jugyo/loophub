@@ -90,3 +90,28 @@ export function finish(
     ],
   );
 }
+
+// A `running` row whose heartbeat stopped belongs to a queue process that died without finishing
+// it. The command may already have produced external side effects, so the row is failed for an
+// operator to inspect instead of being requeued.
+// `liveIds` are jobs the calling process is still running, which a paused clock must not fail.
+export function failStale(
+  heartbeatBefore: string,
+  liveIds: number[],
+  error: string,
+): JobRow[] {
+  return db.transaction(() => {
+    const live = new Set(liveIds);
+    const stale = (
+      db
+        .query(
+          `SELECT * FROM jobs
+           WHERE status = 'running' AND heartbeat_at < ?
+           ORDER BY id`,
+        )
+        .all(heartbeatBefore) as JobRow[]
+    ).filter((job) => !live.has(job.id));
+    for (const job of stale) finish(job.id, { status: "failed", error });
+    return stale;
+  });
+}
