@@ -1101,7 +1101,7 @@ export const methods: Record<string, MethodDef> = {
   },
   "pullComments/answerEscalation": {
     description:
-      "Answer a Workflow run's human escalation on a pull request by picking one of its options.",
+      "Answer a Workflow run's human escalation on a pull request with one of its options or free text.",
     params: params(
       {
         repo,

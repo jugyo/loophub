@@ -260,9 +260,9 @@ test("answer posts the chosen option as the human's PR comment once", () => {
       repo.full_name,
       pr.number,
       escalationComment.id,
-      "C 案",
+      "  \n ",
     ),
-  ).toThrowError(/not one of/);
+  ).toThrowError(/blank/);
 
   const answered = svc.workflowEscalation.answer(
     repo.full_name,
@@ -296,6 +296,37 @@ test("answer posts the chosen option as the human's PR comment once", () => {
   expect(S.listComments(pr.id)).toHaveLength(2);
 });
 
+test("answer records a free answer outside the options and quotes every line", () => {
+  const { repo, pr, run } = createRun("me/escalation-free-answer");
+  svc.workflowEscalation.escalateHuman(
+    repo.full_name,
+    { run: run.id, reason: "Pick one.", options: ["A 案", "B 案"] },
+    run.parent_session_id,
+  );
+  const [escalationComment] = S.listComments(pr.id);
+
+  const answered = svc.workflowEscalation.answer(
+    repo.full_name,
+    pr.number,
+    escalationComment.id,
+    "  どちらでもない。\nC 案で進める  ",
+  );
+
+  expect(answered).toMatchObject({ answer: "どちらでもない。\nC 案で進める" });
+  const comments = S.listComments(pr.id);
+  expect(comments[1].body).toBe(
+    `Answer to escalation comment #${escalationComment.id}:\n\n> どちらでもない。\n> C 案で進める`,
+  );
+  expect(() =>
+    svc.workflowEscalation.answer(
+      repo.full_name,
+      pr.number,
+      escalationComment.id,
+      "別の自由回答",
+    ),
+  ).toThrowError(/already answered/);
+});
+
 test("a newer escalation for the run supersedes the earlier one", () => {
   const { repo, pr, run } = createRun("me/escalation-superseded");
   svc.workflowEscalation.escalateHuman(
@@ -321,5 +352,13 @@ test("a newer escalation for the run supersedes the earlier one", () => {
   ]);
   expect(() =>
     svc.workflowEscalation.answer(repo.full_name, pr.number, first.id, "A"),
+  ).toThrowError(/superseded/);
+  expect(() =>
+    svc.workflowEscalation.answer(
+      repo.full_name,
+      pr.number,
+      first.id,
+      "自由回答",
+    ),
   ).toThrowError(/superseded/);
 });
