@@ -212,8 +212,14 @@ describe("worker maintenance", () => {
     const sweep = vi.fn(async () => ({
       checked: 2,
       emitted: [],
+      statusRefreshed: 0,
       failures: [
-        { number: 7, github_number: 70, error: "auth failed\nnext line" },
+        {
+          number: 7,
+          github_number: 70,
+          part: "feedback" as const,
+          error: "auth failed\nnext line",
+        },
       ],
     }));
     const stop = M.startGithubFeedbackSweep(25, sweep);
@@ -224,7 +230,7 @@ describe("worker maintenance", () => {
       expect(sweep).toHaveBeenCalledTimes(1);
       expect(err).toHaveBeenCalledWith(
         expect.stringContaining(
-          "github feedback sweep PR failed pr=7 github_pr=70 error=auth failed next line",
+          "github feedback sweep PR failed pr=7 github_pr=70 part=feedback error=auth failed next line",
         ),
       );
       expect(out).toHaveBeenCalledWith(
@@ -240,19 +246,41 @@ describe("worker maintenance", () => {
     }
   });
 
-  test("GitHub merge sweep also refreshes PR status and isolates status failures", async () => {
+  test("GitHub merge sweep runs at its configured interval and logs status failures", async () => {
     vi.useFakeTimers();
-    const mergeSweep = vi.fn(async () => []);
-    const statusSweep = vi.fn(async () => {
-      throw new Error("gh auth failed");
-    });
-    const stop = M.startGithubMergeSweep(25, mergeSweep, statusSweep);
+    const out = vi.spyOn(console, "log").mockImplementation(() => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sync = vi.fn(async () => ({
+      checked: 1,
+      emitted: [],
+      statusRefreshed: 0,
+      failures: [
+        {
+          number: 7,
+          github_number: 70,
+          part: "status" as const,
+          error: "gh auth failed",
+        },
+      ],
+    }));
+    const stop = M.startGithubMergeSweep(25, sync);
     try {
       await vi.advanceTimersByTimeAsync(25);
-      expect(mergeSweep).toHaveBeenCalledTimes(1);
-      expect(statusSweep).toHaveBeenCalledTimes(1);
+      expect(sync).toHaveBeenCalledTimes(1);
+      expect(err).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "github merge sweep PR failed pr=7 github_pr=70 part=status error=gh auth failed",
+        ),
+      );
+      expect(out).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "emitted_events=0 status_checked=1 status_refreshed=0 status_failures=1",
+        ),
+      );
     } finally {
       stop();
+      out.mockRestore();
+      err.mockRestore();
       vi.useRealTimers();
     }
   });

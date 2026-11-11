@@ -512,7 +512,7 @@ test("a failed merge-conflict event leaves the clean -> conflict edge unconsumed
 });
 
 test("a failed github_merged event leaves the link still worth polling", async () => {
-  const { syncGithubMergeStatus } = await import("../github-merge-sync.ts");
+  const { syncGithubPulls } = await import("../github-sync.ts");
   svc.pulls.recordGithubPull(REPO, prNumber, {
     github_number: 4242,
     url: "https://github.com/me/tx-boundaries/pull/4242",
@@ -527,18 +527,25 @@ test("a failed github_merged event leaves the link still worth polling", async (
     },
   };
   const isPollable = () =>
-    S.unmergedGithubPullLinks().some((link) => link.number === prNumber);
+    S.githubSyncRows().some(
+      (link) => link.number === prNumber && link.github_merged === 0,
+    );
   expect(isPollable()).toBe(true);
 
-  await expect(
-    whileFailingAsync("pull_request.github_merged", () =>
-      syncGithubMergeStatus(deps),
-    ),
-  ).rejects.toThrowError(/injected event failure/);
+  const failed = await whileFailingAsync("pull_request.github_merged", () =>
+    syncGithubPulls(["merge"], deps),
+  );
+  expect(failed.failures).toEqual([
+    expect.objectContaining({
+      number: prNumber,
+      part: "merge",
+      error: expect.stringMatching(/injected event failure/),
+    }),
+  ]);
 
-  // Recording the merge alone drops the link out of the sweep, so the prompt would never appear.
+  // Recording the merge alone makes the merge check skip the link, so the prompt would never appear.
   expect(isPollable()).toBe(true);
-  expect(await syncGithubMergeStatus(deps)).toHaveLength(1);
+  expect((await syncGithubPulls(["merge"], deps)).emitted).toHaveLength(1);
   expect(isPollable()).toBe(false);
 });
 

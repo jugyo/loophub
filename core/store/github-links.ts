@@ -147,57 +147,34 @@ export function deleteGithubPull(issueId: number): void {
   db.run(`DELETE FROM github_pulls WHERE issue_id = ?`, [issueId]);
 }
 
-// #800: a github_pulls row not yet known to be merged on GitHub, joined with enough to run the
-// merge-status check and record the result — the loophub PR number (for the event payload), the
-// repo id (to emit into), and local_path (gh's cwd; the URL itself carries owner/repo/number so
-// gh resolves the right PR regardless of local_path's own remote).
-export interface GithubPullSyncRow {
+// One GitHub sync target: an open, active loophub PR linked to a GitHub PR. Joined with enough to
+// call `gh` (local_path is gh's cwd; the URL itself carries owner/repo/number) and to record the
+// result — the loophub PR number (for event payloads) and the repo id (to emit into).
+// `github_merged` tells the merge check to skip a link already known merged. The run columns are set
+// only while the PR's latest running Workflow run has a parent session to observe the projected
+// feedback event: without a parent_session_id the projection has no consumer on the parent
+// contract's event cursor.
+export interface GithubSyncRow {
   issue_id: number;
   repo_id: number;
   number: number;
   github_number: number;
   url: string;
   local_path: string;
-}
-
-// #152: open, active linked GitHub PRs are the pull-detail status targets. Keep the selection in
-// core so the eager worker and any future caller use the same set without reconstructing it from
-// partial pull responses.
-export interface GithubPrStatusSyncRow {
-  issue_id: number;
-  url: string;
-  local_path: string;
-}
-
-export function githubPrStatusSyncRows(): GithubPrStatusSyncRow[] {
-  return db
-    .query(
-      `SELECT gp.issue_id AS issue_id, gp.url AS url, r.local_path AS local_path
-       FROM github_pulls gp
-       JOIN issues i ON i.id = gp.issue_id
-       JOIN pulls p ON p.issue_id = gp.issue_id
-       JOIN repos r ON r.id = i.repo_id
-       WHERE gp.status = 'linked'
-         AND i.kind = 'pull' AND i.state = 'open'
-         AND p.merged = 0 AND p.archived_at IS NULL AND r.archived = 0
-       ORDER BY i.repo_id, i.number`,
-    )
-    .all() as GithubPrStatusSyncRow[];
-}
-
-export interface GithubFeedbackSyncRow extends GithubPullSyncRow {
+  github_merged: number;
   workflow_run_id: number | null;
   parent_session_id: string | null;
 }
 
-// Every open linked PR is swept so the GitHub PR view stays current. The run columns are set only
-// while the PR's latest running Workflow run has a parent session to observe the projected event:
-// without a parent_session_id the projection has no consumer on the parent contract's event cursor.
-export function githubFeedbackSyncRows(): GithubFeedbackSyncRow[] {
+// The single selection of GitHub sync targets. Once the loophub PR is closed/merged locally or
+// archived, it drops out here so lh-worker doesn't poll `gh` forever for a link nobody cares about
+// anymore. Archived repos are excluded, mirroring S.openPulls' sweep-target filter.
+export function githubSyncRows(): GithubSyncRow[] {
   return db
     .query(
       `SELECT gp.issue_id AS issue_id, i.repo_id AS repo_id, i.number AS number,
               gp.number AS github_number, gp.url AS url, r.local_path AS local_path,
+              gp.github_merged AS github_merged,
               CASE WHEN wr.parent_session_id IS NOT NULL THEN wr.id END AS workflow_run_id,
               wr.parent_session_id AS parent_session_id
        FROM github_pulls gp
@@ -215,7 +192,7 @@ export function githubFeedbackSyncRows(): GithubFeedbackSyncRow[] {
          AND p.archived_at IS NULL AND r.archived = 0
        ORDER BY i.repo_id, i.number`,
     )
-    .all() as GithubFeedbackSyncRow[];
+    .all() as GithubSyncRow[];
 }
 
 /** Whether a Workflow run is currently running on this PR, and so would receive a PR comment. */
@@ -412,30 +389,8 @@ export function saveGithubCheckLog(
   });
 }
 
-// #800: github_pulls links still worth polling — has a GitHub link, not yet github_merged, and the
-// loophub side is still open/unmerged (the scenario this issue targets: exported-then-merged-on-
-// GitHub while the loophub PR itself hasn't gone through its own merge flow yet). Once the loophub
-// PR is closed/merged locally or github_merged flips on, it drops out here so lh-worker doesn't
-// poll `gh` forever for a link nobody cares about anymore. Archived repos are excluded, mirroring
-// S.openPulls' sweep-target filter.
-export function unmergedGithubPullLinks(): GithubPullSyncRow[] {
-  return db
-    .query(
-      `SELECT gp.issue_id AS issue_id, i.repo_id AS repo_id, i.number AS number,
-              gp.number AS github_number, gp.url AS url, r.local_path AS local_path
-       FROM github_pulls gp
-       JOIN issues i ON i.id = gp.issue_id
-       JOIN pulls p ON p.issue_id = gp.issue_id
-       JOIN repos r ON r.id = i.repo_id
-       WHERE gp.status = 'linked' AND gp.github_merged = 0
-         AND i.kind = 'pull' AND i.state = 'open'
-         AND p.merged = 0 AND p.archived_at IS NULL AND r.archived = 0`,
-    )
-    .all() as GithubPullSyncRow[];
-}
-
 // #800: record that the GitHub PR has been merged (idempotent — re-running after it's already
-// flagged just re-sets the same values, since unmergedGithubPullLinks stops returning the row).
+// flagged just re-sets the same values, since the merge check skips a merged link).
 export function setGithubMerged(issueId: number, mergedAt: string): GithubPull {
   return db
     .query(

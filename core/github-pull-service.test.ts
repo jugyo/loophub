@@ -978,9 +978,7 @@ test("unlinkGithubPull drops the link, its status cache, and the merge polling (
     contentHash: "abc",
     updatedAt: "2026-01-01T00:00:00Z",
   });
-  expect(
-    S.unmergedGithubPullLinks().some((link) => link.number === number),
-  ).toBe(true);
+  expect(S.githubSyncRows().some((link) => link.number === number)).toBe(true);
 
   const res = svc.pulls.unlinkGithubPull("me/proj", number);
   expect(res).toEqual({ unlinked: true, github_number: 77 });
@@ -994,10 +992,8 @@ test("unlinkGithubPull drops the link, its status cache, and the merge polling (
   expect(S.getGithubFeedbackObservation(row.id, "review", 991)).toMatchObject({
     content_hash: "abc",
   });
-  // The worker's merge-status sweep no longer polls `gh` for this PR.
-  expect(
-    S.unmergedGithubPullLinks().some((link) => link.number === number),
-  ).toBe(false);
+  // The worker's GitHub sync no longer polls `gh` for this PR.
+  expect(S.githubSyncRows().some((link) => link.number === number)).toBe(false);
 
   const events = S.listEvents(0, repo.id, 100, undefined, "asc", {
     types: ["pull_request.github_pr_unlinked"],

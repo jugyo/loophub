@@ -14,7 +14,11 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
 let DB: typeof import("./db.ts");
-let statusSync: typeof import("./github-status-sync.ts");
+let sync: typeof import("./github-sync.ts");
+
+function syncStatus(deps: GithubPrStatusSyncDeps) {
+  return sync.syncGithubPulls(["status"], deps);
+}
 let repoPath: string;
 let ghNumber = 2000;
 
@@ -26,7 +30,7 @@ beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
   DB = await import("./db.ts");
-  statusSync = await import("./github-status-sync.ts");
+  sync = await import("./github-sync.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-gh-pr-status-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -188,7 +192,7 @@ test("githubStatus reports local commits added after the GitHub head (#457)", as
 test("the eager status sweep fills the same cache used by githubStatus (#152)", async () => {
   const number = await openGithubLinkedPull();
   let calls = 0;
-  const result = await statusSync.syncGithubPrStatus({
+  const result = await syncStatus({
     fetchStatus: async () => {
       calls++;
       return SAMPLE;
@@ -197,8 +201,8 @@ test("the eager status sweep fills the same cache used by githubStatus (#152)", 
   });
 
   expect(result.checked).toBeGreaterThan(0);
-  expect(result.refreshed).toBeGreaterThan(0);
-  expect(calls).toBe(result.refreshed);
+  expect(result.statusRefreshed).toBeGreaterThan(0);
+  expect(calls).toBe(result.statusRefreshed);
   expect(await svc.pulls.githubStatus("me/proj", number)).toMatchObject({
     state: "open",
     checks: "failure",
@@ -211,12 +215,12 @@ test("the eager status sweep emits a GitHub conflict edge once", async () => {
   const issue = S.getIssue(repo!.id, number)!;
   S.recordPullConflictState(repo!.id, number, "clean");
 
-  await statusSync.syncGithubPrStatus(depsReturning(SAMPLE));
+  await syncStatus(depsReturning(SAMPLE));
   DB.db.run("UPDATE github_pull_status SET synced_at = ? WHERE issue_id = ?", [
     "2000-01-01T00:00:00Z",
     issue.id,
   ]);
-  await statusSync.syncGithubPrStatus(depsReturning(SAMPLE));
+  await syncStatus(depsReturning(SAMPLE));
 
   const events = S.listEvents(0, repo!.id, 1000).filter(
     (event) =>
@@ -230,7 +234,7 @@ test("the eager status sweep fetches origin before projecting a GitHub conflict"
   await openGithubLinkedPull();
   const calls: string[] = [];
 
-  await statusSync.syncGithubPrStatus({
+  await syncStatus({
     fetchStatus: async () => SAMPLE,
     fetchOrigin: async (path, remote) => {
       calls.push(`${path}:${remote}`);
@@ -246,7 +250,7 @@ test("a failed origin fetch does not discard the GitHub conflict edge", async ()
   const repo = await svc.repos.get("me/proj");
   S.recordPullConflictState(repo!.id, number, "blocked");
 
-  const result = await statusSync.syncGithubPrStatus({
+  const result = await syncStatus({
     fetchStatus: async () => SAMPLE,
     fetchOrigin: async () => ({
       code: 1,
@@ -255,8 +259,8 @@ test("a failed origin fetch does not discard the GitHub conflict edge", async ()
     }),
   });
 
-  expect(result.failures).toBeGreaterThan(0);
-  expect(result.refreshed).toBeGreaterThan(0);
+  expect(result.failures.length).toBeGreaterThan(0);
+  expect(result.statusRefreshed).toBeGreaterThan(0);
   expect(
     S.listEvents(0, repo!.id, 1000).filter(
       (event) =>
@@ -271,9 +275,7 @@ test("GitHub unknown does not overwrite the recorded conflict state", async () =
   const repo = await svc.repos.get("me/proj");
   S.recordPullConflictState(repo!.id, number, "conflict");
 
-  await statusSync.syncGithubPrStatus(
-    depsReturning({ ...SAMPLE, mergeable: "unknown" }),
-  );
+  await syncStatus(depsReturning({ ...SAMPLE, mergeable: "unknown" }));
 
   expect(S.recordPullConflictState(repo!.id, number, "conflict")).toEqual({
     previous: "conflict",
@@ -284,13 +286,13 @@ test("GitHub unknown does not overwrite the recorded conflict state", async () =
 test("the eager status sweep keeps the last status when GitHub fails (#152)", async () => {
   const number = await openGithubLinkedPull();
   const seeded = seedStatus(number, SAMPLE);
-  const result = await statusSync.syncGithubPrStatus({
+  const result = await syncStatus({
     fetchStatus: async () => {
       throw new Error("gh network error");
     },
   });
 
-  expect(result.failures).toBeGreaterThan(0);
+  expect(result.failures.length).toBeGreaterThan(0);
   await expect(
     svc.pulls.githubStatus("me/proj", number),
   ).resolves.toMatchObject({ state: "open", synced_at: seeded.synced_at });
@@ -305,13 +307,51 @@ test("a changed status announces itself once, without GitHub text", async () => 
         event.type === "pull_request.github_data_updated" &&
         JSON.parse(event.payload).number === number,
     );
-  await statusSync.syncGithubPrStatus(depsReturning(SAMPLE));
-  await statusSync.syncGithubPrStatus(depsReturning(SAMPLE));
+  await syncStatus(depsReturning(SAMPLE));
+  await syncStatus(depsReturning(SAMPLE));
   expect(updates()).toHaveLength(1);
-  await statusSync.syncGithubPrStatus(
-    depsReturning({ ...SAMPLE, isDraft: true }),
-  );
+  await syncStatus(depsReturning({ ...SAMPLE, isDraft: true }));
   expect(updates()).toHaveLength(2);
+});
+
+test("one PR's sync saves what it read when another GitHub read fails", async () => {
+  const number = await openGithubLinkedPull();
+  const repo = S.getRepo("me", "proj")!;
+  const issueId = S.getIssue(repo.id, number)!.id;
+  const link = S.githubSyncRows().find((row) => row.issue_id === issueId)!;
+
+  const result = await sync.syncGithubPull(link, undefined, {
+    ...depsReturning({ ...SAMPLE, mergeable: "mergeable" }),
+    fetchMergeStatus: async () => {
+      throw new Error("gh pr view failed: boom");
+    },
+    fetchFeedback: async () => [
+      {
+        kind: "issue_comment",
+        id: 9001,
+        body: "looks good",
+        updatedAt: "2026-07-01T00:00:00Z",
+        createdAt: "2026-07-01T00:00:00Z",
+        authorLogin: "octocat",
+        reviewState: null,
+        path: null,
+        line: null,
+        inReplyToId: null,
+        reviewId: null,
+        threadId: null,
+        threadResolved: null,
+      },
+    ],
+  });
+
+  expect(result.failures).toEqual([
+    { part: "merge", error: "gh pr view failed: boom" },
+  ]);
+  expect(result.statusRefreshed).toBe(true);
+  expect(S.getGithubPullStatus(issueId)).not.toBeNull();
+  expect(
+    S.getGithubFeedbackObservation(issueId, "issue_comment", 9001),
+  ).toMatchObject({ body: "looks good" });
 });
 
 function fakeActions(

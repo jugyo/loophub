@@ -10,11 +10,16 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
-let sync: typeof import("./github-feedback-sync.ts");
+let sync: typeof import("./github-sync.ts");
 let github: typeof import("./github.ts");
 let repoPath: string;
 let workflowId: number;
 type GithubPrFeedback = import("./github-feedback-sync.ts").GithubPrFeedback;
+type GithubFeedbackDeps = import("./github.ts").GithubFeedbackDeps;
+
+function syncFeedback(deps: GithubFeedbackDeps) {
+  return sync.syncGithubPulls(["feedback"], deps);
+}
 
 function git(args: string[]) {
   return spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
@@ -90,7 +95,7 @@ function feedback(input: {
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
-  sync = await import("./github-feedback-sync.ts");
+  sync = await import("./github-sync.ts");
   github = await import("./github.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-ghfeedback-repo-"));
   git(["init", "-q", "-b", "main"]);
@@ -115,7 +120,7 @@ afterAll(() => {
 
 test("emits one marked source event for aggregated GitHub feedback", async () => {
   const pull = await workflowGithubPull(101);
-  const result = await sync.syncGithubFeedback({
+  const result = await syncFeedback({
     async fetchFeedback(_repoPath, url) {
       if (url !== pull.url) return [];
       return [
@@ -173,7 +178,7 @@ test("emits one marked source event for aggregated GitHub feedback", async () =>
 // URL — GitHub's own html_url is never trusted for it.
 test("records what the PR timeline shows for each observed item", async () => {
   const pull = await workflowGithubPull(103);
-  await sync.syncGithubFeedback({
+  await syncFeedback({
     async fetchFeedback(_repoPath, url) {
       if (url !== pull.url) return [];
       return [
@@ -274,7 +279,7 @@ test("does not wake a Workflow run with no parent session, but still stores its 
     },
   };
 
-  const result = await sync.syncGithubFeedback(deps);
+  const result = await syncFeedback(deps);
   expect(
     result.emitted.filter(
       (event) =>
@@ -300,7 +305,7 @@ test("detects edits and durably suppresses the same comment content", async () =
     },
   };
 
-  const first = await sync.syncGithubFeedback(deps);
+  const first = await syncFeedback(deps);
   expect(
     first.emitted.filter(
       (event) =>
@@ -311,7 +316,7 @@ test("detects edits and durably suppresses the same comment content", async () =
 
   // Calling the public sweep again models a worker restart: dedupe state must come from SQLite,
   // not process memory.
-  const afterRestart = await sync.syncGithubFeedback(deps);
+  const afterRestart = await syncFeedback(deps);
   expect(
     afterRestart.emitted.filter(
       (event) =>
@@ -326,7 +331,7 @@ test("detects edits and durably suppresses the same comment content", async () =
     body: "edited",
     updatedAt: "2026-07-02T00:00:00Z",
   });
-  const edited = await sync.syncGithubFeedback(deps);
+  const edited = await syncFeedback(deps);
   expect(
     edited.emitted.filter(
       (event) =>
@@ -334,7 +339,7 @@ test("detects edits and durably suppresses the same comment content", async () =
         JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(1);
-  const unchangedEdit = await sync.syncGithubFeedback(deps);
+  const unchangedEdit = await syncFeedback(deps);
   expect(
     unchangedEdit.emitted.filter(
       (event) =>
@@ -363,7 +368,7 @@ test("notifies once when a pending review with the same id and body is submitted
     },
   };
 
-  const pending = await sync.syncGithubFeedback(deps);
+  const pending = await syncFeedback(deps);
   expect(
     pending.emitted.filter(
       (event) => JSON.parse(event.payload).number === pull.number,
@@ -376,7 +381,7 @@ test("notifies once when a pending review with the same id and body is submitted
     state: "COMMENTED",
     submitted_at: "2026-07-03T00:00:00Z",
   };
-  const submitted = await sync.syncGithubFeedback(deps);
+  const submitted = await syncFeedback(deps);
   expect(
     submitted.emitted.filter(
       (event) =>
@@ -385,7 +390,7 @@ test("notifies once when a pending review with the same id and body is submitted
     ),
   ).toHaveLength(1);
 
-  const unchanged = await sync.syncGithubFeedback(deps);
+  const unchanged = await syncFeedback(deps);
   expect(
     unchanged.emitted.filter(
       (event) =>
@@ -421,7 +426,7 @@ test("notifies once for a submitted review with no body", async () => {
     },
   };
 
-  const submitted = await sync.syncGithubFeedback(deps);
+  const submitted = await syncFeedback(deps);
   expect(
     submitted.emitted.filter(
       (event) =>
@@ -430,7 +435,7 @@ test("notifies once for a submitted review with no body", async () => {
     ),
   ).toHaveLength(1);
 
-  const unchanged = await sync.syncGithubFeedback(deps);
+  const unchanged = await syncFeedback(deps);
   expect(
     unchanged.emitted.filter(
       (event) =>
@@ -443,7 +448,7 @@ test("notifies once for a submitted review with no body", async () => {
 test("isolates a GitHub failure to one PR and reports it visibly to the worker", async () => {
   const failed = await workflowGithubPull(201);
   const healthy = await workflowGithubPull(202);
-  const result = await sync.syncGithubFeedback({
+  const result = await syncFeedback({
     async fetchFeedback(_repoPath, url) {
       if (url === failed.url) throw new Error("gh api failed: auth expired");
       if (url === healthy.url) {
@@ -457,6 +462,7 @@ test("isolates a GitHub failure to one PR and reports it visibly to the worker",
     {
       number: failed.number,
       github_number: 201,
+      part: "feedback",
       error: "gh api failed: auth expired",
     },
   ]);
@@ -474,7 +480,7 @@ test("stops polling closed PRs and keeps polling an open PR whose Workflow run f
   S.updateWorkflowRun(completed.runId, { status: "completed" });
   const called: string[] = [];
 
-  await sync.syncGithubFeedback({
+  await syncFeedback({
     async fetchFeedback(_repoPath, url) {
       called.push(url);
       return [];
@@ -519,7 +525,7 @@ function eventsFor(number: number, type: string) {
 
 test("a PR with no Workflow run is stored, announced without text, and does not wake an agent", async () => {
   const pull = await linkedPull(201);
-  await sync.syncGithubFeedback(
+  await syncFeedback(
     feedOnly(pull.url, () => [
       feedback({ kind: "issue_comment", id: 2011, body: "secret text" }),
     ]),
@@ -538,7 +544,7 @@ test("feedback from before a Workflow started is announced to it once", async ()
   const deps = feedOnly(pull.url, () => [
     feedback({ kind: "issue_comment", id: 2021, body: "early" }),
   ]);
-  await sync.syncGithubFeedback(deps);
+  await syncFeedback(deps);
 
   const repo = S.getRepo("me", "proj")!;
   S.createWorkflowRun({
@@ -552,8 +558,8 @@ test("feedback from before a Workflow started is announced to it once", async ()
     costLimitUsd: 10,
     parentSessionId: "parent-202",
   });
-  await sync.syncGithubFeedback(deps);
-  await sync.syncGithubFeedback(deps);
+  await syncFeedback(deps);
+  await syncFeedback(deps);
   expect(eventsFor(pull.number, "pull_request.github_feedback")).toHaveLength(
     1,
   );
@@ -579,9 +585,9 @@ test("resolution, a dismissed verdict, and deletion reach the view without re-wa
 
   let items = [review("changes_requested"), inline(false), comment];
   const deps = feedOnly(pull.url, () => items);
-  await sync.syncGithubFeedback(deps);
+  await syncFeedback(deps);
   items = [review("dismissed"), inline(true)];
-  await sync.syncGithubFeedback(deps);
+  await syncFeedback(deps);
 
   expect(eventsFor(pull.number, "pull_request.github_feedback")).toHaveLength(
     1,
@@ -620,7 +626,7 @@ test("a sweep backfills the body of a row observed before bodies were stored", a
     updatedAt: item.updatedAt,
     notifiedHash: hash,
   });
-  await sync.syncGithubFeedback(feedOnly(pull.url, () => [item]));
+  await syncFeedback(feedOnly(pull.url, () => [item]));
   expect(
     S.getGithubFeedbackObservation(issueId, "issue_comment", 2041)?.body,
   ).toBe("legacy");
@@ -629,7 +635,7 @@ test("a sweep backfills the body of a row observed before bodies were stored", a
 
 test("the conversation hides an empty commented review and keeps its thread", async () => {
   const pull = await linkedPull(205);
-  await sync.syncGithubFeedback(
+  await syncFeedback(
     feedOnly(pull.url, () => [
       feedback({
         kind: "review",
@@ -677,7 +683,7 @@ test("the conversation hides an empty commented review and keeps its thread", as
 
 test("a relinked PR keeps the old ledger and shows only the current GitHub PR", async () => {
   const pull = await linkedPull(206);
-  await sync.syncGithubFeedback(
+  await syncFeedback(
     feedOnly(pull.url, () => [
       feedback({ kind: "issue_comment", id: 2061, body: "old link" }),
     ]),
@@ -688,7 +694,7 @@ test("a relinked PR keeps the old ledger and shows only the current GitHub PR", 
     github_number: 207,
     url: nextUrl,
   });
-  await sync.syncGithubFeedback(feedOnly(nextUrl, () => []));
+  await syncFeedback(feedOnly(nextUrl, () => []));
 
   const repo = S.getRepo("me", "proj")!;
   const issueId = S.getIssue(repo.id, pull.number)!.id;
