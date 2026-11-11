@@ -20,6 +20,8 @@ export async function syncGithubPullMerge(
   // alone would make the merge check skip this link, so a lost event means the Notification Center
   // prompt is never shown for this PR.
   return db.transaction(() => {
+    // A manual sync and the periodic one can both see the merge; only the first records it.
+    if (S.getGithubPull(link.issue_id)?.github_merged) return null;
     S.setGithubMerged(link.issue_id, mergedAt);
     return S.emitEvent(
       link.repo_id,

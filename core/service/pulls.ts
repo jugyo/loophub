@@ -42,6 +42,10 @@ import {
 } from "../github.ts";
 import { githubFixRequestBody } from "../github-fix-request.ts";
 import { notifyGithubPullLinked } from "../github-pull-notifications.ts";
+import {
+  enqueueGithubPullSync,
+  latestGithubPullSyncJob,
+} from "../github-pull-sync-job.ts";
 import { latestChangedLines } from "../latest-diff-lines.ts";
 import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
 import {
@@ -56,6 +60,7 @@ import {
   githubConversationJSON,
   githubPrStatusJSON,
   githubPullJSON,
+  githubSyncJobJSON,
   type PullTimelineItemWire,
   pullGithubTimelineJSON,
   pullUsageJSON,
@@ -1211,6 +1216,25 @@ export const pulls = {
       cached.synced_at,
       await githubCommitSync(r.local_path, S.getPull(row.id)!, status),
     );
+  },
+
+  // Ask lh-job-queue to sync this PR with GitHub now instead of at the next periodic sweep. Any
+  // linked PR qualifies, closed, merged or archived included; returns the queued (or already
+  // pending) job without waiting.
+  syncGithubPull(name: string, number: number) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const link = S.githubSyncRow(row.id);
+    if (!link) throw new ServiceError(404, "PR has no linked GitHub PR");
+    return githubSyncJobJSON(enqueueGithubPullSync(link));
+  },
+
+  // The PR's newest on-demand sync job, or null when none was ever requested.
+  githubSyncJob(name: string, number: number) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const job = latestGithubPullSyncJob(row.id);
+    return job ? githubSyncJobJSON(job) : null;
   },
 
   // The comments, reviews and inline threads the feedback sweep stored for the linked GitHub PR.

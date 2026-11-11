@@ -1,4 +1,8 @@
 #!/usr/bin/env bun
+import {
+  runGithubPullSyncJob,
+  SYNC_GITHUB_PULL_JOB,
+} from "../core/github-pull-sync-job.ts";
 import { spawnProcess } from "../core/process.ts";
 import { jobs, workflowAgentStop } from "../core/service.ts";
 import { STOP_WORKFLOW_AGENTS_JOB } from "../core/workflow-agent-stop-job.ts";
@@ -130,6 +134,8 @@ const queue = createJobQueue({
       if (job.type === "shell") await runShell(job);
       else if (job.type === STOP_WORKFLOW_AGENTS_JOB)
         await runWorkflowAgentStop(job);
+      else if (job.type === SYNC_GITHUB_PULL_JOB)
+        await runGithubPullSyncJob(job);
       else
         jobs.finish(job.id, {
           status: "failed",

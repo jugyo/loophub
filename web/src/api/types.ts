@@ -25,6 +25,7 @@ import type {
   GithubConversationWire,
   GithubPrStatusWire,
   GithubPullWire,
+  GithubSyncJobWire,
   GlobalSettingsWire,
   HandoffWire,
   HerdrRepoSessionsWire,
@@ -285,6 +286,9 @@ export type GithubPull = GithubPullWire;
 export type GithubPrStatus = GithubPrStatusWire;
 
 export type GithubCheckRun = GithubCheckRunWire;
+
+/** The newest on-demand GitHub sync job of a PR (`pulls/githubSyncJob`). */
+export type GithubSyncJob = GithubSyncJobWire;
 
 /** The linked GitHub PR's comments, reviews and threads, as stored by the worker's sweep. */
 export type GithubConversation = GithubConversationWire;

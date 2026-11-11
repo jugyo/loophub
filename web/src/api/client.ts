@@ -21,6 +21,7 @@ import type {
   GithubConversation,
   GithubPrStatus,
   GithubPull,
+  GithubSyncJob,
   GlobalSettings,
   Handoff,
   HerdrAgentRead,
@@ -1378,6 +1379,22 @@ export function markGithubMerged(
 /** Cached GitHub-side status of a PR's linked GitHub PR; null until the worker's first sweep. */
 export function getGithubPrStatus(owner: string, repo: string, number: number) {
   return rpc<GithubPrStatus | null>("pulls/githubStatus", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+/** Queue an immediate GitHub sync of the PR; returns the job without waiting for GitHub. */
+export function syncGithubPull(owner: string, repo: string, number: number) {
+  return rpc<GithubSyncJob>("pulls/syncGithubPull", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
+/** The PR's newest on-demand GitHub sync job, or null when none was requested. */
+export function getGithubSyncJob(owner: string, repo: string, number: number) {
+  return rpc<GithubSyncJob | null>("pulls/githubSyncJob", {
     repo: full(owner, repo),
     number,
   });

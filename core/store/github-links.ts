@@ -166,13 +166,7 @@ export interface GithubSyncRow {
   parent_session_id: string | null;
 }
 
-// The single selection of GitHub sync targets. Once the loophub PR is closed/merged locally or
-// archived, it drops out here so lh-worker doesn't poll `gh` forever for a link nobody cares about
-// anymore. Archived repos are excluded, mirroring S.openPulls' sweep-target filter.
-export function githubSyncRows(): GithubSyncRow[] {
-  return db
-    .query(
-      `SELECT gp.issue_id AS issue_id, i.repo_id AS repo_id, i.number AS number,
+const GITHUB_SYNC_ROW_SQL = `SELECT gp.issue_id AS issue_id, i.repo_id AS repo_id, i.number AS number,
               gp.number AS github_number, gp.url AS url, r.local_path AS local_path,
               gp.github_merged AS github_merged,
               CASE WHEN wr.parent_session_id IS NOT NULL THEN wr.id END AS workflow_run_id,
@@ -187,12 +181,28 @@ export function githubSyncRows(): GithubSyncRow[] {
            AND candidate.status = 'running'
          ORDER BY candidate.id DESC LIMIT 1
        )
-       WHERE gp.status = 'linked'
-         AND i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
+       WHERE gp.status = 'linked' AND i.kind = 'pull'`;
+
+// The single selection of periodic GitHub sync targets. Once the loophub PR is closed/merged
+// locally or archived, it drops out here so lh-worker doesn't poll `gh` forever for a link nobody
+// cares about anymore. Archived repos are excluded, mirroring S.openPulls' sweep-target filter.
+export function githubSyncRows(): GithubSyncRow[] {
+  return db
+    .query(
+      `${GITHUB_SYNC_ROW_SQL}
+         AND i.state = 'open' AND p.merged = 0
          AND p.archived_at IS NULL AND r.archived = 0
        ORDER BY i.repo_id, i.number`,
     )
     .all() as GithubSyncRow[];
+}
+
+// One linked PR to sync on request, whatever its state: a person asking can still want what
+// happened on GitHub after the PR was closed, merged or archived here.
+export function githubSyncRow(issueId: number): GithubSyncRow | null {
+  return db
+    .query(`${GITHUB_SYNC_ROW_SQL} AND gp.issue_id = ?`)
+    .get(issueId) as GithubSyncRow | null;
 }
 
 /** Whether a Workflow run is currently running on this PR, and so would receive a PR comment. */

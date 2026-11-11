@@ -91,6 +91,20 @@ export function finish(
   );
 }
 
+/** The newest job whose dedupe key starts with `keyPrefix`. */
+export function latestByKeyPrefix(keyPrefix: string): JobRow | null {
+  return db
+    .query(
+      `SELECT * FROM jobs WHERE substr(dedupe_key, 1, ?) = ?
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(keyPrefix.length, keyPrefix) as JobRow | null;
+}
+
+export function get(id: number): JobRow | null {
+  return db.query("SELECT * FROM jobs WHERE id = ?").get(id) as JobRow | null;
+}
+
 // A `running` row whose heartbeat stopped belongs to a queue process that died without finishing
 // it. The command may already have produced external side effects, so the row is failed for an
 // operator to inspect instead of being requeued.

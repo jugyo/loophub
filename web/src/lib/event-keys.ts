@@ -66,6 +66,8 @@ export const queryKeys = {
     ["github-pr-status", full, number] as const,
   githubConversation: (full: string, number: number) =>
     ["github-conversation", full, number] as const,
+  githubSyncJob: (full: string, number: number) =>
+    ["github-sync-job", full, number] as const,
   githubCheckLog: (full: string, number: number, jobId: number) =>
     ["github-check-log", full, number, jobId] as const,
   notifications: () => ["notifications"] as const,
@@ -200,6 +202,9 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
           keys.push([...queryKeys.githubPrStatus(repo, pullNumber)]);
           keys.push([...queryKeys.githubConversation(repo, pullNumber)]);
         }
+        if (type === "pull_request.github_sync_finished") {
+          keys.push([...queryKeys.githubSyncJob(repo, pullNumber)]);
+        }
         // Workflow tracker Done is the PR's merge-ready fact (mergeable clean), not a run
         // lifecycle field. Review pass / head advance / conflict / close change that fact via
         // pull_request.* only — reviews no longer twin a workflow_run.review_submitted — so the
@@ -249,6 +254,9 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       ) {
         keys.push(["github-pr-status"]);
         keys.push(["github-conversation"]);
+      }
+      if (type === "pull_request.github_sync_finished") {
+        keys.push(["github-sync-job"]);
       }
       // Repo-less pull events still need the Done tracker to drop its stale merge-ready signal.
       keys.push(["workflow-run", "pull"]);

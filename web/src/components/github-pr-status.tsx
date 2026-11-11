@@ -47,7 +47,9 @@ import {
   useGithubCheckLog,
   useGithubConversation,
   useGithubPullAction,
+  useGithubSyncJob,
   usePushGithubPull,
+  useSyncGithubPull,
   useUnlinkGithubPull,
 } from "@/queries/pulls";
 
@@ -280,7 +282,9 @@ export function GithubPrStatusSection({
       data-debug-component="GithubPrStatusSection"
       className="flex h-full min-h-0 min-w-0 flex-col"
     >
-      <PullPaneHead title="GitHub PR" />
+      <PullPaneHead title="GitHub PR">
+        <GithubSyncButton owner={owner} repo={repo} number={pull.number} />
+      </PullPaneHead>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-4">
         {/* The route out to GitHub (#2091). Outside the status branches below because it is the PR
             detail's only link to the GitHub PR, so it must stay reachable while the status is loading
@@ -313,8 +317,9 @@ export function GithubPrStatusSection({
         {!pullOpen ? (
           <p className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
             This PR is {pull.merged ? "merged" : "closed"}, so GitHub data is no
-            longer refreshed. This is the last state synced before that
-            {status ? ` (synced ${relativeTime(status.synced_at)})` : ""}.
+            longer refreshed automatically
+            {status ? ` (synced ${relativeTime(status.synced_at)})` : ""}. Use
+            the sync button to refresh it.
           </p>
         ) : null}
         {isLoading ? (
@@ -382,6 +387,54 @@ export function GithubPrStatusSection({
         />
       ) : null}
     </section>
+  );
+}
+
+// Sync this PR with GitHub now instead of waiting for the periodic sweep. The request only queues
+// a job; the synced data arrives through the usual events, and the job's own state drives the
+// spinner and the error.
+function GithubSyncButton({
+  owner,
+  repo,
+  number,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  const job = useGithubSyncJob(owner, repo, number, true).data;
+  const sync = useSyncGithubPull(owner, repo, number);
+  const syncing =
+    sync.isPending || job?.status === "queued" || job?.status === "running";
+  const error = sync.isError
+    ? errorMessage(sync.error)
+    : job?.status === "failed"
+      ? job.error
+      : null;
+  return (
+    <div className="ml-auto flex min-w-0 items-center gap-2">
+      {error && !syncing ? (
+        <span
+          role="alert"
+          title={error}
+          className="min-w-0 truncate text-xs text-destructive"
+        >
+          Sync failed: {error}
+        </span>
+      ) : null}
+      <Button
+        variant="ghost"
+        size="icon"
+        type="button"
+        className="h-7 w-7 shrink-0"
+        aria-label={syncing ? "Syncing with GitHub" : "Sync with GitHub"}
+        title={syncing ? "Syncing with GitHub…" : "Sync with GitHub"}
+        disabled={syncing}
+        onClick={() => sync.mutate()}
+      >
+        <RotateCw className={`size-4${syncing ? " animate-spin" : ""}`} />
+      </Button>
+    </div>
   );
 }
 

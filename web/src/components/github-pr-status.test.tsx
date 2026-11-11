@@ -8,6 +8,7 @@ import type {
   GithubConversationThread,
   GithubPrStatus,
   GithubPull,
+  GithubSyncJob,
   PullRequest,
 } from "@/api/types";
 import { GithubPrStatusSection } from "./github-pr-status";
@@ -61,6 +62,7 @@ const LOOPHUB_PULL: PullRequest = {
   merge_mode: "github_pr",
   github_pull: PULL,
   github_pr_export_started_at: null,
+  archived_at: null,
 };
 
 /** The fixture PR with its GitHub link overridden — the section reads the link off the PR. */
@@ -140,6 +142,14 @@ const CONVERSATION: GithubConversation = {
   ],
 };
 
+const SYNC_JOB: GithubSyncJob = {
+  id: 3,
+  status: "queued",
+  error: null,
+  created_at: "2026-07-01T00:01:00Z",
+  finished_at: null,
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -159,6 +169,7 @@ function renderSection(
       "pulls/unlinkGithubPull": () => ({ unlinked: true, github_number: 42 }),
       "pulls/pushGithubPull": () => ({ ...PULL, pushed_sha: "head-sha" }),
       "pulls/githubConversation": () => CONVERSATION,
+      "pulls/githubSyncJob": () => null,
       ...handlers,
     }),
   );
@@ -644,5 +655,79 @@ describe("GithubPrStatusSection", () => {
       ),
     );
     expect(getByRole("dialog")).toBeTruthy();
+  });
+  it("queues a GitHub sync from the header and spins until the job finishes", async () => {
+    const { getByRole, findByRole } = renderSection(
+      {},
+      { "pulls/syncGithubPull": () => SYNC_JOB },
+    );
+    fireEvent.click(await findByRole("button", { name: "Sync with GitHub" }));
+    const syncing = await findByRole("button", { name: "Syncing with GitHub" });
+    expect((syncing as HTMLButtonElement).disabled).toBe(true);
+    expect(rpcCall("pulls/syncGithubPull")!.params).toEqual({
+      repo: "me/proj",
+      number: 7,
+    });
+    expect(getByRole("button", { name: "Syncing with GitHub" })).toBeTruthy();
+  });
+
+  it("shows a running sync job as in progress", async () => {
+    const { findByRole } = renderSection(
+      {},
+      { "pulls/githubSyncJob": () => ({ ...SYNC_JOB, status: "running" }) },
+    );
+    expect(
+      await findByRole("button", { name: "Syncing with GitHub" }),
+    ).toBeTruthy();
+  });
+
+  it("shows the error of a failed sync job", async () => {
+    const { findByRole } = renderSection(
+      {},
+      {
+        "pulls/githubSyncJob": () => ({
+          ...SYNC_JOB,
+          status: "failed",
+          error: "status: gh: rate limited",
+        }),
+      },
+    );
+    expect((await findByRole("alert")).textContent).toBe(
+      "Sync failed: status: gh: rate limited",
+    );
+    expect(
+      await findByRole("button", { name: "Sync with GitHub" }),
+    ).toBeTruthy();
+  });
+
+  it("shows a refused sync request as an error", async () => {
+    const { findByRole } = renderSection(
+      {},
+      {
+        "pulls/syncGithubPull": () => {
+          throw new RpcFault(404, "PR has no linked GitHub PR");
+        },
+      },
+    );
+    fireEvent.click(await findByRole("button", { name: "Sync with GitHub" }));
+    expect((await findByRole("alert")).textContent).toContain(
+      "PR has no linked GitHub PR",
+    );
+  });
+
+  it("offers the sync button on a closed or archived PR too", () => {
+    const closed = renderSection({
+      pull: { ...LOOPHUB_PULL, state: "closed" },
+    });
+    expect(
+      closed.getByRole("button", { name: "Sync with GitHub" }),
+    ).toBeTruthy();
+    cleanup();
+    const archived = renderSection({
+      pull: { ...LOOPHUB_PULL, archived_at: "2026-07-01T00:00:00Z" },
+    });
+    expect(
+      archived.getByRole("button", { name: "Sync with GitHub" }),
+    ).toBeTruthy();
   });
 });

@@ -18,6 +18,7 @@ import type { MergeableState } from "./mergeable.ts";
 import type { EffectiveAgentConfig } from "./repo-agent-config.ts";
 import { normalizeRepoAgentRuntime } from "./repo-agent-config.ts";
 import type { CodingAgent } from "./runtimes.ts";
+import type * as J from "./store/jobs.ts";
 import * as S from "./store.ts";
 import type {
   HerdrAgent,
@@ -3034,4 +3035,23 @@ export function pullGithubTimelineJSON(
     });
   }
   return entries;
+}
+
+/** The latest on-demand GitHub sync job of one PR (`pulls/githubSyncJob`). */
+export interface GithubSyncJobWire {
+  id: number;
+  status: J.JobStatus;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export function githubSyncJobJSON(job: J.JobRow): GithubSyncJobWire {
+  return {
+    id: job.id,
+    status: job.status,
+    error: job.error,
+    created_at: job.created_at,
+    finished_at: job.finished_at,
+  };
 }

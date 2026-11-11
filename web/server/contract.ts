@@ -1582,6 +1582,20 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pulls.githubStatus(p.repo, p.number),
   },
+  "pulls/syncGithubPull": {
+    description:
+      "Queue an immediate GitHub sync of one PR as an lh-job-queue job and return the job without waiting for GitHub; an already queued or running sync is returned instead. Any linked PR qualifies, including a closed, merged or archived one. 404 without a linked GitHub PR.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.syncGithubPull(p.repo, p.number),
+  },
+  "pulls/githubSyncJob": {
+    description:
+      "The PR's newest on-demand GitHub sync job (status and error), or null when none was requested.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.githubSyncJob(p.repo, p.number),
+  },
   "pulls/githubConversation": {
     description:
       "Comments, reviews and inline threads of a PR's linked GitHub PR, newest first, as stored by lh-worker's sweep. 404 when the PR has no linked GitHub PR.",

@@ -18,6 +18,7 @@ import {
   getGithubCheckLog,
   getGithubConversation,
   getGithubPrStatus,
+  getGithubSyncJob,
   getPull,
   getPullDebug,
   getPullDetailPage,
@@ -43,6 +44,7 @@ import {
   setDiffFeedbackArchived,
   setPullCommentArchived,
   setPullFileViewed,
+  syncGithubPull,
   unarchivePull,
   unlinkGithubPull,
 } from "@/api/client";
@@ -850,6 +852,33 @@ export function useGithubConversation(
     queryKey: queryKeys.githubConversation(full(owner, repo), number),
     queryFn: () => getGithubConversation(owner, repo, number),
     enabled,
+  });
+}
+
+/**
+ * The PR's newest on-demand GitHub sync job. Refreshed by the event the job emits when it
+ * finishes; a new request writes its job straight into this key.
+ */
+export function useGithubSyncJob(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.githubSyncJob(full(owner, repo), number),
+    queryFn: () => getGithubSyncJob(owner, repo, number),
+    enabled,
+  });
+}
+
+/** Queue an immediate GitHub sync of the PR; the result arrives through the sync's events. */
+export function useSyncGithubPull(owner: string, repo: string, number: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => syncGithubPull(owner, repo, number),
+    onSuccess: (job) =>
+      qc.setQueryData(queryKeys.githubSyncJob(full(owner, repo), number), job),
   });
 }
 

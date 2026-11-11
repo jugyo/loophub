@@ -67,6 +67,26 @@ export function cachedGithubMergeable(
   }
 }
 
+// Cache a freshly fetched GitHub status for pulls/githubStatus. That RPC only reads this cache, so an
+// open screen learns of a change through the event.
+export function saveGithubStatus(
+  pull: { issue_id: number; repo_id: number; number: number },
+  status: GhPrStatus,
+): void {
+  db.transaction(() => {
+    const payload = JSON.stringify(status);
+    const unchanged = S.getGithubPullStatus(pull.issue_id)?.payload === payload;
+    S.saveGithubPullStatus(pull.issue_id, payload);
+    if (!unchanged)
+      S.emitEvent(
+        pull.repo_id,
+        "pull_request.github_data_updated",
+        "lh-worker",
+        { number: pull.number },
+      );
+  });
+}
+
 // One sweep tick: reconcile every open PR's mergeable state, and for each that just transitioned
 // clean -> conflict, fire pull_request.merge_conflict once. State is recorded before the
 // transition check so the event fires at most once per transition, even across ticks (see
@@ -100,20 +120,7 @@ export async function sweepPullConflicts(
     // conflict -> conflict, and the conflict is never reported.
     if (
       db.transaction(() => {
-        if (deps.githubStatus) {
-          const payload = JSON.stringify(deps.githubStatus);
-          const unchanged =
-            S.getGithubPullStatus(pull.issue_id)?.payload === payload;
-          S.saveGithubPullStatus(pull.issue_id, payload);
-          // pulls/githubStatus only reads this cache, so an open screen learns of a change here.
-          if (!unchanged)
-            S.emitEvent(
-              pull.repo_id,
-              "pull_request.github_data_updated",
-              "lh-worker",
-              { number: pull.number },
-            );
-        }
+        if (deps.githubStatus) saveGithubStatus(pull, deps.githubStatus);
         // Read the GitHub signal only after entering the write transaction. A periodic sweep may
         // have computed local state before another process refreshed GitHub; this fresh read keeps
         // that stale local result from overwriting a newly recorded GitHub conflict.

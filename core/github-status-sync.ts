@@ -1,6 +1,9 @@
 import { fetchRemote } from "./git.ts";
 import type { GithubPrStatusDeps } from "./github.ts";
-import { sweepPullConflicts } from "./pull-conflict-events.ts";
+import {
+  saveGithubStatus,
+  sweepPullConflicts,
+} from "./pull-conflict-events.ts";
 import type * as S from "./store.ts";
 
 export interface GithubPrStatusSyncDeps extends GithubPrStatusDeps {
@@ -29,6 +32,12 @@ export async function syncGithubPullStatus(
     if (fetched.code !== 0)
       originError = `git fetch origin failed: ${fetched.stderr.trim()}`;
   }
-  await sweepPullConflicts({ issueId: link.issue_id, githubStatus: status });
+  const swept = await sweepPullConflicts({
+    issueId: link.issue_id,
+    githubStatus: status,
+  });
+  // A closed, merged or archived PR (synced only on request) has no conflict state to track, so
+  // only its cache is refreshed.
+  if (swept.checked === 0) saveGithubStatus(link, status);
   return originError;
 }
