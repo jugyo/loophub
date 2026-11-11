@@ -195,7 +195,20 @@ test("human PR instructions reconcile conflicts into the Issue before implementa
     expect(execute).toMatch(
       /compare a human instruction with the current Issue body and enabled\s+acceptance criteria|人間の指示を実装する前に、現在の Issue 本文と enabled な acceptance criteria を照合/u,
     );
-    expect(execute).not.toContain("lh pr view <pr> --json");
+    // PR comments arrive with their body, so that route must not look the PR up again.
+    const prComment = execute
+      .split(/\n(?=- )/u)
+      .find((item) => item.includes('type="pr_comment"'));
+    expect(prComment, language).toBeDefined();
+    expect(prComment).not.toContain("lh pr view <pr> --json");
+    // A GitHub PR-body update still resolves its target from `github_pull`.
+    const prBodyUpdate = execute
+      .split(/\n{2,}/u)
+      .find((paragraph) =>
+        paragraph.includes("gh pr edit <github_pull.url> --body-file -"),
+      );
+    expect(prBodyUpdate, language).toBeDefined();
+    expect(prBodyUpdate).toContain("lh pr view <pr> --json");
     expect(execute).toMatch(
       /If consistent, proceed without requesting a spec\s+update|矛盾しなければ仕様更新を求めず/u,
     );

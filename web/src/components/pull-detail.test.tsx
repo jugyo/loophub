@@ -2346,6 +2346,9 @@ describe("PullDetail", () => {
         handlers: Parameters<typeof renderDetail>[0] = {},
       ) => {
         const result = renderDetail(handlers);
+        // Let the files load while Files changed is on screen, before switching away.
+        await screen.findByRole("heading", { name: /Files changed \(/ });
+        await openCommitsView();
         await screen.findByRole("heading", { name: /Commits \(/ });
         return result;
       };
@@ -2356,7 +2359,7 @@ describe("PullDetail", () => {
         expect(updated("Evidence")).toBeNull();
         first.unmount();
 
-        await visit({
+        const { queryClient } = await visit({
           "pulls/get": () => ({ ...pull, body: "New evidence" }),
           "pulls/files": () => [
             { ...files[0], additions: (files[0]?.additions ?? 0) + 1 },
@@ -2366,7 +2369,16 @@ describe("PullDetail", () => {
         expect(updated("Evidence")?.getAttribute("title")).toBe(
           "Evidence: Updated",
         );
-        expect(updated("Files changed")).toBeTruthy();
+        // The pane loads on Files changed, so its reload update is already seen.
+        expect(updated("Files changed")).toBeNull();
+        // A later update arriving while another view is open is flagged.
+        await act(() => {
+          queryClient.setQueryData(queryKeys.pullFiles("me/proj", 30), [
+            { ...files[0], additions: (files[0]?.additions ?? 0) + 2 },
+            ...files.slice(1),
+          ]);
+        });
+        await waitFor(() => expect(updated("Files changed")).toBeTruthy());
       });
 
       it("clears a dot when its view is opened, also after reloading", async () => {
